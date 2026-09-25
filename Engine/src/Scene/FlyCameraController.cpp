@@ -36,7 +36,7 @@ namespace Flux {
         const double right = axis(Key::D, Key::A);
         const double up = axis(Key::E, Key::Q);
 
-        // Le déplacement est calculé en double : un float perdrait les petits pas loin de l'origine.
+        // Le déplacement est calculé en double puis reporté dans les secteurs : un float perdrait les petits pas.
         Math::Vector3d direction = Math::Vector3d(camera.GetForward()) * forward
                                  + Math::Vector3d(camera.GetRight()) * right
                                  + Math::Vector3d{0.0, 1.0, 0.0} * up;

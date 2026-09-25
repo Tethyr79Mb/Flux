@@ -3,6 +3,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Scene/Camera.hpp"
+#include "Flux/Scene/Scene.hpp"
 #include "Flux/UI/DrawList.hpp"
 #include "Flux/UI/Font.hpp"
 #include "RHI/Vulkan/VulkanBuffer.hpp"
@@ -82,37 +83,6 @@ namespace Flux {
         }
         constexpr CubeMesh Cube = BuildCube();
 
-        struct SceneCube {
-            Math::Vector3d position; // centre, en double
-            Math::Vector3f size;
-            Math::LinearColor color;
-        };
-
-        // Scène de test, en attendant les vraies scènes : une grille de cubes à l'origine,
-        // et la même à 10 000 km devant la caméra, pour vérifier qu'on reste précis très loin.
-        std::vector<SceneCube> BuildTestScene() {
-            constexpr std::array<Math::LinearColor, 4> palette{{
-                {0.80f, 0.25f, 0.20f}, {0.25f, 0.60f, 0.30f}, {0.20f, 0.40f, 0.80f}, {0.85f, 0.65f, 0.20f},
-            }};
-            std::vector<SceneCube> cubes;
-            for (const double originZ : {0.0, -1.0e7}) {
-                // Sol gris à l'origine, violet pour la copie lointaine : on voit tout de suite où l'on est.
-                const Math::LinearColor ground = originZ == 0.0 ? Math::LinearColor{0.30f, 0.30f, 0.32f}
-                                                                : Math::LinearColor{0.35f, 0.15f, 0.45f};
-                cubes.push_back({{0.0, -0.05, originZ}, {60.0f, 0.1f, 60.0f}, ground});
-                for (int i = -5; i <= 5; ++i) {
-                    for (int j = -5; j <= 5; ++j) {
-                        // Décalage pour rester positif : en C++, le reste d'un nombre négatif est négatif.
-                        const float height = 1.0f + static_cast<float>((i * 7 + j * 3 + 52) % 4);
-                        cubes.push_back({{i * 5.0, height * 0.5, originZ + j * 5.0},
-                                         {1.0f, height, 1.0f},
-                                         palette[static_cast<std::size_t>((i + j + 20) % 4)]});
-                    }
-                }
-            }
-            return cubes;
-        }
-
         // Doit correspondre à OverlayParams dans shaders/Overlay.slang.
         struct OverlayParams {
             float screenSize[2];
@@ -168,8 +138,9 @@ namespace Flux {
         Vk::Buffer cubeVertexBuffer;
         Vk::Buffer cubeIndexBuffer;
         Vk::GraphicsPipeline meshPipeline;
-        std::vector<SceneCube> scene = BuildTestScene();
-        Camera camera;
+        // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une frame à l'autre.
+        std::vector<RelativeTransform> relativeTransforms;
+        std::vector<MeshParams> meshDraws;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
 
         // Overlay 2D (FluxUI) : atlas MSDF + un vertex buffer par frame en vol.
@@ -445,18 +416,31 @@ namespace Flux {
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(commandBuffer, cubeIndexBuffer.GetHandle(), 0, VK_INDEX_TYPE_UINT16);
 
-            const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-            const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
-            for (const SceneCube& cube : scene) {
-                // Rendu relatif à la caméra : la soustraction se fait en double, le GPU ne voit que de petits nombres.
-                const Math::Vector3f relative(cube.position - camera.position);
-                const MeshParams params{
-                    viewProjection * Math::Matrix4f::Translation(relative) * Math::Matrix4f::Scale(cube.size),
-                    cube.color,
-                };
+            for (const MeshParams& params : meshDraws) {
                 vkCmdPushConstants(commandBuffer, meshPipeline.GetLayout(),
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
                 vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(Cube.indices.size()), 1, 0, 0, 0);
+            }
+        }
+
+        // Une matrice par maillage visible, calculée relativement à la caméra : la soustraction des positions
+        // se fait en double (secteurs compris), le GPU ne voit que de petits nombres.
+        void PrepareScene(const Scene& scene, const Camera& camera) {
+            const VkExtent2D extent = swapchain->GetExtent();
+            const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+            const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+
+            scene.ComputeRelativeTransforms(camera.position, relativeTransforms);
+            meshDraws.clear();
+            for (const RelativeTransform& transform : relativeTransforms) {
+                const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity);
+                if (!renderer) {
+                    continue;
+                }
+                const Math::Matrix4f model = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
+                                           * transform.rotation.ToMatrix()
+                                           * Math::Matrix4f::Scale(transform.scale);
+                meshDraws.push_back({viewProjection * model, renderer->color});
             }
         }
 
@@ -538,7 +522,7 @@ namespace Flux {
                             VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
         }
 
-        bool RenderFrame() {
+        bool RenderFrame(const Scene& scene, const Camera& camera) {
             const VkExtent2D extent = WindowExtent();
             if (extent.width == 0 || extent.height == 0) {
                 return true; // fenêtre réduite : rien à présenter
@@ -578,6 +562,7 @@ namespace Flux {
             beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
             vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
+            PrepareScene(scene, camera);
             Record(frame.commandBuffer, imageIndex);
             if (!Vk::Check(vkEndCommandBuffer(frame.commandBuffer), "vkEndCommandBuffer")) {
                 return false;
@@ -663,18 +648,14 @@ namespace Flux {
 
     Renderer::~Renderer() = default;
 
-    bool Renderer::RenderFrame() {
-        const bool ok = m_impl->RenderFrame();
+    bool Renderer::RenderFrame(const Scene& scene, const Camera& camera) {
+        const bool ok = m_impl->RenderFrame(scene, camera);
         m_impl->overlay->Clear(); // même si la frame n'a pas été présentée (fenêtre réduite, swapchain recréée)
         return ok;
     }
 
     void Renderer::SetClearColor(Math::LinearColor color) {
         m_impl->clearColor = color;
-    }
-
-    void Renderer::SetCamera(const Camera& camera) {
-        m_impl->camera = camera;
     }
 
     UI::DrawList& Renderer::GetOverlay() {

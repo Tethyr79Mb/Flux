@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 
 namespace Flux::Math {
     template <typename T>
@@ -53,4 +54,5 @@ namespace Flux::Math {
 
     using Vector3f = Vector3<float>;
     using Vector3d = Vector3<double>;
+    using Vector3i64 = Vector3<std::int64_t>;
 }

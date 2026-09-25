@@ -59,9 +59,16 @@ FetchContent_Declare(msdfgen
         GIT_SHALLOW TRUE
         SYSTEM)
 
+# ECS (entités et composants) de la scène, en headers seulement. Exposé aux modules de jeu.
+FetchContent_Declare(EnTT
+        GIT_REPOSITORY https://github.com/skypjack/entt.git
+        GIT_TAG v3.16.0
+        GIT_SHALLOW TRUE
+        SYSTEM)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT)
 
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 # Bibliothèques statiques liées dans FluxEngine.dll.

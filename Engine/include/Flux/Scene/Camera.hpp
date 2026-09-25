@@ -3,15 +3,17 @@
 #include "Flux/Export.hpp"
 #include "Flux/Math/Matrix4.hpp"
 #include "Flux/Math/Vector3.hpp"
+#include "Flux/Math/WorldPosition.hpp"
 
 #include <numbers>
 
 namespace Flux {
     // Caméra perspective. Repère monde main droite, y vers le haut, mètres.
-    // La position est en double : le rendu se fait relativement à elle, pour rester précis loin de l'origine.
+    // La position est un secteur + un décalage double : le rendu se fait relativement à elle,
+    // pour rester précis n'importe où dans la galaxie.
     struct FLUX_API Camera
     {
-        Math::Vector3d position;
+        Math::WorldPosition position;
         float yaw = 0.0f;   // radians ; 0 regarde vers -z, positif tourne vers la gauche
         float pitch = 0.0f; // radians ; positif regarde vers le haut
         float verticalFov = std::numbers::pi_v<float> / 3.0f; // 60°
