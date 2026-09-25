@@ -4,6 +4,8 @@ add_library(FluxEngine SHARED
         src/Renderer/Renderer.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
         src/RHI/Vulkan/VulkanSwapchain.cpp
+        src/RHI/Vulkan/VulkanBuffer.cpp
+        src/RHI/Vulkan/VulkanPipeline.cpp
         src/RHI/Vulkan/VmaImplementation.cpp
         src/Platform/Win32/Win32Window.cpp
         src/Platform/Win32/Win32SharedLibrary.cpp
@@ -39,3 +41,8 @@ target_compile_definitions(FluxEngine PRIVATE
         VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
 
 flux_set_warnings(FluxEngine)
+
+flux_add_shaders(FluxShaders
+        shaders/Triangle.slang
+)
+add_dependencies(FluxEngine FluxShaders)

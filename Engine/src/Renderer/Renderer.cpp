@@ -1,15 +1,33 @@
 #include "Flux/Renderer/Renderer.hpp"
 
+#include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
+#include "RHI/Vulkan/VulkanBuffer.hpp"
 #include "RHI/Vulkan/VulkanDevice.hpp"
+#include "RHI/Vulkan/VulkanPipeline.hpp"
 #include "RHI/Vulkan/VulkanSwapchain.hpp"
 
 #include <array>
+#include <cstddef>
+#include <cstring>
 
 namespace Flux {
     namespace {
         // Deux frames en vol : le CPU prépare la suivante pendant que le GPU dessine la courante.
         constexpr uint32_t FramesInFlight = 2;
+
+        // Doit correspondre à VertexInput dans shaders/Triangle.slang.
+        struct TriangleVertex {
+            float position[2];
+            float color[3];
+        };
+
+        // Repère Vulkan : y vers le bas, donc le premier sommet est en haut.
+        constexpr std::array<TriangleVertex, 3> TriangleVertices{{
+            {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+            {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+            {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+        }};
 
         struct FrameData {
             VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -49,6 +67,9 @@ namespace Flux {
         std::unique_ptr<Vk::Swapchain> swapchain;
         std::array<FrameData, FramesInFlight> frames{};
         uint32_t frameIndex = 0;
+        // Déclarés après device : détruits avant lui.
+        Vk::Buffer triangleVertexBuffer;
+        Vk::GraphicsPipeline trianglePipeline;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
 
         explicit Impl(Window& w) : window(w) {}
@@ -102,6 +123,35 @@ namespace Flux {
             return true;
         }
 
+        std::expected<void, std::string> CreateTriangle() {
+            auto buffer = Vk::Buffer::Create(device->GetAllocator(), sizeof(TriangleVertices),
+                                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
+            if (!buffer) {
+                return std::unexpected(buffer.error());
+            }
+            std::memcpy(buffer->GetMappedData(), TriangleVertices.data(), sizeof(TriangleVertices));
+            triangleVertexBuffer = std::move(*buffer);
+
+            const VkVertexInputBindingDescription binding{0, sizeof(TriangleVertex), VK_VERTEX_INPUT_RATE_VERTEX};
+            const std::array attributes{
+                VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(TriangleVertex, position)},
+                VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(TriangleVertex, color)},
+            };
+
+            Vk::GraphicsPipelineDesc desc;
+            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Triangle.spv";
+            desc.vertexBindings = {&binding, 1};
+            desc.vertexAttributes = attributes;
+            desc.colorFormat = swapchain->GetFormat();
+
+            auto pipeline = Vk::GraphicsPipeline::Create(device->GetHandle(), desc);
+            if (!pipeline) {
+                return std::unexpected(pipeline.error());
+            }
+            trianglePipeline = std::move(*pipeline);
+            return {};
+        }
+
         VkExtent2D WindowExtent() const {
             const Math::Vector2i size = window.GetSize();
             return {static_cast<uint32_t>(size.x), static_cast<uint32_t>(size.y)};
@@ -110,6 +160,20 @@ namespace Flux {
         bool RecreateSwapchain() {
             device->WaitIdle();
             return swapchain->Recreate(WindowExtent());
+        }
+
+        void DrawTriangle(VkCommandBuffer commandBuffer) const {
+            const VkExtent2D extent = swapchain->GetExtent();
+            const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
+            const VkRect2D scissor{{0, 0}, extent};
+            const VkBuffer vertexBuffer = triangleVertexBuffer.GetHandle();
+            const VkDeviceSize offset = 0;
+
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.GetHandle());
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(TriangleVertices.size()), 1, 0, 0);
         }
 
         void Record(VkCommandBuffer commandBuffer, uint32_t imageIndex) const {
@@ -137,7 +201,7 @@ namespace Flux {
             renderingInfo.pColorAttachments = &colorAttachment;
 
             vkCmdBeginRendering(commandBuffer, &renderingInfo);
-            // Le dessin de la scène viendra ici.
+            DrawTriangle(commandBuffer);
             vkCmdEndRendering(commandBuffer);
 
             TransitionImage(commandBuffer, image,
@@ -250,6 +314,9 @@ namespace Flux {
         }
         if (!impl->CreateFrames()) {
             return std::unexpected("création des ressources de frame");
+        }
+        if (auto triangle = impl->CreateTriangle(); !triangle) {
+            return std::unexpected(triangle.error());
         }
 
         return std::unique_ptr<Renderer>(new Renderer(std::move(impl)));

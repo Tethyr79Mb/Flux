@@ -20,6 +20,7 @@ endif()
 
 include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
+include(cmake/FluxShaders.cmake)
 
 add_subdirectory(Engine)
 add_subdirectory(Game)
