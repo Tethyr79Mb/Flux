@@ -4,10 +4,14 @@ namespace Flux {
     void Input::BeginFrame() {
         m_mouseDelta = {};
         m_wheelDelta = 0.0f;
+        m_pressed.fill(false);
     }
 
     void Input::SetKey(std::uint16_t scancode, bool down) {
         if (scancode < KeyCount) {
+            if (down && !m_keys[scancode]) {
+                m_pressed[scancode] = true;
+            }
             m_keys[scancode] = down;
         }
     }
@@ -27,6 +31,7 @@ namespace Flux {
 
     void Input::ReleaseAll() {
         m_keys.fill(false);
+        m_pressed.fill(false);
         m_buttons.fill(false);
     }
 }

@@ -43,6 +43,8 @@ namespace Flux {
         static constexpr std::size_t KeyCount = 0x200;
 
         bool IsKeyDown(Key key) const { return m_keys[static_cast<std::size_t>(key) % KeyCount]; }
+        // Vrai seulement à la frame où la touche vient d'être enfoncée (répétition automatique ignorée).
+        bool WasKeyPressed(Key key) const { return m_pressed[static_cast<std::size_t>(key) % KeyCount]; }
         bool IsMouseButtonDown(MouseButton button) const { return m_buttons[static_cast<std::size_t>(button)]; }
 
         // Déplacement brut de la souris depuis la frame précédente, en unités du capteur (sans accélération Windows).
@@ -61,6 +63,7 @@ namespace Flux {
 
         private:
         std::array<bool, KeyCount> m_keys{};
+        std::array<bool, KeyCount> m_pressed{};
         std::array<bool, static_cast<std::size_t>(MouseButton::Count)> m_buttons{};
         Math::Vector2f m_mouseDelta;
         float m_wheelDelta = 0.0f;

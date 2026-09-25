@@ -60,7 +60,8 @@ namespace Flux {
             const std::string text = std::format(
                 "{:.0f} fps · Durée d'image : {:.2f} ms\nGPU : {}\n"
                 "Caméra : x {}  y {}  z {}\nVitesse : {}/s (molette)\n"
-                "Clic droit maintenu : souris pour regarder, ZQSD, E / A pour monter / descendre, Maj pour accélérer",
+                "Clic droit maintenu : souris pour regarder, ZQSD, E / A pour monter / descendre, Maj pour accélérer\n"
+                "T : sauter entre la grille de l'origine et sa copie à 10 000 km",
                 stats.GetFps(), stats.GetFrameMilliseconds(), deviceName,
                 FormatDistance(camera.position.x), FormatDistance(camera.position.y), FormatDistance(camera.position.z),
                 FormatDistance(controller.GetSpeed()));
@@ -123,6 +124,10 @@ namespace Flux {
             stats.Tick(now);
 
             m_cameraController.Update(m_camera, *m_window, deltaSeconds);
+            // Provisoire, pour la scène de test : saute de 10 000 km en gardant le même point de vue.
+            if (m_window->GetInput().WasKeyPressed(Key::T)) {
+                m_camera.position.z += m_camera.position.z > -5.0e6 ? -1.0e7 : 1.0e7;
+            }
             m_renderer->SetCamera(m_camera);
 
             if (m_showDebugOverlay) {
