@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(Flux LANGUAGES CXX)
+project(Flux LANGUAGES C CXX) # C : requis par volk
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,7 @@ if(NOT WIN32)
 endif()
 
 include(cmake/FluxWarnings.cmake)
+include(cmake/FluxDependencies.cmake)
 
 add_subdirectory(Engine)
 add_subdirectory(Game)

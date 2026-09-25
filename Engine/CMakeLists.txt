@@ -1,6 +1,10 @@
 add_library(FluxEngine SHARED
         src/Core/Engine.cpp
         src/Core/GameModule.cpp
+        src/Renderer/Renderer.cpp
+        src/RHI/Vulkan/VulkanDevice.cpp
+        src/RHI/Vulkan/VulkanSwapchain.cpp
+        src/RHI/Vulkan/VmaImplementation.cpp
         src/Platform/Win32/Win32Window.cpp
         src/Platform/Win32/Win32SharedLibrary.cpp
         src/Platform/Win32/Win32Filesystem.cpp
@@ -23,7 +27,15 @@ target_include_directories(FluxEngine
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# windows.h reste confiné aux .cpp de Platform/Win32.
+# windows.h reste confiné aux .cpp de Platform/Win32 et RHI/Vulkan.
 target_compile_definitions(FluxEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+
+# Vulkan est privé au moteur : aucun header public ne l'expose.
+target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
+target_compile_definitions(FluxEngine PRIVATE
+        VK_NO_PROTOTYPES
+        VK_USE_PLATFORM_WIN32_KHR
+        VMA_STATIC_VULKAN_FUNCTIONS=0
+        VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
 
 flux_set_warnings(FluxEngine)

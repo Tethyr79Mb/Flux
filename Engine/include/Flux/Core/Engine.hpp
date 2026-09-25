@@ -7,6 +7,7 @@
 #include <string>
 
 namespace Flux {
+    class Renderer;
     class Window;
 
     struct EngineConfig {
@@ -27,9 +28,11 @@ namespace Flux {
         void RequestQuit();
 
         Window& GetWindow();
+        Renderer& GetRenderer();
 
         private:
         std::unique_ptr<Window> m_window;
+        std::unique_ptr<Renderer> m_renderer;
         bool m_quitRequested = false;
     };
 }

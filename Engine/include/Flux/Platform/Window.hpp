@@ -22,6 +22,8 @@ namespace Flux {
         void Destroy();
 
         void HandleEvents();
+        // Bloque jusqu'au prochain événement puis le traite (fenêtre réduite, par exemple).
+        void WaitEvents();
         bool IsOpen() const;
 
         void SetTitle(std::string_view title);
