@@ -5,6 +5,7 @@ add_library(FluxEngine SHARED
         src/Renderer/Renderer.cpp
         src/Scene/Camera.cpp
         src/Scene/FlyCameraController.cpp
+        src/Scene/Scene.cpp
         src/UI/Font.cpp
         src/UI/DrawList.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
@@ -37,6 +38,9 @@ target_include_directories(FluxEngine
 
 # windows.h reste confiné aux .cpp de Platform/Win32 et RHI/Vulkan.
 target_compile_definitions(FluxEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+
+# EnTT est public : les modules de jeu manipulent directement la scène.
+target_link_libraries(FluxEngine PUBLIC EnTT::EnTT)
 
 # Vulkan est privé au moteur : aucun header public ne l'expose.
 target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)

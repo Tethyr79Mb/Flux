@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <format>
 #include <string>
+#include <utility>
 
 namespace Flux {
     namespace {
@@ -39,7 +40,7 @@ namespace Flux {
             double m_frameMilliseconds = 0.0;
         };
 
-        // Distance lisible : mètres, kilomètres, puis unités astronomiques.
+        // Distance lisible : mètres, kilomètres, unités astronomiques puis années-lumière.
         std::string FormatDistance(double meters) {
             const double magnitude = std::abs(meters);
             if (magnitude < 1.0e4) {
@@ -48,7 +49,10 @@ namespace Flux {
             if (magnitude < 1.0e9) {
                 return std::format("{:.1f} km", meters / 1.0e3);
             }
-            return std::format("{:.3f} ua", meters / 1.495978707e11);
+            if (magnitude < 1.0e15) {
+                return std::format("{:.3f} ua", meters / 1.495978707e11);
+            }
+            return std::format("{:.4f} al", meters / 9.4607304725808e15);
         }
 
         void DrawDebugOverlay(UI::DrawList& overlay, const FrameStats& stats, std::string_view deviceName,
@@ -59,12 +63,12 @@ namespace Flux {
 
             const std::string text = std::format(
                 "{:.0f} fps · Durée d'image : {:.2f} ms\nGPU : {}\n"
-                "Caméra : x {}  y {}  z {}\nVitesse : {}/s (molette)\n"
-                "Clic droit maintenu : souris pour regarder, ZQSD, E / A pour monter / descendre, Maj pour accélérer\n"
-                "T : sauter entre la grille de l'origine et sa copie à 10 000 km",
+                "Caméra : secteur ({}, {}, {}) + x {}  y {}  z {}\nVitesse : {}/s (molette)\n"
+                "Clic droit maintenu : souris pour regarder, ZQSD, E / A pour monter / descendre, Maj pour accélérer",
                 stats.GetFps(), stats.GetFrameMilliseconds(), deviceName,
-                FormatDistance(camera.position.x), FormatDistance(camera.position.y), FormatDistance(camera.position.z),
-                FormatDistance(controller.GetSpeed()));
+                camera.position.sector.x, camera.position.sector.y, camera.position.sector.z,
+                FormatDistance(camera.position.offset.x), FormatDistance(camera.position.offset.y),
+                FormatDistance(camera.position.offset.z), FormatDistance(controller.GetSpeed()));
             const Math::Vector2f size = overlay.MeasureText(text, TextSize);
             overlay.AddRect({Margin, Margin},
                             {Margin + size.x + 2.0f * Padding, Margin + size.y + 2.0f * Padding},
@@ -91,7 +95,7 @@ namespace Flux {
         m_renderer = std::move(renderer.value());
 
         // Un peu en arrière et au-dessus de la grille de test, légèrement vers le bas.
-        m_camera.position = {0.0, 6.0, 30.0};
+        m_camera.position.offset = {0.0, 6.0, 30.0};
         m_camera.pitch = -0.2f;
     }
 
@@ -124,21 +128,23 @@ namespace Flux {
             stats.Tick(now);
 
             m_cameraController.Update(m_camera, *m_window, deltaSeconds);
-            // Provisoire, pour la scène de test : saute de 10 000 km en gardant le même point de vue.
-            if (m_window->GetInput().WasKeyPressed(Key::T)) {
-                m_camera.position.z += m_camera.position.z > -5.0e6 ? -1.0e7 : 1.0e7;
+            if (m_gameUpdate) {
+                m_gameUpdate(*this, deltaSeconds);
             }
-            m_renderer->SetCamera(m_camera);
 
             if (m_showDebugOverlay) {
                 DrawDebugOverlay(m_renderer->GetOverlay(), stats, m_renderer->GetDeviceName(), m_camera, m_cameraController);
             }
 
-            if (!m_renderer->RenderFrame()) {
+            if (!m_renderer->RenderFrame(m_scene, m_camera)) {
                 return 1;
             }
         }
         return 0;
+    }
+
+    void Engine::SetGameUpdate(UpdateFunction update) {
+        m_gameUpdate = std::move(update);
     }
 
     void Engine::RequestQuit() {

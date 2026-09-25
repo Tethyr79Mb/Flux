@@ -11,6 +11,7 @@
 namespace Flux {
     class Window;
     struct Camera;
+    class Scene;
 
     namespace UI {
         class DrawList;
@@ -27,12 +28,9 @@ namespace Flux {
         Renderer& operator=(const Renderer&) = delete;
 
         // Retourne false sur une erreur irrécupérable (device perdu, etc.).
-        bool RenderFrame();
+        bool RenderFrame(const Scene& scene, const Camera& camera);
 
         void SetClearColor(Math::LinearColor color);
-
-        // Point de vue des frames suivantes.
-        void SetCamera(const Camera& camera);
 
         // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
         UI::DrawList& GetOverlay();
