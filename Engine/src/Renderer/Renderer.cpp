@@ -99,7 +99,8 @@ namespace Flux {
                 cubes.push_back({{0.0, -0.05, originZ}, {60.0f, 0.1f, 60.0f}, {0.30f, 0.30f, 0.32f}});
                 for (int i = -5; i <= 5; ++i) {
                     for (int j = -5; j <= 5; ++j) {
-                        const float height = 1.0f + static_cast<float>((i * 7 + j * 3 + 20) % 4);
+                        // Décalage pour rester positif : en C++, le reste d'un nombre négatif est négatif.
+                        const float height = 1.0f + static_cast<float>((i * 7 + j * 3 + 52) % 4);
                         cubes.push_back({{i * 5.0, height * 0.5, originZ + j * 5.0},
                                          {1.0f, height, 1.0f},
                                          palette[static_cast<std::size_t>((i + j + 20) % 4)]});
