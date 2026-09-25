@@ -1,11 +1,13 @@
 add_library(FluxEngine SHARED
         src/Core/Engine.cpp
         src/Core/GameModule.cpp
+        src/Core/Uuid.cpp
         src/Platform/Input.cpp
         src/Renderer/Renderer.cpp
         src/Scene/Camera.cpp
         src/Scene/FlyCameraController.cpp
         src/Scene/Scene.cpp
+        src/Scene/SceneSerializer.cpp
         src/UI/Font.cpp
         src/UI/DrawList.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
@@ -45,7 +47,7 @@ target_link_libraries(FluxEngine PUBLIC EnTT::EnTT)
 # Vulkan est privé au moteur : aucun header public ne l'expose.
 target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
 # FreeType et msdfgen servent à générer l'atlas de police ; eux aussi restent privés.
-target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core)
+target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
 
 target_compile_definitions(FluxEngine PRIVATE
         VK_NO_PROTOTYPES

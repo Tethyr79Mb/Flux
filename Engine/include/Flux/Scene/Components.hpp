@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Core/Uuid.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Math/Vector3.hpp"
@@ -12,6 +13,12 @@
 namespace Flux {
     using Entity = entt::entity;
     inline constexpr Entity NullEntity = entt::null;
+
+    // Identifiant stable, sauvegardé : sert aux références entre entités (parent, cibles, undo).
+    struct IdComponent
+    {
+        Uuid id;
+    };
 
     struct NameComponent
     {
@@ -33,12 +40,13 @@ namespace Flux {
         Math::Vector3i64 sector;
     };
 
-    // Liens de la hiérarchie, en liste chaînée : aucune allocation par enfant.
+    // Liens de la hiérarchie, en liste chaînée : aucune allocation par enfant. Les racines sont aussi chaînées entre elles.
     // Géré par Scene uniquement (CreateEntity, SetParent, DestroyEntity).
     struct HierarchyComponent
     {
         Entity parent = NullEntity;
         Entity firstChild = NullEntity;
+        Entity lastChild = NullEntity; // ajout en fin de liste sans la parcourir
         Entity nextSibling = NullEntity;
         Entity previousSibling = NullEntity;
     };

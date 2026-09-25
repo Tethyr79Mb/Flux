@@ -1,0 +1,3492 @@
+{
+  "format": "flux.scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": "bd25161f24b9834e",
+      "name": "Grille",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "fc9b47644345b25b",
+      "name": "Sol",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, -0.05, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [60.0, 0.1, 60.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.3, 0.3, 0.32, 1.0]
+      }
+    },
+    {
+      "id": "37cd0af0043469e8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 1.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "835b599af6e12589",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 1.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "85f981daae80823a",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 0.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "d78b1a2347610ad5",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 2.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "b74cf284fa3540c6",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 1.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "1ff7a3ae77a9f870",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 1.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8094d4a85aa62949",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 0.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "db57202f6abcb8be",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 2.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "4fed83aea4e8785b",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 1.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "efbd958e18fea261",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 1.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1cf884311385ca01",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-25.0, 0.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "d14458b987197072",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 1.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "febe3b3c64efa2a9",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 0.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fc2ac3188ef3e39a",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 2.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "07f6a8d938be5786",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 1.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0c18ea8a24ebe128",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 1.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b4f618d4bbe4a1e3",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 0.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "3bb55dcef469ba36",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 2.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "794e93a9c98e0ac1",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 1.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "66430be7339178f8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 1.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "39037622fe25654a",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 0.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "7511e9e13e59b8dc",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-20.0, 2.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "568a6a21141df3c6",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 0.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fd309c985d18d676",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 2.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "68ed86e7d248042c",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 1.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "b32aa4e33f95edc2",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 1.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "ab58ed85d91ad51e",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 0.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b297707868ccc06e",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 2.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "0cb0d760961150fb",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 1.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "36288b0e11bc3f80",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 1.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "82f7ffb9c63d522d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 0.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "6d9c0cd27a2d8555",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 2.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "dc39dc2c6419b55a",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-15.0, 1.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "4029a481d16aa743",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 2.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "8d4d7caea7007b6c",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 1.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "df673f7a561c17fe",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 1.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fc84e8488a4a283b",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 0.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1206b3fb1dd34ad8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 2.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "163c718de9d02838",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 1.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "82657654ae71d7c9",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 1.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "94506ae89049927b",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 0.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b1e7319dfd94c9cb",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 2.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "afede43daf957719",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 1.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "d6467071b1113904",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-10.0, 1.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "2d4bcae07f4cc803",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 1.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "8084bc8f575d78f9",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 1.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5c080f78ba6cc5bf",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 0.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "ac1ac1fc7f75919f",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 2.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "a007f35ca953ee3f",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 1.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "60b2de14f8de82ca",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 1.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "c00d73a115d27fc4",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 0.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "67b82b472a989928",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 2.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "70a0676d1c424cf1",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 1.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "047f1db54ad0b267",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 1.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8c3aac21cc521635",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [-5.0, 0.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5eca8b6ec13070a2",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 1.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "79cf22021b153f93",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 0.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "dad910dbf336fcd8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 2.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "eb0496731f6be161",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 1.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "1f148171b8ab3250",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 1.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "42d6a7254dd0093d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 0.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5e4ec437e11e8a65",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 2.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "ec8be814770452a2",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 1.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "b124d92f442d9f24",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 1.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "aa2778dcd5afd33c",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 0.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "9b835715d9c1fd09",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [0.0, 2.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "b2081d3dd1665e6b",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 0.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b482595af3348716",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 2.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "b54487f624ece98e",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 1.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "64a3b28a6a474737",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 1.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "a77f2cc93f8c74df",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 0.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "a295350082444f4d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 2.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "37643c799c9daaed",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 1.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "7b5bf59d25df30f7",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 1.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "6378a809701921ad",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 0.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "a2d450d217ff68a8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 2.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "70e0c4e3e2d6b9a7",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [5.0, 1.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "a7666e9ac9968b92",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 2.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "a7f3105d919a6636",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 1.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "71cb1ecce1fb773f",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 1.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1dffc5cc8d80e653",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 0.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fc571b185375d480",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 2.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "2ca7590b2aea0f1d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 1.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "440c2a2775bd3712",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 1.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "2d2df7fef30db8de",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 0.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1e6ce96b511ab482",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 2.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "9996c9e62ef422d8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 1.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "54ae9f53b45b51e8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [10.0, 1.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "c3d57e33ead80241",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 1.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "6e16e9bd25304f3f",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 1.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "828bebff8d6cc8aa",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 0.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "90a0546e04e5df48",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 2.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "5819a469bdf6b13d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 1.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "6cdfe8bb984ccfc8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 1.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "7fee64330ec84066",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 0.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "3f3636d50c0b720a",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 2.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "21b04a00b03f80b3",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 1.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "fdf17e233c6764c2",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 1.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fa823138dc12dcf1",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [15.0, 0.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "71947f9fe43c1690",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 1.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "3ed234565e1dca49",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 0.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "0ba819612881701d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 2.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "bdf815cb5cb23540",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 1.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "b45fb51929a7bd3d",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 1.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fa3cb9e60b683032",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 0.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "9b35864ee0900b18",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 2.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "141404835a688517",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 1.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0304788e6e46b3ef",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 1.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "f1e487866eaed6ed",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 0.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b80d10accd7c2f4e",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [20.0, 2.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "2a4b84ab81bd4ee4",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 0.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8c84653b201c59c7",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 2.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "28ab5b8e3dec64b8",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 1.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "5c7f3d07db159d85",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 1.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "893ae518a45a42ff",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 0.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "c0558772cd99a385",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 2.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "1697a08a6c0607b0",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 1.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "6cb2b5606dff9d09",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 1.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "2e2420d5ed394b8e",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 0.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5fa19886341f39db",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 2.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "9c70e0dafcaaf2cf",
+      "name": "Cube",
+      "parent": "bd25161f24b9834e",
+      "transform": {
+        "position": [25.0, 1.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "07f74edf3dc218e8",
+      "name": "Grille lointaine",
+      "sector": [0, 0, -9460730],
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "00b3d433c5df7809",
+      "name": "Sol",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, -0.05, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [60.0, 0.1, 60.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.35, 0.15, 0.45, 1.0]
+      }
+    },
+    {
+      "id": "f0e00ad5959470fe",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 1.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "ce030d22b4543547",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 1.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "47c17073e73c8b75",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 0.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "10c031297315d80e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 2.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "dcef430d763c3b91",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 1.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "7542c64a0f93ebef",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 1.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "cd543058523c9631",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 0.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "eb65f13bbaafb44d",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 2.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "e546d96084c9a33c",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 1.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "a142f8adde8bb189",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 1.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "73d8724289e46a4e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-25.0, 0.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "ecc08b0b07260e5f",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 1.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "accde18b1d9f6562",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 0.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "6fbe4bc93099ddbe",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 2.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "4ec2f45c0b926335",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 1.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "1bdfce14c3e4f176",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 1.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "2569b73fc8ad68fb",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 0.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5c80b50eab9f6550",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 2.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "330d7e7d301458ce",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 1.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "3547790343051783",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 1.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1d40d32722822a8a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 0.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "bc37ae1fbb7000ae",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-20.0, 2.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "71162032ad764148",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 0.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "6e0cd2d430851617",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 2.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "dc1acd8eca228d8f",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 1.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "cf7bebb0f0dd55b4",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 1.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "9f556dbcbeec33ef",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 0.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "376538fc1c6fd902",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 2.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "4be68c86a4089d1a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 1.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "b4319b19decd5d43",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 1.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5b929c09317a2f0e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 0.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "9687021decc63185",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 2.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "06732df0dea34276",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-15.0, 1.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0156548b8ba3368e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 2.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "4546cf969efa23c1",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 1.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "9ef0c17a2edbb1e6",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 1.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "c9085752e21cc79a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 0.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "cb15566f11958624",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 2.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "fbd5bb1e1d1b0198",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 1.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "60ec428e95c89439",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 1.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "e094a9b4d8b3854f",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 0.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "0ac4b27f5b128437",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 2.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "a88e4c2a434e0765",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 1.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "7ff0b7eb3c91cd7d",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-10.0, 1.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "0a8d068034c42753",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 1.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "85d129b6cc4e9a01",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 1.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "41da57223e49965e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 0.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "4afbdb2427914969",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 2.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "bd25014a7415a49a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 1.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0403f1b0d7106e32",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 1.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "4a65ff8195522a83",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 0.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "45edd91b7be07795",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 2.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "36f4149a7f1c85dd",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 1.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "aea8257de767de16",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 1.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "0914f788488656e1",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [-5.0, 0.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b84f1692baaa8754",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 1.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "7a3b6ffa22e519d9",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 0.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "38ec0dfcf724670a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 2.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "2b068b160a4bab6c",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 1.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "cd3e94da4e00012f",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 1.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "41d48e15cdda60e7",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 0.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8dfb5bb8f265d6f9",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 2.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "03d8b881d514a3d0",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 1.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "e1962d480accf82e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 1.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "293633cdbc59920d",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 0.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1c4c43e03edd1ad9",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [0.0, 2.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "0659768e1695e61a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 0.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "d61c04d1b4fef18a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 2.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "cafb68c305bcfc1b",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 1.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "f0e698adb7880cce",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 1.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "0c300de5d81a0b8d",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 0.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "beec251e30542056",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 2.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "493faecabe1ac560",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 1.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "7bdfc665e1867afe",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 1.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "64bd6ef9c3641cd8",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 0.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "fce72cf738785d39",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 2.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "d8fc663408ce8fb2",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [5.0, 1.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "6fc47c66c93c9800",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 2.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "81cf8f5127a78170",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 1.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "7a34d94f96293994",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 1.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "5ba4504ed97a12d2",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 0.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8b526cf8685dcf98",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 2.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "559d8d511da2a13e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 1.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "f599b45f49fbb642",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 1.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "254580d47a20137b",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 0.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "34adaa64f2eb2403",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 2.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "8d369b9db1041f9c",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 1.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "eda329c3e9711ef9",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [10.0, 1.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "327fbdfc527fd64d",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 1.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "c5854e37861977d5",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 1.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "7cd2d5a7693874dd",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 0.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b0da6480b4f32dbc",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 2.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "9270d8b866364432",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 1.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "eb6adba291bb1c2a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 1.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "a1f4194973934e62",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 0.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "643998475ec4618a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 2.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "f3cfe595885aa4d1",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 1.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "bc704766fa9fb6c2",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 1.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "07880fc59443decf",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [15.0, 0.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "49c857e9d77f2c62",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 1.0, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "248906d511940ab5",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 0.5, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "118df56b03bcc4cc",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 2.0, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "6266c86f00d28c13",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 1.5, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "adaf024e95aff482",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 1.0, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "6a764659abb7553a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 0.5, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "9f1816fe8833410b",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 2.0, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "6cd8c361d58855e7",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 1.5, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0644a108b7faeb4e",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 1.0, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "e1cec97ef4d4af1a",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 0.5, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "611e9f947bc5cddc",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [20.0, 2.0, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "7c7656aff9397d15",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 0.5, -25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "29ab16eae27e08a0",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 2.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "fa55c9405906b97b",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 1.5, -15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "b27e71a8101295e9",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 1.0, -10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "f77d9aaf18d4ab5c",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 0.5, -5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "49c598b32b554eb9",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 2.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "0cfaeb22b1ed89f3",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 1.5, 5.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "d2ec474487348379",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 1.0, 10.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 2.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "74515ce4bceb62b8",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 0.5, 15.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "bdec931001145d44",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 2.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 4.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "2213978767e71006",
+      "name": "Cube",
+      "parent": "07f74edf3dc218e8",
+      "transform": {
+        "position": [25.0, 1.5, 25.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 3.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "bd7f078da4611cce",
+      "name": "Système",
+      "transform": {
+        "position": [0.0, 14.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "c4fe3f2ac7b65613",
+      "name": "Soleil",
+      "parent": "bd7f078da4611cce",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [2.5, 2.5, 2.5]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [1.0, 0.75, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "e15819907d650a96",
+      "name": "Planète",
+      "parent": "bd7f078da4611cce",
+      "transform": {
+        "position": [9.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.45, 0.9, 1.0]
+      }
+    },
+    {
+      "id": "9ed581d0b3a07204",
+      "name": "Lune",
+      "parent": "e15819907d650a96",
+      "transform": {
+        "position": [2.5, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 0.4, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.7, 0.7, 0.7, 1.0]
+      }
+    }
+  ]
+}
