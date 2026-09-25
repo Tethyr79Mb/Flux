@@ -3,18 +3,12 @@
 #include "RHI/Vulkan/VulkanBuffer.hpp"
 #include "RHI/Vulkan/VulkanDevice.hpp"
 
-#include <cstring>
+#include <format>
 #include <utility>
 
 namespace Flux::Vk {
-    std::expected<Image, std::string> Image::CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
-                                                           std::span<const std::uint8_t> pixels) {
-        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Upload);
-        if (!staging) {
-            return std::unexpected(staging.error());
-        }
-        std::memcpy(staging->GetMappedData(), pixels.data(), pixels.size());
-
+    std::expected<Image, std::string> Image::Allocate(const Device& device, VkFormat format, VkExtent2D extent,
+                                                      VkImageUsageFlags usage, VkImageAspectFlags aspect) {
         Image image;
         image.m_device = device.GetHandle();
         image.m_allocator = device.GetAllocator();
@@ -29,14 +23,48 @@ namespace Flux::Vk {
         imageInfo.arrayLayers = 1;
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        imageInfo.usage = usage;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
         VmaAllocationCreateInfo allocationInfo{};
         allocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        if (usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+            allocationInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT; // conseillé pour les cibles de rendu
+        }
         if (!Check(vmaCreateImage(image.m_allocator, &imageInfo, &allocationInfo, &image.m_image, &image.m_allocation, nullptr),
                    "vmaCreateImage")) {
-            return std::unexpected("allocation d'une texture");
+            return std::unexpected(std::format("allocation d'une image {}x{}", extent.width, extent.height));
+        }
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = image.m_image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = format;
+        viewInfo.subresourceRange = {aspect, 0, 1, 0, 1};
+        if (!Check(vkCreateImageView(image.m_device, &viewInfo, nullptr, &image.m_view), "vkCreateImageView")) {
+            return std::unexpected("création de la vue d'une image");
+        }
+        return image;
+    }
+
+    std::expected<Image, std::string> Image::CreateAttachment(const Device& device, VkFormat format, VkExtent2D extent,
+                                                              VkImageUsageFlags usage, VkImageAspectFlags aspect) {
+        return Allocate(device, format, extent, usage, aspect);
+    }
+
+    std::expected<Image, std::string> Image::CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
+                                                           std::span<const std::uint8_t> pixels) {
+        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Upload);
+        if (!staging) {
+            return std::unexpected(staging.error());
+        }
+        staging->Write(pixels.data(), pixels.size());
+
+        auto image = Allocate(device, format, extent, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                              VK_IMAGE_ASPECT_COLOR_BIT);
+        if (!image) {
+            return image;
         }
 
         const bool copied = device.ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
@@ -49,7 +77,7 @@ namespace Flux::Vk {
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image.m_image;
+            barrier.image = image->m_image;
             barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
             VkDependencyInfo dependency{};
@@ -61,7 +89,7 @@ namespace Flux::Vk {
             VkBufferImageCopy region{};
             region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.imageExtent = {extent.width, extent.height, 1};
-            vkCmdCopyBufferToImage(commandBuffer, staging->GetHandle(), image.m_image,
+            vkCmdCopyBufferToImage(commandBuffer, staging->GetHandle(), image->m_image,
                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
             barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
@@ -74,16 +102,6 @@ namespace Flux::Vk {
         });
         if (!copied) {
             return std::unexpected("envoi d'une texture au GPU");
-        }
-
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = image.m_image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = format;
-        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        if (!Check(vkCreateImageView(image.m_device, &viewInfo, nullptr, &image.m_view), "vkCreateImageView")) {
-            return std::unexpected("création de la vue d'une texture");
         }
         return image;
     }

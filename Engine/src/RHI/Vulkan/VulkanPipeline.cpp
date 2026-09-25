@@ -83,13 +83,19 @@ namespace Flux::Vk {
         VkPipelineRasterizationStateCreateInfo rasterization{};
         rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterization.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterization.cullMode = VK_CULL_MODE_NONE;
+        rasterization.cullMode = desc.cullMode;
         rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterization.lineWidth = 1.0f;
 
         VkPipelineMultisampleStateCreateInfo multisample{};
         multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = desc.depthTest ? VK_TRUE : VK_FALSE;
+        depthStencil.depthWriteEnable = desc.depthWrite ? VK_TRUE : VK_FALSE;
+        depthStencil.depthCompareOp = desc.depthCompare;
 
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
@@ -120,6 +126,7 @@ namespace Flux::Vk {
         renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingInfo.colorAttachmentCount = 1;
         renderingInfo.pColorAttachmentFormats = &desc.colorFormat;
+        renderingInfo.depthAttachmentFormat = desc.depthFormat;
 
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -131,6 +138,7 @@ namespace Flux::Vk {
         pipelineInfo.pViewportState = &viewportState;
         pipelineInfo.pRasterizationState = &rasterization;
         pipelineInfo.pMultisampleState = &multisample;
+        pipelineInfo.pDepthStencilState = desc.depthFormat != VK_FORMAT_UNDEFINED ? &depthStencil : nullptr;
         pipelineInfo.pColorBlendState = &colorBlend;
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = pipeline.m_layout;

@@ -2,6 +2,8 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Scene/Camera.hpp"
+#include "Flux/Scene/FlyCameraController.hpp"
 
 #include <memory>
 #include <string>
@@ -30,10 +32,14 @@ namespace Flux {
 
         Window& GetWindow();
         Renderer& GetRenderer();
+        Camera& GetCamera() { return m_camera; }
 
         private:
         std::unique_ptr<Window> m_window;
         std::unique_ptr<Renderer> m_renderer;
+        // Provisoire : la caméra et son pilotage iront dans le viewport de l'éditeur.
+        Camera m_camera;
+        FlyCameraController m_cameraController;
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
     };

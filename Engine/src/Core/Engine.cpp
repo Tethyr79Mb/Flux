@@ -4,9 +4,12 @@
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/UI/DrawList.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <format>
+#include <string>
 
 namespace Flux {
     namespace {
@@ -36,13 +39,32 @@ namespace Flux {
             double m_frameMilliseconds = 0.0;
         };
 
-        void DrawDebugOverlay(UI::DrawList& overlay, const FrameStats& stats, std::string_view deviceName) {
+        // Distance lisible : mètres, kilomètres, puis unités astronomiques.
+        std::string FormatDistance(double meters) {
+            const double magnitude = std::abs(meters);
+            if (magnitude < 1.0e4) {
+                return std::format("{:.1f} m", meters);
+            }
+            if (magnitude < 1.0e9) {
+                return std::format("{:.1f} km", meters / 1.0e3);
+            }
+            return std::format("{:.3f} ua", meters / 1.495978707e11);
+        }
+
+        void DrawDebugOverlay(UI::DrawList& overlay, const FrameStats& stats, std::string_view deviceName,
+                              const Camera& camera, const FlyCameraController& controller) {
             constexpr float TextSize = 16.0f;
             constexpr float Margin = 8.0f;
             constexpr float Padding = 8.0f;
 
-            const std::string text = std::format("{:.0f} fps · Durée d'image : {:.2f} ms\nGPU : {}",
-                                                 stats.GetFps(), stats.GetFrameMilliseconds(), deviceName);
+            const std::string text = std::format(
+                "{:.0f} fps · Durée d'image : {:.2f} ms\nGPU : {}\n"
+                "Caméra : x {}  y {}  z {}\nVitesse : {}/s (molette)\n"
+                "Clic droit maintenu : souris pour regarder, ZQSD, E / A pour monter / descendre, Maj pour accélérer\n"
+                "T : sauter entre la grille de l'origine et sa copie à 10 000 km",
+                stats.GetFps(), stats.GetFrameMilliseconds(), deviceName,
+                FormatDistance(camera.position.x), FormatDistance(camera.position.y), FormatDistance(camera.position.z),
+                FormatDistance(controller.GetSpeed()));
             const Math::Vector2f size = overlay.MeasureText(text, TextSize);
             overlay.AddRect({Margin, Margin},
                             {Margin + size.x + 2.0f * Padding, Margin + size.y + 2.0f * Padding},
@@ -67,6 +89,10 @@ namespace Flux {
             return;
         }
         m_renderer = std::move(renderer.value());
+
+        // Un peu en arrière et au-dessus de la grille de test, légèrement vers le bas.
+        m_camera.position = {0.0, 6.0, 30.0};
+        m_camera.pitch = -0.2f;
     }
 
     // Défini ici, où Renderer est complet, pour que unique_ptr<Renderer> puisse le détruire.
@@ -78,6 +104,7 @@ namespace Flux {
         }
 
         FrameStats stats;
+        Clock::time_point previousFrame = Clock::now();
         while (!m_quitRequested && m_window->IsOpen()) {
             m_window->HandleEvents();
             if (!m_window->IsOpen()) {
@@ -90,9 +117,21 @@ namespace Flux {
                 continue;
             }
 
-            stats.Tick(Clock::now());
+            const Clock::time_point now = Clock::now();
+            // Plafonné : après un blocage (déplacement de fenêtre, point d'arrêt), la caméra ne fait pas un bond.
+            const double deltaSeconds = std::min(std::chrono::duration<double>(now - previousFrame).count(), 0.1);
+            previousFrame = now;
+            stats.Tick(now);
+
+            m_cameraController.Update(m_camera, *m_window, deltaSeconds);
+            // Provisoire, pour la scène de test : saute de 10 000 km en gardant le même point de vue.
+            if (m_window->GetInput().WasKeyPressed(Key::T)) {
+                m_camera.position.z += m_camera.position.z > -5.0e6 ? -1.0e7 : 1.0e7;
+            }
+            m_renderer->SetCamera(m_camera);
+
             if (m_showDebugOverlay) {
-                DrawDebugOverlay(m_renderer->GetOverlay(), stats, m_renderer->GetDeviceName());
+                DrawDebugOverlay(m_renderer->GetOverlay(), stats, m_renderer->GetDeviceName(), m_camera, m_cameraController);
             }
 
             if (!m_renderer->RenderFrame()) {

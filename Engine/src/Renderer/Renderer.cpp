@@ -2,6 +2,7 @@
 
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
+#include "Flux/Scene/Camera.hpp"
 #include "Flux/UI/DrawList.hpp"
 #include "Flux/UI/Font.hpp"
 #include "RHI/Vulkan/VulkanBuffer.hpp"
@@ -16,24 +17,101 @@
 #include <cstddef>
 #include <cstdio>
 #include <span>
+#include <vector>
 
 namespace Flux {
     namespace {
         // Deux frames en vol : le CPU prépare la suivante pendant que le GPU dessine la courante.
         constexpr uint32_t FramesInFlight = 2;
 
-        // Doit correspondre à VertexInput dans shaders/Triangle.slang.
-        struct TriangleVertex {
-            float position[2];
-            float color[3];
+        // Profondeur 32 bits flottante : obligatoire pour que le reverse-Z tienne l'échelle galaxie.
+        constexpr VkFormat DepthFormat = VK_FORMAT_D32_SFLOAT;
+
+        // Doit correspondre à VertexInput dans shaders/Mesh.slang.
+        struct MeshVertex {
+            Math::Vector3f position;
+            float shade;
         };
 
-        // Repère Vulkan : y vers le bas, donc le premier sommet est en haut.
-        constexpr std::array<TriangleVertex, 3> TriangleVertices{{
-            {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-            {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-            {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-        }};
+        // Doit correspondre à MeshParams dans shaders/Mesh.slang.
+        struct MeshParams {
+            Math::Matrix4f modelViewProjection;
+            Math::LinearColor color;
+        };
+        static_assert(sizeof(MeshParams) == 80);
+
+        struct CubeMesh {
+            std::array<MeshVertex, 24> vertices;
+            std::array<uint16_t, 36> indices;
+        };
+
+        // Cube unité centré ; chaque face a ses 4 sommets pour garder un éclairage uniforme par face.
+        constexpr CubeMesh BuildCube() {
+            struct Face {
+                Math::Vector3f normal;
+                Math::Vector3f tangent;
+                float shade; // éclairage fixe : le dessus clair, le dessous sombre
+            };
+            constexpr std::array<Face, 6> faces{{
+                {{1, 0, 0}, {0, 0, -1}, 0.75f},
+                {{-1, 0, 0}, {0, 0, 1}, 0.75f},
+                {{0, 1, 0}, {1, 0, 0}, 1.0f},
+                {{0, -1, 0}, {1, 0, 0}, 0.35f},
+                {{0, 0, 1}, {1, 0, 0}, 0.55f},
+                {{0, 0, -1}, {-1, 0, 0}, 0.55f},
+            }};
+            CubeMesh mesh{};
+            for (std::size_t f = 0; f < faces.size(); ++f) {
+                const Face& face = faces[f];
+                // bitangent = normal x tangent, donc tangent x bitangent = normal : sens antihoraire vu de l'extérieur.
+                const Math::Vector3f bitangent = Math::Cross(face.normal, face.tangent);
+                const Math::Vector3f center = face.normal * 0.5f;
+                const Math::Vector3f u = face.tangent * 0.5f;
+                const Math::Vector3f v = bitangent * 0.5f;
+                const auto base = static_cast<uint16_t>(f * 4);
+                mesh.vertices[base + 0] = {center - u - v, face.shade};
+                mesh.vertices[base + 1] = {center + u - v, face.shade};
+                mesh.vertices[base + 2] = {center + u + v, face.shade};
+                mesh.vertices[base + 3] = {center - u + v, face.shade};
+                const std::array<uint16_t, 6> quad{0, 1, 2, 0, 2, 3};
+                for (std::size_t i = 0; i < quad.size(); ++i) {
+                    mesh.indices[f * 6 + i] = static_cast<uint16_t>(base + quad[i]);
+                }
+            }
+            return mesh;
+        }
+        constexpr CubeMesh Cube = BuildCube();
+
+        struct SceneCube {
+            Math::Vector3d position; // centre, en double
+            Math::Vector3f size;
+            Math::LinearColor color;
+        };
+
+        // Scène de test, en attendant les vraies scènes : une grille de cubes à l'origine,
+        // et la même à 10 000 km devant la caméra, pour vérifier qu'on reste précis très loin.
+        std::vector<SceneCube> BuildTestScene() {
+            constexpr std::array<Math::LinearColor, 4> palette{{
+                {0.80f, 0.25f, 0.20f}, {0.25f, 0.60f, 0.30f}, {0.20f, 0.40f, 0.80f}, {0.85f, 0.65f, 0.20f},
+            }};
+            std::vector<SceneCube> cubes;
+            for (const double originZ : {0.0, -1.0e7}) {
+                // Sol gris à l'origine, violet pour la copie lointaine : on voit tout de suite où l'on est.
+                const Math::LinearColor ground = originZ == 0.0 ? Math::LinearColor{0.30f, 0.30f, 0.32f}
+                                                                : Math::LinearColor{0.35f, 0.15f, 0.45f};
+                cubes.push_back({{0.0, -0.05, originZ}, {60.0f, 0.1f, 60.0f}, ground});
+                for (int i = -5; i <= 5; ++i) {
+                    for (int j = -5; j <= 5; ++j) {
+                        // Décalage pour rester positif : en C++, le reste d'un nombre négatif est négatif.
+                        const float height = 1.0f + static_cast<float>((i * 7 + j * 3 + 52) % 4);
+                        cubes.push_back({{i * 5.0, height * 0.5, originZ + j * 5.0},
+                                         {1.0f, height, 1.0f},
+                                         palette[static_cast<std::size_t>((i + j + 20) % 4)]});
+                    }
+                }
+            }
+            return cubes;
+        }
 
         // Doit correspondre à OverlayParams dans shaders/Overlay.slang.
         struct OverlayParams {
@@ -56,7 +134,8 @@ namespace Flux {
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image,
                              VkImageLayout from, VkImageLayout to,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                             VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
+                             VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
+                             VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) {
             VkImageMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             barrier.srcStageMask = srcStage;
@@ -68,7 +147,7 @@ namespace Flux {
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            barrier.subresourceRange = {aspect, 0, 1, 0, 1};
 
             VkDependencyInfo dependency{};
             dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -85,8 +164,12 @@ namespace Flux {
         std::array<FrameData, FramesInFlight> frames{};
         uint32_t frameIndex = 0;
         // Déclarés après device : détruits avant lui.
-        Vk::Buffer triangleVertexBuffer;
-        Vk::GraphicsPipeline trianglePipeline;
+        Vk::Image depthImage;
+        Vk::Buffer cubeVertexBuffer;
+        Vk::Buffer cubeIndexBuffer;
+        Vk::GraphicsPipeline meshPipeline;
+        std::vector<SceneCube> scene = BuildTestScene();
+        Camera camera;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
 
         // Overlay 2D (FluxUI) : atlas MSDF + un vertex buffer par frame en vol.
@@ -156,32 +239,57 @@ namespace Flux {
             return true;
         }
 
-        std::expected<void, std::string> CreateTriangle() {
-            auto buffer = Vk::Buffer::Create(device->GetAllocator(), sizeof(TriangleVertices),
-                                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
-            if (!buffer) {
-                return std::unexpected(buffer.error());
+        std::expected<void, std::string> CreateDepth() {
+            depthImage = {}; // libère l'ancienne avant d'allouer la nouvelle
+            auto depth = Vk::Image::CreateAttachment(*device, DepthFormat, swapchain->GetExtent(),
+                                                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+            if (!depth) {
+                return std::unexpected(depth.error());
             }
-            buffer->Write(TriangleVertices.data(), sizeof(TriangleVertices));
-            triangleVertexBuffer = std::move(*buffer);
+            depthImage = std::move(*depth);
+            return {};
+        }
 
-            const VkVertexInputBindingDescription binding{0, sizeof(TriangleVertex), VK_VERTEX_INPUT_RATE_VERTEX};
+        std::expected<void, std::string> CreateMeshes() {
+            auto vertices = Vk::Buffer::Create(device->GetAllocator(), sizeof(Cube.vertices),
+                                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
+            if (!vertices) {
+                return std::unexpected(vertices.error());
+            }
+            vertices->Write(Cube.vertices.data(), sizeof(Cube.vertices));
+            cubeVertexBuffer = std::move(*vertices);
+
+            auto indices = Vk::Buffer::Create(device->GetAllocator(), sizeof(Cube.indices),
+                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
+            if (!indices) {
+                return std::unexpected(indices.error());
+            }
+            indices->Write(Cube.indices.data(), sizeof(Cube.indices));
+            cubeIndexBuffer = std::move(*indices);
+
+            const VkVertexInputBindingDescription binding{0, sizeof(MeshVertex), VK_VERTEX_INPUT_RATE_VERTEX};
             const std::array attributes{
-                VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(TriangleVertex, position)},
-                VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(TriangleVertex, color)},
+                VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(MeshVertex, position)},
+                VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32_SFLOAT, offsetof(MeshVertex, shade)},
             };
+            const VkPushConstantRange pushConstants{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshParams)};
 
             Vk::GraphicsPipelineDesc desc;
-            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Triangle.spv";
+            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
             desc.vertexBindings = {&binding, 1};
             desc.vertexAttributes = attributes;
+            desc.pushConstants = {&pushConstants, 1};
             desc.colorFormat = swapchain->GetFormat();
+            desc.depthFormat = DepthFormat;
+            desc.depthTest = true;
+            desc.depthWrite = true;
+            desc.cullMode = VK_CULL_MODE_BACK_BIT;
 
             auto pipeline = Vk::GraphicsPipeline::Create(device->GetHandle(), desc);
             if (!pipeline) {
                 return std::unexpected(pipeline.error());
             }
-            trianglePipeline = std::move(*pipeline);
+            meshPipeline = std::move(*pipeline);
             return {};
         }
 
@@ -273,6 +381,7 @@ namespace Flux {
             desc.setLayouts = {&overlaySetLayout, 1};
             desc.pushConstants = {&pushConstants, 1};
             desc.colorFormat = swapchain->GetFormat();
+            desc.depthFormat = DepthFormat; // l'overlay passe par-dessus tout : pas de test de profondeur
             desc.alphaBlend = true;
 
             auto pipeline = Vk::GraphicsPipeline::Create(vkDevice, desc);
@@ -313,21 +422,42 @@ namespace Flux {
 
         bool RecreateSwapchain() {
             device->WaitIdle();
-            return swapchain->Recreate(WindowExtent());
+            if (!swapchain->Recreate(WindowExtent())) {
+                return false;
+            }
+            if (auto depth = CreateDepth(); !depth) {
+                std::fprintf(stderr, "Flux : %s\n", depth.error().c_str());
+                return false;
+            }
+            return true;
         }
 
-        void DrawTriangle(VkCommandBuffer commandBuffer) const {
+        void DrawScene(VkCommandBuffer commandBuffer) const {
             const VkExtent2D extent = swapchain->GetExtent();
             const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
             const VkRect2D scissor{{0, 0}, extent};
-            const VkBuffer vertexBuffer = triangleVertexBuffer.GetHandle();
+            const VkBuffer vertexBuffer = cubeVertexBuffer.GetHandle();
             const VkDeviceSize offset = 0;
 
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.GetHandle());
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline.GetHandle());
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
-            vkCmdDraw(commandBuffer, static_cast<uint32_t>(TriangleVertices.size()), 1, 0, 0);
+            vkCmdBindIndexBuffer(commandBuffer, cubeIndexBuffer.GetHandle(), 0, VK_INDEX_TYPE_UINT16);
+
+            const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+            const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+            for (const SceneCube& cube : scene) {
+                // Rendu relatif à la caméra : la soustraction se fait en double, le GPU ne voit que de petits nombres.
+                const Math::Vector3f relative(cube.position - camera.position);
+                const MeshParams params{
+                    viewProjection * Math::Matrix4f::Translation(relative) * Math::Matrix4f::Scale(cube.size),
+                    cube.color,
+                };
+                vkCmdPushConstants(commandBuffer, meshPipeline.GetLayout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
+                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(Cube.indices.size()), 1, 0, 0, 0);
+            }
         }
 
         void DrawOverlay(VkCommandBuffer commandBuffer) const {
@@ -345,7 +475,7 @@ namespace Flux {
             const VkBuffer vertexBuffer = overlayBuffers[frameIndex].GetHandle();
             const VkDeviceSize offset = 0;
 
-            // Viewport et scissor déjà réglés par DrawTriangle, pour toute la passe.
+            // Viewport et scissor déjà réglés par DrawScene, pour toute la passe.
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetHandle());
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetLayout(),
                                     0, 1, &overlaySet, 0, nullptr);
@@ -372,15 +502,33 @@ namespace Flux {
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             colorAttachment.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
 
+            // Deux frames en vol partagent le tampon de profondeur : on attend la fin des écritures de la précédente.
+            TransitionImage(commandBuffer, depthImage.GetHandle(),
+                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                            VK_IMAGE_ASPECT_DEPTH_BIT);
+
+            VkRenderingAttachmentInfo depthAttachment{};
+            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            depthAttachment.imageView = depthImage.GetView();
+            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            depthAttachment.clearValue.depthStencil = {0.0f, 0}; // reverse-Z : 0 = infiniment loin
+
             VkRenderingInfo renderingInfo{};
             renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
             renderingInfo.renderArea = {{0, 0}, swapchain->GetExtent()};
             renderingInfo.layerCount = 1;
             renderingInfo.colorAttachmentCount = 1;
             renderingInfo.pColorAttachments = &colorAttachment;
+            renderingInfo.pDepthAttachment = &depthAttachment;
 
             vkCmdBeginRendering(commandBuffer, &renderingInfo);
-            DrawTriangle(commandBuffer);
+            DrawScene(commandBuffer);
             DrawOverlay(commandBuffer);
             vkCmdEndRendering(commandBuffer);
 
@@ -498,8 +646,11 @@ namespace Flux {
         if (!impl->CreateFrames()) {
             return std::unexpected("création des ressources de frame");
         }
-        if (auto triangle = impl->CreateTriangle(); !triangle) {
-            return std::unexpected(triangle.error());
+        if (auto depth = impl->CreateDepth(); !depth) {
+            return std::unexpected(depth.error());
+        }
+        if (auto meshes = impl->CreateMeshes(); !meshes) {
+            return std::unexpected(meshes.error());
         }
         if (auto overlay = impl->CreateOverlay(); !overlay) {
             return std::unexpected(overlay.error());
@@ -520,6 +671,10 @@ namespace Flux {
 
     void Renderer::SetClearColor(Math::LinearColor color) {
         m_impl->clearColor = color;
+    }
+
+    void Renderer::SetCamera(const Camera& camera) {
+        m_impl->camera = camera;
     }
 
     UI::DrawList& Renderer::GetOverlay() {

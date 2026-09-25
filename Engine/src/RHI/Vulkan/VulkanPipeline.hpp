@@ -21,6 +21,14 @@ namespace Flux::Vk {
         std::span<const VkPushConstantRange> pushConstants;
 
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+        // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.
+        VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+        bool depthTest = false;
+        bool depthWrite = false;
+        VkCompareOp depthCompare = VK_COMPARE_OP_GREATER; // reverse-Z : plus proche = plus grand
+
+        // Les maillages sont en sens antihoraire vu de l'extérieur.
+        VkCullModeFlags cullMode = VK_CULL_MODE_NONE;
         // Mélange alpha classique (couleur non prémultipliée), pour l'UI et le texte.
         bool alphaBlend = false;
     };
