@@ -1,18 +1,19 @@
-// Tests de la scène : hiérarchie, transformations composées, secteurs. Lancer FluxTests (ou ctest).
+// Tests de la scène : hiérarchie, transformations composées, secteurs.
+#include "Check.hpp"
+
 #include "Flux/Scene/Scene.hpp"
 
 #include <cmath>
-#include <cstdio>
 #include <numbers>
 #include <vector>
 
 using namespace Flux;
 
-#define CHECK(c) do { if (!(c)) { std::printf("ÉCHEC ligne %d : %s\n", __LINE__, #c); return 1; } } while (0)
+namespace {
+    bool Near(Math::Vector3d a, Math::Vector3d b, double eps = 1e-6) { return Math::Length(a - b) < eps; }
+}
 
-static bool Near(Math::Vector3d a, Math::Vector3d b, double eps = 1e-6) { return Math::Length(a - b) < eps; }
-
-int main() {
+bool RunSceneTests() {
     Scene scene;
     const Entity a = scene.CreateEntity("A");
     const Entity b = scene.CreateEntity("B", a);
@@ -50,7 +51,11 @@ int main() {
     scene.Get<TransformComponent>(far).position = {0.001, 0, 0};
     Math::WorldPosition camera; camera.sector = {0, 0, -9'460'730};
     scene.ComputeRelativeTransforms(camera, out);
-    for (const auto& t : out) if (t.entity == far) { std::printf("écart à 1 al : %.9f m\n", t.position.x); CHECK(std::abs(t.position.x - 0.001) < 1e-9); }
+    for (const auto& t : out) {
+        if (t.entity == far) {
+            CHECK(std::abs(t.position.x - 0.001) < 1e-9); // 1 mm à une année-lumière, au nanomètre près
+        }
+    }
 
     // WorldPosition : normalisation et déplacement à travers une frontière de secteur
     Math::WorldPosition p; p += {6.0e8, 0, -1.5e9};
@@ -61,6 +66,24 @@ int main() {
     scene.DestroyEntity(a);
     CHECK(!scene.IsValid(a) && !scene.IsValid(b) && !scene.IsValid(c) && scene.IsValid(d));
     roots = 0; scene.ForEachRoot([&](Entity) { ++roots; }); CHECK(roots == 2);
+
+    // Ordre des racines et ajout en fin de liste après suppressions (lastChild tenu à jour).
+    const Entity e = scene.CreateEntity("E");
+    std::vector<Entity> rootOrder;
+    scene.ForEachRoot([&](Entity root) { rootOrder.push_back(root); });
+    CHECK((rootOrder == std::vector<Entity>{d, far, e}));
+    scene.DestroyEntity(e);
+    const Entity f = scene.CreateEntity("F");
+    const Entity g = scene.CreateEntity("G", f);
+    scene.DestroyEntity(g);
+    const Entity h = scene.CreateEntity("H", f);
+    rootOrder.clear();
+    scene.ForEachRoot([&](Entity root) { rootOrder.push_back(root); });
+    CHECK((rootOrder == std::vector<Entity>{d, far, f}));
+    std::vector<Entity> childOrder;
+    scene.ForEachChild(f, [&](Entity child) { childOrder.push_back(child); });
+    CHECK((childOrder == std::vector<Entity>{h}));
     scene.Clear();
-    std::printf("tous les tests de scène passent\n");
+    CHECK(scene.GetEntityCount() == 0);
+    return true;
 }

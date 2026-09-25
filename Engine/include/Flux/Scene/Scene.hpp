@@ -7,6 +7,7 @@
 #include <entt/entity/registry.hpp>
 
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -28,11 +29,19 @@ namespace Flux {
         Scene(const Scene&) = delete;
         Scene& operator=(const Scene&) = delete;
 
-        Entity CreateEntity(std::string_view name, Entity parent = NullEntity);
+        // id vide : un nouvel identifiant est tiré au hasard (le chargement de scène fournit l'identifiant sauvegardé).
+        Entity CreateEntity(std::string_view name, Entity parent = NullEntity, Uuid id = {});
         // Détruit aussi tous les descendants.
         void DestroyEntity(Entity entity);
         void Clear();
         bool IsValid(Entity entity) const { return m_registry.valid(entity); }
+
+        Uuid GetId(Entity entity) const { return m_registry.get<IdComponent>(entity).id; }
+        // NullEntity si aucune entité ne porte cet identifiant.
+        Entity FindById(Uuid id) const;
+        // Une entité portant ce nom, NullEntity sinon (recherche linéaire : à éviter à chaque frame).
+        Entity FindByName(std::string_view name) const;
+        std::size_t GetEntityCount() const { return m_entitiesById.size(); }
 
         // parent = NullEntity pour en faire une racine. La transformation locale est conservée telle quelle
         // (l'entité peut donc se déplacer à l'écran), et le secteur est perdu en devenant enfant.
@@ -55,12 +64,13 @@ namespace Flux {
             }
         }
 
+        // Dans l'ordre de création (ou de rattachement) : stable d'une sauvegarde à l'autre.
         template <typename Function>
         void ForEachRoot(Function&& function) const {
-            for (const auto [entity, hierarchy] : m_registry.view<const HierarchyComponent>().each()) {
-                if (hierarchy.parent == NullEntity) {
-                    function(entity);
-                }
+            for (Entity root = m_firstRoot; root != NullEntity;) {
+                const Entity next = m_registry.get<HierarchyComponent>(root).nextSibling; // l'appel peut détruire root
+                function(root);
+                root = next;
             }
         }
 
@@ -89,5 +99,9 @@ namespace Flux {
         void ComputeSubtree(Entity entity, const RelativeTransform& parent, std::vector<RelativeTransform>& out) const;
 
         entt::registry m_registry;
+        std::unordered_map<Uuid, Entity> m_entitiesById;
+        // Les racines forment une liste de frères, comme des enfants sans parent.
+        Entity m_firstRoot = NullEntity;
+        Entity m_lastRoot = NullEntity;
     };
 }

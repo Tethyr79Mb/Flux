@@ -3,14 +3,18 @@
 #include <string>
 
 namespace Flux {
-    Entity Scene::CreateEntity(std::string_view name, Entity parent) {
+    Entity Scene::CreateEntity(std::string_view name, Entity parent, Uuid id) {
+        // Un identifiant déjà pris (fichier copié-collé à la main, par exemple) est remplacé plutôt que partagé.
+        while (!id || m_entitiesById.contains(id)) {
+            id = Uuid::Generate();
+        }
         const Entity entity = m_registry.create();
+        m_entitiesById.emplace(id, entity);
+        m_registry.emplace<IdComponent>(entity, id);
         m_registry.emplace<NameComponent>(entity, std::string(name));
         m_registry.emplace<TransformComponent>(entity);
         m_registry.emplace<HierarchyComponent>(entity);
-        if (parent != NullEntity) {
-            AppendChild(parent, entity);
-        }
+        AppendChild(parent, entity);
         return entity;
     }
 
@@ -20,11 +24,29 @@ namespace Flux {
         }
         ForEachChild(entity, [this](Entity child) { DestroyEntity(child); });
         Detach(entity);
+        m_entitiesById.erase(GetId(entity));
         m_registry.destroy(entity);
     }
 
     void Scene::Clear() {
         m_registry.clear();
+        m_entitiesById.clear();
+        m_firstRoot = NullEntity;
+        m_lastRoot = NullEntity;
+    }
+
+    Entity Scene::FindById(Uuid id) const {
+        const auto found = m_entitiesById.find(id);
+        return found != m_entitiesById.end() ? found->second : NullEntity;
+    }
+
+    Entity Scene::FindByName(std::string_view name) const {
+        for (const auto [entity, component] : m_registry.view<const NameComponent>().each()) {
+            if (component.name == name) {
+                return entity;
+            }
+        }
+        return NullEntity;
     }
 
     bool Scene::SetParent(Entity entity, Entity parent) {
@@ -36,23 +58,26 @@ namespace Flux {
         Detach(entity);
         if (parent != NullEntity) {
             m_registry.remove<SectorComponent>(entity);
-            AppendChild(parent, entity);
         }
+        AppendChild(parent, entity);
         return true;
     }
 
     void Scene::Detach(Entity entity) {
         auto& hierarchy = m_registry.get<HierarchyComponent>(entity);
-        if (hierarchy.parent == NullEntity) {
-            return;
-        }
         if (hierarchy.previousSibling != NullEntity) {
             m_registry.get<HierarchyComponent>(hierarchy.previousSibling).nextSibling = hierarchy.nextSibling;
-        } else {
+        } else if (hierarchy.parent != NullEntity) {
             m_registry.get<HierarchyComponent>(hierarchy.parent).firstChild = hierarchy.nextSibling;
+        } else {
+            m_firstRoot = hierarchy.nextSibling;
         }
         if (hierarchy.nextSibling != NullEntity) {
             m_registry.get<HierarchyComponent>(hierarchy.nextSibling).previousSibling = hierarchy.previousSibling;
+        } else if (hierarchy.parent != NullEntity) {
+            m_registry.get<HierarchyComponent>(hierarchy.parent).lastChild = hierarchy.previousSibling;
+        } else {
+            m_lastRoot = hierarchy.previousSibling;
         }
         hierarchy.parent = NullEntity;
         hierarchy.nextSibling = NullEntity;
@@ -64,17 +89,16 @@ namespace Flux {
         childHierarchy.parent = parent;
 
         // Ajout en fin de liste : l'ordre de création est conservé (panneau Hiérarchie de l'éditeur).
-        auto& parentHierarchy = m_registry.get<HierarchyComponent>(parent);
-        if (parentHierarchy.firstChild == NullEntity) {
-            parentHierarchy.firstChild = child;
-            return;
+        auto* parentHierarchy = parent != NullEntity ? &m_registry.get<HierarchyComponent>(parent) : nullptr;
+        Entity& first = parentHierarchy ? parentHierarchy->firstChild : m_firstRoot;
+        Entity& last = parentHierarchy ? parentHierarchy->lastChild : m_lastRoot;
+        if (last == NullEntity) {
+            first = child;
+        } else {
+            m_registry.get<HierarchyComponent>(last).nextSibling = child;
+            childHierarchy.previousSibling = last;
         }
-        Entity last = parentHierarchy.firstChild;
-        while (m_registry.get<HierarchyComponent>(last).nextSibling != NullEntity) {
-            last = m_registry.get<HierarchyComponent>(last).nextSibling;
-        }
-        m_registry.get<HierarchyComponent>(last).nextSibling = child;
-        childHierarchy.previousSibling = last;
+        last = child;
     }
 
     Math::WorldPosition Scene::GetWorldPosition(Entity entity) const {

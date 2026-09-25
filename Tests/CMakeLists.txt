@@ -1,5 +1,9 @@
-# Tests automatiques du moteur : un exe par groupe, lancé par ctest (ou directement depuis CLion).
-add_executable(FluxTests src/SceneTests.cpp)
+# Tests automatiques du moteur, tous dans un exe lancé par ctest (ou directement depuis CLion).
+add_executable(FluxTests
+        src/main.cpp
+        src/SceneTests.cpp
+        src/SceneSerializerTests.cpp
+)
 target_link_libraries(FluxTests PRIVATE Flux::Engine)
 flux_set_warnings(FluxTests)
-add_test(NAME Scene COMMAND FluxTests WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+add_test(NAME FluxTests COMMAND FluxTests WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
