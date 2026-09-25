@@ -96,7 +96,10 @@ namespace Flux {
             }};
             std::vector<SceneCube> cubes;
             for (const double originZ : {0.0, -1.0e7}) {
-                cubes.push_back({{0.0, -0.05, originZ}, {60.0f, 0.1f, 60.0f}, {0.30f, 0.30f, 0.32f}});
+                // Sol gris à l'origine, violet pour la copie lointaine : on voit tout de suite où l'on est.
+                const Math::LinearColor ground = originZ == 0.0 ? Math::LinearColor{0.30f, 0.30f, 0.32f}
+                                                                : Math::LinearColor{0.35f, 0.15f, 0.45f};
+                cubes.push_back({{0.0, -0.05, originZ}, {60.0f, 0.1f, 60.0f}, ground});
                 for (int i = -5; i <= 5; ++i) {
                     for (int j = -5; j <= 5; ++j) {
                         // Décalage pour rester positif : en C++, le reste d'un nombre négatif est négatif.
