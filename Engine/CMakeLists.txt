@@ -1,7 +1,10 @@
 add_library(FluxEngine SHARED
         src/Core/Engine.cpp
         src/Core/GameModule.cpp
+        src/Platform/Input.cpp
         src/Renderer/Renderer.cpp
+        src/Scene/Camera.cpp
+        src/Scene/FlyCameraController.cpp
         src/UI/Font.cpp
         src/UI/DrawList.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
@@ -49,7 +52,7 @@ target_compile_definitions(FluxEngine PRIVATE
 flux_set_warnings(FluxEngine)
 
 flux_add_shaders(FluxShaders
-        shaders/Triangle.slang
+        shaders/Mesh.slang
         shaders/Overlay.slang
 )
 add_dependencies(FluxEngine FluxShaders)

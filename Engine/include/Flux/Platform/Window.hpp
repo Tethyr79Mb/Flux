@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Platform/Input.hpp"
 
 #include <memory>
 #include <string_view>
@@ -21,6 +22,7 @@ namespace Flux {
         bool Create(std::string_view title, Math::Vector2i size);
         void Destroy();
 
+        // Traite les messages en attente et met à jour GetInput().
         void HandleEvents();
         // Bloque jusqu'au prochain événement puis le traite (fenêtre réduite, par exemple).
         void WaitEvents();
@@ -29,6 +31,13 @@ namespace Flux {
         void SetTitle(std::string_view title);
         void SetSize(Math::Vector2i size);
         Math::Vector2i GetSize() const;
+
+        const Input& GetInput() const;
+        bool HasFocus() const;
+
+        // Curseur caché et immobilisé (vol libre de la caméra) ; libéré automatiquement si la fenêtre perd le focus.
+        void SetCursorLocked(bool locked);
+        bool IsCursorLocked() const;
 
         // HWND sous Windows, pour vkCreateWin32SurfaceKHR.
         void* GetNativeHandle() const;

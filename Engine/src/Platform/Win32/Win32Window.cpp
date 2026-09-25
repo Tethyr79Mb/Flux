@@ -18,6 +18,56 @@ namespace Flux {
     struct Window::Impl {
         HWND hwnd = nullptr;
         Math::Vector2i size;
+        Input input;
+        bool focused = false;
+        bool cursorLocked = false;
+
+        void LockCursor(bool locked) {
+            if (locked == cursorLocked) {
+                return;
+            }
+            cursorLocked = locked;
+            if (locked) {
+                // Le curseur reste où il est, enfermé dans un rectangle d'un pixel.
+                POINT position;
+                GetCursorPos(&position);
+                const RECT clip{position.x, position.y, position.x + 1, position.y + 1};
+                ClipCursor(&clip);
+                ShowCursor(FALSE);
+            } else {
+                ClipCursor(nullptr);
+                ShowCursor(TRUE);
+            }
+        }
+
+        static void RegisterRawMouse(HWND hwnd) {
+            // Souris brute : déplacements sans accélération ni blocage aux bords de l'écran.
+            RAWINPUTDEVICE device{};
+            device.usUsagePage = 0x01; // HID_USAGE_PAGE_GENERIC
+            device.usUsage = 0x02;     // HID_USAGE_GENERIC_MOUSE
+            device.hwndTarget = hwnd;
+            RegisterRawInputDevices(&device, 1, sizeof(device));
+        }
+
+        void OnRawInput(LPARAM lParam) {
+            RAWINPUT raw;
+            UINT dataSize = sizeof(raw);
+            if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &dataSize, sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1)) {
+                return;
+            }
+            // Les tablettes et le bureau à distance envoient des positions absolues : ignorées pour l'instant.
+            if (raw.header.dwType == RIM_TYPEMOUSE && (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
+                input.AddMouseDelta(static_cast<float>(raw.data.mouse.lLastX), static_cast<float>(raw.data.mouse.lLastY));
+            }
+        }
+
+        void OnKey(LPARAM lParam, bool down) {
+            auto scancode = static_cast<std::uint16_t>((lParam >> 16) & 0xFF);
+            if (lParam & (1 << 24)) {
+                scancode |= 0x100; // touche étendue (flèches, Ctrl droit...)
+            }
+            input.SetKey(scancode, down);
+        }
 
         static bool RegisterWindowClass() {
             static const bool registered = [] {
@@ -45,10 +95,45 @@ namespace Flux {
                     case WM_SIZE:
                         impl->size = {LOWORD(lParam), HIWORD(lParam)};
                         return 0;
+                    case WM_SETFOCUS:
+                        impl->focused = true;
+                        return 0;
+                    case WM_KILLFOCUS:
+                        impl->focused = false;
+                        impl->input.ReleaseAll();
+                        impl->LockCursor(false);
+                        return 0;
+                    case WM_INPUT:
+                        impl->OnRawInput(lParam);
+                        break; // DefWindowProc libère les données brutes
+                    case WM_KEYDOWN:
+                    case WM_SYSKEYDOWN:
+                        impl->OnKey(lParam, true);
+                        break; // DefWindowProc garde Alt+F4
+                    case WM_KEYUP:
+                    case WM_SYSKEYUP:
+                        impl->OnKey(lParam, false);
+                        break;
+                    case WM_LBUTTONDOWN:
+                    case WM_LBUTTONUP:
+                        impl->input.SetMouseButton(MouseButton::Left, message == WM_LBUTTONDOWN);
+                        return 0;
+                    case WM_RBUTTONDOWN:
+                    case WM_RBUTTONUP:
+                        impl->input.SetMouseButton(MouseButton::Right, message == WM_RBUTTONDOWN);
+                        return 0;
+                    case WM_MBUTTONDOWN:
+                    case WM_MBUTTONUP:
+                        impl->input.SetMouseButton(MouseButton::Middle, message == WM_MBUTTONDOWN);
+                        return 0;
+                    case WM_MOUSEWHEEL:
+                        impl->input.AddWheelDelta(static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA);
+                        return 0;
                     case WM_CLOSE:
                         DestroyWindow(hwnd);
                         return 0;
                     case WM_DESTROY:
+                        impl->LockCursor(false);
                         impl->hwnd = nullptr;
                         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                         return 0;
@@ -92,6 +177,7 @@ namespace Flux {
             return false;
         }
 
+        Impl::RegisterRawMouse(m_impl->hwnd);
         ShowWindow(m_impl->hwnd, SW_SHOW);
         return true;
     }
@@ -103,6 +189,9 @@ namespace Flux {
     }
 
     void Window::HandleEvents() {
+        if (m_impl) {
+            m_impl->input.BeginFrame();
+        }
         MSG message;
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&message);
@@ -134,6 +223,24 @@ namespace Flux {
 
     Math::Vector2i Window::GetSize() const {
         return m_impl ? m_impl->size : Math::Vector2i{};
+    }
+
+    const Input& Window::GetInput() const {
+        return m_impl->input;
+    }
+
+    bool Window::HasFocus() const {
+        return m_impl && m_impl->focused;
+    }
+
+    void Window::SetCursorLocked(bool locked) {
+        if (IsOpen()) {
+            m_impl->LockCursor(locked && m_impl->focused);
+        }
+    }
+
+    bool Window::IsCursorLocked() const {
+        return m_impl && m_impl->cursorLocked;
     }
 
     void* Window::GetNativeHandle() const {

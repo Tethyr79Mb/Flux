@@ -10,6 +10,7 @@
 
 namespace Flux {
     class Window;
+    struct Camera;
 
     namespace UI {
         class DrawList;
@@ -29,6 +30,9 @@ namespace Flux {
         bool RenderFrame();
 
         void SetClearColor(Math::LinearColor color);
+
+        // Point de vue des frames suivantes.
+        void SetCamera(const Camera& camera);
 
         // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
         UI::DrawList& GetOverlay();

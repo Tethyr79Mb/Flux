@@ -10,9 +10,13 @@
 namespace Flux::Vk {
     class Device;
 
-    // Texture 2D échantillonnable (une seule mip), allouée par VMA.
+    // Image 2D (une seule mip) allouée par VMA, avec sa vue : texture ou attachment de rendu.
     class Image {
         public:
+        // Image vierge (contenu indéfini), par exemple un tampon de profondeur.
+        static std::expected<Image, std::string> CreateAttachment(const Device& device, VkFormat format, VkExtent2D extent,
+                                                                  VkImageUsageFlags usage, VkImageAspectFlags aspect);
+
         // Crée l'image et y copie pixels (via un buffer intermédiaire) ; attend la fin de la copie.
         static std::expected<Image, std::string> CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
                                                                std::span<const std::uint8_t> pixels);
@@ -30,6 +34,8 @@ namespace Flux::Vk {
         VkExtent2D GetExtent() const { return m_extent; }
 
         private:
+        static std::expected<Image, std::string> Allocate(const Device& device, VkFormat format, VkExtent2D extent,
+                                                          VkImageUsageFlags usage, VkImageAspectFlags aspect);
         void Reset();
 
         VkDevice m_device = VK_NULL_HANDLE;
