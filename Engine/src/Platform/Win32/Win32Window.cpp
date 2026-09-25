@@ -110,6 +110,11 @@ namespace Flux {
         }
     }
 
+    void Window::WaitEvents() {
+        WaitMessage();
+        HandleEvents();
+    }
+
     bool Window::IsOpen() const {
         return m_impl && m_impl->hwnd;
     }
