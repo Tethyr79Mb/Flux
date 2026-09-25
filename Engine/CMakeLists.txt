@@ -1,0 +1,29 @@
+add_library(FluxEngine SHARED
+        src/Core/Engine.cpp
+        src/Core/GameModule.cpp
+        src/Platform/Win32/Win32Window.cpp
+        src/Platform/Win32/Win32SharedLibrary.cpp
+        src/Platform/Win32/Win32Filesystem.cpp
+)
+add_library(Flux::Engine ALIAS FluxEngine)
+
+# FluxEngine.dll plutôt que libFluxEngine.dll avec MinGW.
+set_target_properties(FluxEngine PROPERTIES PREFIX "")
+
+include(GenerateExportHeader)
+generate_export_header(FluxEngine
+        BASE_NAME FLUX
+        EXPORT_MACRO_NAME FLUX_API
+        EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/include/Flux/Export.hpp)
+
+target_include_directories(FluxEngine
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# windows.h reste confiné aux .cpp de Platform/Win32.
+target_compile_definitions(FluxEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+
+flux_set_warnings(FluxEngine)
