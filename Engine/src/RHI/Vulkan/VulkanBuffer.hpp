@@ -31,6 +31,9 @@ namespace Flux::Vk {
         // nullptr pour un buffer GpuOnly.
         void* GetMappedData() const { return m_mapped; }
 
+        // Copie dans un buffer Upload puis flush (sans effet si la mémoire est cohérente, cas courant sur PC).
+        void Write(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+
         private:
         void Reset();
 

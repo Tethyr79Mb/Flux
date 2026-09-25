@@ -6,9 +6,14 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace Flux {
     class Window;
+
+    namespace UI {
+        class DrawList;
+    }
 
     // Aucun type Vulkan ici : tout vit dans Impl (Renderer.cpp).
     class FLUX_API Renderer {
@@ -24,6 +29,12 @@ namespace Flux {
         bool RenderFrame();
 
         void SetClearColor(Math::LinearColor color);
+
+        // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
+        UI::DrawList& GetOverlay();
+
+        // Nom du GPU utilisé, tel que rapporté par le pilote.
+        std::string_view GetDeviceName() const;
 
         private:
         struct Impl;

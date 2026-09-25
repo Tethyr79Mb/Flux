@@ -44,6 +44,10 @@ namespace Flux::Vk {
 
         VkPipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount = static_cast<uint32_t>(desc.setLayouts.size());
+        layoutInfo.pSetLayouts = desc.setLayouts.data();
+        layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(desc.pushConstants.size());
+        layoutInfo.pPushConstantRanges = desc.pushConstants.data();
         if (!Check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipeline.m_layout), "vkCreatePipelineLayout")) {
             vkDestroyShaderModule(device, shaderModule, nullptr);
             return std::unexpected("création du pipeline layout");
@@ -90,6 +94,15 @@ namespace Flux::Vk {
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
                                        | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        if (desc.alphaBlend) {
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        }
 
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

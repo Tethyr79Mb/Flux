@@ -13,6 +13,7 @@ namespace Flux {
     struct EngineConfig {
         std::string title = "Flux";
         Math::Vector2i windowSize{1280, 720};
+        bool showDebugOverlay = true; // fps, temps de frame et GPU en haut à gauche
     };
 
     class FLUX_API Engine {
@@ -34,5 +35,6 @@ namespace Flux {
         std::unique_ptr<Window> m_window;
         std::unique_ptr<Renderer> m_renderer;
         bool m_quitRequested = false;
+        bool m_showDebugOverlay = true;
     };
 }
