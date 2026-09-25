@@ -2,10 +2,13 @@ add_library(FluxEngine SHARED
         src/Core/Engine.cpp
         src/Core/GameModule.cpp
         src/Renderer/Renderer.cpp
+        src/UI/Font.cpp
+        src/UI/DrawList.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
         src/RHI/Vulkan/VulkanSwapchain.cpp
         src/RHI/Vulkan/VulkanBuffer.cpp
         src/RHI/Vulkan/VulkanPipeline.cpp
+        src/RHI/Vulkan/VulkanImage.cpp
         src/RHI/Vulkan/VmaImplementation.cpp
         src/Platform/Win32/Win32Window.cpp
         src/Platform/Win32/Win32SharedLibrary.cpp
@@ -34,6 +37,9 @@ target_compile_definitions(FluxEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICO
 
 # Vulkan est privé au moteur : aucun header public ne l'expose.
 target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
+# FreeType et msdfgen servent à générer l'atlas de police ; eux aussi restent privés.
+target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core)
+
 target_compile_definitions(FluxEngine PRIVATE
         VK_NO_PROTOTYPES
         VK_USE_PLATFORM_WIN32_KHR
@@ -44,5 +50,9 @@ flux_set_warnings(FluxEngine)
 
 flux_add_shaders(FluxShaders
         shaders/Triangle.slang
+        shaders/Overlay.slang
 )
 add_dependencies(FluxEngine FluxShaders)
+
+flux_add_assets(FluxAssets assets)
+add_dependencies(FluxEngine FluxAssets)

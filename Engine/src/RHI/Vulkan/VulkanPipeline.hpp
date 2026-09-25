@@ -17,7 +17,12 @@ namespace Flux::Vk {
         std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> vertexAttributes;
 
+        std::span<const VkDescriptorSetLayout> setLayouts;
+        std::span<const VkPushConstantRange> pushConstants;
+
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+        // Mélange alpha classique (couleur non prémultipliée), pour l'UI et le texte.
+        bool alphaBlend = false;
     };
 
     // Pipeline graphique pour le dynamic rendering ; viewport et scissor sont dynamiques.

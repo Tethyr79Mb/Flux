@@ -2,14 +2,20 @@
 
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
+#include "Flux/UI/DrawList.hpp"
+#include "Flux/UI/Font.hpp"
 #include "RHI/Vulkan/VulkanBuffer.hpp"
 #include "RHI/Vulkan/VulkanDevice.hpp"
+#include "RHI/Vulkan/VulkanImage.hpp"
 #include "RHI/Vulkan/VulkanPipeline.hpp"
 #include "RHI/Vulkan/VulkanSwapchain.hpp"
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
-#include <cstring>
+#include <cstdio>
+#include <span>
 
 namespace Flux {
     namespace {
@@ -28,6 +34,17 @@ namespace Flux {
             {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
             {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
         }};
+
+        // Doit correspondre à OverlayParams dans shaders/Overlay.slang.
+        struct OverlayParams {
+            float screenSize[2];
+            float atlasSize[2];
+            float distanceRange;
+            float padding;
+        };
+
+        // Taille minimale d'un vertex buffer d'overlay : évite de réallouer pour quelques caractères de plus.
+        constexpr VkDeviceSize MinOverlayBufferSize = 64 * 1024;
 
         struct FrameData {
             VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -72,6 +89,18 @@ namespace Flux {
         Vk::GraphicsPipeline trianglePipeline;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
 
+        // Overlay 2D (FluxUI) : atlas MSDF + un vertex buffer par frame en vol.
+        std::unique_ptr<UI::Font> font;
+        std::unique_ptr<UI::DrawList> overlay;
+        Vk::Image atlasImage;
+        VkSampler atlasSampler = VK_NULL_HANDLE;
+        VkDescriptorSetLayout overlaySetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool overlayDescriptorPool = VK_NULL_HANDLE;
+        VkDescriptorSet overlaySet = VK_NULL_HANDLE;
+        Vk::GraphicsPipeline overlayPipeline;
+        std::array<Vk::Buffer, FramesInFlight> overlayBuffers;
+        uint32_t overlayVertexCount = 0;
+
         explicit Impl(Window& w) : window(w) {}
 
         ~Impl() {
@@ -79,6 +108,10 @@ namespace Flux {
                 return;
             }
             device->WaitIdle();
+            const VkDevice vkDevice = device->GetHandle();
+            vkDestroyDescriptorPool(vkDevice, overlayDescriptorPool, nullptr); // libère aussi overlaySet
+            vkDestroyDescriptorSetLayout(vkDevice, overlaySetLayout, nullptr);
+            vkDestroySampler(vkDevice, atlasSampler, nullptr);
             for (FrameData& frame : frames) {
                 vkDestroyFence(device->GetHandle(), frame.inFlight, nullptr);
                 vkDestroySemaphore(device->GetHandle(), frame.imageAvailable, nullptr);
@@ -129,7 +162,7 @@ namespace Flux {
             if (!buffer) {
                 return std::unexpected(buffer.error());
             }
-            std::memcpy(buffer->GetMappedData(), TriangleVertices.data(), sizeof(TriangleVertices));
+            buffer->Write(TriangleVertices.data(), sizeof(TriangleVertices));
             triangleVertexBuffer = std::move(*buffer);
 
             const VkVertexInputBindingDescription binding{0, sizeof(TriangleVertex), VK_VERTEX_INPUT_RATE_VERTEX};
@@ -150,6 +183,127 @@ namespace Flux {
             }
             trianglePipeline = std::move(*pipeline);
             return {};
+        }
+
+        std::expected<void, std::string> CreateOverlay() {
+            const std::filesystem::path fontPath = Platform::GetExecutableDirectory() / "assets" / "fonts" / "Arimo.ttf";
+            auto loadedFont = UI::Font::Load(fontPath);
+            if (!loadedFont) {
+                return std::unexpected(loadedFont.error());
+            }
+            font = std::move(*loadedFont);
+            overlay = std::make_unique<UI::DrawList>(*font);
+
+            // UNORM et pas SRGB : l'atlas contient des distances, pas des couleurs.
+            const Math::Vector2i atlasSize = font->GetAtlasSize();
+            auto image = Vk::Image::CreateTexture(*device, VK_FORMAT_R8G8B8A8_UNORM,
+                                                  {static_cast<uint32_t>(atlasSize.x), static_cast<uint32_t>(atlasSize.y)},
+                                                  font->GetAtlasPixels());
+            if (!image) {
+                return std::unexpected(image.error());
+            }
+            atlasImage = std::move(*image);
+
+            const VkDevice vkDevice = device->GetHandle();
+
+            // Filtrage linéaire obligatoire : le MSDF reconstruit le contour entre les texels.
+            VkSamplerCreateInfo samplerInfo{};
+            samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+            samplerInfo.magFilter = VK_FILTER_LINEAR;
+            samplerInfo.minFilter = VK_FILTER_LINEAR;
+            samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            if (!Vk::Check(vkCreateSampler(vkDevice, &samplerInfo, nullptr, &atlasSampler), "vkCreateSampler")) {
+                return std::unexpected("création du sampler de l'atlas");
+            }
+
+            const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                                       VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+            VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
+            setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            setLayoutInfo.bindingCount = 1;
+            setLayoutInfo.pBindings = &binding;
+            if (!Vk::Check(vkCreateDescriptorSetLayout(vkDevice, &setLayoutInfo, nullptr, &overlaySetLayout), "vkCreateDescriptorSetLayout")) {
+                return std::unexpected("création du descriptor set layout de l'overlay");
+            }
+
+            const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+            VkDescriptorPoolCreateInfo poolInfo{};
+            poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            poolInfo.maxSets = 1;
+            poolInfo.poolSizeCount = 1;
+            poolInfo.pPoolSizes = &poolSize;
+            if (!Vk::Check(vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &overlayDescriptorPool), "vkCreateDescriptorPool")) {
+                return std::unexpected("création du descriptor pool de l'overlay");
+            }
+
+            VkDescriptorSetAllocateInfo allocateInfo{};
+            allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocateInfo.descriptorPool = overlayDescriptorPool;
+            allocateInfo.descriptorSetCount = 1;
+            allocateInfo.pSetLayouts = &overlaySetLayout;
+            if (!Vk::Check(vkAllocateDescriptorSets(vkDevice, &allocateInfo, &overlaySet), "vkAllocateDescriptorSets")) {
+                return std::unexpected("allocation du descriptor set de l'overlay");
+            }
+
+            const VkDescriptorImageInfo imageInfo{atlasSampler, atlasImage.GetView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = overlaySet;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imageInfo;
+            vkUpdateDescriptorSets(vkDevice, 1, &write, 0, nullptr);
+
+            const VkVertexInputBindingDescription vertexBinding{0, sizeof(UI::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+            const std::array attributes{
+                VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UI::Vertex, position)},
+                VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UI::Vertex, uv)},
+                VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(UI::Vertex, color)},
+            };
+            const VkPushConstantRange pushConstants{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(OverlayParams)};
+
+            Vk::GraphicsPipelineDesc desc;
+            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Overlay.spv";
+            desc.vertexBindings = {&vertexBinding, 1};
+            desc.vertexAttributes = attributes;
+            desc.setLayouts = {&overlaySetLayout, 1};
+            desc.pushConstants = {&pushConstants, 1};
+            desc.colorFormat = swapchain->GetFormat();
+            desc.alphaBlend = true;
+
+            auto pipeline = Vk::GraphicsPipeline::Create(vkDevice, desc);
+            if (!pipeline) {
+                return std::unexpected(pipeline.error());
+            }
+            overlayPipeline = std::move(*pipeline);
+            return {};
+        }
+
+        // Appelé après l'attente de la fence : le GPU n'utilise plus le buffer de cette frame.
+        bool UploadOverlay() {
+            const std::span<const UI::Vertex> vertices = overlay->GetVertices();
+            overlayVertexCount = static_cast<uint32_t>(vertices.size());
+            if (vertices.empty()) {
+                return true;
+            }
+
+            const VkDeviceSize bytes = vertices.size_bytes();
+            Vk::Buffer& buffer = overlayBuffers[frameIndex];
+            if (buffer.GetSize() < bytes) {
+                auto grown = Vk::Buffer::Create(device->GetAllocator(), std::bit_ceil(std::max(bytes, MinOverlayBufferSize)),
+                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
+                if (!grown) {
+                    std::fprintf(stderr, "Flux : %s\n", grown.error().c_str());
+                    return false;
+                }
+                buffer = std::move(*grown);
+            }
+            buffer.Write(vertices.data(), bytes);
+            return true;
         }
 
         VkExtent2D WindowExtent() const {
@@ -174,6 +328,31 @@ namespace Flux {
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
             vkCmdDraw(commandBuffer, static_cast<uint32_t>(TriangleVertices.size()), 1, 0, 0);
+        }
+
+        void DrawOverlay(VkCommandBuffer commandBuffer) const {
+            if (overlayVertexCount == 0) {
+                return;
+            }
+            const VkExtent2D extent = swapchain->GetExtent();
+            const Math::Vector2i atlasSize = font->GetAtlasSize();
+            const OverlayParams params{
+                {static_cast<float>(extent.width), static_cast<float>(extent.height)},
+                {static_cast<float>(atlasSize.x), static_cast<float>(atlasSize.y)},
+                font->GetDistanceRange(),
+                0.0f,
+            };
+            const VkBuffer vertexBuffer = overlayBuffers[frameIndex].GetHandle();
+            const VkDeviceSize offset = 0;
+
+            // Viewport et scissor déjà réglés par DrawTriangle, pour toute la passe.
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetHandle());
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetLayout(),
+                                    0, 1, &overlaySet, 0, nullptr);
+            vkCmdPushConstants(commandBuffer, overlayPipeline.GetLayout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdDraw(commandBuffer, overlayVertexCount, 1, 0, 0);
         }
 
         void Record(VkCommandBuffer commandBuffer, uint32_t imageIndex) const {
@@ -202,6 +381,7 @@ namespace Flux {
 
             vkCmdBeginRendering(commandBuffer, &renderingInfo);
             DrawTriangle(commandBuffer);
+            DrawOverlay(commandBuffer);
             vkCmdEndRendering(commandBuffer);
 
             TransitionImage(commandBuffer, image,
@@ -236,6 +416,9 @@ namespace Flux {
                 return RecreateSwapchain(); // on retentera à la frame suivante
             }
             if (!Vk::Check(acquire, "vkAcquireNextImageKHR")) {
+                return false;
+            }
+            if (!UploadOverlay()) {
                 return false;
             }
 
@@ -318,6 +501,9 @@ namespace Flux {
         if (auto triangle = impl->CreateTriangle(); !triangle) {
             return std::unexpected(triangle.error());
         }
+        if (auto overlay = impl->CreateOverlay(); !overlay) {
+            return std::unexpected(overlay.error());
+        }
 
         return std::unique_ptr<Renderer>(new Renderer(std::move(impl)));
     }
@@ -327,10 +513,20 @@ namespace Flux {
     Renderer::~Renderer() = default;
 
     bool Renderer::RenderFrame() {
-        return m_impl->RenderFrame();
+        const bool ok = m_impl->RenderFrame();
+        m_impl->overlay->Clear(); // même si la frame n'a pas été présentée (fenêtre réduite, swapchain recréée)
+        return ok;
     }
 
     void Renderer::SetClearColor(Math::LinearColor color) {
         m_impl->clearColor = color;
+    }
+
+    UI::DrawList& Renderer::GetOverlay() {
+        return *m_impl->overlay;
+    }
+
+    std::string_view Renderer::GetDeviceName() const {
+        return m_impl->device->GetName();
     }
 }

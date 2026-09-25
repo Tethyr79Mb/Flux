@@ -5,6 +5,7 @@
 #include <VkBootstrap.h>
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -22,6 +23,7 @@ namespace Flux::Vk {
         VkDevice GetHandle() const { return m_device.device; }
         const vkb::Device& GetBootstrapDevice() const { return m_device; }
         VkSurfaceKHR GetSurface() const { return m_surface; }
+        const std::string& GetName() const { return m_physicalDevice.name; }
         VmaAllocator GetAllocator() const { return m_allocator; }
 
         VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
@@ -29,6 +31,10 @@ namespace Flux::Vk {
         VkQueue GetPresentQueue() const { return m_presentQueue; }
 
         void WaitIdle() const;
+
+        // Enregistre des commandes, les soumet sur la file graphique et attend leur fin.
+        // Réservé au chargement (textures, buffers statiques) : bloque le CPU.
+        bool ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) const;
 
         private:
         Device() = default;
@@ -42,5 +48,7 @@ namespace Flux::Vk {
         VkQueue m_graphicsQueue = VK_NULL_HANDLE;
         uint32_t m_graphicsQueueFamily = 0;
         VkQueue m_presentQueue = VK_NULL_HANDLE;
+
+        VkCommandPool m_immediatePool = VK_NULL_HANDLE;
     };
 }

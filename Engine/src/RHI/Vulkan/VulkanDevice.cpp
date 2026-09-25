@@ -86,6 +86,14 @@ namespace Flux::Vk {
             return std::unexpected("création de l'allocateur VMA");
         }
 
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        poolInfo.queueFamilyIndex = device->m_graphicsQueueFamily;
+        if (!Check(vkCreateCommandPool(device->m_device.device, &poolInfo, nullptr, &device->m_immediatePool), "vkCreateCommandPool")) {
+            return std::unexpected("création du command pool de chargement");
+        }
+
         std::fprintf(stderr, "Vulkan : %s\n", device->m_physicalDevice.name.c_str());
         return device;
     }
@@ -94,6 +102,9 @@ namespace Flux::Vk {
         // Ordre inverse de la création ; chaque étape tolère un objet jamais créé.
         if (m_device.device != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(m_device.device);
+        }
+        if (m_immediatePool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(m_device.device, m_immediatePool, nullptr);
         }
         if (m_allocator != VK_NULL_HANDLE) {
             vmaDestroyAllocator(m_allocator);
@@ -111,5 +122,38 @@ namespace Flux::Vk {
 
     void Device::WaitIdle() const {
         Check(vkDeviceWaitIdle(m_device.device), "vkDeviceWaitIdle");
+    }
+
+    bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) const {
+        VkCommandBufferAllocateInfo allocateInfo{};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocateInfo.commandPool = m_immediatePool;
+        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocateInfo.commandBufferCount = 1;
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        if (!Check(vkAllocateCommandBuffers(m_device.device, &allocateInfo, &commandBuffer), "vkAllocateCommandBuffers")) {
+            return false;
+        }
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        record(commandBuffer);
+        bool success = Check(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+
+        if (success) {
+            VkCommandBufferSubmitInfo commandInfo{};
+            commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+            commandInfo.commandBuffer = commandBuffer;
+            VkSubmitInfo2 submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+            submitInfo.commandBufferInfoCount = 1;
+            submitInfo.pCommandBufferInfos = &commandInfo;
+            success = Check(vkQueueSubmit2(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "vkQueueSubmit2")
+                   && Check(vkQueueWaitIdle(m_graphicsQueue), "vkQueueWaitIdle");
+        }
+        vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &commandBuffer);
+        return success;
     }
 }

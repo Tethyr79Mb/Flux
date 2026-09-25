@@ -1,5 +1,6 @@
 #include "RHI/Vulkan/VulkanBuffer.hpp"
 
+#include <cstring>
 #include <utility>
 
 namespace Flux::Vk {
@@ -30,6 +31,11 @@ namespace Flux::Vk {
         buffer.m_size = size;
         buffer.m_mapped = allocated.pMappedData;
         return buffer;
+    }
+
+    void Buffer::Write(const void* data, VkDeviceSize size, VkDeviceSize offset) {
+        std::memcpy(static_cast<std::byte*>(m_mapped) + offset, data, size);
+        vmaFlushAllocation(m_allocator, m_allocation, offset, size);
     }
 
     Buffer::~Buffer() {
