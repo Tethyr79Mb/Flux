@@ -1,0 +1,7 @@
+{
+  "format": "flux.project",
+  "version": 1,
+  "name": "Flux Demo",
+  "assets": "assets",
+  "startupScene": "scenes/Demo.scene.json"
+}

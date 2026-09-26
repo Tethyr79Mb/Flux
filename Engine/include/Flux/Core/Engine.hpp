@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Core/Project.hpp"
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/Camera.hpp"
@@ -9,6 +10,8 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <string>
 
 namespace Flux {
@@ -52,6 +55,10 @@ namespace Flux {
         // (à enregistrer dans FluxRegisterGame, avant de charger une scène qui les utilise).
         ComponentRegistry& GetComponents() { return m_components; }
 
+        // Projet ouvert (nullptr sans projet) : dossier des assets, scène de démarrage.
+        void SetProject(Project project) { m_project = std::move(project); }
+        const Project* GetProject() const { return m_project ? &*m_project : nullptr; }
+
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
@@ -64,6 +71,7 @@ namespace Flux {
         std::unique_ptr<Renderer> m_renderer;
         std::unique_ptr<UI::Context> m_ui;
         ComponentRegistry m_components;
+        std::optional<Project> m_project;
         Scene m_scene;
         UpdateFunction m_gameUpdate;
         UpdateFunction m_editorUpdate;

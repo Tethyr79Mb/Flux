@@ -1,18 +1,14 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
-#include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
-#include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/UI/Context.hpp>
 
 #include <algorithm>
-#include <cstdio>
-#include <filesystem>
-#include <string>
+#include <cstdint>
 
-// Démo : la scène vient de assets/scenes/Demo.scene.json (copié à côté de l'exe à chaque build).
+// Démo : composants et systèmes du jeu. La scène de démarrage est choisie par le projet (Game.fluxproject).
 namespace {
     using namespace Flux;
 
@@ -27,30 +23,9 @@ namespace {
     // Environ une année-lumière (9,46e15 m) en secteurs de 1 million de km : la grille lointaine de la démo.
     constexpr std::int64_t FarSectorZ = -9'460'730;
 
-    std::string g_status; // résultat de la dernière sauvegarde ou du dernier chargement, affiché à l'écran
-
     // Réglages de l'animation, modifiables depuis le panneau « Démo ».
     bool g_animate = true;
     float g_timeScale = 1.0f; // multiplie la vitesse de toutes les rotations
-
-    std::filesystem::path ScenePath(const char* fileName) {
-        return Platform::GetExecutableDirectory() / "assets" / "scenes" / fileName;
-    }
-
-    void LoadScene(Engine& engine, const char* fileName) {
-        Scene& scene = engine.GetScene();
-        if (auto loaded = SceneSerializer::Load(scene, engine.GetComponents(), ScenePath(fileName)); !loaded) {
-            g_status = "Erreur : " + loaded.error();
-            std::fprintf(stderr, "%s\n", g_status.c_str());
-        } else {
-            g_status = std::string(fileName) + " chargée (" + std::to_string(scene.GetEntityCount()) + " entités)";
-        }
-    }
-
-    void SaveScene(Engine& engine, const char* fileName) {
-        auto saved = SceneSerializer::Save(engine.GetScene(), engine.GetComponents(), ScenePath(fileName));
-        g_status = saved ? std::string(fileName) + " sauvegardée" : "Erreur : " + saved.error();
-    }
 
     void JumpSector(Engine& engine) {
         // Même point de vue, un autre secteur.
@@ -68,21 +43,9 @@ namespace {
             ui.DragFloat("Vitesse (x)", g_timeScale, 0.01f, -10.0, 10.0, 2);
 
             ui.Separator();
-            if (ui.Button("Recharger (F5)")) {
-                LoadScene(engine, "Demo.scene.json");
-            }
-            ui.SameLine();
-            if (ui.Button("Sauver (F6)")) {
-                SaveScene(engine, "Sauvegarde.scene.json");
-            }
-            ui.SameLine();
-            if (ui.Button("Charger (F7)")) {
-                LoadScene(engine, "Sauvegarde.scene.json");
-            }
             if (ui.Button("Sauter d'une année-lumière (T)")) {
                 JumpSector(engine);
             }
-            ui.TextDisabled(g_status);
         }
         ui.EndPanel();
     }
@@ -105,15 +68,6 @@ namespace {
             if (input.WasKeyPressed(Key::T)) {
                 JumpSector(engine);
             }
-            if (input.WasKeyPressed(Key::F5)) {
-                LoadScene(engine, "Demo.scene.json");
-            }
-            if (input.WasKeyPressed(Key::F6)) {
-                SaveScene(engine, "Sauvegarde.scene.json");
-            }
-            if (input.WasKeyPressed(Key::F7)) {
-                LoadScene(engine, "Sauvegarde.scene.json");
-            }
         }
 
         DrawDemoPanel(engine);
@@ -125,12 +79,11 @@ FLUX_GAME_MODULE_EXPORT std::uint32_t FluxGameApiVersion() {
 }
 
 FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
-    // Les composants du jeu d'abord : la scène chargée ensuite les utilise.
+    // Les scènes sont chargées ensuite par l'hôte (Game.exe ou l'éditeur) : elles peuvent utiliser ces composants.
     engine.GetComponents()
         .Register<SpinComponent>("spin", "Rotation continue")
         .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
         .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
-    LoadScene(engine, "Demo.scene.json");
     engine.SetGameUpdate(Update);
 }
 

@@ -10,6 +10,17 @@ flux_set_warnings(GameModule)
 flux_add_assets(GameAssets Module/assets)
 add_dependencies(GameModule GameAssets)
 
+# Le projet (nom du jeu, scène de démarrage), à côté de Game.exe : ses chemins relatifs y restent valides.
+set(gameProjectOutput ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Game.fluxproject)
+add_custom_command(
+        OUTPUT ${gameProjectOutput}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/Module/Game.fluxproject ${gameProjectOutput}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Module/Game.fluxproject
+        COMMENT "Copie de Game.fluxproject"
+        VERBATIM)
+add_custom_target(GameProject DEPENDS ${gameProjectOutput} SOURCES Module/Game.fluxproject)
+add_dependencies(GameModule GameProject)
+
 # Client : l'exe du jeu, sans éditeur (Game.exe). Le nom Launcher est réservé au futur lanceur
 # (mises à jour, paramètres de lancement), qui démarrera Game.exe.
 add_executable(Game Client/src/main.cpp)

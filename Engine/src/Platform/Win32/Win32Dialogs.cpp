@@ -4,9 +4,11 @@
 #include "Platform/Win32/Win32Utf.hpp"
 
 #include <commdlg.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cwctype>
+#include <string>
 #include <vector>
 
 namespace Flux::Platform {
@@ -101,6 +103,32 @@ namespace Flux::Platform {
         const int answer = MessageBoxW(OwnerHandle(owner), Win32::ToWide(question).c_str(), Win32::ToWide(title).c_str(),
                                        MB_YESNOCANCEL | MB_ICONWARNING);
         return answer == IDYES ? Answer::Yes : answer == IDNO ? Answer::No : Answer::Cancel;
+    }
+
+    bool AskYesNo(const Window& owner, std::string_view title, std::string_view question) {
+        return MessageBoxW(OwnerHandle(owner), Win32::ToWide(question).c_str(), Win32::ToWide(title).c_str(),
+                           MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+    }
+
+    std::expected<void, std::string> MoveToRecycleBin(const std::filesystem::path& path) {
+        // SHFileOperation attend une liste de chemins terminée par deux zéros.
+        std::wstring from = std::filesystem::absolute(path).wstring();
+        from.push_back(L'\0');
+        SHFILEOPSTRUCTW operation{};
+        operation.wFunc = FO_DELETE;
+        operation.pFrom = from.c_str();
+        operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+        const int result = SHFileOperationW(&operation);
+        if (result != 0 || operation.fAnyOperationsAborted) {
+            return std::unexpected("impossible de supprimer « " + Win32::ToUtf8(path.filename().wstring()) + " » (code "
+                                   + std::to_string(result) + ")");
+        }
+        return {};
+    }
+
+    void ShowInExplorer(const std::filesystem::path& path) {
+        const std::wstring arguments = L"/select,\"" + std::filesystem::absolute(path).wstring() + L"\"";
+        ShellExecuteW(nullptr, L"open", L"explorer.exe", arguments.c_str(), nullptr, SW_SHOWNORMAL);
     }
 
     void ShowError(const Window& owner, std::string_view title, std::string_view message) {

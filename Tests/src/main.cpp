@@ -10,6 +10,7 @@ int main() {
         {"scène", RunSceneTests},
         {"sauvegarde de scène", RunSceneSerializerTests},
         {"interface (FluxUI) et rotations", RunUiTests},
+        {"projet", RunProjectTests},
     };
 
     int failures = 0;
