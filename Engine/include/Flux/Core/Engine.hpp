@@ -24,7 +24,8 @@ namespace Flux {
 
     struct EngineConfig {
         std::string title = "Flux";
-        Math::Vector2i windowSize{1280, 720};
+        Math::Vector2i windowSize{1280, 720}; // taille de la fenêtre restaurée si maximized
+        bool maximized = false;
         bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra (le jeu ; l'éditeur a les siens)
     };
 

@@ -19,7 +19,8 @@ namespace Flux {
         Window(Window&&) noexcept;
         Window& operator=(Window&&) noexcept;
 
-        bool Create(std::string_view title, Math::Vector2i size);
+        // maximized : la fenêtre occupe tout l'écran (bureau) dès l'ouverture, barre des tâches exceptée.
+        bool Create(std::string_view title, Math::Vector2i size, bool maximized = false);
         void Destroy();
 
         // Traite les messages en attente et met à jour GetInput().
