@@ -34,6 +34,7 @@ namespace Flux {
         Entity CreateEntity(std::string_view name, Entity parent = NullEntity, Uuid id = {});
         // Détruit aussi tous les descendants.
         void DestroyEntity(Entity entity);
+        // Supprime toutes les entités et tous les stockages de composants.
         void Clear();
         bool IsValid(Entity entity) const { return m_registry.valid(entity); }
 

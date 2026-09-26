@@ -2,13 +2,17 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Platform/Window.hpp>
+#include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/UI/Context.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <numbers>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace FluxEditor {
     using namespace Flux;
@@ -103,15 +107,16 @@ namespace FluxEditor {
                 ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans la hiérarchie.");
             } else {
                 const Uuid id = scene.GetId(selected);
+                if (m_anglesFor != id) {
+                    m_angles.clear();
+                    m_anglesFor = id;
+                }
                 ui.PushId(id.value); // un champ en cours de saisie ne passe pas d'une entité à l'autre
 
                 ui.InputText("Nom", scene.Get<NameComponent>(selected).name);
                 ui.LabelText("Identifiant", id.ToString());
                 const Entity parent = scene.GetParent(selected);
                 ui.LabelText("Parent", parent == NullEntity ? "(racine)" : DisplayName(scene, parent));
-
-                ui.Separator();
-                ui.Text("Transformation");
                 if (parent == NullEntity) {
                     // Seules les racines ont un secteur ; secteur 0 = pas de composant (fichier plus lisible).
                     const auto* sectorComponent = scene.TryGet<SectorComponent>(selected);
@@ -124,36 +129,115 @@ namespace FluxEditor {
                         }
                     }
                 }
-                auto& transform = scene.Get<TransformComponent>(selected);
-                ui.DragDouble3("Position", transform.position, 0.05);
 
-                if (m_anglesFor != id || !(transform.rotation == m_anglesSource)) {
-                    const Math::Vector3f angles = Math::ToYawPitchRoll(transform.rotation);
-                    // Affichés par axe : x = tangage, y = lacet, z = roulis.
-                    m_anglesDegrees = Math::Vector3f{angles.y, angles.x, angles.z} * DegreesPerRadian;
-                    m_anglesFor = id;
-                }
-                if (ui.DragFloat3("Rotation (°)", m_anglesDegrees, 0.5f, UI::Context::NoMin, UI::Context::NoMax, 1)) {
-                    const Math::Vector3f radians = m_anglesDegrees * (1.0f / DegreesPerRadian);
-                    transform.rotation = Math::Normalize(Math::Quaternionf::FromYawPitchRoll(radians.y, radians.x, radians.z));
-                }
-                m_anglesSource = transform.rotation;
-                ui.DragFloat3("Échelle", transform.scale, 0.01f, 0.001, 1.0e6);
-
-                ui.Separator();
-                if (auto* renderer = scene.TryGet<MeshRendererComponent>(selected)) {
-                    ui.Text("Rendu : cube");
-                    ui.ColorEdit3("Couleur", renderer->color);
-                    if (ui.Button("Retirer le rendu")) {
-                        m_pendingAction = Action::RemoveMeshRenderer;
+                // Composants enregistrés (moteur puis jeu) : champs générés à partir de leur description.
+                const ComponentRegistry& components = engine.GetComponents();
+                std::vector<const ComponentInfo*> missing;
+                for (std::size_t i = 0; i < components.GetCount(); ++i) {
+                    const ComponentInfo& info = components.Get(i);
+                    if (void* component = info.get(scene.GetRegistry(), selected)) {
+                        DrawComponent(ui, info, component);
+                    } else if (info.removable) {
+                        missing.push_back(&info);
                     }
-                } else if (ui.Button("Ajouter un rendu (cube)")) {
-                    scene.Add<MeshRendererComponent>(selected);
+                }
+                if (const auto* unknown = scene.TryGet<UnknownComponentsComponent>(selected)) {
+                    ui.Separator();
+                    for (const auto& [key, text] : unknown->components) {
+                        ui.TextDisabled("« " + key + " » : type inconnu, conservé tel quel");
+                    }
+                }
+
+                if (!missing.empty()) {
+                    ui.Separator();
+                    for (const ComponentInfo* info : missing) {
+                        if (ui.Button("Ajouter : " + info->label + "##" + info->key)) {
+                            m_pendingAction = Action::AddComponent;
+                            m_pendingComponent = info->key;
+                        }
+                    }
                 }
                 ui.PopId();
             }
         }
         ui.EndPanel();
+    }
+
+    void SceneEditor::DrawComponent(UI::Context& ui, const ComponentInfo& info, void* component) {
+        ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
+        if (ui.CollapsingHeader(info.label)) {
+            for (const FieldInfo& field : info.fields) {
+                DrawField(ui, info, field, field.access(component));
+            }
+            if (info.removable && ui.Button("Retirer")) {
+                m_pendingAction = Action::RemoveComponent;
+                m_pendingComponent = info.key;
+            }
+        }
+        ui.PopId();
+    }
+
+    void SceneEditor::DrawField(UI::Context& ui, const ComponentInfo& info, const FieldInfo& field, void* value) {
+        const FieldOptions& o = field.options;
+        const std::string label = field.label + "##" + field.key;
+        switch (field.type) {
+            case FieldType::Bool:
+                ui.Checkbox(label, *static_cast<bool*>(value));
+                break;
+            case FieldType::Int:
+                ui.DragInt(label, *static_cast<std::int32_t*>(value), static_cast<float>(o.speed), o.min, o.max);
+                break;
+            case FieldType::Float:
+                ui.DragFloat(label, *static_cast<float*>(value), static_cast<float>(o.speed), o.min, o.max, o.decimals);
+                break;
+            case FieldType::Double:
+                ui.DragDouble(label, *static_cast<double*>(value), o.speed, o.min, o.max, o.decimals);
+                break;
+            case FieldType::Vector3f:
+                ui.DragFloat3(label, *static_cast<Math::Vector3f*>(value), static_cast<float>(o.speed), o.min, o.max,
+                              o.decimals);
+                break;
+            case FieldType::Vector3d:
+                ui.DragDouble3(label, *static_cast<Math::Vector3d*>(value), o.speed, o.min, o.max, o.decimals);
+                break;
+            case FieldType::Quaternion: {
+                auto& rotation = *static_cast<Math::Quaternionf*>(value);
+                auto [cached, created] = m_angles.try_emplace(info.key + '/' + field.key);
+                Angles& angles = cached->second;
+                if (created || !(rotation == angles.source)) {
+                    const Math::Vector3f radians = Math::ToYawPitchRoll(rotation);
+                    // Affichés par axe : x = tangage, y = lacet, z = roulis.
+                    angles.degrees = Math::Vector3f{radians.y, radians.x, radians.z} * DegreesPerRadian;
+                }
+                if (ui.DragFloat3(label, angles.degrees, 0.5f, UI::Context::NoMin, UI::Context::NoMax, 1)) {
+                    const Math::Vector3f radians = angles.degrees * (1.0f / DegreesPerRadian);
+                    rotation = Math::Normalize(Math::Quaternionf::FromYawPitchRoll(radians.y, radians.x, radians.z));
+                }
+                angles.source = rotation;
+                break;
+            }
+            case FieldType::Color:
+                ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
+                break;
+            case FieldType::String:
+                ui.InputText(label, *static_cast<std::string*>(value));
+                break;
+            case FieldType::Enum: {
+                std::vector<std::string_view> names;
+                int index = -1;
+                const std::int64_t current = field.getEnum(value);
+                for (const EnumOption& option : field.enumOptions) {
+                    if (option.value == current) {
+                        index = static_cast<int>(names.size());
+                    }
+                    names.push_back(option.label);
+                }
+                if (ui.Choice(label, index, names)) {
+                    field.setEnum(value, field.enumOptions[static_cast<std::size_t>(index)].value);
+                }
+                break;
+            }
+        }
     }
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected) {
@@ -189,10 +273,17 @@ namespace FluxEditor {
                     m_selection = {};
                 }
                 break;
-            case Action::RemoveMeshRenderer:
-                if (selected != NullEntity) {
-                    scene.Remove<MeshRendererComponent>(selected);
+            case Action::AddComponent:
+            case Action::RemoveComponent:
+                // Le type a pu disparaître entre-temps (module de jeu rechargé) : on le recherche par sa clé.
+                if (const ComponentInfo* info = engine.GetComponents().Find(m_pendingComponent); info && selected != NullEntity) {
+                    if (action == Action::AddComponent) {
+                        info->add(scene.GetRegistry(), selected);
+                    } else if (info->removable) {
+                        info->remove(scene.GetRegistry(), selected);
+                    }
                 }
+                m_pendingComponent.clear();
                 break;
         }
     }

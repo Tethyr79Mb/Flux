@@ -915,6 +915,107 @@ namespace Flux::UI {
         return changed;
     }
 
+    bool Context::DragInt(std::string_view label, std::int32_t& value, float speed, double min, double max) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const WidgetId id = ui.GetId(label);
+        const auto [fieldMin, fieldMax] = ui.LabeledRow(label);
+        double& accumulated = ui.intAccumulators[id];
+        if (ui.activeId != id) {
+            accumulated = static_cast<double>(value);
+        }
+        constexpr double Lowest = std::numeric_limits<std::int32_t>::min();
+        constexpr double Highest = std::numeric_limits<std::int32_t>::max();
+        if (!ui.DragScalar(id, fieldMin, fieldMax, accumulated, speed, std::max(min, Lowest), std::min(max, Highest), 0,
+                           nullptr)) {
+            return false;
+        }
+        const auto rounded = static_cast<std::int32_t>(std::lround(accumulated));
+        if (rounded == value) {
+            return false;
+        }
+        value = rounded;
+        return true;
+    }
+
+    bool Context::Choice(std::string_view label, int& index, std::span<const std::string_view> options) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || options.empty()) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        const auto [min, max] = ui.LabeledRow(label);
+        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        const int count = static_cast<int>(options.size());
+        const int previous = index;
+        if (interaction.clicked) {
+            index = index < 0 || index >= count - 1 ? 0 : index + 1;
+        } else if (interaction.hovered && ui.input->WasMouseButtonPressed(MouseButton::Right)) {
+            index = index <= 0 || index >= count ? count - 1 : index - 1;
+        }
+
+        DrawList& list = ui.panel->content;
+        list.AddRect(min, max, interaction.held && interaction.hovered ? style.frameActive
+                               : interaction.hovered                   ? style.frameHovered
+                                                                       : style.frame);
+        const std::string_view text = index >= 0 && index < count ? options[static_cast<std::size_t>(index)] : "?";
+        const float arrows = count > 1 ? style.fontSize : 0.0f;
+        ui.ClippedText(min + style.framePadding, max.x - arrows - 2.0f, text, style.text);
+        if (count > 1) {
+            // Deux petites flèches : la valeur se fait défiler.
+            const float size = style.fontSize * 0.3f;
+            const float x = max.x - style.framePadding.x - size;
+            const float centerY = (min.y + max.y) * 0.5f;
+            list.AddTriangle({x, centerY - 1.0f}, {x + size * 0.5f, centerY - 1.0f - size * 0.6f}, {x + size, centerY - 1.0f},
+                             style.text);
+            list.AddTriangle({x, centerY + 1.0f}, {x + size, centerY + 1.0f}, {x + size * 0.5f, centerY + 1.0f + size * 0.6f},
+                             style.text);
+        }
+        return index != previous;
+    }
+
+    bool Context::CollapsingHeader(std::string_view label, bool defaultOpen) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        bool& open = ui.treeOpen.try_emplace(id, defaultOpen).first->second;
+        if (ui.nextTreeOpen) {
+            open = *ui.nextTreeOpen;
+            ui.nextTreeOpen.reset();
+        }
+
+        const float height = ui.FrameHeight();
+        const Vector2f min = ui.ItemRect({ui.RowWidth(), height});
+        const Vector2f max = min + Vector2f{ui.RowWidth(), height};
+        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        if (interaction.clicked) {
+            open = !open;
+        }
+
+        DrawList& list = ui.panel->content;
+        list.AddRect(min, max, interaction.hovered ? style.buttonHovered : style.button);
+        const float arrowWidth = style.fontSize;
+        const float size = style.fontSize * 0.45f;
+        const float x = min.x + style.framePadding.x * 0.5f + (arrowWidth - size) * 0.5f;
+        const float centerY = min.y + height * 0.5f;
+        if (open) {
+            list.AddTriangle({x, centerY - size * 0.35f}, {x + size, centerY - size * 0.35f},
+                             {x + size * 0.5f, centerY + size * 0.45f}, style.text);
+        } else {
+            list.AddTriangle({x + size * 0.15f, centerY - size * 0.5f}, {x + size * 0.15f, centerY + size * 0.5f},
+                             {x + size * 0.95f, centerY}, style.text);
+        }
+        ui.ClippedText({min.x + style.framePadding.x * 0.5f + arrowWidth + 2.0f, min.y + style.framePadding.y},
+                       max.x - 2.0f, VisibleLabel(label), style.text);
+        return open;
+    }
+
     Context::TreeNodeResult Context::TreeNode(std::string_view label, bool selected, bool leaf) {
         Impl& ui = *m_impl;
         TreeNodeResult result;

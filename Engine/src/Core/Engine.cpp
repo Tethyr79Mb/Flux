@@ -94,6 +94,7 @@ namespace Flux {
     Engine::Engine(const EngineConfig& config)
         : m_window(std::make_unique<Window>()),
           m_showDebugOverlay(config.showDebugOverlay) {
+        RegisterEngineComponents(m_components);
         if (!m_window->Create(config.title, config.windowSize)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
             m_quitRequested = true;

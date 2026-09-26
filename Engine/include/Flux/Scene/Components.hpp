@@ -9,6 +9,8 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace Flux {
     using Entity = entt::entity;
@@ -59,5 +61,12 @@ namespace Flux {
     {
         MeshType mesh = MeshType::Cube;
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
+    };
+
+    // Composants d'un fichier de scène dont le type n'est pas enregistré (module de jeu absent ou ancien) :
+    // gardés tels quels (clé, texte JSON) et réécrits à la sauvegarde, pour ne jamais perdre de données.
+    struct UnknownComponentsComponent
+    {
+        std::vector<std::pair<std::string, std::string>> components;
     };
 }
