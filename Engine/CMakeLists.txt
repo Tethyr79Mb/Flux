@@ -13,6 +13,11 @@ add_library(FluxEngine SHARED
         src/UI/Font.cpp
         src/UI/Context.cpp
         src/UI/Docking.cpp
+        src/UI/Fields.cpp
+        src/UI/Menus.cpp
+        src/UI/Panel.cpp
+        src/UI/Tree.cpp
+        src/UI/Widgets.cpp
         src/UI/DrawList.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
         src/RHI/Vulkan/VulkanSwapchain.cpp

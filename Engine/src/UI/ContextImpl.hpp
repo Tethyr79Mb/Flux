@@ -1,4 +1,5 @@
-// Détails internes de UI::Context, partagés par ses fichiers sources (Context.cpp, Docking.cpp) : pas d'en-tête public.
+// Détails internes de UI::Context, partagés par ses fichiers sources (Context.cpp, Panel.cpp, Widgets.cpp,
+// Fields.cpp, Menus.cpp, Tree.cpp, Docking.cpp) : pas d'en-tête public.
 #pragma once
 
 #include "Flux/UI/Context.hpp"
@@ -353,45 +354,10 @@ namespace Flux::UI {
             lastSpacing = layout.lastSpacing;
         }
 
-        // Barre de menus ou menu déroulant : devient le panneau en cours, hors de l'ordre des panneaux.
-        // Menu déroulant ou contextuel en position : le panneau en cours est mis de côté jusqu'à EndMenu.
-        void BeginPopup(WidgetId id, Vector2f position) {
-            openMenuSeen = true;
-            menuParent = SaveLayout();
-            Panel& popup = BeginOverlay(id);
-            // Largeur des éléments mesurée à la frame précédente (la première frame, une largeur minimale).
-            popup.width = std::max(180.0f, popup.measuredWidth);
-            popup.position = {std::clamp(position.x, 0.0f, std::max(0.0f, screenSize.x - popup.width)),
-                              std::clamp(position.y, 0.0f, std::max(0.0f, screenSize.y - popup.height))};
-            const float padding = 4.0f;
-            contentMin = popup.position + Vector2f{padding, padding};
-            contentMaxX = popup.position.x + popup.width - padding;
-            cursorY = contentMin.y;
-            lastSpacing = 0.0f;
-            clipMin = popup.position;
-            clipMax = {popup.position.x + popup.width, screenSize.y};
-            RestorePanelClip();
-            menuItemWidth = 0.0f;
-        }
-
-        Panel& BeginOverlay(WidgetId id) {
-            auto& slot = panels[id];
-            if (!slot) {
-                slot = std::make_unique<Panel>(font);
-                slot->overlay = true;
-            }
-            Panel& overlay = *slot;
-            overlay.lastFrame = frame;
-            overlay.chrome.Clear();
-            overlay.content.Clear();
-            overlays.push_back(id);
-            panel = &overlay;
-            panelId = id;
-            idStack.push_back(id);
-            indent = 0.0f;
-            sameLine = false;
-            return overlay;
-        }
+        // Menus (Menus.cpp). Barre de menus ou menu déroulant : devient le panneau en cours, hors de l'ordre des
+        // panneaux. Menu déroulant ou contextuel en position : le panneau en cours est mis de côté jusqu'à EndMenu.
+        void BeginPopup(WidgetId id, Vector2f position);
+        Panel& BeginOverlay(WidgetId id);
 
         void RestorePanelClip() {
             panel->content.SetClipRect(clipMin, clipMax);
@@ -441,169 +407,13 @@ namespace Flux::UI {
             return {{min.x + labelWidth, min.y}, {min.x + RowWidth(), min.y + FrameHeight()}};
         }
 
-        void BeginEdit(WidgetId id, std::string text) {
-            editingId = id;
-            editingSeen = true;
-            editBuffer = std::move(text);
-            caret = editBuffer.size();
-            selectAll = true; // la première frappe remplace tout, comme dans la plupart des éditeurs
-            caretTime = time;
-        }
-
+        // Saisie au clavier et champs numériques (Fields.cpp).
+        void BeginEdit(WidgetId id, std::string text);
         // Frappe dans le champ en cours de saisie ; numeric : seuls les caractères d'un nombre sont acceptés.
-        EditResult ProcessTextEdit(Vector2f min, Vector2f max, bool numeric) {
-            editingSeen = true;
-            bool typed = false;
-            const auto clearIfSelected = [&] {
-                if (selectAll) {
-                    editBuffer.clear();
-                    caret = 0;
-                    selectAll = false;
-                }
-            };
-
-            const std::string_view text = input->GetTextInput();
-            for (std::size_t i = 0; i < text.size();) {
-                const std::size_t next = NextBoundary(text, i);
-                const std::string_view character = text.substr(i, next - i);
-                i = next;
-                if (numeric && (character.size() != 1 || !IsNumberCharacter(character[0]))) {
-                    continue;
-                }
-                clearIfSelected();
-                editBuffer.insert(caret, character);
-                caret += character.size();
-                typed = true;
-            }
-            if (input->WasKeyTyped(Key::Backspace)) {
-                if (selectAll) {
-                    clearIfSelected();
-                } else if (caret > 0) {
-                    const std::size_t previous = PreviousBoundary(editBuffer, caret);
-                    editBuffer.erase(previous, caret - previous);
-                    caret = previous;
-                }
-                typed = true;
-            }
-            if (input->WasKeyTyped(Key::Delete)) {
-                if (selectAll) {
-                    clearIfSelected();
-                } else if (caret < editBuffer.size()) {
-                    editBuffer.erase(caret, NextBoundary(editBuffer, caret) - caret);
-                }
-                typed = true;
-            }
-            if (input->WasKeyTyped(Key::Left)) {
-                caret = selectAll ? 0 : PreviousBoundary(editBuffer, caret);
-                selectAll = false;
-                typed = true;
-            }
-            if (input->WasKeyTyped(Key::Right)) {
-                caret = selectAll ? editBuffer.size() : NextBoundary(editBuffer, caret);
-                selectAll = false;
-                typed = true;
-            }
-            if (input->WasKeyPressed(Key::Home)) {
-                caret = 0;
-                selectAll = false;
-                typed = true;
-            }
-            if (input->WasKeyPressed(Key::End)) {
-                caret = editBuffer.size();
-                selectAll = false;
-                typed = true;
-            }
-            if (typed) {
-                caretTime = time; // le curseur reste visible pendant la frappe
-            }
-
-            if (input->WasKeyPressed(Key::Escape)) {
-                editingId = 0;
-                return EditResult::Cancel;
-            }
-            if (input->WasKeyPressed(Key::Enter) || input->WasKeyPressed(Key::NumpadEnter) || input->WasKeyPressed(Key::Tab)
-                || (mousePressed && !Contains(min, max, mouse))) { // clic ailleurs : on garde ce qui a été tapé
-                editingId = 0;
-                return EditResult::Commit;
-            }
-            return EditResult::Editing;
-        }
-
-        void DrawTextEdit(Vector2f min, Vector2f max) {
-            DrawList& list = panel->content;
-            list.AddRect(min, max, style.frameActive);
-            // Texte décalé vers la gauche quand le curseur sortirait du champ.
-            const float visibleWidth = max.x - min.x - 2.0f * style.framePadding.x;
-            const float caretOffset = MeasureText(std::string_view(editBuffer).substr(0, caret)).x;
-            const float scroll = std::max(0.0f, caretOffset - visibleWidth + 1.0f);
-            const Vector2f textPosition{min.x + style.framePadding.x - scroll, min.y + style.framePadding.y};
-            const float clipLeft = min.x + 1.0f;
-            if (selectAll && !editBuffer.empty()) {
-                const float textWidth = MeasureText(editBuffer).x;
-                list.AddRect({std::max(textPosition.x - 1.0f, clipLeft), min.y + 2.0f},
-                             {std::min(textPosition.x + textWidth + 1.0f, max.x - 1.0f), max.y - 2.0f}, style.selection);
-            }
-            ClippedText(textPosition, max.x - 1.0f, editBuffer, style.text, clipLeft);
-            if (std::fmod(time - caretTime, 1.0) < 0.55) {
-                const float caretX = textPosition.x + caretOffset;
-                list.AddRect({caretX, min.y + 3.0f}, {caretX + 1.0f, max.y - 3.0f}, style.text);
-            }
-        }
-
+        EditResult ProcessTextEdit(Vector2f min, Vector2f max, bool numeric);
+        void DrawTextEdit(Vector2f min, Vector2f max);
         bool DragScalar(WidgetId id, Vector2f min, Vector2f max, double& value, double speed, double low, double high,
-                        int decimals, const LinearColor* axisColor) {
-            bool changed = false;
-            if (editingId == id) {
-                const EditResult result = ProcessTextEdit(min, max, true);
-                if (result == EditResult::Editing) {
-                    DrawTextEdit(min, max);
-                    return false;
-                }
-                if (result == EditResult::Commit) {
-                    if (const std::optional<double> parsed = ParseNumber(editBuffer)) {
-                        const double clamped = std::clamp(*parsed, low, high);
-                        changed = clamped != value;
-                        value = clamped;
-                    }
-                }
-                // Saisie terminée à cette frame : le champ est dessiné normalement.
-            } else {
-                const Interaction interaction = Behavior(id, min, max);
-                if (interaction.held) {
-                    if (!dragging && std::abs(mouse.x - pressPosition.x) > 2.0f) {
-                        dragging = true; // quelques pixels de tolérance pour qu'un clic reste un clic
-                    }
-                    if (dragging && mouseDelta.x != 0.0f) {
-                        double step = speed;
-                        if (input->IsShiftDown()) {
-                            step *= 10.0;
-                        } else if (input->IsControlDown()) {
-                            step *= 0.1;
-                        }
-                        const double dragged = std::clamp(value + static_cast<double>(mouseDelta.x) * step, low, high);
-                        changed = dragged != value;
-                        value = dragged;
-                    }
-                }
-                if (interaction.clicked && !dragging) {
-                    BeginEdit(id, FormatEditable(value, decimals));
-                }
-            }
-
-            const bool active = activeId == id || editingId == id;
-            const bool hovered = activeId == 0 && IsMouseOver(min, max);
-            DrawList& list = panel->content;
-            list.AddRect(min, max, active ? style.frameActive : (hovered ? style.frameHovered : style.frame));
-            if (axisColor) {
-                list.AddRect(min, {min.x + 3.0f, max.y}, *axisColor);
-            }
-            const std::string text = FormatNumber(value, decimals);
-            const float textWidth = MeasureText(text).x;
-            // Centré ; aligné à gauche quand il déborde, pour garder le signe et les premiers chiffres visibles.
-            const float x = std::max(min.x + style.framePadding.x, (min.x + max.x - textWidth) * 0.5f);
-            ClippedText({x, min.y + style.framePadding.y}, max.x - 2.0f, text, style.text);
-            return changed;
-        }
+                        int decimals, const LinearColor* axisColor);
 
         template <typename T>
         bool DragVector3(std::string_view label, Math::Vector3<T>& value, double speed, double low, double high,
