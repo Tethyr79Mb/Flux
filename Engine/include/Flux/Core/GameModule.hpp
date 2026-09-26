@@ -12,7 +12,7 @@ namespace Flux {
     class Engine;
 
     // À incrémenter à chaque changement incompatible du contrat entre moteur et jeu.
-    inline constexpr std::uint32_t GameModuleApiVersion = 3;
+    inline constexpr std::uint32_t GameModuleApiVersion = 4;
 
     // Points d'entrée qu'une DLL de jeu doit exporter (voir FLUX_GAME_MODULE_EXPORT).
     using GameApiVersionFn = std::uint32_t (*)();

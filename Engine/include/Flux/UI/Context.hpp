@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <string>
 #include <string_view>
 
 namespace Flux {
@@ -20,7 +21,7 @@ namespace Flux::UI {
 
     using WidgetId = std::uint64_t;
 
-    struct Style
+    struct FLUX_API Style
     {
         float fontSize = 15.0f;
         float panelPadding = 8.0f;           // marge intérieure des panneaux
@@ -76,10 +77,11 @@ namespace Flux::UI {
         // Vrai pendant la saisie dans un champ : les raccourcis clavier du jeu et de la caméra doivent se taire.
         bool WantsKeyboard() const;
 
-        // Panneau déplaçable (par sa barre de titre) et repliable (clic sur la barre), de hauteur ajustée au contenu.
-        // initialPosition et width ne servent qu'à la première apparition. Retourne false si le panneau est replié :
+        // Panneau déplaçable (par sa barre de titre) et repliable (clic sur la barre).
+        // height 0 : hauteur ajustée au contenu ; sinon hauteur fixe, avec défilement (molette ou barre) si le contenu
+        // dépasse. initialPosition ne sert qu'à la première apparition. Retourne false si le panneau est replié :
         // inutile alors de décrire son contenu. EndPanel doit être appelé dans tous les cas.
-        bool BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width = 320.0f);
+        bool BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width = 320.0f, float height = 0.0f);
         void EndPanel();
 
         // Widgets : seulement entre BeginPanel et EndPanel.
@@ -105,6 +107,28 @@ namespace Flux::UI {
                         double max = NoMax, int decimals = 3);
         bool DragDouble3(std::string_view label, Math::Vector3d& value, double speed = 0.01, double min = NoMin,
                          double max = NoMax, int decimals = 3);
+
+        // Champ texte : cliquer pour éditer, Entrée ou clic ailleurs valide, Échap annule.
+        // Retourne true quand une nouvelle valeur vient d'être validée (pas à chaque touche).
+        bool InputText(std::string_view label, std::string& value);
+
+        // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu.
+        bool ColorEdit3(std::string_view label, Math::LinearColor& color);
+
+        // Entiers 64 bits (secteurs) : même principe que les champs numériques, sans décimales.
+        bool DragInt3(std::string_view label, Math::Vector3i64& value, float speed = 0.2f);
+
+        // Nœud d'arbre (hiérarchie) : flèche pour déplier, clic sur le libellé pour sélectionner,
+        // double-clic pour déplier aussi. Quand open est vrai, décrire les enfants puis appeler TreePop.
+        struct TreeNodeResult
+        {
+            bool open = false;
+            bool clicked = false;
+        };
+        TreeNodeResult TreeNode(std::string_view label, bool selected, bool leaf = false);
+        void TreePop();
+        // Force l'état déplié du prochain TreeNode (pour montrer une sélection faite ailleurs, par exemple).
+        void SetNextTreeNodeOpen(bool open);
 
         void Separator();
         // Le prochain widget se place à droite du précédent au lieu d'en dessous.

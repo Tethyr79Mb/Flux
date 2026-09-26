@@ -3,6 +3,7 @@ add_executable(FluxTests
         src/main.cpp
         src/SceneTests.cpp
         src/SceneSerializerTests.cpp
+        src/UiTests.cpp
 )
 target_link_libraries(FluxTests PRIVATE Flux::Engine)
 flux_set_warnings(FluxTests)

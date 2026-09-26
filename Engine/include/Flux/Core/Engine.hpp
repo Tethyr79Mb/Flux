@@ -48,6 +48,8 @@ namespace Flux {
 
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
+        // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
+        void SetEditorUpdate(UpdateFunction update);
 
         private:
         std::unique_ptr<Window> m_window;
@@ -55,6 +57,7 @@ namespace Flux {
         std::unique_ptr<UI::Context> m_ui;
         Scene m_scene;
         UpdateFunction m_gameUpdate;
+        UpdateFunction m_editorUpdate;
         // Provisoire : la caméra et son pilotage iront dans le viewport de l'éditeur.
         Camera m_camera;
         FlyCameraController m_cameraController;
