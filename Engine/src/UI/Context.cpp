@@ -116,7 +116,7 @@ namespace Flux::UI {
         ui.menuBarHeight = ui.menuBarDrawn ? ui.FrameHeight() : 0.0f;
         ui.menuBarDrawn = false;
 
-        // Ancrage (onglets, séparateurs), panneaux ancrés, panneaux flottants, puis menus.
+        // Ancrage (onglets, séparateurs), panneaux ancrés, panneaux flottants, cibles de dépôt, puis menus.
         if (ui.dockFrame == ui.frame) {
             output.Append(ui.dockChrome);
         }
@@ -128,6 +128,9 @@ namespace Flux::UI {
                     output.Append(panel.content);
                 }
             }
+        }
+        if (ui.dockFrame == ui.frame) {
+            output.Append(ui.dockTargets); // cibles de dépôt, par-dessus le panneau glissé
         }
         for (const WidgetId id : ui.overlays) {
             const Impl::Panel& panel = *ui.panels.at(id);
@@ -159,6 +162,8 @@ namespace Flux::UI {
         }
         Impl::Panel& panel = *slot;
         panel.title = VisibleLabel(title);
+        panel.fullTitle = title;
+        panel.floatingWidth = width;
         panel.fixedHeight = height;
         panel.lastFrame = ui.frame;
         panel.chrome.Clear();
@@ -211,12 +216,14 @@ namespace Flux::UI {
                 }
                 if (ui.dragging) {
                     panel.position = ui.dragOrigin + moved;
+                    ui.draggedPanel = id; // DockSpace montre où il peut s'ancrer
+                    ui.draggedFrame = ui.frame;
                 }
             }
             if (titleBar.clicked && !ui.dragging) {
                 panel.collapsed = !panel.collapsed;
             }
-            if (ui.DockActive()) {
+            if (ui.DockActive() && !(titleBar.held && ui.dragging)) {
                 // Avec un ancrage, les panneaux flottants (ceux du jeu) restent dans la zone centrale, la vue du jeu.
                 const Rect& area = ui.dockCentral;
                 panel.position.x = std::clamp(panel.position.x, area.min.x, std::max(area.min.x, area.max.x - panel.width));
@@ -393,6 +400,30 @@ namespace Flux::UI {
                                                                           : style.button;
         ui.panel->content.AddRect(min, max, color);
         ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
+        return interaction.clicked;
+    }
+
+    bool Context::Tab(std::string_view label, bool selected) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const std::string_view visible = VisibleLabel(label);
+        const Vector2f size{ui.MeasureText(visible).x + 2.0f * style.framePadding.x + 8.0f, ui.FrameHeight()};
+        const Vector2f min = ui.ItemRect(size, 0.0f);
+        const Vector2f max = min + size;
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+
+        // Même allure que les onglets des zones ancrées : fond du contenu et trait d'accent pour l'onglet affiché.
+        if (selected) {
+            ui.panel->content.AddRect(min, max, style.frameActive);
+            ui.panel->content.AddRect(min, {max.x, min.y + 2.0f}, style.checkMark);
+        } else if (interaction.hovered) {
+            ui.panel->content.AddRect(min, max, style.frameHovered);
+        }
+        ui.panel->content.AddText({min.x + style.framePadding.x + 4.0f, min.y + style.framePadding.y}, visible,
+                                  style.fontSize, selected ? style.text : style.textDisabled);
         return interaction.clicked;
     }
 

@@ -65,51 +65,73 @@ namespace Flux::UI {
         return hovered.docked && !hovered.overlay;
     }
 
+    Vector2f Context::Impl::SplitterMin(const DockNode& node) const {
+        const DockNode& first = dockNodes[node.children[0]];
+        return node.horizontal ? Vector2f{first.max.x, node.min.y} : Vector2f{node.min.x, first.max.y};
+    }
+
+    Vector2f Context::Impl::SplitterMax(const DockNode& node) const {
+        const DockNode& first = dockNodes[node.children[0]];
+        return node.horizontal ? Vector2f{first.max.x + SplitterSize, node.max.y}
+                               : Vector2f{node.max.x, first.max.y + SplitterSize};
+    }
+
+    WidgetId Context::Impl::SplitterId(std::size_t index) const {
+        return Hash(Hash(RootId, "#ancrage"), &index, sizeof(index));
+    }
+
     // Séparateurs : glisser pour changer la part de chaque côté.
-    void Context::Impl::DockSplitters() {
+    void Context::Impl::DockSplitterInput() {
         for (std::size_t i = 0; i < dockNodes.size(); ++i) {
             DockNode& node = dockNodes[i];
             if (node.IsLeaf()) {
                 continue;
             }
-            const DockNode& first = dockNodes[node.children[0]];
-            const Vector2f min = node.horizontal ? Vector2f{first.max.x, node.min.y} : Vector2f{node.min.x, first.max.y};
-            const Vector2f max = node.horizontal ? Vector2f{first.max.x + SplitterSize, node.max.y}
-                                                 : Vector2f{node.max.x, first.max.y + SplitterSize};
             // Zone d'accroche un peu plus large que le trait visible.
             const Vector2f grip = node.horizontal ? Vector2f{2.0f, 0.0f} : Vector2f{0.0f, 2.0f};
-            const WidgetId id = Hash(Hash(RootId, "#ancrage"), &i, sizeof(i));
-            const bool hovered = DockMouseFree() && (activeId == 0 || activeId == id)
-                              && Contains(min - grip, max + grip, mouse);
-            if (hovered && mousePressed) {
+            const WidgetId id = SplitterId(i);
+            if (activeId == 0 && mousePressed && DockMouseFree()
+                && Contains(SplitterMin(node) - grip, SplitterMax(node) + grip, mouse)) {
                 activeId = id;
                 pressPosition = mouse;
             }
-            bool held = false;
-            if (activeId == id) {
-                activeSeen = true;
-                if (mouseReleased || !mouseDown) {
-                    activeId = 0;
-                } else {
-                    held = true;
-                    const float start = node.horizontal ? node.min.x : node.min.y;
-                    const float length = node.horizontal ? node.max.x - node.min.x : node.max.y - node.min.y;
-                    const float available = length - SplitterSize;
-                    if (available > 0.0f) {
-                        const float position = (node.horizontal ? mouse.x : mouse.y) - start - SplitterSize * 0.5f;
-                        const float margin = std::min(MinZoneSize, available * 0.5f);
-                        node.ratio = std::clamp(position, margin, available - margin) / available;
-                    }
-                }
+            if (activeId != id) {
+                continue;
             }
+            activeSeen = true;
+            if (mouseReleased || !mouseDown) {
+                activeId = 0;
+                continue;
+            }
+            const float start = node.horizontal ? node.min.x : node.min.y;
+            const float length = node.horizontal ? node.max.x - node.min.x : node.max.y - node.min.y;
+            const float available = length - SplitterSize;
+            if (available > 0.0f) {
+                const float position = (node.horizontal ? mouse.x : mouse.y) - start - SplitterSize * 0.5f;
+                const float margin = std::min(MinZoneSize, available * 0.5f);
+                node.ratio = std::clamp(position, margin, available - margin) / available;
+            }
+        }
+    }
+
+    void Context::Impl::DrawDockSplitters() {
+        for (std::size_t i = 0; i < dockNodes.size(); ++i) {
+            const DockNode& node = dockNodes[i];
+            if (node.IsLeaf()) {
+                continue;
+            }
+            const Vector2f min = SplitterMin(node);
+            const Vector2f max = SplitterMax(node);
+            const Vector2f grip = node.horizontal ? Vector2f{2.0f, 0.0f} : Vector2f{0.0f, 2.0f};
+            const bool held = activeId == SplitterId(i);
+            const bool hovered = activeId == 0 && DockMouseFree() && Contains(min - grip, max + grip, mouse);
             // Toujours peint : sinon la couleur de fond de la scène apparaît entre deux zones.
             dockChrome.AddRect(min, max, held ? style.checkMark : hovered ? style.frameHovered : style.titleBackground);
         }
     }
 
-    // Barre d'onglets d'une zone : les panneaux décrits à la frame précédente (ou déjà dans celle-ci).
-    void Context::Impl::DockTabs(DockNode& node) {
-        const float barHeight = FrameHeight();
+    // Onglets d'une zone : les panneaux décrits à la frame précédente (ou déjà dans celle-ci).
+    std::vector<WidgetId> Context::Impl::VisibleTabs(const DockNode& node) const {
         std::vector<WidgetId> visible;
         for (const std::string& title : node.panels) {
             const WidgetId id = PanelId(title);
@@ -118,40 +140,259 @@ namespace Flux::UI {
                 visible.push_back(id);
             }
         }
-        if (std::ranges::find(visible, node.selected) == visible.end()) {
-            node.selected = visible.empty() ? 0 : visible.front();
-        }
+        return visible;
+    }
 
+    std::vector<Context::Impl::TabRect> Context::Impl::TabRects(const DockNode& node) const {
+        std::vector<TabRect> tabs;
+        float x = node.min.x + 2.0f;
+        for (const WidgetId id : VisibleTabs(node)) {
+            const std::string& title = panels.at(id)->title;
+            const float width = measure.MeasureText(title, style.fontSize).x + 2.0f * style.framePadding.x + 8.0f;
+            tabs.push_back({id, {x, node.min.y + 3.0f}, {x + width, node.min.y + FrameHeight()}});
+            x += width + 2.0f;
+        }
+        return tabs;
+    }
+
+    // Clic : affiche l'onglet ; glissé de quelques pixels : le panneau sort de la zone (retourné pour UndockPanel).
+    WidgetId Context::Impl::DockTabInput(DockNode& node) {
+        const std::vector<TabRect> tabs = TabRects(node);
+        if (std::ranges::find(tabs, node.selected, &TabRect::id) == tabs.end()) {
+            node.selected = tabs.empty() ? 0 : tabs.front().id;
+        }
+        WidgetId undock = 0;
+        for (const TabRect& tab : tabs) {
+            const WidgetId tabId = Hash(tab.id, "#onglet");
+            if (activeId == 0 && mousePressed && DockMouseFree() && Contains(tab.min, tab.max, mouse)
+                && Contains(node.min, node.max, mouse)) {
+                activeId = tabId;
+                pressPosition = mouse;
+                node.selected = tab.id;
+            }
+            if (activeId != tabId) {
+                continue;
+            }
+            activeSeen = true;
+            const Vector2f moved = mouse - pressPosition;
+            if (mouseReleased || !mouseDown) {
+                activeId = 0;
+            } else if (std::abs(moved.x) + std::abs(moved.y) > 6.0f) {
+                undock = tab.id;
+            }
+        }
+        return undock;
+    }
+
+    void Context::Impl::DrawDockTabs(const DockNode& node) {
+        const float barHeight = FrameHeight();
+        const std::vector<TabRect> tabs = TabRects(node);
         dockChrome.AddRect(node.min, {node.max.x, std::min(node.max.y, node.min.y + barHeight)}, style.titleBackground);
-        if (visible.empty()) {
+        if (tabs.empty()) {
             // Zone sans panneau (le jeu ne tourne pas, par exemple) : un fond, pas un trou vers la vue 3D.
             dockChrome.AddRect({node.min.x, node.min.y + barHeight}, node.max, Opaque(style.panelBackground));
         }
-
         dockChrome.SetClipRect(node.min, {node.max.x, node.min.y + barHeight});
-        float x = node.min.x + 2.0f;
-        for (const WidgetId id : visible) {
-            const std::string& title = panels.at(id)->title;
-            const float width = measure.MeasureText(title, style.fontSize).x + 2.0f * style.framePadding.x + 8.0f;
-            const Vector2f min{x, node.min.y + 3.0f};
-            const Vector2f max{x + width, node.min.y + barHeight};
-            const bool hovered = DockMouseFree() && activeId == 0 && Contains(min, max, mouse)
-                              && Contains(node.min, node.max, mouse);
-            if (hovered && mousePressed) {
-                node.selected = id;
-            }
-            const bool selected = node.selected == id;
+        for (const TabRect& tab : tabs) {
+            const Vector2f min = tab.min;
+            const Vector2f max = tab.max;
+            const bool hovered = activeId == 0 && DockMouseFree() && Contains(min, max, mouse);
+            const bool selected = node.selected == tab.id;
             if (selected) {
                 dockChrome.AddRect(min, max, Opaque(style.panelBackground));
                 dockChrome.AddRect(min, {max.x, min.y + 2.0f}, style.checkMark);
             } else if (hovered) {
                 dockChrome.AddRect(min, max, style.frameHovered);
             }
-            dockChrome.AddText({min.x + style.framePadding.x + 4.0f, node.min.y + style.framePadding.y + 1.0f}, title,
-                               style.fontSize, selected ? style.text : style.textDisabled);
-            x = max.x + 2.0f;
+            dockChrome.AddText({min.x + style.framePadding.x + 4.0f, node.min.y + style.framePadding.y + 1.0f},
+                               panels.at(tab.id)->title, style.fontSize, selected ? style.text : style.textDisabled);
         }
         dockChrome.ResetClipRect();
+    }
+
+    // Le panneau devient flottant sous la souris, et continue d'être glissé par sa barre de titre.
+    void Context::Impl::UndockPanel(WidgetId id) {
+        Panel& undocked = *panels.at(id);
+        for (DockNode& node : dockNodes) {
+            std::erase(node.panels, undocked.fullTitle);
+        }
+        undocked.docked = false;
+        undocked.hiddenTab = false;
+        undocked.collapsed = false;
+        undocked.width = undocked.floatingWidth > 0.0f ? undocked.floatingWidth : 320.0f;
+        undocked.position = mouse - Vector2f{std::min(60.0f, undocked.width * 0.3f), FrameHeight() * 0.5f};
+        std::erase(order, id);
+        order.push_back(id); // au premier plan
+
+        activeId = Hash(id, "#titre");
+        activeSeen = true;
+        pressPosition = mouse;
+        dragOrigin = undocked.position;
+        dragging = true;
+        RemoveEmptyZones();
+    }
+
+    // Une zone vidée de ses panneaux disparaît : sa voisine prend toute la place.
+    void Context::Impl::RemoveEmptyZones() {
+        bool removed = true;
+        while (removed) {
+            removed = false;
+            for (std::size_t parent = 0; parent < dockNodes.size() && !removed; ++parent) {
+                if (dockNodes[parent].IsLeaf()) {
+                    continue;
+                }
+                for (int side = 0; side < 2; ++side) {
+                    const DockNode& child = dockNodes[dockNodes[parent].children[side]];
+                    if (child.IsLeaf() && !child.central && child.panels.empty()) {
+                        DockNode sibling = dockNodes[dockNodes[parent].children[1 - side]];
+                        dockNodes[parent] = std::move(sibling);
+                        removed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        CompactDock();
+    }
+
+    // Renumérote les zones depuis la racine : celles retirées par RemoveEmptyZones ne restent pas dans le tableau.
+    void Context::Impl::CompactDock() {
+        std::vector<DockNode> compact;
+        compact.reserve(dockNodes.size());
+        const auto copy = [&](auto&& self, DockId id) -> DockId {
+            const DockId index = static_cast<DockId>(compact.size());
+            compact.push_back(dockNodes[id]);
+            if (!dockNodes[id].IsLeaf()) {
+                const DockId first = self(self, dockNodes[id].children[0]);
+                const DockId second = self(self, dockNodes[id].children[1]);
+                compact[index].children[0] = first;
+                compact[index].children[1] = second;
+            }
+            return index;
+        };
+        if (!dockNodes.empty()) {
+            copy(copy, 0);
+        }
+        dockNodes = std::move(compact);
+        RebuildDockIndex();
+    }
+
+    DockId Context::Impl::DockLeafAt(Vector2f point) const {
+        for (std::size_t i = 0; i < dockNodes.size(); ++i) {
+            const DockNode& node = dockNodes[i];
+            if (node.IsLeaf() && Contains(node.min, node.max, point)) {
+                return static_cast<DockId>(i);
+            }
+        }
+        return -1;
+    }
+
+    // Croix de cibles au milieu de la zone : centre (onglet, sauf zone centrale) et quatre côtés.
+    std::vector<Context::Impl::DropTarget> Context::Impl::DropTargets(DockId zone) const {
+        const DockNode& node = dockNodes[zone];
+        const Vector2f center = (node.min + node.max) * 0.5f;
+        const float size = 30.0f;
+        const float step = size + 6.0f;
+        // La zone centrale (la vue) ne cède qu'un quart de sa place ; une autre zone, la moitié.
+        const float fraction = node.central ? 0.25f : 0.5f;
+        const Vector2f extent = node.max - node.min;
+        std::vector<DropTarget> targets;
+        const auto add = [&](bool isCenter, DockSide side, Vector2f offset, Rect preview) {
+            DropTarget target;
+            target.zone = zone;
+            target.center = isCenter;
+            target.side = side;
+            target.min = center + offset - Vector2f{size * 0.5f, size * 0.5f};
+            target.max = target.min + Vector2f{size, size};
+            target.preview = preview;
+            targets.push_back(target);
+        };
+        if (!node.central) {
+            add(true, DockSide::Left, {0.0f, 0.0f}, {node.min, node.max});
+        }
+        add(false, DockSide::Left, {-step, 0.0f}, {node.min, {node.min.x + extent.x * fraction, node.max.y}});
+        add(false, DockSide::Right, {step, 0.0f}, {{node.max.x - extent.x * fraction, node.min.y}, node.max});
+        add(false, DockSide::Top, {0.0f, -step}, {node.min, {node.max.x, node.min.y + extent.y * fraction}});
+        add(false, DockSide::Bottom, {0.0f, step}, {{node.min.x, node.max.y - extent.y * fraction}, node.max});
+        return targets;
+    }
+
+    // Panneau flottant glissé au-dessus d'une zone : cibles affichées ; relâché sur l'une d'elles, il s'y ancre.
+    void Context::Impl::DockDropInput() {
+        dockTargets.Clear();
+        const bool dragged = draggedPanel != 0 && draggedFrame + 1 >= frame && panels.contains(draggedPanel);
+        if (!dragged) {
+            draggedPanel = 0;
+            return;
+        }
+        const DockId zone = DockLeafAt(mouse);
+        if (zone < 0) {
+            if (!mouseDown) {
+                draggedPanel = 0;
+            }
+            return;
+        }
+        const std::vector<DropTarget> targets = DropTargets(zone);
+        const DropTarget* hovered = nullptr;
+        for (const DropTarget& target : targets) {
+            if (Contains(target.min, target.max, mouse)) {
+                hovered = &target;
+            }
+        }
+
+        if (mouseDown) {
+            if (hovered) {
+                LinearColor preview = style.selection;
+                preview.a = 0.35f;
+                dockTargets.AddRect(hovered->preview.min, hovered->preview.max, preview);
+            }
+            for (const DropTarget& target : targets) {
+                dockTargets.AddRect(target.min, target.max, &target == hovered ? style.buttonHovered : style.button);
+                dockTargets.AddRectOutline(target.min, target.max, style.checkMark);
+            }
+            return;
+        }
+
+        // Relâché.
+        const WidgetId id = draggedPanel;
+        draggedPanel = 0;
+        if (!hovered) {
+            return;
+        }
+        const std::string title = panels.at(id)->fullTitle;
+        DockId destination = hovered->zone;
+        if (!hovered->center) {
+            // Même règle que DropTargets : un quart de la vue, la moitié d'une autre zone.
+            destination = SplitZone(hovered->zone, hovered->side, dockNodes[hovered->zone].central ? 0.25f : 0.5f);
+        }
+        for (DockNode& node : dockNodes) {
+            std::erase(node.panels, title);
+        }
+        dockNodes[destination].panels.push_back(title);
+        dockNodes[destination].selected = id;
+        RebuildDockIndex();
+        activeId = 0;
+        dragging = false;
+    }
+
+    // Découpe une feuille : la nouvelle zone (retournée) du côté demandé, la suivante garde le contenu d'origine.
+    DockId Context::Impl::SplitZone(DockId zone, DockSide side, float fraction) {
+        const DockId sideId = static_cast<DockId>(dockNodes.size());
+        const DockId restId = sideId + 1;
+        DockNode rest = std::move(dockNodes[zone]); // panneaux, onglet affiché, rôle central
+        dockNodes.push_back({});
+        dockNodes.push_back(std::move(rest));
+
+        const bool sideFirst = side == DockSide::Left || side == DockSide::Top;
+        fraction = std::clamp(fraction, 0.05f, 0.95f);
+        DockNode& split = dockNodes[zone];
+        split = {};
+        split.horizontal = side == DockSide::Left || side == DockSide::Right;
+        split.children[0] = sideFirst ? sideId : restId;
+        split.children[1] = sideFirst ? restId : sideId;
+        split.ratio = sideFirst ? fraction : 1.0f - fraction;
+        RebuildDockIndex();
+        return sideId;
     }
 
     DockId Context::ClearDockLayout() {
@@ -167,22 +408,8 @@ namespace Flux::UI {
         if (zone < 0 || zone >= static_cast<DockId>(ui.dockNodes.size()) || !ui.dockNodes[zone].IsLeaf()) {
             return {-1, -1};
         }
-        const DockId sideId = static_cast<DockId>(ui.dockNodes.size());
-        const DockId restId = sideId + 1;
-        DockNode rest = std::move(ui.dockNodes[zone]); // panneaux, onglet affiché, rôle central
-        ui.dockNodes.push_back({});
-        ui.dockNodes.push_back(std::move(rest));
-
-        const bool sideFirst = side == DockSide::Left || side == DockSide::Top;
-        fraction = std::clamp(fraction, 0.05f, 0.95f);
-        DockNode& split = ui.dockNodes[zone];
-        split = {};
-        split.horizontal = side == DockSide::Left || side == DockSide::Right;
-        split.children[0] = sideFirst ? sideId : restId;
-        split.children[1] = sideFirst ? restId : sideId;
-        split.ratio = sideFirst ? fraction : 1.0f - fraction;
-        ui.RebuildDockIndex();
-        return {sideId, restId};
+        const DockId sideId = ui.SplitZone(zone, side, fraction);
+        return {sideId, sideId + 1};
     }
 
     void Context::DockPanel(std::string_view title, DockId zone) {
@@ -208,20 +435,33 @@ namespace Flux::UI {
         ui.dockArea = {min, max};
         ui.dockChrome.Clear();
 
-        // Séparateurs d'après la disposition de cette frame, puis disposition recalculée avec leurs nouvelles parts.
+        // Entrées d'abord (elles peuvent changer l'arbre), sur la disposition de la frame ; dessin ensuite.
         ui.LayoutDock(0, min, max);
-        ui.DockSplitters();
+        ui.DockSplitterInput();
+        ui.DockDropInput();
+        WidgetId undock = 0;
+        for (DockNode& node : ui.dockNodes) {
+            if (node.IsLeaf() && !node.central) {
+                if (const WidgetId id = ui.DockTabInput(node); id != 0) {
+                    undock = id;
+                }
+            }
+        }
+        if (undock != 0) {
+            ui.UndockPanel(undock);
+        }
         ui.LayoutDock(0, min, max);
 
+        ui.DrawDockSplitters();
         ui.dockCentral = {};
-        for (DockNode& node : ui.dockNodes) {
+        for (const DockNode& node : ui.dockNodes) {
             if (!node.IsLeaf()) {
                 continue;
             }
             if (node.central) {
                 ui.dockCentral = {node.min, node.max};
             } else {
-                ui.DockTabs(node);
+                ui.DrawDockTabs(node);
             }
         }
         return ui.dockCentral;

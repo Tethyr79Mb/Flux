@@ -6,11 +6,13 @@
 
 #include <Flux/UI/Context.hpp>
 
+#include "CameraPanel.hpp"
 #include "ContentBrowser.hpp"
 #include "EditorLayout.hpp"
 #include "PlayMode.hpp"
 #include "SceneDocument.hpp"
 #include "SceneEditor.hpp"
+#include "SettingsWindow.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -36,7 +38,9 @@ int main(int argc, char** argv) {
     FluxEditor::ContentBrowser contentBrowser;
     FluxEditor::PlayMode playMode;
     FluxEditor::EditorLayout layout;
-    Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}});
+    FluxEditor::SettingsWindow settings;
+    // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
+    Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .showDebugOverlay = false});
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
@@ -45,7 +49,16 @@ int main(int argc, char** argv) {
         document.HandleShortcuts(e);
         Flux::UI::Context& ui = e.GetUi();
         if (ui.BeginMainMenuBar()) {
-            document.DrawFileMenu(ui, e);
+            if (ui.BeginMenu("Fichier")) {
+                document.DrawSceneMenuItems(ui, e);
+                ui.Separator();
+                if (ui.MenuItem("Paramètres...")) {
+                    settings.Open();
+                }
+                ui.Separator();
+                document.DrawQuitMenuItem(ui, e);
+                ui.EndMenu();
+            }
             layout.DrawWindowMenu(ui);
             playMode.DrawToolbar(ui, e);
             ui.EndMainMenuBar();
@@ -55,6 +68,8 @@ int main(int argc, char** argv) {
         layout.Update(e);
         sceneEditor.Update(e);
         contentBrowser.Update(e, document, deltaSeconds);
+        FluxEditor::DrawCameraPanel(e);
+        settings.Draw(e);
         // Pendant le jeu, les modifications disparaissent à l'arrêt : le fichier n'est pas concerné.
         if (sceneEditor.TakeModified() && !playMode.IsPlaying()) {
             document.MarkModified();

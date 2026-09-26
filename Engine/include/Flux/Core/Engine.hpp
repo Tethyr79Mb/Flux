@@ -25,7 +25,7 @@ namespace Flux {
     struct EngineConfig {
         std::string title = "Flux";
         Math::Vector2i windowSize{1280, 720};
-        bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra
+        bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra (le jeu ; l'éditeur a les siens)
     };
 
     // État du jeu : l'éditeur démarre à l'arrêt (on édite la scène), Game.exe démarre en cours.
@@ -57,6 +57,7 @@ namespace Flux {
         // Interface FluxUI de la frame en cours (panneaux décrits dans la fonction de mise à jour du jeu).
         UI::Context& GetUi();
         Camera& GetCamera() { return m_camera; }
+        FlyCameraController& GetCameraController() { return m_cameraController; }
         Scene& GetScene() { return m_scene; }
         // Types de composants sauvegardés et affichés dans l'inspecteur : ceux du moteur, puis ceux du jeu
         // (à enregistrer dans FluxRegisterGame, avant de charger une scène qui les utilise).

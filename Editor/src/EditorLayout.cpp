@@ -54,8 +54,8 @@ namespace FluxEditor {
         engine.GetRenderer().SetSceneViewport(view.min, view.max);
     }
 
-    // Hiérarchie à gauche, inspecteur à droite, contenu et moteur en bas, la vue 3D au centre.
-    // Les panneaux du jeu (« Démo ») flottent dans la vue, comme dans Game.exe.
+    // Hiérarchie à gauche, inspecteur à droite, contenu et caméra en bas, la vue 3D au centre.
+    // Les panneaux du jeu (« Démo ») et les Paramètres flottent dans la vue.
     void EditorLayout::BuildDefault(UI::Context& ui) {
         const UI::DockId root = ui.ClearDockLayout();
         const auto [left, rest] = ui.SplitDock(root, UI::DockSide::Left, 0.2f);
@@ -64,7 +64,7 @@ namespace FluxEditor {
         ui.DockPanel("Hiérarchie", left);
         ui.DockPanel("Inspecteur", right);
         ui.DockPanel("Contenu", bottom);
-        ui.DockPanel("Moteur", bottom);
+        ui.DockPanel("Caméra", bottom);
     }
 
     std::filesystem::path EditorLayout::FilePath() {

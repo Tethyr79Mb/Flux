@@ -149,6 +149,8 @@ namespace Flux::UI {
             bool collapsed = false;
             bool overlay = false;       // barre de menus ou menu déroulant : au-dessus des panneaux, jamais dans order
             float measuredWidth = 0.0f; // menu déroulant : largeur de ses éléments à la dernière frame
+            std::string fullTitle;      // titre donné à BeginPanel, ##suffixe compris (pour l'ancrer)
+            float floatingWidth = 0.0f; // largeur demandée par BeginPanel : celle reprise en sortant d'une zone
             bool docked = false;        // ancré à la dernière frame (sa zone décide de sa place)
             bool hiddenTab = false;     // ancré derrière un autre onglet : ni dessiné, ni survolé
             std::uint64_t lastFrame = 0;
@@ -164,7 +166,8 @@ namespace Flux::UI {
             bool clicked = false;
         };
 
-        Impl(const Font& uiFont, const Style& uiStyle) : font(uiFont), style(uiStyle), measure(uiFont), dockChrome(uiFont) {}
+        Impl(const Font& uiFont, const Style& uiStyle)
+            : font(uiFont), style(uiStyle), measure(uiFont), dockChrome(uiFont), dockTargets(uiFont) {}
 
         const Font& font;
         Style style;
@@ -226,11 +229,43 @@ namespace Flux::UI {
         Rect dockCentral;
         bool dockHovered = false; // souris sur un séparateur ou une zone vide : ni l'UI ni la vue 3D ne la prennent
         DrawList dockChrome;      // séparateurs, barres d'onglets et zones vides, sous tous les panneaux
+        DrawList dockTargets;     // cibles de dépôt d'un panneau glissé, au-dessus des panneaux
+        WidgetId draggedPanel = 0;        // panneau flottant glissé par sa barre de titre
+        std::uint64_t draggedFrame = 0;   // dernière frame où il l'était
+
+        // Où déposer un panneau glissé : au centre d'une zone (onglet) ou sur un côté (nouvelle zone).
+        struct DropTarget {
+            DockId zone = -1;
+            bool center = false;
+            DockSide side = DockSide::Left;
+            Vector2f min; // carré à survoler
+            Vector2f max;
+            Rect preview; // place que prendrait le panneau
+        };
 
         void RebuildDockIndex();
         void LayoutDock(DockId id, Vector2f min, Vector2f max);
-        void DockSplitters();
-        void DockTabs(DockNode& node);
+        Vector2f SplitterMin(const DockNode& node) const;
+        Vector2f SplitterMax(const DockNode& node) const;
+        WidgetId SplitterId(std::size_t index) const;
+        void DockSplitterInput();
+        void DrawDockSplitters();
+        std::vector<WidgetId> VisibleTabs(const DockNode& node) const;
+        struct TabRect {
+            WidgetId id = 0;
+            Vector2f min;
+            Vector2f max;
+        };
+        std::vector<TabRect> TabRects(const DockNode& node) const;
+        WidgetId DockTabInput(DockNode& node);
+        void DrawDockTabs(const DockNode& node);
+        void UndockPanel(WidgetId id);
+        DockId SplitZone(DockId zone, DockSide side, float fraction);
+        void RemoveEmptyZones();
+        void CompactDock();
+        DockId DockLeafAt(Vector2f point) const;
+        std::vector<DropTarget> DropTargets(DockId zone) const;
+        void DockDropInput();
         bool DockMouseFree() const;
         // DockSpace décrit dans cette frame ou la précédente : les panneaux du jeu, décrits avant ceux de l'éditeur,
         // se placent d'après la disposition de la frame précédente.

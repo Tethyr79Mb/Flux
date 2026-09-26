@@ -40,10 +40,7 @@ namespace FluxEditor {
 
     }
 
-    void SceneDocument::DrawFileMenu(UI::Context& ui, Engine& engine) {
-        if (!ui.BeginMenu("Fichier")) {
-            return;
-        }
+    void SceneDocument::DrawSceneMenuItems(UI::Context& ui, Engine& engine) {
         // Pendant le jeu, la scène est une copie jetable : rien ne s'ouvre ni ne s'enregistre.
         const bool enabled = !m_locked;
         if (ui.MenuItem("Nouvelle scène", "Ctrl+N", enabled)) {
@@ -58,11 +55,12 @@ namespace FluxEditor {
         if (ui.MenuItem("Enregistrer sous...", "Ctrl+Maj+S", enabled)) {
             SaveAs(engine);
         }
-        ui.Separator();
-        if (ui.MenuItem("Quitter", "Alt+F4", enabled) && ConfirmClose(engine)) {
+    }
+
+    void SceneDocument::DrawQuitMenuItem(UI::Context& ui, Engine& engine) {
+        if (ui.MenuItem("Quitter", "Alt+F4", !m_locked) && ConfirmClose(engine)) {
             engine.RequestQuit();
         }
-        ui.EndMenu();
     }
 
     bool SceneDocument::ConfirmClose(Engine& engine) {

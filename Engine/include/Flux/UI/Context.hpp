@@ -105,6 +105,10 @@ namespace Flux::UI {
         void LabelText(std::string_view label, std::string_view text);
         // Vrai au clic (bouton relâché sur le widget).
         bool Button(std::string_view label);
+        // Onglet d'une rangée (les suivants avec SameLine) : l'appelant garde l'onglet affiché.
+        //     if (ui.Tab("Graphiques", tab == 0)) tab = 0;
+        // Vrai au clic.
+        bool Tab(std::string_view label, bool selected);
         // Retourne true quand la valeur vient de changer.
         bool Checkbox(std::string_view label, bool& value);
 

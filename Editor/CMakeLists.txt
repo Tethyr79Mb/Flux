@@ -1,10 +1,12 @@
 add_executable(FluxEditor
         src/main.cpp
+        src/CameraPanel.cpp
         src/ContentBrowser.cpp
         src/EditorLayout.cpp
         src/PlayMode.cpp
         src/SceneDocument.cpp
         src/SceneEditor.cpp
+        src/SettingsWindow.cpp
 )
 target_link_libraries(FluxEditor PRIVATE Flux::Engine)
 

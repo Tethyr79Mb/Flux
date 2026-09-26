@@ -331,12 +331,14 @@ namespace {
         ui.DockPanel("B", right);
 
         UI::Rect view;
+        bool leftOpen = false;
         bool aOpen = false;
         bool bOpen = false;
         bool floatingSeen = false;
         const auto describe = [&](UI::Context& context) {
             view = context.DockSpace({0.0f, 0.0f}, {1280.0f, 720.0f});
-            if (context.BeginPanel("Gauche", {0.0f, 0.0f})) {
+            leftOpen = context.BeginPanel("Gauche", {0.0f, 0.0f});
+            if (leftOpen) {
                 context.Text("contenu");
             }
             context.EndPanel();
@@ -357,7 +359,7 @@ namespace {
         CHECK(!ui.WantsMouse()); // milieu de la vue : à la caméra
 
         // Le panneau flottant est dans la vue, et la souris y est prise par l'UI.
-        harness.Move({view.min.x + 20.0f, 5.0f}, describe);
+        harness.Move({view.min.x + 20.0f, 20.0f}, describe); // demandé en (10, 10) : x ramené dans la vue
         CHECK(ui.WantsMouse());
 
         // Zone ancrée, séparateur : l'UI prend la souris.
@@ -400,6 +402,46 @@ namespace {
         CHECK(!ui.LoadDockLayout(R"({"format":"flux.dock","version":1,"root":{"panels":[]}})")); // pas de zone centrale
         harness.Move({640.0f, 400.0f}, describe);
         CHECK(view.min.x == before.min.x);
+
+        // Glisser-déposer : bouton enfoncé, déplacement en quelques frames, relâché.
+        const auto drag = [&](Vector2f from, Vector2f to) {
+            harness.Move(from, describe);
+            harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
+            for (int step = 1; step <= 4; ++step) {
+                const float t = static_cast<float>(step) / 4.0f;
+                harness.Move(from + (to - from) * t, describe);
+            }
+            harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, false); }, describe);
+            harness.Move(to, describe);
+        };
+        const auto center = [](const UI::Rect& rect) { return (rect.min + rect.max) * 0.5f; };
+
+        // L'onglet B sort de sa zone et reste flottant (relâché loin des cibles) ; A reprend la zone.
+        const float rightMin = view.max.x + 4.0f;
+        const Vector2f tabB{rightMin + 2.0f + tabAWidth + 2.0f + 10.0f, tabY};
+        drag(tabB, {view.min.x + 40.0f, view.max.y - 40.0f});
+        CHECK(aOpen && bOpen);
+        CHECK(view.max.x == rightMin - 4.0f); // la zone de droite reste, avec A
+
+        // A, dernier onglet de sa zone, glissé au centre de la zone de gauche : la zone de droite disparaît,
+        // et A devient l'onglet affiché à gauche.
+        const Vector2f rightTabA{rightMin + 10.0f, tabY};
+        const Vector2f leftCenter{(0.0f + (view.min.x - 4.0f)) * 0.5f, 360.0f};
+        drag(rightTabA, leftCenter);
+        CHECK(view.max.x == 1280.0f);
+        CHECK(aOpen && !leftOpen);
+
+        // A, glissé sur la cible gauche de la vue : une nouvelle zone d'un quart de la vue.
+        const float viewWidth = view.max.x - view.min.x;
+        const Vector2f viewLeftTarget = center(view) - Vector2f{36.0f, 0.0f};
+        drag({10.0f + ui.MeasureText("Gauche").x + 24.0f, tabY}, viewLeftTarget); // second onglet de gauche : A
+        CHECK(aOpen && leftOpen);
+        CHECK(std::abs((view.max.x - view.min.x) - (viewWidth - 4.0f) * 0.75f) <= 2.0f);
+
+        // La disposition modifiée s'enregistre et se recharge.
+        const std::string moved = ui.SaveDockLayout();
+        CHECK(ui.LoadDockLayout(moved));
+        CHECK(moved.find("\"A\"") != std::string::npos);
         return true;
     }
 
