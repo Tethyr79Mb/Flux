@@ -148,6 +148,13 @@ namespace Flux::UI {
         bool BeginContextMenu(std::string_view id = "contexte");
         // Vrai au clic, qui referme le menu. shortcut n'est qu'affiché : le raccourci reste à gérer par l'appelant.
         bool MenuItem(std::string_view label, std::string_view shortcut = {}, bool enabled = true);
+        // Bouton dans la barre de menus (après les menus, ou à la position donnée par SetMenuBarCursor) ;
+        // highlighted : dessiné comme enfoncé (mode en cours). Vrai au clic.
+        bool MenuBarButton(std::string_view label, bool highlighted = false);
+        // Position horizontale du prochain élément de la barre (pour centrer des boutons, par exemple).
+        void SetMenuBarCursor(float x);
+        // Taille d'un texte dans la police de l'interface.
+        Math::Vector2f MeasureText(std::string_view text) const;
         // Hauteur de la barre de menus (0 sans barre) : la place à laisser en haut de l'écran.
         float GetMenuBarHeight() const;
 

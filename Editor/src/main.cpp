@@ -4,7 +4,10 @@
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 
+#include <Flux/UI/Context.hpp>
+
 #include "ContentBrowser.hpp"
+#include "PlayMode.hpp"
 #include "SceneDocument.hpp"
 #include "SceneEditor.hpp"
 
@@ -30,16 +33,34 @@ int main(int argc, char** argv) {
     FluxEditor::SceneDocument document;
     FluxEditor::SceneEditor sceneEditor;
     FluxEditor::ContentBrowser contentBrowser;
+    FluxEditor::PlayMode playMode;
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}});
+    engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
-        document.Update(e); // barre de menus d'abord : « Ouvrir » remplace la scène avant que les panneaux la décrivent
+        // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
+        playMode.HandleShortcuts(e);
+        document.SetLocked(playMode.IsPlaying());
+        document.HandleShortcuts(e);
+        Flux::UI::Context& ui = e.GetUi();
+        if (ui.BeginMainMenuBar()) {
+            document.DrawFileMenu(ui, e);
+            playMode.DrawToolbar(ui, e);
+            ui.EndMainMenuBar();
+        }
+        document.SetLocked(playMode.IsPlaying());
+
         sceneEditor.Update(e);
         contentBrowser.Update(e, document, deltaSeconds);
-        if (sceneEditor.TakeModified()) {
+        // Pendant le jeu, les modifications disparaissent à l'arrêt : le fichier n'est pas concerné.
+        if (sceneEditor.TakeModified() && !playMode.IsPlaying()) {
             document.MarkModified();
         }
+        document.UpdateTitle(e);
     });
-    engine.SetCloseRequestHandler([&](Flux::Engine& e) { return document.ConfirmClose(e); });
+    engine.SetCloseRequestHandler([&](Flux::Engine& e) {
+        playMode.Stop(e); // la question porte sur la scène éditée, pas sur sa copie en jeu
+        return document.ConfirmClose(e);
+    });
 
     // Sans projet, l'éditeur démarre quand même, sur une scène vide : on peut toujours ouvrir un fichier.
     auto project = Flux::ProjectFile::Load(ProjectPath(argc, argv));
