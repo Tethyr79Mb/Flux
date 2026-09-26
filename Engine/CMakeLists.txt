@@ -8,6 +8,7 @@ add_library(FluxEngine SHARED
         src/Scene/Camera.cpp
         src/Scene/ComponentRegistry.cpp
         src/Scene/FlyCameraController.cpp
+        src/Scene/Picking.cpp
         src/Scene/Scene.cpp
         src/Scene/SceneSerializer.cpp
         src/UI/Font.cpp

@@ -3,6 +3,7 @@
 #include "Flux/UI/Font.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Flux::UI {
     namespace {
@@ -103,6 +104,51 @@ namespace Flux::UI {
         }
         const Math::Vector2f uv = m_font->GetSolidUV();
         m_vertices.insert(m_vertices.end(), {Vertex{a, uv, color}, Vertex{b, uv, color}, Vertex{c, uv, color}});
+    }
+
+    void DrawList::AddLine(Math::Vector2f a, Math::Vector2f b, Math::LinearColor color, float thickness) {
+        if (m_clipping) {
+            // Découpe du segment (Liang-Barsky) au rectangle réduit de la demi-épaisseur : ses deux triangles
+            // restent alors entiers dans le rectangle et ne sont pas écartés par AddTriangle.
+            const float margin = thickness * 0.5f + 0.01f;
+            const Math::Vector2f min{m_clipMin.x + margin, m_clipMin.y + margin};
+            const Math::Vector2f max{m_clipMax.x - margin, m_clipMax.y - margin};
+            const Math::Vector2f d = b - a;
+            float t0 = 0.0f;
+            float t1 = 1.0f;
+            // Pour chaque bord : p * t <= q à l'intérieur.
+            const float p[4] = {-d.x, d.x, -d.y, d.y};
+            const float q[4] = {a.x - min.x, max.x - a.x, a.y - min.y, max.y - a.y};
+            for (int i = 0; i < 4; ++i) {
+                if (p[i] == 0.0f) {
+                    if (q[i] < 0.0f) {
+                        return; // parallèle au bord et dehors
+                    }
+                } else {
+                    const float t = q[i] / p[i];
+                    if (p[i] < 0.0f) {
+                        t0 = std::max(t0, t);
+                    } else {
+                        t1 = std::min(t1, t);
+                    }
+                }
+            }
+            if (t0 > t1) {
+                return;
+            }
+            const Math::Vector2f start = a;
+            a = start + d * t0;
+            b = start + d * t1;
+        }
+        const Math::Vector2f direction = b - a;
+        const float length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+        if (length <= 0.0f) {
+            return;
+        }
+        const float half = thickness * 0.5f / length;
+        const Math::Vector2f normal{-direction.y * half, direction.x * half};
+        AddTriangle(a + normal, b + normal, b - normal, color);
+        AddTriangle(a + normal, b - normal, a - normal, color);
     }
 
     void DrawList::Append(const DrawList& other) {

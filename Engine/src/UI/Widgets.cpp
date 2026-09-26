@@ -98,8 +98,8 @@ namespace Flux::UI {
         if (value) {
             const float thickness = std::max(2.0f, box * 0.12f);
             const auto at = [&](float x, float y) { return min + Vector2f{box * x, box * y}; };
-            AddLine(list, at(0.22f, 0.52f), at(0.42f, 0.72f), thickness, style.checkMark);
-            AddLine(list, at(0.40f, 0.72f), at(0.78f, 0.30f), thickness, style.checkMark);
+            list.AddLine(at(0.22f, 0.52f), at(0.42f, 0.72f), style.checkMark, thickness);
+            list.AddLine(at(0.40f, 0.72f), at(0.78f, 0.30f), style.checkMark, thickness);
         }
         if (!visible.empty()) {
             list.AddText({min.x + box + 2.0f * style.itemSpacing, min.y + style.framePadding.y}, visible, style.fontSize,

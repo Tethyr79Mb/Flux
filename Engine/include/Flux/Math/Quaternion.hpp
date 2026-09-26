@@ -29,6 +29,9 @@ namespace Flux::Math {
 
         constexpr bool operator==(const Quaternionf&) const = default;
 
+        // Rotation inverse (pour un quaternion unitaire).
+        constexpr Quaternionf Conjugate() const { return {-x, -y, -z, w}; }
+
         // Composition : (a * b) applique b puis a.
         constexpr Quaternionf operator*(const Quaternionf& b) const {
             return {

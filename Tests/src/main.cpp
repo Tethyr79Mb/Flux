@@ -11,6 +11,7 @@ int main() {
         {"sauvegarde de scène", RunSceneSerializerTests},
         {"interface (FluxUI) et rotations", RunUiTests},
         {"projet", RunProjectTests},
+        {"sélection dans la vue 3D", RunPickingTests},
     };
 
     int failures = 0;
