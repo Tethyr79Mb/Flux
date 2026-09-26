@@ -212,7 +212,7 @@ namespace Flux {
         return *this;
     }
 
-    bool Window::Create(std::string_view title, Math::Vector2i size) {
+    bool Window::Create(std::string_view title, Math::Vector2i size, bool maximized) {
         if (!m_impl || m_impl->hwnd || !Impl::RegisterWindowClass()) {
             return false;
         }
@@ -228,7 +228,8 @@ namespace Flux {
         }
 
         Impl::RegisterRawMouse(m_impl->hwnd);
-        ShowWindow(m_impl->hwnd, SW_SHOW);
+        // Maximisée : WM_SIZE donne la taille réelle ; size ne sert qu'une fois la fenêtre restaurée.
+        ShowWindow(m_impl->hwnd, maximized ? SW_SHOWMAXIMIZED : SW_SHOW);
         return true;
     }
 
