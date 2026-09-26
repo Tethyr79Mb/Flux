@@ -18,12 +18,15 @@ namespace Flux::Vk {
         Swapchain& operator=(const Swapchain&) = delete;
 
         // (Re)crée la swapchain ; le GPU ne doit plus utiliser l'ancienne (WaitIdle avant).
-        bool Recreate(VkExtent2D extent);
+        // vsync false : MAILBOX (sans déchirure) si le pilote l'offre, sinon IMMEDIATE, sinon FIFO.
+        bool Recreate(VkExtent2D extent, bool vsync);
 
         bool IsValid() const { return m_swapchain.swapchain != VK_NULL_HANDLE; }
         VkSwapchainKHR GetHandle() const { return m_swapchain.swapchain; }
         VkExtent2D GetExtent() const { return m_swapchain.extent; }
         VkFormat GetFormat() const { return m_swapchain.image_format; }
+        // Mode réellement obtenu, qui peut différer du mode demandé.
+        VkPresentModeKHR GetPresentMode() const { return m_swapchain.present_mode; }
 
         uint32_t GetImageCount() const { return static_cast<uint32_t>(m_images.size()); }
         VkImage GetImage(uint32_t index) const { return m_images[index]; }

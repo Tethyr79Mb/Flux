@@ -21,6 +21,7 @@ namespace Flux {
         Input input;
         bool focused = false;
         bool cursorLocked = false;
+        wchar_t highSurrogate = 0; // WM_CHAR livre les caractères hors BMP en deux moitiés UTF-16
 
         void LockCursor(bool locked) {
             if (locked == cursorLocked) {
@@ -69,6 +70,36 @@ namespace Flux {
             input.SetKey(scancode, down);
         }
 
+        void OnMouseButton(MouseButton button, bool down) {
+            input.SetMouseButton(button, down);
+            // Capture tant qu'un bouton est enfoncé : on reçoit le relâchement même hors de la fenêtre
+            // (glisser une valeur ou un panneau jusqu'au bord de l'écran).
+            const bool anyDown = input.IsMouseButtonDown(MouseButton::Left) || input.IsMouseButtonDown(MouseButton::Right)
+                              || input.IsMouseButtonDown(MouseButton::Middle);
+            if (anyDown && GetCapture() != hwnd) {
+                SetCapture(hwnd);
+            } else if (!anyDown && GetCapture() == hwnd) {
+                ReleaseCapture();
+            }
+        }
+
+        void OnChar(WPARAM wParam) {
+            const auto unit = static_cast<wchar_t>(wParam);
+            if (unit >= 0xD800 && unit <= 0xDBFF) {
+                highSurrogate = unit;
+                return;
+            }
+            if (unit >= 0xDC00 && unit <= 0xDFFF) {
+                if (highSurrogate != 0) {
+                    input.AddCharacter(0x10000 + ((static_cast<char32_t>(highSurrogate) - 0xD800) << 10) + (unit - 0xDC00));
+                }
+                highSurrogate = 0;
+                return;
+            }
+            highSurrogate = 0;
+            input.AddCharacter(unit);
+        }
+
         static bool RegisterWindowClass() {
             static const bool registered = [] {
                 WNDCLASSEXW windowClass{};
@@ -114,17 +145,33 @@ namespace Flux {
                     case WM_SYSKEYUP:
                         impl->OnKey(lParam, false);
                         break;
+                    case WM_CHAR:
+                        impl->OnChar(wParam);
+                        return 0;
+                    case WM_MOUSEMOVE:
+                        // Coordonnées signées : négatives hors de la fenêtre pendant une capture.
+                        impl->input.SetMousePosition({static_cast<float>(static_cast<short>(LOWORD(lParam))),
+                                                      static_cast<float>(static_cast<short>(HIWORD(lParam)))});
+                        return 0;
                     case WM_LBUTTONDOWN:
                     case WM_LBUTTONUP:
-                        impl->input.SetMouseButton(MouseButton::Left, message == WM_LBUTTONDOWN);
+                        impl->OnMouseButton(MouseButton::Left, message == WM_LBUTTONDOWN);
                         return 0;
                     case WM_RBUTTONDOWN:
                     case WM_RBUTTONUP:
-                        impl->input.SetMouseButton(MouseButton::Right, message == WM_RBUTTONDOWN);
+                        impl->OnMouseButton(MouseButton::Right, message == WM_RBUTTONDOWN);
                         return 0;
                     case WM_MBUTTONDOWN:
                     case WM_MBUTTONUP:
-                        impl->input.SetMouseButton(MouseButton::Middle, message == WM_MBUTTONDOWN);
+                        impl->OnMouseButton(MouseButton::Middle, message == WM_MBUTTONDOWN);
+                        return 0;
+                    case WM_CAPTURECHANGED:
+                        // Capture perdue (Alt+Tab, boîte de dialogue) : les relâchements ne viendront pas.
+                        if (reinterpret_cast<HWND>(lParam) != hwnd) {
+                            impl->input.SetMouseButton(MouseButton::Left, false);
+                            impl->input.SetMouseButton(MouseButton::Right, false);
+                            impl->input.SetMouseButton(MouseButton::Middle, false);
+                        }
                         return 0;
                     case WM_MOUSEWHEEL:
                         impl->input.AddWheelDelta(static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA);

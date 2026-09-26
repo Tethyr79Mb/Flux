@@ -23,10 +23,14 @@ namespace Flux {
         explicit FlyCameraController(const FlyCameraSettings& settings = {});
 
         // deltaSeconds : durée de la frame précédente.
-        void Update(Camera& camera, Window& window, double deltaSeconds);
+        // mouseAvailable false (souris sur l'interface) : un clic droit ne prend pas les commandes.
+        // keyboardAvailable false (saisie dans un champ) : les touches ne déplacent pas la caméra.
+        void Update(Camera& camera, Window& window, double deltaSeconds, bool mouseAvailable = true,
+                    bool keyboardAvailable = true);
 
         bool IsActive() const { return m_active; }
         double GetSpeed() const { return m_speed; }
+        void SetSpeed(double speed);
 
         private:
         FlyCameraSettings m_settings;
