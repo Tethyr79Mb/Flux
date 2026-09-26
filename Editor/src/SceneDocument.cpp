@@ -82,17 +82,27 @@ namespace FluxEditor {
         if (!ConfirmDiscard(engine)) {
             return;
         }
-        const auto path = Platform::ShowOpenFileDialog(engine.GetWindow(), "Ouvrir une scène", SceneFileType, DialogDirectory());
-        if (!path) {
-            return;
+        if (const auto path = Platform::ShowOpenFileDialog(engine.GetWindow(), "Ouvrir une scène", SceneFileType,
+                                                           DialogDirectory(engine))) {
+            Load(engine, *path);
         }
+    }
+
+    void SceneDocument::OpenFile(Engine& engine, const std::filesystem::path& path) {
+        if (ConfirmDiscard(engine)) {
+            Load(engine, path);
+        }
+    }
+
+    bool SceneDocument::Load(Engine& engine, const std::filesystem::path& path) {
         // En cas d'erreur, la scène en cours reste intacte (le chargement vérifie tout avant de la remplacer).
-        if (auto loaded = SceneSerializer::Load(engine.GetScene(), engine.GetComponents(), *path); !loaded) {
+        if (auto loaded = SceneSerializer::Load(engine.GetScene(), engine.GetComponents(), path); !loaded) {
             Platform::ShowError(engine.GetWindow(), "Ouvrir une scène", loaded.error());
-            return;
+            return false;
         }
-        m_path = *path;
+        m_path = path;
         m_modified = false;
+        return true;
     }
 
     bool SceneDocument::Save(Engine& engine) {
@@ -102,7 +112,7 @@ namespace FluxEditor {
     bool SceneDocument::SaveAs(Engine& engine) {
         const std::string name = m_path.empty() ? "Nouvelle.scene.json" : FileName(m_path);
         const auto path = Platform::ShowSaveFileDialog(engine.GetWindow(), "Enregistrer la scène", SceneFileType,
-                                                       DialogDirectory(), name);
+                                                       DialogDirectory(engine), name);
         return path && WriteTo(engine, *path);
     }
 
@@ -138,6 +148,9 @@ namespace FluxEditor {
         if (m_modified) {
             title += " *";
         }
+        if (const Project* project = engine.GetProject()) {
+            title += " - " + project->name;
+        }
         title += " - Flux Editor";
         if (title != m_title) {
             engine.GetWindow().SetTitle(title);
@@ -145,15 +158,15 @@ namespace FluxEditor {
         }
     }
 
-    std::filesystem::path SceneDocument::DialogDirectory() const {
+    std::filesystem::path SceneDocument::DialogDirectory(const Engine& engine) const {
         if (!m_path.empty()) {
             return m_path.parent_path();
         }
-        // Les scènes du dépôt plutôt que leur copie dans bin/, écrasée à chaque build qui touche aux assets.
+        // Les scènes du projet, sinon celles copiées à côté de l'exe.
         std::error_code error;
-        const std::filesystem::path sources(u8"" FLUX_SOURCE_SCENES_DIR);
-        if (std::filesystem::is_directory(sources, error)) {
-            return sources;
+        if (const Project* project = engine.GetProject();
+            project && std::filesystem::is_directory(project->assetsDirectory / "scenes", error)) {
+            return project->assetsDirectory / "scenes";
         }
         return Platform::GetExecutableDirectory() / "assets" / "scenes";
     }

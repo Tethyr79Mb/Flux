@@ -154,8 +154,10 @@ namespace Flux::UI {
         {
             bool open = false;
             bool clicked = false;
+            bool doubleClicked = false;
         };
-        TreeNodeResult TreeNode(std::string_view label, bool selected, bool leaf = false);
+        // defaultOpen ne sert qu'à la première apparition du nœud.
+        TreeNodeResult TreeNode(std::string_view label, bool selected, bool leaf = false, bool defaultOpen = false);
         void TreePop();
         // Force l'état déplié du prochain TreeNode (pour montrer une sélection faite ailleurs, par exemple).
         void SetNextTreeNodeOpen(bool open);

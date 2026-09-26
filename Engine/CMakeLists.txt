@@ -1,6 +1,7 @@
 add_library(FluxEngine SHARED
         src/Core/Engine.cpp
         src/Core/GameModule.cpp
+        src/Core/Project.cpp
         src/Core/Uuid.cpp
         src/Platform/Input.cpp
         src/Renderer/Renderer.cpp

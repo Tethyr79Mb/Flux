@@ -14,3 +14,4 @@
 bool RunSceneTests();
 bool RunSceneSerializerTests();
 bool RunUiTests();
+bool RunProjectTests();

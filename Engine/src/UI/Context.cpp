@@ -1264,7 +1264,7 @@ namespace Flux::UI {
         return open;
     }
 
-    Context::TreeNodeResult Context::TreeNode(std::string_view label, bool selected, bool leaf) {
+    Context::TreeNodeResult Context::TreeNode(std::string_view label, bool selected, bool leaf, bool defaultOpen) {
         Impl& ui = *m_impl;
         TreeNodeResult result;
         if (!ui.panel) {
@@ -1272,7 +1272,7 @@ namespace Flux::UI {
         }
         const Style& style = ui.style;
         const WidgetId id = ui.GetId(label);
-        bool& open = ui.treeOpen[id];
+        bool& open = ui.treeOpen.try_emplace(id, defaultOpen).first->second;
         if (ui.nextTreeOpen) {
             open = *ui.nextTreeOpen;
             ui.nextTreeOpen.reset();
@@ -1290,6 +1290,7 @@ namespace Flux::UI {
             } else {
                 result.clicked = true;
                 const bool doubleClick = ui.lastClickId == id && ui.time - ui.lastClickTime < 0.35;
+                result.doubleClicked = doubleClick;
                 if (doubleClick && !leaf) {
                     open = !open;
                 }

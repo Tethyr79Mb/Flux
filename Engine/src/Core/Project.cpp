@@ -1,0 +1,83 @@
+#include "Flux/Core/Project.hpp"
+
+#include <nlohmann/json.hpp>
+
+#include <format>
+#include <fstream>
+#include <sstream>
+
+namespace Flux::ProjectFile {
+    namespace {
+        constexpr std::string_view FormatName = "flux.project";
+
+        // path::string() et le constructeur depuis std::string passent par la page de code Windows : UTF-8 explicite.
+        std::filesystem::path FromUtf8(const std::string& text) {
+            return std::filesystem::path(std::u8string(text.begin(), text.end()));
+        }
+
+        std::string ToUtf8(const std::filesystem::path& path) {
+            const std::u8string text = path.u8string();
+            return {text.begin(), text.end()};
+        }
+
+        // Chemin relatif qui reste sous le dossier du projet : ni absolu, ni « .. ».
+        std::expected<std::filesystem::path, std::string> ReadRelative(const nlohmann::json& document, const char* key) {
+            const auto found = document.find(key);
+            if (found == document.end() || !found->is_string() || found->get<std::string>().empty()) {
+                return std::unexpected(std::format("« {} » doit être un chemin (texte)", key));
+            }
+            const std::filesystem::path path = FromUtf8(found->get<std::string>()).lexically_normal();
+            if (path.has_root_path() || (!path.empty() && *path.begin() == "..")) {
+                return std::unexpected(std::format("« {} » doit être relatif au projet, sans « .. »", key));
+            }
+            return path;
+        }
+    }
+
+    std::expected<Project, std::string> Parse(std::string_view json, const std::filesystem::path& file) {
+        try {
+            const nlohmann::json document = nlohmann::json::parse(json);
+            if (!document.is_object() || document.value("format", std::string{}) != FormatName) {
+                return std::unexpected(std::format("ce n'est pas un projet Flux (« format » différent de « {} »)", FormatName));
+            }
+            const int version = document.at("version").get<int>();
+            if (version < 1 || version > FormatVersion) {
+                return std::unexpected(std::format("version {} non gérée (ce moteur lit jusqu'à la version {})", version, FormatVersion));
+            }
+            auto assets = ReadRelative(document, "assets");
+            if (!assets) {
+                return std::unexpected(assets.error());
+            }
+            auto startupScene = ReadRelative(document, "startupScene");
+            if (!startupScene) {
+                return std::unexpected(startupScene.error());
+            }
+
+            Project project;
+            project.name = document.value("name", std::string{});
+            if (project.name.empty()) {
+                project.name = ToUtf8(file.stem());
+            }
+            project.file = std::filesystem::absolute(file).lexically_normal();
+            project.assetsDirectory = (project.file.parent_path() / *assets).lexically_normal();
+            project.startupScene = *startupScene;
+            return project;
+        } catch (const std::exception& error) {
+            return std::unexpected(std::string(error.what()));
+        }
+    }
+
+    std::expected<Project, std::string> Load(const std::filesystem::path& file) {
+        std::ifstream stream(file, std::ios::binary);
+        if (!stream) {
+            return std::unexpected("projet introuvable : " + ToUtf8(file));
+        }
+        std::ostringstream text;
+        text << stream.rdbuf();
+        if (auto project = Parse(text.str(), file); !project) {
+            return std::unexpected(ToUtf8(file.filename()) + " : " + project.error());
+        } else {
+            return project;
+        }
+    }
+}
