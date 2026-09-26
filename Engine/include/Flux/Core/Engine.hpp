@@ -29,6 +29,8 @@ namespace Flux {
         public:
         // Appelée à chaque frame, après le déplacement de la caméra et avant le rendu ; peut décrire des panneaux FluxUI.
         using UpdateFunction = std::function<void(Engine& engine, double deltaSeconds)>;
+        // Demande de fermeture de la fenêtre : retourne false pour l'annuler (modifications à enregistrer...).
+        using CloseFunction = std::function<bool(Engine& engine)>;
 
         explicit Engine(const EngineConfig& config = {});
         ~Engine();
@@ -54,6 +56,8 @@ namespace Flux {
         void SetGameUpdate(UpdateFunction update);
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
         void SetEditorUpdate(UpdateFunction update);
+        // Appelée quand l'utilisateur ferme la fenêtre ; sans fonction, la fenêtre se ferme toujours.
+        void SetCloseRequestHandler(CloseFunction handler);
 
         private:
         std::unique_ptr<Window> m_window;
@@ -63,6 +67,7 @@ namespace Flux {
         Scene m_scene;
         UpdateFunction m_gameUpdate;
         UpdateFunction m_editorUpdate;
+        CloseFunction m_closeRequestHandler;
         // Provisoire : la caméra et son pilotage iront dans le viewport de l'éditeur.
         Camera m_camera;
         FlyCameraController m_cameraController;

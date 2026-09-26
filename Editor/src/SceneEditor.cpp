@@ -52,8 +52,9 @@ namespace FluxEditor {
     void SceneEditor::DrawHierarchy(Engine& engine, Scene& scene) {
         UI::Context& ui = engine.GetUi();
         const float screenHeight = static_cast<float>(engine.GetWindow().GetSize().y);
-        // Sous le panneau « Moteur », jusqu'en bas de la fenêtre.
-        if (ui.BeginPanel("Hiérarchie", {8.0f, 350.0f}, 300.0f, std::max(160.0f, screenHeight - 358.0f))) {
+        // Sous le panneau « Moteur » (lui-même sous la barre de menus), jusqu'en bas de la fenêtre.
+        const float top = 350.0f + ui.GetMenuBarHeight();
+        if (ui.BeginPanel("Hiérarchie", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
             if (ui.Button("Nouveau cube")) {
                 m_pendingAction = Action::CreateRoot;
             }
@@ -113,7 +114,7 @@ namespace FluxEditor {
                 }
                 ui.PushId(id.value); // un champ en cours de saisie ne passe pas d'une entité à l'autre
 
-                ui.InputText("Nom", scene.Get<NameComponent>(selected).name);
+                m_modified |= ui.InputText("Nom", scene.Get<NameComponent>(selected).name);
                 ui.LabelText("Identifiant", id.ToString());
                 const Entity parent = scene.GetParent(selected);
                 ui.LabelText("Parent", parent == NullEntity ? "(racine)" : DisplayName(scene, parent));
@@ -122,6 +123,7 @@ namespace FluxEditor {
                     const auto* sectorComponent = scene.TryGet<SectorComponent>(selected);
                     Math::Vector3i64 sector = sectorComponent ? sectorComponent->sector : Math::Vector3i64{};
                     if (ui.DragInt3("Secteur", sector)) {
+                        m_modified = true;
                         if (sector == Math::Vector3i64{}) {
                             scene.Remove<SectorComponent>(selected);
                         } else {
@@ -167,7 +169,7 @@ namespace FluxEditor {
         ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
         if (ui.CollapsingHeader(info.label)) {
             for (const FieldInfo& field : info.fields) {
-                DrawField(ui, info, field, field.access(component));
+                m_modified |= DrawField(ui, info, field, field.access(component));
             }
             if (info.removable && ui.Button("Retirer")) {
                 m_pendingAction = Action::RemoveComponent;
@@ -177,29 +179,23 @@ namespace FluxEditor {
         ui.PopId();
     }
 
-    void SceneEditor::DrawField(UI::Context& ui, const ComponentInfo& info, const FieldInfo& field, void* value) {
+    bool SceneEditor::DrawField(UI::Context& ui, const ComponentInfo& info, const FieldInfo& field, void* value) {
         const FieldOptions& o = field.options;
         const std::string label = field.label + "##" + field.key;
         switch (field.type) {
             case FieldType::Bool:
-                ui.Checkbox(label, *static_cast<bool*>(value));
-                break;
+                return ui.Checkbox(label, *static_cast<bool*>(value));
             case FieldType::Int:
-                ui.DragInt(label, *static_cast<std::int32_t*>(value), static_cast<float>(o.speed), o.min, o.max);
-                break;
+                return ui.DragInt(label, *static_cast<std::int32_t*>(value), static_cast<float>(o.speed), o.min, o.max);
             case FieldType::Float:
-                ui.DragFloat(label, *static_cast<float*>(value), static_cast<float>(o.speed), o.min, o.max, o.decimals);
-                break;
+                return ui.DragFloat(label, *static_cast<float*>(value), static_cast<float>(o.speed), o.min, o.max, o.decimals);
             case FieldType::Double:
-                ui.DragDouble(label, *static_cast<double*>(value), o.speed, o.min, o.max, o.decimals);
-                break;
+                return ui.DragDouble(label, *static_cast<double*>(value), o.speed, o.min, o.max, o.decimals);
             case FieldType::Vector3f:
-                ui.DragFloat3(label, *static_cast<Math::Vector3f*>(value), static_cast<float>(o.speed), o.min, o.max,
-                              o.decimals);
-                break;
+                return ui.DragFloat3(label, *static_cast<Math::Vector3f*>(value), static_cast<float>(o.speed), o.min, o.max,
+                                     o.decimals);
             case FieldType::Vector3d:
-                ui.DragDouble3(label, *static_cast<Math::Vector3d*>(value), o.speed, o.min, o.max, o.decimals);
-                break;
+                return ui.DragDouble3(label, *static_cast<Math::Vector3d*>(value), o.speed, o.min, o.max, o.decimals);
             case FieldType::Quaternion: {
                 auto& rotation = *static_cast<Math::Quaternionf*>(value);
                 auto [cached, created] = m_angles.try_emplace(info.key + '/' + field.key);
@@ -209,19 +205,18 @@ namespace FluxEditor {
                     // Affichés par axe : x = tangage, y = lacet, z = roulis.
                     angles.degrees = Math::Vector3f{radians.y, radians.x, radians.z} * DegreesPerRadian;
                 }
-                if (ui.DragFloat3(label, angles.degrees, 0.5f, UI::Context::NoMin, UI::Context::NoMax, 1)) {
+                const bool changed = ui.DragFloat3(label, angles.degrees, 0.5f, UI::Context::NoMin, UI::Context::NoMax, 1);
+                if (changed) {
                     const Math::Vector3f radians = angles.degrees * (1.0f / DegreesPerRadian);
                     rotation = Math::Normalize(Math::Quaternionf::FromYawPitchRoll(radians.y, radians.x, radians.z));
                 }
                 angles.source = rotation;
-                break;
+                return changed;
             }
             case FieldType::Color:
-                ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
-                break;
+                return ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
             case FieldType::String:
-                ui.InputText(label, *static_cast<std::string*>(value));
-                break;
+                return ui.InputText(label, *static_cast<std::string*>(value));
             case FieldType::Enum: {
                 std::vector<std::string_view> names;
                 int index = -1;
@@ -232,16 +227,21 @@ namespace FluxEditor {
                     }
                     names.push_back(option.label);
                 }
-                if (ui.Choice(label, index, names)) {
-                    field.setEnum(value, field.enumOptions[static_cast<std::size_t>(index)].value);
+                if (!ui.Choice(label, index, names)) {
+                    return false;
                 }
-                break;
+                field.setEnum(value, field.enumOptions[static_cast<std::size_t>(index)].value);
+                return true;
             }
         }
+        return false;
     }
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected) {
         const Action action = std::exchange(m_pendingAction, Action::None);
+        if (action == Action::CreateRoot || (action != Action::None && selected != NullEntity)) {
+            m_modified = true;
+        }
         switch (action) {
             case Action::None:
                 break;

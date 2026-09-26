@@ -127,6 +127,9 @@ namespace Flux {
         Clock::time_point previousFrame = Clock::now();
         while (!m_quitRequested && m_window->IsOpen()) {
             m_window->HandleEvents();
+            if (m_window->ConsumeCloseRequest() && (!m_closeRequestHandler || m_closeRequestHandler(*this))) {
+                break;
+            }
             if (!m_window->IsOpen()) {
                 break;
             }
@@ -171,6 +174,10 @@ namespace Flux {
 
     void Engine::SetEditorUpdate(UpdateFunction update) {
         m_editorUpdate = std::move(update);
+    }
+
+    void Engine::SetCloseRequestHandler(CloseFunction handler) {
+        m_closeRequestHandler = std::move(handler);
     }
 
     void Engine::RequestQuit() {

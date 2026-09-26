@@ -80,6 +80,12 @@ namespace Flux::SceneSerializer {
             return result;
         }
 
+        // path::string() convertit dans la page de code Windows : les accents des messages seraient perdus.
+        std::string Utf8(const std::filesystem::path& path) {
+            const std::u8string text = path.u8string();
+            return {text.begin(), text.end()};
+        }
+
         // Clés d'entité gérées ici ; toutes les autres sont des composants.
         bool IsEntityKey(std::string_view key) {
             return key == "id" || key == "name" || key == "parent" || key == "sector";
@@ -375,13 +381,13 @@ namespace Flux::SceneSerializer {
         {
             std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
             if (!file.write(text.data(), static_cast<std::streamsize>(text.size()))) {
-                return std::unexpected("écriture impossible : " + temporary.string());
+                return std::unexpected("écriture impossible : " + Utf8(temporary));
             }
         }
         std::error_code error;
         std::filesystem::rename(temporary, path, error);
         if (error) {
-            return std::unexpected(std::format("remplacement de {} : {}", path.string(), error.message()));
+            return std::unexpected(std::format("remplacement de {} : {}", Utf8(path), error.message()));
         }
         return {};
     }
@@ -390,12 +396,12 @@ namespace Flux::SceneSerializer {
                                           const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
-            return std::unexpected("scène introuvable : " + path.string());
+            return std::unexpected("scène introuvable : " + Utf8(path));
         }
         std::ostringstream text;
         text << file.rdbuf();
         if (auto loaded = LoadFromString(scene, components, text.str()); !loaded) {
-            return std::unexpected(path.filename().string() + " : " + loaded.error());
+            return std::unexpected(Utf8(path.filename()) + " : " + loaded.error());
         }
         return {};
     }

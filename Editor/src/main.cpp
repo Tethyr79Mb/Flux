@@ -2,15 +2,24 @@
 #include <Flux/Core/GameModule.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 
+#include "SceneDocument.hpp"
 #include "SceneEditor.hpp"
 
 #include <cstdio>
 
 int main() {
-    // Déclaré avant le moteur, donc détruit après lui : la fonction d'outils qui le référence ne lui survit pas.
+    // Déclarés avant le moteur, donc détruits après lui : les fonctions qui les référencent ne leur survivent pas.
+    FluxEditor::SceneDocument document;
     FluxEditor::SceneEditor sceneEditor;
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}});
-    engine.SetEditorUpdate([&](Flux::Engine& e, double) { sceneEditor.Update(e); });
+    engine.SetEditorUpdate([&](Flux::Engine& e, double) {
+        document.Update(e); // barre de menus d'abord : « Ouvrir » remplace la scène avant que les panneaux la décrivent
+        sceneEditor.Update(e);
+        if (sceneEditor.TakeModified()) {
+            document.MarkModified();
+        }
+    });
+    engine.SetCloseRequestHandler([&](Flux::Engine& e) { return document.ConfirmClose(e); });
 
     // Copie fantôme : la DLL d'origine reste libre pour être recompilée pendant que l'éditeur tourne.
     auto game = Flux::GameModule::Load(Flux::Platform::GetExecutableDirectory() / FLUX_GAME_MODULE_FILE,
