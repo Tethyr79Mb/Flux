@@ -92,6 +92,15 @@ namespace Flux::UI {
     }
 
     void DrawList::AddTriangle(Math::Vector2f a, Math::Vector2f b, Math::Vector2f c, Math::LinearColor color) {
+        if (m_clipping) {
+            // Pas de découpe partielle : un triangle (flèche, coche) est entier ou absent.
+            const auto inside = [&](Math::Vector2f p) {
+                return p.x >= m_clipMin.x && p.x <= m_clipMax.x && p.y >= m_clipMin.y && p.y <= m_clipMax.y;
+            };
+            if (!inside(a) || !inside(b) || !inside(c)) {
+                return;
+            }
+        }
         const Math::Vector2f uv = m_font->GetSolidUV();
         m_vertices.insert(m_vertices.end(), {Vertex{a, uv, color}, Vertex{b, uv, color}, Vertex{c, uv, color}});
     }

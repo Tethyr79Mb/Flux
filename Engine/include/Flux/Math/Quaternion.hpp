@@ -59,6 +59,21 @@ namespace Flux::Math {
         }
     };
 
+    // Inverse de FromYawPitchRoll : angles (lacet, tangage, roulis) en radians, tangage dans [-pi/2, pi/2].
+    // À la verticale (tangage de ±90°), lacet et roulis se confondent : le roulis est alors mis à 0.
+    inline Vector3f ToYawPitchRoll(const Quaternionf& q) {
+        // Colonnes de la matrice de rotation : R = Ry(lacet) * Rx(tangage) * Rz(roulis).
+        const Vector3f column0 = q.Rotate(Vector3f{1, 0, 0});
+        const Vector3f column1 = q.Rotate(Vector3f{0, 1, 0});
+        const Vector3f column2 = q.Rotate(Vector3f{0, 0, 1});
+        const float sinPitch = -column2.y; // R[1][2] = -sin(tangage)
+        if (std::abs(sinPitch) > 0.99999f) {
+            const float pitch = std::copysign(1.5707963f, sinPitch);
+            return {std::atan2(-column0.z, column0.x), pitch, 0.0f};
+        }
+        return {std::atan2(column2.x, column2.z), std::asin(sinPitch), std::atan2(column0.y, column1.y)};
+    }
+
     inline Quaternionf Normalize(const Quaternionf& q) {
         const float length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
         return length > 0.0f ? Quaternionf{q.x / length, q.y / length, q.z / length, q.w / length} : Quaternionf{};

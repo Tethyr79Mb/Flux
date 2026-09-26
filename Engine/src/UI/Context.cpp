@@ -81,6 +81,27 @@ namespace Flux::UI {
             return text;
         }
 
+        // Déplacements du curseur de saisie d'un caractère UTF-8 entier (é tient sur deux octets).
+        std::size_t PreviousBoundary(std::string_view text, std::size_t index) {
+            while (index > 0) {
+                --index;
+                if ((static_cast<unsigned char>(text[index]) & 0xC0) != 0x80) {
+                    break;
+                }
+            }
+            return index;
+        }
+
+        std::size_t NextBoundary(std::string_view text, std::size_t index) {
+            if (index < text.size()) {
+                ++index;
+            }
+            while (index < text.size() && (static_cast<unsigned char>(text[index]) & 0xC0) == 0x80) {
+                ++index;
+            }
+            return index;
+        }
+
         std::optional<double> ParseNumber(std::string text) {
             std::ranges::replace(text, ',', '.'); // clavier français
             if (text.starts_with('+')) {
@@ -128,11 +149,16 @@ namespace Flux::UI {
             Vector2f position;
             float width = 0.0f;
             float height = 0.0f;      // hauteur de la dernière frame : sert au survol de la frame suivante
+            float fixedHeight = 0.0f; // 0 : ajustée au contenu
+            float scrollY = 0.0f;
+            float contentHeight = 0.0f; // hauteur totale du contenu à la dernière frame, défilement compris
             bool collapsed = false;
             std::uint64_t lastFrame = 0;
             DrawList chrome;          // fond, bordure et barre de titre, dessinés sous le contenu
             DrawList content;
         };
+
+        enum class EditResult { Editing, Commit, Cancel };
 
         struct Interaction {
             bool hovered = false;
@@ -151,6 +177,7 @@ namespace Flux::UI {
         Vector2f mouse;
         Vector2f previousMouse;
         Vector2f mouseDelta;
+        float wheel = 0.0f;
         bool mouseEnabled = false;
         bool mousePressed = false;
         bool mouseReleased = false;
@@ -169,9 +196,13 @@ namespace Flux::UI {
         Vector2f contentMin;
         float contentMaxX = 0.0f;
         float cursorY = 0.0f;
+        float indent = 0.0f;       // décalage des nœuds d'arbre dépliés
+        Vector2f clipMin;          // zone visible du contenu (sous la barre de titre, au-dessus du bas défilé)
+        Vector2f clipMax;
         Vector2f lastItemMin;
         Vector2f lastItemMax;
         bool sameLine = false;
+        float lastSpacing = 0.0f;
 
         std::vector<WidgetId> idStack{RootId};
 
@@ -182,7 +213,15 @@ namespace Flux::UI {
         Vector2f dragOrigin;
         bool dragging = false;
 
-        // Champ numérique en cours de saisie.
+        // Arbres : nœuds dépliés, et dernier clic pour reconnaître un double-clic.
+        std::unordered_map<WidgetId, bool> treeOpen;
+        std::optional<bool> nextTreeOpen;
+        // Valeurs en cours de glissement des champs entiers (DragInt3).
+        std::unordered_map<WidgetId, double> intAccumulators;
+        WidgetId lastClickId = 0;
+        double lastClickTime = -1.0;
+
+        // Champ (numérique ou texte) en cours de saisie.
         WidgetId editingId = 0;
         bool editingSeen = false;
         std::string editBuffer;
@@ -192,7 +231,8 @@ namespace Flux::UI {
 
         float LineHeight() const { return font.GetLineHeight() * style.fontSize; }
         float FrameHeight() const { return LineHeight() + 2.0f * style.framePadding.y; }
-        float RowWidth() const { return contentMaxX - contentMin.x; }
+        float RowWidth() const { return contentMaxX - (contentMin.x + indent); }
+        float TreeRowHeight() const { return LineHeight() + 4.0f; }
 
         WidgetId GetId(std::string_view label) const { return Hash(idStack.back(), label); }
 
@@ -200,35 +240,39 @@ namespace Flux::UI {
             return panel->content.MeasureText(text, style.fontSize);
         }
 
-        // Réserve la place d'un widget et retourne son coin haut-gauche.
-        Vector2f ItemRect(Vector2f size) {
+        // Réserve la place d'un widget et retourne son coin haut-gauche. spacing < 0 : espacement du style.
+        Vector2f ItemRect(Vector2f size, float spacing = -1.0f) {
             const Vector2f min = sameLine ? Vector2f{lastItemMax.x + style.itemSpacing, lastItemMin.y}
-                                          : Vector2f{contentMin.x, cursorY};
+                                          : Vector2f{contentMin.x + indent, cursorY};
             sameLine = false;
             lastItemMin = min;
             lastItemMax = min + size;
-            cursorY = std::max(cursorY, lastItemMax.y + style.itemSpacing);
+            lastSpacing = spacing < 0.0f ? style.itemSpacing : spacing;
+            cursorY = std::max(cursorY, lastItemMax.y + lastSpacing);
             return min;
         }
 
         void RestorePanelClip() {
-            panel->content.SetClipRect({panel->position.x + 1.0f, panel->position.y + FrameHeight()},
-                                       {panel->position.x + panel->width - 1.0f, screenSize.y + 1.0e4f});
+            panel->content.SetClipRect(clipMin, clipMax);
         }
 
-        // Texte découpé à [min.x, maxX] en plus du panneau.
-        void ClippedText(Vector2f topLeft, float maxX, std::string_view text, LinearColor color) {
-            const float panelMaxX = panel->position.x + panel->width - 1.0f;
-            panel->content.SetClipRect({std::max(topLeft.x, panel->position.x + 1.0f), panel->position.y + FrameHeight()},
-                                       {std::min(maxX, panelMaxX), screenSize.y + 1.0e4f});
+        // Texte découpé à [topLeft.x, maxX] en plus de la zone visible du panneau.
+        void ClippedText(Vector2f topLeft, float maxX, std::string_view text, LinearColor color, float minX = -1.0e9f) {
+            panel->content.SetClipRect({std::max(std::max(topLeft.x, minX), clipMin.x), clipMin.y},
+                                       {std::min(maxX, clipMax.x), clipMax.y});
             panel->content.AddText(topLeft, text, style.fontSize, color);
             RestorePanelClip();
         }
 
+        // Souris au-dessus de ce rectangle, dans la partie visible du panneau survolé.
+        bool IsMouseOver(Vector2f min, Vector2f max) const {
+            return mouseEnabled && panel && !panel->collapsed && panelId == hoveredPanel && Contains(min, max, mouse)
+                && Contains(clipMin, clipMax, mouse);
+        }
+
         Interaction Behavior(WidgetId id, Vector2f min, Vector2f max) {
             Interaction result;
-            const bool inside = mouseEnabled && panel && !panel->collapsed && panelId == hoveredPanel
-                             && Contains(min, max, mouse);
+            const bool inside = IsMouseOver(min, max);
             result.hovered = inside && (activeId == 0 || activeId == id);
             if (result.hovered && mousePressed) {
                 activeId = id;
@@ -256,12 +300,19 @@ namespace Flux::UI {
             return {{min.x + labelWidth, min.y}, {min.x + RowWidth(), min.y + FrameHeight()}};
         }
 
-        void EditField(Vector2f min, Vector2f max, double& value, double low, double high, bool& changed) {
+        void BeginEdit(WidgetId id, std::string text) {
+            editingId = id;
             editingSeen = true;
-            bool commit = false;
-            bool cancel = false;
-            bool typed = false;
+            editBuffer = std::move(text);
+            caret = editBuffer.size();
+            selectAll = true; // la première frappe remplace tout, comme dans la plupart des éditeurs
+            caretTime = time;
+        }
 
+        // Frappe dans le champ en cours de saisie ; numeric : seuls les caractères d'un nombre sont acceptés.
+        EditResult ProcessTextEdit(Vector2f min, Vector2f max, bool numeric) {
+            editingSeen = true;
+            bool typed = false;
             const auto clearIfSelected = [&] {
                 if (selectAll) {
                     editBuffer.clear();
@@ -269,18 +320,27 @@ namespace Flux::UI {
                     selectAll = false;
                 }
             };
-            for (const char c : input->GetTextInput()) {
-                if (IsNumberCharacter(c)) {
-                    clearIfSelected();
-                    editBuffer.insert(caret++, 1, c);
-                    typed = true;
+
+            const std::string_view text = input->GetTextInput();
+            for (std::size_t i = 0; i < text.size();) {
+                const std::size_t next = NextBoundary(text, i);
+                const std::string_view character = text.substr(i, next - i);
+                i = next;
+                if (numeric && (character.size() != 1 || !IsNumberCharacter(character[0]))) {
+                    continue;
                 }
+                clearIfSelected();
+                editBuffer.insert(caret, character);
+                caret += character.size();
+                typed = true;
             }
             if (input->WasKeyTyped(Key::Backspace)) {
                 if (selectAll) {
                     clearIfSelected();
                 } else if (caret > 0) {
-                    editBuffer.erase(--caret, 1);
+                    const std::size_t previous = PreviousBoundary(editBuffer, caret);
+                    editBuffer.erase(previous, caret - previous);
+                    caret = previous;
                 }
                 typed = true;
             }
@@ -288,17 +348,17 @@ namespace Flux::UI {
                 if (selectAll) {
                     clearIfSelected();
                 } else if (caret < editBuffer.size()) {
-                    editBuffer.erase(caret, 1);
+                    editBuffer.erase(caret, NextBoundary(editBuffer, caret) - caret);
                 }
                 typed = true;
             }
             if (input->WasKeyTyped(Key::Left)) {
-                caret = selectAll ? 0 : caret - (caret > 0 ? 1 : 0);
+                caret = selectAll ? 0 : PreviousBoundary(editBuffer, caret);
                 selectAll = false;
                 typed = true;
             }
             if (input->WasKeyTyped(Key::Right)) {
-                caret = selectAll ? editBuffer.size() : std::min(caret + 1, editBuffer.size());
+                caret = selectAll ? editBuffer.size() : NextBoundary(editBuffer, caret);
                 selectAll = false;
                 typed = true;
             }
@@ -315,41 +375,37 @@ namespace Flux::UI {
             if (typed) {
                 caretTime = time; // le curseur reste visible pendant la frappe
             }
-            if (input->WasKeyPressed(Key::Enter) || input->WasKeyPressed(Key::NumpadEnter) || input->WasKeyPressed(Key::Tab)) {
-                commit = true;
-            }
+
             if (input->WasKeyPressed(Key::Escape)) {
-                cancel = true;
-            }
-            if (mousePressed && !Contains(min, max, mouse)) {
-                commit = true; // clic ailleurs : on garde ce qui a été tapé
-            }
-
-            if (commit) {
-                if (const std::optional<double> parsed = ParseNumber(editBuffer)) {
-                    const double clamped = std::clamp(*parsed, low, high);
-                    changed = clamped != value;
-                    value = clamped;
-                }
                 editingId = 0;
-            } else if (cancel) {
-                editingId = 0;
+                return EditResult::Cancel;
             }
+            if (input->WasKeyPressed(Key::Enter) || input->WasKeyPressed(Key::NumpadEnter) || input->WasKeyPressed(Key::Tab)
+                || (mousePressed && !Contains(min, max, mouse))) { // clic ailleurs : on garde ce qui a été tapé
+                editingId = 0;
+                return EditResult::Commit;
+            }
+            return EditResult::Editing;
+        }
 
+        void DrawTextEdit(Vector2f min, Vector2f max) {
             DrawList& list = panel->content;
             list.AddRect(min, max, style.frameActive);
-            const Vector2f textPosition{min.x + style.framePadding.x, min.y + style.framePadding.y};
-            if (editingId != 0) {
+            // Texte décalé vers la gauche quand le curseur sortirait du champ.
+            const float visibleWidth = max.x - min.x - 2.0f * style.framePadding.x;
+            const float caretOffset = MeasureText(std::string_view(editBuffer).substr(0, caret)).x;
+            const float scroll = std::max(0.0f, caretOffset - visibleWidth + 1.0f);
+            const Vector2f textPosition{min.x + style.framePadding.x - scroll, min.y + style.framePadding.y};
+            const float clipLeft = min.x + 1.0f;
+            if (selectAll && !editBuffer.empty()) {
                 const float textWidth = MeasureText(editBuffer).x;
-                if (selectAll && !editBuffer.empty()) {
-                    list.AddRect({textPosition.x - 1.0f, min.y + 2.0f}, {textPosition.x + textWidth + 1.0f, max.y - 2.0f},
-                                 style.selection);
-                }
-                ClippedText(textPosition, max.x - 1.0f, editBuffer, style.text);
-                if (std::fmod(time - caretTime, 1.0) < 0.55) {
-                    const float caretX = textPosition.x + MeasureText(std::string_view(editBuffer).substr(0, caret)).x;
-                    list.AddRect({caretX, min.y + 3.0f}, {caretX + 1.0f, max.y - 3.0f}, style.text);
-                }
+                list.AddRect({std::max(textPosition.x - 1.0f, clipLeft), min.y + 2.0f},
+                             {std::min(textPosition.x + textWidth + 1.0f, max.x - 1.0f), max.y - 2.0f}, style.selection);
+            }
+            ClippedText(textPosition, max.x - 1.0f, editBuffer, style.text, clipLeft);
+            if (std::fmod(time - caretTime, 1.0) < 0.55) {
+                const float caretX = textPosition.x + caretOffset;
+                list.AddRect({caretX, min.y + 3.0f}, {caretX + 1.0f, max.y - 3.0f}, style.text);
             }
         }
 
@@ -357,11 +413,19 @@ namespace Flux::UI {
                         int decimals, const LinearColor* axisColor) {
             bool changed = false;
             if (editingId == id) {
-                EditField(min, max, value, low, high, changed);
-                if (editingId == id) {
-                    return changed;
+                const EditResult result = ProcessTextEdit(min, max, true);
+                if (result == EditResult::Editing) {
+                    DrawTextEdit(min, max);
+                    return false;
                 }
-                // Saisie terminée à cette frame : on dessine le champ normalement par-dessus.
+                if (result == EditResult::Commit) {
+                    if (const std::optional<double> parsed = ParseNumber(editBuffer)) {
+                        const double clamped = std::clamp(*parsed, low, high);
+                        changed = clamped != value;
+                        value = clamped;
+                    }
+                }
+                // Saisie terminée à cette frame : le champ est dessiné normalement.
             } else {
                 const Interaction interaction = Behavior(id, min, max);
                 if (interaction.held) {
@@ -381,17 +445,12 @@ namespace Flux::UI {
                     }
                 }
                 if (interaction.clicked && !dragging) {
-                    editingId = id;
-                    editingSeen = true;
-                    editBuffer = FormatEditable(value, decimals);
-                    caret = editBuffer.size();
-                    selectAll = true;
-                    caretTime = time;
+                    BeginEdit(id, FormatEditable(value, decimals));
                 }
             }
 
             const bool active = activeId == id || editingId == id;
-            const bool hovered = mouseEnabled && panelId == hoveredPanel && activeId == 0 && Contains(min, max, mouse);
+            const bool hovered = activeId == 0 && IsMouseOver(min, max);
             DrawList& list = panel->content;
             list.AddRect(min, max, active ? style.frameActive : (hovered ? style.frameHovered : style.frame));
             if (axisColor) {
@@ -448,6 +507,7 @@ namespace Flux::UI {
         ui.mousePressed = mouseEnabled && input.WasMouseButtonPressed(MouseButton::Left);
         ui.mouseReleased = input.WasMouseButtonReleased(MouseButton::Left);
         ui.mouseDown = input.IsMouseButtonDown(MouseButton::Left);
+        ui.wheel = mouseEnabled ? input.GetWheelDelta() : 0.0f;
 
         // Survol d'après les rectangles de la frame précédente, du panneau le plus proche au plus lointain.
         ui.hoveredPanel = 0;
@@ -500,7 +560,7 @@ namespace Flux::UI {
         return m_impl->editingId != 0;
     }
 
-    bool Context::BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width) {
+    bool Context::BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width, float height) {
         Impl& ui = *m_impl;
         const WidgetId id = ui.GetId(title);
         auto& slot = ui.panels[id];
@@ -512,6 +572,7 @@ namespace Flux::UI {
         }
         Impl::Panel& panel = *slot;
         panel.title = VisibleLabel(title);
+        panel.fixedHeight = height;
         panel.lastFrame = ui.frame;
         panel.chrome.Clear();
         panel.content.Clear();
@@ -524,7 +585,9 @@ namespace Flux::UI {
         const WidgetId titleId = Hash(id, "#titre");
         const bool wasCollapsed = panel.collapsed;
         panel.collapsed = false; // Behavior ignore les panneaux repliés ; la barre de titre, elle, reste active
-        const Impl::Interaction titleBar = ui.Behavior(titleId, panel.position, panel.position + Vector2f{panel.width, titleHeight});
+        ui.clipMin = panel.position;
+        ui.clipMax = panel.position + Vector2f{panel.width, titleHeight};
+        const Impl::Interaction titleBar = ui.Behavior(titleId, ui.clipMin, ui.clipMax);
         panel.collapsed = wasCollapsed;
         if (ui.activeId == titleId && ui.mousePressed) {
             ui.dragOrigin = panel.position;
@@ -545,10 +608,28 @@ namespace Flux::UI {
         panel.position.x = std::clamp(panel.position.x, 40.0f - panel.width, std::max(0.0f, ui.screenSize.x - 40.0f));
         panel.position.y = std::clamp(panel.position.y, 0.0f, std::max(0.0f, ui.screenSize.y - titleHeight));
 
-        ui.contentMin = {panel.position.x + ui.style.panelPadding, panel.position.y + titleHeight + ui.style.panelPadding};
-        ui.contentMaxX = panel.position.x + panel.width - ui.style.panelPadding;
+        // Défilement (hauteur fixe seulement) : molette au-dessus du panneau, bornée par le contenu de la frame précédente.
+        const float viewTop = panel.position.y + titleHeight;
+        const float viewHeight = std::max(0.0f, panel.fixedHeight - titleHeight);
+        const bool scrollable = panel.fixedHeight > 0.0f;
+        const float maxScroll = scrollable ? std::max(0.0f, panel.contentHeight - viewHeight) : 0.0f;
+        if (scrollable && ui.panelId == ui.hoveredPanel && ui.wheel != 0.0f) {
+            panel.scrollY -= ui.wheel * 3.0f * (ui.TreeRowHeight() + 1.0f); // trois lignes d'arbre par cran
+        }
+        panel.scrollY = std::clamp(panel.scrollY, 0.0f, maxScroll);
+
+        const float scrollbarWidth = maxScroll > 0.0f ? 10.0f : 0.0f;
+        ui.contentMin = {panel.position.x + ui.style.panelPadding, viewTop + ui.style.panelPadding - panel.scrollY};
+        ui.contentMaxX = panel.position.x + panel.width - ui.style.panelPadding - scrollbarWidth;
         ui.cursorY = ui.contentMin.y;
+        ui.indent = 0.0f;
         ui.sameLine = false;
+        ui.clipMin = {panel.position.x + 1.0f, viewTop};
+        ui.clipMax = {panel.position.x + panel.width - 1.0f - scrollbarWidth,
+                      scrollable ? panel.position.y + panel.fixedHeight - 1.0f : ui.screenSize.y + 1.0e4f};
+        if (panel.collapsed) {
+            ui.clipMax = ui.clipMin; // rien du contenu ne doit apparaître, même si l'appelant le décrit quand même
+        }
         ui.RestorePanelClip();
         return !panel.collapsed;
     }
@@ -561,16 +642,25 @@ namespace Flux::UI {
         Impl::Panel& panel = *ui.panel;
         const Style& style = ui.style;
         const float titleHeight = ui.FrameHeight();
+        const float viewTop = panel.position.y + titleHeight;
         const bool empty = ui.cursorY == ui.contentMin.y;
-        panel.height = panel.collapsed || empty ? titleHeight
-                                                : ui.cursorY - style.itemSpacing + style.panelPadding - panel.position.y;
+        if (!panel.collapsed) {
+            panel.contentHeight = empty ? 0.0f : ui.cursorY - ui.lastSpacing + style.panelPadding - (viewTop - panel.scrollY);
+        }
+        if (panel.collapsed) {
+            panel.height = titleHeight;
+        } else if (panel.fixedHeight > 0.0f) {
+            panel.height = std::max(panel.fixedHeight, titleHeight);
+        } else {
+            panel.height = titleHeight + panel.contentHeight;
+        }
 
         const Vector2f min = panel.position;
         const Vector2f max = min + Vector2f{panel.width, panel.height};
         DrawList& chrome = panel.chrome;
         chrome.AddRect(min, max, style.panelBackground);
         const bool front = ui.order.back() == ui.panelId;
-        chrome.AddRect(min, {max.x, min.y + titleHeight}, front ? style.titleBackgroundActive : style.titleBackground);
+        chrome.AddRect(min, {max.x, viewTop}, front ? style.titleBackgroundActive : style.titleBackground);
 
         // Flèche : vers le bas si déplié, vers la droite si replié.
         const float arrow = style.fontSize * 0.5f;
@@ -584,9 +674,33 @@ namespace Flux::UI {
                                {arrowX + arrow * 0.5f, centerY + arrow * 0.45f}, style.text);
         }
         const float titleX = arrowX + arrow + style.framePadding.x;
-        chrome.SetClipRect({titleX, min.y}, {max.x - style.framePadding.x, min.y + titleHeight});
+        chrome.SetClipRect({titleX, min.y}, {max.x - style.framePadding.x, viewTop});
         chrome.AddText({titleX, min.y + style.framePadding.y}, panel.title, style.fontSize, style.text);
         chrome.ResetClipRect();
+
+        // Barre de défilement : glisser le curseur, la molette fait le reste.
+        const float viewHeight = panel.height - titleHeight;
+        const float maxScroll = std::max(0.0f, panel.contentHeight - viewHeight);
+        if (!panel.collapsed && panel.fixedHeight > 0.0f && maxScroll > 0.0f) {
+            const float trackTop = viewTop + 3.0f;
+            const float trackHeight = viewHeight - 6.0f;
+            const float thumbHeight = std::max(20.0f, trackHeight * viewHeight / panel.contentHeight);
+            const float travel = std::max(1.0f, trackHeight - thumbHeight);
+            const float thumbY = trackTop + travel * panel.scrollY / maxScroll;
+            const Vector2f thumbMin{max.x - 9.0f, thumbY};
+            const Vector2f thumbMax{max.x - 3.0f, thumbY + thumbHeight};
+            const WidgetId thumbId = Hash(ui.panelId, "#défilement");
+            const Impl::Interaction thumb = ui.Behavior(thumbId, {thumbMin.x - 2.0f, thumbMin.y}, {thumbMax.x + 2.0f, thumbMax.y});
+            if (ui.activeId == thumbId && ui.mousePressed) {
+                ui.dragOrigin = {0.0f, panel.scrollY};
+            }
+            if (thumb.held) {
+                panel.scrollY = std::clamp(ui.dragOrigin.y + (ui.mouse.y - ui.pressPosition.y) * maxScroll / travel, 0.0f, maxScroll);
+            }
+            chrome.AddRect({thumbMin.x, trackTop}, {thumbMax.x, trackTop + trackHeight}, style.frame);
+            chrome.AddRect(thumbMin, thumbMax, thumb.held || thumb.hovered ? style.textDisabled : style.frameActive);
+        }
+        // La barre est dessinée sous le contenu (chrome) mais à droite de celui-ci : pas de chevauchement.
         chrome.AddRectOutline(min, max, style.panelBorder);
 
         panel.content.ResetClipRect();
@@ -704,6 +818,171 @@ namespace Flux::UI {
     bool Context::DragDouble3(std::string_view label, Math::Vector3d& value, double speed, double min, double max,
                               int decimals) {
         return m_impl->DragVector3(label, value, speed, min, max, decimals);
+    }
+
+    bool Context::InputText(std::string_view label, std::string& value) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const WidgetId id = ui.GetId(label);
+        const auto [min, max] = ui.LabeledRow(label);
+        if (ui.editingId == id) {
+            const Impl::EditResult result = ui.ProcessTextEdit(min, max, false);
+            if (result == Impl::EditResult::Editing) {
+                ui.DrawTextEdit(min, max);
+                return false;
+            }
+            const bool changed = result == Impl::EditResult::Commit && ui.editBuffer != value;
+            if (changed) {
+                value = ui.editBuffer;
+            }
+            ui.panel->content.AddRect(min, max, ui.style.frame);
+            ui.ClippedText(min + ui.style.framePadding, max.x - 2.0f, value, ui.style.text);
+            return changed;
+        }
+
+        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        if (interaction.clicked) {
+            ui.BeginEdit(id, value);
+        }
+        ui.panel->content.AddRect(min, max, interaction.hovered ? ui.style.frameHovered : ui.style.frame);
+        ui.ClippedText(min + ui.style.framePadding, max.x - 2.0f, value, ui.style.text);
+        return false;
+    }
+
+    bool Context::ColorEdit3(std::string_view label, Math::LinearColor& color) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const WidgetId id = ui.GetId(label);
+        const auto [fieldMin, fieldMax] = ui.LabeledRow(label);
+        const Style& style = ui.style;
+
+        // Aperçu (couleur opaque), puis rouge, vert, bleu.
+        const float swatch = fieldMax.y - fieldMin.y;
+        ui.panel->content.AddRect(fieldMin, {fieldMin.x + swatch, fieldMax.y}, {color.r, color.g, color.b, 1.0f});
+        ui.panel->content.AddRectOutline(fieldMin, {fieldMin.x + swatch, fieldMax.y}, style.panelBorder);
+        const float start = fieldMin.x + swatch + style.itemSpacing;
+        const float width = (fieldMax.x - start - 2.0f * style.itemSpacing) / 3.0f;
+        float* channels[3] = {&color.r, &color.g, &color.b};
+        const LinearColor* colors[3] = {&style.axisX, &style.axisY, &style.axisZ};
+        bool changed = false;
+        for (int channel = 0; channel < 3; ++channel) {
+            const float x = start + static_cast<float>(channel) * (width + style.itemSpacing);
+            // Sans arrondi : un glissement lent s'accumule au lieu d'être perdu à chaque frame.
+            double value = static_cast<double>(Math::LinearColor::LinearToSrgb(std::clamp(*channels[channel], 0.0f, 1.0f))) * 255.0;
+            if (ui.DragScalar(Hash(id, &channel, sizeof(channel)), {x, fieldMin.y}, {x + width, fieldMax.y}, value, 1.0,
+                              0.0, 255.0, 0, colors[channel])) {
+                *channels[channel] = Math::LinearColor::SrgbToLinear(static_cast<float>(value / 255.0));
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    bool Context::DragInt3(std::string_view label, Math::Vector3i64& value, float speed) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const WidgetId id = ui.GetId(label);
+        const auto [fieldMin, fieldMax] = ui.LabeledRow(label);
+        const float width = (fieldMax.x - fieldMin.x - 2.0f * ui.style.itemSpacing) / 3.0f;
+        std::int64_t* components[3] = {&value.x, &value.y, &value.z};
+        const LinearColor* colors[3] = {&ui.style.axisX, &ui.style.axisY, &ui.style.axisZ};
+        bool changed = false;
+        for (int axis = 0; axis < 3; ++axis) {
+            const float x = fieldMin.x + static_cast<float>(axis) * (width + ui.style.itemSpacing);
+            const WidgetId fieldId = Hash(id, &axis, sizeof(axis));
+            // Le glissement s'accumule en double tant que le champ est actif : un pas de 0,2 finit par compter.
+            double& accumulated = ui.intAccumulators[fieldId];
+            if (ui.activeId != fieldId) {
+                accumulated = static_cast<double>(*components[axis]);
+            }
+            // Exact jusqu'à 2^53 secteurs, bien au-delà d'une galaxie (1e12 secteurs).
+            constexpr double Limit = 9.0e15;
+            if (ui.DragScalar(fieldId, {x, fieldMin.y}, {x + width, fieldMax.y}, accumulated, speed, -Limit, Limit, 0,
+                              colors[axis])) {
+                const auto rounded = static_cast<std::int64_t>(std::llround(accumulated));
+                if (rounded != *components[axis]) {
+                    *components[axis] = rounded;
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    Context::TreeNodeResult Context::TreeNode(std::string_view label, bool selected, bool leaf) {
+        Impl& ui = *m_impl;
+        TreeNodeResult result;
+        if (!ui.panel) {
+            return result;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        bool& open = ui.treeOpen[id];
+        if (ui.nextTreeOpen) {
+            open = *ui.nextTreeOpen;
+            ui.nextTreeOpen.reset();
+        }
+
+        const float rowHeight = ui.TreeRowHeight();
+        const float rowWidth = ui.RowWidth();
+        const Vector2f min = ui.ItemRect({rowWidth, rowHeight}, 1.0f);
+        const Vector2f max = min + Vector2f{rowWidth, rowHeight};
+        const float arrowWidth = style.fontSize;
+        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        if (interaction.clicked) {
+            if (!leaf && ui.mouse.x < min.x + arrowWidth) {
+                open = !open; // clic sur la flèche : déplier sans sélectionner
+            } else {
+                result.clicked = true;
+                const bool doubleClick = ui.lastClickId == id && ui.time - ui.lastClickTime < 0.35;
+                if (doubleClick && !leaf) {
+                    open = !open;
+                }
+                ui.lastClickId = doubleClick ? 0 : id;
+                ui.lastClickTime = ui.time;
+            }
+        }
+
+        DrawList& list = ui.panel->content;
+        if (selected) {
+            list.AddRect(min, max, style.selection);
+        } else if (interaction.hovered) {
+            list.AddRect(min, max, style.frame);
+        }
+        if (!leaf) {
+            const float size = style.fontSize * 0.45f;
+            const float x = min.x + (arrowWidth - size) * 0.5f;
+            const float centerY = min.y + rowHeight * 0.5f;
+            if (open) {
+                list.AddTriangle({x, centerY - size * 0.35f}, {x + size, centerY - size * 0.35f},
+                                 {x + size * 0.5f, centerY + size * 0.45f}, style.text);
+            } else {
+                list.AddTriangle({x + size * 0.15f, centerY - size * 0.5f}, {x + size * 0.15f, centerY + size * 0.5f},
+                                 {x + size * 0.95f, centerY}, style.text);
+            }
+        }
+        ui.ClippedText({min.x + arrowWidth, min.y + 2.0f}, max.x - 2.0f, VisibleLabel(label), style.text);
+
+        result.open = open && !leaf;
+        if (result.open) {
+            ui.indent += arrowWidth;
+        }
+        return result;
+    }
+
+    void Context::TreePop() {
+        Impl& ui = *m_impl;
+        ui.indent = std::max(0.0f, ui.indent - ui.style.fontSize);
+    }
+
+    void Context::SetNextTreeNodeOpen(bool open) {
+        m_impl->nextTreeOpen = open;
     }
 
     void Context::Separator() {

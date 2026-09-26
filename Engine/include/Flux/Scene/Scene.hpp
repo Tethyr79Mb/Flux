@@ -7,6 +7,7 @@
 #include <entt/entity/registry.hpp>
 
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -77,6 +78,15 @@ namespace Flux {
         template <typename Component, typename... Args>
         Component& Add(Entity entity, Args&&... args) {
             return m_registry.emplace_or_replace<Component>(entity, std::forward<Args>(args)...);
+        }
+
+        // Retire un composant facultatif (MeshRendererComponent...). Jamais Id, Name, Transform ni Hierarchy.
+        template <typename Component>
+        void Remove(Entity entity) {
+            static_assert(!std::is_same_v<Component, IdComponent> && !std::is_same_v<Component, NameComponent>
+                          && !std::is_same_v<Component, TransformComponent> && !std::is_same_v<Component, HierarchyComponent>,
+                          "composant obligatoire");
+            m_registry.remove<Component>(entity);
         }
 
         template <typename Component>

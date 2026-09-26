@@ -149,6 +149,9 @@ namespace Flux {
             if (m_gameUpdate) {
                 m_gameUpdate(*this, deltaSeconds);
             }
+            if (m_editorUpdate) {
+                m_editorUpdate(*this, deltaSeconds);
+            }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
             }
@@ -163,6 +166,10 @@ namespace Flux {
 
     void Engine::SetGameUpdate(UpdateFunction update) {
         m_gameUpdate = std::move(update);
+    }
+
+    void Engine::SetEditorUpdate(UpdateFunction update) {
+        m_editorUpdate = std::move(update);
     }
 
     void Engine::RequestQuit() {

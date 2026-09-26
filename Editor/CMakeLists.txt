@@ -1,5 +1,6 @@
 add_executable(FluxEditor
         src/main.cpp
+        src/SceneEditor.cpp
 )
 target_link_libraries(FluxEditor PRIVATE Flux::Engine)
 

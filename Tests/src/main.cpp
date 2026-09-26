@@ -9,6 +9,7 @@ int main() {
     constexpr Group groups[] = {
         {"scène", RunSceneTests},
         {"sauvegarde de scène", RunSceneSerializerTests},
+        {"interface (FluxUI) et rotations", RunUiTests},
     };
 
     int failures = 0;

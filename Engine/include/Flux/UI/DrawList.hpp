@@ -34,7 +34,7 @@ namespace Flux::UI {
         void AddRect(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color);
         // Contour intérieur au rectangle, d'épaisseur thickness pixels.
         void AddRectOutline(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float thickness = 1.0f);
-        // Triangle plein (flèches des panneaux, coches) ; non découpé, à garder dans le rectangle de découpe.
+        // Triangle plein (flèches, coches) ; omis s'il dépasse du rectangle de découpe (pas de découpe partielle).
         void AddTriangle(Math::Vector2f a, Math::Vector2f b, Math::Vector2f c, Math::LinearColor color);
         // Ajoute tels quels les sommets d'une autre liste (panneaux assemblés dans leur ordre d'affichage).
         void Append(const DrawList& other);
