@@ -142,6 +142,8 @@ namespace Flux {
         std::vector<RelativeTransform> relativeTransforms;
         std::vector<MeshParams> meshDraws;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
+        bool vsync = true;
+        bool vsyncChanged = false;
 
         // Overlay 2D (FluxUI) : atlas MSDF + un vertex buffer par frame en vol.
         std::unique_ptr<UI::Font> font;
@@ -393,7 +395,7 @@ namespace Flux {
 
         bool RecreateSwapchain() {
             device->WaitIdle();
-            if (!swapchain->Recreate(WindowExtent())) {
+            if (!swapchain->Recreate(WindowExtent(), vsync)) {
                 return false;
             }
             if (auto depth = CreateDepth(); !depth) {
@@ -528,7 +530,8 @@ namespace Flux {
                 return true; // fenêtre réduite : rien à présenter
             }
             const VkExtent2D current = swapchain->GetExtent();
-            if (extent.width != current.width || extent.height != current.height) {
+            if (extent.width != current.width || extent.height != current.height || vsyncChanged) {
+                vsyncChanged = false;
                 if (!RecreateSwapchain()) {
                     return false;
                 }
@@ -625,7 +628,7 @@ namespace Flux {
         impl->device = std::move(device.value());
 
         impl->swapchain = std::make_unique<Vk::Swapchain>(*impl->device);
-        if (!impl->swapchain->Recreate(impl->WindowExtent())) {
+        if (!impl->swapchain->Recreate(impl->WindowExtent(), impl->vsync)) {
             return std::unexpected("création de la swapchain");
         }
         if (!impl->CreateFrames()) {
@@ -656,6 +659,27 @@ namespace Flux {
 
     void Renderer::SetClearColor(Math::LinearColor color) {
         m_impl->clearColor = color;
+    }
+
+    void Renderer::SetVSync(bool enabled) {
+        if (enabled != m_impl->vsync) {
+            m_impl->vsync = enabled;
+            m_impl->vsyncChanged = true; // swapchain recréée au début de la prochaine frame
+        }
+    }
+
+    bool Renderer::IsVSyncEnabled() const {
+        return m_impl->vsync;
+    }
+
+    std::string_view Renderer::GetPresentModeName() const {
+        switch (m_impl->swapchain->GetPresentMode()) {
+            case VK_PRESENT_MODE_FIFO_KHR: return "FIFO (synchronisé)";
+            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO relaxed";
+            case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX (sans déchirure)";
+            case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE (déchirure possible)";
+            default: return "autre";
+        }
     }
 
     UI::DrawList& Renderer::GetOverlay() {

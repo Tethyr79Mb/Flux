@@ -2,6 +2,7 @@
 
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
 
 #include <algorithm>
@@ -55,25 +56,38 @@ namespace Flux {
             return std::format("{:.4f} al", meters / 9.4607304725808e15);
         }
 
-        void DrawDebugOverlay(UI::DrawList& overlay, const FrameStats& stats, std::string_view deviceName,
-                              const Camera& camera, const FlyCameraController& controller) {
-            constexpr float TextSize = 16.0f;
-            constexpr float Margin = 8.0f;
-            constexpr float Padding = 8.0f;
+        void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
+                             FlyCameraController& controller) {
+            if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
+                ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
+                ui.LabelText("GPU", renderer.GetDeviceName());
+                bool vsync = renderer.IsVSyncEnabled();
+                if (ui.Checkbox("V-Sync", vsync)) {
+                    renderer.SetVSync(vsync);
+                }
+                ui.LabelText("Présentation", renderer.GetPresentModeName());
 
-            const std::string text = std::format(
-                "{:.0f} fps · Durée d'image : {:.2f} ms\nGPU : {}\n"
-                "Caméra : secteur ({}, {}, {}) + x {}  y {}  z {}\nVitesse : {}/s (molette)\n"
-                "Clic droit maintenu : souris pour regarder, ZQSD, E / A pour monter / descendre, Maj pour accélérer",
-                stats.GetFps(), stats.GetFrameMilliseconds(), deviceName,
-                camera.position.sector.x, camera.position.sector.y, camera.position.sector.z,
-                FormatDistance(camera.position.offset.x), FormatDistance(camera.position.offset.y),
-                FormatDistance(camera.position.offset.z), FormatDistance(controller.GetSpeed()));
-            const Math::Vector2f size = overlay.MeasureText(text, TextSize);
-            overlay.AddRect({Margin, Margin},
-                            {Margin + size.x + 2.0f * Padding, Margin + size.y + 2.0f * Padding},
-                            {0.0f, 0.0f, 0.0f, 0.6f});
-            overlay.AddText({Margin + Padding, Margin + Padding}, text, TextSize, {1.0f, 1.0f, 1.0f, 1.0f});
+                ui.Separator();
+                ui.LabelText("Secteur", std::format("{}  {}  {}", camera.position.sector.x, camera.position.sector.y,
+                                                    camera.position.sector.z));
+                Math::Vector3d offset = camera.position.offset;
+                if (ui.DragDouble3("Position (m)", offset, 0.1, UI::Context::NoMin, UI::Context::NoMax, 2)) {
+                    camera.position.offset = offset;
+                    camera.position.Normalize();
+                }
+                // Pas proportionnel à la valeur : 1 % par pixel, utilisable du cm/s à l'année-lumière par seconde.
+                double speed = controller.GetSpeed();
+                if (ui.DragDouble("Vitesse (m/s)", speed, speed * 0.01, 0.0, UI::Context::NoMax, 2)) {
+                    controller.SetSpeed(speed);
+                }
+                ui.LabelText("Soit", FormatDistance(controller.GetSpeed()) + "/s");
+
+                ui.Separator();
+                ui.TextDisabled("Clic droit maintenu : regarder autour\n"
+                                "ZQSD : avancer, E / A : monter / descendre\n"
+                                "Maj : accélérer, molette : régler la vitesse");
+            }
+            ui.EndPanel();
         }
     }
 
@@ -93,6 +107,7 @@ namespace Flux {
             return;
         }
         m_renderer = std::move(renderer.value());
+        m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
 
         // Un peu en arrière et au-dessus de la grille de test, légèrement vers le bas.
         m_camera.position.offset = {0.0, 6.0, 30.0};
@@ -127,14 +142,17 @@ namespace Flux {
             previousFrame = now;
             stats.Tick(now);
 
-            m_cameraController.Update(m_camera, *m_window, deltaSeconds);
+            // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
+            m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
+                             !m_window->IsCursorLocked());
+            m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
             if (m_gameUpdate) {
                 m_gameUpdate(*this, deltaSeconds);
             }
-
             if (m_showDebugOverlay) {
-                DrawDebugOverlay(m_renderer->GetOverlay(), stats, m_renderer->GetDeviceName(), m_camera, m_cameraController);
+                DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
             }
+            m_ui->EndFrame(m_renderer->GetOverlay());
 
             if (!m_renderer->RenderFrame(m_scene, m_camera)) {
                 return 1;
@@ -157,5 +175,9 @@ namespace Flux {
 
     Renderer& Engine::GetRenderer() {
         return *m_renderer;
+    }
+
+    UI::Context& Engine::GetUi() {
+        return *m_ui;
     }
 }

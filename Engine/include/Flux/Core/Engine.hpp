@@ -14,15 +14,19 @@ namespace Flux {
     class Renderer;
     class Window;
 
+    namespace UI {
+        class Context;
+    }
+
     struct EngineConfig {
         std::string title = "Flux";
         Math::Vector2i windowSize{1280, 720};
-        bool showDebugOverlay = true; // fps, temps de frame et GPU en haut à gauche
+        bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra
     };
 
     class FLUX_API Engine {
         public:
-        // Appelée à chaque frame, après le déplacement de la caméra et avant le rendu.
+        // Appelée à chaque frame, après le déplacement de la caméra et avant le rendu ; peut décrire des panneaux FluxUI.
         using UpdateFunction = std::function<void(Engine& engine, double deltaSeconds)>;
 
         explicit Engine(const EngineConfig& config = {});
@@ -37,6 +41,8 @@ namespace Flux {
 
         Window& GetWindow();
         Renderer& GetRenderer();
+        // Interface FluxUI de la frame en cours (panneaux décrits dans la fonction de mise à jour du jeu).
+        UI::Context& GetUi();
         Camera& GetCamera() { return m_camera; }
         Scene& GetScene() { return m_scene; }
 
@@ -46,6 +52,7 @@ namespace Flux {
         private:
         std::unique_ptr<Window> m_window;
         std::unique_ptr<Renderer> m_renderer;
+        std::unique_ptr<UI::Context> m_ui;
         Scene m_scene;
         UpdateFunction m_gameUpdate;
         // Provisoire : la caméra et son pilotage iront dans le viewport de l'éditeur.

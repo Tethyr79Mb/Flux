@@ -12,12 +12,18 @@ namespace Flux::Vk {
         }
     }
 
-    bool Swapchain::Recreate(VkExtent2D extent) {
+    bool Swapchain::Recreate(VkExtent2D extent, bool vsync) {
         vkb::SwapchainBuilder builder(m_device.GetBootstrapDevice());
+        if (vsync) {
+            builder.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        } else {
+            // Premier mode disponible dans cet ordre ; FIFO (toujours présent) si aucun.
+            builder.set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                   .add_fallback_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+        }
         auto swapchain = builder
             // Couleurs écrites en linéaire, converties en sRGB par le matériel.
             .set_desired_format({VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-            .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
             .set_desired_extent(extent.width, extent.height)
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
             .set_old_swapchain(m_swapchain)

@@ -11,9 +11,18 @@ namespace Flux {
     FlyCameraController::FlyCameraController(const FlyCameraSettings& settings)
         : m_settings(settings), m_speed(settings.speed) {}
 
-    void FlyCameraController::Update(Camera& camera, Window& window, double deltaSeconds) {
+    void FlyCameraController::SetSpeed(double speed) {
+        m_speed = std::clamp(speed, m_settings.minSpeed, m_settings.maxSpeed);
+    }
+
+    void FlyCameraController::Update(Camera& camera, Window& window, double deltaSeconds, bool mouseAvailable,
+                                     bool keyboardAvailable) {
         const Input& input = window.GetInput();
-        m_active = window.HasFocus() && input.IsMouseButtonDown(MouseButton::Right);
+        // Le pilotage commence au clic droit hors de l'interface, puis dure tant que le bouton reste enfoncé,
+        // même si le curseur (immobile) se trouve alors sous un panneau.
+        const bool held = window.HasFocus() && input.IsMouseButtonDown(MouseButton::Right);
+        const bool started = input.WasMouseButtonPressed(MouseButton::Right) && mouseAvailable;
+        m_active = held && (m_active || started);
         window.SetCursorLocked(m_active);
         if (!m_active) {
             return;
@@ -30,6 +39,9 @@ namespace Flux {
         }
 
         const auto axis = [&](Key positive, Key negative) {
+            if (!keyboardAvailable) {
+                return 0.0;
+            }
             return (input.IsKeyDown(positive) ? 1.0 : 0.0) - (input.IsKeyDown(negative) ? 1.0 : 0.0);
         };
         const double forward = axis(Key::W, Key::S);
@@ -43,7 +55,7 @@ namespace Flux {
         direction = Math::Normalize(direction);
 
         double speed = m_speed;
-        if (input.IsKeyDown(Key::LeftShift)) {
+        if (keyboardAvailable && input.IsKeyDown(Key::LeftShift)) {
             speed *= m_settings.boostFactor;
         }
         camera.position += direction * (speed * deltaSeconds);

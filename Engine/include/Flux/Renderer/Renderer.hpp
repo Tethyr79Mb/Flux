@@ -32,6 +32,13 @@ namespace Flux {
 
         void SetClearColor(Math::LinearColor color);
 
+        // V-Sync (activée par défaut) : sans elle, autant d'images que le GPU peut en produire.
+        // Le changement prend effet à la frame suivante (la swapchain est recréée).
+        void SetVSync(bool enabled);
+        bool IsVSyncEnabled() const;
+        // Mode de présentation Vulkan réellement utilisé, lisible (FIFO, MAILBOX...).
+        std::string_view GetPresentModeName() const;
+
         // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
         UI::DrawList& GetOverlay();
 
