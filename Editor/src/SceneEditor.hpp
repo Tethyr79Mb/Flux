@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace Flux {
     class Engine;
@@ -28,6 +29,8 @@ namespace FluxEditor {
     class SceneEditor {
         public:
         void Update(Flux::Engine& engine);
+        // Vrai si la scène a été modifiée depuis le dernier appel (pour l'étoile du titre).
+        bool TakeModified() { return std::exchange(m_modified, false); }
 
         private:
         enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent };
@@ -36,11 +39,12 @@ namespace FluxEditor {
         void DrawNode(Flux::UI::Context& ui, Flux::Scene& scene, Flux::Entity entity);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void DrawComponent(Flux::UI::Context& ui, const Flux::ComponentInfo& info, void* component);
-        void DrawField(Flux::UI::Context& ui, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
+        bool DrawField(Flux::UI::Context& ui, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
         void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void Select(Flux::Scene& scene, Flux::Entity entity);
 
         Flux::Uuid m_selection;
+        bool m_modified = false;
         // Actions demandées pendant le dessin, appliquées après : on ne détruit rien en parcourant l'arbre.
         Action m_pendingAction = Action::None;
         std::string m_pendingComponent; // clé du composant à ajouter ou retirer

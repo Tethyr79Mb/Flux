@@ -129,6 +129,25 @@ namespace Flux::UI {
         // pas de TreePop. defaultOpen ne sert qu'à la première apparition.
         bool CollapsingHeader(std::string_view label, bool defaultOpen = true);
 
+        // Barre de menus en haut de l'écran, au-dessus de tous les panneaux (qui ne peuvent plus passer dessous) :
+        //     if (ui.BeginMainMenuBar()) {
+        //         if (ui.BeginMenu("Fichier")) {
+        //             if (ui.MenuItem("Enregistrer", "Ctrl+S")) { ... }
+        //             ui.EndMenu();
+        //         }
+        //         ui.EndMainMenuBar();
+        //     }
+        // Hors de tout panneau. Un clic sur un titre ouvre son menu ; un clic ailleurs ou Échap le referme.
+        bool BeginMainMenuBar();
+        void EndMainMenuBar();
+        // Vrai si ce menu est ouvert : décrire ses éléments puis appeler EndMenu.
+        bool BeginMenu(std::string_view label);
+        void EndMenu();
+        // Vrai au clic, qui referme le menu. shortcut n'est qu'affiché : le raccourci reste à gérer par l'appelant.
+        bool MenuItem(std::string_view label, std::string_view shortcut = {}, bool enabled = true);
+        // Hauteur de la barre de menus (0 sans barre) : la place à laisser en haut de l'écran.
+        float GetMenuBarHeight() const;
+
         // Nœud d'arbre (hiérarchie) : flèche pour déplier, clic sur le libellé pour sélectionner,
         // double-clic pour déplier aussi. Quand open est vrai, décrire les enfants puis appeler TreePop.
         struct TreeNodeResult

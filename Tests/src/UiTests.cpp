@@ -220,6 +220,77 @@ namespace {
         return true;
     }
 
+    bool RunMenuTests(const UI::Font& font) {
+        Harness harness(font);
+        const float bar = font.GetLineHeight() * 15.0f + 8.0f; // hauteur de la barre = hauteur d'un champ
+        const float fileX = 4.0f + 10.0f;                       // dans le titre « Fichier »
+        const auto itemY = [&](int index) { return bar + 4.0f + static_cast<float>(index) * bar + bar * 0.5f; };
+
+        int saves = 0;
+        int opens = 0;
+        int buttonClicks = 0;
+        bool menuOpen = false;
+        const auto describe = [&](UI::Context& ui) {
+            // Panneau demandé en haut de l'écran : repoussé sous la barre.
+            if (ui.BeginPanel("Dessous", {300.0f, 0.0f}, 400.0f)) {
+                if (ui.Button("Bouton")) {
+                    ++buttonClicks;
+                }
+            }
+            ui.EndPanel();
+            menuOpen = false;
+            if (ui.BeginMainMenuBar()) {
+                if (ui.BeginMenu("Fichier")) {
+                    menuOpen = true;
+                    if (ui.MenuItem("Ouvrir...", "Ctrl+O")) {
+                        ++opens;
+                    }
+                    if (ui.MenuItem("Enregistrer", "Ctrl+S")) {
+                        ++saves;
+                    }
+                    ui.MenuItem("Grisé", {}, false);
+                    ui.EndMenu();
+                }
+                ui.EndMainMenuBar();
+            }
+        };
+
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Move({600.0f, 600.0f}, describe);
+        CHECK(harness.GetUi().GetMenuBarHeight() == bar);
+        CHECK(!menuOpen);
+
+        // Clic sur le titre : le menu s'ouvre ; clic sur un élément : il agit et referme le menu.
+        harness.Click({fileX, bar * 0.5f}, describe);
+        CHECK(menuOpen);
+        harness.Click({40.0f, itemY(1)}, describe);
+        CHECK(saves == 1 && opens == 0);
+        harness.Move({40.0f, itemY(1)}, describe);
+        CHECK(!menuOpen);
+
+        // Élément désactivé : rien, le menu reste ouvert.
+        harness.Click({fileX, bar * 0.5f}, describe);
+        harness.Click({40.0f, itemY(2)}, describe);
+        harness.Move({40.0f, itemY(2)}, describe);
+        CHECK(menuOpen && saves == 1);
+
+        // Clic ailleurs : referme le menu, sans atteindre le bouton du panneau en dessous.
+        // Le panneau commence sous la barre : titre, marge, puis le bouton.
+        const float buttonY = bar + bar + 8.0f + bar * 0.5f;
+        harness.Click({320.0f, buttonY}, describe);
+        CHECK(!menuOpen);
+        CHECK(buttonClicks == 0);
+        harness.Click({320.0f, buttonY}, describe);
+        CHECK(buttonClicks == 1);
+
+        // Échap referme aussi.
+        harness.Click({fileX, bar * 0.5f}, describe);
+        CHECK(menuOpen);
+        harness.Key(Key::Escape, describe);
+        CHECK(!menuOpen);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -245,5 +316,5 @@ bool RunUiTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font);
+    return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font);
 }

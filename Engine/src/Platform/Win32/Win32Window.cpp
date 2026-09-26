@@ -2,6 +2,8 @@
 
 #include "Platform/Win32/Win32Utf.hpp"
 
+#include <utility>
+
 namespace Flux {
     namespace {
         constexpr wchar_t WindowClassName[] = L"FluxWindow";
@@ -21,6 +23,7 @@ namespace Flux {
         Input input;
         bool focused = false;
         bool cursorLocked = false;
+        bool closeRequested = false;
         wchar_t highSurrogate = 0; // WM_CHAR livre les caractères hors BMP en deux moitiés UTF-16
 
         void LockCursor(bool locked) {
@@ -177,7 +180,7 @@ namespace Flux {
                         impl->input.AddWheelDelta(static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA);
                         return 0;
                     case WM_CLOSE:
-                        DestroyWindow(hwnd);
+                        impl->closeRequested = true; // Engine demande confirmation si besoin, puis détruit la fenêtre
                         return 0;
                     case WM_DESTROY:
                         impl->LockCursor(false);
@@ -253,6 +256,10 @@ namespace Flux {
 
     bool Window::IsOpen() const {
         return m_impl && m_impl->hwnd;
+    }
+
+    bool Window::ConsumeCloseRequest() {
+        return m_impl && std::exchange(m_impl->closeRequested, false);
     }
 
     void Window::SetTitle(std::string_view title) {

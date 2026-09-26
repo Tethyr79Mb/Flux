@@ -27,6 +27,9 @@ namespace Flux {
         // Bloque jusqu'au prochain événement puis le traite (fenêtre réduite, par exemple).
         void WaitEvents();
         bool IsOpen() const;
+        // Clic sur la croix (ou Alt+F4) : la fenêtre ne se ferme pas d'elle-même, le programme décide.
+        // Retourne true une seule fois par demande.
+        bool ConsumeCloseRequest();
 
         void SetTitle(std::string_view title);
         void SetSize(Math::Vector2i size);

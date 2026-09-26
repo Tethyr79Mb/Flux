@@ -20,6 +20,7 @@ add_library(FluxEngine SHARED
         src/RHI/Vulkan/VmaImplementation.cpp
         src/Platform/Win32/Win32Window.cpp
         src/Platform/Win32/Win32SharedLibrary.cpp
+        src/Platform/Win32/Win32Dialogs.cpp
         src/Platform/Win32/Win32Filesystem.cpp
 )
 add_library(Flux::Engine ALIAS FluxEngine)
@@ -50,6 +51,8 @@ target_link_libraries(FluxEngine PUBLIC EnTT::EnTT)
 target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
 # FreeType et msdfgen servent à générer l'atlas de police ; eux aussi restent privés.
 target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
+# Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
+target_link_libraries(FluxEngine PRIVATE comdlg32)
 
 target_compile_definitions(FluxEngine PRIVATE
         VK_NO_PROTOTYPES

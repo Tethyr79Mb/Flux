@@ -153,6 +153,8 @@ namespace Flux::UI {
             float scrollY = 0.0f;
             float contentHeight = 0.0f; // hauteur totale du contenu à la dernière frame, défilement compris
             bool collapsed = false;
+            bool overlay = false;       // barre de menus ou menu déroulant : au-dessus des panneaux, jamais dans order
+            float measuredWidth = 0.0f; // menu déroulant : largeur de ses éléments à la dernière frame
             std::uint64_t lastFrame = 0;
             DrawList chrome;          // fond, bordure et barre de titre, dessinés sous le contenu
             DrawList content;
@@ -189,6 +191,34 @@ namespace Flux::UI {
         std::unordered_map<WidgetId, std::unique_ptr<Panel>> panels;
         std::vector<WidgetId> order;
         WidgetId hoveredPanel = 0;
+
+        // Barre de menus et menu déroulant ouvert : dessinés après les panneaux, survolés avant eux.
+        std::vector<WidgetId> overlays;         // décrits pendant la frame en cours
+        std::vector<WidgetId> previousOverlays; // ceux de la frame précédente, pour le survol
+        WidgetId openMenu = 0;                  // titre du menu ouvert
+        bool openMenuSeen = false;
+        bool menuBarDrawn = false;
+        float menuBarHeight = 0.0f;             // à la frame précédente
+        float menuBarNextX = 0.0f;              // position du prochain titre dans la barre
+        float menuItemWidth = 0.0f;             // plus large élément du menu ouvert
+        bool clickSwallowed = false;            // clic qui a refermé un menu : il ne va à personne d'autre
+
+        // Mise en page de la barre, mise de côté pendant la description du menu déroulant.
+        struct Layout {
+            Panel* panel = nullptr;
+            WidgetId panelId = 0;
+            Vector2f contentMin;
+            float contentMaxX = 0.0f;
+            float cursorY = 0.0f;
+            float indent = 0.0f;
+            Vector2f clipMin;
+            Vector2f clipMax;
+            Vector2f lastItemMin;
+            Vector2f lastItemMax;
+            bool sameLine = false;
+            float lastSpacing = 0.0f;
+        };
+        std::optional<Layout> menuParent;
 
         // Panneau en cours de description et sa mise en page.
         Panel* panel = nullptr;
@@ -250,6 +280,46 @@ namespace Flux::UI {
             lastSpacing = spacing < 0.0f ? style.itemSpacing : spacing;
             cursorY = std::max(cursorY, lastItemMax.y + lastSpacing);
             return min;
+        }
+
+        Layout SaveLayout() const {
+            return {panel, panelId, contentMin, contentMaxX, cursorY, indent, clipMin, clipMax, lastItemMin, lastItemMax,
+                    sameLine, lastSpacing};
+        }
+
+        void RestoreLayout(const Layout& layout) {
+            panel = layout.panel;
+            panelId = layout.panelId;
+            contentMin = layout.contentMin;
+            contentMaxX = layout.contentMaxX;
+            cursorY = layout.cursorY;
+            indent = layout.indent;
+            clipMin = layout.clipMin;
+            clipMax = layout.clipMax;
+            lastItemMin = layout.lastItemMin;
+            lastItemMax = layout.lastItemMax;
+            sameLine = layout.sameLine;
+            lastSpacing = layout.lastSpacing;
+        }
+
+        // Barre de menus ou menu déroulant : devient le panneau en cours, hors de l'ordre des panneaux.
+        Panel& BeginOverlay(WidgetId id) {
+            auto& slot = panels[id];
+            if (!slot) {
+                slot = std::make_unique<Panel>(font);
+                slot->overlay = true;
+            }
+            Panel& overlay = *slot;
+            overlay.lastFrame = frame;
+            overlay.chrome.Clear();
+            overlay.content.Clear();
+            overlays.push_back(id);
+            panel = &overlay;
+            panelId = id;
+            idStack.push_back(id);
+            indent = 0.0f;
+            sameLine = false;
+            return overlay;
         }
 
         void RestorePanelClip() {
@@ -512,7 +582,13 @@ namespace Flux::UI {
         // Survol d'après les rectangles de la frame précédente, du panneau le plus proche au plus lointain.
         ui.hoveredPanel = 0;
         if (mouseEnabled) {
-            for (auto it = ui.order.rbegin(); it != ui.order.rend(); ++it) {
+            for (auto it = ui.previousOverlays.rbegin(); it != ui.previousOverlays.rend() && ui.hoveredPanel == 0; ++it) {
+                const Impl::Panel& panel = *ui.panels.at(*it);
+                if (Contains(panel.position, panel.position + Vector2f{panel.width, panel.height}, ui.mouse)) {
+                    ui.hoveredPanel = *it;
+                }
+            }
+            for (auto it = ui.order.rbegin(); it != ui.order.rend() && ui.hoveredPanel == 0; ++it) {
                 const Impl::Panel& panel = *ui.panels.at(*it);
                 if (panel.lastFrame + 1 == ui.frame
                     && Contains(panel.position, panel.position + Vector2f{panel.width, panel.height}, ui.mouse)) {
@@ -521,8 +597,21 @@ namespace Flux::UI {
                 }
             }
         }
+        // Menu ouvert : un clic ailleurs (ou Échap) le referme, sans rien faire d'autre.
+        ui.clickSwallowed = false;
+        if (ui.openMenu != 0) {
+            const bool overMenu = ui.hoveredPanel != 0 && ui.panels.at(ui.hoveredPanel)->overlay;
+            if (ui.mousePressed && !overMenu) {
+                ui.openMenu = 0;
+                ui.mousePressed = false;
+                ui.clickSwallowed = true;
+            } else if (input.WasKeyPressed(Key::Escape)) {
+                ui.openMenu = 0;
+            }
+        }
         // Un clic sur un panneau le passe au premier plan.
-        if (ui.mousePressed && ui.hoveredPanel != 0 && ui.order.back() != ui.hoveredPanel) {
+        if (ui.mousePressed && ui.hoveredPanel != 0 && !ui.panels.at(ui.hoveredPanel)->overlay
+            && ui.order.back() != ui.hoveredPanel) {
             std::erase(ui.order, ui.hoveredPanel);
             ui.order.push_back(ui.hoveredPanel);
         }
@@ -532,6 +621,8 @@ namespace Flux::UI {
         ui.idStack.assign(1, RootId);
         ui.panel = nullptr;
         ui.panelId = 0;
+        ui.menuParent.reset();
+        ui.overlays.clear();
     }
 
     void Context::EndFrame(DrawList& output) {
@@ -543,6 +634,14 @@ namespace Flux::UI {
         if (!ui.editingSeen) {
             ui.editingId = 0;
         }
+        // Menu ouvert dont le titre n'a pas été décrit (barre masquée) : refermé.
+        if (!ui.openMenuSeen) {
+            ui.openMenu = 0;
+        }
+        ui.openMenuSeen = false;
+        ui.menuBarHeight = ui.menuBarDrawn ? ui.FrameHeight() : 0.0f;
+        ui.menuBarDrawn = false;
+
         for (const WidgetId id : ui.order) {
             const Impl::Panel& panel = *ui.panels.at(id);
             if (panel.lastFrame == ui.frame) {
@@ -550,10 +649,18 @@ namespace Flux::UI {
                 output.Append(panel.content);
             }
         }
+        for (const WidgetId id : ui.overlays) {
+            const Impl::Panel& panel = *ui.panels.at(id);
+            output.Append(panel.chrome);
+            output.Append(panel.content);
+        }
+        ui.previousOverlays = std::move(ui.overlays);
+        ui.overlays.clear();
     }
 
     bool Context::WantsMouse() const {
-        return m_impl->hoveredPanel != 0 || m_impl->activeId != 0;
+        const Impl& ui = *m_impl;
+        return ui.hoveredPanel != 0 || ui.activeId != 0 || ui.openMenu != 0 || ui.clickSwallowed;
     }
 
     bool Context::WantsKeyboard() const {
@@ -606,7 +713,9 @@ namespace Flux::UI {
         }
         // La barre de titre reste toujours attrapable, même si la fenêtre a rétréci.
         panel.position.x = std::clamp(panel.position.x, 40.0f - panel.width, std::max(0.0f, ui.screenSize.x - 40.0f));
-        panel.position.y = std::clamp(panel.position.y, 0.0f, std::max(0.0f, ui.screenSize.y - titleHeight));
+        // Jamais sous la barre de menus.
+        panel.position.y = std::clamp(panel.position.y, ui.menuBarHeight,
+                                      std::max(ui.menuBarHeight, ui.screenSize.y - titleHeight));
 
         // Défilement (hauteur fixe seulement) : molette au-dessus du panneau, bornée par le contenu de la frame précédente.
         const float viewTop = panel.position.y + titleHeight;
@@ -913,6 +1022,145 @@ namespace Flux::UI {
             }
         }
         return changed;
+    }
+
+    bool Context::BeginMainMenuBar() {
+        Impl& ui = *m_impl;
+        if (ui.panel) {
+            return false; // hors de tout panneau
+        }
+        const float height = ui.FrameHeight();
+        const float width = ui.screenSize.x;
+        Impl::Panel& bar = ui.BeginOverlay(Hash(RootId, "#barre de menus"));
+        bar.position = {0.0f, 0.0f};
+        bar.width = width;
+        bar.height = height;
+        ui.contentMin = {ui.style.panelPadding * 0.5f, 0.0f};
+        ui.contentMaxX = width;
+        ui.cursorY = 0.0f;
+        ui.clipMin = {0.0f, 0.0f};
+        ui.clipMax = {width, height};
+        ui.RestorePanelClip();
+        ui.menuBarNextX = ui.contentMin.x;
+        ui.menuBarDrawn = true;
+        ui.menuBarHeight = height; // dès cette frame pour les panneaux décrits après la barre
+        bar.chrome.AddRect({0.0f, 0.0f}, {width, height}, ui.style.titleBackground);
+        bar.chrome.AddRect({0.0f, height - 1.0f}, {width, height}, ui.style.panelBorder);
+        return true;
+    }
+
+    void Context::EndMainMenuBar() {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
+            return;
+        }
+        ui.panel->content.ResetClipRect();
+        ui.idStack.pop_back();
+        ui.panel = nullptr;
+        ui.panelId = 0;
+    }
+
+    bool Context::BeginMenu(std::string_view label) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
+            return false; // dans la barre seulement : pas de sous-menus pour l'instant
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        const std::string_view visible = VisibleLabel(label);
+        const Vector2f size{ui.MeasureText(visible).x + 2.0f * style.framePadding.x, ui.FrameHeight()};
+        const Vector2f min{ui.menuBarNextX, 0.0f};
+        const Vector2f max = min + size;
+        ui.menuBarNextX = max.x;
+
+        const bool hovered = ui.IsMouseOver(min, max) && ui.activeId == 0;
+        if (hovered && ui.mousePressed) {
+            ui.openMenu = ui.openMenu == id ? 0 : id;
+        } else if (hovered && ui.openMenu != 0) {
+            ui.openMenu = id; // un menu est ouvert : survoler un autre titre l'ouvre à sa place
+        }
+        const bool open = ui.openMenu == id;
+        if (open || hovered) {
+            ui.panel->content.AddRect(min, max, open ? style.selection : style.frameHovered);
+        }
+        ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
+        if (!open) {
+            return false;
+        }
+
+        ui.openMenuSeen = true;
+        ui.menuParent = ui.SaveLayout();
+        Impl::Panel& popup = ui.BeginOverlay(Hash(id, "#menu"));
+        // Largeur des éléments mesurée à la frame précédente (la première frame, une largeur minimale).
+        popup.width = std::max(180.0f, popup.measuredWidth);
+        popup.position = {std::clamp(min.x, 0.0f, std::max(0.0f, ui.screenSize.x - popup.width)), max.y};
+        const float padding = 4.0f;
+        ui.contentMin = popup.position + Vector2f{padding, padding};
+        ui.contentMaxX = popup.position.x + popup.width - padding;
+        ui.cursorY = ui.contentMin.y;
+        ui.lastSpacing = 0.0f;
+        ui.clipMin = popup.position;
+        ui.clipMax = {popup.position.x + popup.width, ui.screenSize.y};
+        ui.RestorePanelClip();
+        ui.menuItemWidth = 0.0f;
+        return true;
+    }
+
+    void Context::EndMenu() {
+        Impl& ui = *m_impl;
+        if (!ui.menuParent) {
+            return;
+        }
+        Impl::Panel& popup = *ui.panel;
+        const float padding = 4.0f;
+        const bool empty = ui.cursorY == ui.contentMin.y;
+        popup.height = (empty ? ui.cursorY : ui.cursorY - ui.lastSpacing) + padding - popup.position.y;
+        popup.measuredWidth = ui.menuItemWidth + 2.0f * padding;
+        const Vector2f max = popup.position + Vector2f{popup.width, popup.height};
+        popup.chrome.AddRect(popup.position, max, {ui.style.panelBackground.r, ui.style.panelBackground.g,
+                                                   ui.style.panelBackground.b, 1.0f});
+        popup.chrome.AddRectOutline(popup.position, max, ui.style.panelBorder);
+        popup.content.ResetClipRect();
+
+        ui.idStack.pop_back();
+        ui.RestoreLayout(*ui.menuParent);
+        ui.menuParent.reset();
+    }
+
+    bool Context::MenuItem(std::string_view label, std::string_view shortcut, bool enabled) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.menuParent) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const std::string_view visible = VisibleLabel(label);
+        const float labelWidth = ui.MeasureText(visible).x;
+        const float shortcutWidth = shortcut.empty() ? 0.0f : ui.MeasureText(shortcut).x;
+        const float gap = shortcut.empty() ? 0.0f : 3.0f * style.fontSize;
+        ui.menuItemWidth = std::max(ui.menuItemWidth, 2.0f * style.framePadding.x + labelWidth + gap + shortcutWidth);
+
+        const Vector2f size{ui.RowWidth(), ui.FrameHeight()};
+        const Vector2f min = ui.ItemRect(size, 0.0f);
+        const Vector2f max = min + size;
+        const Impl::Interaction interaction = enabled ? ui.Behavior(ui.GetId(label), min, max) : Impl::Interaction{};
+        DrawList& list = ui.panel->content;
+        if (interaction.hovered) {
+            list.AddRect(min, max, style.selection);
+        }
+        list.AddText(min + style.framePadding, visible, style.fontSize, enabled ? style.text : style.textDisabled);
+        if (!shortcut.empty()) {
+            list.AddText({max.x - style.framePadding.x - shortcutWidth, min.y + style.framePadding.y}, shortcut, style.fontSize,
+                         style.textDisabled);
+        }
+        if (interaction.clicked) {
+            ui.openMenu = 0;
+            return true;
+        }
+        return false;
+    }
+
+    float Context::GetMenuBarHeight() const {
+        return m_impl->menuBarHeight;
     }
 
     bool Context::DragInt(std::string_view label, std::int32_t& value, float speed, double min, double max) {
