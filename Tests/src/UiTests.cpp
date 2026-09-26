@@ -283,6 +283,32 @@ namespace {
         harness.Click({320.0f, buttonY}, describe);
         CHECK(buttonClicks == 1);
 
+        // Menu contextuel : clic droit sur le bouton, puis clic sur un élément.
+        int deletes = 0;
+        bool contextOpen = false;
+        const auto describeContext = [&](UI::Context& ui) {
+            contextOpen = false;
+            if (ui.BeginPanel("Dessous", {300.0f, 0.0f}, 400.0f)) {
+                ui.Button("Bouton");
+                if (ui.BeginContextMenu()) {
+                    contextOpen = true;
+                    if (ui.MenuItem("Supprimer")) {
+                        ++deletes;
+                    }
+                    ui.EndMenu();
+                }
+            }
+            ui.EndPanel();
+        };
+        harness.Move({320.0f, buttonY}, describeContext);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Right, true); }, describeContext);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Right, false); }, describeContext);
+        CHECK(contextOpen);
+        // Le menu apparaît sous la souris : son premier élément est juste en dessous.
+        harness.Click({330.0f, buttonY + 4.0f + bar * 0.5f}, describeContext);
+        harness.Move({330.0f, buttonY + 4.0f + bar * 0.5f}, describeContext);
+        CHECK(deletes == 1 && !contextOpen);
+
         // Échap referme aussi.
         harness.Click({fileX, bar * 0.5f}, describe);
         CHECK(menuOpen);

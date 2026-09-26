@@ -3,6 +3,7 @@
 #include "SceneDocument.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/UI/Context.hpp>
 
@@ -47,7 +48,7 @@ namespace FluxEditor {
             } else if (m_entries.empty()) {
                 ui.TextDisabled("Dossier des assets vide ou introuvable :\n" + ToUtf8(root));
             } else {
-                ui.TextDisabled("Double-clic sur une scène pour l'ouvrir.");
+                ui.TextDisabled("Double-clic sur une scène pour l'ouvrir,\nclic droit pour les autres actions.");
                 ui.Separator();
                 for (const Entry& entry : m_entries) {
                     DrawEntry(ui, engine, document, entry);
@@ -85,7 +86,9 @@ namespace FluxEditor {
     void ContentBrowser::DrawEntry(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
         ui.PushId(entry.name);
         if (entry.directory) {
-            if (ui.TreeNode(entry.name + "/", false, entry.children.empty(), true).open) {
+            const bool open = ui.TreeNode(entry.name + "/", false, entry.children.empty(), true).open;
+            ShowContextMenu(ui, engine, document, entry);
+            if (open) {
                 for (const Entry& child : entry.children) {
                     DrawEntry(ui, engine, document, child);
                 }
@@ -97,7 +100,45 @@ namespace FluxEditor {
             if (node.doubleClicked && IsScene(entry.path) && !current) {
                 document.OpenFile(engine, entry.path);
             }
+            ShowContextMenu(ui, engine, document, entry);
         }
         ui.PopId();
+    }
+
+    void ContentBrowser::ShowContextMenu(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
+        if (!ui.BeginContextMenu()) {
+            return;
+        }
+        const bool scene = !entry.directory && IsScene(entry.path);
+        if (scene && ui.MenuItem("Ouvrir")) {
+            document.OpenFile(engine, entry.path);
+        }
+        if (ui.MenuItem("Afficher dans l'explorateur")) {
+            Platform::ShowInExplorer(entry.path);
+        }
+        // Les dossiers se suppriment dans l'explorateur : trop facile de perdre beaucoup d'un coup ici.
+        if (!entry.directory && ui.MenuItem("Supprimer")) {
+            Delete(engine, document, entry);
+        }
+        ui.EndMenu();
+    }
+
+    void ContentBrowser::Delete(Engine& engine, SceneDocument& document, const Entry& entry) {
+        const Window& window = engine.GetWindow();
+        const Project* project = engine.GetProject();
+        if (project && project->GetStartupScenePath().lexically_normal() == entry.path.lexically_normal()) {
+            Platform::ShowError(window, "Supprimer", "« " + entry.name + " » est la scène de démarrage du projet : "
+                                                     "Game.exe ne pourrait plus démarrer.");
+            return;
+        }
+        if (!Platform::AskYesNo(window, "Supprimer", "Envoyer « " + entry.name + " » à la corbeille ?")) {
+            return;
+        }
+        if (auto deleted = Platform::MoveToRecycleBin(entry.path); !deleted) {
+            Platform::ShowError(window, "Supprimer", deleted.error());
+            return;
+        }
+        document.ForgetFile(entry.path);
+        m_sinceScan = ScanInterval; // relu à la prochaine frame
     }
 }

@@ -143,6 +143,9 @@ namespace Flux::UI {
         // Vrai si ce menu est ouvert : décrire ses éléments puis appeler EndMenu.
         bool BeginMenu(std::string_view label);
         void EndMenu();
+        // Menu contextuel du dernier widget décrit, ouvert par un clic droit sur lui ; id le distingue des autres.
+        // Vrai s'il est ouvert : décrire ses éléments (MenuItem) puis appeler EndMenu.
+        bool BeginContextMenu(std::string_view id = "contexte");
         // Vrai au clic, qui referme le menu. shortcut n'est qu'affiché : le raccourci reste à gérer par l'appelant.
         bool MenuItem(std::string_view label, std::string_view shortcut = {}, bool enabled = true);
         // Hauteur de la barre de menus (0 sans barre) : la place à laisser en haut de l'écran.

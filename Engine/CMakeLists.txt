@@ -54,6 +54,8 @@ target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap G
 target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
 target_link_libraries(FluxEngine PRIVATE comdlg32)
+# Corbeille et explorateur (SHFileOperationW, ShellExecuteW).
+target_link_libraries(FluxEngine PRIVATE shell32)
 
 target_compile_definitions(FluxEngine PRIVATE
         VK_NO_PROTOTYPES

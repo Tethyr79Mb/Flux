@@ -32,6 +32,8 @@ namespace FluxEditor {
 
         void Scan(const std::filesystem::path& root);
         void DrawEntry(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry);
+        void ShowContextMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry);
+        void Delete(Flux::Engine& engine, SceneDocument& document, const Entry& entry);
 
         std::filesystem::path m_root;
         std::vector<Entry> m_entries;

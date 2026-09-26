@@ -195,7 +195,8 @@ namespace Flux::UI {
         // Barre de menus et menu déroulant ouvert : dessinés après les panneaux, survolés avant eux.
         std::vector<WidgetId> overlays;         // décrits pendant la frame en cours
         std::vector<WidgetId> previousOverlays; // ceux de la frame précédente, pour le survol
-        WidgetId openMenu = 0;                  // titre du menu ouvert
+        WidgetId openMenu = 0;                  // titre du menu ouvert (ou menu contextuel)
+        Vector2f contextPosition;               // où le menu contextuel ouvert est apparu
         bool openMenuSeen = false;
         bool menuBarDrawn = false;
         float menuBarHeight = 0.0f;             // à la frame précédente
@@ -303,6 +304,26 @@ namespace Flux::UI {
         }
 
         // Barre de menus ou menu déroulant : devient le panneau en cours, hors de l'ordre des panneaux.
+        // Menu déroulant ou contextuel en position : le panneau en cours est mis de côté jusqu'à EndMenu.
+        void BeginPopup(WidgetId id, Vector2f position) {
+            openMenuSeen = true;
+            menuParent = SaveLayout();
+            Panel& popup = BeginOverlay(id);
+            // Largeur des éléments mesurée à la frame précédente (la première frame, une largeur minimale).
+            popup.width = std::max(180.0f, popup.measuredWidth);
+            popup.position = {std::clamp(position.x, 0.0f, std::max(0.0f, screenSize.x - popup.width)),
+                              std::clamp(position.y, 0.0f, std::max(0.0f, screenSize.y - popup.height))};
+            const float padding = 4.0f;
+            contentMin = popup.position + Vector2f{padding, padding};
+            contentMaxX = popup.position.x + popup.width - padding;
+            cursorY = contentMin.y;
+            lastSpacing = 0.0f;
+            clipMin = popup.position;
+            clipMax = {popup.position.x + popup.width, screenSize.y};
+            RestorePanelClip();
+            menuItemWidth = 0.0f;
+        }
+
         Panel& BeginOverlay(WidgetId id) {
             auto& slot = panels[id];
             if (!slot) {
@@ -605,6 +626,8 @@ namespace Flux::UI {
                 ui.openMenu = 0;
                 ui.mousePressed = false;
                 ui.clickSwallowed = true;
+            } else if (mouseEnabled && input.WasMouseButtonPressed(MouseButton::Right) && !overMenu) {
+                ui.openMenu = 0; // un autre clic droit peut rouvrir un menu contextuel ailleurs dans la même frame
             } else if (input.WasKeyPressed(Key::Escape)) {
                 ui.openMenu = 0;
             }
@@ -1088,21 +1111,26 @@ namespace Flux::UI {
             return false;
         }
 
-        ui.openMenuSeen = true;
-        ui.menuParent = ui.SaveLayout();
-        Impl::Panel& popup = ui.BeginOverlay(Hash(id, "#menu"));
-        // Largeur des éléments mesurée à la frame précédente (la première frame, une largeur minimale).
-        popup.width = std::max(180.0f, popup.measuredWidth);
-        popup.position = {std::clamp(min.x, 0.0f, std::max(0.0f, ui.screenSize.x - popup.width)), max.y};
-        const float padding = 4.0f;
-        ui.contentMin = popup.position + Vector2f{padding, padding};
-        ui.contentMaxX = popup.position.x + popup.width - padding;
-        ui.cursorY = ui.contentMin.y;
-        ui.lastSpacing = 0.0f;
-        ui.clipMin = popup.position;
-        ui.clipMax = {popup.position.x + popup.width, ui.screenSize.y};
-        ui.RestorePanelClip();
-        ui.menuItemWidth = 0.0f;
+        ui.BeginPopup(Hash(id, "#menu"), {min.x, max.y});
+        return true;
+    }
+
+    bool Context::BeginContextMenu(std::string_view id) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || ui.menuParent) {
+            return false;
+        }
+        const WidgetId popupId = Hash(ui.GetId(id), "#contexte");
+        // Clic droit sur le dernier widget décrit : le menu s'ouvre sous la souris.
+        if (ui.mouseEnabled && ui.input->WasMouseButtonPressed(MouseButton::Right)
+            && ui.IsMouseOver(ui.lastItemMin, ui.lastItemMax)) {
+            ui.openMenu = popupId;
+            ui.contextPosition = ui.mouse;
+        }
+        if (ui.openMenu != popupId) {
+            return false;
+        }
+        ui.BeginPopup(popupId, ui.contextPosition);
         return true;
     }
 

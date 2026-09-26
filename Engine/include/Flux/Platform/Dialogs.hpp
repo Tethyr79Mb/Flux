@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -33,5 +34,11 @@ namespace Flux::Platform {
     enum class Answer { Yes, No, Cancel };
     // Question à trois réponses (Oui, Non, Annuler), par exemple avant de perdre des modifications.
     FLUX_API Answer AskYesNoCancel(const Window& owner, std::string_view title, std::string_view question);
+    FLUX_API bool AskYesNo(const Window& owner, std::string_view title, std::string_view question);
     FLUX_API void ShowError(const Window& owner, std::string_view title, std::string_view message);
+
+    // Fichier ou dossier envoyé à la corbeille (récupérable), sans autre confirmation que celle de l'appelant.
+    FLUX_API std::expected<void, std::string> MoveToRecycleBin(const std::filesystem::path& path);
+    // Ouvre l'explorateur sur le dossier du fichier, fichier sélectionné.
+    FLUX_API void ShowInExplorer(const std::filesystem::path& path);
 }

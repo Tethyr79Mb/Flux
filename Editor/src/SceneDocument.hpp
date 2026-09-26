@@ -23,6 +23,8 @@ namespace FluxEditor {
         // Ouvre une scène sans rien demander (démarrage de l'éditeur) ; false et message d'erreur en cas d'échec.
         bool Load(Flux::Engine& engine, const std::filesystem::path& path);
         const std::filesystem::path& GetPath() const { return m_path; }
+        // Le fichier de la scène ouverte a été supprimé : la scène reste en mémoire, sans titre et à enregistrer.
+        void ForgetFile(const std::filesystem::path& path);
 
         private:
         void NewScene(Flux::Engine& engine);

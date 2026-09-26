@@ -105,6 +105,13 @@ namespace FluxEditor {
         return true;
     }
 
+    void SceneDocument::ForgetFile(const std::filesystem::path& path) {
+        if (!m_path.empty() && m_path.lexically_normal() == path.lexically_normal()) {
+            m_path.clear();
+            m_modified = true;
+        }
+    }
+
     bool SceneDocument::Save(Engine& engine) {
         return m_path.empty() ? SaveAs(engine) : WriteTo(engine, m_path);
     }
