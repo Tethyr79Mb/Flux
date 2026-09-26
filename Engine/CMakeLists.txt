@@ -5,6 +5,7 @@ add_library(FluxEngine SHARED
         src/Platform/Input.cpp
         src/Renderer/Renderer.cpp
         src/Scene/Camera.cpp
+        src/Scene/ComponentRegistry.cpp
         src/Scene/FlyCameraController.cpp
         src/Scene/Scene.cpp
         src/Scene/SceneSerializer.cpp

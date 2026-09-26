@@ -3,6 +3,7 @@
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/Camera.hpp"
+#include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/FlyCameraController.hpp"
 #include "Flux/Scene/Scene.hpp"
 
@@ -45,6 +46,9 @@ namespace Flux {
         UI::Context& GetUi();
         Camera& GetCamera() { return m_camera; }
         Scene& GetScene() { return m_scene; }
+        // Types de composants sauvegardés et affichés dans l'inspecteur : ceux du moteur, puis ceux du jeu
+        // (à enregistrer dans FluxRegisterGame, avant de charger une scène qui les utilise).
+        ComponentRegistry& GetComponents() { return m_components; }
 
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
@@ -55,6 +59,7 @@ namespace Flux {
         std::unique_ptr<Window> m_window;
         std::unique_ptr<Renderer> m_renderer;
         std::unique_ptr<UI::Context> m_ui;
+        ComponentRegistry m_components;
         Scene m_scene;
         UpdateFunction m_gameUpdate;
         UpdateFunction m_editorUpdate;

@@ -3,6 +3,7 @@
 #include "Flux/Export.hpp"
 #include "Flux/Platform/SharedLibrary.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -12,7 +13,7 @@ namespace Flux {
     class Engine;
 
     // À incrémenter à chaque changement incompatible du contrat entre moteur et jeu.
-    inline constexpr std::uint32_t GameModuleApiVersion = 4;
+    inline constexpr std::uint32_t GameModuleApiVersion = 5;
 
     // Points d'entrée qu'une DLL de jeu doit exporter (voir FLUX_GAME_MODULE_EXPORT).
     using GameApiVersionFn = std::uint32_t (*)();
@@ -38,6 +39,7 @@ namespace Flux {
 
         void Register(Engine& engine);
         // Appelé aussi par le destructeur : plus aucun objet du jeu ne doit survivre ensuite.
+        // Vide la scène et retire les composants enregistrés par le jeu : leur code est dans la DLL.
         void Unregister();
 
         private:
@@ -48,6 +50,7 @@ namespace Flux {
         RegisterGameFn m_register = nullptr;
         UnregisterGameFn m_unregister = nullptr;
         Engine* m_registeredTo = nullptr;
+        std::size_t m_engineComponentCount = 0; // types de composants enregistrés avant le jeu
     };
 }
 

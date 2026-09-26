@@ -29,7 +29,9 @@ namespace Flux {
     }
 
     void Scene::Clear() {
-        m_registry.clear();
+        // Registre neuf plutôt que clear() : les stockages de tous les types disparaissent aussi, y compris ceux
+        // créés par un module de jeu, dont le code (destructeur, table virtuelle) part avec sa DLL.
+        m_registry = entt::registry{};
         m_entitiesById.clear();
         m_firstRoot = NullEntity;
         m_lastRoot = NullEntity;

@@ -1,13 +1,17 @@
 #include "Flux/Scene/SceneSerializer.hpp"
 
+#include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <format>
 #include <fstream>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -76,24 +80,16 @@ namespace Flux::SceneSerializer {
             return result;
         }
 
-        const char* ToString(MeshType mesh) {
-            switch (mesh) {
-                case MeshType::Cube: return "cube";
-            }
-            return "cube";
+        // Clés d'entité gérées ici ; toutes les autres sont des composants.
+        bool IsEntityKey(std::string_view key) {
+            return key == "id" || key == "name" || key == "parent" || key == "sector";
         }
 
-        std::optional<MeshType> ParseMesh(std::string_view text) {
-            if (text == "cube") {
-                return MeshType::Cube;
-            }
-            return std::nullopt;
-        }
-
-        // Lecture d'un tableau de N nombres ; lève nlohmann::json::exception si le type ne va pas.
+        // Lecture d'un tableau de N nombres.
         template <typename T, std::size_t N>
         std::array<T, N> ReadArray(const Json& value, std::string_view what) {
-            if (!value.is_array() || value.size() != N) {
+            if (!value.is_array() || value.size() != N
+                || !std::ranges::all_of(value, [](const Json& item) { return item.is_number(); })) {
                 throw std::runtime_error(std::format("« {} » doit être un tableau de {} nombres", what, N));
             }
             std::array<T, N> result{};
@@ -103,7 +99,94 @@ namespace Flux::SceneSerializer {
             return result;
         }
 
-        void WriteEntity(const Scene& scene, Entity entity, Json& entities) {
+        Json WriteField(const FieldInfo& field, const void* value) {
+            switch (field.type) {
+                case FieldType::Bool: return *static_cast<const bool*>(value);
+                case FieldType::Int: return *static_cast<const std::int32_t*>(value);
+                case FieldType::Float: return Shortest(*static_cast<const float*>(value));
+                case FieldType::Double: return *static_cast<const double*>(value);
+                case FieldType::Vector3f: return ToJson(*static_cast<const Math::Vector3f*>(value));
+                case FieldType::Vector3d: return ToJson(*static_cast<const Math::Vector3d*>(value));
+                case FieldType::Quaternion: return ToJson(*static_cast<const Math::Quaternionf*>(value));
+                case FieldType::Color: return ToJson(*static_cast<const Math::LinearColor*>(value));
+                case FieldType::String: return *static_cast<const std::string*>(value);
+                case FieldType::Enum: {
+                    const std::int64_t number = field.getEnum(value);
+                    for (const EnumOption& option : field.enumOptions) {
+                        if (option.value == number) {
+                            return option.key;
+                        }
+                    }
+                    return number; // valeur hors de la liste déclarée : gardée en nombre, refusée au chargement
+                }
+            }
+            return nullptr;
+        }
+
+        void ReadField(const FieldInfo& field, const Json& json, void* value) {
+            const auto expect = [&](bool ok, std::string_view what) {
+                if (!ok) {
+                    throw std::runtime_error(std::format("« {} » doit être {}", field.key, what));
+                }
+            };
+            switch (field.type) {
+                case FieldType::Bool:
+                    expect(json.is_boolean(), "true ou false");
+                    *static_cast<bool*>(value) = json.get<bool>();
+                    break;
+                case FieldType::Int:
+                    expect(json.is_number_integer() && json.get<std::int64_t>() >= std::numeric_limits<std::int32_t>::min()
+                               && json.get<std::int64_t>() <= std::numeric_limits<std::int32_t>::max(),
+                           "un entier (32 bits)");
+                    *static_cast<std::int32_t*>(value) = json.get<std::int32_t>();
+                    break;
+                case FieldType::Float:
+                    expect(json.is_number(), "un nombre");
+                    *static_cast<float*>(value) = json.get<float>();
+                    break;
+                case FieldType::Double:
+                    expect(json.is_number(), "un nombre");
+                    *static_cast<double*>(value) = json.get<double>();
+                    break;
+                case FieldType::Vector3f: {
+                    const auto v = ReadArray<float, 3>(json, field.key);
+                    *static_cast<Math::Vector3f*>(value) = {v[0], v[1], v[2]};
+                    break;
+                }
+                case FieldType::Vector3d: {
+                    const auto v = ReadArray<double, 3>(json, field.key);
+                    *static_cast<Math::Vector3d*>(value) = {v[0], v[1], v[2]};
+                    break;
+                }
+                case FieldType::Quaternion: {
+                    const auto q = ReadArray<float, 4>(json, field.key);
+                    *static_cast<Math::Quaternionf*>(value) = Math::Normalize(Math::Quaternionf{q[0], q[1], q[2], q[3]});
+                    break;
+                }
+                case FieldType::Color: {
+                    const auto c = ReadArray<float, 4>(json, field.key);
+                    *static_cast<Math::LinearColor*>(value) = {c[0], c[1], c[2], c[3]};
+                    break;
+                }
+                case FieldType::String:
+                    expect(json.is_string(), "une chaîne");
+                    *static_cast<std::string*>(value) = json.get<std::string>();
+                    break;
+                case FieldType::Enum: {
+                    std::string allowed;
+                    for (const EnumOption& option : field.enumOptions) {
+                        if (json.is_string() && json.get<std::string>() == option.key) {
+                            field.setEnum(value, option.value);
+                            return;
+                        }
+                        allowed += (allowed.empty() ? "« " : ", « ") + option.key + " »";
+                    }
+                    throw std::runtime_error(std::format("« {} » vaut {}, valeurs possibles : {}", field.key, json.dump(), allowed));
+                }
+            }
+        }
+
+        void WriteEntity(const Scene& scene, const ComponentRegistry& components, Entity entity, Json& entities) {
             Json json;
             json["id"] = scene.GetId(entity).ToString();
             json["name"] = scene.Get<NameComponent>(entity).name;
@@ -114,20 +197,33 @@ namespace Flux::SceneSerializer {
                 json["sector"] = ToJson(sector->sector);
             }
 
-            const auto& transform = scene.Get<TransformComponent>(entity);
-            json["transform"] = {
-                {"position", ToJson(transform.position)},
-                {"rotation", ToJson(transform.rotation)},
-                {"scale", ToJson(transform.scale)},
-            };
-
-            if (const auto* renderer = scene.TryGet<MeshRendererComponent>(entity)) {
-                json["meshRenderer"] = {{"mesh", ToString(renderer->mesh)}, {"color", ToJson(renderer->color)}};
+            // Composants enregistrés, dans l'ordre d'enregistrement : le fichier ne change pas d'une sauvegarde à l'autre.
+            for (std::size_t i = 0; i < components.GetCount(); ++i) {
+                const ComponentInfo& info = components.Get(i);
+                if (const void* component = info.get(scene.GetRegistry(), entity)) {
+                    Json fields = Json::object();
+                    for (const FieldInfo& field : info.fields) {
+                        fields[field.key] = WriteField(field, field.access(const_cast<void*>(component)));
+                    }
+                    json[info.key] = std::move(fields);
+                }
+            }
+            if (const auto* unknown = scene.TryGet<UnknownComponentsComponent>(entity)) {
+                for (const auto& [key, text] : unknown->components) {
+                    if (!json.contains(key)) { // enregistré entre-temps : la version à jour l'emporte
+                        json[key] = Json::parse(text);
+                    }
+                }
             }
             entities.push_back(std::move(json));
 
-            scene.ForEachChild(entity, [&](Entity child) { WriteEntity(scene, child, entities); });
+            scene.ForEachChild(entity, [&](Entity child) { WriteEntity(scene, components, child, entities); });
         }
+
+        struct ComponentData {
+            const ComponentInfo* info;
+            std::shared_ptr<void> instance;
+        };
 
         // Entité lue et vérifiée, avant toute modification de la scène.
         struct EntityData {
@@ -135,14 +231,17 @@ namespace Flux::SceneSerializer {
             std::string name;
             std::optional<Uuid> parent;
             Math::Vector3i64 sector;
-            TransformComponent transform;
-            std::optional<MeshRendererComponent> meshRenderer;
+            std::vector<ComponentData> components;
+            UnknownComponentsComponent unknown;
         };
 
-        EntityData ReadEntity(const Json& json, std::size_t index) {
+        EntityData ReadEntity(const ComponentRegistry& components, const Json& json, std::size_t index) {
             const auto fail = [&](std::string_view message) {
                 return std::runtime_error(std::format("entité n°{} : {}", index + 1, message));
             };
+            if (!json.is_object()) {
+                throw fail("un objet { ... } est attendu");
+            }
 
             EntityData data;
             const auto id = Uuid::Parse(json.at("id").get<std::string>());
@@ -161,42 +260,41 @@ namespace Flux::SceneSerializer {
                 const auto s = ReadArray<std::int64_t, 3>(*sector, "sector");
                 data.sector = {s[0], s[1], s[2]};
             }
-            if (const auto transform = json.find("transform"); transform != json.end()) {
-                // Champs absents : valeurs par défaut, pour pouvoir écrire une scène à la main sans tout préciser.
-                if (const auto position = transform->find("position"); position != transform->end()) {
-                    const auto p = ReadArray<double, 3>(*position, "position");
-                    data.transform.position = {p[0], p[1], p[2]};
+
+            for (const auto& [key, value] : json.items()) {
+                if (IsEntityKey(key)) {
+                    continue;
                 }
-                if (const auto rotation = transform->find("rotation"); rotation != transform->end()) {
-                    const auto r = ReadArray<float, 4>(*rotation, "rotation");
-                    data.transform.rotation = Math::Normalize(Math::Quaternionf{r[0], r[1], r[2], r[3]});
+                const ComponentInfo* info = components.Find(key);
+                if (!info) {
+                    data.unknown.components.emplace_back(key, value.dump());
+                    continue;
                 }
-                if (const auto scale = transform->find("scale"); scale != transform->end()) {
-                    const auto s = ReadArray<float, 3>(*scale, "scale");
-                    data.transform.scale = {s[0], s[1], s[2]};
+                if (!value.is_object()) {
+                    throw fail(std::format("« {} » doit être un objet {{ ... }}", key));
                 }
-            }
-            if (const auto renderer = json.find("meshRenderer"); renderer != json.end()) {
-                MeshRendererComponent component;
-                const std::string meshName = renderer->value("mesh", std::string{"cube"});
-                const auto mesh = ParseMesh(meshName);
-                if (!mesh) {
-                    throw fail(std::format("maillage inconnu « {} »", meshName));
+                // Champs absents : valeurs par défaut du composant, pour pouvoir écrire une scène à la main sans tout préciser.
+                ComponentData component{info, info->create()};
+                for (const auto& [fieldKey, fieldValue] : value.items()) {
+                    const FieldInfo* field = info->FindField(fieldKey);
+                    if (!field) {
+                        throw fail(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
+                    }
+                    try {
+                        ReadField(*field, fieldValue, field->access(component.instance.get()));
+                    } catch (const std::exception& error) {
+                        throw fail(std::format("{} : {}", key, error.what()));
+                    }
                 }
-                component.mesh = *mesh;
-                if (const auto color = renderer->find("color"); color != renderer->end()) {
-                    const auto c = ReadArray<float, 4>(*color, "color");
-                    component.color = {c[0], c[1], c[2], c[3]};
-                }
-                data.meshRenderer = component;
+                data.components.push_back(std::move(component));
             }
             return data;
         }
     }
 
-    std::string SaveToString(const Scene& scene) {
+    std::string SaveToString(const Scene& scene, const ComponentRegistry& components) {
         Json entities = Json::array();
-        scene.ForEachRoot([&](Entity root) { WriteEntity(scene, root, entities); });
+        scene.ForEachRoot([&](Entity root) { WriteEntity(scene, components, root, entities); });
 
         Json document;
         document["format"] = FormatName;
@@ -205,7 +303,7 @@ namespace Flux::SceneSerializer {
         return CompactNumberArrays(document.dump(2)) + '\n';
     }
 
-    std::expected<void, std::string> LoadFromString(Scene& scene, std::string_view text) {
+    std::expected<void, std::string> LoadFromString(Scene& scene, const ComponentRegistry& components, std::string_view text) {
         std::vector<EntityData> entities;
         try {
             const Json document = Json::parse(text);
@@ -219,7 +317,7 @@ namespace Flux::SceneSerializer {
             const Json& list = document.at("entities");
             entities.reserve(list.size());
             for (std::size_t i = 0; i < list.size(); ++i) {
-                entities.push_back(ReadEntity(list[i], i));
+                entities.push_back(ReadEntity(components, list[i], i));
             }
         } catch (const std::exception& error) {
             return std::unexpected(std::string(error.what()));
@@ -252,23 +350,26 @@ namespace Flux::SceneSerializer {
             scene.CreateEntity(data.name, NullEntity, data.id);
         }
         // Liens posés dans l'ordre du fichier : l'ordre des enfants est conservé.
-        for (const EntityData& data : entities) {
+        for (EntityData& data : entities) {
             const Entity entity = scene.FindById(data.id);
             if (data.parent) {
                 scene.SetParent(entity, scene.FindById(*data.parent));
             } else if (data.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, data.sector);
             }
-            scene.Get<TransformComponent>(entity) = data.transform;
-            if (data.meshRenderer) {
-                scene.Add<MeshRendererComponent>(entity, *data.meshRenderer);
+            for (const ComponentData& component : data.components) {
+                component.info->emplace(scene.GetRegistry(), entity, component.instance.get());
+            }
+            if (!data.unknown.components.empty()) {
+                scene.Add<UnknownComponentsComponent>(entity, std::move(data.unknown));
             }
         }
         return {};
     }
 
-    std::expected<void, std::string> Save(const Scene& scene, const std::filesystem::path& path) {
-        const std::string text = SaveToString(scene);
+    std::expected<void, std::string> Save(const Scene& scene, const ComponentRegistry& components,
+                                          const std::filesystem::path& path) {
+        const std::string text = SaveToString(scene, components);
         std::filesystem::path temporary = path;
         temporary += ".tmp";
         {
@@ -285,14 +386,15 @@ namespace Flux::SceneSerializer {
         return {};
     }
 
-    std::expected<void, std::string> Load(Scene& scene, const std::filesystem::path& path) {
+    std::expected<void, std::string> Load(Scene& scene, const ComponentRegistry& components,
+                                          const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
             return std::unexpected("scène introuvable : " + path.string());
         }
         std::ostringstream text;
         text << file.rdbuf();
-        if (auto loaded = LoadFromString(scene, text.str()); !loaded) {
+        if (auto loaded = LoadFromString(scene, components, text.str()); !loaded) {
             return std::unexpected(path.filename().string() + " : " + loaded.error());
         }
         return {};

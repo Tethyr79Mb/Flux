@@ -1,5 +1,7 @@
 #include "Flux/Core/GameModule.hpp"
 
+#include "Flux/Core/Engine.hpp"
+
 #include <atomic>
 #include <format>
 #include <system_error>
@@ -80,7 +82,8 @@ namespace Flux {
           m_shadowCopy(std::exchange(other.m_shadowCopy, {})),
           m_register(std::exchange(other.m_register, nullptr)),
           m_unregister(std::exchange(other.m_unregister, nullptr)),
-          m_registeredTo(std::exchange(other.m_registeredTo, nullptr)) {}
+          m_registeredTo(std::exchange(other.m_registeredTo, nullptr)),
+          m_engineComponentCount(std::exchange(other.m_engineComponentCount, 0)) {}
 
     GameModule& GameModule::operator=(GameModule&& other) noexcept {
         if (this != &other) {
@@ -90,12 +93,14 @@ namespace Flux {
             m_register = std::exchange(other.m_register, nullptr);
             m_unregister = std::exchange(other.m_unregister, nullptr);
             m_registeredTo = std::exchange(other.m_registeredTo, nullptr);
+            m_engineComponentCount = std::exchange(other.m_engineComponentCount, 0);
         }
         return *this;
     }
 
     void GameModule::Register(Engine& engine) {
         if (m_register && !m_registeredTo) {
+            m_engineComponentCount = engine.GetComponents().GetCount();
             m_register(engine);
             m_registeredTo = &engine;
         }
@@ -104,6 +109,9 @@ namespace Flux {
     void GameModule::Unregister() {
         if (m_unregister && m_registeredTo) {
             m_unregister(*m_registeredTo);
+            // Les stockages EnTT des composants du jeu ont leur code dans la DLL : ils doivent disparaître avant elle.
+            m_registeredTo->GetScene().Clear();
+            m_registeredTo->GetComponents().Truncate(m_engineComponentCount);
             m_registeredTo = nullptr;
         }
     }

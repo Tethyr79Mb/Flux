@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -115,8 +116,18 @@ namespace Flux::UI {
         // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu.
         bool ColorEdit3(std::string_view label, Math::LinearColor& color);
 
-        // Entiers 64 bits (secteurs) : même principe que les champs numériques, sans décimales.
+        // Entiers : même principe que les champs numériques, sans décimales.
+        bool DragInt(std::string_view label, std::int32_t& value, float speed = 0.2f, double min = NoMin, double max = NoMax);
+        // Entiers 64 bits (secteurs).
         bool DragInt3(std::string_view label, Math::Vector3i64& value, float speed = 0.2f);
+
+        // Choix parmi quelques valeurs (énumération) : un clic passe à la suivante, clic droit à la précédente.
+        // Retourne true quand index change.
+        bool Choice(std::string_view label, int& index, std::span<const std::string_view> options);
+
+        // Titre de section repliable (un composant dans l'inspecteur). Retourne true si la section est dépliée ;
+        // pas de TreePop. defaultOpen ne sert qu'à la première apparition.
+        bool CollapsingHeader(std::string_view label, bool defaultOpen = true);
 
         // Nœud d'arbre (hiérarchie) : flèche pour déplier, clic sur le libellé pour sélectionner,
         // double-clic pour déplier aussi. Quand open est vrai, décrire les enfants puis appeler TreePop.
