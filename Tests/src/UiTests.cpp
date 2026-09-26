@@ -317,6 +317,92 @@ namespace {
         return true;
     }
 
+    bool RunDockTests(const UI::Font& font) {
+        Harness harness(font);
+        UI::Context& ui = harness.GetUi();
+        const float bar = font.GetLineHeight() * 15.0f + 8.0f; // hauteur de la barre d'onglets
+
+        // Un panneau à gauche (25 %), deux onglets à droite (30 % du reste), la vue au milieu.
+        const UI::DockId root = ui.ClearDockLayout();
+        const auto [left, rest] = ui.SplitDock(root, UI::DockSide::Left, 0.25f);
+        const UI::DockId right = ui.SplitDock(rest, UI::DockSide::Right, 0.3f).side;
+        ui.DockPanel("Gauche", left);
+        ui.DockPanel("A", right);
+        ui.DockPanel("B", right);
+
+        UI::Rect view;
+        bool aOpen = false;
+        bool bOpen = false;
+        bool floatingSeen = false;
+        const auto describe = [&](UI::Context& context) {
+            view = context.DockSpace({0.0f, 0.0f}, {1280.0f, 720.0f});
+            if (context.BeginPanel("Gauche", {0.0f, 0.0f})) {
+                context.Text("contenu");
+            }
+            context.EndPanel();
+            aOpen = context.BeginPanel("A", {0.0f, 0.0f});
+            context.EndPanel();
+            bOpen = context.BeginPanel("B", {0.0f, 0.0f});
+            context.EndPanel();
+            // Panneau flottant demandé à gauche de l'écran : ramené dans la zone centrale.
+            floatingSeen = context.BeginPanel("Flottant", {10.0f, 10.0f}, 200.0f);
+            context.EndPanel();
+        };
+
+        harness.Move({640.0f, 400.0f}, describe);
+        harness.Move({640.0f, 400.0f}, describe);
+        // 1280 - 4 (séparateur) = 1276 ; 25 % : 319, la vue commence après le séparateur.
+        CHECK(view.min.x == 323.0f && view.min.y == 0.0f && view.max.y == 720.0f);
+        CHECK(aOpen && !bOpen && floatingSeen);
+        CHECK(!ui.WantsMouse()); // milieu de la vue : à la caméra
+
+        // Le panneau flottant est dans la vue, et la souris y est prise par l'UI.
+        harness.Move({view.min.x + 20.0f, 5.0f}, describe);
+        CHECK(ui.WantsMouse());
+
+        // Zone ancrée, séparateur : l'UI prend la souris.
+        harness.Move({100.0f, 400.0f}, describe);
+        CHECK(ui.WantsMouse());
+        harness.Move({321.0f, 400.0f}, describe);
+        CHECK(ui.WantsMouse());
+
+        // Onglets : clic sur le second.
+        const float tabY = bar * 0.5f + 2.0f;
+        const float rightX = view.max.x + 4.0f;
+        const float tabAWidth = ui.MeasureText("A").x + 2.0f * 6.0f + 8.0f; // texte, marges, espace
+        const float tabBX = rightX + 2.0f + tabAWidth + 2.0f + 10.0f;
+        harness.Click({tabBX, tabY}, describe);
+        harness.Move({tabBX, tabY}, describe);
+        CHECK(!aOpen && bOpen);
+
+        // Glisser le séparateur de gauche jusqu'à x = 500.
+        harness.Move({321.0f, 400.0f}, describe);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
+        harness.Move({500.0f, 400.0f}, describe);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, false); }, describe);
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(std::abs(view.min.x - 502.0f) <= 1.0f);
+
+        // Enregistrement puis rechargement : même disposition, même onglet affiché.
+        const std::string saved = ui.SaveDockLayout();
+        const UI::Rect before = view;
+        ui.ClearDockLayout();
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(view.min.x == 0.0f);
+        CHECK(ui.LoadDockLayout(saved));
+        harness.Move({640.0f, 400.0f}, describe);
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(view.min.x == before.min.x && view.max.x == before.max.x);
+        CHECK(!aOpen && bOpen);
+
+        // Texte invalide : refusé, disposition inchangée.
+        CHECK(!ui.LoadDockLayout("pas du json"));
+        CHECK(!ui.LoadDockLayout(R"({"format":"flux.dock","version":1,"root":{"panels":[]}})")); // pas de zone centrale
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(view.min.x == before.min.x);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -342,5 +428,6 @@ bool RunUiTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font);
+    return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
+        && RunDockTests(**font);
 }

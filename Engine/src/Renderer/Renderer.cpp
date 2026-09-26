@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <span>
@@ -144,6 +145,8 @@ namespace Flux {
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
         bool vsyncChanged = false;
+        Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
+        Math::Vector2f sceneViewportMax;
 
         // Overlay 2D (FluxUI) : atlas MSDF + un vertex buffer par frame en vol.
         std::unique_ptr<UI::Font> font;
@@ -405,10 +408,27 @@ namespace Flux {
             return true;
         }
 
-        void DrawScene(VkCommandBuffer commandBuffer) const {
+        // Rectangle de la scène (en pixels entiers), borné à la fenêtre : la vue 3D de l'éditeur, ou toute la fenêtre.
+        VkRect2D SceneRect() const {
             const VkExtent2D extent = swapchain->GetExtent();
-            const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
-            const VkRect2D scissor{{0, 0}, extent};
+            const auto clampTo = [](float value, uint32_t limit) {
+                return static_cast<int32_t>(std::clamp(std::round(value), 0.0f, static_cast<float>(limit)));
+            };
+            const int32_t x0 = clampTo(sceneViewportMin.x, extent.width);
+            const int32_t y0 = clampTo(sceneViewportMin.y, extent.height);
+            const int32_t x1 = clampTo(sceneViewportMax.x, extent.width);
+            const int32_t y1 = clampTo(sceneViewportMax.y, extent.height);
+            if (x1 - x0 < 1 || y1 - y0 < 1) {
+                return {{0, 0}, extent};
+            }
+            return {{x0, y0}, {static_cast<uint32_t>(x1 - x0), static_cast<uint32_t>(y1 - y0)}};
+        }
+
+        void DrawScene(VkCommandBuffer commandBuffer) const {
+            const VkRect2D scissor = SceneRect();
+            const VkViewport viewport{static_cast<float>(scissor.offset.x), static_cast<float>(scissor.offset.y),
+                                      static_cast<float>(scissor.extent.width), static_cast<float>(scissor.extent.height),
+                                      0.0f, 1.0f};
             const VkBuffer vertexBuffer = cubeVertexBuffer.GetHandle();
             const VkDeviceSize offset = 0;
 
@@ -428,7 +448,7 @@ namespace Flux {
         // Une matrice par maillage visible, calculée relativement à la caméra : la soustraction des positions
         // se fait en double (secteurs compris), le GPU ne voit que de petits nombres.
         void PrepareScene(const Scene& scene, const Camera& camera) {
-            const VkExtent2D extent = swapchain->GetExtent();
+            const VkExtent2D extent = SceneRect().extent;
             const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
             const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
 
@@ -461,7 +481,11 @@ namespace Flux {
             const VkBuffer vertexBuffer = overlayBuffers[frameIndex].GetHandle();
             const VkDeviceSize offset = 0;
 
-            // Viewport et scissor déjà réglés par DrawScene, pour toute la passe.
+            // L'interface couvre toute la fenêtre, la scène seulement sa zone.
+            const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
+            const VkRect2D scissor{{0, 0}, extent};
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetHandle());
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetLayout(),
                                     0, 1, &overlaySet, 0, nullptr);
@@ -655,6 +679,11 @@ namespace Flux {
         const bool ok = m_impl->RenderFrame(scene, camera);
         m_impl->overlay->Clear(); // même si la frame n'a pas été présentée (fenêtre réduite, swapchain recréée)
         return ok;
+    }
+
+    void Renderer::SetSceneViewport(Math::Vector2f min, Math::Vector2f max) {
+        m_impl->sceneViewportMin = min;
+        m_impl->sceneViewportMax = max;
     }
 
     void Renderer::SetClearColor(Math::LinearColor color) {

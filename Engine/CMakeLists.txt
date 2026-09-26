@@ -12,6 +12,7 @@ add_library(FluxEngine SHARED
         src/Scene/SceneSerializer.cpp
         src/UI/Font.cpp
         src/UI/Context.cpp
+        src/UI/Docking.cpp
         src/UI/DrawList.cpp
         src/RHI/Vulkan/VulkanDevice.cpp
         src/RHI/Vulkan/VulkanSwapchain.cpp

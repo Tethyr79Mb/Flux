@@ -7,6 +7,7 @@
 #include <Flux/UI/Context.hpp>
 
 #include "ContentBrowser.hpp"
+#include "EditorLayout.hpp"
 #include "PlayMode.hpp"
 #include "SceneDocument.hpp"
 #include "SceneEditor.hpp"
@@ -34,6 +35,7 @@ int main(int argc, char** argv) {
     FluxEditor::SceneEditor sceneEditor;
     FluxEditor::ContentBrowser contentBrowser;
     FluxEditor::PlayMode playMode;
+    FluxEditor::EditorLayout layout;
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}});
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
@@ -44,11 +46,13 @@ int main(int argc, char** argv) {
         Flux::UI::Context& ui = e.GetUi();
         if (ui.BeginMainMenuBar()) {
             document.DrawFileMenu(ui, e);
+            layout.DrawWindowMenu(ui);
             playMode.DrawToolbar(ui, e);
             ui.EndMainMenuBar();
         }
         document.SetLocked(playMode.IsPlaying());
 
+        layout.Update(e);
         sceneEditor.Update(e);
         contentBrowser.Update(e, document, deltaSeconds);
         // Pendant le jeu, les modifications disparaissent à l'arrêt : le fichier n'est pas concerné.
@@ -82,5 +86,7 @@ int main(int argc, char** argv) {
         document.Load(engine, project->GetStartupScenePath());
     }
 
-    return engine.Run();
+    const int exitCode = engine.Run();
+    layout.Save(engine);
+    return exitCode;
 }

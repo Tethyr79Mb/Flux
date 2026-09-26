@@ -1,6 +1,7 @@
 add_executable(FluxEditor
         src/main.cpp
         src/ContentBrowser.cpp
+        src/EditorLayout.cpp
         src/PlayMode.cpp
         src/SceneDocument.cpp
         src/SceneEditor.cpp

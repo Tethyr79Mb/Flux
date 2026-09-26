@@ -52,7 +52,7 @@ namespace FluxEditor {
     void SceneEditor::DrawHierarchy(Engine& engine, Scene& scene) {
         UI::Context& ui = engine.GetUi();
         const float screenHeight = static_cast<float>(engine.GetWindow().GetSize().y);
-        // Sous le panneau « Moteur » (lui-même sous la barre de menus), jusqu'en bas de la fenêtre.
+        // Position sans ancrage (l'éditeur l'ancre à gauche) : sous le panneau « Moteur », jusqu'en bas.
         const float top = 350.0f + ui.GetMenuBarHeight();
         if (ui.BeginPanel("Hiérarchie", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
             if (ui.Button("Nouveau cube")) {
@@ -102,7 +102,7 @@ namespace FluxEditor {
     void SceneEditor::DrawInspector(Engine& engine, Scene& scene, Entity selected) {
         UI::Context& ui = engine.GetUi();
         const float screenWidth = static_cast<float>(engine.GetWindow().GetSize().x);
-        // Entre la vue et le panneau « Démo » du jeu (en haut à droite).
+        // Position sans ancrage (l'éditeur l'ancre à droite) : entre la vue et le panneau « Démo » du jeu.
         if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screenWidth - 752.0f), 8.0f}, 368.0f)) {
             if (selected == NullEntity) {
                 ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans la hiérarchie.");
