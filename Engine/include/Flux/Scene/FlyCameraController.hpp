@@ -6,6 +6,10 @@ namespace Flux {
     struct Camera;
     class Window;
 
+    namespace UI {
+        class Context;
+    }
+
     struct FlyCameraSettings
     {
         float lookSensitivity = 0.0025f; // radians par unité de déplacement brut de la souris
@@ -27,6 +31,9 @@ namespace Flux {
         // keyboardAvailable false (saisie dans un champ) : les touches ne déplacent pas la caméra.
         void Update(Camera& camera, Window& window, double deltaSeconds, bool mouseAvailable = true,
                     bool keyboardAvailable = true);
+
+        // Champs FluxUI (dans un panneau ouvert) : secteur, position et vitesse, puis l'aide des commandes.
+        void DrawFields(UI::Context& ui, Camera& camera);
 
         bool IsActive() const { return m_active; }
         double GetSpeed() const { return m_speed; }

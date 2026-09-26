@@ -22,6 +22,18 @@ namespace Flux::UI {
 
     using WidgetId = std::uint64_t;
 
+    struct Rect
+    {
+        Math::Vector2f min;
+        Math::Vector2f max;
+
+        Math::Vector2f GetSize() const { return max - min; }
+    };
+
+    // Zone d'ancrage : index dans la disposition, valable jusqu'à la prochaine SplitDock ou ClearDockLayout.
+    using DockId = int;
+    enum class DockSide { Left, Right, Top, Bottom };
+
     struct FLUX_API Style
     {
         float fontSize = 15.0f;
@@ -73,7 +85,8 @@ namespace Flux::UI {
         // Ajoute les panneaux de la frame à output, du plus lointain au plus proche.
         void EndFrame(DrawList& output);
 
-        // Vrai si la souris survole un panneau ou manipule un widget : le reste du programme doit l'ignorer.
+        // Vrai si la souris survole un panneau, une zone ancrée (hors zone centrale) ou manipule un widget :
+        // le reste du programme doit l'ignorer.
         bool WantsMouse() const;
         // Vrai pendant la saisie dans un champ : les raccourcis clavier du jeu et de la caméra doivent se taire.
         bool WantsKeyboard() const;
@@ -92,6 +105,10 @@ namespace Flux::UI {
         void LabelText(std::string_view label, std::string_view text);
         // Vrai au clic (bouton relâché sur le widget).
         bool Button(std::string_view label);
+        // Onglet d'une rangée (les suivants avec SameLine) : l'appelant garde l'onglet affiché.
+        //     if (ui.Tab("Graphiques", tab == 0)) tab = 0;
+        // Vrai au clic.
+        bool Tab(std::string_view label, bool selected);
         // Retourne true quand la valeur vient de changer.
         bool Checkbox(std::string_view label, bool& value);
 
@@ -157,6 +174,36 @@ namespace Flux::UI {
         Math::Vector2f MeasureText(std::string_view text) const;
         // Hauteur de la barre de menus (0 sans barre) : la place à laisser en haut de l'écran.
         float GetMenuBarHeight() const;
+
+        // Ancrage : une zone de l'écran découpée en rectangles par des séparateurs à glisser. Chaque rectangle
+        // accueille un ou plusieurs panneaux (en onglets s'ils sont plusieurs) ; le rectangle central reste libre
+        // (la vue 3D de l'éditeur). Construction, une fois :
+        //     const DockId root = ui.ClearDockLayout();           // tout l'espace, central
+        //     const auto [left, rest] = ui.SplitDock(root, DockSide::Left, 0.2f);
+        //     ui.DockPanel("Hiérarchie", left);                   // rest reste central
+        // puis à chaque frame, avant les panneaux :
+        //     const Rect view = ui.DockSpace(zone);
+        // Un panneau ancré garde son BeginPanel / EndPanel : sa position et sa taille viennent de sa zone, et
+        // BeginPanel retourne false quand un autre onglet est affiché. Sans DockSpace dans la frame (Game.exe),
+        // tous les panneaux flottent.
+        struct DockSplit
+        {
+            DockId side; // la nouvelle zone, du côté demandé
+            DockId rest; // le reste, qui garde les panneaux (et le rôle central) de la zone découpée
+        };
+        // Vide la disposition ; retourne la zone unique, centrale, qui couvre tout l'espace.
+        DockId ClearDockLayout();
+        // fraction : part de la zone donnée au côté demandé (entre 0 et 1).
+        DockSplit SplitDock(DockId zone, DockSide side, float fraction);
+        // Ajoute un panneau (par son titre, ##suffixe compris) aux onglets d'une zone non centrale.
+        void DockPanel(std::string_view title, DockId zone);
+        // Pose la disposition sur min-max (sous la barre de menus, en général), gère séparateurs et onglets.
+        // Retourne le rectangle central.
+        Rect DockSpace(Math::Vector2f min, Math::Vector2f max);
+        // Disposition en JSON (proportions, panneaux et onglet affiché de chaque zone), pour la retrouver
+        // au prochain lancement. Load retourne false (disposition inchangée) si le texte n'est pas valide.
+        std::string SaveDockLayout() const;
+        bool LoadDockLayout(std::string_view json);
 
         // Nœud d'arbre (hiérarchie) : flèche pour déplier, clic sur le libellé pour sélectionner,
         // double-clic pour déplier aussi. Quand open est vrai, décrire les enfants puis appeler TreePop.

@@ -41,21 +41,6 @@ namespace Flux {
             double m_frameMilliseconds = 0.0;
         };
 
-        // Distance lisible : mètres, kilomètres, unités astronomiques puis années-lumière.
-        std::string FormatDistance(double meters) {
-            const double magnitude = std::abs(meters);
-            if (magnitude < 1.0e4) {
-                return std::format("{:.1f} m", meters);
-            }
-            if (magnitude < 1.0e9) {
-                return std::format("{:.1f} km", meters / 1.0e3);
-            }
-            if (magnitude < 1.0e15) {
-                return std::format("{:.3f} ua", meters / 1.495978707e11);
-            }
-            return std::format("{:.4f} al", meters / 9.4607304725808e15);
-        }
-
         void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
                              FlyCameraController& controller) {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
@@ -68,24 +53,7 @@ namespace Flux {
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
 
                 ui.Separator();
-                ui.LabelText("Secteur", std::format("{}  {}  {}", camera.position.sector.x, camera.position.sector.y,
-                                                    camera.position.sector.z));
-                Math::Vector3d offset = camera.position.offset;
-                if (ui.DragDouble3("Position (m)", offset, 0.1, UI::Context::NoMin, UI::Context::NoMax, 2)) {
-                    camera.position.offset = offset;
-                    camera.position.Normalize();
-                }
-                // Pas proportionnel à la valeur : 1 % par pixel, utilisable du cm/s à l'année-lumière par seconde.
-                double speed = controller.GetSpeed();
-                if (ui.DragDouble("Vitesse (m/s)", speed, speed * 0.01, 0.0, UI::Context::NoMax, 2)) {
-                    controller.SetSpeed(speed);
-                }
-                ui.LabelText("Soit", FormatDistance(controller.GetSpeed()) + "/s");
-
-                ui.Separator();
-                ui.TextDisabled("Clic droit maintenu : regarder autour\n"
-                                "ZQSD : avancer, E / A : monter / descendre\n"
-                                "Maj : accélérer, molette : régler la vitesse");
+                controller.DrawFields(ui, camera);
             }
             ui.EndPanel();
         }

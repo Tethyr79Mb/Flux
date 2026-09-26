@@ -18,8 +18,9 @@ namespace FluxEditor {
         public:
         // Raccourcis Ctrl+N/O/S ; à appeler à chaque frame, avant les panneaux.
         void HandleShortcuts(Flux::Engine& engine);
-        // Menu « Fichier », dans la barre de menus.
-        void DrawFileMenu(Flux::UI::Context& ui, Flux::Engine& engine);
+        // Éléments du menu « Fichier » (ouvert par l'appelant, qui y ajoute les siens) : scènes, puis Quitter.
+        void DrawSceneMenuItems(Flux::UI::Context& ui, Flux::Engine& engine);
+        void DrawQuitMenuItem(Flux::UI::Context& ui, Flux::Engine& engine);
         // Titre de la fenêtre : nom de la scène, étoile si modifiée, projet.
         void UpdateTitle(Flux::Engine& engine);
         // Pendant le jeu : ni ouverture, ni enregistrement (la scène est une copie jetable).

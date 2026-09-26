@@ -1,10 +1,13 @@
 #include "Flux/Scene/FlyCameraController.hpp"
 
+#include "Flux/Core/Format.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Scene/Camera.hpp"
+#include "Flux/UI/Context.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <numbers>
 
 namespace Flux {
@@ -59,5 +62,26 @@ namespace Flux {
             speed *= m_settings.boostFactor;
         }
         camera.position += direction * (speed * deltaSeconds);
+    }
+
+    void FlyCameraController::DrawFields(UI::Context& ui, Camera& camera) {
+        ui.LabelText("Secteur", std::format("{}  {}  {}", camera.position.sector.x, camera.position.sector.y,
+                                            camera.position.sector.z));
+        Math::Vector3d offset = camera.position.offset;
+        if (ui.DragDouble3("Position (m)", offset, 0.1, UI::Context::NoMin, UI::Context::NoMax, 2)) {
+            camera.position.offset = offset;
+            camera.position.Normalize();
+        }
+        // Pas proportionnel à la valeur : 1 % par pixel, utilisable du cm/s à l'année-lumière par seconde.
+        double speed = m_speed;
+        if (ui.DragDouble("Vitesse (m/s)", speed, speed * 0.01, 0.0, UI::Context::NoMax, 2)) {
+            SetSpeed(speed);
+        }
+        ui.LabelText("Soit", FormatDistance(m_speed) + "/s");
+
+        ui.Separator();
+        ui.TextDisabled("Clic droit maintenu : regarder autour\n"
+                        "ZQSD : avancer, E / A : monter / descendre\n"
+                        "Maj : accélérer, molette : régler la vitesse");
     }
 }

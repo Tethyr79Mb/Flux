@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Math/Color.hpp"
+#include "Flux/Math/Vector2.hpp"
 
 #include <expected>
 #include <memory>
@@ -31,6 +32,10 @@ namespace Flux {
         bool RenderFrame(const Scene& scene, const Camera& camera);
 
         void SetClearColor(Math::LinearColor color);
+
+        // Partie de la fenêtre où la scène est dessinée (en pixels, la vue 3D de l'éditeur) ; l'image garde les
+        // proportions de ce rectangle. min == max (par défaut) : toute la fenêtre. L'overlay 2D couvre toujours tout.
+        void SetSceneViewport(Math::Vector2f min, Math::Vector2f max);
 
         // V-Sync (activée par défaut) : sans elle, autant d'images que le GPU peut en produire.
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
