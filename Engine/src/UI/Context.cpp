@@ -168,10 +168,11 @@ namespace Flux::UI {
             bool clicked = false;
         };
 
-        Impl(const Font& uiFont, const Style& uiStyle) : font(uiFont), style(uiStyle) {}
+        Impl(const Font& uiFont, const Style& uiStyle) : font(uiFont), style(uiStyle), measure(uiFont) {}
 
         const Font& font;
         Style style;
+        DrawList measure; // mesure du texte hors de tout panneau
 
         // Entrées de la frame.
         const Input* input = nullptr;
@@ -1185,6 +1186,37 @@ namespace Flux::UI {
             return true;
         }
         return false;
+    }
+
+    bool Context::MenuBarButton(std::string_view label, bool highlighted) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const std::string_view visible = VisibleLabel(label);
+        const Vector2f size{ui.MeasureText(visible).x + 2.0f * style.framePadding.x, ui.FrameHeight()};
+        const Vector2f min{ui.menuBarNextX, 0.0f};
+        const Vector2f max = min + size;
+        ui.menuBarNextX = max.x + style.itemSpacing;
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+        const bool pressed = interaction.held && interaction.hovered;
+        if (highlighted || pressed || interaction.hovered) {
+            ui.panel->content.AddRect(min, max, pressed      ? style.buttonActive
+                                                : highlighted ? style.button
+                                                              : style.frameHovered);
+        }
+        ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
+        return interaction.clicked;
+    }
+
+    void Context::SetMenuBarCursor(float x) {
+        m_impl->menuBarNextX = x;
+    }
+
+    Math::Vector2f Context::MeasureText(std::string_view text) const {
+        const Impl& ui = *m_impl;
+        return ui.measure.MeasureText(text, ui.style.fontSize);
     }
 
     float Context::GetMenuBarHeight() const {

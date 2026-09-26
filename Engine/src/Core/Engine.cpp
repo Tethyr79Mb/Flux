@@ -150,8 +150,8 @@ namespace Flux {
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
                              !m_window->IsCursorLocked());
             m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
-            if (m_gameUpdate) {
-                m_gameUpdate(*this, deltaSeconds);
+            if (m_gameUpdate && m_gameState != GameState::Stopped) {
+                m_gameUpdate(*this, m_gameState == GameState::Running ? deltaSeconds : 0.0);
             }
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);

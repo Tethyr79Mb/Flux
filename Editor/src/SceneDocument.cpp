@@ -24,13 +24,11 @@ namespace FluxEditor {
         }
     }
 
-    void SceneDocument::Update(Engine& engine) {
-        UI::Context& ui = engine.GetUi();
-
+    void SceneDocument::HandleShortcuts(Engine& engine) {
         // Raccourcis (touches physiques : S, O et N sont au même endroit en AZERTY et en QWERTY).
         // Muets pendant une saisie : Ctrl+S dans un champ texte ne doit pas enregistrer à moitié.
         const Input& input = engine.GetWindow().GetInput();
-        if (!ui.WantsKeyboard() && input.IsControlDown()) {
+        if (!m_locked && !engine.GetUi().WantsKeyboard() && input.IsControlDown()) {
             if (input.WasKeyPressed(Key::N)) {
                 NewScene(engine);
             } else if (input.WasKeyPressed(Key::O)) {
@@ -40,29 +38,31 @@ namespace FluxEditor {
             }
         }
 
-        if (ui.BeginMainMenuBar()) {
-            if (ui.BeginMenu("Fichier")) {
-                if (ui.MenuItem("Nouvelle scène", "Ctrl+N")) {
-                    NewScene(engine);
-                }
-                if (ui.MenuItem("Ouvrir...", "Ctrl+O")) {
-                    Open(engine);
-                }
-                if (ui.MenuItem("Enregistrer", "Ctrl+S")) {
-                    Save(engine);
-                }
-                if (ui.MenuItem("Enregistrer sous...", "Ctrl+Maj+S")) {
-                    SaveAs(engine);
-                }
-                ui.Separator();
-                if (ui.MenuItem("Quitter", "Alt+F4") && ConfirmClose(engine)) {
-                    engine.RequestQuit();
-                }
-                ui.EndMenu();
-            }
-            ui.EndMainMenuBar();
+    }
+
+    void SceneDocument::DrawFileMenu(UI::Context& ui, Engine& engine) {
+        if (!ui.BeginMenu("Fichier")) {
+            return;
         }
-        UpdateTitle(engine);
+        // Pendant le jeu, la scène est une copie jetable : rien ne s'ouvre ni ne s'enregistre.
+        const bool enabled = !m_locked;
+        if (ui.MenuItem("Nouvelle scène", "Ctrl+N", enabled)) {
+            NewScene(engine);
+        }
+        if (ui.MenuItem("Ouvrir...", "Ctrl+O", enabled)) {
+            Open(engine);
+        }
+        if (ui.MenuItem("Enregistrer", "Ctrl+S", enabled)) {
+            Save(engine);
+        }
+        if (ui.MenuItem("Enregistrer sous...", "Ctrl+Maj+S", enabled)) {
+            SaveAs(engine);
+        }
+        ui.Separator();
+        if (ui.MenuItem("Quitter", "Alt+F4", enabled) && ConfirmClose(engine)) {
+            engine.RequestQuit();
+        }
+        ui.EndMenu();
     }
 
     bool SceneDocument::ConfirmClose(Engine& engine) {
@@ -89,7 +89,7 @@ namespace FluxEditor {
     }
 
     void SceneDocument::OpenFile(Engine& engine, const std::filesystem::path& path) {
-        if (ConfirmDiscard(engine)) {
+        if (!m_locked && ConfirmDiscard(engine)) {
             Load(engine, path);
         }
     }
@@ -154,6 +154,9 @@ namespace FluxEditor {
         std::string title = m_path.empty() ? "Sans titre" : FileName(m_path);
         if (m_modified) {
             title += " *";
+        }
+        if (m_locked) {
+            title += " [en jeu]";
         }
         if (const Project* project = engine.GetProject()) {
             title += " - " + project->name;
