@@ -43,6 +43,9 @@ namespace Flux {
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")
             .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}})
             .Field("color", "Couleur", &MeshRendererComponent::color);
+        registry.Register<ModelComponent>("model", "Modèle 3D")
+            .Asset("model", "Fichier", &ModelComponent::model, AssetType::Model)
+            .Field("tint", "Teinte", &ModelComponent::tint);
         registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")
             .Field("text", "Texte", &ScreenTextComponent::text)
             .Field("size", "Taille", &ScreenTextComponent::size, {.speed = 0.5, .min = 1.0, .max = 1000.0, .decimals = 0})

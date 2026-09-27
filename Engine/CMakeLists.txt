@@ -31,6 +31,8 @@ target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap G
 target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
 # Lecture des images PNG et JPEG (textures de l'interface).
 target_link_libraries(FluxEngine PRIVATE stb_image)
+# Lecture des modèles 3D glTF.
+target_link_libraries(FluxEngine PRIVATE cgltf_header)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
 target_link_libraries(FluxEngine PRIVATE comdlg32)
 # Corbeille et explorateur (SHFileOperationW, ShellExecuteW).

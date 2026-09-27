@@ -82,12 +82,23 @@ FetchContent_Declare(stb
         GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20
         SYSTEM)
 
+# Lecture des modèles glTF 2.0 (.gltf, .glb) : cgltf, un seul header C, sans dépendance.
+FetchContent_Declare(cgltf
+        GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+        GIT_TAG v1.15
+        GIT_SHALLOW TRUE
+        SYSTEM)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb cgltf)
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+# Le header seul : l'implémentation (CGLTF_IMPLEMENTATION) est compilée dans Model.cpp.
+add_library(cgltf_header INTERFACE)
+target_include_directories(cgltf_header SYSTEM INTERFACE ${cgltf_SOURCE_DIR})
 
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 # Bibliothèques statiques liées dans FluxEngine.dll.

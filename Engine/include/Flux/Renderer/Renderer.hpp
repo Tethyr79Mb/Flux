@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Export.hpp"
+#include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -51,6 +52,16 @@ namespace Flux {
         // fichier est relu s'il a changé (vérifié une fois par seconde). nullopt si le fichier est absent ou illisible
         // (message dans la console). Au plus 256 images différentes.
         std::optional<UI::TextureInfo> LoadTexture(const std::filesystem::path& path);
+
+        // Dossier des assets du projet : les modèles de la scène (ModelComponent) y sont cherchés. Vide (sans projet) :
+        // aucun modèle dessiné, les cubes seulement.
+        void SetAssetsDirectory(const std::filesystem::path& directory);
+
+        // Modèle glTF (.gltf, .glb), chargé au premier appel puis gardé jusqu'à la fermeture, et relu si le fichier
+        // change (vérifié une fois par seconde) ; c'est aussi ce que fait le rendu pour chaque ModelComponent.
+        // Retourne sa boîte englobante (repère du modèle) ; nullopt si le fichier est absent ou illisible
+        // (message dans la console).
+        std::optional<Math::Box3f> LoadModel(const std::filesystem::path& path);
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;

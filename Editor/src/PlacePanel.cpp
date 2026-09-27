@@ -1,9 +1,11 @@
 #include "PlacePanel.hpp"
 
+#include "AssetPicker.hpp"
 #include "SceneEditor.hpp"
 #include "UndoHistory.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
@@ -29,7 +31,8 @@ namespace FluxEditor {
         };
 
         ItemInfo GetInfo(int item) {
-            constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Texte à l'écran", "Texte"},
+            constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Modèle 3D...", "Modèle"},
+                                           {"Texte à l'écran", "Texte"},
                                            {"Image à l'écran", "Image"},
                                            {"Changement de scène", "Changement de scène"}};
             return Infos[item];
@@ -61,6 +64,7 @@ namespace FluxEditor {
             button(Item::Empty);
             ui.SameLine();
             button(Item::Cube);
+            button(Item::Model);
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
@@ -115,7 +119,21 @@ namespace FluxEditor {
         history.Commit(engine); // un geste en cours est un pas à part, avant celui-ci
         Scene& scene = engine.GetScene();
         const ItemInfo info = GetInfo(static_cast<int>(item));
-        const Entity entity = scene.CreateEntity(info.name);
+        // Un modèle sans fichier ne montrerait rien : le fichier d'abord (copié dans le projet s'il vient d'ailleurs),
+        // et l'entité porte son nom.
+        std::string name = info.name;
+        std::optional<std::string> model;
+        if (item == Item::Model) {
+            model = ChooseAsset(engine, AssetType::Model, "");
+            if (!model) {
+                return;
+            }
+            std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*model).stem());
+            if (!stem.empty()) {
+                name = std::move(stem);
+            }
+        }
+        const Entity entity = scene.CreateEntity(name);
 
         if (item == Item::ScreenText || item == Item::ScreenImage) {
             // Accroché au centre ; lâché dans la vue, décalé jusqu'au point de dépôt (en pixels de référence).
@@ -137,6 +155,8 @@ namespace FluxEditor {
         } else {
             if (item == Item::Cube) {
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
+            } else if (item == Item::Model) {
+                scene.Add<ModelComponent>(entity).model = std::move(*model);
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();

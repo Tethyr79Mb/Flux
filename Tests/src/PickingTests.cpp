@@ -47,14 +47,22 @@ bool RunPickingTests() {
     // Cube de 2 m à 10 m devant, tourné de 45° autour de y : son arête avant est à 10 - sqrt(2).
     RelativeTransform cube{NullEntity, {0.0, 0.0, -10.0}, Math::Quaternionf::FromAxisAngle({0, 1, 0}, std::numbers::pi_v<float> / 4),
                            {2.0f, 2.0f, 2.0f}};
-    const auto hit = IntersectCube(center, cube);
+    const auto hit = IntersectBox(center, cube);
     CHECK(hit && Near(*hit, 10.0 - std::sqrt(2.0)));
-    CHECK(!IntersectCube(projection.GetRay({290.0f, 60.0f}), cube));
-    CHECK(!IntersectCube({{}, {0.0, 0.0, 1.0}}, cube)); // derrière le rayon
+    CHECK(!IntersectBox(projection.GetRay({290.0f, 60.0f}), cube));
+    CHECK(!IntersectBox({{}, {0.0, 0.0, 1.0}}, cube)); // derrière le rayon
     cube.position = {0.0, 0.0, 0.5};
-    CHECK(IntersectCube(center, cube) == 0.0); // la caméra est dedans
+    CHECK(IntersectBox(center, cube) == 0.0); // la caméra est dedans
     cube.scale = {0.0f, 1.0f, 1.0f};
-    CHECK(!IntersectCube(center, cube));
+    CHECK(!IntersectBox(center, cube));
+
+    // Boîte d'un modèle, décentrée (un personnage : pieds à l'origine), 1 m devant la caméra, à l'échelle 2.
+    const RelativeTransform figure{NullEntity, {0.0, -1.0, -5.0}, {}, {2.0f, 2.0f, 2.0f}};
+    const Math::Box3f standing{{-0.25f, 0.0f, -0.1f}, {0.25f, 1.8f, 0.1f}};
+    const auto body = IntersectBox(center, figure, standing); // le rayon passe à 1 m au-dessus des pieds
+    CHECK(body && Near(*body, 5.0 - 0.2));
+    const RelativeTransform lying{NullEntity, {0.0, 1.0, -5.0}, {}, {2.0f, 2.0f, 2.0f}};
+    CHECK(!IntersectBox(center, lying, standing)); // pieds 1 m au-dessus du rayon : manqué
 
     // Scène : le plus proche des cubes visibles est choisi ; une entité sans maillage est ignorée.
     Scene scene;
@@ -69,13 +77,19 @@ bool RunPickingTests() {
     scene.Get<TransformComponent>(empty).scale = {10.0f, 10.0f, 10.0f};
     std::vector<RelativeTransform> transforms;
     scene.ComputeRelativeTransforms(camera.position, transforms);
-    CHECK(PickEntity(scene, transforms, center) == nearCube);
-    CHECK(PickEntity(scene, transforms, projection.GetRay({290.0f, 60.0f})) == NullEntity);
+    const MeshBoundsFunction cubes = [&scene](Entity entity) -> std::optional<Math::Box3f> {
+        if (scene.TryGet<MeshRendererComponent>(entity)) {
+            return Math::Box3f{};
+        }
+        return std::nullopt;
+    };
+    CHECK(PickEntity(transforms, center, cubes) == nearCube);
+    CHECK(PickEntity(transforms, projection.GetRay({290.0f, 60.0f}), cubes) == NullEntity);
     // Loin de l'origine (un secteur plus loin) : tout reste relatif à la caméra.
     camera.position.sector = {5, 0, 0};
     scene.Add<SectorComponent>(farCube, Math::Vector3i64{5, 0, 0});
     scene.ComputeRelativeTransforms(camera.position, transforms);
-    CHECK(PickEntity(scene, transforms, center) == farCube);
+    CHECK(PickEntity(transforms, center, cubes) == farCube);
 
     // Axe du gizmo : droite x passant par (0, 0, -10) ; la souris vise le point x = 3.
     const Ray aim{{}, Math::Normalize(Math::Vector3d{3.0, 0.0, -10.0})};

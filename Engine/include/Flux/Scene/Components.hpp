@@ -63,6 +63,13 @@ namespace Flux {
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
     };
 
+    // Modèle 3D importé (glTF : .gltf ou .glb), placé par la transformation de l'entité. 1 unité du fichier = 1 mètre.
+    struct ModelComponent
+    {
+        std::string model; // relatif au dossier des assets du projet, avec des « / » (models/Personnage.glb)
+        Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie les couleurs du modèle (blanc : inchangées)
+    };
+
     // Point de l'écran (ou de la vue de l'éditeur) auquel un élément d'interface est accroché.
     enum class ScreenAnchor : std::uint8_t {
         TopLeft,
