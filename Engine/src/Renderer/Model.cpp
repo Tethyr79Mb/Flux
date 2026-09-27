@@ -1,6 +1,7 @@
 #include "Flux/Renderer/Model.hpp"
 
 #include "Flux/Platform/Filesystem.hpp"
+#include "Flux/Renderer/Animation.hpp"
 
 #include <algorithm>
 #include <array>
@@ -35,33 +36,8 @@ namespace Flux {
 
         constexpr Matrix IdentityMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
-        Matrix Multiply(const Matrix& a, const Matrix& b) {
-            Matrix result{};
-            for (int c = 0; c < 4; ++c) {
-                for (int r = 0; r < 4; ++r) {
-                    float sum = 0.0f;
-                    for (int k = 0; k < 4; ++k) {
-                        sum += a[k * 4 + r] * b[c * 4 + k];
-                    }
-                    result[c * 4 + r] = sum;
-                }
-            }
-            return result;
-        }
-
-        Matrix Scaled(const Matrix& m, float s) {
-            Matrix result = m;
-            for (float& value : result) {
-                value *= s;
-            }
-            return result;
-        }
-
-        void Accumulate(Matrix& sum, const Matrix& m) {
-            for (std::size_t i = 0; i < sum.size(); ++i) {
-                sum[i] += m[i];
-            }
-        }
+        // Os d'un modèle au plus : indices de sommet sur 16 bits.
+        constexpr std::size_t MaxJoints = 65535;
 
         Vector3f TransformPoint(const Matrix& m, const Vector3f& p) {
             return {m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12],
@@ -96,6 +72,76 @@ namespace Flux {
                                   n[6] * v.x + n[7] * v.y + n[8] * v.z};
             const float length = std::sqrt(Math::Dot(result, result));
             return length > 0.0f ? result / length : Vector3f{0.0f, 1.0f, 0.0f};
+        }
+
+        Math::Matrix4f ToMatrix4(const Matrix& m) {
+            Math::Matrix4f result;
+            for (int c = 0; c < 4; ++c) {
+                for (int r = 0; r < 4; ++r) {
+                    result.columns[c][r] = m[c * 4 + r];
+                }
+            }
+            return result;
+        }
+
+        float Determinant3(const Matrix& m) {
+            return m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2])
+                 + m[8] * (m[1] * m[6] - m[5] * m[2]);
+        }
+
+        // Rotation d'une matrice 3x3 orthonormée (colonnes x, y, z), méthode de Shepperd : on part de la plus
+        // grande composante, pour ne jamais diviser par un petit nombre.
+        Math::Quaternionf RotationFromAxes(const Vector3f& x, const Vector3f& y, const Vector3f& z) {
+            const float trace = x.x + y.y + z.z;
+            Math::Quaternionf q;
+            if (trace > 0.0f) {
+                const float s = std::sqrt(trace + 1.0f) * 2.0f;
+                q = {(y.z - z.y) / s, (z.x - x.z) / s, (x.y - y.x) / s, 0.25f * s};
+            } else if (x.x > y.y && x.x > z.z) {
+                const float s = std::sqrt(1.0f + x.x - y.y - z.z) * 2.0f;
+                q = {0.25f * s, (y.x + x.y) / s, (z.x + x.z) / s, (y.z - z.y) / s};
+            } else if (y.y > z.z) {
+                const float s = std::sqrt(1.0f + y.y - x.x - z.z) * 2.0f;
+                q = {(y.x + x.y) / s, 0.25f * s, (z.y + y.z) / s, (z.x - x.z) / s};
+            } else {
+                const float s = std::sqrt(1.0f + z.z - x.x - y.y) * 2.0f;
+                q = {(z.x + x.z) / s, (z.y + y.z) / s, 0.25f * s, (x.y - y.x) / s};
+            }
+            return Math::Normalize(q);
+        }
+
+        // Pose de repos d'un nœud : ses translation, rotation et échelle, ou sa matrice décomposée (sans
+        // cisaillement, que glTF interdit de toute façon pour un nœud animé).
+        SkeletonNode RestPose(const cgltf_node& node) {
+            SkeletonNode rest;
+            if (node.has_matrix) {
+                const float* m = node.matrix;
+                Vector3f x{m[0], m[1], m[2]};
+                Vector3f y{m[4], m[5], m[6]};
+                Vector3f z{m[8], m[9], m[10]};
+                rest.translation = {m[12], m[13], m[14]};
+                rest.scale = {std::sqrt(Math::Dot(x, x)), std::sqrt(Math::Dot(y, y)), std::sqrt(Math::Dot(z, z))};
+                Matrix full;
+                std::copy_n(m, 16, full.begin());
+                if (Determinant3(full) < 0.0f) {
+                    rest.scale.x = -rest.scale.x; // symétrie : portée par l'échelle, la rotation reste propre
+                }
+                if (rest.scale.x != 0.0f && rest.scale.y != 0.0f && rest.scale.z != 0.0f) {
+                    rest.rotation = RotationFromAxes(x / rest.scale.x, y / rest.scale.y, z / rest.scale.z);
+                }
+                return rest;
+            }
+            if (node.has_translation) {
+                rest.translation = {node.translation[0], node.translation[1], node.translation[2]};
+            }
+            if (node.has_rotation) {
+                rest.rotation = Math::Normalize(Math::Quaternionf{node.rotation[0], node.rotation[1], node.rotation[2],
+                                                                  node.rotation[3]});
+            }
+            if (node.has_scale) {
+                rest.scale = {node.scale[0], node.scale[1], node.scale[2]};
+            }
+            return rest;
         }
 
         // Fichiers annexes (.bin) lus par nous plutôt que par fopen : chemins Unicode sous Windows.
@@ -163,9 +209,14 @@ namespace Flux {
         struct Loader {
             const cgltf_data& gltf;
             std::filesystem::path directory; // pour les images à côté du fichier
-            ModelData model;
+            ModelData model{};
             // Image du fichier -> indice dans model.images (-1 : pas encore lue, -2 : illisible).
-            std::vector<int> imageSlots;
+            std::vector<int> imageSlots{};
+            // Modèle animé (squelette ou animation dans le fichier) : sommets laissés dans le repère de leur maillage.
+            bool animated = false;
+            std::vector<int> nodeSlots{};             // nœud du fichier -> indice dans model.skeleton.nodes
+            std::vector<std::int64_t> skinBases{};    // peau du fichier -> son premier os ; -1 : trop d'os, ignorée
+            std::vector<int> rigidSlots{};            // nœud du fichier -> son os de pièce rigide (-1 : pas encore créé)
 
             int LoadImage(const cgltf_image* image) {
                 const std::size_t index = static_cast<std::size_t>(image - gltf.images);
@@ -260,22 +311,96 @@ namespace Flux {
             }
             int defaultMaterial = -1;
 
-            // Matrices de la pose de repos d'un squelette : pour chaque os, monde * inverse de la pose de liaison.
-            std::vector<Matrix> JointMatrices(const cgltf_skin& skin) {
-                std::vector<Matrix> joints(skin.joints_count, IdentityMatrix);
-                for (std::size_t j = 0; j < skin.joints_count; ++j) {
-                    Matrix world;
-                    cgltf_node_transform_world(skin.joints[j], world.data());
-                    Matrix inverseBind = IdentityMatrix;
-                    if (skin.inverse_bind_matrices) {
-                        cgltf_accessor_read_float(skin.inverse_bind_matrices, j, inverseBind.data(), 16);
+            // Modèle statique : sommets placés dans le repère du modèle par la transformation de leur nœud.
+            void AddStaticVertices(const Matrix& world, const cgltf_accessor* positions, const cgltf_accessor* normals,
+                                   const cgltf_accessor* uvs) {
+                const std::array<float, 9> normalMatrix = NormalMatrix(world);
+                for (std::size_t v = 0; v < positions->count; ++v) {
+                    ModelVertex vertex{};
+                    float p[3] = {};
+                    cgltf_accessor_read_float(positions, v, p, 3);
+                    float n[3] = {0.0f, 0.0f, 0.0f};
+                    if (normals) {
+                        cgltf_accessor_read_float(normals, v, n, 3);
                     }
-                    joints[j] = Multiply(world, inverseBind);
+                    float t[2] = {};
+                    if (uvs) {
+                        cgltf_accessor_read_float(uvs, v, t, 2);
+                    }
+                    vertex.position = TransformPoint(world, {p[0], p[1], p[2]});
+                    vertex.normal = TransformNormal(normalMatrix, {n[0], n[1], n[2]});
+                    vertex.uv = {t[0], t[1]};
+                    model.vertices.push_back(vertex);
                 }
-                return joints;
             }
 
-            void AddPrimitive(const cgltf_primitive& primitive, const Matrix& world, const cgltf_skin* skin,
+            // Modèle animé : sommets dans le repère de leur maillage, et les os qui les déplacent. Comme le veut glTF,
+            // la transformation du nœud d'un maillage à squelette est ignorée : ses os le placent.
+            void AddAnimatedVertices(const cgltf_node& node, const cgltf_accessor* positions, const cgltf_accessor* normals,
+                                     const cgltf_accessor* uvs, const cgltf_accessor* joints, const cgltf_accessor* weights) {
+                const cgltf_skin* skin = node.skin;
+                const std::int64_t skinBase = skin && joints && weights ? skinBases[static_cast<std::size_t>(skin - gltf.skins)] : -1;
+                const std::uint16_t rigid = skinBase < 0 ? RigidSlot(node) : 0;
+                for (std::size_t v = 0; v < positions->count; ++v) {
+                    ModelVertex vertex{};
+                    float p[3] = {};
+                    cgltf_accessor_read_float(positions, v, p, 3);
+                    float n[3] = {0.0f, 0.0f, 0.0f};
+                    if (normals) {
+                        cgltf_accessor_read_float(normals, v, n, 3);
+                    }
+                    float t[2] = {};
+                    if (uvs) {
+                        cgltf_accessor_read_float(uvs, v, t, 2);
+                    }
+                    vertex.position = {p[0], p[1], p[2]};
+                    const Vector3f normal{n[0], n[1], n[2]};
+                    const float length = std::sqrt(Math::Dot(normal, normal));
+                    vertex.normal = length > 0.0f ? normal / length : Vector3f{0.0f, 1.0f, 0.0f};
+                    vertex.uv = {t[0], t[1]};
+                    model.vertices.push_back(vertex);
+
+                    ModelSkinVertex bones{{rigid, 0, 0, 0}, {1.0f, 0.0f, 0.0f, 0.0f}};
+                    if (skinBase >= 0) {
+                        float jointIndices[4] = {};
+                        float jointWeights[4] = {};
+                        cgltf_accessor_read_float(joints, v, jointIndices, 4);
+                        cgltf_accessor_read_float(weights, v, jointWeights, 4);
+                        float total = 0.0f;
+                        for (int k = 0; k < 4; ++k) {
+                            const auto joint = static_cast<std::size_t>(jointIndices[k]);
+                            if (jointWeights[k] > 0.0f && joint < skin->joints_count) {
+                                bones.joints[k] = static_cast<std::uint16_t>(skinBase + static_cast<std::int64_t>(joint));
+                                bones.weights[k] = jointWeights[k];
+                                total += jointWeights[k];
+                            } else {
+                                bones.joints[k] = 0;
+                                bones.weights[k] = 0.0f;
+                            }
+                        }
+                        if (total > 0.0f) {
+                            for (float& weight : bones.weights) {
+                                weight /= total;
+                            }
+                        } else {
+                            bones = {{RigidSlot(node), 0, 0, 0}, {1.0f, 0.0f, 0.0f, 0.0f}}; // sommet sans os
+                        }
+                    }
+                    model.skinVertices.push_back(bones);
+                }
+            }
+
+            // Os de poids 1 d'une pièce rigide : elle suit son nœud, animé ou non.
+            std::uint16_t RigidSlot(const cgltf_node& node) {
+                const std::size_t index = static_cast<std::size_t>(&node - gltf.nodes);
+                if (rigidSlots[index] < 0) {
+                    rigidSlots[index] = static_cast<int>(model.skeleton.joints.size());
+                    model.skeleton.joints.push_back({static_cast<std::uint32_t>(nodeSlots[index]), Math::Matrix4f::Identity()});
+                }
+                return static_cast<std::uint16_t>(rigidSlots[index]);
+            }
+
+            void AddPrimitive(const cgltf_primitive& primitive, const cgltf_node& node, const Matrix& world,
                               const std::string& meshName) {
                 if (primitive.type != cgltf_primitive_type_triangles && primitive.type != cgltf_primitive_type_triangle_strip
                     && primitive.type != cgltf_primitive_type_triangle_fan) {
@@ -318,51 +443,21 @@ namespace Flux {
                     model.warnings.push_back("maillage « " + meshName + " » : trop de sommets, ignoré");
                     return;
                 }
-                const auto base = static_cast<std::uint32_t>(model.vertices.size());
-
-                // Os de la pose de repos (personnage) : chaque sommet suit la moyenne pondérée de ses os, comme
-                // à l'affichage dans Blender. Sinon, la transformation du nœud.
-                std::vector<Matrix> jointMatrices;
-                if (skin && joints && weights) {
-                    jointMatrices = JointMatrices(*skin);
+                if (animated && model.skeleton.joints.size() >= MaxJoints) {
+                    model.warnings.push_back("maillage « " + meshName + " » : trop d'os dans le modèle, ignoré");
+                    return;
                 }
-                const Matrix* fixed = jointMatrices.empty() ? &world : nullptr;
-                const std::array<float, 9> fixedNormals = NormalMatrix(world);
-
-                for (std::size_t v = 0; v < count; ++v) {
-                    ModelVertex vertex{};
-                    float p[3] = {};
-                    cgltf_accessor_read_float(positions, v, p, 3);
-                    float n[3] = {0.0f, 0.0f, 0.0f};
-                    if (normals) {
-                        cgltf_accessor_read_float(normals, v, n, 3);
+                const auto base = static_cast<std::uint32_t>(model.vertices.size());
+                const auto undo = [&] {
+                    model.vertices.resize(base);
+                    if (animated) {
+                        model.skinVertices.resize(base);
                     }
-                    float t[2] = {};
-                    if (uvs) {
-                        cgltf_accessor_read_float(uvs, v, t, 2);
-                    }
-                    Matrix skinned{};
-                    const Matrix* transform = fixed;
-                    if (!transform) {
-                        float jointIndices[4] = {};
-                        float jointWeights[4] = {};
-                        cgltf_accessor_read_float(joints, v, jointIndices, 4);
-                        cgltf_accessor_read_float(weights, v, jointWeights, 4);
-                        float total = 0.0f;
-                        for (int k = 0; k < 4; ++k) {
-                            const auto joint = static_cast<std::size_t>(jointIndices[k]);
-                            if (jointWeights[k] > 0.0f && joint < jointMatrices.size()) {
-                                Accumulate(skinned, Scaled(jointMatrices[joint], jointWeights[k]));
-                                total += jointWeights[k];
-                            }
-                        }
-                        skinned = total > 0.0f ? Scaled(skinned, 1.0f / total) : world;
-                        transform = &skinned;
-                    }
-                    vertex.position = TransformPoint(*transform, {p[0], p[1], p[2]});
-                    vertex.normal = TransformNormal(fixed ? fixedNormals : NormalMatrix(*transform), {n[0], n[1], n[2]});
-                    vertex.uv = {t[0], t[1]};
-                    model.vertices.push_back(vertex);
+                };
+                if (animated) {
+                    AddAnimatedVertices(node, positions, normals, uvs, joints, weights);
+                } else {
+                    AddStaticVertices(world, positions, normals, uvs);
                 }
 
                 // Indices : ceux du fichier, ou 0, 1, 2... sans eux ; bandes et éventails remis en triangles.
@@ -373,7 +468,7 @@ namespace Flux {
                     const std::size_t index = primitive.indices ? cgltf_accessor_read_index(primitive.indices, i) : i;
                     if (index >= count) {
                         model.warnings.push_back("maillage « " + meshName + " » : indice hors limites, primitive ignorée");
-                        model.vertices.resize(base);
+                        undo();
                         return;
                     }
                     local.push_back(static_cast<std::uint32_t>(index));
@@ -394,15 +489,13 @@ namespace Flux {
                     }
                 }
                 if (triangles.empty()) {
-                    model.vertices.resize(base);
+                    undo();
                     return;
                 }
 
                 // Symétrie (échelle négative) : les triangles changent de sens, on les retourne pour le culling.
-                const float determinant = world[0] * (world[5] * world[10] - world[9] * world[6])
-                                        - world[4] * (world[1] * world[10] - world[9] * world[2])
-                                        + world[8] * (world[1] * world[6] - world[5] * world[2]);
-                const bool flip = fixed && determinant < 0.0f;
+                // Maillage à squelette : ses os le placent, rien à retourner ici.
+                const bool flip = !(animated && node.skin && joints && weights) && Determinant3(world) < 0.0f;
                 for (std::size_t i = 0; i + 2 < triangles.size(); i += 3) {
                     if (flip) {
                         std::swap(triangles[i + 1], triangles[i + 2]);
@@ -412,8 +505,14 @@ namespace Flux {
                 // Sans normales dans le fichier : normales de face (aspect facetté), sommets dupliqués au besoin.
                 if (!normals) {
                     std::vector<ModelVertex> flat;
+                    std::vector<ModelSkinVertex> flatSkin;
                     flat.reserve(triangles.size());
                     for (std::size_t i = 0; i + 2 < triangles.size(); i += 3) {
+                        if (animated) {
+                            for (std::size_t k = 0; k < 3; ++k) {
+                                flatSkin.push_back(model.skinVertices[base + triangles[i + k]]);
+                            }
+                        }
                         ModelVertex a = model.vertices[base + triangles[i]];
                         ModelVertex b = model.vertices[base + triangles[i + 1]];
                         ModelVertex c = model.vertices[base + triangles[i + 2]];
@@ -423,8 +522,9 @@ namespace Flux {
                         a.normal = b.normal = c.normal = normal;
                         flat.insert(flat.end(), {a, b, c});
                     }
-                    model.vertices.resize(base);
+                    undo();
                     model.vertices.insert(model.vertices.end(), flat.begin(), flat.end());
+                    model.skinVertices.insert(model.skinVertices.end(), flatSkin.begin(), flatSkin.end());
                     for (std::size_t i = 0; i < triangles.size(); ++i) {
                         triangles[i] = static_cast<std::uint32_t>(i);
                     }
@@ -450,11 +550,116 @@ namespace Flux {
                     cgltf_node_transform_world(&node, world.data());
                     const std::string meshName = Name(node.mesh->name, "maillage", static_cast<std::size_t>(node.mesh - gltf.meshes));
                     for (std::size_t p = 0; p < node.mesh->primitives_count; ++p) {
-                        AddPrimitive(node.mesh->primitives[p], world, node.skin, meshName);
+                        AddPrimitive(node.mesh->primitives[p], node, world, meshName);
                     }
                 }
                 for (std::size_t c = 0; c < node.children_count; ++c) {
                     AddNode(*node.children[c], depth + 1);
+                }
+            }
+
+            // Tous les nœuds du fichier, parents avant enfants : ceux de la scène d'abord, puis les autres racines
+            // (un os peut, en théorie, vivre hors de la scène affichée).
+            void AddSkeletonNode(const cgltf_node& node, int parent, int depth) {
+                const std::size_t index = static_cast<std::size_t>(&node - gltf.nodes);
+                if (nodeSlots[index] >= 0 || depth > 256) {
+                    return;
+                }
+                const int slot = static_cast<int>(model.skeleton.nodes.size());
+                nodeSlots[index] = slot;
+                SkeletonNode skeletonNode = RestPose(node);
+                skeletonNode.name = Name(node.name, "nœud", index);
+                skeletonNode.parent = parent;
+                model.skeleton.nodes.push_back(std::move(skeletonNode));
+                for (std::size_t c = 0; c < node.children_count; ++c) {
+                    AddSkeletonNode(*node.children[c], slot, depth + 1);
+                }
+            }
+
+            void LoadSkeleton(const cgltf_scene* scene) {
+                nodeSlots.assign(gltf.nodes_count, -1);
+                rigidSlots.assign(gltf.nodes_count, -1);
+                if (scene) {
+                    for (std::size_t n = 0; n < scene->nodes_count; ++n) {
+                        AddSkeletonNode(*scene->nodes[n], -1, 0);
+                    }
+                }
+                for (std::size_t n = 0; n < gltf.nodes_count; ++n) {
+                    if (!gltf.nodes[n].parent) {
+                        AddSkeletonNode(gltf.nodes[n], -1, 0);
+                    }
+                }
+                skinBases.assign(gltf.skins_count, -1);
+                for (std::size_t s = 0; s < gltf.skins_count; ++s) {
+                    const cgltf_skin& skin = gltf.skins[s];
+                    if (model.skeleton.joints.size() + skin.joints_count > MaxJoints) {
+                        model.warnings.push_back("squelette « " + Name(skin.name, "peau", s) + " » : trop d'os, ignoré");
+                        continue;
+                    }
+                    skinBases[s] = static_cast<std::int64_t>(model.skeleton.joints.size());
+                    for (std::size_t j = 0; j < skin.joints_count; ++j) {
+                        Matrix inverseBind = IdentityMatrix;
+                        if (skin.inverse_bind_matrices) {
+                            cgltf_accessor_read_float(skin.inverse_bind_matrices, j, inverseBind.data(), 16);
+                        }
+                        const int node = nodeSlots[static_cast<std::size_t>(skin.joints[j] - gltf.nodes)];
+                        model.skeleton.joints.push_back({static_cast<std::uint32_t>(std::max(node, 0)), ToMatrix4(inverseBind)});
+                    }
+                }
+            }
+
+            void LoadAnimations() {
+                for (std::size_t a = 0; a < gltf.animations_count; ++a) {
+                    const cgltf_animation& source = gltf.animations[a];
+                    ModelAnimation animation;
+                    animation.name = Name(source.name, "animation", a);
+                    for (std::size_t c = 0; c < source.channels_count; ++c) {
+                        const cgltf_animation_channel& from = source.channels[c];
+                        if (!from.target_node || !from.sampler || !from.sampler->input || !from.sampler->output) {
+                            continue;
+                        }
+                        AnimationChannel channel;
+                        int components = 3;
+                        switch (from.target_path) {
+                            case cgltf_animation_path_type_translation: channel.path = AnimationPath::Translation; break;
+                            case cgltf_animation_path_type_rotation:
+                                channel.path = AnimationPath::Rotation;
+                                components = 4;
+                                break;
+                            case cgltf_animation_path_type_scale: channel.path = AnimationPath::Scale; break;
+                            default: continue; // poids des morph targets : pas gérés
+                        }
+                        switch (from.sampler->interpolation) {
+                            case cgltf_interpolation_type_step: channel.interpolation = AnimationInterpolation::Step; break;
+                            case cgltf_interpolation_type_cubic_spline:
+                                channel.interpolation = AnimationInterpolation::CubicSpline;
+                                break;
+                            default: channel.interpolation = AnimationInterpolation::Linear; break;
+                        }
+                        const int node = nodeSlots[static_cast<std::size_t>(from.target_node - gltf.nodes)];
+                        const cgltf_accessor& input = *from.sampler->input;
+                        const cgltf_accessor& output = *from.sampler->output;
+                        const std::size_t perKey = channel.interpolation == AnimationInterpolation::CubicSpline ? 3 : 1;
+                        if (node < 0 || input.count == 0 || output.count != input.count * perKey
+                            || cgltf_num_components(output.type) != static_cast<cgltf_size>(components)) {
+                            model.warnings.push_back("animation « " + animation.name + " » : courbe invalide ignorée");
+                            continue;
+                        }
+                        channel.node = static_cast<std::uint32_t>(node);
+                        channel.times.resize(input.count);
+                        cgltf_accessor_unpack_floats(&input, channel.times.data(), channel.times.size());
+                        channel.values.resize(output.count * static_cast<std::size_t>(components));
+                        cgltf_accessor_unpack_floats(&output, channel.values.data(), channel.values.size());
+                        // Instants croissants exigés par glTF : un fichier fautif ne doit pas égarer la recherche des clés.
+                        if (!std::ranges::is_sorted(channel.times)
+                            || !std::ranges::all_of(channel.times, [](float t) { return std::isfinite(t); })) {
+                            model.warnings.push_back("animation « " + animation.name + " » : instants dans le désordre, courbe ignorée");
+                            continue;
+                        }
+                        animation.duration = std::max(animation.duration, channel.times.back());
+                        animation.channels.push_back(std::move(channel));
+                    }
+                    model.skeleton.animations.push_back(std::move(animation));
                 }
             }
 
@@ -463,6 +668,10 @@ namespace Flux {
                 LoadMaterials();
                 // La scène par défaut, sinon la première, sinon tous les nœuds racines.
                 const cgltf_scene* scene = gltf.scene ? gltf.scene : (gltf.scenes_count > 0 ? gltf.scenes : nullptr);
+                animated = gltf.skins_count > 0 || gltf.animations_count > 0;
+                if (animated) {
+                    LoadSkeleton(scene);
+                }
                 if (scene) {
                     for (std::size_t n = 0; n < scene->nodes_count; ++n) {
                         AddNode(*scene->nodes[n], 0);
@@ -477,11 +686,30 @@ namespace Flux {
                 if (model.materials.empty()) {
                     DefaultMaterial();
                 }
-                if (!model.vertices.empty()) {
-                    Math::Box3f& bounds = model.bounds;
-                    bounds.min = bounds.max = model.vertices.front().position;
+                if (animated) {
+                    LoadAnimations();
+                    if (model.skinVertices.empty()) {
+                        model.skeleton = {}; // aucun maillage animé (tous ignorés) : un modèle vide reste statique
+                    }
+                }
+                // Boîte de la pose de repos ; un modèle animé est d'abord mis dans cette pose.
+                std::vector<Vector3f> placed;
+                if (model.IsAnimated()) {
+                    PoseEvaluator pose;
+                    pose.Evaluate(model.skeleton, nullptr, 0.0, false, 0.0f);
+                    placed.reserve(model.vertices.size());
+                    for (std::size_t v = 0; v < model.vertices.size(); ++v) {
+                        placed.push_back(SkinPosition(pose.GetJointMatrices(), model.skinVertices[v], model.vertices[v].position));
+                    }
+                } else {
                     for (const ModelVertex& vertex : model.vertices) {
-                        const Vector3f& p = vertex.position;
+                        placed.push_back(vertex.position);
+                    }
+                }
+                if (!placed.empty()) {
+                    Math::Box3f& bounds = model.bounds;
+                    bounds.min = bounds.max = placed.front();
+                    for (const Vector3f& p : placed) {
                         bounds.min = {std::min(bounds.min.x, p.x), std::min(bounds.min.y, p.y), std::min(bounds.min.z, p.z)};
                         bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y), std::max(bounds.max.z, p.z)};
                     }
@@ -555,7 +783,7 @@ namespace Flux {
             return std::unexpected("« " + fileName + " » : " + Describe(result));
         }
 
-        Loader loader{*gltf, path.parent_path(), {}, {}};
+        Loader loader{.gltf = *gltf, .directory = path.parent_path()};
         loader.Load();
         if (loader.model.indices.empty()) {
             return std::unexpected("« " + fileName + " » : aucun triangle");
