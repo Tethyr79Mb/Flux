@@ -17,6 +17,7 @@ int main() {
         {"changement de scène", RunSceneChangeTests},
         {"modèles 3D (glTF)", RunModelTests},
         {"physique (Jolt)", RunPhysicsTests},
+        {"animation squelettique", RunAnimationTests},
     };
 
     int failures = 0;

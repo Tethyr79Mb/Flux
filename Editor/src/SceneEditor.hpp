@@ -49,8 +49,15 @@ namespace FluxEditor {
             }
         }
 
+        // Le personnage sélectionné devient le seul « dirigé par le joueur » (les autres sont décochés, annulable).
+        void RequestClaimPlayer() {
+            if (m_selection && !m_readOnly) {
+                m_pendingAction = Action::ClaimPlayer;
+            }
+        }
+
         private:
-        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move };
+        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer };
 
         // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée.
         enum class DropZone { Before, After, Inside };
@@ -71,11 +78,13 @@ namespace FluxEditor {
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
         bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
+        bool DrawAnimationChoice(Flux::Engine& engine, const std::string& label, std::string& text);
         void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected, UndoHistory& history);
 
         Flux::Uuid m_selection;
         bool m_modified = false;
         bool m_readOnly = false; // mode Jouer : on regarde, on ne modifie pas
+        Flux::Entity m_inspected = Flux::NullEntity; // entité dont l'inspecteur dessine les champs
         // Actions demandées pendant le dessin, appliquées après : on ne détruit rien en parcourant l'arbre.
         Action m_pendingAction = Action::None;
         std::string m_pendingComponent; // clé du composant à ajouter ou retirer

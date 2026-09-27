@@ -174,6 +174,7 @@ namespace FluxEditor {
                 // Les pieds du modèle (son origine) posés sur celle de l'entité, comme la capsule.
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
                 scene.Add<CharacterComponent>(entity);
+                scene.Add<AnimatorComponent>(entity); // sans effet si le modèle n'a pas d'animation
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();
@@ -189,5 +190,8 @@ namespace FluxEditor {
 
         sceneEditor.Select(scene, entity);
         history.Push(std::string("Placer : ") + info.label, scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
+        if (item == Item::Character) {
+            sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
+        }
     }
 }

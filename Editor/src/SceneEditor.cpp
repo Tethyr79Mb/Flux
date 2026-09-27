@@ -37,6 +37,11 @@ namespace FluxEditor {
             return false;
         }
 
+        bool IsPlayer(const Scene& scene, Entity entity) {
+            const auto* character = scene.TryGet<CharacterComponent>(entity);
+            return character && character->player;
+        }
+
         std::string DisplayName(const Scene& scene, Entity entity) {
             const std::string& name = scene.Get<NameComponent>(entity).name;
             return name.empty() ? "(sans nom)" : name;
@@ -200,13 +205,31 @@ namespace FluxEditor {
 
                 // Composants enregistrés (moteur puis jeu) : champs générés à partir de leur description.
                 const ComponentRegistry& components = engine.GetComponents();
+                m_inspected = selected;
+                std::vector<const ComponentInfo*> present;
                 std::vector<const ComponentInfo*> missing;
+                const bool wasPlayer = IsPlayer(scene, selected);
                 for (std::size_t i = 0; i < components.GetCount(); ++i) {
                     const ComponentInfo& info = components.Get(i);
                     if (void* component = info.get(scene.GetRegistry(), selected)) {
                         DrawComponent(engine, info, component);
+                        present.push_back(&info);
                     } else if (info.removable) {
                         missing.push_back(&info);
+                    }
+                }
+                // Un seul personnage dirigé par le joueur : cocher la case sur celui-ci la décoche sur les autres.
+                if (!wasPlayer && IsPlayer(scene, selected) && !m_readOnly) {
+                    m_pendingAction = Action::ClaimPlayer;
+                }
+                // Mélange venu d'une ancienne scène (l'inspecteur ne le permet plus) : dire lequel est ignoré.
+                for (const ComponentInfo* info : present) {
+                    for (const ComponentInfo* other : present) {
+                        if (info < other && info->Excludes(*other)) {
+                            ui.Separator();
+                            ui.TextDisabled("« " + info->label + " » et « " + other->label + " » ne vont pas ensemble :\n"
+                                            "en retirer un (la physique en ignore un).");
+                        }
                     }
                 }
                 if (const auto* unknown = scene.TryGet<UnknownComponentsComponent>(selected)) {
@@ -219,7 +242,12 @@ namespace FluxEditor {
                 if (!missing.empty() && !m_readOnly) {
                     ui.Separator();
                     for (const ComponentInfo* info : missing) {
-                        if (ui.Button("Ajouter : " + info->label + "##" + info->key)) {
+                        const auto blocker = std::ranges::find_if(present, [&](const ComponentInfo* other) {
+                            return info->Excludes(*other);
+                        });
+                        if (blocker != present.end()) {
+                            ui.TextDisabled(info->label + " : impossible avec « " + (*blocker)->label + " »");
+                        } else if (ui.Button("Ajouter : " + info->label + "##" + info->key)) {
                             m_pendingAction = Action::AddComponent;
                             m_pendingComponent = info->key;
                         }
@@ -287,6 +315,9 @@ namespace FluxEditor {
                 return ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
             case FieldType::String: {
                 auto& text = *static_cast<std::string*>(value);
+                if (field.asset == AssetType::Animation) {
+                    return DrawAnimationChoice(engine, label, text);
+                }
                 if (field.asset == AssetType::None) {
                     return ui.InputText(label, text);
                 }
@@ -319,6 +350,36 @@ namespace FluxEditor {
             }
         }
         return false;
+    }
+
+    // Liste des animations du modèle de l'entité : on ne tape plus un nom qui n'existe pas. En tête, « (par défaut) »
+    // (champ vide : 1re animation, marche figée au repos, marche accélérée en courant) ; un nom absent du fichier
+    // reste affiché, marqué.
+    bool SceneEditor::DrawAnimationChoice(Engine& engine, const std::string& label, std::string& text) {
+        UI::Context& ui = engine.GetUi();
+        const std::vector<std::string> animations = engine.GetAnimationNames(m_inspected);
+        if (animations.empty()) {
+            ui.LabelText(label, text.empty() ? "(modèle sans animation)" : text + " (modèle sans animation)");
+            return false;
+        }
+        const bool known = text.empty() || std::ranges::contains(animations, text);
+        const std::string missing = text + " (introuvable)";
+        std::vector<std::string_view> names{"(par défaut)"};
+        names.insert(names.end(), animations.begin(), animations.end());
+        if (!known) {
+            names.push_back(missing);
+        }
+        int index = 0;
+        if (!known) {
+            index = static_cast<int>(names.size()) - 1;
+        } else if (!text.empty()) {
+            index = 1 + static_cast<int>(std::ranges::find(animations, text) - animations.begin());
+        }
+        if (!ui.Choice(label, index, names) || (!known && index == static_cast<int>(names.size()) - 1)) {
+            return false;
+        }
+        text = index == 0 ? std::string{} : animations[static_cast<std::size_t>(index - 1)];
+        return true;
     }
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {
@@ -389,6 +450,22 @@ namespace FluxEditor {
                 }
                 break;
             }
+            case Action::ClaimPlayer: {
+                // La case cochée est déjà un pas (Commit ci-dessus) ; chaque personnage décoché en est un de plus.
+                std::vector<Entity> others;
+                for (const auto [entity, character] : scene.GetRegistry().view<const CharacterComponent>().each()) {
+                    if (character.player && entity != selected) {
+                        others.push_back(entity);
+                    }
+                }
+                for (const Entity entity : others) {
+                    const Uuid id = scene.GetId(entity);
+                    std::string before = UndoHistory::Capture(engine, id);
+                    scene.Get<CharacterComponent>(entity).player = false;
+                    history.Push("Un seul joueur", id, std::move(before), UndoHistory::Capture(engine, id));
+                }
+                break;
+            }
             case Action::AddComponent:
             case Action::RemoveComponent:
                 // Le type a pu disparaître entre-temps (module de jeu rechargé) : on le recherche par sa clé.
@@ -397,6 +474,9 @@ namespace FluxEditor {
                     std::string before = UndoHistory::Capture(engine, id);
                     if (action == Action::AddComponent) {
                         info->add(scene.GetRegistry(), selected);
+                        if (IsPlayer(scene, selected)) {
+                            m_pendingAction = Action::ClaimPlayer; // nouveau personnage : joueur par défaut
+                        }
                     } else if (info->removable) {
                         info->remove(scene.GetRegistry(), selected);
                     }

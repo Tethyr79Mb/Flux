@@ -106,6 +106,27 @@ namespace Flux {
         float runSpeed = 5.0f;
         float jumpSpeed = 4.5f;  // m/s vers le haut au départ du saut (environ 1 m de haut)
         bool player = true;      // dirigé par le joueur ; sinon, immobile (soumis à la gravité seulement)
+        float groundSpeed = 0.0f; // vitesse horizontale mesurée pendant le jeu, m/s ; 0 en l'air (non enregistrée)
+    };
+
+    // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
+    // la première image de son animation. Sur un personnage (CharacterComponent), le choix suit ses pas : repos
+    // quand il est immobile, marche, puis course au-delà de la moitié entre ses vitesses de marche et de course,
+    // chacune jouée d'autant plus vite qu'il va vite, avec un fondu entre elles.
+    struct AnimatorComponent
+    {
+        std::string animation{};     // nom dans le fichier (marche d'un personnage) ; vide : la première
+        std::string idleAnimation{}; // personnage immobile ; vide : l'animation principale se fige
+        std::string runAnimation{};  // personnage qui court ; vide : l'animation principale, accélérée
+        float speed = 1.0f;          // vitesse de lecture (2 : deux fois plus vite)
+        bool loop = true;            // sinon, s'arrête sur sa dernière image
+
+        // Lecture en cours (non enregistrée) : animation jouée et son instant, animation qui s'efface, fondu.
+        std::string playing{};
+        double time = 0.0;
+        std::string previous{};
+        double previousTime = 0.0;
+        float fade = 1.0f; // part de playing dans la pose, de 0 à 1
     };
 
     // Point de l'écran (ou de la vue de l'éditeur) auquel un élément d'interface est accroché.

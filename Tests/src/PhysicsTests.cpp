@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 using namespace Flux;
 
@@ -148,8 +149,34 @@ namespace {
         CHECK(std::abs(scene.Get<TransformComponent>(hero).position.y) < 0.05);
         return true;
     }
+
+    // Deux personnages : ni l'un ni l'autre ne décolle, qu'ils soient côte à côte, l'un dans l'autre, ou que le joueur
+    // marche droit sur l'autre.
+    bool RunTwoCharactersTests() {
+        for (const double gap : {1.0, 0.2, 0.0}) {
+            Scene scene;
+            AddFloor(scene);
+            const Entity hero = scene.CreateEntity("Joueur");
+            scene.Add<CharacterComponent>(hero);
+            const Entity other = scene.CreateEntity("Autre");
+            scene.Get<TransformComponent>(other).position = {gap, 0.0, 0.0};
+            scene.Add<CharacterComponent>(other);
+
+            PhysicsWorld world;
+            double highest = 0.0;
+            for (int frame = 0; frame < 300; ++frame) {
+                world.Update(scene, Frame, frame < 150 ? Walk(1.0f) : CharacterInput{});
+                highest = std::max({highest, scene.Get<TransformComponent>(hero).position.y,
+                                    scene.Get<TransformComponent>(other).position.y});
+            }
+            std::printf("  écart %.1f : plus haut %.3f, joueur y=%.3f, autre y=%.3f\n", gap, highest,
+                        scene.Get<TransformComponent>(hero).position.y, scene.Get<TransformComponent>(other).position.y);
+            CHECK(highest < 0.3);
+        }
+        return true;
+    }
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunDegenerateTests() && RunCharacterTests();
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests();
 }

@@ -6,6 +6,7 @@
 #include "Flux/Platform/Input.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/Scene/Animator.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
@@ -208,6 +209,7 @@ namespace Flux {
             m_physics = std::make_unique<PhysicsWorld>();
         }
         m_physics->Update(m_scene, deltaSeconds, character);
+        Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 
     void Engine::SetGameState(GameState state) {
@@ -300,6 +302,14 @@ namespace Flux {
             return std::nullopt;
         }
         return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+    }
+
+    std::vector<std::string> Engine::GetAnimationNames(Entity entity) {
+        const auto* model = m_scene.TryGet<ModelComponent>(entity);
+        if (!m_project || !model || model->model.empty()) {
+            return {};
+        }
+        return m_renderer->GetAnimationNames(m_project->assetsDirectory / Platform::PathFromUtf8(model->model));
     }
 
     std::optional<Math::Box3f> Engine::GetMeshBounds(Entity entity) {

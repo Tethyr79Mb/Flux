@@ -60,13 +60,21 @@ namespace Flux {
             .Field("friction", "Frottement", &ColliderComponent::friction, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
             .Field("restitution", "Rebond", &ColliderComponent::restitution, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("gravityFactor", "Gravité (x)", &ColliderComponent::gravityFactor, {.speed = 0.01, .min = -10.0, .max = 10.0, .decimals = 2});
+        // Un personnage a sa propre capsule : une Collision sur la même entité serait ignorée par la physique.
         registry.Register<CharacterComponent>("character", "Personnage")
+            .Excludes("collider")
             .Field("radius", "Rayon", &CharacterComponent::radius, {.speed = 0.01, .min = 0.05, .max = 10.0, .decimals = 2})
             .Field("height", "Taille", &CharacterComponent::height, {.speed = 0.01, .min = 0.2, .max = 20.0, .decimals = 2})
             .Field("walkSpeed", "Marche (m/s)", &CharacterComponent::walkSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("runSpeed", "Course (m/s)", &CharacterComponent::runSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("jumpSpeed", "Saut (m/s)", &CharacterComponent::jumpSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("player", "Dirigé par le joueur", &CharacterComponent::player);
+        registry.Register<AnimatorComponent>("animator", "Animation")
+            .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
+            .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)
+            .Asset("runAnimation", "En courant", &AnimatorComponent::runAnimation, AssetType::Animation)
+            .Field("speed", "Vitesse", &AnimatorComponent::speed, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("loop", "En boucle", &AnimatorComponent::loop);
         registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")
             .Field("text", "Texte", &ScreenTextComponent::text)
             .Field("size", "Taille", &ScreenTextComponent::size, {.speed = 0.5, .min = 1.0, .max = 1000.0, .decimals = 0})
