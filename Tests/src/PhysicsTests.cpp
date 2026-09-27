@@ -75,6 +75,35 @@ namespace {
         return true;
     }
 
+    // Réglages absurdes (tailles nulles, rotation nulle, rebond parfait) : la simulation reste finie.
+    bool RunDegenerateTests() {
+        Scene scene;
+        AddFloor(scene);
+        for (int i = 0; i < 4; ++i) {
+            const Entity entity = scene.CreateEntity("Poussière");
+            TransformComponent& transform = scene.Get<TransformComponent>(entity);
+            transform.position = {0.4 * i, 1.0 + i, 0.0};
+            if (i == 3) {
+                transform.rotation = Math::Quaternionf{0.0f, 0.0f, 0.0f, 0.0f};
+            }
+            ColliderComponent& collider = scene.Add<ColliderComponent>(entity);
+            collider.shape = i % 2 ? ColliderShape::Sphere : ColliderShape::Box;
+            collider.size = {0.0f, 0.5f, 0.0f};
+            collider.radius = 0.0f;
+            collider.center = {1.0f, 1.0f, 1.0f};
+            collider.simulatePhysics = true;
+            collider.restitution = 1.0f;
+            collider.mass = i == 0 ? 2.0f : 0.0f;
+        }
+        PhysicsWorld world;
+        Run(world, scene, 5.0);
+        CHECK(world.GetBodyCount() == 5);
+        for (const auto [entity, transform] : scene.GetRegistry().view<const TransformComponent>().each()) {
+            CHECK(std::isfinite(transform.position.x) && std::isfinite(transform.position.y) && std::isfinite(transform.position.z));
+        }
+        return true;
+    }
+
     bool RunCharacterTests() {
         Scene scene;
         AddFloor(scene);
@@ -122,5 +151,5 @@ namespace {
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunCharacterTests();
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests();
 }

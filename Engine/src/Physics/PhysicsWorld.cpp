@@ -95,6 +95,11 @@ namespace Flux {
             return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
         }
         JPH::Quat ToJolt(const Math::Quaternionf& q) { return {q.x, q.y, q.z, q.w}; }
+        // Jolt exige une rotation normalisée ; une rotation nulle (fichier abîmé) devient l'identité.
+        JPH::Quat ToJoltRotation(const Math::Quaternionf& q) {
+            const JPH::Quat rotation = ToJolt(q);
+            return rotation.LengthSq() > 1.0e-12f ? rotation.Normalized() : JPH::Quat::sIdentity();
+        }
         Math::Vector3f FromJolt(JPH::Vec3Arg v) { return {v.GetX(), v.GetY(), v.GetZ()}; }
         Math::Quaternionf FromJolt(JPH::QuatArg q) { return {q.GetX(), q.GetY(), q.GetZ(), q.GetW()}; }
 
@@ -103,8 +108,11 @@ namespace Flux {
         }
 
         // Forme de base de la collision (sans le décalage du centre), à l'échelle de l'entité.
-        JPH::ShapeSettings::ShapeResult CreateBaseShape(const ColliderComponent& collider, const Math::Vector3f& absScale) {
-            constexpr float MinSize = 1.0e-3f; // une forme plate ou nulle n'a pas de volume : Jolt la refuserait
+        JPH::ShapeSettings::ShapeResult CreateBaseShape(const ColliderComponent& collider, const Math::Vector3f& absScale,
+                                                        bool simulated) {
+            // Une forme plate ou nulle n'a pas de volume : Jolt la refuserait. Un objet simulé minuscule (quelques
+            // milligrammes, inertie quasi nulle) rend la simulation instable jusqu'aux NaN : 5 cm au moins.
+            const float MinSize = simulated ? 0.05f : 1.0e-3f;
             if (collider.shape == ColliderShape::Sphere) {
                 return JPH::SphereShapeSettings(std::max(collider.radius * MaxComponent(absScale), MinSize)).Create();
             }
@@ -121,9 +129,9 @@ namespace Flux {
         }
 
         // Forme de la collision, à l'échelle de l'entité. nullptr (et un message) si Jolt la refuse.
-        JPH::RefConst<JPH::Shape> CreateShape(const ColliderComponent& collider, const Math::Vector3f& scale) {
+        JPH::RefConst<JPH::Shape> CreateShape(const ColliderComponent& collider, const Math::Vector3f& scale, bool simulated) {
             const Math::Vector3f absScale{std::abs(scale.x), std::abs(scale.y), std::abs(scale.z)};
-            JPH::ShapeSettings::ShapeResult result = CreateBaseShape(collider, absScale);
+            JPH::ShapeSettings::ShapeResult result = CreateBaseShape(collider, absScale, simulated);
             if (result.HasError()) {
                 std::fprintf(stderr, "Flux : forme de collision refusée : %s\n", result.GetError().c_str());
                 return nullptr;
@@ -212,11 +220,6 @@ namespace Flux {
         }
 
         void CreateBody(const Scene& scene, Entity entity, const ColliderComponent& collider, const RelativeTransform& transform) {
-            const JPH::RefConst<JPH::Shape> shape = CreateShape(collider, transform.scale);
-            if (!shape) {
-                bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
-                return;
-            }
             bool simulated = collider.simulatePhysics;
             if (simulated && scene.GetParent(entity) != NullEntity) {
                 // La physique réécrirait la position locale comme si elle était celle du monde.
@@ -228,7 +231,12 @@ namespace Flux {
                 }
                 simulated = false;
             }
-            JPH::BodyCreationSettings settings(shape, JPH::RVec3(ToJolt(transform.position)), ToJolt(transform.rotation).Normalized(),
+            const JPH::RefConst<JPH::Shape> shape = CreateShape(collider, transform.scale, simulated);
+            if (!shape) {
+                bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
+                return;
+            }
+            JPH::BodyCreationSettings settings(shape, JPH::RVec3(ToJolt(transform.position)), ToJoltRotation(transform.rotation),
                                                simulated ? JPH::EMotionType::Dynamic : JPH::EMotionType::Static,
                                                simulated ? Layers::Moving : Layers::NonMoving);
             settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(entity));
