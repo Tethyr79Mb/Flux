@@ -264,8 +264,13 @@ namespace Flux {
             settings->mMaxSlopeAngle = JPH::DegreesToRadians(50.0f);
             // Seuls les contacts sous le centre de la sphère du bas comptent comme sol.
             settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -radius);
-            // Corps interne : les objets dynamiques et les rayons voient le personnage.
-            settings->mInnerBodyShape = shape;
+            // Corps interne : les objets dynamiques et les rayons voient le personnage. Un peu plus mince que la
+            // capsule (comme l'exemple de Jolt) : il est téléporté à chaque pas, et s'il touchait ce que la capsule
+            // touche, il éjecterait les caisses en les repoussant.
+            constexpr float InnerFraction = 0.9f;
+            settings->mInnerBodyShape = JPH::RotatedTranslatedShapeSettings(
+                JPH::Vec3(0.0f, halfCylinder + radius, 0.0f), JPH::Quat::sIdentity(),
+                new JPH::CapsuleShape(halfCylinder + radius * (1.0f - InnerFraction), radius * InnerFraction)).Create().Get();
             settings->mInnerBodyLayer = Layers::Moving;
 
             Character character;
