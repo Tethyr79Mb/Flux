@@ -1,9 +1,11 @@
 # Compile le projet avec MSVC (Visual Studio) sur une machine Windows de GitHub et lance FluxTests,
-# à chaque envoi sur une branche et à chaque PR : les erreurs propres à MSVC sont vues avant de tester.
+# pour chaque PR et chaque envoi sur master : les erreurs propres à MSVC sont vues avant de tester.
+# (Pas à chaque envoi sur une branche : celles d'une PR seraient compilées deux fois.)
 name: MSVC
 
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
