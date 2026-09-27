@@ -16,6 +16,7 @@ namespace Flux {
 // Boîtes de dialogue natives du système (fenêtres modales : la boucle du moteur attend la réponse).
 namespace Flux::Platform {
     // Type de fichier proposé : description affichée et extension, point compris (".scene.json").
+    // Ouverture seulement : plusieurs extensions séparées par « ; » (".png;.jpg").
     struct FileType
     {
         std::string description;

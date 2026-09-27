@@ -18,16 +18,16 @@ namespace FluxEditor {
     class SceneEditor;
 
     // Vue 3D de l'éditeur : clic gauche pour sélectionner un objet, contour de la sélection,
-    // et gizmo de déplacement (une flèche par axe du monde, à glisser). Les textes à l'écran de la scène y sont
-    // dessinés comme dans le jeu, et se déplacent en les glissant.
+    // et gizmo de déplacement (une flèche par axe du monde, à glisser). Les textes et images à l'écran de la scène
+    // y sont dessinés comme dans le jeu, et se déplacent en les glissant.
     class SceneViewport {
         public:
         // view : rectangle de la vue 3D (retourné par EditorLayout::Update).
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, const Flux::UI::Rect& view);
-        // Vrai si la scène a été modifiée (déplacement au gizmo ou d'un texte) depuis le dernier appel.
+        // Vrai si la scène a été modifiée (déplacement au gizmo, d'un texte ou d'une image) depuis le dernier appel.
         bool TakeModified() { return std::exchange(m_modified, false); }
-        // Une flèche du gizmo ou un texte est tenu : le déplacement n'est pas fini.
-        bool IsDragging() const { return m_drag.axis >= 0 || m_textDrag.active; }
+        // Une flèche du gizmo, un texte ou une image est tenu : le déplacement n'est pas fini.
+        bool IsDragging() const { return m_drag.axis >= 0 || m_screenDrag.active; }
 
         private:
         // Glissement d'une flèche du gizmo en cours.
@@ -41,8 +41,8 @@ namespace FluxEditor {
             double startParameter = 0.0;              // point de l'axe saisi, en mètres depuis startPoint
         };
 
-        // Glissement d'un texte à l'écran : son décalage suit la souris.
-        struct TextDrag
+        // Glissement d'un élément à l'écran (texte, image) : son décalage suit la souris.
+        struct ScreenDrag
         {
             bool active = false;
             Flux::Uuid entity;
@@ -51,14 +51,15 @@ namespace FluxEditor {
             Flux::Math::Vector2f startMouse;
         };
 
-        // Déplace le texte tenu ; le glissement finit au relâchement, ou Échap le remet à sa place.
-        void UpdateTextDrag(Flux::Engine& engine, Flux::Entity selected, const Flux::UI::Rect& view);
+        // Déplace l'élément tenu ; le glissement finit au relâchement, ou Échap le remet à sa place.
+        void UpdateScreenDrag(Flux::Engine& engine, Flux::Entity selected, const Flux::UI::Rect& view);
 
         Drag m_drag;
-        TextDrag m_textDrag;
+        ScreenDrag m_screenDrag;
         int m_hoveredAxis = -1;
         bool m_modified = false;
         std::vector<Flux::RelativeTransform> m_transforms; // gardé d'une frame à l'autre : pas d'allocation
-        std::vector<Flux::ScreenUi::ItemRect> m_textRects; // textes dessinés à la frame précédente (sélection au clic)
+        // Éléments à l'écran dessinés à la frame précédente (sélection au clic).
+        std::vector<Flux::ScreenUi::ItemRect> m_screenRects;
     };
 }

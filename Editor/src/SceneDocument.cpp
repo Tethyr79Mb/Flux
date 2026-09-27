@@ -17,10 +17,8 @@ namespace FluxEditor {
     namespace {
         const Platform::FileType SceneFileType{"Scènes Flux", ".scene.json"};
 
-        // path::string() convertit dans la page de code Windows : les accents seraient perdus.
         std::string FileName(const std::filesystem::path& path) {
-            const std::u8string name = path.filename().u8string();
-            return {name.begin(), name.end()};
+            return Platform::ToUtf8(path.filename());
         }
     }
 

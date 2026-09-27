@@ -201,6 +201,32 @@ namespace Flux::UI {
         }
         const WidgetId id = ui.GetId(label);
         const auto [min, max] = ui.LabeledRow(label);
+        return ui.TextField(id, min, max, value);
+    }
+
+    bool Context::InputTextBrowse(std::string_view label, std::string& value, bool& browse) {
+        Impl& ui = *m_impl;
+        browse = false;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        const auto [fieldMin, fieldMax] = ui.LabeledRow(label);
+        const float buttonWidth = ui.MeasureText("...").x + 2.0f * style.framePadding.x;
+        const Vector2f buttonMin{std::max(fieldMin.x, fieldMax.x - buttonWidth), fieldMin.y};
+        const Impl::Interaction interaction = ui.Behavior(Hash(id, "#parcourir"), buttonMin, fieldMax);
+        const LinearColor color = interaction.held && interaction.hovered ? style.buttonActive
+                                : interaction.hovered                     ? style.buttonHovered
+                                                                          : style.button;
+        ui.panel->content.AddRect(buttonMin, fieldMax, color);
+        ui.ClippedText(buttonMin + style.framePadding, fieldMax.x, "...", style.text);
+        browse = interaction.clicked;
+        return ui.TextField(id, fieldMin, {buttonMin.x - style.itemSpacing, fieldMax.y}, value);
+    }
+
+    bool Context::Impl::TextField(WidgetId id, Vector2f min, Vector2f max, std::string& value) {
+        Impl& ui = *this;
         if (ui.editingId == id) {
             const Impl::EditResult result = ui.ProcessTextEdit(min, max, false);
             if (result == Impl::EditResult::Editing) {

@@ -135,6 +135,9 @@ namespace Flux::UI {
         // Champ texte : cliquer pour éditer, Entrée ou clic ailleurs valide, Échap annule.
         // Retourne true quand une nouvelle valeur vient d'être validée (pas à chaque touche).
         bool InputText(std::string_view label, std::string& value);
+        // Champ texte suivi d'un bouton « ... » (choisir un fichier) : browse devient true au clic sur le bouton,
+        // à l'appelant d'ouvrir le choix et de modifier value.
+        bool InputTextBrowse(std::string_view label, std::string& value, bool& browse);
 
         // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu ;
         // un clic sur l'aperçu ouvre le sélecteur de couleur (SetColorPicker), s'il y en a un.

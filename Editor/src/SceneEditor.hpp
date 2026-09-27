@@ -46,8 +46,8 @@ namespace FluxEditor {
         void DrawHierarchy(Flux::Engine& engine, Flux::Scene& scene);
         void DrawNode(Flux::UI::Context& ui, Flux::Scene& scene, Flux::Entity entity);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
-        void DrawComponent(Flux::UI::Context& ui, const Flux::ComponentInfo& info, void* component);
-        bool DrawField(Flux::UI::Context& ui, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
+        void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
+        bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
         void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected, UndoHistory& history);
 
         Flux::Uuid m_selection;

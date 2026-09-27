@@ -1,16 +1,17 @@
-// Overlay 2D (FluxUI) : rectangles et texte MSDF, dessinés en un seul appel.
-// Les rectangles échantillonnent un bloc plein de l'atlas, donc le même shader sert aux deux.
+// Overlay 2D (FluxUI) : rectangles et texte MSDF, puis images.
+// Les rectangles échantillonnent un bloc plein de l'atlas, donc le même mode sert aux deux ;
+// une image est une texture ordinaire (sRGB, décodée en linéaire par le GPU), multipliée par la couleur du sommet.
 
 struct OverlayParams
 {
     float2 screenSize;    // pixels
     float2 atlasSize;     // pixels
     float distanceRange;  // étendue du champ de distance, en pixels d'atlas
-    float padding;
+    float mode;           // 0 : atlas MSDF (texte, rectangles) ; 1 : image
 };
 
 [[vk::push_constant]] ConstantBuffer<OverlayParams> params;
-[[vk::binding(0, 0)]] Sampler2D atlas;
+[[vk::binding(0, 0)]] Sampler2D atlas; // l'atlas de la police, ou l'image selon le mode
 
 // Doit correspondre à UI::Vertex (Flux/UI/DrawList.hpp).
 struct VertexInput
@@ -46,6 +47,11 @@ float median(float3 v)
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
+    if (params.mode > 0.5)
+    {
+        return atlas.Sample(input.uv) * input.color;
+    }
+
     const float3 msdf = atlas.Sample(input.uv).rgb;
     const float signedDistance = median(msdf);
 

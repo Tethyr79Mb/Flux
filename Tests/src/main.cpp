@@ -12,7 +12,8 @@ int main() {
         {"interface (FluxUI) et rotations", RunUiTests},
         {"projet", RunProjectTests},
         {"sélection dans la vue 3D", RunPickingTests},
-        {"textes à l'écran", RunScreenUiTests},
+        {"images et textures", RunImageTests},
+        {"textes et images à l'écran", RunScreenUiTests},
     };
 
     int failures = 0;

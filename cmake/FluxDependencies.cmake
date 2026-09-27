@@ -75,9 +75,19 @@ FetchContent_Declare(nlohmann_json
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         SYSTEM)
 
+# Lecture des images (PNG, JPEG...) : stb_image, un seul header. Pas de version publiée : commit figé.
+# Seulement téléchargé (FetchContent_Populate implicite) : stb n'a pas de CMakeLists.
+FetchContent_Declare(stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20
+        SYSTEM)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb)
+
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 # Bibliothèques statiques liées dans FluxEngine.dll.

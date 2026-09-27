@@ -404,6 +404,8 @@ namespace Flux::UI {
         // Frappe dans le champ en cours de saisie ; numeric : seuls les caractères d'un nombre sont acceptés.
         EditResult ProcessTextEdit(Vector2f min, Vector2f max, bool numeric);
         void DrawTextEdit(Vector2f min, Vector2f max);
+        // Champ texte dans min-max (InputText, InputTextBrowse) : true quand une nouvelle valeur est validée.
+        bool TextField(WidgetId id, Vector2f min, Vector2f max, std::string& value);
         bool DragScalar(WidgetId id, Vector2f min, Vector2f max, double& value, double speed, double low, double high,
                         int decimals, const LinearColor* axisColor);
 

@@ -37,6 +37,7 @@ namespace Flux::UI {
 
     void DrawList::Clear() {
         m_vertices.clear();
+        m_commands.clear();
         ResetClipRect();
     }
 
@@ -50,8 +51,19 @@ namespace Flux::UI {
         m_clipping = false;
     }
 
+    void DrawList::PushVertices(TextureId texture, std::span<const Vertex> vertices) {
+        if (vertices.empty()) {
+            return;
+        }
+        if (m_commands.empty() || m_commands.back().texture != texture) {
+            m_commands.push_back({texture, static_cast<std::uint32_t>(m_vertices.size()), 0});
+        }
+        m_vertices.insert(m_vertices.end(), vertices.begin(), vertices.end());
+        m_commands.back().vertexCount += static_cast<std::uint32_t>(vertices.size());
+    }
+
     void DrawList::AddQuad(Math::Vector2f min, Math::Vector2f max, Math::Vector2f uvMin, Math::Vector2f uvMax,
-                           Math::LinearColor color) {
+                           Math::LinearColor color, TextureId texture) {
         if (m_clipping) {
             // Quad aligné sur les axes : on rogne la géométrie et on interpole les UV d'autant.
             const float clippedMinX = std::max(min.x, m_clipMin.x);
@@ -77,7 +89,8 @@ namespace Flux::UI {
         const Vertex topRight{{max.x, min.y}, {uvMax.x, uvMin.y}, color};
         const Vertex bottomLeft{{min.x, max.y}, {uvMin.x, uvMax.y}, color};
         const Vertex bottomRight{max, uvMax, color};
-        m_vertices.insert(m_vertices.end(), {topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft});
+        const Vertex quad[] = {topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft};
+        PushVertices(texture, quad);
     }
 
     void DrawList::AddRect(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color) {
@@ -103,7 +116,8 @@ namespace Flux::UI {
             }
         }
         const Math::Vector2f uv = m_font->GetSolidUV();
-        m_vertices.insert(m_vertices.end(), {Vertex{a, uv, color}, Vertex{b, uv, color}, Vertex{c, uv, color}});
+        const Vertex triangle[] = {{a, uv, color}, {b, uv, color}, {c, uv, color}};
+        PushVertices(FontTexture, triangle);
     }
 
     void DrawList::AddLine(Math::Vector2f a, Math::Vector2f b, Math::LinearColor color, float thickness) {
@@ -151,8 +165,19 @@ namespace Flux::UI {
         AddTriangle(a + normal, b - normal, a - normal, color);
     }
 
+    void DrawList::AddImage(Math::Vector2f min, Math::Vector2f max, TextureId texture, Math::LinearColor tint,
+                            Math::Vector2f uvMin, Math::Vector2f uvMax) {
+        if (min.x >= max.x || min.y >= max.y) {
+            return; // rectangle vide (ou retourné) : rien à dessiner, et pas de division par zéro à la découpe
+        }
+        AddQuad(min, max, uvMin, uvMax, tint, texture);
+    }
+
     void DrawList::Append(const DrawList& other) {
-        m_vertices.insert(m_vertices.end(), other.m_vertices.begin(), other.m_vertices.end());
+        const std::span<const Vertex> vertices = other.m_vertices;
+        for (const DrawCommand& command : other.m_commands) {
+            PushVertices(command.texture, vertices.subspan(command.firstVertex, command.vertexCount));
+        }
     }
 
     template <typename Emit>

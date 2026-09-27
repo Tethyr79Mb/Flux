@@ -1,5 +1,6 @@
 #include "SceneEditor.hpp"
 
+#include "AssetPicker.hpp"
 #include "UndoHistory.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -140,7 +141,7 @@ namespace FluxEditor {
                 for (std::size_t i = 0; i < components.GetCount(); ++i) {
                     const ComponentInfo& info = components.Get(i);
                     if (void* component = info.get(scene.GetRegistry(), selected)) {
-                        DrawComponent(ui, info, component);
+                        DrawComponent(engine, info, component);
                     } else if (info.removable) {
                         missing.push_back(&info);
                     }
@@ -167,11 +168,12 @@ namespace FluxEditor {
         ui.EndPanel();
     }
 
-    void SceneEditor::DrawComponent(UI::Context& ui, const ComponentInfo& info, void* component) {
+    void SceneEditor::DrawComponent(Engine& engine, const ComponentInfo& info, void* component) {
+        UI::Context& ui = engine.GetUi();
         ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
         if (ui.CollapsingHeader(info.label)) {
             for (const FieldInfo& field : info.fields) {
-                m_modified |= DrawField(ui, info, field, field.access(component));
+                m_modified |= DrawField(engine, info, field, field.access(component));
             }
             if (info.removable && ui.Button("Retirer")) {
                 m_pendingAction = Action::RemoveComponent;
@@ -181,7 +183,8 @@ namespace FluxEditor {
         ui.PopId();
     }
 
-    bool SceneEditor::DrawField(UI::Context& ui, const ComponentInfo& info, const FieldInfo& field, void* value) {
+    bool SceneEditor::DrawField(Engine& engine, const ComponentInfo& info, const FieldInfo& field, void* value) {
+        UI::Context& ui = engine.GetUi();
         const FieldOptions& o = field.options;
         const std::string label = field.label + "##" + field.key;
         switch (field.type) {
@@ -217,8 +220,22 @@ namespace FluxEditor {
             }
             case FieldType::Color:
                 return ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
-            case FieldType::String:
-                return ui.InputText(label, *static_cast<std::string*>(value));
+            case FieldType::String: {
+                auto& text = *static_cast<std::string*>(value);
+                if (field.asset == AssetType::None) {
+                    return ui.InputText(label, text);
+                }
+                bool browse = false;
+                bool changed = ui.InputTextBrowse(label, text, browse);
+                if (browse) {
+                    // Boîte de dialogue modale : la frame attend le choix.
+                    if (std::optional<std::string> chosen = ChooseAsset(engine, field.asset, text); chosen && *chosen != text) {
+                        text = std::move(*chosen);
+                        changed = true;
+                    }
+                }
+                return changed;
+            }
             case FieldType::Enum: {
                 std::vector<std::string_view> names;
                 int index = -1;
