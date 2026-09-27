@@ -53,6 +53,8 @@ set(MSDFGEN_CORE_ONLY ON CACHE BOOL "" FORCE)
 set(MSDFGEN_BUILD_STANDALONE OFF CACHE BOOL "" FORCE)
 set(MSDFGEN_USE_VCPKG OFF CACHE BOOL "" FORCE)
 set(MSDFGEN_USE_SKIA OFF CACHE BOOL "" FORCE)
+# Runtime C++ en DLL (/MD), comme le reste du projet : sinon MSVC refuse de lier (discordance RuntimeLibrary).
+set(MSDFGEN_DYNAMIC_RUNTIME ON CACHE BOOL "" FORCE)
 FetchContent_Declare(msdfgen
         GIT_REPOSITORY https://github.com/Chlumsky/msdfgen.git
         GIT_TAG v1.13
