@@ -272,6 +272,45 @@ namespace {
         return true;
     }
 
+    // Aperçu de ColorEdit3 : un clic ouvre le sélecteur branché (ici simulé), Annuler ne change rien.
+    bool RunColorPickerTests(const UI::Font& font) {
+        Harness harness(font);
+        const float row = font.GetLineHeight() * 15.0f + 8.0f;
+        const float fieldY = row + 8.0f + row * 0.5f;
+        const float swatchX = 8.0f + std::floor(384.0f * 0.38f) + 5.0f;
+
+        Math::LinearColor color{0.0f, 0.0f, 1.0f};
+        int opened = 0;
+        bool accept = true;
+        harness.GetUi().SetColorPicker([&](Math::LinearColor& picked) {
+            ++opened;
+            if (accept) {
+                picked = {1.0f, 0.0f, 0.0f, picked.a};
+            }
+            return accept;
+        });
+        int changes = 0;
+        const auto describe = [&](UI::Context& ui) {
+            if (ui.BeginPanel("Test", {0.0f, 0.0f}, 400.0f)) {
+                if (ui.ColorEdit3("Couleur", color)) {
+                    ++changes;
+                }
+            }
+            ui.EndPanel();
+        };
+
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Click({swatchX, fieldY}, describe);
+        CHECK(opened == 1 && changes == 1);
+        CHECK(color == (Math::LinearColor{1.0f, 0.0f, 0.0f}));
+        accept = false;
+        harness.Click({swatchX, fieldY}, describe);
+        CHECK(opened == 2 && changes == 1);
+        CHECK(color == (Math::LinearColor{1.0f, 0.0f, 0.0f}));
+        return true;
+    }
+
     bool RunMenuTests(const UI::Font& font) {
         Harness harness(font);
         const float bar = font.GetLineHeight() * 15.0f + 8.0f; // hauteur de la barre = hauteur d'un champ
@@ -523,5 +562,5 @@ bool RunUiTests() {
         return false;
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
-        && RunChoiceTests(**font) && RunDockTests(**font);
+        && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font);
 }

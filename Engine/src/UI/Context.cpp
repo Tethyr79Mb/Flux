@@ -192,6 +192,10 @@ namespace Flux::UI {
         }
     }
 
+    void Context::SetColorPicker(ColorPicker picker) {
+        m_impl->colorPicker = std::move(picker);
+    }
+
     const Style& Context::GetStyle() const {
         return m_impl->style;
     }
