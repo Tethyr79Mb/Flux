@@ -151,6 +151,7 @@ namespace Flux {
         struct Character {
             JPH::Ref<JPH::CharacterVirtual> character;
             float yaw = 0.0f; // direction du regard (le modèle regarde vers +z en glTF)
+            float groundSpeed = 0.0f; // vitesse horizontale au dernier pas, pour les animations
         };
     }
 
@@ -377,8 +378,18 @@ namespace Flux {
                 JPH::CharacterVirtual::ExtendedUpdateSettings update;
                 update.mStickToFloorStepDown = -up * 0.5f;
                 update.mWalkStairsStepUp = up * 0.4f;
+                const JPH::RVec3 before = body.GetPosition();
                 body.ExtendedUpdate(StepSeconds, gravity, update, system->GetDefaultBroadPhaseLayerFilter(Layers::Moving),
                                     system->GetDefaultLayerFilter(Layers::Moving), {}, {}, *tempAllocator);
+
+                // Vitesse des pas : le chemin vraiment parcouru (nulle contre un mur), par rapport au sol qui peut
+                // bouger, dans le plan du sol ; nulle en l'air.
+                if (body.GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround) {
+                    const JPH::Vec3 moved = JPH::Vec3(body.GetPosition() - before) / StepSeconds - body.GetGroundVelocity();
+                    character.groundSpeed = (moved - up * moved.Dot(up)).Length();
+                } else {
+                    character.groundSpeed = 0.0f;
+                }
             }
         }
 
@@ -409,6 +420,7 @@ namespace Flux {
             }
             for (const auto& [entity, character] : characters) {
                 WriteRoot(scene, entity, character.character->GetPosition(), character.character->GetRotation());
+                scene.Get<CharacterComponent>(entity).groundSpeed = character.groundSpeed;
             }
         }
 

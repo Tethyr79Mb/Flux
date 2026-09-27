@@ -2,6 +2,7 @@
 
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
+#include "Flux/Renderer/Animation.hpp"
 #include "Flux/Renderer/Image.hpp"
 #include "Flux/Renderer/Model.hpp"
 #include "Flux/Scene/Camera.hpp"
@@ -35,11 +36,13 @@ namespace Flux {
         constexpr VkFormat DepthFormat = VK_FORMAT_D32_SFLOAT;
 
         static_assert(sizeof(ModelVertex) == 32, "ModelVertex doit correspondre à VertexInput dans shaders/Mesh.slang");
+        static_assert(sizeof(ModelSkinVertex) == 24, "ModelSkinVertex doit correspondre à SkinnedVertexInput dans shaders/Mesh.slang");
 
         // Doit correspondre à MeshParams dans shaders/Mesh.slang : 128 octets, le minimum garanti des push constants.
         struct MeshParams {
             Math::Matrix4f modelViewProjection;
-            std::array<std::array<float, 4>, 3> normalColumns; // normalColumns[0][3] : seuil d'alpha
+            // normalColumns[0][3] : seuil d'alpha ; normalColumns[1][3] : premier os (bits d'un entier), modèle animé
+            std::array<std::array<float, 4>, 3> normalColumns;
             Math::LinearColor color;
         };
         static_assert(sizeof(MeshParams) == 128);
@@ -112,10 +115,15 @@ namespace Flux {
             VkDescriptorSet set = VK_NULL_HANDLE; // VK_NULL_HANDLE : celui de l'image blanche
         };
 
+        // Matrices d'os envoyées au GPU par frame : de quoi animer des dizaines de personnages sans réallouer.
+        constexpr VkDeviceSize MinJointBufferSize = 64 * 1024;
+
         // Modèle 3D envoyé au GPU (le cube du moteur, ou un fichier glTF), et de quoi voir si le fichier a changé.
         struct GpuModel {
             Vk::Buffer vertices;
             Vk::Buffer indices; // 32 bits
+            Vk::Buffer skin;    // ModelSkinVertex, modèle animé seulement
+            ModelSkeleton skeleton; // gardé sur le CPU : les poses y sont calculées à chaque frame
             std::vector<Vk::Image> images;
             std::vector<GpuMaterial> materials;
             std::vector<ModelPrimitive> primitives;
@@ -131,6 +139,7 @@ namespace Flux {
             Math::Matrix4f modelViewProjection;
             std::array<std::array<float, 4>, 3> normalColumns;
             Math::LinearColor tint;
+            uint32_t firstJoint = 0; // modèle animé : ses os dans le buffer des os de la frame
         };
 
         // Taille minimale d'un vertex buffer d'overlay : évite de réallouer pour quelques caractères de plus.
@@ -180,6 +189,15 @@ namespace Flux {
         // Maillages : faces arrière éliminées, ou gardées (matériaux double face). Même layout pour les deux.
         Vk::GraphicsPipeline meshPipeline;
         Vk::GraphicsPipeline meshPipelineDoubleSided;
+        // Modèles animés : un second flux de sommets (os et poids), et les matrices des os en set 1.
+        Vk::GraphicsPipeline skinnedPipeline;
+        Vk::GraphicsPipeline skinnedPipelineDoubleSided;
+        VkDescriptorSetLayout jointSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool jointDescriptorPool = VK_NULL_HANDLE;
+        std::array<VkDescriptorSet, FramesInFlight> jointSets{};
+        std::array<Vk::Buffer, FramesInFlight> jointBuffers;
+        std::vector<Math::Matrix4f> jointMatrices; // de la frame en préparation
+        PoseEvaluator poseEvaluator;
         VkSampler meshSampler = VK_NULL_HANDLE;
         VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
         VkDescriptorPool materialDescriptorPool = VK_NULL_HANDLE;
@@ -221,6 +239,8 @@ namespace Flux {
             }
             device->WaitIdle();
             const VkDevice vkDevice = device->GetHandle();
+            vkDestroyDescriptorPool(vkDevice, jointDescriptorPool, nullptr);
+            vkDestroyDescriptorSetLayout(vkDevice, jointSetLayout, nullptr);
             vkDestroyDescriptorPool(vkDevice, materialDescriptorPool, nullptr); // libère aussi les sets des matériaux
             vkDestroyDescriptorSetLayout(vkDevice, materialSetLayout, nullptr);
             vkDestroySampler(vkDevice, meshSampler, nullptr);
@@ -364,12 +384,106 @@ namespace Flux {
             }
             meshPipelineDoubleSided = std::move(*doubleSided);
 
+            if (auto skinned = CreateSkinnedPipelines(desc, vertexBinding, attributes); !skinned) {
+                return skinned;
+            }
+
             auto uploaded = UploadModel(BuildCube(), "cube");
             if (!uploaded) {
                 return std::unexpected(uploaded.error());
             }
             cube = std::move(*uploaded);
             return {};
+        }
+
+        // Même description que les maillages statiques, plus les os et poids (binding 1) et les matrices des os
+        // (set 1, lues par le vertex shader).
+        std::expected<void, std::string> CreateSkinnedPipelines(Vk::GraphicsPipelineDesc desc,
+                                                                const VkVertexInputBindingDescription& vertexBinding,
+                                                                std::span<const VkVertexInputAttributeDescription> modelAttributes) {
+            const VkDevice vkDevice = device->GetHandle();
+            const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+            VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
+            setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            setLayoutInfo.bindingCount = 1;
+            setLayoutInfo.pBindings = &binding;
+            if (!Vk::Check(vkCreateDescriptorSetLayout(vkDevice, &setLayoutInfo, nullptr, &jointSetLayout), "vkCreateDescriptorSetLayout")) {
+                return std::unexpected("création du descriptor set layout des os");
+            }
+            const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, FramesInFlight};
+            VkDescriptorPoolCreateInfo poolInfo{};
+            poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            poolInfo.maxSets = FramesInFlight;
+            poolInfo.poolSizeCount = 1;
+            poolInfo.pPoolSizes = &poolSize;
+            if (!Vk::Check(vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &jointDescriptorPool), "vkCreateDescriptorPool")) {
+                return std::unexpected("création du descriptor pool des os");
+            }
+            for (uint32_t f = 0; f < FramesInFlight; ++f) {
+                VkDescriptorSetAllocateInfo allocateInfo{};
+                allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+                allocateInfo.descriptorPool = jointDescriptorPool;
+                allocateInfo.descriptorSetCount = 1;
+                allocateInfo.pSetLayouts = &jointSetLayout;
+                if (!Vk::Check(vkAllocateDescriptorSets(vkDevice, &allocateInfo, &jointSets[f]), "vkAllocateDescriptorSets")) {
+                    return std::unexpected("allocation des descriptor sets des os");
+                }
+                if (!GrowJointBuffer(f, MinJointBufferSize)) {
+                    return std::unexpected("création du buffer des os");
+                }
+            }
+
+            const std::array bindings{
+                vertexBinding,
+                VkVertexInputBindingDescription{1, sizeof(ModelSkinVertex), VK_VERTEX_INPUT_RATE_VERTEX},
+            };
+            std::vector<VkVertexInputAttributeDescription> attributes(modelAttributes.begin(), modelAttributes.end());
+            attributes.push_back({3, 1, VK_FORMAT_R16G16B16A16_UINT, offsetof(ModelSkinVertex, joints)});
+            attributes.push_back({4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(ModelSkinVertex, weights)});
+            const std::array setLayouts{materialSetLayout, jointSetLayout};
+            desc.vertexEntryPoint = "vertexSkinned";
+            desc.vertexBindings = bindings;
+            desc.vertexAttributes = attributes;
+            desc.setLayouts = setLayouts;
+            desc.cullMode = VK_CULL_MODE_BACK_BIT;
+            auto pipeline = Vk::GraphicsPipeline::Create(vkDevice, desc);
+            if (!pipeline) {
+                return std::unexpected(pipeline.error());
+            }
+            skinnedPipeline = std::move(*pipeline);
+            desc.cullMode = VK_CULL_MODE_NONE;
+            auto doubleSided = Vk::GraphicsPipeline::Create(vkDevice, desc);
+            if (!doubleSided) {
+                return std::unexpected(doubleSided.error());
+            }
+            skinnedPipelineDoubleSided = std::move(*doubleSided);
+            return {};
+        }
+
+        // Buffer des os de la frame f agrandi à size octets au moins, et son descriptor set mis à jour. Appelé quand
+        // le GPU n'utilise plus cette frame (après l'attente de sa fence).
+        bool GrowJointBuffer(uint32_t f, VkDeviceSize size) {
+            Vk::Buffer& buffer = jointBuffers[f];
+            if (buffer.GetSize() >= size) {
+                return true;
+            }
+            auto grown = Vk::Buffer::Create(device->GetAllocator(), std::bit_ceil(std::max(size, MinJointBufferSize)),
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, Vk::Buffer::Memory::Upload);
+            if (!grown) {
+                std::fprintf(stderr, "Flux : %s\n", grown.error().c_str());
+                return false;
+            }
+            buffer = std::move(*grown);
+            const VkDescriptorBufferInfo bufferInfo{buffer.GetHandle(), 0, VK_WHOLE_SIZE};
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = jointSets[f];
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            write.pBufferInfo = &bufferInfo;
+            vkUpdateDescriptorSets(device->GetHandle(), 1, &write, 0, nullptr);
+            return true;
         }
 
         VkDescriptorSet AllocateMaterialSet(const Vk::Image& image) const {
@@ -432,6 +546,15 @@ namespace Flux {
                 return std::unexpected(indices.error());
             }
             model.indices = std::move(*indices);
+            if (data.IsAnimated()) {
+                auto skin = CreateStaticBuffer(data.skinVertices.data(), data.skinVertices.size() * sizeof(ModelSkinVertex),
+                                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+                if (!skin) {
+                    return std::unexpected(skin.error());
+                }
+                model.skin = std::move(*skin);
+                model.skeleton = data.skeleton;
+            }
 
             std::vector<int> imageSlots(data.images.size(), -1); // indice dans model.images
             for (std::size_t i = 0; i < data.images.size(); ++i) {
@@ -759,21 +882,35 @@ namespace Flux {
             const Vk::GraphicsPipeline* boundPipeline = nullptr;
             const GpuModel* boundModel = nullptr;
             VkDescriptorSet boundSet = VK_NULL_HANDLE;
+            bool jointsBound = false;
             for (const MeshDraw& draw : meshDraws) {
                 const GpuModel& model = *draw.model;
+                const bool animated = model.skin.GetHandle() != VK_NULL_HANDLE;
                 if (&model != boundModel) {
                     boundModel = &model;
-                    const VkBuffer vertexBuffer = model.vertices.GetHandle();
-                    const VkDeviceSize offset = 0;
-                    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
+                    const std::array vertexBuffers{model.vertices.GetHandle(), model.skin.GetHandle()};
+                    const std::array<VkDeviceSize, 2> offsets{};
+                    vkCmdBindVertexBuffers(commandBuffer, 0, animated ? 2 : 1, vertexBuffers.data(), offsets.data());
                     vkCmdBindIndexBuffer(commandBuffer, model.indices.GetHandle(), 0, VK_INDEX_TYPE_UINT32);
                 }
                 for (const ModelPrimitive& primitive : model.primitives) {
                     const GpuMaterial& material = model.materials[primitive.material];
-                    const Vk::GraphicsPipeline& pipeline = material.doubleSided ? meshPipelineDoubleSided : meshPipeline;
+                    const Vk::GraphicsPipeline& pipeline =
+                        animated ? (material.doubleSided ? skinnedPipelineDoubleSided : skinnedPipeline)
+                                 : (material.doubleSided ? meshPipelineDoubleSided : meshPipeline);
                     if (&pipeline != boundPipeline) {
+                        // Layout différent (statique / animé) : les sets liés ne sont plus garantis, on les relie.
+                        if (boundPipeline && boundPipeline->GetLayout() != pipeline.GetLayout()) {
+                            boundSet = VK_NULL_HANDLE;
+                            jointsBound = false;
+                        }
                         boundPipeline = &pipeline;
                         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetHandle());
+                    }
+                    if (animated && !jointsBound) {
+                        jointsBound = true;
+                        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetLayout(), 1, 1,
+                                                &jointSets[frameIndex], 0, nullptr);
                     }
                     const VkDescriptorSet set = material.set != VK_NULL_HANDLE ? material.set : whiteSet;
                     if (set != boundSet) {
@@ -784,6 +921,7 @@ namespace Flux {
                                       {material.baseColor.r * draw.tint.r, material.baseColor.g * draw.tint.g,
                                        material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a}};
                     params.normalColumns[0][3] = material.alphaCutoff;
+                    params.normalColumns[1][3] = std::bit_cast<float>(draw.firstJoint);
                     vkCmdPushConstants(commandBuffer, pipeline.GetLayout(),
                                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
                     vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1, primitive.firstIndex, 0, 0);
@@ -800,6 +938,7 @@ namespace Flux {
 
             scene.ComputeRelativeTransforms(camera.position, relativeTransforms);
             meshDraws.clear();
+            jointMatrices.clear();
             for (const RelativeTransform& transform : relativeTransforms) {
                 const GpuModel* model = nullptr;
                 Math::LinearColor tint;
@@ -826,7 +965,47 @@ namespace Flux {
                 const std::array<std::array<float, 4>, 3> normalColumns{{{x.x, x.y, x.z, 0.0f},
                                                                          {y.x, y.y, y.z, 0.0f},
                                                                          {z.x, z.y, z.z, 0.0f}}};
-                meshDraws.push_back({model, viewProjection * world, normalColumns, tint});
+                uint32_t firstJoint = 0;
+                if (!model->skeleton.joints.empty()) {
+                    firstJoint = static_cast<uint32_t>(jointMatrices.size());
+                    Pose(*model, scene.TryGet<AnimatorComponent>(transform.entity));
+                    const std::span<const Math::Matrix4f> joints = poseEvaluator.GetJointMatrices();
+                    jointMatrices.insert(jointMatrices.end(), joints.begin(), joints.end());
+                }
+                meshDraws.push_back({model, viewProjection * world, normalColumns, tint, firstJoint});
+            }
+            UploadJoints();
+        }
+
+        // Pose d'un modèle animé, d'après la lecture de son AnimatorComponent ; sans lui, la pose de repos.
+        // Avant le jeu (rien de joué encore), la première image de l'animation choisie.
+        void Pose(const GpuModel& model, const AnimatorComponent* animator) {
+            if (!animator) {
+                poseEvaluator.Evaluate(model.skeleton, {});
+                return;
+            }
+            const std::string& playing = animator->playing.empty() ? animator->animation : animator->playing;
+            const AnimationSample to{FindAnimation(model.skeleton, playing), animator->time, animator->loop};
+            if (animator->fade >= 1.0f) {
+                poseEvaluator.Evaluate(model.skeleton, to);
+                return;
+            }
+            const AnimationSample from{FindAnimation(model.skeleton, animator->previous), animator->previousTime, animator->loop};
+            poseEvaluator.Evaluate(model.skeleton, from, to, animator->fade);
+        }
+
+        // Matrices des os de la frame, par colonnes comme jointColumns dans shaders/Mesh.slang. Si le buffer ne
+        // peut grandir (mémoire épuisée), les modèles animés ne sont pas dessinés plutôt que lus hors du buffer.
+        void UploadJoints() {
+            if (jointMatrices.empty()) {
+                return;
+            }
+            static_assert(sizeof(Math::Matrix4f) == 64);
+            const VkDeviceSize bytes = jointMatrices.size() * sizeof(Math::Matrix4f);
+            if (GrowJointBuffer(frameIndex, bytes)) {
+                jointBuffers[frameIndex].Write(jointMatrices.data(), bytes);
+            } else {
+                std::erase_if(meshDraws, [](const MeshDraw& draw) { return !draw.model->skeleton.joints.empty(); });
             }
         }
 

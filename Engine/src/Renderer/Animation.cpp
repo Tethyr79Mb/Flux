@@ -165,25 +165,25 @@ namespace Flux {
         return m;
     }
 
-    void PoseEvaluator::Evaluate(const ModelSkeleton& skeleton, const ModelAnimation* animation, double time, bool loop,
-                                 float weight) {
-        const std::size_t nodeCount = skeleton.nodes.size();
-        m_poses.resize(nodeCount);
-        for (std::size_t n = 0; n < nodeCount; ++n) {
-            const SkeletonNode& node = skeleton.nodes[n];
-            m_poses[n] = {node.translation, node.rotation, node.scale};
-        }
-
-        weight = std::clamp(weight, 0.0f, 1.0f);
-        if (animation && weight > 0.0f) {
-            const float at = AnimationTime(*animation, time, loop);
-            m_sampled.assign(m_poses.begin(), m_poses.end());
-            for (const AnimationChannel& channel : animation->channels) {
+    namespace {
+        // Pose de repos, puis les courbes de l'animation (s'il y en a une) à son instant.
+        void SamplePose(const ModelSkeleton& skeleton, const AnimationSample& sample, std::vector<NodePose>& poses) {
+            const std::size_t nodeCount = skeleton.nodes.size();
+            poses.resize(nodeCount);
+            for (std::size_t n = 0; n < nodeCount; ++n) {
+                const SkeletonNode& node = skeleton.nodes[n];
+                poses[n] = {node.translation, node.rotation, node.scale};
+            }
+            if (!sample.animation) {
+                return;
+            }
+            const float at = AnimationTime(*sample.animation, sample.time, sample.loop);
+            for (const AnimationChannel& channel : sample.animation->channels) {
                 if (channel.node >= nodeCount || channel.times.empty()) {
                     continue;
                 }
-                NodePose& pose = m_sampled[channel.node];
-                float value[4];
+                NodePose& pose = poses[channel.node];
+                float value[4] = {};
                 switch (channel.path) {
                     case AnimationPath::Translation:
                         Sample(channel, 3, at, value);
@@ -199,16 +199,22 @@ namespace Flux {
                         break;
                 }
             }
-            if (weight >= 1.0f) {
-                m_poses.swap(m_sampled);
-            } else {
-                for (std::size_t n = 0; n < nodeCount; ++n) {
-                    NodePose& pose = m_poses[n];
-                    const NodePose& target = m_sampled[n];
-                    pose.translation = Lerp(pose.translation, target.translation, weight);
-                    pose.rotation = Slerp(pose.rotation, target.rotation, weight);
-                    pose.scale = Lerp(pose.scale, target.scale, weight);
-                }
+        }
+    }
+
+    void PoseEvaluator::Evaluate(const ModelSkeleton& skeleton, const AnimationSample& from, const AnimationSample& to,
+                                 float weight) {
+        const std::size_t nodeCount = skeleton.nodes.size();
+        weight = std::clamp(weight, 0.0f, 1.0f);
+        SamplePose(skeleton, to, m_poses);
+        if (weight < 1.0f) {
+            SamplePose(skeleton, from, m_from);
+            for (std::size_t n = 0; n < nodeCount; ++n) {
+                NodePose& pose = m_poses[n];
+                const NodePose& start = m_from[n];
+                pose.translation = Lerp(start.translation, pose.translation, weight);
+                pose.rotation = Slerp(start.rotation, pose.rotation, weight);
+                pose.scale = Lerp(start.scale, pose.scale, weight);
             }
         }
 

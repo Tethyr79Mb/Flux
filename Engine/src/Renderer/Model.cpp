@@ -693,26 +693,23 @@ namespace Flux {
                     }
                 }
                 // Boîte de la pose de repos ; un modèle animé est d'abord mis dans cette pose.
-                std::vector<Vector3f> placed;
-                if (model.IsAnimated()) {
-                    PoseEvaluator pose;
-                    pose.Evaluate(model.skeleton, nullptr, 0.0, false, 0.0f);
-                    placed.reserve(model.vertices.size());
-                    for (std::size_t v = 0; v < model.vertices.size(); ++v) {
-                        placed.push_back(SkinPosition(pose.GetJointMatrices(), model.skinVertices[v], model.vertices[v].position));
-                    }
-                } else {
-                    for (const ModelVertex& vertex : model.vertices) {
-                        placed.push_back(vertex.position);
-                    }
+                if (model.vertices.empty()) {
+                    return;
                 }
-                if (!placed.empty()) {
-                    Math::Box3f& bounds = model.bounds;
-                    bounds.min = bounds.max = placed.front();
-                    for (const Vector3f& p : placed) {
-                        bounds.min = {std::min(bounds.min.x, p.x), std::min(bounds.min.y, p.y), std::min(bounds.min.z, p.z)};
-                        bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y), std::max(bounds.max.z, p.z)};
+                PoseEvaluator pose;
+                if (model.IsAnimated()) {
+                    pose.Evaluate(model.skeleton, {});
+                }
+                Math::Box3f& bounds = model.bounds;
+                for (std::size_t v = 0; v < model.vertices.size(); ++v) {
+                    const Vector3f p = model.IsAnimated()
+                                     ? SkinPosition(pose.GetJointMatrices(), model.skinVertices[v], model.vertices[v].position)
+                                     : model.vertices[v].position;
+                    if (v == 0) {
+                        bounds.min = bounds.max = p;
                     }
+                    bounds.min = {std::min(bounds.min.x, p.x), std::min(bounds.min.y, p.y), std::min(bounds.min.z, p.z)};
+                    bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y), std::max(bounds.max.z, p.z)};
                 }
             }
         };

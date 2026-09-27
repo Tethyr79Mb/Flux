@@ -6,6 +6,7 @@
 #include "Flux/Platform/Input.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/Scene/Animator.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
@@ -208,6 +209,7 @@ namespace Flux {
             m_physics = std::make_unique<PhysicsWorld>();
         }
         m_physics->Update(m_scene, deltaSeconds, character);
+        Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 
     void Engine::SetGameState(GameState state) {
