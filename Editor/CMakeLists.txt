@@ -1,15 +1,5 @@
-add_executable(FluxEditor
-        src/main.cpp
-        src/CameraPanel.cpp
-        src/ContentBrowser.cpp
-        src/EditorLayout.cpp
-        src/PlayMode.cpp
-        src/SceneDocument.cpp
-        src/SceneEditor.cpp
-        src/SceneViewport.cpp
-        src/SettingsWindow.cpp
-        src/UndoHistory.cpp
-)
+add_executable(FluxEditor)
+flux_add_sources(FluxEditor src)
 target_link_libraries(FluxEditor PRIVATE Flux::Engine)
 
 # L'éditeur ne lie pas le jeu : il charge sa DLL à l'exécution pour pouvoir la recharger.
