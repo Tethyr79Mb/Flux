@@ -63,6 +63,32 @@ namespace Flux {
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
     };
 
+    // Point de l'écran (ou de la vue de l'éditeur) auquel un élément d'interface est accroché.
+    enum class ScreenAnchor : std::uint8_t {
+        TopLeft,
+        Top,
+        TopRight,
+        Left,
+        Center,
+        Right,
+        BottomLeft,
+        Bottom,
+        BottomRight,
+    };
+
+    // Texte collé à l'écran (titre, menu), dessiné par-dessus la 3D. La transformation de l'entité est ignorée.
+    // Taille et décalage sont en pixels d'un écran de 1080 lignes (ScreenUi::ReferenceHeight) : le texte garde
+    // la même place dans toutes les résolutions, et dans la vue de l'éditeur.
+    struct ScreenTextComponent
+    {
+        std::string text = "Texte";
+        float size = 64.0f;
+        Math::LinearColor color{1.0f, 1.0f, 1.0f};
+        ScreenAnchor anchor = ScreenAnchor::Center; // aussi le point du texte placé sur l'ancre (centre sur centre...)
+        float offsetX = 0.0f; // vers la droite
+        float offsetY = 0.0f; // vers le bas
+    };
+
     // Composants d'un fichier de scène dont le type n'est pas enregistré (module de jeu absent ou ancien) :
     // gardés tels quels (clé, texte JSON) et réécrits à la sauvegarde, pour ne jamais perdre de données.
     struct UnknownComponentsComponent
