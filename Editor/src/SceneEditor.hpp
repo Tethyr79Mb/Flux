@@ -40,6 +40,14 @@ namespace FluxEditor {
         Flux::Uuid GetSelection() const { return m_selection; }
         // Déplie aussi ses ancêtres dans la hiérarchie, pour la montrer (sélection faite dans la vue 3D).
         void Select(Flux::Scene& scene, Flux::Entity entity);
+        // Supprime l'entité sélectionnée (et ses enfants) au prochain Update : touche Suppr, menu Édition.
+        // Sans effet sans sélection ou en mode Jouer.
+        bool CanDelete() const { return m_selection && !m_readOnly; }
+        void RequestDelete() {
+            if (CanDelete()) {
+                m_pendingAction = Action::Delete;
+            }
+        }
 
         private:
         enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move };

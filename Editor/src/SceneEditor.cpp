@@ -55,6 +55,10 @@ namespace FluxEditor {
         // Mode Jouer : la scène du jeu est jetée à l'arrêt, la modifier ne servirait qu'à perdre des changements.
         // On peut toujours sélectionner et regarder les valeurs.
         m_readOnly = engine.GetGameState() != GameState::Stopped;
+        // Suppr : l'entité sélectionnée, sauf pendant une saisie (la touche efface alors du texte).
+        if (engine.GetWindow().GetInput().WasKeyPressed(Key::Delete) && !engine.GetUi().WantsKeyboard()) {
+            RequestDelete();
+        }
         Entity selected = m_selection ? scene.FindById(m_selection) : NullEntity;
         DrawHierarchy(engine, scene);
         DrawInspector(engine, scene, selected);
@@ -84,10 +88,6 @@ namespace FluxEditor {
                 ui.SameLine();
                 if (ui.Button("Enfant")) {
                     m_pendingAction = Action::CreateChild;
-                }
-                ui.SameLine();
-                if (ui.Button("Supprimer")) {
-                    m_pendingAction = Action::Delete;
                 }
             }
             ui.Separator();

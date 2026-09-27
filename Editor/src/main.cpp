@@ -59,6 +59,10 @@ namespace {
                         "Ctrl+Y", canRedo)) {
             Undo(engine, history, sceneEditor, true);
         }
+        ui.Separator();
+        if (ui.MenuItem("Supprimer", "Suppr", sceneEditor.CanDelete())) {
+            sceneEditor.RequestDelete();
+        }
         ui.EndMenu();
     }
 
