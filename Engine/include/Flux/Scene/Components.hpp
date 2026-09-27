@@ -112,6 +112,16 @@ namespace Flux {
         float offsetY = 0.0f;
     };
 
+    // Passe à une autre scène après un délai ou sur confirmation du joueur (écran de démarrage) : voir SceneChange.
+    // Seulement pendant le jeu (Game.exe, ou le mode Jouer de l'éditeur).
+    struct SceneChangeComponent
+    {
+        std::string scene;     // scène à charger, relative au dossier des assets (scenes/Demo.scene.json)
+        float delay = 3.0f;    // secondes ; 0 : pas de délai
+        bool onConfirm = true; // aussi au clic gauche, sur Entrée ou Espace
+        float elapsed = 0.0f;  // temps écoulé depuis le chargement de la scène (non enregistré)
+    };
+
     // Composants d'un fichier de scène dont le type n'est pas enregistré (module de jeu absent ou ancien) :
     // gardés tels quels (clé, texte JSON) et réécrits à la sauvegarde, pour ne jamais perdre de données.
     struct UnknownComponentsComponent

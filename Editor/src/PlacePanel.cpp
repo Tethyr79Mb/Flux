@@ -30,7 +30,8 @@ namespace FluxEditor {
 
         ItemInfo GetInfo(int item) {
             constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Texte à l'écran", "Texte"},
-                                           {"Image à l'écran", "Image"}};
+                                           {"Image à l'écran", "Image"},
+                                           {"Changement de scène", "Changement de scène"}};
             return Infos[item];
         }
 
@@ -65,6 +66,9 @@ namespace FluxEditor {
             button(Item::ScreenText);
             ui.SameLine();
             button(Item::ScreenImage);
+            ui.Separator();
+            ui.TextDisabled("Logique");
+            button(Item::SceneChange);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
         }
@@ -127,6 +131,9 @@ namespace FluxEditor {
                 *offset->x = std::round(moved.x / scale);
                 *offset->y = std::round(moved.y / scale);
             }
+        } else if (item == Item::SceneChange) {
+            // Rien à voir ni à placer : se règle dans l'inspecteur (scène suivante, délai).
+            scene.Add<SceneChangeComponent>(entity);
         } else {
             if (item == Item::Cube) {
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));

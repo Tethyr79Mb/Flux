@@ -14,6 +14,7 @@ int main() {
         {"sélection dans la vue 3D", RunPickingTests},
         {"images et textures", RunImageTests},
         {"textes et images à l'écran", RunScreenUiTests},
+        {"changement de scène", RunSceneChangeTests},
     };
 
     int failures = 0;
