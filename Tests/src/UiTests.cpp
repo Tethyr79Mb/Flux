@@ -220,6 +220,58 @@ namespace {
         return true;
     }
 
+    // Liste déroulante (Choice) et bouton tenu (IsItemActive, début d'un glisser-déposer).
+    bool RunChoiceTests(const UI::Font& font) {
+        Harness harness(font);
+        const float row = font.GetLineHeight() * 15.0f + 8.0f;
+        const float top = row + 8.0f;
+        const float fieldX = 8.0f + std::floor(384.0f * 0.38f) + 30.0f;
+        const float fieldY = top + row * 0.5f;
+        const auto optionY = [&](int index) { return top + row + 4.0f + static_cast<float>(index) * row + row * 0.5f; };
+
+        constexpr std::string_view Options[] = {"Gauche", "Centre", "Droite"};
+        int index = 0;
+        int changes = 0;
+        bool held = false;
+        const auto describe = [&](UI::Context& ui) {
+            if (ui.BeginPanel("Test", {0.0f, 0.0f}, 400.0f)) {
+                if (ui.Choice("Ancre", index, Options)) { // ligne 0
+                    ++changes;
+                }
+                ui.Button("Tenir"); // ligne 1
+                held = ui.IsItemActive();
+            }
+            ui.EndPanel();
+        };
+
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Move({600.0f, 600.0f}, describe);
+        // Clic sur le champ : la liste s'ouvre sous lui, sans rien changer ; clic sur une valeur : choisie.
+        harness.Click({fieldX, fieldY}, describe);
+        CHECK(index == 0 && changes == 0);
+        harness.Click({fieldX, optionY(2)}, describe);
+        CHECK(index == 2 && changes == 1);
+        // Liste refermée : un clic à la place de ses valeurs n'y touche plus.
+        harness.Click({fieldX, optionY(1)}, describe);
+        CHECK(index == 2);
+        // Rouvrir, puis cliquer ailleurs : refermée sans changement.
+        harness.Click({fieldX, fieldY}, describe);
+        harness.Click({1000.0f, 600.0f}, describe);
+        harness.Click({fieldX, optionY(0)}, describe);
+        CHECK(index == 2 && changes == 1);
+
+        // Bouton tenu : actif jusqu'au relâchement, même souris sortie du bouton.
+        const float buttonY = top + row + 4.0f + row * 0.5f;
+        harness.Move({20.0f, buttonY}, describe);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
+        CHECK(held);
+        harness.Move({700.0f, 500.0f}, describe);
+        CHECK(held);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, false); }, describe);
+        CHECK(!held);
+        return true;
+    }
+
     bool RunMenuTests(const UI::Font& font) {
         Harness harness(font);
         const float bar = font.GetLineHeight() * 15.0f + 8.0f; // hauteur de la barre = hauteur d'un champ
@@ -471,5 +523,5 @@ bool RunUiTests() {
         return false;
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
-        && RunDockTests(**font);
+        && RunChoiceTests(**font) && RunDockTests(**font);
 }

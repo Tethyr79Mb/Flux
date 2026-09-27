@@ -278,6 +278,7 @@ namespace Flux::UI {
 
         // Widget sous le bouton gauche enfoncé (glissement, clic en cours).
         WidgetId activeId = 0;
+        WidgetId lastBehaviorId = 0; // dernier widget interactif décrit (IsItemActive)
         bool activeSeen = false;
         Vector2f pressPosition;
         Vector2f dragOrigin;
@@ -344,7 +345,8 @@ namespace Flux::UI {
 
         // Menus (Menus.cpp). Barre de menus ou menu déroulant : devient le panneau en cours, hors de l'ordre des
         // panneaux. Menu déroulant ou contextuel en position : le panneau en cours est mis de côté jusqu'à EndMenu.
-        void BeginPopup(WidgetId id, Vector2f position);
+        // minWidth : liste déroulante au moins aussi large que son champ.
+        void BeginPopup(WidgetId id, Vector2f position, float minWidth = 180.0f);
         Panel& BeginOverlay(WidgetId id);
 
         void RestorePanelClip() {
@@ -367,6 +369,7 @@ namespace Flux::UI {
 
         Interaction Behavior(WidgetId id, Vector2f min, Vector2f max) {
             Interaction result;
+            lastBehaviorId = id;
             const bool inside = IsMouseOver(min, max);
             result.hovered = inside && (activeId == 0 || activeId == id);
             if (result.hovered && mousePressed) {

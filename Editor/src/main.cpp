@@ -11,6 +11,7 @@
 #include "CameraPanel.hpp"
 #include "ContentBrowser.hpp"
 #include "EditorLayout.hpp"
+#include "PlacePanel.hpp"
 #include "PlayMode.hpp"
 #include "SceneDocument.hpp"
 #include "SceneEditor.hpp"
@@ -86,8 +87,10 @@ int main(int argc, char** argv) {
     FluxEditor::EditorLayout layout;
     FluxEditor::SettingsWindow settings;
     FluxEditor::UndoHistory history;
+    FluxEditor::PlacePanel placePanel;
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
-    Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false});
+    Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
+                          .drawScreenUi = false}); // la vue dessine l'interface de la scène
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
@@ -124,6 +127,7 @@ int main(int argc, char** argv) {
         history.BeginFrame(e, sceneEditor.GetSelection());
 
         const Flux::UI::Rect view = layout.Update(e);
+        placePanel.Update(e, sceneEditor, history, view);
         sceneEditor.Update(e, history);
         viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
         contentBrowser.Update(e, document, deltaSeconds);

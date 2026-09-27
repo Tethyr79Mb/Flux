@@ -93,6 +93,8 @@ namespace Flux::UI {
         // Vrai tant qu'un widget est tenu (valeur glissée, bouton enfoncé, panneau déplacé) ou qu'un champ est en
         // saisie : une modification en cours n'est pas finie (annuler / refaire en fait un seul pas).
         bool IsInteracting() const;
+        // Vrai tant que le dernier widget décrit (bouton...) est tenu : sert à commencer un glisser-déposer.
+        bool IsItemActive() const;
 
         // Panneau déplaçable (par sa barre de titre) et repliable (clic sur la barre).
         // height 0 : hauteur ajustée au contenu ; sinon hauteur fixe, avec défilement (molette ou barre) si le contenu
@@ -141,8 +143,8 @@ namespace Flux::UI {
         // Entiers 64 bits (secteurs).
         bool DragInt3(std::string_view label, Math::Vector3i64& value, float speed = 0.2f);
 
-        // Choix parmi quelques valeurs (énumération) : un clic passe à la suivante, clic droit à la précédente.
-        // Retourne true quand index change.
+        // Choix parmi quelques valeurs (énumération) : un clic ouvre la liste sous le champ, un clic sur une valeur
+        // la choisit. Retourne true quand index change.
         bool Choice(std::string_view label, int& index, std::span<const std::string_view> options);
 
         // Titre de section repliable (un composant dans l'inspecteur). Retourne true si la section est dépliée ;

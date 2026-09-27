@@ -28,5 +28,21 @@ namespace Flux {
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")
             .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}})
             .Field("color", "Couleur", &MeshRendererComponent::color);
+        registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")
+            .Field("text", "Texte", &ScreenTextComponent::text)
+            .Field("size", "Taille", &ScreenTextComponent::size, {.speed = 0.5, .min = 1.0, .max = 1000.0, .decimals = 0})
+            .Field("color", "Couleur", &ScreenTextComponent::color)
+            .Enum("anchor", "Ancre", &ScreenTextComponent::anchor,
+                  {{"topLeft", "En haut à gauche", ScreenAnchor::TopLeft},
+                   {"top", "En haut", ScreenAnchor::Top},
+                   {"topRight", "En haut à droite", ScreenAnchor::TopRight},
+                   {"left", "À gauche", ScreenAnchor::Left},
+                   {"center", "Au centre", ScreenAnchor::Center},
+                   {"right", "À droite", ScreenAnchor::Right},
+                   {"bottomLeft", "En bas à gauche", ScreenAnchor::BottomLeft},
+                   {"bottom", "En bas", ScreenAnchor::Bottom},
+                   {"bottomRight", "En bas à droite", ScreenAnchor::BottomRight}})
+            .Field("offsetX", "Décalage X", &ScreenTextComponent::offsetX, {.speed = 1.0, .decimals = 0})
+            .Field("offsetY", "Décalage Y", &ScreenTextComponent::offsetY, {.speed = 1.0, .decimals = 0});
     }
 }
