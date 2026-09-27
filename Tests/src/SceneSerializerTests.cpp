@@ -164,6 +164,11 @@ bool RunSceneSerializerTests() {
         const ColliderComponent& collider = loaded.Get<ColliderComponent>(loaded.FindById(Uuid{0xef}));
         CHECK(collider.size.x > 0.0f && collider.size.y == 0.5f && collider.size.z > 0.0f);
         CHECK(collider.radius > 0.0f && collider.restitution == 1.0f);
+
+        // Personnage et Collision s'excluent (dans les deux sens), pas Personnage et Modèle 3D.
+        const ComponentInfo* character = engine.Find("character");
+        CHECK(character && character->Excludes(*engine.Find("collider")) && engine.Find("collider")->Excludes(*character));
+        CHECK(!character->Excludes(*engine.Find("model")));
     }
 
     // Composant de type inconnu (module de jeu absent) : chargé sans erreur, conservé et réécrit tel quel.

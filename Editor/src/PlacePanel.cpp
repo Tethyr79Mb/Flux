@@ -190,5 +190,8 @@ namespace FluxEditor {
 
         sceneEditor.Select(scene, entity);
         history.Push(std::string("Placer : ") + info.label, scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
+        if (item == Item::Character) {
+            sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
+        }
     }
 }

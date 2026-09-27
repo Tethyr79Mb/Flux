@@ -8,6 +8,7 @@
 
 #include <entt/entity/registry.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -78,7 +79,15 @@ namespace Flux {
         std::string key;   // dans le fichier
         std::string label; // dans l'inspecteur
         bool removable = true;
+        // Composants avec lesquels il ne peut pas cohabiter sur une entité (clés) : l'inspecteur refuse de les
+        // ajouter ensemble. Il suffit de le déclarer d'un côté.
+        std::vector<std::string> excludes;
         std::vector<FieldInfo> fields;
+
+        // L'un des deux déclare l'autre incompatible.
+        bool Excludes(const ComponentInfo& other) const {
+            return std::ranges::contains(excludes, other.key) || std::ranges::contains(other.excludes, key);
+        }
 
         // Composant de l'entité, ou nullptr. Registre const : la lecture ne crée pas de stockage EnTT pour le type
         // (la sauvegarde lit une scène const) ; l'appelant qui modifie le composant doit tenir la scène en non-const.
@@ -173,6 +182,11 @@ namespace Flux {
         // Composant présent sur toutes les entités (transformation) : ni ajouté ni retiré depuis l'inspecteur.
         ComponentBuilder& NotRemovable() {
             m_info->removable = false;
+            return *this;
+        }
+
+        ComponentBuilder& Excludes(std::string key) {
+            m_info->excludes.push_back(std::move(key));
             return *this;
         }
 

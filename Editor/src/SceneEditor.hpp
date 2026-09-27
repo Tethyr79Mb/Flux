@@ -49,8 +49,15 @@ namespace FluxEditor {
             }
         }
 
+        // Le personnage sélectionné devient le seul « dirigé par le joueur » (les autres sont décochés, annulable).
+        void RequestClaimPlayer() {
+            if (m_selection && !m_readOnly) {
+                m_pendingAction = Action::ClaimPlayer;
+            }
+        }
+
         private:
-        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move };
+        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer };
 
         // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée.
         enum class DropZone { Before, After, Inside };
