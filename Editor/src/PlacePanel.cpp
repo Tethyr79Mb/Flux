@@ -35,7 +35,7 @@ namespace FluxEditor {
                                            {"Texte à l'écran", "Texte"},
                                            {"Image à l'écran", "Image"},
                                            {"Changement de scène", "Changement de scène"},
-                                           {"Sol", "Sol"}, {"Cube physique", "Cube physique"}, {"Personnage...", "Joueur"}};
+                                           {"Personnage...", "Joueur"}};
             return Infos[item];
         }
 
@@ -76,9 +76,6 @@ namespace FluxEditor {
             button(Item::SceneChange);
             ui.Separator();
             ui.TextDisabled("Physique (en mode Jouer)");
-            button(Item::Floor);
-            ui.SameLine();
-            button(Item::PhysicsCube);
             button(Item::Character);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
@@ -161,18 +158,11 @@ namespace FluxEditor {
             scene.Add<SceneChangeComponent>(entity);
         } else {
             if (item == Item::Cube) {
+                // Solide dès sa création (immobile) : on marche dessus. « Corps physique » dans l'inspecteur le fait tomber.
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
+                scene.Add<ColliderComponent>(entity);
             } else if (item == Item::Model) {
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
-            } else if (item == Item::Floor) {
-                // Dalle de 20 x 20 m, immobile : un cube aplati et sa collision.
-                scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(110, 115, 120));
-                scene.Add<ColliderComponent>(entity);
-                scene.Get<TransformComponent>(entity).scale = {20.0f, 0.2f, 20.0f};
-            } else if (item == Item::PhysicsCube) {
-                scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(200, 140, 60));
-                scene.Add<ColliderComponent>(entity);
-                scene.Add<RigidBodyComponent>(entity);
             } else if (item == Item::Character) {
                 // Les pieds du modèle (son origine) posés sur celle de l'entité, comme la capsule.
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
