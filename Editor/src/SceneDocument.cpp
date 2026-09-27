@@ -25,15 +25,15 @@ namespace FluxEditor {
     }
 
     void SceneDocument::HandleShortcuts(Engine& engine) {
-        // Raccourcis (touches physiques : S, O et N sont au même endroit en AZERTY et en QWERTY).
+        // Raccourcis lus par la lettre de la touche (disposition du clavier), comme dans toutes les applications.
         // Muets pendant une saisie : Ctrl+S dans un champ texte ne doit pas enregistrer à moitié.
         const Input& input = engine.GetWindow().GetInput();
         if (!m_locked && !engine.GetUi().WantsKeyboard() && input.IsControlDown()) {
-            if (input.WasKeyPressed(Key::N)) {
+            if (input.WasLetterPressed('N')) {
                 NewScene(engine);
-            } else if (input.WasKeyPressed(Key::O)) {
+            } else if (input.WasLetterPressed('O')) {
                 Open(engine);
-            } else if (input.WasKeyPressed(Key::S)) {
+            } else if (input.WasLetterPressed('S')) {
                 input.IsShiftDown() ? SaveAs(engine) : Save(engine);
             }
         }
@@ -74,6 +74,7 @@ namespace FluxEditor {
         engine.GetScene().Clear();
         m_path.clear();
         m_modified = false;
+        m_replaced = true;
     }
 
     void SceneDocument::Open(Engine& engine) {
@@ -100,6 +101,7 @@ namespace FluxEditor {
         }
         m_path = path;
         m_modified = false;
+        m_replaced = true;
         return true;
     }
 

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 
 namespace Flux {
     class Engine;
@@ -25,6 +26,8 @@ namespace FluxEditor {
         void UpdateTitle(Flux::Engine& engine);
         // Pendant le jeu : ni ouverture, ni enregistrement (la scène est une copie jetable).
         void SetLocked(bool locked) { m_locked = locked; }
+        // Vrai si une autre scène a remplacé la scène éditée (nouvelle, ouverte) depuis le dernier appel.
+        bool TakeReplaced() { return std::exchange(m_replaced, false); }
         // Une modification faite dans l'éditeur (pas l'animation du jeu) : le titre prend une étoile.
         void MarkModified() { m_modified = true; }
         // Fermeture de la fenêtre ou « Quitter » : false si l'utilisateur annule.
@@ -50,6 +53,7 @@ namespace FluxEditor {
         std::filesystem::path m_path; // vide : scène jamais enregistrée par l'éditeur
         bool m_modified = false;
         bool m_locked = false;
+        bool m_replaced = false;
         std::string m_title;          // dernier titre donné à la fenêtre
     };
 }

@@ -3,6 +3,8 @@
 #include <Flux/Core/Project.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
+#include <Flux/Platform/Input.hpp>
+#include <Flux/Platform/Window.hpp>
 
 #include <Flux/UI/Context.hpp>
 
@@ -14,6 +16,7 @@
 #include "SceneEditor.hpp"
 #include "SceneViewport.hpp"
 #include "SettingsWindow.hpp"
+#include "UndoHistory.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -30,6 +33,47 @@ namespace {
         return std::filesystem::exists(source, error) ? source
                                                       : Flux::Platform::GetExecutableDirectory() / "Game.fluxproject";
     }
+
+    // Annule ou refait un pas, puis sélectionne l'entité concernée (ou rien si elle n'existe plus).
+    void Undo(Flux::Engine& engine, FluxEditor::UndoHistory& history, FluxEditor::SceneEditor& sceneEditor, bool redo) {
+        const Flux::Uuid entity = redo ? history.Redo(engine) : history.Undo(engine);
+        Flux::Scene& scene = engine.GetScene();
+        sceneEditor.Select(scene, entity ? scene.FindById(entity) : Flux::NullEntity);
+    }
+
+    // Menu « Édition ».
+    void DrawEditMenu(Flux::Engine& engine, FluxEditor::UndoHistory& history, FluxEditor::SceneEditor& sceneEditor) {
+        Flux::UI::Context& ui = engine.GetUi();
+        if (!ui.BeginMenu("Édition")) {
+            return;
+        }
+        const bool canUndo = history.IsEnabled() && history.CanUndo();
+        const bool canRedo = history.IsEnabled() && history.CanRedo();
+        // Libellés à identifiant fixe : l'élément reste le même quand le nom du pas change.
+        if (ui.MenuItem((canUndo ? "Annuler : " + history.GetUndoLabel() : std::string("Annuler")) + "##annuler", "Ctrl+Z",
+                        canUndo)) {
+            Undo(engine, history, sceneEditor, false);
+        }
+        if (ui.MenuItem((canRedo ? "Rétablir : " + history.GetRedoLabel() : std::string("Rétablir")) + "##retablir",
+                        "Ctrl+Y", canRedo)) {
+            Undo(engine, history, sceneEditor, true);
+        }
+        ui.EndMenu();
+    }
+
+    // Ctrl+Z annule, Ctrl+Y ou Ctrl+Maj+Z rétablit (par la lettre de la touche : Z reste Z en AZERTY).
+    void HandleEditShortcuts(Flux::Engine& engine, FluxEditor::UndoHistory& history, FluxEditor::SceneEditor& sceneEditor) {
+        const Flux::Input& input = engine.GetWindow().GetInput();
+        // Pendant une saisie, Ctrl+Z appartient au champ : la scène ne doit pas changer sous lui.
+        if (!history.IsEnabled() || engine.GetUi().WantsKeyboard() || !input.IsControlDown()) {
+            return;
+        }
+        if (input.WasLetterPressed('Z')) {
+            Undo(engine, history, sceneEditor, input.IsShiftDown());
+        } else if (input.WasLetterPressed('Y')) {
+            Undo(engine, history, sceneEditor, true);
+        }
+    }
 }
 
 int main(int argc, char** argv) {
@@ -41,6 +85,7 @@ int main(int argc, char** argv) {
     FluxEditor::PlayMode playMode;
     FluxEditor::EditorLayout layout;
     FluxEditor::SettingsWindow settings;
+    FluxEditor::UndoHistory history;
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false});
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
@@ -49,6 +94,7 @@ int main(int argc, char** argv) {
         playMode.HandleShortcuts(e);
         document.SetLocked(playMode.IsPlaying());
         document.HandleShortcuts(e);
+        HandleEditShortcuts(e, history, sceneEditor);
         Flux::UI::Context& ui = e.GetUi();
         if (ui.BeginMainMenuBar()) {
             if (ui.BeginMenu("Fichier")) {
@@ -61,22 +107,37 @@ int main(int argc, char** argv) {
                 document.DrawQuitMenuItem(ui, e);
                 ui.EndMenu();
             }
+            DrawEditMenu(e, history, sceneEditor);
             layout.DrawWindowMenu(ui);
             playMode.DrawToolbar(ui, e);
             ui.EndMainMenuBar();
         }
         document.SetLocked(playMode.IsPlaying());
+        if (document.TakeReplaced()) {
+            history.Clear(); // l'historique parlait de l'ancienne scène
+        }
+        // Pendant le jeu, les modifications disparaissent à l'arrêt : ni historique, ni fichier concernés.
+        if (playMode.IsPlaying() && history.IsEnabled()) {
+            history.Commit(e); // la scène du jeu est encore identique à la scène éditée
+        }
+        history.SetEnabled(!playMode.IsPlaying());
+        history.BeginFrame(e, sceneEditor.GetSelection());
 
         const Flux::UI::Rect view = layout.Update(e);
-        sceneEditor.Update(e);
+        sceneEditor.Update(e, history);
         viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
         contentBrowser.Update(e, document, deltaSeconds);
         FluxEditor::DrawCameraPanel(e);
         settings.Draw(e);
-        // Pendant le jeu, les modifications disparaissent à l'arrêt : le fichier n'est pas concerné.
-        const bool edited = sceneEditor.TakeModified();
-        const bool moved = viewport.TakeModified(); // les deux vidés à chaque frame
-        if ((edited || moved) && !playMode.IsPlaying()) {
+
+        if (sceneEditor.TakeModified()) {
+            history.NoteModified();
+        }
+        if (viewport.TakeModified()) {
+            history.NoteModified("Déplacer");
+        }
+        history.EndFrame(e, ui.IsInteracting() || viewport.IsDragging());
+        if (history.TakeChanged()) {
             document.MarkModified();
         }
         document.UpdateTitle(e);

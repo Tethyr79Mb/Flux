@@ -6,6 +6,7 @@ namespace Flux {
         m_wheelDelta = 0.0f;
         m_pressed.fill(false);
         m_typed.fill(false);
+        m_letterPressed.fill(false);
         m_buttonPressed.fill(false);
         m_buttonReleased.fill(false);
         m_textInput.clear();
@@ -20,6 +21,12 @@ namespace Flux {
                 m_typed[scancode] = true; // premier appui et répétitions
             }
             m_keys[scancode] = down;
+        }
+    }
+
+    void Input::SetLetterPressed(char letter) {
+        if (letter >= 'A' && letter <= 'Z') {
+            m_letterPressed[static_cast<std::size_t>(letter - 'A')] = true;
         }
     }
 
@@ -69,6 +76,7 @@ namespace Flux {
         m_keys.fill(false);
         m_pressed.fill(false);
         m_typed.fill(false);
+        m_letterPressed.fill(false);
         m_buttons.fill(false);
         m_buttonPressed.fill(false);
         m_buttonReleased.fill(false);

@@ -90,6 +90,9 @@ namespace Flux::UI {
         bool WantsMouse() const;
         // Vrai pendant la saisie dans un champ : les raccourcis clavier du jeu et de la caméra doivent se taire.
         bool WantsKeyboard() const;
+        // Vrai tant qu'un widget est tenu (valeur glissée, bouton enfoncé, panneau déplacé) ou qu'un champ est en
+        // saisie : une modification en cours n'est pas finie (annuler / refaire en fait un seul pas).
+        bool IsInteracting() const;
 
         // Panneau déplaçable (par sa barre de titre) et repliable (clic sur la barre).
         // height 0 : hauteur ajustée au contenu ; sinon hauteur fixe, avec défilement (molette ou barre) si le contenu

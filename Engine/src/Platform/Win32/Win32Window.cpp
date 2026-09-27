@@ -65,7 +65,11 @@ namespace Flux {
             }
         }
 
-        void OnKey(LPARAM lParam, bool down) {
+        void OnKey(WPARAM wParam, LPARAM lParam, bool down) {
+            // Lettre imprimée sur la touche, selon la disposition du clavier (raccourcis Ctrl+Z...) ; pas les répétitions.
+            if (down && (lParam & (1 << 30)) == 0 && wParam >= 'A' && wParam <= 'Z') {
+                input.SetLetterPressed(static_cast<char>(wParam));
+            }
             auto scancode = static_cast<std::uint16_t>((lParam >> 16) & 0xFF);
             if (lParam & (1 << 24)) {
                 scancode |= 0x100; // touche étendue (flèches, Ctrl droit...)
@@ -142,11 +146,11 @@ namespace Flux {
                         break; // DefWindowProc libère les données brutes
                     case WM_KEYDOWN:
                     case WM_SYSKEYDOWN:
-                        impl->OnKey(lParam, true);
+                        impl->OnKey(wParam, lParam, true);
                         break; // DefWindowProc garde Alt+F4
                     case WM_KEYUP:
                     case WM_SYSKEYUP:
-                        impl->OnKey(lParam, false);
+                        impl->OnKey(wParam, lParam, false);
                         break;
                     case WM_CHAR:
                         impl->OnChar(wParam);

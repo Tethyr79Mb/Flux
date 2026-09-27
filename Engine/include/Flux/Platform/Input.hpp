@@ -54,6 +54,11 @@ namespace Flux {
         bool WasKeyPressed(Key key) const { return m_pressed[static_cast<std::size_t>(key) % KeyCount]; }
         // Comme WasKeyPressed, mais compte aussi la répétition automatique (touche maintenue) : pour l'édition de texte.
         bool WasKeyTyped(Key key) const { return m_typed[static_cast<std::size_t>(key) % KeyCount]; }
+        // Vrai à la frame où la touche portant cette lettre (A à Z) vient d'être enfoncée, selon la disposition du
+        // clavier : pour les raccourcis qui se lisent par leur lettre (Ctrl+Z annule aussi en AZERTY).
+        bool WasLetterPressed(char letter) const {
+            return letter >= 'A' && letter <= 'Z' && m_letterPressed[static_cast<std::size_t>(letter - 'A')];
+        }
         bool IsControlDown() const { return IsKeyDown(Key::LeftControl) || IsKeyDown(Key::RightControl); }
         bool IsShiftDown() const { return IsKeyDown(Key::LeftShift); }
 
@@ -78,6 +83,7 @@ namespace Flux {
         void BeginFrame();
         void SetKey(std::uint16_t scancode, bool down);
         void SetMouseButton(MouseButton button, bool down);
+        void SetLetterPressed(char letter);
         void SetMousePosition(Math::Vector2f position) { m_mousePosition = position; }
         void AddMouseDelta(float dx, float dy);
         void AddCharacter(char32_t codepoint);
@@ -92,6 +98,7 @@ namespace Flux {
         std::array<bool, KeyCount> m_keys{};
         std::array<bool, KeyCount> m_pressed{};
         std::array<bool, KeyCount> m_typed{};
+        std::array<bool, 26> m_letterPressed{};
         std::array<bool, ButtonCount> m_buttons{};
         std::array<bool, ButtonCount> m_buttonPressed{};
         std::array<bool, ButtonCount> m_buttonReleased{};

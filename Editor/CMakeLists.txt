@@ -8,6 +8,7 @@ add_executable(FluxEditor
         src/SceneEditor.cpp
         src/SceneViewport.cpp
         src/SettingsWindow.cpp
+        src/UndoHistory.cpp
 )
 target_link_libraries(FluxEditor PRIVATE Flux::Engine)
 
