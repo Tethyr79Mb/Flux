@@ -23,13 +23,16 @@ namespace Flux {
 }
 
 namespace FluxEditor {
+    class UndoHistory;
+
     // Panneaux « Hiérarchie » et « Inspecteur » de l'éditeur, décrits à chaque frame avec FluxUI.
     // La sélection est retenue par identifiant stable (Uuid) : elle survit au rechargement de la scène
     // et du module de jeu, qui recréent toutes les entités.
     class SceneEditor {
         public:
-        void Update(Flux::Engine& engine);
-        // Vrai si la scène a été modifiée depuis le dernier appel (pour l'étoile du titre).
+        // Les actions ponctuelles (créer, supprimer, ajouter un composant) sont enregistrées dans history.
+        void Update(Flux::Engine& engine, UndoHistory& history);
+        // Vrai si un champ de l'inspecteur a modifié l'entité sélectionnée depuis le dernier appel.
         bool TakeModified() { return std::exchange(m_modified, false); }
 
         // Entité sélectionnée (Uuid vide si aucune) ; Select(NullEntity) désélectionne.
@@ -45,7 +48,7 @@ namespace FluxEditor {
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void DrawComponent(Flux::UI::Context& ui, const Flux::ComponentInfo& info, void* component);
         bool DrawField(Flux::UI::Context& ui, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
-        void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
+        void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected, UndoHistory& history);
 
         Flux::Uuid m_selection;
         bool m_modified = false;

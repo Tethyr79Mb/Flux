@@ -23,6 +23,7 @@ namespace Flux::SceneSerializer {
         using Json = nlohmann::ordered_json; // garde l'ordre des clés : fichiers stables et lisibles
 
         constexpr std::string_view FormatName = "flux.scene";
+        constexpr std::string_view SnapshotFormatName = "flux.entity";
 
         // JSON ne stocke que des doubles : un float 0.1f s'écrirait 0.10000000149011612.
         // On passe par l'écriture la plus courte qui redonne exactement ce float (« 0.1 »).
@@ -192,7 +193,8 @@ namespace Flux::SceneSerializer {
             }
         }
 
-        void WriteEntity(const Scene& scene, const ComponentRegistry& components, Entity entity, Json& entities) {
+        void WriteEntity(const Scene& scene, const ComponentRegistry& components, Entity entity, Json& entities,
+                         bool withDescendants = true) {
             Json json;
             json["id"] = scene.GetId(entity).ToString();
             json["name"] = scene.Get<NameComponent>(entity).name;
@@ -223,7 +225,9 @@ namespace Flux::SceneSerializer {
             }
             entities.push_back(std::move(json));
 
-            scene.ForEachChild(entity, [&](Entity child) { WriteEntity(scene, components, child, entities); });
+            if (withDescendants) {
+                scene.ForEachChild(entity, [&](Entity child) { WriteEntity(scene, components, child, entities, true); });
+            }
         }
 
         struct ComponentData {
@@ -367,6 +371,91 @@ namespace Flux::SceneSerializer {
                 component.info->emplace(scene.GetRegistry(), entity, component.instance.get());
             }
             if (!data.unknown.components.empty()) {
+                scene.Add<UnknownComponentsComponent>(entity, std::move(data.unknown));
+            }
+        }
+        return {};
+    }
+
+    std::string SaveEntity(const Scene& scene, const ComponentRegistry& components, Entity entity, bool withDescendants) {
+        Json entities = Json::array();
+        WriteEntity(scene, components, entity, entities, withDescendants);
+        Json snapshot;
+        snapshot["format"] = SnapshotFormatName;
+        if (const Entity next = scene.GetNextSibling(entity); next != NullEntity) {
+            snapshot["before"] = scene.GetId(next).ToString();
+        }
+        snapshot["entities"] = std::move(entities);
+        return snapshot.dump();
+    }
+
+    std::expected<void, std::string> RestoreEntity(Scene& scene, const ComponentRegistry& components, std::string_view text) {
+        std::vector<EntityData> entities;
+        std::optional<Uuid> before;
+        try {
+            const Json snapshot = Json::parse(text);
+            if (snapshot.value("format", std::string{}) != SnapshotFormatName) {
+                return std::unexpected("ce n'est pas un instantané d'entité");
+            }
+            if (const auto next = snapshot.find("before"); next != snapshot.end()) {
+                before = Uuid::Parse(next->get<std::string>());
+            }
+            const Json& list = snapshot.at("entities");
+            for (std::size_t i = 0; i < list.size(); ++i) {
+                entities.push_back(ReadEntity(components, list[i], i));
+            }
+        } catch (const std::exception& error) {
+            return std::unexpected(std::string(error.what()));
+        }
+        if (entities.empty()) {
+            return std::unexpected("instantané vide");
+        }
+        // Chaque parent doit exister : dans la scène, ou plus haut dans l'instantané (qui liste les parents d'abord).
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            const std::optional<Uuid>& parent = entities[i].parent;
+            const bool earlier = parent && std::ranges::any_of(entities.begin(), entities.begin() + static_cast<std::ptrdiff_t>(i),
+                                                               [&](const EntityData& data) { return data.id == *parent; });
+            if (parent && !earlier && scene.FindById(*parent) == NullEntity) {
+                return std::unexpected(std::format("le parent de « {} » n'existe plus", entities[i].name));
+            }
+            if (parent && *parent == entities[i].id) {
+                return std::unexpected(std::format("« {} » est son propre parent", entities[i].name));
+            }
+        }
+
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            EntityData& data = entities[i];
+            const Entity parent = data.parent ? scene.FindById(*data.parent) : NullEntity;
+            // Seule la première entité a une place à retrouver ; ses descendants suivent dans l'ordre.
+            const Entity next = i == 0 && before ? scene.FindById(*before) : NullEntity;
+            Entity entity = scene.FindById(data.id);
+            if (entity == NullEntity) {
+                entity = scene.CreateEntity(data.name, NullEntity, data.id);
+                scene.SetParent(entity, parent, next);
+            } else {
+                scene.Get<NameComponent>(entity).name = data.name;
+                if (scene.GetParent(entity) != parent) {
+                    scene.SetParent(entity, parent, next);
+                }
+            }
+            if (parent == NullEntity && data.sector != Math::Vector3i64{}) {
+                scene.Add<SectorComponent>(entity, data.sector);
+            } else {
+                scene.Remove<SectorComponent>(entity);
+            }
+            // Composants : ceux de l'instantané remplacent les actuels, les autres (facultatifs) sont retirés.
+            for (std::size_t c = 0; c < components.GetCount(); ++c) {
+                const ComponentInfo& info = components.Get(c);
+                const auto saved = std::ranges::find(data.components, &info, &ComponentData::info);
+                if (saved != data.components.end()) {
+                    info.emplace(scene.GetRegistry(), entity, saved->instance.get());
+                } else if (info.removable && info.get(scene.GetRegistry(), entity)) {
+                    info.remove(scene.GetRegistry(), entity);
+                }
+            }
+            if (data.unknown.components.empty()) {
+                scene.Remove<UnknownComponentsComponent>(entity);
+            } else {
                 scene.Add<UnknownComponentsComponent>(entity, std::move(data.unknown));
             }
         }

@@ -48,7 +48,11 @@ namespace Flux {
         // parent = NullEntity pour en faire une racine. La transformation locale est conservée telle quelle
         // (l'entité peut donc se déplacer à l'écran), et le secteur est perdu en devenant enfant.
         // Refuse (retourne false) de rendre une entité enfant d'elle-même ou d'un de ses descendants.
-        bool SetParent(Entity entity, Entity parent);
+        // before : frère devant lequel la placer (annuler une suppression la remet à sa place) ; NullEntity, ou une
+        // entité qui n'est pas un enfant de parent : à la fin.
+        bool SetParent(Entity entity, Entity parent, Entity before = NullEntity);
+        // Frère suivant (NullEntity pour le dernier).
+        Entity GetNextSibling(Entity entity) const { return m_registry.get<HierarchyComponent>(entity).nextSibling; }
         Entity GetParent(Entity entity) const { return m_registry.get<HierarchyComponent>(entity).parent; }
 
         // Position absolue (secteur + décalage), en composant toute la hiérarchie.
@@ -107,6 +111,7 @@ namespace Flux {
         private:
         void Detach(Entity entity);
         void AppendChild(Entity parent, Entity child);
+        void InsertChild(Entity parent, Entity child, Entity before);
         void ComputeSubtree(Entity entity, const RelativeTransform& parent, std::vector<RelativeTransform>& out) const;
 
         entt::registry m_registry;

@@ -24,6 +24,8 @@ namespace FluxEditor {
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, const Flux::UI::Rect& view);
         // Vrai si la scène a été modifiée (déplacement au gizmo) depuis le dernier appel.
         bool TakeModified() { return std::exchange(m_modified, false); }
+        // Une flèche du gizmo est tenue : le déplacement n'est pas fini.
+        bool IsDragging() const { return m_drag.axis >= 0; }
 
         private:
         // Glissement d'une flèche du gizmo en cours.

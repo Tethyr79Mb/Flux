@@ -1,5 +1,7 @@
 #include "SceneEditor.hpp"
 
+#include "UndoHistory.hpp"
+
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
@@ -33,12 +35,12 @@ namespace FluxEditor {
         }
     }
 
-    void SceneEditor::Update(Engine& engine) {
+    void SceneEditor::Update(Engine& engine, UndoHistory& history) {
         Scene& scene = engine.GetScene();
         Entity selected = m_selection ? scene.FindById(m_selection) : NullEntity;
         DrawHierarchy(engine, scene);
         DrawInspector(engine, scene, selected);
-        ApplyAction(engine, scene, selected);
+        ApplyAction(engine, scene, selected, history);
     }
 
     void SceneEditor::Select(Scene& scene, Entity entity) {
@@ -237,11 +239,13 @@ namespace FluxEditor {
         return false;
     }
 
-    void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected) {
+    void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {
         const Action action = std::exchange(m_pendingAction, Action::None);
-        if (action == Action::CreateRoot || (action != Action::None && selected != NullEntity)) {
-            m_modified = true;
+        if (action == Action::None || (action != Action::CreateRoot && selected == NullEntity)) {
+            m_pendingComponent.clear();
+            return;
         }
+        history.Commit(engine); // un geste en cours (champ encore tenu) est un pas à part, avant celui-ci
         switch (action) {
             case Action::None:
                 break;
@@ -256,32 +260,40 @@ namespace FluxEditor {
                     scene.Add<SectorComponent>(entity, position.sector);
                 }
                 Select(scene, entity);
+                history.Push("Créer un cube", scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
                 break;
             }
-            case Action::CreateChild:
-                if (selected != NullEntity) {
-                    const Entity entity = CreateCube(scene, selected);
-                    auto& transform = scene.Get<TransformComponent>(entity);
-                    transform.position = {1.5, 0.0, 0.0};
-                    transform.scale = {0.5f, 0.5f, 0.5f};
-                    Select(scene, entity);
-                }
+            case Action::CreateChild: {
+                const Entity entity = CreateCube(scene, selected);
+                auto& transform = scene.Get<TransformComponent>(entity);
+                transform.position = {1.5, 0.0, 0.0};
+                transform.scale = {0.5f, 0.5f, 0.5f};
+                Select(scene, entity);
+                history.Push("Créer un enfant", scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
                 break;
-            case Action::Delete:
-                if (selected != NullEntity) {
-                    scene.DestroyEntity(selected);
-                    m_selection = {};
-                }
+            }
+            case Action::Delete: {
+                // Avec ses descendants, et sa place parmi ses frères : annuler la remet exactement où elle était.
+                const Uuid id = scene.GetId(selected);
+                std::string before = UndoHistory::Capture(engine, id, true);
+                scene.DestroyEntity(selected);
+                m_selection = {};
+                history.Push("Supprimer", id, std::move(before), {});
                 break;
+            }
             case Action::AddComponent:
             case Action::RemoveComponent:
                 // Le type a pu disparaître entre-temps (module de jeu rechargé) : on le recherche par sa clé.
-                if (const ComponentInfo* info = engine.GetComponents().Find(m_pendingComponent); info && selected != NullEntity) {
+                if (const ComponentInfo* info = engine.GetComponents().Find(m_pendingComponent)) {
+                    const Uuid id = scene.GetId(selected);
+                    std::string before = UndoHistory::Capture(engine, id);
                     if (action == Action::AddComponent) {
                         info->add(scene.GetRegistry(), selected);
                     } else if (info->removable) {
                         info->remove(scene.GetRegistry(), selected);
                     }
+                    history.Push(action == Action::AddComponent ? "Ajouter un composant" : "Retirer un composant", id,
+                                 std::move(before), UndoHistory::Capture(engine, id));
                 }
                 m_pendingComponent.clear();
                 break;

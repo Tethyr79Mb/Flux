@@ -51,7 +51,7 @@ namespace Flux {
         return NullEntity;
     }
 
-    bool Scene::SetParent(Entity entity, Entity parent) {
+    bool Scene::SetParent(Entity entity, Entity parent, Entity before) {
         for (Entity ancestor = parent; ancestor != NullEntity; ancestor = GetParent(ancestor)) {
             if (ancestor == entity) {
                 return false;
@@ -61,7 +61,11 @@ namespace Flux {
         if (parent != NullEntity) {
             m_registry.remove<SectorComponent>(entity);
         }
-        AppendChild(parent, entity);
+        if (before != NullEntity && IsValid(before) && before != entity && GetParent(before) == parent) {
+            InsertChild(parent, entity, before);
+        } else {
+            AppendChild(parent, entity);
+        }
         return true;
     }
 
@@ -101,6 +105,22 @@ namespace Flux {
             childHierarchy.previousSibling = last;
         }
         last = child;
+    }
+
+    void Scene::InsertChild(Entity parent, Entity child, Entity before) {
+        auto& childHierarchy = m_registry.get<HierarchyComponent>(child);
+        auto& beforeHierarchy = m_registry.get<HierarchyComponent>(before);
+        childHierarchy.parent = parent;
+        childHierarchy.nextSibling = before;
+        childHierarchy.previousSibling = beforeHierarchy.previousSibling;
+        if (beforeHierarchy.previousSibling != NullEntity) {
+            m_registry.get<HierarchyComponent>(beforeHierarchy.previousSibling).nextSibling = child;
+        } else if (parent != NullEntity) {
+            m_registry.get<HierarchyComponent>(parent).firstChild = child;
+        } else {
+            m_firstRoot = child;
+        }
+        beforeHierarchy.previousSibling = child;
     }
 
     Math::WorldPosition Scene::GetWorldPosition(Entity entity) const {

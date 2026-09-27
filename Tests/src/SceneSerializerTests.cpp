@@ -178,5 +178,52 @@ bool RunSceneSerializerTests() {
     CHECK(engineOnly.GetCount() == engineCount + 1);
     engineOnly.Truncate(engineCount);
     CHECK(engineOnly.Find("test") == nullptr && engineOnly.Find("transform") != nullptr);
+    // Instantanés d'entité (annuler / refaire).
+    {
+        Scene edited;
+        const Entity a = edited.CreateEntity("A");
+        const Entity b = edited.CreateEntity("B");
+        const Entity c = edited.CreateEntity("C");
+        const Entity child = edited.CreateEntity("Enfant", b);
+        const Entity grandChild = edited.CreateEntity("Petit-enfant", child);
+        edited.Add<MeshRendererComponent>(child);
+        edited.Get<TransformComponent>(grandChild).position = {1.0, 2.0, 3.0};
+        const Uuid bId = edited.GetId(b);
+        const Uuid childId = edited.GetId(child);
+
+        // Modification annulée : nom, composants retirés ou ajoutés depuis reviennent à l'état de l'instantané.
+        const std::string before = SceneSerializer::SaveEntity(edited, components, child, false);
+        edited.Get<NameComponent>(child).name = "Renommé";
+        edited.Remove<MeshRendererComponent>(child);
+        edited.Add<TestComponent>(child).count = 4;
+        edited.Get<TransformComponent>(child).position = {9.0, 9.0, 9.0};
+        CHECK(SceneSerializer::RestoreEntity(edited, components, before));
+        CHECK(edited.Get<NameComponent>(child).name == "Enfant");
+        CHECK(edited.TryGet<MeshRendererComponent>(child) && !edited.TryGet<TestComponent>(child));
+        CHECK(edited.Get<TransformComponent>(child).position == Math::Vector3d{});
+        CHECK(edited.GetParent(child) == b);
+
+        // Suppression annulée : B revient entre A et C, avec ses descendants et leurs identifiants.
+        const std::string subtree = SceneSerializer::SaveEntity(edited, components, b, true);
+        edited.DestroyEntity(b);
+        CHECK(edited.GetEntityCount() == 2);
+        CHECK(SceneSerializer::RestoreEntity(edited, components, subtree));
+        CHECK(edited.GetEntityCount() == 5);
+        const Entity restoredB = edited.FindById(bId);
+        CHECK(restoredB != NullEntity && edited.GetNextSibling(a) == restoredB && edited.GetNextSibling(restoredB) == c);
+        const Entity restoredChild = edited.FindById(childId);
+        CHECK(restoredChild != NullEntity && edited.GetParent(restoredChild) == restoredB);
+        CHECK(edited.TryGet<MeshRendererComponent>(restoredChild));
+        const Entity restoredGrandChild = edited.FindByName("Petit-enfant");
+        CHECK(edited.GetParent(restoredGrandChild) == restoredChild);
+        CHECK(edited.Get<TransformComponent>(restoredGrandChild).position == Math::Vector3d(1.0, 2.0, 3.0));
+
+        // Parent disparu : refusé sans rien toucher.
+        const std::string orphan = SceneSerializer::SaveEntity(edited, components, restoredGrandChild, false);
+        edited.DestroyEntity(restoredChild);
+        CHECK(!SceneSerializer::RestoreEntity(edited, components, orphan));
+        CHECK(edited.GetEntityCount() == 3);
+        CHECK(!SceneSerializer::RestoreEntity(edited, components, "{}"));
+    }
     return true;
 }
