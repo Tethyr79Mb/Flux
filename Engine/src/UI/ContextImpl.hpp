@@ -279,6 +279,8 @@ namespace Flux::UI {
         // Widget sous le bouton gauche enfoncé (glissement, clic en cours).
         WidgetId activeId = 0;
         WidgetId lastBehaviorId = 0; // dernier widget interactif décrit (IsItemActive)
+        Vector2f lastBehaviorMin;    // et son rectangle (GetItemRect)
+        Vector2f lastBehaviorMax;
         Context::ColorPicker colorPicker; // ouvert par l'aperçu de ColorEdit3
         bool activeSeen = false;
         Vector2f pressPosition;
@@ -371,6 +373,8 @@ namespace Flux::UI {
         Interaction Behavior(WidgetId id, Vector2f min, Vector2f max) {
             Interaction result;
             lastBehaviorId = id;
+            lastBehaviorMin = min;
+            lastBehaviorMax = max;
             const bool inside = IsMouseOver(min, max);
             result.hovered = inside && (activeId == 0 || activeId == id);
             if (result.hovered && mousePressed) {
@@ -404,6 +408,8 @@ namespace Flux::UI {
         // Frappe dans le champ en cours de saisie ; numeric : seuls les caractères d'un nombre sont acceptés.
         EditResult ProcessTextEdit(Vector2f min, Vector2f max, bool numeric);
         void DrawTextEdit(Vector2f min, Vector2f max);
+        // Champ texte dans min-max (InputText, InputTextBrowse) : true quand une nouvelle valeur est validée.
+        bool TextField(WidgetId id, Vector2f min, Vector2f max, std::string& value);
         bool DragScalar(WidgetId id, Vector2f min, Vector2f max, double& value, double speed, double low, double high,
                         int decimals, const LinearColor* axisColor);
 

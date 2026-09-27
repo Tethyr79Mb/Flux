@@ -29,7 +29,8 @@ namespace FluxEditor {
         };
 
         ItemInfo GetInfo(int item) {
-            constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Texte à l'écran", "Texte"}};
+            constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Texte à l'écran", "Texte"},
+                                           {"Image à l'écran", "Image"}};
             return Infos[item];
         }
 
@@ -62,6 +63,8 @@ namespace FluxEditor {
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
+            ui.SameLine();
+            button(Item::ScreenImage);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
         }
@@ -110,16 +113,19 @@ namespace FluxEditor {
         const ItemInfo info = GetInfo(static_cast<int>(item));
         const Entity entity = scene.CreateEntity(info.name);
 
-        if (item == Item::ScreenText) {
+        if (item == Item::ScreenText || item == Item::ScreenImage) {
             // Accroché au centre ; lâché dans la vue, décalé jusqu'au point de dépôt (en pixels de référence).
-            auto& text = scene.Add<ScreenTextComponent>(entity);
-            if (drop) {
-                const float scale = ScreenUi::GetScale(view.min, view.max);
+            // Une image est créée sans fichier : cadre gris dans la vue, à choisir dans l'inspecteur (« ... »).
+            if (item == Item::ScreenText) {
+                scene.Add<ScreenTextComponent>(entity);
+            } else {
+                scene.Add<ScreenImageComponent>(entity);
+            }
+            const float scale = ScreenUi::GetScale(view.min, view.max);
+            if (const std::optional<ScreenUi::Offset> offset = ScreenUi::FindOffset(scene, entity); offset && drop && scale > 0.0f) {
                 const Vector2f moved = *drop - ScreenUi::AnchorPoint(ScreenAnchor::Center, view.min, view.max);
-                if (scale > 0.0f) {
-                    text.offsetX = std::round(moved.x / scale);
-                    text.offsetY = std::round(moved.y / scale);
-                }
+                *offset->x = std::round(moved.x / scale);
+                *offset->y = std::round(moved.y / scale);
             }
         } else {
             if (item == Item::Cube) {

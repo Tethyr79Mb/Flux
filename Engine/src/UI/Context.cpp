@@ -158,6 +158,18 @@ namespace Flux::UI {
         return m_impl->activeId != 0 && m_impl->activeId == m_impl->lastBehaviorId;
     }
 
+    Rect Context::GetItemRect() const {
+        return {m_impl->lastBehaviorMin, m_impl->lastBehaviorMax};
+    }
+
+    bool Context::IsMouseOverItem() const {
+        return m_impl->IsMouseOver(m_impl->lastBehaviorMin, m_impl->lastBehaviorMax);
+    }
+
+    DrawList* Context::GetPanelDrawList() {
+        return m_impl->panel ? &m_impl->panel->content : nullptr;
+    }
+
     Math::Vector2f Context::MeasureText(std::string_view text) const {
         const Impl& ui = *m_impl;
         return ui.measure.MeasureText(text, ui.style.fontSize);

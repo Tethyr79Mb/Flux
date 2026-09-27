@@ -4,6 +4,7 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Platform/Dialogs.hpp>
+#include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/UI/Context.hpp>
 
@@ -17,19 +18,10 @@ namespace FluxEditor {
     namespace {
         constexpr double ScanInterval = 2.0; // secondes : quelques dizaines de fichiers, lecture négligeable
 
-        std::string ToUtf8(const std::filesystem::path& path) {
-            const std::u8string text = path.u8string();
-            return {text.begin(), text.end()};
-        }
-
         constexpr std::string_view SceneExtension = ".scene.json";
 
         bool IsScene(const std::filesystem::path& path) {
-            return ToUtf8(path.filename()).ends_with(SceneExtension);
-        }
-
-        std::filesystem::path FromUtf8(const std::string& text) {
-            return std::filesystem::path(std::u8string(text.begin(), text.end()));
+            return Platform::ToUtf8(path.filename()).ends_with(SceneExtension);
         }
     }
 
@@ -52,7 +44,7 @@ namespace FluxEditor {
             if (!project) {
                 ui.TextDisabled("Aucun projet ouvert.");
             } else if (m_entries.empty()) {
-                ui.TextDisabled("Dossier des assets vide ou introuvable :\n" + ToUtf8(root));
+                ui.TextDisabled("Dossier des assets vide ou introuvable :\n" + Platform::ToUtf8(root));
             } else {
                 ui.TextDisabled("Double-clic sur une scène pour l'ouvrir,\nclic droit pour les autres actions.");
                 ui.Separator();
@@ -74,7 +66,7 @@ namespace FluxEditor {
                  !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
                 Entry entry;
                 entry.path = it->path();
-                entry.name = ToUtf8(entry.path.filename());
+                entry.name = Platform::ToUtf8(entry.path.filename());
                 entry.directory = it->is_directory(error);
                 if (entry.directory) {
                     entry.children = self(self, entry.path);
@@ -189,7 +181,7 @@ namespace FluxEditor {
         const float width = 400.0f;
         if (ui.BeginPanel("Renommer la scène", {(static_cast<float>(screen.x) - width) * 0.5f, static_cast<float>(screen.y) * 0.3f},
                           width)) {
-            ui.TextDisabled(ToUtf8(m_renaming.filename()));
+            ui.TextDisabled(Platform::ToUtf8(m_renaming.filename()));
             // Entrée dans le champ valide aussi ; l'extension .scene.json est ajoutée d'office.
             const bool entered = ui.InputText("Nouveau nom", m_newName);
             ui.Separator();
@@ -218,7 +210,7 @@ namespace FluxEditor {
         }
         fileName += SceneExtension;
         const std::filesystem::path from = m_renaming;
-        const std::filesystem::path to = from.parent_path() / FromUtf8(fileName);
+        const std::filesystem::path to = from.parent_path() / Platform::PathFromUtf8(fileName);
         if (to.filename() == from.filename()) {
             return true; // rien à faire
         }

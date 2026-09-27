@@ -89,6 +89,29 @@ namespace Flux {
         float offsetY = 0.0f; // vers le bas
     };
 
+    // Manière dont une image à l'écran occupe la vue.
+    enum class ScreenImageFit : std::uint8_t {
+        Size,    // largeur et hauteur données (ou celles du fichier), placée par l'ancre et le décalage
+        Stretch, // étirée sur toute la vue, proportions perdues
+        Cover,   // couvre toute la vue en gardant ses proportions, le surplus est rogné (fond d'écran)
+    };
+
+    // Image collée à l'écran (logo, fond d'écran), dessinée par-dessus la 3D comme ScreenTextComponent, avec les
+    // mêmes unités (pixels d'un écran de 1080 lignes).
+    struct ScreenImageComponent
+    {
+        std::string image; // chemin relatif au dossier des assets du projet, avec des « / » (textures/logo.png)
+        Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie les couleurs de l'image (blanc : inchangées)
+        float opacity = 1.0f;
+        ScreenImageFit fit = ScreenImageFit::Size;
+        // 0 : taille du fichier (1 pixel de l'image = 1 pixel de référence) ; une seule à 0 : proportions gardées.
+        float width = 0.0f;
+        float height = 0.0f;
+        ScreenAnchor anchor = ScreenAnchor::Center;
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+    };
+
     // Composants d'un fichier de scène dont le type n'est pas enregistré (module de jeu absent ou ancien) :
     // gardés tels quels (clé, texte JSON) et réécrits à la sauvegarde, pour ne jamais perdre de données.
     struct UnknownComponentsComponent

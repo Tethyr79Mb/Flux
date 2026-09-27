@@ -103,31 +103,31 @@ namespace FluxEditor {
         }
     }
 
-    void SceneViewport::UpdateTextDrag(Engine& engine, Entity selected, const UI::Rect& view) {
+    void SceneViewport::UpdateScreenDrag(Engine& engine, Entity selected, const UI::Rect& view) {
         Scene& scene = engine.GetScene();
-        ScreenTextComponent* text = selected == NullEntity ? nullptr : scene.TryGet<ScreenTextComponent>(selected);
-        if (!text || scene.GetId(selected) != m_textDrag.entity) {
-            m_textDrag.active = false; // texte supprimé, composant retiré ou sélection changée ailleurs
+        const std::optional<ScreenUi::Offset> offset = selected == NullEntity ? std::nullopt : ScreenUi::FindOffset(scene, selected);
+        if (!offset || scene.GetId(selected) != m_screenDrag.entity) {
+            m_screenDrag.active = false; // élément supprimé, composant retiré ou sélection changée ailleurs
             return;
         }
         const Input& input = engine.GetWindow().GetInput();
-        float x = m_textDrag.startOffsetX;
-        float y = m_textDrag.startOffsetY;
+        float x = m_screenDrag.startOffsetX;
+        float y = m_screenDrag.startOffsetY;
         if (input.WasKeyPressed(Key::Escape) && !engine.GetUi().WantsKeyboard()) {
-            m_textDrag.active = false; // annulé : retour au point de départ
+            m_screenDrag.active = false; // annulé : retour au point de départ
         } else {
             // Pixels de la vue ramenés en pixels de référence ; décalage arrondi, comme dans l'inspecteur.
             const float scale = ScreenUi::GetScale(view.min, view.max);
-            const Vector2f moved = input.GetMousePosition() - m_textDrag.startMouse;
+            const Vector2f moved = input.GetMousePosition() - m_screenDrag.startMouse;
             x = std::round(x + moved.x / scale);
             y = std::round(y + moved.y / scale);
             if (!input.IsMouseButtonDown(MouseButton::Left)) {
-                m_textDrag.active = false;
+                m_screenDrag.active = false;
             }
         }
-        if (x != text->offsetX || y != text->offsetY) {
-            text->offsetX = x;
-            text->offsetY = y;
+        if (x != *offset->x || y != *offset->y) {
+            *offset->x = x;
+            *offset->y = y;
             m_modified = true;
         }
     }
@@ -140,8 +140,8 @@ namespace FluxEditor {
         const Vector2f size = view.GetSize();
         if (size.x < 1.0f || size.y < 1.0f) {
             m_drag.axis = -1;
-            m_textDrag.active = false;
-            m_textRects.clear();
+            m_screenDrag.active = false;
+            m_screenRects.clear();
             return; // vue écrasée par les panneaux
         }
 
@@ -155,11 +155,11 @@ namespace FluxEditor {
         };
         const Entity selected = sceneEditor.GetSelection() ? scene.FindById(sceneEditor.GetSelection()) : NullEntity;
         RelativeTransform* selectedTransform = selected == NullEntity ? nullptr : findTransform(selected);
-        // Un texte à l'écran n'est pas dans le monde : pas de gizmo, il se glisse directement.
-        const bool selectedIsText = selected != NullEntity && scene.TryGet<ScreenTextComponent>(selected);
+        // Un élément à l'écran n'est pas dans le monde : pas de gizmo, il se glisse directement.
+        const bool selectedIsScreen = selected != NullEntity && ScreenUi::IsScreenElement(scene, selected);
 
-        if (m_textDrag.active) {
-            UpdateTextDrag(engine, selected, view);
+        if (m_screenDrag.active) {
+            UpdateScreenDrag(engine, selected, view);
         }
 
         // Glissement d'une flèche : le point de l'axe saisi suit le point de l'axe le plus proche de la souris.
@@ -199,7 +199,7 @@ namespace FluxEditor {
             }
         }
 
-        const std::optional<std::array<Arrow, 3>> arrows = selectedTransform && !selectedIsText
+        const std::optional<std::array<Arrow, 3>> arrows = selectedTransform && !selectedIsScreen
                                                                ? ProjectGizmo(projection, selectedTransform->position)
                                                                : std::nullopt;
 
@@ -207,7 +207,7 @@ namespace FluxEditor {
         const bool mouseInView = mouse.x >= view.min.x && mouse.x < view.max.x && mouse.y >= view.min.y
                               && mouse.y < view.max.y && !ui.WantsMouse() && !engine.GetWindow().IsCursorLocked()
                               && !engine.GetCameraController().IsActive();
-        if (m_drag.axis < 0 && !m_textDrag.active) {
+        if (m_drag.axis < 0 && !m_screenDrag.active) {
             m_hoveredAxis = -1;
             if (mouseInView && arrows) {
                 float closest = GrabPixels;
@@ -227,18 +227,21 @@ namespace FluxEditor {
                 if (m_hoveredAxis >= 0) {
                     grabbed = ClosestPointOnLine(ray, selectedTransform->position, Axes[m_hoveredAxis]);
                 }
-                // Texte sous la souris (le dernier dessiné est au-dessus) : il passe avant les objets 3D qu'il recouvre.
-                const auto text = std::ranges::find_if(m_textRects.rbegin(), m_textRects.rend(), [&](const auto& rect) {
+                // Élément à l'écran sous la souris (le dernier dessiné est au-dessus) : il passe avant les objets 3D
+                // qu'il recouvre.
+                const auto item = std::ranges::find_if(m_screenRects.rbegin(), m_screenRects.rend(), [&](const auto& rect) {
                     return scene.IsValid(rect.entity) && mouse.x >= rect.min.x && mouse.x < rect.max.x
                         && mouse.y >= rect.min.y && mouse.y < rect.max.y;
                 });
                 if (grabbed) {
                     m_drag = {m_hoveredAxis, scene.GetId(selected), scene.Get<TransformComponent>(selected).position,
                               selectedTransform->position, camera.position, *grabbed};
-                } else if (text != m_textRects.rend() && scene.TryGet<ScreenTextComponent>(text->entity)) {
-                    const auto& component = scene.Get<ScreenTextComponent>(text->entity);
-                    sceneEditor.Select(scene, text->entity);
-                    m_textDrag = {true, scene.GetId(text->entity), component.offsetX, component.offsetY, mouse};
+                } else if (item != m_screenRects.rend() && ScreenUi::IsScreenElement(scene, item->entity)) {
+                    sceneEditor.Select(scene, item->entity);
+                    // Une image étirée ou qui couvre l'écran se sélectionne mais ne se déplace pas.
+                    if (const std::optional<ScreenUi::Offset> offset = ScreenUi::FindOffset(scene, item->entity)) {
+                        m_screenDrag = {true, scene.GetId(item->entity), *offset->x, *offset->y, mouse};
+                    }
                 } else {
                     // Clic dans le vide : désélectionne.
                     sceneEditor.Select(scene, PickEntity(scene, m_transforms, ray));
@@ -247,17 +250,21 @@ namespace FluxEditor {
         }
 
         // Dessin, sous les panneaux (l'interface est ajoutée à l'overlay après) et découpé à la vue :
-        // les textes de la scène comme dans le jeu, puis la sélection par-dessus.
+        // les textes et images de la scène comme dans le jeu, puis la sélection par-dessus.
         UI::DrawList& list = engine.GetRenderer().GetOverlay();
-        m_textRects.clear();
-        ScreenUi::Draw(scene, list, view.min, view.max, &m_textRects);
+        m_screenRects.clear();
+        ScreenUi::Draw(scene, list, view.min, view.max,
+                       {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); },
+                        .rects = &m_screenRects,
+                        .placeholders = true});
         if (!selectedTransform) {
             return;
         }
         list.SetClipRect(view.min, view.max);
-        if (selectedIsText) {
-            const auto rect = std::ranges::find(m_textRects, selected, &ScreenUi::ItemRect::entity);
-            if (rect != m_textRects.end()) {
+        if (selectedIsScreen) {
+            // Le dernier rectangle de l'entité : son texte s'il y en a un (dessiné après l'image).
+            const auto rect = std::ranges::find(m_screenRects.rbegin(), m_screenRects.rend(), selected, &ScreenUi::ItemRect::entity);
+            if (rect != m_screenRects.rend()) {
                 const Vector2f margin{4.0f, 2.0f};
                 list.AddRectOutline(rect->min - margin, rect->max + margin, Math::LinearColor::FromSrgb8(255, 165, 40), 2.0f);
             }

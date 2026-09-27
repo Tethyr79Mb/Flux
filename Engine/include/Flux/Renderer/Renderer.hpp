@@ -3,9 +3,12 @@
 #include "Flux/Export.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/UI/DrawList.hpp"
 
 #include <expected>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -13,10 +16,6 @@ namespace Flux {
     class Window;
     struct Camera;
     class Scene;
-
-    namespace UI {
-        class DrawList;
-    }
 
     // Aucun type Vulkan ici : tout vit dans Impl (Renderer.cpp).
     class FLUX_API Renderer {
@@ -46,6 +45,12 @@ namespace Flux {
 
         // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
         UI::DrawList& GetOverlay();
+
+        // Image (PNG, JPEG, TGA, BMP) à dessiner dans l'overlay (DrawList::AddImage), chargée au premier appel puis
+        // gardée jusqu'à la fermeture ; appeler à chaque frame est prévu : c'est une recherche dans un cache, et le
+        // fichier est relu s'il a changé (vérifié une fois par seconde). nullopt si le fichier est absent ou illisible
+        // (message dans la console). Au plus 256 images différentes.
+        std::optional<UI::TextureInfo> LoadTexture(const std::filesystem::path& path);
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;

@@ -218,6 +218,18 @@ bool RunSceneSerializerTests() {
         CHECK(edited.GetParent(restoredGrandChild) == restoredChild);
         CHECK(edited.Get<TransformComponent>(restoredGrandChild).position == Math::Vector3d(1.0, 2.0, 3.0));
 
+        // Ordre changé (glisser-déposer dans la hiérarchie) puis annulé : A revient devant B, puis refait.
+        const Uuid aId = edited.GetId(a);
+        const std::string inPlace = SceneSerializer::SaveEntity(edited, components, a, false);
+        edited.SetParent(a, NullEntity); // à la fin des racines : dessiné en dernier
+        CHECK(edited.GetNextSibling(c) == a);
+        const std::string moved = SceneSerializer::SaveEntity(edited, components, a, false);
+        CHECK(SceneSerializer::RestoreEntity(edited, components, inPlace));
+        CHECK(edited.GetNextSibling(edited.FindById(aId)) == restoredB && edited.GetNextSibling(c) == NullEntity);
+        CHECK(SceneSerializer::RestoreEntity(edited, components, moved));
+        CHECK(edited.GetNextSibling(c) == a && edited.GetNextSibling(a) == NullEntity);
+        CHECK(SceneSerializer::RestoreEntity(edited, components, inPlace));
+
         // Parent disparu : refusé sans rien toucher.
         const std::string orphan = SceneSerializer::SaveEntity(edited, components, restoredGrandChild, false);
         edited.DestroyEntity(restoredChild);

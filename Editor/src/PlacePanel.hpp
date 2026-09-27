@@ -14,7 +14,7 @@ namespace FluxEditor {
     class UndoHistory;
 
     // Panneau « Placer » (le « Place Actors » d'Unreal) : les objets qu'on peut ajouter à la scène, par catégorie.
-    // Un clic crée l'objet (devant la caméra, ou au centre de l'écran pour un texte) ; le glisser dans la vue
+    // Un clic crée l'objet (devant la caméra, ou au centre de l'écran pour un texte ou une image) ; le glisser dans la vue
     // le pose sous la souris. L'objet créé est sélectionné, et Ctrl+Z le retire.
     class PlacePanel {
         public:
@@ -22,7 +22,7 @@ namespace FluxEditor {
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Flux::UI::Rect& view);
 
         private:
-        enum class Item { Empty, Cube, ScreenText };
+        enum class Item { Empty, Cube, ScreenText, ScreenImage };
 
         // drop : point de la vue où l'objet a été lâché ; sans lui, la place par défaut.
         static void Place(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, Item item,

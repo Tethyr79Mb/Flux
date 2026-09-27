@@ -1,5 +1,7 @@
 #include "Flux/Core/Project.hpp"
 
+#include "Flux/Platform/Filesystem.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <format>
@@ -11,29 +13,13 @@ namespace Flux::ProjectFile {
     namespace {
         constexpr std::string_view FormatName = "flux.project";
 
-        // path::string() et le constructeur depuis std::string passent par la page de code Windows : UTF-8 explicite.
-        std::filesystem::path FromUtf8(const std::string& text) {
-            return std::filesystem::path(std::u8string(text.begin(), text.end()));
-        }
-
-        std::string ToUtf8(const std::filesystem::path& path) {
-            const std::u8string text = path.u8string();
-            return {text.begin(), text.end()};
-        }
-
-        // Avec des « / » : le fichier est le même sous Windows et ailleurs, et se lit mieux.
-        std::string ToGenericUtf8(const std::filesystem::path& path) {
-            const std::u8string text = path.generic_u8string();
-            return {text.begin(), text.end()};
-        }
-
         // Chemin relatif qui reste sous le dossier du projet : ni absolu, ni « .. ».
         std::expected<std::filesystem::path, std::string> ReadRelative(const nlohmann::json& document, const char* key) {
             const auto found = document.find(key);
             if (found == document.end() || !found->is_string() || found->get<std::string>().empty()) {
                 return std::unexpected(std::format("« {} » doit être un chemin (texte)", key));
             }
-            const std::filesystem::path path = FromUtf8(found->get<std::string>()).lexically_normal();
+            const std::filesystem::path path = Platform::PathFromUtf8(found->get<std::string>()).lexically_normal();
             if (path.has_root_path() || (!path.empty() && *path.begin() == "..")) {
                 return std::unexpected(std::format("« {} » doit être relatif au projet, sans « .. »", key));
             }
@@ -63,7 +49,7 @@ namespace Flux::ProjectFile {
             Project project;
             project.name = document.value("name", std::string{});
             if (project.name.empty()) {
-                project.name = ToUtf8(file.stem());
+                project.name = Platform::ToUtf8(file.stem());
             }
             project.file = std::filesystem::absolute(file).lexically_normal();
             project.assetsDirectory = (project.file.parent_path() / *assets).lexically_normal();
@@ -77,12 +63,12 @@ namespace Flux::ProjectFile {
     std::expected<Project, std::string> Load(const std::filesystem::path& file) {
         std::ifstream stream(file, std::ios::binary);
         if (!stream) {
-            return std::unexpected("projet introuvable : " + ToUtf8(file));
+            return std::unexpected("projet introuvable : " + Platform::ToUtf8(file));
         }
         std::ostringstream text;
         text << stream.rdbuf();
         if (auto project = Parse(text.str(), file); !project) {
-            return std::unexpected(ToUtf8(file.filename()) + " : " + project.error());
+            return std::unexpected(Platform::ToUtf8(file.filename()) + " : " + project.error());
         } else {
             return project;
         }
@@ -93,8 +79,8 @@ namespace Flux::ProjectFile {
         document["format"] = FormatName;
         document["version"] = FormatVersion;
         document["name"] = project.name;
-        document["assets"] = ToGenericUtf8(project.assetsDirectory.lexically_relative(project.file.parent_path()));
-        document["startupScene"] = ToGenericUtf8(project.startupScene);
+        document["assets"] = Platform::ToGenericUtf8(project.assetsDirectory.lexically_relative(project.file.parent_path()));
+        document["startupScene"] = Platform::ToGenericUtf8(project.startupScene);
         return document.dump(2) + '\n';
     }
 
@@ -105,13 +91,13 @@ namespace Flux::ProjectFile {
         {
             std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
             if (!stream.write(text.data(), static_cast<std::streamsize>(text.size()))) {
-                return std::unexpected("écriture impossible : " + ToUtf8(temporary));
+                return std::unexpected("écriture impossible : " + Platform::ToUtf8(temporary));
             }
         }
         std::error_code error;
         std::filesystem::rename(temporary, project.file, error);
         if (error) {
-            return std::unexpected(std::format("remplacement de {} : {}", ToUtf8(project.file), error.message()));
+            return std::unexpected(std::format("remplacement de {} : {}", Platform::ToUtf8(project.file), error.message()));
         }
         return {};
     }

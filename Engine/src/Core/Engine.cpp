@@ -1,6 +1,7 @@
 #include "Flux/Core/Engine.hpp"
 
 #include "Flux/Platform/Dialogs.hpp"
+#include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
@@ -136,7 +137,8 @@ namespace Flux {
             }
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             if (m_drawScreenUi) {
-                ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)});
+                ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
+                               {.textures = [this](std::string_view path) { return LoadAssetTexture(path); }});
             }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
@@ -172,6 +174,13 @@ namespace Flux {
 
     Renderer& Engine::GetRenderer() {
         return *m_renderer;
+    }
+
+    std::optional<UI::TextureInfo> Engine::LoadAssetTexture(std::string_view relativePath) {
+        if (!m_project || relativePath.empty()) {
+            return std::nullopt;
+        }
+        return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
     }
 
     UI::Context& Engine::GetUi() {

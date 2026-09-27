@@ -19,8 +19,18 @@ namespace Flux::Platform {
         }
 
         // "Scènes Flux (*.scene.json)\0*.scene.json\0Tous les fichiers\0*.*\0\0" : chaînes séparées par des zéros.
+        // Plusieurs extensions (".png;.jpg") donnent "*.png;*.jpg", la syntaxe de la boîte de dialogue.
         std::wstring MakeFilter(const FileType& type) {
-            const std::wstring pattern = L"*" + Win32::ToWide(type.extension);
+            std::wstring pattern;
+            std::string_view extensions = type.extension;
+            while (!extensions.empty()) {
+                const std::size_t end = extensions.find(';');
+                if (!pattern.empty()) {
+                    pattern += L';';
+                }
+                pattern += L"*" + Win32::ToWide(extensions.substr(0, end));
+                extensions = end == std::string_view::npos ? std::string_view{} : extensions.substr(end + 1);
+            }
             std::wstring filter = Win32::ToWide(type.description) + L" (" + pattern + L")";
             filter += L'\0';
             filter += pattern;

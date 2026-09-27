@@ -33,6 +33,12 @@ namespace Flux {
         Enum,       // sauvegardé par nom, voir ComponentBuilder::Enum
     };
 
+    // Fichier du projet désigné par un champ texte : l'inspecteur propose alors de le choisir dans l'explorateur.
+    enum class AssetType : std::uint8_t {
+        None,
+        Image, // PNG, JPEG, TGA, BMP
+    };
+
     // Réglages d'édition d'un champ numérique (inspecteur).
     struct FieldOptions
     {
@@ -55,6 +61,7 @@ namespace Flux {
         std::string label; // dans l'inspecteur
         FieldType type = FieldType::Float;
         FieldOptions options;
+        AssetType asset = AssetType::None; // String seulement
         // Adresse du champ dans une instance du composant.
         std::function<void*(void*)> access;
         // Enum seulement : valeurs possibles, et lecture / écriture de la valeur en entier.
@@ -133,6 +140,14 @@ namespace Flux {
             field.options = options;
             field.access = [member](void* instance) -> void* { return &(static_cast<C*>(instance)->*member); };
             m_info->fields.push_back(std::move(field));
+            return *this;
+        }
+
+        // Chemin d'un fichier du projet, relatif au dossier des assets (texte avec des « / ») : choisi dans l'explorateur
+        // depuis l'inspecteur.
+        ComponentBuilder& Asset(std::string key, std::string label, std::string C::* member, AssetType asset) {
+            Field(std::move(key), std::move(label), member);
+            m_info->fields.back().asset = asset;
             return *this;
         }
 

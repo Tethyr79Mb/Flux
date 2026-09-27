@@ -2,6 +2,7 @@
 
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
+#include "Flux/Renderer/Image.hpp"
 #include "Flux/Scene/Camera.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -15,10 +16,13 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <span>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Flux {
@@ -89,7 +93,22 @@ namespace Flux {
             float screenSize[2];
             float atlasSize[2];
             float distanceRange;
-            float padding;
+            float mode; // 0 : atlas MSDF ; 1 : image
+        };
+
+        // Images chargées au plus : un descriptor set chacune, réservés d'avance.
+        constexpr uint32_t MaxTextures = 256;
+        // Intervalle entre deux vérifications de la date d'un fichier d'image (rechargé s'il a changé) :
+        // assez court pour voir une retouche aussitôt, assez long pour ne pas interroger le disque à chaque frame.
+        constexpr std::chrono::milliseconds TextureCheckInterval{1000};
+
+        // Image de l'interface chargée depuis un fichier, et de quoi voir si le fichier a changé.
+        struct Texture {
+            Vk::Image image;
+            UI::TextureId id = UI::FontTexture; // FontTexture : pas (encore) chargée
+            Math::Vector2i size;
+            std::filesystem::file_time_type writeTime{};
+            std::chrono::steady_clock::time_point checked{};
         };
 
         // Taille minimale d'un vertex buffer d'overlay : évite de réallouer pour quelques caractères de plus.
@@ -155,7 +174,10 @@ namespace Flux {
         VkSampler atlasSampler = VK_NULL_HANDLE;
         VkDescriptorSetLayout overlaySetLayout = VK_NULL_HANDLE;
         VkDescriptorPool overlayDescriptorPool = VK_NULL_HANDLE;
-        VkDescriptorSet overlaySet = VK_NULL_HANDLE;
+        // Un set par texture, indexé par UI::TextureId : [0] est l'atlas de la police.
+        std::vector<VkDescriptorSet> overlaySets;
+        // Images de l'interface, par chemin (UTF-8, normalisé).
+        std::unordered_map<std::string, Texture> textures;
         Vk::GraphicsPipeline overlayPipeline;
         std::array<Vk::Buffer, FramesInFlight> overlayBuffers;
         uint32_t overlayVertexCount = 0;
@@ -168,7 +190,7 @@ namespace Flux {
             }
             device->WaitIdle();
             const VkDevice vkDevice = device->GetHandle();
-            vkDestroyDescriptorPool(vkDevice, overlayDescriptorPool, nullptr); // libère aussi overlaySet
+            vkDestroyDescriptorPool(vkDevice, overlayDescriptorPool, nullptr); // libère aussi overlaySets
             vkDestroyDescriptorSetLayout(vkDevice, overlaySetLayout, nullptr);
             vkDestroySampler(vkDevice, atlasSampler, nullptr);
             for (FrameData& frame : frames) {
@@ -313,34 +335,23 @@ namespace Flux {
                 return std::unexpected("création du descriptor set layout de l'overlay");
             }
 
-            const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+            // L'atlas, puis les images.
+            const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + MaxTextures};
             VkDescriptorPoolCreateInfo poolInfo{};
             poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-            poolInfo.maxSets = 1;
+            poolInfo.maxSets = 1 + MaxTextures;
             poolInfo.poolSizeCount = 1;
             poolInfo.pPoolSizes = &poolSize;
             if (!Vk::Check(vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &overlayDescriptorPool), "vkCreateDescriptorPool")) {
                 return std::unexpected("création du descriptor pool de l'overlay");
             }
 
-            VkDescriptorSetAllocateInfo allocateInfo{};
-            allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocateInfo.descriptorPool = overlayDescriptorPool;
-            allocateInfo.descriptorSetCount = 1;
-            allocateInfo.pSetLayouts = &overlaySetLayout;
-            if (!Vk::Check(vkAllocateDescriptorSets(vkDevice, &allocateInfo, &overlaySet), "vkAllocateDescriptorSets")) {
+            const VkDescriptorSet atlasSet = AllocateOverlaySet();
+            if (atlasSet == VK_NULL_HANDLE) {
                 return std::unexpected("allocation du descriptor set de l'overlay");
             }
-
-            const VkDescriptorImageInfo imageInfo{atlasSampler, atlasImage.GetView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkWriteDescriptorSet write{};
-            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dstSet = overlaySet;
-            write.dstBinding = 0;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.pImageInfo = &imageInfo;
-            vkUpdateDescriptorSets(vkDevice, 1, &write, 0, nullptr);
+            WriteOverlaySet(atlasSet, atlasImage);
+            overlaySets.push_back(atlasSet); // UI::FontTexture
 
             const VkVertexInputBindingDescription vertexBinding{0, sizeof(UI::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
             const std::array attributes{
@@ -366,6 +377,89 @@ namespace Flux {
             }
             overlayPipeline = std::move(*pipeline);
             return {};
+        }
+
+        VkDescriptorSet AllocateOverlaySet() const {
+            VkDescriptorSetAllocateInfo allocateInfo{};
+            allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocateInfo.descriptorPool = overlayDescriptorPool;
+            allocateInfo.descriptorSetCount = 1;
+            allocateInfo.pSetLayouts = &overlaySetLayout;
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            if (!Vk::Check(vkAllocateDescriptorSets(device->GetHandle(), &allocateInfo, &set), "vkAllocateDescriptorSets")) {
+                return VK_NULL_HANDLE;
+            }
+            return set;
+        }
+
+        // Le sampler de l'atlas (linéaire, bords prolongés) convient aussi aux images.
+        void WriteOverlaySet(VkDescriptorSet set, const Vk::Image& image) const {
+            const VkDescriptorImageInfo imageInfo{atlasSampler, image.GetView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = set;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imageInfo;
+            vkUpdateDescriptorSets(device->GetHandle(), 1, &write, 0, nullptr);
+        }
+
+        // Lit le fichier et remplace l'image de la texture ; en cas d'échec, l'ancienne image (s'il y en a une) reste.
+        void ReloadTexture(const std::filesystem::path& path, Texture& texture) {
+            auto pixels = LoadImageFile(path);
+            if (!pixels) {
+                std::fprintf(stderr, "Flux : image %s\n", pixels.error().c_str());
+                return;
+            }
+            // SRGB : les couleurs d'une image sont en sRGB, le GPU les ramène en linéaire à la lecture.
+            auto image = Vk::Image::CreateTexture(*device, VK_FORMAT_R8G8B8A8_SRGB,
+                                                  {static_cast<uint32_t>(pixels->size.x), static_cast<uint32_t>(pixels->size.y)},
+                                                  pixels->rgba);
+            if (!image) {
+                std::fprintf(stderr, "Flux : image %s : %s\n", Platform::ToUtf8(path).c_str(), image.error().c_str());
+                return;
+            }
+            if (texture.id == UI::FontTexture) {
+                if (overlaySets.size() > MaxTextures) {
+                    std::fprintf(stderr, "Flux : plus de %u images chargées, %s ignorée\n", MaxTextures,
+                                 Platform::ToUtf8(path).c_str());
+                    return;
+                }
+                const VkDescriptorSet set = AllocateOverlaySet();
+                if (set == VK_NULL_HANDLE) {
+                    return;
+                }
+                texture.id = static_cast<UI::TextureId>(overlaySets.size());
+                overlaySets.push_back(set);
+            } else {
+                // Rechargement (fichier retouché) : les frames en vol dessinent peut-être encore l'ancienne image,
+                // et un descriptor set ne se modifie pas pendant qu'il sert. Rare : attendre le GPU suffit.
+                device->WaitIdle();
+            }
+            texture.image = std::move(*image);
+            texture.size = pixels->size;
+            WriteOverlaySet(overlaySets[texture.id], texture.image);
+        }
+
+        std::optional<UI::TextureInfo> LoadTexture(const std::filesystem::path& path) {
+            const auto now = std::chrono::steady_clock::now();
+            auto [found, created] = textures.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
+            Texture& texture = found->second;
+            if (created || now - texture.checked >= TextureCheckInterval) {
+                texture.checked = now;
+                std::error_code error;
+                const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, error);
+                // Fichier absent : essayé une fois (pour le signaler), puis de nouveau quand il apparaît.
+                if (created || (!error && writeTime != texture.writeTime)) {
+                    texture.writeTime = error ? std::filesystem::file_time_type{} : writeTime;
+                    ReloadTexture(path, texture);
+                }
+            }
+            if (texture.id == UI::FontTexture) {
+                return std::nullopt;
+            }
+            return UI::TextureInfo{texture.id, texture.size};
         }
 
         // Appelé après l'attente de la fence : le GPU n'utilise plus le buffer de cette frame.
@@ -472,7 +566,7 @@ namespace Flux {
             }
             const VkExtent2D extent = swapchain->GetExtent();
             const Math::Vector2i atlasSize = font->GetAtlasSize();
-            const OverlayParams params{
+            OverlayParams params{
                 {static_cast<float>(extent.width), static_cast<float>(extent.height)},
                 {static_cast<float>(atlasSize.x), static_cast<float>(atlasSize.y)},
                 font->GetDistanceRange(),
@@ -487,12 +581,25 @@ namespace Flux {
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetHandle());
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetLayout(),
-                                    0, 1, &overlaySet, 0, nullptr);
-            vkCmdPushConstants(commandBuffer, overlayPipeline.GetLayout(),
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
-            vkCmdDraw(commandBuffer, overlayVertexCount, 1, 0, 0);
+            // Un appel par suite de sommets de même texture, dans l'ordre de la liste (le dernier par-dessus).
+            UI::TextureId bound = 0;
+            bool anyBound = false;
+            for (const UI::DrawCommand& command : overlay->GetCommands()) {
+                if (command.texture >= overlaySets.size()) {
+                    continue; // identifiant inconnu (liste remplie à la main) : ignoré plutôt qu'un plantage GPU
+                }
+                if (!anyBound || command.texture != bound) {
+                    bound = command.texture;
+                    anyBound = true;
+                    params.mode = bound == UI::FontTexture ? 0.0f : 1.0f;
+                    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline.GetLayout(),
+                                            0, 1, &overlaySets[bound], 0, nullptr);
+                    vkCmdPushConstants(commandBuffer, overlayPipeline.GetLayout(),
+                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
+                }
+                vkCmdDraw(commandBuffer, command.vertexCount, 1, command.firstVertex, 0);
+            }
         }
 
         void Record(VkCommandBuffer commandBuffer, uint32_t imageIndex) const {
@@ -709,6 +816,10 @@ namespace Flux {
             case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE (déchirure possible)";
             default: return "autre";
         }
+    }
+
+    std::optional<UI::TextureInfo> Renderer::LoadTexture(const std::filesystem::path& path) {
+        return m_impl->LoadTexture(path);
     }
 
     UI::DrawList& Renderer::GetOverlay() {

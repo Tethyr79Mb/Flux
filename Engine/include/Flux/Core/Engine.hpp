@@ -7,12 +7,14 @@
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/FlyCameraController.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/UI/DrawList.hpp"
 
 #include <functional>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <string>
+#include <string_view>
 
 namespace Flux {
     class Renderer;
@@ -70,6 +72,10 @@ namespace Flux {
         void SetProject(Project project) { m_project = std::move(project); }
         const Project* GetProject() const { return m_project ? &*m_project : nullptr; }
         Project* GetProject() { return m_project ? &*m_project : nullptr; }
+
+        // Image du projet (chemin relatif au dossier des assets, « textures/logo.png ») chargée pour l'overlay :
+        // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
+        std::optional<UI::TextureInfo> LoadAssetTexture(std::string_view relativePath);
 
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);

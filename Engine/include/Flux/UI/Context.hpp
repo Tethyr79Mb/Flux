@@ -96,6 +96,12 @@ namespace Flux::UI {
         bool IsInteracting() const;
         // Vrai tant que le dernier widget décrit (bouton...) est tenu : sert à commencer un glisser-déposer.
         bool IsItemActive() const;
+        // Rectangle du dernier widget interactif décrit, et souris au-dessus de lui même si un autre widget est tenu
+        // (cible d'un glisser-déposer).
+        Rect GetItemRect() const;
+        bool IsMouseOverItem() const;
+        // Liste de dessin du contenu du panneau en cours (repères de glisser-déposer...), ou nullptr hors panneau.
+        DrawList* GetPanelDrawList();
 
         // Panneau déplaçable (par sa barre de titre) et repliable (clic sur la barre).
         // height 0 : hauteur ajustée au contenu ; sinon hauteur fixe, avec défilement (molette ou barre) si le contenu
@@ -135,6 +141,9 @@ namespace Flux::UI {
         // Champ texte : cliquer pour éditer, Entrée ou clic ailleurs valide, Échap annule.
         // Retourne true quand une nouvelle valeur vient d'être validée (pas à chaque touche).
         bool InputText(std::string_view label, std::string& value);
+        // Champ texte suivi d'un bouton « ... » (choisir un fichier) : browse devient true au clic sur le bouton,
+        // à l'appelant d'ouvrir le choix et de modifier value.
+        bool InputTextBrowse(std::string_view label, std::string& value, bool& browse);
 
         // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu ;
         // un clic sur l'aperçu ouvre le sélecteur de couleur (SetColorPicker), s'il y en a un.

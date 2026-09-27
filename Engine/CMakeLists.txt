@@ -29,6 +29,8 @@ target_link_libraries(FluxEngine PUBLIC EnTT::EnTT)
 target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
 # FreeType et msdfgen servent à générer l'atlas de police ; eux aussi restent privés.
 target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
+# Lecture des images PNG et JPEG (textures de l'interface).
+target_link_libraries(FluxEngine PRIVATE stb_image)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
 target_link_libraries(FluxEngine PRIVATE comdlg32)
 # Corbeille et explorateur (SHFileOperationW, ShellExecuteW).
