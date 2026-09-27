@@ -27,6 +27,8 @@ namespace Flux {
         Math::Vector2i windowSize{1280, 720}; // taille de la fenêtre restaurée si maximized
         bool maximized = false;
         bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra (le jeu ; l'éditeur a les siens)
+        // Interface de la scène (textes à l'écran) sur toute la fenêtre. L'éditeur la dessine lui-même, dans sa vue.
+        bool drawScreenUi = true;
     };
 
     // État du jeu : l'éditeur démarre à l'arrêt (on édite la scène), Game.exe démarre en cours.
@@ -94,5 +96,6 @@ namespace Flux {
         FlyCameraController m_cameraController;
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
+        bool m_drawScreenUi = true;
     };
 }

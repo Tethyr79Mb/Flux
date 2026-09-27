@@ -154,6 +154,10 @@ namespace Flux::UI {
         return m_impl->activeId != 0 || m_impl->editingId != 0;
     }
 
+    bool Context::IsItemActive() const {
+        return m_impl->activeId != 0 && m_impl->activeId == m_impl->lastBehaviorId;
+    }
+
     Math::Vector2f Context::MeasureText(std::string_view text) const {
         const Impl& ui = *m_impl;
         return ui.measure.MeasureText(text, ui.style.fontSize);

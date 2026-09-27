@@ -5,6 +5,7 @@ add_executable(FluxTests
         src/ProjectTests.cpp
         src/SceneTests.cpp
         src/SceneSerializerTests.cpp
+        src/ScreenUiTests.cpp
         src/UiTests.cpp
 )
 target_link_libraries(FluxTests PRIVATE Flux::Engine)

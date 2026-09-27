@@ -2,6 +2,7 @@
 
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -61,7 +62,8 @@ namespace Flux {
 
     Engine::Engine(const EngineConfig& config)
         : m_window(std::make_unique<Window>()),
-          m_showDebugOverlay(config.showDebugOverlay) {
+          m_showDebugOverlay(config.showDebugOverlay),
+          m_drawScreenUi(config.drawScreenUi) {
         RegisterEngineComponents(m_components);
         if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
@@ -123,6 +125,10 @@ namespace Flux {
             }
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
+            }
+            // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
+            if (m_drawScreenUi) {
+                ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)});
             }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);

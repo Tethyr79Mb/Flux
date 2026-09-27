@@ -55,20 +55,24 @@ namespace FluxEditor {
         return view;
     }
 
-    // Hiérarchie à gauche, inspecteur à droite, contenu et caméra en bas, la vue 3D au centre.
+    // Placer et hiérarchie à gauche, inspecteur à droite, contenu et caméra en bas, la vue 3D au centre.
     // Les panneaux du jeu (« Démo ») et les Paramètres flottent dans la vue.
     void EditorLayout::BuildDefault(UI::Context& ui) {
         const UI::DockId root = ui.ClearDockLayout();
         const auto [left, rest] = ui.SplitDock(root, UI::DockSide::Left, 0.2f);
         const auto [right, middle] = ui.SplitDock(rest, UI::DockSide::Right, 0.3f);
         const UI::DockId bottom = ui.SplitDock(middle, UI::DockSide::Bottom, 0.3f).side; // le reste : la vue 3D
-        ui.DockPanel("Hiérarchie", left);
+        const auto [place, hierarchy] = ui.SplitDock(left, UI::DockSide::Top, 0.35f);
+        ui.DockPanel("Placer", place);
+        ui.DockPanel("Hiérarchie", hierarchy);
         ui.DockPanel("Inspecteur", right);
         ui.DockPanel("Contenu", bottom);
         ui.DockPanel("Caméra", bottom);
     }
 
     std::filesystem::path EditorLayout::FilePath() {
-        return Platform::GetExecutableDirectory() / "FluxEditor.layout.json";
+        // Numéro changé quand la disposition par défaut gagne un panneau (v2 : « Placer ») : l'ancienne n'est plus
+        // relue, sinon le nouveau panneau flotterait au milieu de la vue.
+        return Platform::GetExecutableDirectory() / "FluxEditor.layout.v2.json";
     }
 }

@@ -3,6 +3,7 @@ add_executable(FluxEditor
         src/CameraPanel.cpp
         src/ContentBrowser.cpp
         src/EditorLayout.cpp
+        src/PlacePanel.cpp
         src/PlayMode.cpp
         src/SceneDocument.cpp
         src/SceneEditor.cpp

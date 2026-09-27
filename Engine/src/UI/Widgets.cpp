@@ -110,39 +110,53 @@ namespace Flux::UI {
 
     bool Context::Choice(std::string_view label, int& index, std::span<const std::string_view> options) {
         Impl& ui = *m_impl;
-        if (!ui.panel || options.empty()) {
+        if (!ui.panel || options.empty() || ui.menuParent) {
             return false;
         }
         const Style& style = ui.style;
         const WidgetId id = ui.GetId(label);
+        const WidgetId popupId = Hash(id, "#liste");
         const auto [min, max] = ui.LabeledRow(label);
         const Impl::Interaction interaction = ui.Behavior(id, min, max);
-        const int count = static_cast<int>(options.size());
-        const int previous = index;
         if (interaction.clicked) {
-            index = index < 0 || index >= count - 1 ? 0 : index + 1;
-        } else if (interaction.hovered && ui.input->WasMouseButtonPressed(MouseButton::Right)) {
-            index = index <= 0 || index >= count ? count - 1 : index - 1;
+            ui.openMenu = popupId; // un clic sur le champ quand la liste est ouverte la referme (BeginFrame)
         }
+        const bool open = ui.openMenu == popupId;
+        const int count = static_cast<int>(options.size());
 
         DrawList& list = ui.panel->content;
-        list.AddRect(min, max, interaction.held && interaction.hovered ? style.frameActive
-                               : interaction.hovered                   ? style.frameHovered
-                                                                       : style.frame);
+        list.AddRect(min, max, open || (interaction.held && interaction.hovered) ? style.frameActive
+                               : interaction.hovered                               ? style.frameHovered
+                                                                                   : style.frame);
         const std::string_view text = index >= 0 && index < count ? options[static_cast<std::size_t>(index)] : "?";
-        const float arrows = count > 1 ? style.fontSize : 0.0f;
-        ui.ClippedText(min + style.framePadding, max.x - arrows - 2.0f, text, style.text);
-        if (count > 1) {
-            // Deux petites flèches : la valeur se fait défiler.
-            const float size = style.fontSize * 0.3f;
-            const float x = max.x - style.framePadding.x - size;
-            const float centerY = (min.y + max.y) * 0.5f;
-            list.AddTriangle({x, centerY - 1.0f}, {x + size * 0.5f, centerY - 1.0f - size * 0.6f}, {x + size, centerY - 1.0f},
-                             style.text);
-            list.AddTriangle({x, centerY + 1.0f}, {x + size, centerY + 1.0f}, {x + size * 0.5f, centerY + 1.0f + size * 0.6f},
-                             style.text);
+        const float arrow = style.fontSize * 0.35f;
+        ui.ClippedText(min + style.framePadding, max.x - arrow - 2.0f * style.framePadding.x, text, style.text);
+        // Pointe vers le bas : une liste s'ouvre.
+        const float x = max.x - style.framePadding.x - arrow;
+        const float centerY = (min.y + max.y) * 0.5f;
+        list.AddTriangle({x, centerY - arrow * 0.3f}, {x + arrow, centerY - arrow * 0.3f}, {x + arrow * 0.5f, centerY + arrow * 0.4f},
+                         style.text);
+        if (!open) {
+            return false;
         }
-        return index != previous;
+
+        // La liste, sous le champ : la valeur en cours est surlignée.
+        bool changed = false;
+        ui.BeginPopup(popupId, {min.x, max.y}, max.x - min.x);
+        for (int i = 0; i < count; ++i) {
+            PushId(static_cast<std::uint64_t>(i)); // deux options de même nom restent distinctes
+            if (i == index) {
+                const Vector2f rowMin{ui.contentMin.x, ui.cursorY};
+                ui.panel->content.AddRect(rowMin, {ui.contentMaxX, rowMin.y + ui.FrameHeight()}, style.frameActive);
+            }
+            if (MenuItem(options[static_cast<std::size_t>(i)]) && i != index) {
+                index = i;
+                changed = true;
+            }
+            PopId();
+        }
+        EndMenu();
+        return changed;
     }
 
     bool Context::CollapsingHeader(std::string_view label, bool defaultOpen) {

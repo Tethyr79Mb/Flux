@@ -4,18 +4,20 @@
 namespace Flux::UI {
     // Barre de menus ou menu déroulant : devient le panneau en cours, hors de l'ordre des panneaux.
     // Menu déroulant ou contextuel en position : le panneau en cours est mis de côté jusqu'à EndMenu.
-    void Context::Impl::BeginPopup(WidgetId id, Vector2f position) {
+    void Context::Impl::BeginPopup(WidgetId id, Vector2f position, float minWidth) {
         openMenuSeen = true;
         menuParent = SaveLayout();
         Panel& popup = BeginOverlay(id);
         // Largeur des éléments mesurée à la frame précédente (la première frame, une largeur minimale).
-        popup.width = std::max(180.0f, popup.measuredWidth);
+        popup.width = std::max(minWidth, popup.measuredWidth);
         popup.position = {std::clamp(position.x, 0.0f, std::max(0.0f, screenSize.x - popup.width)),
                           std::clamp(position.y, 0.0f, std::max(0.0f, screenSize.y - popup.height))};
         const float padding = 4.0f;
         contentMin = popup.position + Vector2f{padding, padding};
         contentMaxX = popup.position.x + popup.width - padding;
         cursorY = contentMin.y;
+        indent = 0.0f; // ouvert depuis un widget en retrait (arbre, section) : la liste n'en hérite pas
+        sameLine = false;
         lastSpacing = 0.0f;
         clipMin = popup.position;
         clipMax = {popup.position.x + popup.width, screenSize.y};
