@@ -15,6 +15,7 @@
 #include <optional>
 #include <utility>
 #include <string>
+#include <vector>
 #include <string_view>
 
 namespace Flux {
@@ -84,6 +85,8 @@ namespace Flux {
         // à défaut, celle de sa capsule de personnage ou de sa forme de collision. nullopt si l'entité n'a rien de
         // tout cela. Sert à la sélection dans la vue et à son contour.
         std::optional<Math::Box3f> GetMeshBounds(Entity entity);
+        // Noms des animations du modèle 3D de l'entité (ModelComponent) ; vide sans modèle ou sans animation.
+        std::vector<std::string> GetAnimationNames(Entity entity);
 
         // Remplace la scène par celle du fichier (chemin relatif au dossier des assets, « scenes/Demo.scene.json »)
         // à la fin de la frame en cours : ce qui se passe pendant la frame voit encore l'ancienne scène.

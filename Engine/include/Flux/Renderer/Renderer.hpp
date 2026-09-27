@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 #include <string_view>
 
 namespace Flux {
@@ -62,6 +63,8 @@ namespace Flux {
         // Retourne sa boîte englobante (repère du modèle) ; nullopt si le fichier est absent ou illisible
         // (message dans la console).
         std::optional<Math::Box3f> LoadModel(const std::filesystem::path& path);
+        // Noms des animations du modèle, dans l'ordre du fichier (chargé au besoin) ; vide s'il n'en a pas.
+        std::vector<std::string> GetAnimationNames(const std::filesystem::path& path);
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;

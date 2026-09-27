@@ -205,6 +205,7 @@ namespace FluxEditor {
 
                 // Composants enregistrés (moteur puis jeu) : champs générés à partir de leur description.
                 const ComponentRegistry& components = engine.GetComponents();
+                m_inspected = selected;
                 std::vector<const ComponentInfo*> present;
                 std::vector<const ComponentInfo*> missing;
                 const bool wasPlayer = IsPlayer(scene, selected);
@@ -314,6 +315,9 @@ namespace FluxEditor {
                 return ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
             case FieldType::String: {
                 auto& text = *static_cast<std::string*>(value);
+                if (field.asset == AssetType::Animation) {
+                    return DrawAnimationChoice(engine, label, text);
+                }
                 if (field.asset == AssetType::None) {
                     return ui.InputText(label, text);
                 }
@@ -346,6 +350,36 @@ namespace FluxEditor {
             }
         }
         return false;
+    }
+
+    // Liste des animations du modèle de l'entité : on ne tape plus un nom qui n'existe pas. En tête, « (par défaut) »
+    // (champ vide : 1re animation, marche figée au repos, marche accélérée en courant) ; un nom absent du fichier
+    // reste affiché, marqué.
+    bool SceneEditor::DrawAnimationChoice(Engine& engine, const std::string& label, std::string& text) {
+        UI::Context& ui = engine.GetUi();
+        const std::vector<std::string> animations = engine.GetAnimationNames(m_inspected);
+        if (animations.empty()) {
+            ui.LabelText(label, text.empty() ? "(modèle sans animation)" : text + " (modèle sans animation)");
+            return false;
+        }
+        const bool known = text.empty() || std::ranges::contains(animations, text);
+        const std::string missing = text + " (introuvable)";
+        std::vector<std::string_view> names{"(par défaut)"};
+        names.insert(names.end(), animations.begin(), animations.end());
+        if (!known) {
+            names.push_back(missing);
+        }
+        int index = 0;
+        if (!known) {
+            index = static_cast<int>(names.size()) - 1;
+        } else if (!text.empty()) {
+            index = 1 + static_cast<int>(std::ranges::find(animations, text) - animations.begin());
+        }
+        if (!ui.Choice(label, index, names) || (!known && index == static_cast<int>(names.size()) - 1)) {
+            return false;
+        }
+        text = index == 0 ? std::string{} : animations[static_cast<std::size_t>(index - 1)];
+        return true;
     }
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {

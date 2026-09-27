@@ -304,6 +304,14 @@ namespace Flux {
         return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
     }
 
+    std::vector<std::string> Engine::GetAnimationNames(Entity entity) {
+        const auto* model = m_scene.TryGet<ModelComponent>(entity);
+        if (!m_project || !model || model->model.empty()) {
+            return {};
+        }
+        return m_renderer->GetAnimationNames(m_project->assetsDirectory / Platform::PathFromUtf8(model->model));
+    }
+
     std::optional<Math::Box3f> Engine::GetMeshBounds(Entity entity) {
         if (m_scene.TryGet<MeshRendererComponent>(entity)) {
             return Math::Box3f{};

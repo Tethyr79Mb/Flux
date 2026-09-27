@@ -1284,6 +1284,16 @@ namespace Flux {
         return std::nullopt;
     }
 
+    std::vector<std::string> Renderer::GetAnimationNames(const std::filesystem::path& path) {
+        std::vector<std::string> names;
+        if (const GpuModel* model = m_impl->FindModel(path)) {
+            for (const ModelAnimation& animation : model->skeleton.animations) {
+                names.push_back(animation.name);
+            }
+        }
+        return names;
+    }
+
     UI::DrawList& Renderer::GetOverlay() {
         return *m_impl->overlay;
     }

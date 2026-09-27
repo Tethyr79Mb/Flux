@@ -70,9 +70,9 @@ namespace Flux {
             .Field("jumpSpeed", "Saut (m/s)", &CharacterComponent::jumpSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("player", "Dirigé par le joueur", &CharacterComponent::player);
         registry.Register<AnimatorComponent>("animator", "Animation")
-            .Field("animation", "Animation (vide : 1re)", &AnimatorComponent::animation)
-            .Field("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation)
-            .Field("runAnimation", "En courant", &AnimatorComponent::runAnimation)
+            .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
+            .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)
+            .Asset("runAnimation", "En courant", &AnimatorComponent::runAnimation, AssetType::Animation)
             .Field("speed", "Vitesse", &AnimatorComponent::speed, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("loop", "En boucle", &AnimatorComponent::loop);
         registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")
