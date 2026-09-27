@@ -158,7 +158,7 @@ namespace FluxEditor {
             scene.Add<SceneChangeComponent>(entity);
         } else {
             if (item == Item::Cube) {
-                // Solide dès sa création (immobile) : on marche dessus. « Corps physique » dans l'inspecteur le fait tomber.
+                // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
                 scene.Add<ColliderComponent>(entity);
             } else if (item == Item::Model) {

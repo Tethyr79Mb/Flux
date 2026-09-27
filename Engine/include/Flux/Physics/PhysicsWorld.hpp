@@ -18,8 +18,8 @@ namespace Flux {
         bool jump = false;
     };
 
-    // Monde physique (Jolt) d'une scène : les entités avec ColliderComponent, RigidBodyComponent et
-    // CharacterComponent y ont un corps, créé à leur première mise à jour. Aucun type Jolt ici.
+    // Monde physique (Jolt) d'une scène : les entités avec ColliderComponent et CharacterComponent y ont
+    // un corps, créé à leur première mise à jour. Aucun type Jolt ici.
     //
     // Échelle galaxie : la simulation se fait en float autour d'une ancre (le secteur du premier objet physique
     // rencontré), précise au millimètre à des kilomètres de là. Plus tard, un vaisseau ou une station aura son
@@ -44,7 +44,7 @@ namespace Flux {
 
         // Personnage dirigé par le joueur (le premier trouvé), NullEntity s'il n'y en a pas : la caméra le suit.
         Entity GetPlayer() const;
-        // Nombre de corps rigides (hors personnages), pour les tests et le panneau Moteur.
+        // Nombre de corps (hors personnages), pour les tests et le panneau Moteur.
         int GetBodyCount() const;
 
         private:

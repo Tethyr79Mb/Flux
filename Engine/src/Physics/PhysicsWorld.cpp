@@ -217,35 +217,30 @@ namespace Flux {
                 bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
                 return;
             }
-            const auto* rigidBody = scene.TryGet<RigidBodyComponent>(entity);
-            BodyMotion motion = rigidBody ? rigidBody->motion : BodyMotion::Static;
-            if (motion != BodyMotion::Static && scene.GetParent(entity) != NullEntity) {
+            bool simulated = collider.simulatePhysics;
+            if (simulated && scene.GetParent(entity) != NullEntity) {
                 // La physique réécrirait la position locale comme si elle était celle du monde.
                 if (!warnedChild) {
-                    std::fprintf(stderr, "Flux : un corps physique mobile doit être une racine de la hiérarchie : "
+                    std::fprintf(stderr, "Flux : un objet simulé doit être une racine de la hiérarchie : "
                                          "« %s » est traité comme immobile\n",
                                  scene.Get<NameComponent>(entity).name.c_str());
                     warnedChild = true;
                 }
-                motion = BodyMotion::Static;
+                simulated = false;
             }
-            const JPH::EMotionType motionType = motion == BodyMotion::Dynamic   ? JPH::EMotionType::Dynamic
-                                              : motion == BodyMotion::Kinematic ? JPH::EMotionType::Kinematic
-                                                                                : JPH::EMotionType::Static;
             JPH::BodyCreationSettings settings(shape, JPH::RVec3(ToJolt(transform.position)), ToJolt(transform.rotation).Normalized(),
-                                               motionType, motion == BodyMotion::Static ? Layers::NonMoving : Layers::Moving);
+                                               simulated ? JPH::EMotionType::Dynamic : JPH::EMotionType::Static,
+                                               simulated ? Layers::Moving : Layers::NonMoving);
             settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(entity));
-            if (rigidBody) {
-                settings.mFriction = rigidBody->friction;
-                settings.mRestitution = rigidBody->restitution;
-                settings.mGravityFactor = rigidBody->gravityFactor;
-                if (rigidBody->mass > 0.0f && motion == BodyMotion::Dynamic) {
-                    settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-                    settings.mMassPropertiesOverride.mMass = rigidBody->mass;
-                }
+            settings.mFriction = collider.friction;
+            settings.mRestitution = collider.restitution;
+            settings.mGravityFactor = collider.gravityFactor;
+            if (simulated && collider.mass > 0.0f) {
+                settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+                settings.mMassPropertiesOverride.mMass = collider.mass;
             }
             const JPH::BodyID id = system->GetBodyInterface().CreateAndAddBody(
-                settings, motion == BodyMotion::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
+                settings, simulated ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
             bodies.emplace(entity, id);
         }
 
@@ -316,19 +311,6 @@ namespace Flux {
                 if (const RelativeTransform* transform = FindTransform(entity)) {
                     CreateBody(scene, entity, collider, *transform);
                 }
-            }
-        }
-
-        void MoveKinematicBodies(const Scene& scene) {
-            JPH::BodyInterface& bodyInterface = system->GetBodyInterface();
-            for (const auto& [entity, id] : bodies) {
-                if (id.IsInvalid() || bodyInterface.GetMotionType(id) != JPH::EMotionType::Kinematic) {
-                    continue;
-                }
-                if (const RelativeTransform* transform = FindTransform(entity)) {
-                    bodyInterface.MoveKinematic(id, JPH::RVec3(ToJolt(transform->position)), ToJolt(transform->rotation).Normalized(), StepSeconds);
-                }
-                (void)scene;
             }
         }
 
@@ -431,7 +413,6 @@ namespace Flux {
             bool stepped = false;
             while (accumulator >= StepSeconds) {
                 accumulator -= StepSeconds;
-                MoveKinematicBodies(scene);
                 UpdateCharacters(scene, input);
                 system->Update(StepSeconds, 1, tempAllocator.get(), jobSystem.get());
                 stepped = true;

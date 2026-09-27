@@ -76,8 +76,10 @@ namespace Flux {
         Capsule, // radius et height, debout selon y
     };
 
-    // Forme de collision (physique, Jolt), dans le repère de l'entité : suit sa transformation, échelle comprise.
-    // Sans RigidBodyComponent, l'entité est un décor immobile (sol, mur). Pendant le jeu seulement.
+    // Collision et physique (Jolt) d'une entité, pendant le jeu seulement. La forme est dans le repère de l'entité :
+    // elle suit sa transformation, échelle comprise. Comme « Simulate Physics » d'Unreal : sans simulation, l'entité
+    // est un décor immobile (sol, mur) ; avec, elle tombe et se cogne. Un objet simulé doit être une racine de la
+    // hiérarchie (sans parent) : la physique réécrit sa position et sa rotation.
     struct ColliderComponent
     {
         ColliderShape shape = ColliderShape::Box;
@@ -85,20 +87,9 @@ namespace Flux {
         float radius = 0.5f;
         float height = 2.0f; // capsule : hauteur totale, extrémités arrondies comprises
         Math::Vector3f center; // décalage du centre de la forme
-    };
 
-    enum class BodyMotion : std::uint8_t {
-        Dynamic,   // soumis à la gravité et aux chocs
-        Kinematic, // déplacé par le jeu (plateforme, porte), pousse les autres sans être poussé
-        Static,    // immobile
-    };
-
-    // Corps physique d'une entité qui a un ColliderComponent. Un corps dynamique doit être une racine de la
-    // hiérarchie (sans parent) : la physique réécrit sa position et sa rotation.
-    struct RigidBodyComponent
-    {
-        BodyMotion motion = BodyMotion::Dynamic;
-        float mass = 0.0f;          // kg ; 0 : d'après le volume (densité de 1000 kg/m³, celle de l'eau)
+        bool simulatePhysics = false;
+        float mass = 0.0f;          // kg, objet simulé ; 0 : d'après le volume (densité de 1000 kg/m³, celle de l'eau)
         float friction = 0.5f;
         float restitution = 0.0f;   // rebond : 0 aucun, 1 parfait
         float gravityFactor = 1.0f; // 0 : flotte (dans l'espace)

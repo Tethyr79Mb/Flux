@@ -40,8 +40,7 @@ namespace {
         AddFloor(scene);
         const Entity box = scene.CreateEntity("Caisse");
         scene.Get<TransformComponent>(box).position = {0.0, 5.0, 0.0};
-        scene.Add<ColliderComponent>(box);
-        scene.Add<RigidBodyComponent>(box);
+        scene.Add<ColliderComponent>(box).simulatePhysics = true;
 
         PhysicsWorld world;
         world.Update(scene, 0.0, {});
@@ -56,8 +55,9 @@ namespace {
         CHECK(world.GetBodyCount() == 1);
         const Entity ball = scene.CreateEntity("Balle");
         scene.Get<TransformComponent>(ball).position = {3.0, 2.0, 0.0};
-        scene.Add<ColliderComponent>(ball).shape = ColliderShape::Sphere;
-        scene.Add<RigidBodyComponent>(ball);
+        ColliderComponent& ballCollider = scene.Add<ColliderComponent>(ball);
+        ballCollider.shape = ColliderShape::Sphere;
+        ballCollider.simulatePhysics = true;
         world.Update(scene, 0.0, {});
         CHECK(world.GetBodyCount() == 2);
         scene.DestroyEntity(ball);
@@ -67,8 +67,9 @@ namespace {
         // Sans gravité (l'espace), un corps reste où il est.
         const Entity drifting = scene.CreateEntity("Débris");
         scene.Get<TransformComponent>(drifting).position = {-3.0, 4.0, 0.0};
-        scene.Add<ColliderComponent>(drifting);
-        scene.Add<RigidBodyComponent>(drifting).gravityFactor = 0.0f;
+        ColliderComponent& driftingCollider = scene.Add<ColliderComponent>(drifting);
+        driftingCollider.simulatePhysics = true;
+        driftingCollider.gravityFactor = 0.0f;
         Run(world, scene, 1.0);
         CHECK(std::abs(scene.Get<TransformComponent>(drifting).position.y - 4.0) < 1.0e-3);
         return true;

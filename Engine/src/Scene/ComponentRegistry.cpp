@@ -54,16 +54,12 @@ namespace Flux {
             .Field("size", "Taille (boîte)", &ColliderComponent::size, {.speed = 0.01, .min = 0.001, .max = 1.0e6})
             .Field("radius", "Rayon", &ColliderComponent::radius, {.speed = 0.01, .min = 0.001, .max = 1.0e6, .decimals = 2})
             .Field("height", "Hauteur (capsule)", &ColliderComponent::height, {.speed = 0.01, .min = 0.001, .max = 1.0e6, .decimals = 2})
-            .Field("center", "Centre", &ColliderComponent::center, {.speed = 0.01});
-        registry.Register<RigidBodyComponent>("rigidBody", "Corps physique")
-            .Enum("motion", "Mouvement", &RigidBodyComponent::motion,
-                  {{"dynamic", "Dynamique (gravité, chocs)", BodyMotion::Dynamic},
-                   {"kinematic", "Cinématique (déplacé par le jeu)", BodyMotion::Kinematic},
-                   {"static", "Immobile", BodyMotion::Static}})
-            .Field("mass", "Masse (kg, 0 : auto)", &RigidBodyComponent::mass, {.speed = 0.1, .min = 0.0, .max = 1.0e9, .decimals = 1})
-            .Field("friction", "Frottement", &RigidBodyComponent::friction, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
-            .Field("restitution", "Rebond", &RigidBodyComponent::restitution, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
-            .Field("gravityFactor", "Gravité (x)", &RigidBodyComponent::gravityFactor, {.speed = 0.01, .min = -10.0, .max = 10.0, .decimals = 2});
+            .Field("center", "Centre", &ColliderComponent::center, {.speed = 0.01})
+            .Field("simulatePhysics", "Simuler la physique", &ColliderComponent::simulatePhysics)
+            .Field("mass", "Masse (kg, 0 : auto)", &ColliderComponent::mass, {.speed = 0.1, .min = 0.0, .max = 1.0e9, .decimals = 1})
+            .Field("friction", "Frottement", &ColliderComponent::friction, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
+            .Field("restitution", "Rebond", &ColliderComponent::restitution, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("gravityFactor", "Gravité (x)", &ColliderComponent::gravityFactor, {.speed = 0.01, .min = -10.0, .max = 10.0, .decimals = 2});
         registry.Register<CharacterComponent>("character", "Personnage")
             .Field("radius", "Rayon", &CharacterComponent::radius, {.speed = 0.01, .min = 0.05, .max = 10.0, .decimals = 2})
             .Field("height", "Taille", &CharacterComponent::height, {.speed = 0.01, .min = 0.2, .max = 20.0, .decimals = 2})
