@@ -67,6 +67,7 @@ namespace FluxEditor {
 
         Flux::Uuid m_selection;
         bool m_modified = false;
+        bool m_readOnly = false; // mode Jouer : on regarde, on ne modifie pas
         // Actions demandées pendant le dessin, appliquées après : on ne détruit rien en parcourant l'arbre.
         Action m_pendingAction = Action::None;
         std::string m_pendingComponent; // clé du composant à ajouter ou retirer

@@ -60,7 +60,13 @@ namespace FluxEditor {
             }
         };
         // Position sans ancrage (l'éditeur l'ancre à gauche, au-dessus de la hiérarchie).
+        // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (boutons grisés et inertes).
+        const bool playing = engine.GetGameState() != GameState::Stopped;
         if (ui.BeginPanel("Placer", {8.0f, 8.0f + ui.GetMenuBarHeight()}, 300.0f)) {
+            if (playing) {
+                ui.TextDisabled("Mode Jouer : arrêter le jeu pour placer.");
+            }
+            ui.BeginDisabled(playing);
             ui.TextDisabled("Formes");
             button(Item::Empty);
             ui.SameLine();
@@ -79,6 +85,7 @@ namespace FluxEditor {
             button(Item::Character);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
+            ui.EndDisabled();
         }
         ui.EndPanel();
 

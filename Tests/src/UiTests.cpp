@@ -72,18 +72,33 @@ namespace {
         double number = 10.0;
         std::string name = "Soleil";
         int clicks = 0;
+        bool disabled = false;
         const auto describe = [&](UI::Context& ui) {
             if (ui.BeginPanel("Test", {0.0f, 0.0f}, 400.0f)) {
+                ui.BeginDisabled(disabled);
                 ui.Checkbox("Case", check);                // ligne 0
                 ui.DragDouble("Nombre", number, 1.0, 0.0); // ligne 1
                 ui.InputText("Nom", name);                 // ligne 2
                 if (ui.Button("Bouton")) {                 // ligne 3
                     ++clicks;
                 }
+                ui.EndDisabled();
             }
             ui.EndPanel();
         };
         const float fieldX = 8.0f + std::floor(384.0f * 0.38f) + 30.0f;
+
+        // Grisés (BeginDisabled) : ni case cochée, ni glissement, ni saisie, ni clic.
+        disabled = true;
+        harness.Click({20.0f, rowCenter(0)}, describe);
+        harness.Move({fieldX, rowCenter(1)}, describe);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
+        harness.Move({fieldX + 30.0f, rowCenter(1)}, describe);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, false); }, describe);
+        harness.Click({fieldX, rowCenter(2)}, describe);
+        harness.Click({20.0f, rowCenter(3)}, describe);
+        CHECK(check && number == 10.0 && clicks == 0 && !harness.GetUi().WantsKeyboard());
+        disabled = false;
 
         harness.Move({600.0f, 600.0f}, describe);
         harness.Move({600.0f, 600.0f}, describe);
