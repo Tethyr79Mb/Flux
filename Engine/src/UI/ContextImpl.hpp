@@ -279,6 +279,9 @@ namespace Flux::UI {
         // Widget sous le bouton gauche enfoncé (glissement, clic en cours).
         WidgetId activeId = 0;
         WidgetId lastBehaviorId = 0; // dernier widget interactif décrit (IsItemActive)
+        std::vector<bool> disabledStack; // un élément par BeginDisabled en cours
+        int disabledDepth = 0;           // BeginDisabled(true) en cours : les widgets sont affichés mais inertes
+        LinearColor enabledText;         // couleur du texte avant le premier BeginDisabled(true)
         Vector2f lastBehaviorMin;    // et son rectangle (GetItemRect)
         Vector2f lastBehaviorMax;
         Context::ColorPicker colorPicker; // ouvert par l'aperçu de ColorEdit3
@@ -375,6 +378,9 @@ namespace Flux::UI {
             lastBehaviorId = id;
             lastBehaviorMin = min;
             lastBehaviorMax = max;
+            if (disabledDepth > 0) {
+                return result; // inerte : ni survol, ni clic, ni glissement
+            }
             const bool inside = IsMouseOver(min, max);
             result.hovered = inside && (activeId == 0 || activeId == id);
             if (result.hovered && mousePressed) {

@@ -33,6 +33,8 @@ target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann
 target_link_libraries(FluxEngine PRIVATE stb_image)
 # Lecture des modèles 3D glTF.
 target_link_libraries(FluxEngine PRIVATE cgltf_header)
+# Physique (Jolt), privée : ses types n'apparaissent dans aucun en-tête public.
+target_link_libraries(FluxEngine PRIVATE Jolt)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
 target_link_libraries(FluxEngine PRIVATE comdlg32)
 # Corbeille et explorateur (SHFileOperationW, ShellExecuteW).

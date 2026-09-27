@@ -34,7 +34,8 @@ namespace FluxEditor {
             constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Modèle 3D...", "Modèle"},
                                            {"Texte à l'écran", "Texte"},
                                            {"Image à l'écran", "Image"},
-                                           {"Changement de scène", "Changement de scène"}};
+                                           {"Changement de scène", "Changement de scène"},
+                                           {"Personnage...", "Joueur"}};
             return Infos[item];
         }
 
@@ -59,7 +60,13 @@ namespace FluxEditor {
             }
         };
         // Position sans ancrage (l'éditeur l'ancre à gauche, au-dessus de la hiérarchie).
+        // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (boutons grisés et inertes).
+        const bool playing = engine.GetGameState() != GameState::Stopped;
         if (ui.BeginPanel("Placer", {8.0f, 8.0f + ui.GetMenuBarHeight()}, 300.0f)) {
+            if (playing) {
+                ui.TextDisabled("Mode Jouer : arrêter le jeu pour placer.");
+            }
+            ui.BeginDisabled(playing);
             ui.TextDisabled("Formes");
             button(Item::Empty);
             ui.SameLine();
@@ -74,7 +81,11 @@ namespace FluxEditor {
             ui.TextDisabled("Logique");
             button(Item::SceneChange);
             ui.Separator();
+            ui.TextDisabled("Physique (en mode Jouer)");
+            button(Item::Character);
+            ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
+            ui.EndDisabled();
         }
         ui.EndPanel();
 
@@ -123,13 +134,13 @@ namespace FluxEditor {
         // et l'entité porte son nom.
         std::string name = info.name;
         std::optional<std::string> model;
-        if (item == Item::Model) {
+        if (item == Item::Model || item == Item::Character) {
             model = ChooseAsset(engine, AssetType::Model, "");
             if (!model) {
                 return;
             }
             std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*model).stem());
-            if (!stem.empty()) {
+            if (!stem.empty() && item == Item::Model) {
                 name = std::move(stem);
             }
         }
@@ -154,9 +165,15 @@ namespace FluxEditor {
             scene.Add<SceneChangeComponent>(entity);
         } else {
             if (item == Item::Cube) {
+                // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
+                scene.Add<ColliderComponent>(entity);
             } else if (item == Item::Model) {
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
+            } else if (item == Item::Character) {
+                // Les pieds du modèle (son origine) posés sur celle de l'entité, comme la capsule.
+                scene.Add<ModelComponent>(entity).model = std::move(*model);
+                scene.Add<CharacterComponent>(entity);
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();

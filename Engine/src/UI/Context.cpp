@@ -31,6 +31,11 @@ namespace Flux::UI {
 
     void Context::BeginFrame(const Input& input, Math::Vector2f screenSize, double deltaSeconds, bool mouseEnabled) {
         Impl& ui = *m_impl;
+        if (ui.disabledDepth > 0) {
+            ui.style.text = ui.enabledText; // EndDisabled oublié : pas de grisé qui déborde sur la frame suivante
+        }
+        ui.disabledStack.clear();
+        ui.disabledDepth = 0;
         ui.input = &input;
         ui.screenSize = screenSize;
         ui.time += deltaSeconds;

@@ -11,6 +11,27 @@ namespace Flux::UI {
         ui.panel->content.AddText(min, text, ui.style.fontSize, ui.style.text);
     }
 
+    void Context::BeginDisabled(bool disabled) {
+        Impl& ui = *m_impl;
+        ui.disabledStack.push_back(disabled);
+        if (disabled && ui.disabledDepth++ == 0) {
+            ui.enabledText = ui.style.text;
+            ui.style.text = ui.style.textDisabled;
+        }
+    }
+
+    void Context::EndDisabled() {
+        Impl& ui = *m_impl;
+        if (ui.disabledStack.empty()) {
+            return;
+        }
+        const bool disabled = ui.disabledStack.back();
+        ui.disabledStack.pop_back();
+        if (disabled && --ui.disabledDepth == 0) {
+            ui.style.text = ui.enabledText;
+        }
+    }
+
     void Context::TextDisabled(std::string_view text) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

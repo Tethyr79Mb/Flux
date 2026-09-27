@@ -89,9 +89,35 @@ FetchContent_Declare(cgltf
         GIT_SHALLOW TRUE
         SYSTEM)
 
+# Physique : Jolt Physics (licence MIT). Le CMakeLists est dans Build/. Bibliothèque statique, privée au moteur.
+FetchContent_Declare(JoltPhysics
+        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+        GIT_TAG v5.6.0
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR Build
+        SYSTEM)
+# Seulement la physique : ni rendu de debug, ni profileur, ni calcul GPU (Vulkan/DX12 à lui), ni installation.
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(PROFILER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(ENABLE_OBJECT_STREAM OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+# Nos options de compilation (et le runtime DLL /MD de MSVC, comme msdfgen), pas les siennes ; pas de LTO
+# (mélangé à MinGW, source d'ennuis) ; ses avertissements ne sont pas des erreurs chez nous.
+set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
+# Ses symboles de debug en Release gonfleraient FluxEngine.dll pour rien.
+set(GENERATE_DEBUG_SYMBOLS OFF CACHE BOOL "" FORCE)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb cgltf)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb cgltf JoltPhysics)
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})

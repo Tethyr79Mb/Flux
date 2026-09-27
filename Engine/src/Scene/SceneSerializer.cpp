@@ -131,6 +131,9 @@ namespace Flux::SceneSerializer {
                     throw std::runtime_error(std::format("« {} » doit être {}", field.key, what));
                 }
             };
+            // Valeur hors des limites du champ (fichier modifié à la main, ancienne version) : ramenée dedans,
+            // comme le ferait l'inspecteur. Une taille nulle ou négative casserait la physique.
+            const auto Limit = [&](double number) { return std::clamp(number, field.options.min, field.options.max); };
             switch (field.type) {
                 case FieldType::Bool:
                     expect(json.is_boolean(), "true ou false");
@@ -144,20 +147,21 @@ namespace Flux::SceneSerializer {
                     break;
                 case FieldType::Float:
                     expect(json.is_number(), "un nombre");
-                    *static_cast<float*>(value) = json.get<float>();
+                    *static_cast<float*>(value) = static_cast<float>(Limit(json.get<double>()));
                     break;
                 case FieldType::Double:
                     expect(json.is_number(), "un nombre");
-                    *static_cast<double*>(value) = json.get<double>();
+                    *static_cast<double*>(value) = Limit(json.get<double>());
                     break;
                 case FieldType::Vector3f: {
                     const auto v = ReadArray<float, 3>(json, field.key);
-                    *static_cast<Math::Vector3f*>(value) = {v[0], v[1], v[2]};
+                    *static_cast<Math::Vector3f*>(value) = {static_cast<float>(Limit(v[0])), static_cast<float>(Limit(v[1])),
+                                                            static_cast<float>(Limit(v[2]))};
                     break;
                 }
                 case FieldType::Vector3d: {
                     const auto v = ReadArray<double, 3>(json, field.key);
-                    *static_cast<Math::Vector3d*>(value) = {v[0], v[1], v[2]};
+                    *static_cast<Math::Vector3d*>(value) = {Limit(v[0]), Limit(v[1]), Limit(v[2])};
                     break;
                 }
                 case FieldType::Quaternion: {

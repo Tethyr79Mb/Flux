@@ -18,6 +18,7 @@
 #include <string_view>
 
 namespace Flux {
+    class PhysicsWorld;
     class Renderer;
     class Window;
 
@@ -79,8 +80,9 @@ namespace Flux {
         std::optional<UI::TextureInfo> LoadAssetTexture(std::string_view relativePath);
 
         // Boîte englobante du maillage d'une entité, dans son repère (avant sa transformation) : le cube unité pour
-        // un cube (MeshRendererComponent) ou un modèle sans fichier lisible, celle du modèle sinon (chargé au besoin).
-        // nullopt si l'entité n'a rien à dessiner en 3D. Sert à la sélection dans la vue et à son contour.
+        // un cube (MeshRendererComponent) ou un modèle sans fichier lisible, celle du modèle sinon (chargé au besoin) ;
+        // à défaut, celle de sa capsule de personnage ou de sa forme de collision. nullopt si l'entité n'a rien de
+        // tout cela. Sert à la sélection dans la vue et à son contour.
         std::optional<Math::Box3f> GetMeshBounds(Entity entity);
 
         // Remplace la scène par celle du fichier (chemin relatif au dossier des assets, « scenes/Demo.scene.json »)
@@ -89,9 +91,14 @@ namespace Flux {
         // mode Jouer) ; en cas d'échec (fichier absent...), la scène actuelle reste et l'erreur va dans la console.
         void RequestScene(std::string relativePath);
 
+        // Monde physique du jeu en cours (créé à la première image de jeu, après chaque changement de scène) ;
+        // nullptr à l'arrêt. Voir PhysicsWorld.
+        PhysicsWorld* GetPhysics() { return m_physics.get(); }
+
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
-        void SetGameState(GameState state) { m_gameState = state; }
+        // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
+        void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
         void SetEditorUpdate(UpdateFunction update);
@@ -116,9 +123,17 @@ namespace Flux {
         bool m_showDebugOverlay = true;
         bool m_drawScreenUi = true;
         std::optional<std::string> m_requestedScene;
+        std::unique_ptr<PhysicsWorld> m_physics;
+        // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette).
+        float m_followDistance = 4.0f;
+        bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
+        // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
+        Entity GetFollowedPlayer() const;
+        void RotateFollowCamera();
+        void PlaceFollowCamera(Entity player);
     };
 }

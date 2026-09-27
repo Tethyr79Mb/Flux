@@ -113,6 +113,10 @@ namespace Flux::UI {
         // Widgets : seulement entre BeginPanel et EndPanel.
         void Text(std::string_view text);
         void TextDisabled(std::string_view text);
+        // Entre BeginDisabled et EndDisabled (imbricables), les widgets sont affichés en grisé et ne réagissent pas :
+        // valeurs visibles mais non modifiables (la scène en mode Jouer).
+        void BeginDisabled(bool disabled = true);
+        void EndDisabled();
         // Libellé à gauche, texte à droite, alignés comme les champs.
         void LabelText(std::string_view label, std::string_view text);
         // Vrai au clic (bouton relâché sur le widget).

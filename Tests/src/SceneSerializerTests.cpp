@@ -155,6 +155,17 @@ bool RunSceneSerializerTests() {
         "entities": [{"id": "0000000000000001", "test": {"mood": "joyeux"}}]})");
     CHECK(!badMood && badMood.error().find("« angry »") != std::string::npos);
 
+    // Valeurs hors limites (fichier abîmé ou modifié à la main) : ramenées dans les limites du champ.
+    {
+        ComponentRegistry engine;
+        RegisterEngineComponents(engine);
+        CHECK(SceneSerializer::LoadFromString(loaded, engine, R"({"format": "flux.scene", "version": 1, "entities": [
+            {"id": "00000000000000ef", "collider": {"size": [0.0, 0.5, -2.0], "radius": 0.0, "restitution": 3.0}}]})").has_value());
+        const ColliderComponent& collider = loaded.Get<ColliderComponent>(loaded.FindById(Uuid{0xef}));
+        CHECK(collider.size.x > 0.0f && collider.size.y == 0.5f && collider.size.z > 0.0f);
+        CHECK(collider.radius > 0.0f && collider.restitution == 1.0f);
+    }
+
     // Composant de type inconnu (module de jeu absent) : chargé sans erreur, conservé et réécrit tel quel.
     const char* withUnknown = R"({"format": "flux.scene", "version": 1, "entities": [
         {"id": "00000000000000cd", "name": "Vaisseau", "shield": {"power": 12, "modes": ["a", "b"]}, "test": {"count": 3}}]})";

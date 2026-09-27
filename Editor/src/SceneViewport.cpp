@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <optional>
 
 namespace FluxEditor {
@@ -102,6 +103,90 @@ namespace FluxEditor {
                 }
             }
         }
+
+        // Point du repère de l'entité (échelle comprise) dans l'espace relatif à la caméra.
+        Vector3d ToView(const RelativeTransform& transform, const Math::Vector3f& local) {
+            const Vector3d scaled{local.x * transform.scale.x, local.y * transform.scale.y, local.z * transform.scale.z};
+            return transform.position + transform.rotation.Rotate(scaled);
+        }
+
+        void DrawLocalLine(UI::DrawList& list, const ScreenProjection& projection, const RelativeTransform& transform,
+                           const Math::Vector3f& a, const Math::Vector3f& b, Math::LinearColor color) {
+            Vector2f screenA;
+            Vector2f screenB;
+            if (projection.ProjectSegment(ToView(transform, a), ToView(transform, b), screenA, screenB)) {
+                list.AddLine(screenA, screenB, color, 1.5f);
+            }
+        }
+
+        // Cercle (ou arc de first à last, en radians) de centre center dans le plan des axes u et v.
+        void DrawLocalArc(UI::DrawList& list, const ScreenProjection& projection, const RelativeTransform& transform,
+                          const Math::Vector3f& center, const Math::Vector3f& u, const Math::Vector3f& v, float first,
+                          float last, Math::LinearColor color) {
+            constexpr int Segments = 32;
+            Math::Vector3f previous = center + u * std::cos(first) + v * std::sin(first);
+            for (int i = 1; i <= Segments; ++i) {
+                const float angle = first + (last - first) * static_cast<float>(i) / Segments;
+                const Math::Vector3f next = center + u * std::cos(angle) + v * std::sin(angle);
+                DrawLocalLine(list, projection, transform, previous, next, color);
+                previous = next;
+            }
+        }
+
+        // Capsule debout (axe y) : cylindre de demi-hauteur halfCylinder, extrémités de rayon radius.
+        void DrawCapsule(UI::DrawList& list, const ScreenProjection& projection, const RelativeTransform& transform,
+                         const Math::Vector3f& center, float radius, float halfCylinder, Math::LinearColor color) {
+            constexpr float Pi = std::numbers::pi_v<float>;
+            const Math::Vector3f top = center + Math::Vector3f{0.0f, halfCylinder, 0.0f};
+            const Math::Vector3f bottom = center - Math::Vector3f{0.0f, halfCylinder, 0.0f};
+            const Math::Vector3f x{radius, 0.0f, 0.0f};
+            const Math::Vector3f y{0.0f, radius, 0.0f};
+            const Math::Vector3f z{0.0f, 0.0f, radius};
+            DrawLocalArc(list, projection, transform, top, x, z, 0.0f, 2.0f * Pi, color);
+            DrawLocalArc(list, projection, transform, bottom, x, z, 0.0f, 2.0f * Pi, color);
+            for (const Math::Vector3f& side : {x, -x, z, -z}) {
+                DrawLocalLine(list, projection, transform, top + side, bottom + side, color);
+            }
+            DrawLocalArc(list, projection, transform, top, x, y, 0.0f, Pi, color);
+            DrawLocalArc(list, projection, transform, top, z, y, 0.0f, Pi, color);
+            DrawLocalArc(list, projection, transform, bottom, x, y, Pi, 2.0f * Pi, color);
+            DrawLocalArc(list, projection, transform, bottom, z, y, Pi, 2.0f * Pi, color);
+        }
+
+        // Forme de collision (et capsule de personnage) de l'entité, en fil de fer.
+        void DrawColliderEdges(UI::DrawList& list, const ScreenProjection& projection, const Scene& scene,
+                               const RelativeTransform& transform, Math::LinearColor color) {
+            if (const auto* character = scene.TryGet<CharacterComponent>(transform.entity)) {
+                const float radius = character->radius;
+                const float halfCylinder = std::max(character->height * 0.5f - radius, 0.0f);
+                DrawCapsule(list, projection, transform, {0.0f, halfCylinder + radius, 0.0f}, radius, halfCylinder, color);
+                return;
+            }
+            const auto* collider = scene.TryGet<ColliderComponent>(transform.entity);
+            if (!collider) {
+                return;
+            }
+            switch (collider->shape) {
+                case ColliderShape::Box: {
+                    const Math::Vector3f half = collider->size * 0.5f;
+                    DrawBoxEdges(list, projection, transform, {collider->center - half, collider->center + half}, color);
+                    break;
+                }
+                case ColliderShape::Sphere: {
+                    const float r = collider->radius;
+                    const Math::Vector3f c = collider->center;
+                    constexpr float Turn = 2.0f * std::numbers::pi_v<float>;
+                    DrawLocalArc(list, projection, transform, c, {r, 0, 0}, {0, r, 0}, 0.0f, Turn, color);
+                    DrawLocalArc(list, projection, transform, c, {r, 0, 0}, {0, 0, r}, 0.0f, Turn, color);
+                    DrawLocalArc(list, projection, transform, c, {0, r, 0}, {0, 0, r}, 0.0f, Turn, color);
+                    break;
+                }
+                case ColliderShape::Capsule:
+                    DrawCapsule(list, projection, transform, collider->center, collider->radius,
+                                std::max(collider->height * 0.5f - collider->radius, 0.0f), color);
+                    break;
+            }
+        }
     }
 
     void SceneViewport::UpdateScreenDrag(Engine& engine, Entity selected, const UI::Rect& view) {
@@ -144,6 +229,16 @@ namespace FluxEditor {
             m_screenDrag.active = false;
             m_screenRects.clear();
             return; // vue écrasée par les panneaux
+        }
+        if (engine.GetGameState() != GameState::Stopped) {
+            // Mode Jouer : la vue montre le jeu tel quel, sans sélection ni gizmo ; le clic appartient au jeu.
+            m_drag.axis = -1;
+            m_screenDrag.active = false;
+            m_hoveredAxis = -1;
+            m_screenRects.clear();
+            ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max,
+                           {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); }});
+            return;
         }
 
         const ScreenProjection projection(camera, view.min, view.max);
@@ -275,6 +370,8 @@ namespace FluxEditor {
         if (const std::optional<Math::Box3f> box = engine.GetMeshBounds(selected)) {
             DrawBoxEdges(list, projection, *selectedTransform, *box, Math::LinearColor::FromSrgb8(255, 165, 40));
         }
+        // La collision en vert, par-dessus : on voit si elle épouse l'objet.
+        DrawColliderEdges(list, projection, scene, *selectedTransform, Math::LinearColor::FromSrgb8(80, 220, 120));
         if (arrows) {
             const UI::Style& style = ui.GetStyle();
             const Math::LinearColor colors[3] = {style.axisX, style.axisY, style.axisZ};

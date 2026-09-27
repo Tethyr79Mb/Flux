@@ -52,6 +52,13 @@ namespace FluxEditor {
 
     void SceneEditor::Update(Engine& engine, UndoHistory& history) {
         Scene& scene = engine.GetScene();
+        // Mode Jouer : la scène du jeu est jetée à l'arrêt, la modifier ne servirait qu'à perdre des changements.
+        // On peut toujours sélectionner et regarder les valeurs.
+        m_readOnly = engine.GetGameState() != GameState::Stopped;
+        // Suppr : l'entité sélectionnée, sauf pendant une saisie (la touche efface alors du texte).
+        if (engine.GetWindow().GetInput().WasKeyPressed(Key::Delete) && !engine.GetUi().WantsKeyboard()) {
+            RequestDelete();
+        }
         Entity selected = m_selection ? scene.FindById(m_selection) : NullEntity;
         DrawHierarchy(engine, scene);
         DrawInspector(engine, scene, selected);
@@ -72,17 +79,15 @@ namespace FluxEditor {
         // Position sans ancrage (l'éditeur l'ancre à gauche) : sous le panneau « Moteur », jusqu'en bas.
         const float top = 350.0f + ui.GetMenuBarHeight();
         if (ui.BeginPanel("Hiérarchie", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
-            if (ui.Button("Nouveau cube")) {
+            if (m_readOnly) {
+                ui.TextDisabled("Mode Jouer : scène non modifiable.");
+            } else if (ui.Button("Nouveau cube")) {
                 m_pendingAction = Action::CreateRoot;
             }
-            if (m_selection) {
+            if (m_selection && !m_readOnly) {
                 ui.SameLine();
                 if (ui.Button("Enfant")) {
                     m_pendingAction = Action::CreateChild;
-                }
-                ui.SameLine();
-                if (ui.Button("Supprimer")) {
-                    m_pendingAction = Action::Delete;
                 }
             }
             ui.Separator();
@@ -126,7 +131,7 @@ namespace FluxEditor {
             m_selection = id;
         }
         HierarchyDrag& drag = m_hierarchyDrag;
-        if (ui.IsItemActive() && !drag.entity) {
+        if (ui.IsItemActive() && !drag.entity && !m_readOnly) {
             drag = {};
             drag.entity = id;
             drag.pressMouse = m_mouse;
@@ -172,6 +177,7 @@ namespace FluxEditor {
                     m_anglesFor = id;
                 }
                 ui.PushId(id.value); // un champ en cours de saisie ne passe pas d'une entité à l'autre
+                ui.BeginDisabled(m_readOnly);
 
                 m_modified |= ui.InputText("Nom", scene.Get<NameComponent>(selected).name);
                 ui.LabelText("Identifiant", id.ToString());
@@ -190,6 +196,7 @@ namespace FluxEditor {
                         }
                     }
                 }
+                ui.EndDisabled();
 
                 // Composants enregistrés (moteur puis jeu) : champs générés à partir de leur description.
                 const ComponentRegistry& components = engine.GetComponents();
@@ -209,7 +216,7 @@ namespace FluxEditor {
                     }
                 }
 
-                if (!missing.empty()) {
+                if (!missing.empty() && !m_readOnly) {
                     ui.Separator();
                     for (const ComponentInfo* info : missing) {
                         if (ui.Button("Ajouter : " + info->label + "##" + info->key)) {
@@ -228,10 +235,12 @@ namespace FluxEditor {
         UI::Context& ui = engine.GetUi();
         ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
         if (ui.CollapsingHeader(info.label)) {
+            ui.BeginDisabled(m_readOnly); // l'en-tête reste repliable
             for (const FieldInfo& field : info.fields) {
                 m_modified |= DrawField(engine, info, field, field.access(component));
             }
-            if (info.removable && ui.Button("Retirer")) {
+            ui.EndDisabled();
+            if (info.removable && !m_readOnly && ui.Button("Retirer")) {
                 m_pendingAction = Action::RemoveComponent;
                 m_pendingComponent = info.key;
             }
@@ -314,7 +323,8 @@ namespace FluxEditor {
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {
         const Action action = std::exchange(m_pendingAction, Action::None);
-        if (action == Action::None || (action != Action::CreateRoot && action != Action::Move && selected == NullEntity)) {
+        if (action == Action::None || m_readOnly
+            || (action != Action::CreateRoot && action != Action::Move && selected == NullEntity)) {
             m_pendingComponent.clear();
             return;
         }
