@@ -12,6 +12,7 @@
 #include "PlayMode.hpp"
 #include "SceneDocument.hpp"
 #include "SceneEditor.hpp"
+#include "SceneViewport.hpp"
 #include "SettingsWindow.hpp"
 
 #include <cstdio>
@@ -35,6 +36,7 @@ int main(int argc, char** argv) {
     // Déclarés avant le moteur, donc détruits après lui : les fonctions qui les référencent ne leur survivent pas.
     FluxEditor::SceneDocument document;
     FluxEditor::SceneEditor sceneEditor;
+    FluxEditor::SceneViewport viewport;
     FluxEditor::ContentBrowser contentBrowser;
     FluxEditor::PlayMode playMode;
     FluxEditor::EditorLayout layout;
@@ -65,13 +67,16 @@ int main(int argc, char** argv) {
         }
         document.SetLocked(playMode.IsPlaying());
 
-        layout.Update(e);
+        const Flux::UI::Rect view = layout.Update(e);
         sceneEditor.Update(e);
+        viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
         contentBrowser.Update(e, document, deltaSeconds);
         FluxEditor::DrawCameraPanel(e);
         settings.Draw(e);
         // Pendant le jeu, les modifications disparaissent à l'arrêt : le fichier n'est pas concerné.
-        if (sceneEditor.TakeModified() && !playMode.IsPlaying()) {
+        const bool edited = sceneEditor.TakeModified();
+        const bool moved = viewport.TakeModified(); // les deux vidés à chaque frame
+        if ((edited || moved) && !playMode.IsPlaying()) {
             document.MarkModified();
         }
         document.UpdateTitle(e);

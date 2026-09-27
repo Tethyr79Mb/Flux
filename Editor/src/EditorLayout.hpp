@@ -1,13 +1,12 @@
 #pragma once
 
+#include <Flux/UI/Context.hpp>
+
 #include <filesystem>
 
 namespace Flux {
     class Engine;
 
-    namespace UI {
-        class Context;
-    }
 }
 
 namespace FluxEditor {
@@ -20,8 +19,8 @@ namespace FluxEditor {
         // Menu « Fenêtre » de la barre de menus.
         void DrawWindowMenu(Flux::UI::Context& ui);
         // Pose l'ancrage sous la barre de menus et y cale la vue 3D ; avant les panneaux de l'éditeur.
-        // La première fois, charge la disposition enregistrée, ou celle par défaut.
-        void Update(Flux::Engine& engine);
+        // La première fois, charge la disposition enregistrée, ou celle par défaut. Retourne le rectangle de la vue 3D.
+        Flux::UI::Rect Update(Flux::Engine& engine);
 
         private:
         void Load(Flux::UI::Context& ui);

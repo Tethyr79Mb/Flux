@@ -1,6 +1,7 @@
 # Tests automatiques du moteur, tous dans un exe lancé par ctest (ou directement depuis CLion).
 add_executable(FluxTests
         src/main.cpp
+        src/PickingTests.cpp
         src/ProjectTests.cpp
         src/SceneTests.cpp
         src/SceneSerializerTests.cpp

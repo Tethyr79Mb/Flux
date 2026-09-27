@@ -6,6 +6,7 @@ add_executable(FluxEditor
         src/PlayMode.cpp
         src/SceneDocument.cpp
         src/SceneEditor.cpp
+        src/SceneViewport.cpp
         src/SettingsWindow.cpp
 )
 target_link_libraries(FluxEditor PRIVATE Flux::Engine)

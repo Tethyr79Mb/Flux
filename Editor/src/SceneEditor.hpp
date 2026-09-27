@@ -32,6 +32,11 @@ namespace FluxEditor {
         // Vrai si la scène a été modifiée depuis le dernier appel (pour l'étoile du titre).
         bool TakeModified() { return std::exchange(m_modified, false); }
 
+        // Entité sélectionnée (Uuid vide si aucune) ; Select(NullEntity) désélectionne.
+        Flux::Uuid GetSelection() const { return m_selection; }
+        // Déplie aussi ses ancêtres dans la hiérarchie, pour la montrer (sélection faite dans la vue 3D).
+        void Select(Flux::Scene& scene, Flux::Entity entity);
+
         private:
         enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent };
 
@@ -41,7 +46,6 @@ namespace FluxEditor {
         void DrawComponent(Flux::UI::Context& ui, const Flux::ComponentInfo& info, void* component);
         bool DrawField(Flux::UI::Context& ui, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
         void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
-        void Select(Flux::Scene& scene, Flux::Entity entity);
 
         Flux::Uuid m_selection;
         bool m_modified = false;

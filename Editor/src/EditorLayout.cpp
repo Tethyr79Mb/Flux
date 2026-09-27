@@ -43,7 +43,7 @@ namespace FluxEditor {
         }
     }
 
-    void EditorLayout::Update(Engine& engine) {
+    UI::Rect EditorLayout::Update(Engine& engine) {
         UI::Context& ui = engine.GetUi();
         if (!m_loaded) {
             Load(ui);
@@ -52,6 +52,7 @@ namespace FluxEditor {
         const UI::Rect view = ui.DockSpace({0.0f, ui.GetMenuBarHeight()},
                                            {static_cast<float>(size.x), static_cast<float>(size.y)});
         engine.GetRenderer().SetSceneViewport(view.min, view.max);
+        return view;
     }
 
     // Hiérarchie à gauche, inspecteur à droite, contenu et caméra en bas, la vue 3D au centre.

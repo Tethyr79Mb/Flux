@@ -48,18 +48,6 @@ namespace Flux::UI {
             return point.x >= min.x && point.x < max.x && point.y >= min.y && point.y < max.y;
         }
 
-        inline void AddLine(DrawList& list, Vector2f a, Vector2f b, float thickness, LinearColor color) {
-            const Vector2f direction = b - a;
-            const float length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
-            if (length <= 0.0f) {
-                return;
-            }
-            const float half = thickness * 0.5f / length;
-            const Vector2f normal{-direction.y * half, direction.x * half};
-            list.AddTriangle(a + normal, b + normal, b - normal, color);
-            list.AddTriangle(a + normal, b - normal, a - normal, color);
-        }
-
         inline bool IsNumberCharacter(char c) {
             return (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '-' || c == '+' || c == 'e' || c == 'E';
         }
