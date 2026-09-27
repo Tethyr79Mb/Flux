@@ -229,7 +229,7 @@ namespace {
         const float fieldY = top + row * 0.5f;
         const auto optionY = [&](int index) { return top + row + 4.0f + static_cast<float>(index) * row + row * 0.5f; };
 
-        constexpr std::string_view Options[] = {"Gauche", "Centre", "Droite"};
+        static constexpr std::string_view Options[] = {"Gauche", "Centre", "Droite"}; // static : lu par le lambda sans capture (MSVC)
         int index = 0;
         int changes = 0;
         bool held = false;
