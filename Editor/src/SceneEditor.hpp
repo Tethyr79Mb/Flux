@@ -2,6 +2,7 @@
 
 #include <Flux/Core/Uuid.hpp>
 #include <Flux/Math/Quaternion.hpp>
+#include <Flux/Math/Vector2.hpp>
 #include <Flux/Math/Vector3.hpp>
 #include <Flux/Scene/Components.hpp>
 
@@ -41,7 +42,21 @@ namespace FluxEditor {
         void Select(Flux::Scene& scene, Flux::Entity entity);
 
         private:
-        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent };
+        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move };
+
+        // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée.
+        enum class DropZone { Before, After, Inside };
+
+        // Glisser-déposer dans la hiérarchie : change l'ordre (donc l'ordre d'affichage de l'interface à l'écran)
+        // ou le parent.
+        struct HierarchyDrag
+        {
+            Flux::Uuid entity;          // ligne tenue (vide : rien)
+            Flux::Math::Vector2f pressMouse;
+            bool dragging = false;      // la souris s'est éloignée : c'est un glisser-déposer, pas un clic
+            Flux::Uuid target;          // ligne survolée cette frame (vide : aucune cible valable)
+            DropZone zone = DropZone::Inside;
+        };
 
         void DrawHierarchy(Flux::Engine& engine, Flux::Scene& scene);
         void DrawNode(Flux::UI::Context& ui, Flux::Scene& scene, Flux::Entity entity);
@@ -55,6 +70,9 @@ namespace FluxEditor {
         // Actions demandées pendant le dessin, appliquées après : on ne détruit rien en parcourant l'arbre.
         Action m_pendingAction = Action::None;
         std::string m_pendingComponent; // clé du composant à ajouter ou retirer
+        HierarchyDrag m_hierarchyDrag;
+        HierarchyDrag m_pendingMove;       // dépôt à appliquer (Action::Move)
+        Flux::Math::Vector2f m_mouse;      // souris de la frame, pour le glisser-déposer
         // Ancêtres à déplier une fois, pour montrer une entité sélectionnée ou créée hors de l'arbre.
         std::unordered_set<Flux::Uuid> m_reveal;
 

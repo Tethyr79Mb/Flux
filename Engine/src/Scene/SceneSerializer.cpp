@@ -429,7 +429,10 @@ namespace Flux::SceneSerializer {
                 scene.SetParent(entity, parent, next);
             } else {
                 scene.Get<NameComponent>(entity).name = data.name;
-                if (scene.GetParent(entity) != parent) {
+                // Autre parent, ou autre place parmi ses frères (ordre changé dans la hiérarchie) : remise en place.
+                // Un frère de l'instantané introuvable ne déplace rien (pas de retour à la fin par erreur).
+                const bool reordered = i == 0 && (!before || next != NullEntity) && scene.GetNextSibling(entity) != next;
+                if (scene.GetParent(entity) != parent || reordered) {
                     scene.SetParent(entity, parent, next);
                 }
             }

@@ -4,12 +4,15 @@
 #include "UndoHistory.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/UI/Context.hpp>
+#include <Flux/UI/DrawList.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <numbers>
 #include <string>
@@ -22,6 +25,17 @@ namespace FluxEditor {
 
     namespace {
         constexpr float DegreesPerRadian = 180.0f / std::numbers::pi_v<float>;
+        constexpr float DragThreshold = 4.0f; // pixels avant qu'une ligne tenue devienne un glisser-déposer
+
+        // ancestor est entity ou l'un de ses ancêtres.
+        bool IsSelfOrAncestor(const Scene& scene, Entity ancestor, Entity entity) {
+            for (; entity != NullEntity; entity = scene.GetParent(entity)) {
+                if (entity == ancestor) {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         std::string DisplayName(const Scene& scene, Entity entity) {
             const std::string& name = scene.Get<NameComponent>(entity).name;
@@ -75,7 +89,23 @@ namespace FluxEditor {
             if (scene.GetEntityCount() == 0) {
                 ui.TextDisabled("Scène vide");
             }
+            const Input& input = engine.GetWindow().GetInput();
+            m_mouse = input.GetMousePosition();
+            m_hierarchyDrag.target = {};
             scene.ForEachRoot([&](Entity root) { DrawNode(ui, scene, root); });
+
+            HierarchyDrag& drag = m_hierarchyDrag;
+            if (drag.entity) {
+                const Math::Vector2f moved = m_mouse - drag.pressMouse;
+                drag.dragging |= std::sqrt(moved.x * moved.x + moved.y * moved.y) > DragThreshold;
+                if (!input.IsMouseButtonDown(MouseButton::Left)) {
+                    if (drag.dragging && drag.target) {
+                        m_pendingAction = Action::Move;
+                        m_pendingMove = drag;
+                    }
+                    drag = {};
+                }
+            }
         }
         ui.EndPanel();
     }
@@ -94,6 +124,32 @@ namespace FluxEditor {
         const UI::Context::TreeNodeResult node = ui.TreeNode(DisplayName(scene, entity), id == m_selection, leaf);
         if (node.clicked) {
             m_selection = id;
+        }
+        HierarchyDrag& drag = m_hierarchyDrag;
+        if (ui.IsItemActive() && !drag.entity) {
+            drag = {};
+            drag.entity = id;
+            drag.pressMouse = m_mouse;
+        }
+        // Ligne survolée pendant un glissement : haut de la ligne, devant elle ; bas, derrière ; milieu, dedans.
+        // Pas sur l'entité glissée ni ses descendants (une entité ne peut pas devenir son propre enfant).
+        const Entity dragged = drag.dragging ? scene.FindById(drag.entity) : NullEntity;
+        if (dragged != NullEntity && ui.IsMouseOverItem() && !IsSelfOrAncestor(scene, dragged, entity)) {
+            const UI::Rect row = ui.GetItemRect();
+            const float quarter = (row.max.y - row.min.y) * 0.25f;
+            drag.target = id;
+            drag.zone = m_mouse.y < row.min.y + quarter   ? DropZone::Before
+                      : m_mouse.y >= row.max.y - quarter ? DropZone::After
+                                                          : DropZone::Inside;
+            if (UI::DrawList* list = ui.GetPanelDrawList()) {
+                const Math::LinearColor color = ui.GetStyle().checkMark;
+                if (drag.zone == DropZone::Inside) {
+                    list->AddRectOutline(row.min, row.max, color, 2.0f);
+                } else {
+                    const float y = drag.zone == DropZone::Before ? row.min.y : row.max.y;
+                    list->AddRect({row.min.x, y - 1.0f}, {row.max.x, y + 1.0f}, color);
+                }
+            }
         }
         if (node.open) {
             scene.ForEachChild(entity, [&](Entity child) { DrawNode(ui, scene, child); });
@@ -258,7 +314,7 @@ namespace FluxEditor {
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {
         const Action action = std::exchange(m_pendingAction, Action::None);
-        if (action == Action::None || (action != Action::CreateRoot && selected == NullEntity)) {
+        if (action == Action::None || (action != Action::CreateRoot && action != Action::Move && selected == NullEntity)) {
             m_pendingComponent.clear();
             return;
         }
@@ -296,6 +352,31 @@ namespace FluxEditor {
                 scene.DestroyEntity(selected);
                 m_selection = {};
                 history.Push("Supprimer", id, std::move(before), {});
+                break;
+            }
+            case Action::Move: {
+                const Entity entity = scene.FindById(m_pendingMove.entity);
+                const Entity target = scene.FindById(m_pendingMove.target);
+                if (entity == NullEntity || target == NullEntity || entity == target) {
+                    break;
+                }
+                Entity parent = scene.GetParent(target);
+                Entity before = target;
+                if (m_pendingMove.zone == DropZone::Inside) {
+                    parent = target;
+                    before = NullEntity; // dernier enfant : dessiné par-dessus ses frères
+                    m_reveal.insert(m_pendingMove.target);
+                } else if (m_pendingMove.zone == DropZone::After) {
+                    before = scene.GetNextSibling(target);
+                    if (before == entity) {
+                        before = scene.GetNextSibling(entity); // déjà juste derrière : reste en place
+                    }
+                }
+                const Uuid id = m_pendingMove.entity;
+                std::string previous = UndoHistory::Capture(engine, id);
+                if (scene.SetParent(entity, parent, before)) {
+                    history.Push("Déplacer dans la hiérarchie", id, std::move(previous), UndoHistory::Capture(engine, id));
+                }
                 break;
             }
             case Action::AddComponent:

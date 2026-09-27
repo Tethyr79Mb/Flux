@@ -279,6 +279,8 @@ namespace Flux::UI {
         // Widget sous le bouton gauche enfoncé (glissement, clic en cours).
         WidgetId activeId = 0;
         WidgetId lastBehaviorId = 0; // dernier widget interactif décrit (IsItemActive)
+        Vector2f lastBehaviorMin;    // et son rectangle (GetItemRect)
+        Vector2f lastBehaviorMax;
         Context::ColorPicker colorPicker; // ouvert par l'aperçu de ColorEdit3
         bool activeSeen = false;
         Vector2f pressPosition;
@@ -371,6 +373,8 @@ namespace Flux::UI {
         Interaction Behavior(WidgetId id, Vector2f min, Vector2f max) {
             Interaction result;
             lastBehaviorId = id;
+            lastBehaviorMin = min;
+            lastBehaviorMax = max;
             const bool inside = IsMouseOver(min, max);
             result.hovered = inside && (activeId == 0 || activeId == id);
             if (result.hovered && mousePressed) {
