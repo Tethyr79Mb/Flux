@@ -1,37 +1,6 @@
-add_library(FluxEngine SHARED
-        src/Core/Engine.cpp
-        src/Core/GameModule.cpp
-        src/Core/Project.cpp
-        src/Core/Uuid.cpp
-        src/Platform/Input.cpp
-        src/Renderer/Renderer.cpp
-        src/Scene/Camera.cpp
-        src/Scene/ComponentRegistry.cpp
-        src/Scene/FlyCameraController.cpp
-        src/Scene/Picking.cpp
-        src/Scene/ScreenUi.cpp
-        src/Scene/Scene.cpp
-        src/Scene/SceneSerializer.cpp
-        src/UI/Font.cpp
-        src/UI/Context.cpp
-        src/UI/Docking.cpp
-        src/UI/Fields.cpp
-        src/UI/Menus.cpp
-        src/UI/Panel.cpp
-        src/UI/Tree.cpp
-        src/UI/Widgets.cpp
-        src/UI/DrawList.cpp
-        src/RHI/Vulkan/VulkanDevice.cpp
-        src/RHI/Vulkan/VulkanSwapchain.cpp
-        src/RHI/Vulkan/VulkanBuffer.cpp
-        src/RHI/Vulkan/VulkanPipeline.cpp
-        src/RHI/Vulkan/VulkanImage.cpp
-        src/RHI/Vulkan/VmaImplementation.cpp
-        src/Platform/Win32/Win32Window.cpp
-        src/Platform/Win32/Win32SharedLibrary.cpp
-        src/Platform/Win32/Win32Dialogs.cpp
-        src/Platform/Win32/Win32Filesystem.cpp
-)
+add_library(FluxEngine SHARED)
+# Tous les fichiers de src/ (et les en-têtes publics, pour les voir dans l'IDE) : voir cmake/FluxSources.cmake.
+flux_add_sources(FluxEngine src include)
 add_library(Flux::Engine ALIAS FluxEngine)
 
 # FluxEngine.dll plutôt que libFluxEngine.dll avec MinGW.
