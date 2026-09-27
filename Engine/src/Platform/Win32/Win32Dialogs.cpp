@@ -7,6 +7,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cwctype>
 #include <string>
 #include <vector>
@@ -133,5 +134,30 @@ namespace Flux::Platform {
 
     void ShowError(const Window& owner, std::string_view title, std::string_view message) {
         MessageBoxW(OwnerHandle(owner), Win32::ToWide(message).c_str(), Win32::ToWide(title).c_str(), MB_OK | MB_ICONERROR);
+    }
+
+    std::optional<Math::LinearColor> ShowColorDialog(const Window& owner, const Math::LinearColor& initial) {
+        // Les 16 cases « couleurs personnalisées » : partagées par tous les appels, le temps de la session.
+        static COLORREF customColors[16] = {RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255),
+                                            RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255),
+                                            RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255),
+                                            RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255), RGB(255, 255, 255)};
+        // Le nuancier travaille en sRGB 8 bits, comme les champs de l'inspecteur.
+        const auto toByte = [](float linear) {
+            return static_cast<BYTE>(std::lround(Math::LinearColor::LinearToSrgb(std::clamp(linear, 0.0f, 1.0f)) * 255.0f));
+        };
+        CHOOSECOLORW dialog{};
+        dialog.lStructSize = sizeof(dialog);
+        dialog.hwndOwner = OwnerHandle(owner);
+        dialog.rgbResult = RGB(toByte(initial.r), toByte(initial.g), toByte(initial.b));
+        dialog.lpCustColors = customColors;
+        dialog.Flags = CC_RGBINIT | CC_FULLOPEN | CC_ANYCOLOR;
+        if (!ChooseColorW(&dialog)) {
+            return std::nullopt;
+        }
+        Math::LinearColor color = Math::LinearColor::FromSrgb8(GetRValue(dialog.rgbResult), GetGValue(dialog.rgbResult),
+                                                               GetBValue(dialog.rgbResult));
+        color.a = initial.a;
+        return color;
     }
 }

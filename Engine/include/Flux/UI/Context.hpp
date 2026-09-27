@@ -6,6 +6,7 @@
 #include "Flux/Math/Vector3.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <span>
@@ -135,7 +136,8 @@ namespace Flux::UI {
         // Retourne true quand une nouvelle valeur vient d'être validée (pas à chaque touche).
         bool InputText(std::string_view label, std::string& value);
 
-        // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu.
+        // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu ;
+        // un clic sur l'aperçu ouvre le sélecteur de couleur (SetColorPicker), s'il y en a un.
         bool ColorEdit3(std::string_view label, Math::LinearColor& color);
 
         // Entiers : même principe que les champs numériques, sans décimales.
@@ -234,6 +236,11 @@ namespace Flux::UI {
         void PopId();
 
         const Style& GetStyle() const;
+
+        // Sélecteur de couleur ouvert par l'aperçu de ColorEdit3 (Engine y branche celui du système) :
+        // modifie la couleur et retourne true, ou retourne false si l'utilisateur annule.
+        using ColorPicker = std::function<bool(Math::LinearColor& color)>;
+        void SetColorPicker(ColorPicker picker);
 
         private:
         struct Impl;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Export.hpp"
+#include "Flux/Math/Color.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -36,6 +37,9 @@ namespace Flux::Platform {
     FLUX_API Answer AskYesNoCancel(const Window& owner, std::string_view title, std::string_view question);
     FLUX_API bool AskYesNo(const Window& owner, std::string_view title, std::string_view question);
     FLUX_API void ShowError(const Window& owner, std::string_view title, std::string_view message);
+    // Sélecteur de couleur de Windows (nuancier complet, couleurs personnalisées gardées jusqu'à la fermeture).
+    // Couleur choisie (alpha inchangé), ou nullopt si l'utilisateur annule.
+    FLUX_API std::optional<Math::LinearColor> ShowColorDialog(const Window& owner, const Math::LinearColor& initial);
 
     // Fichier ou dossier envoyé à la corbeille (récupérable), sans autre confirmation que celle de l'appelant.
     FLUX_API std::expected<void, std::string> MoveToRecycleBin(const std::filesystem::path& path);

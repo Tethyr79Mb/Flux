@@ -279,6 +279,7 @@ namespace Flux::UI {
         // Widget sous le bouton gauche enfoncé (glissement, clic en cours).
         WidgetId activeId = 0;
         WidgetId lastBehaviorId = 0; // dernier widget interactif décrit (IsItemActive)
+        Context::ColorPicker colorPicker; // ouvert par l'aperçu de ColorEdit3
         bool activeSeen = false;
         Vector2f pressPosition;
         Vector2f dragOrigin;

@@ -234,15 +234,31 @@ namespace Flux::UI {
         const auto [fieldMin, fieldMax] = ui.LabeledRow(label);
         const Style& style = ui.style;
 
-        // Aperçu (couleur opaque), puis rouge, vert, bleu.
+        // Aperçu (couleur opaque), puis rouge, vert, bleu. Un clic sur l'aperçu ouvre le sélecteur de couleur :
+        // fenêtre modale, la frame attend la réponse.
         const float swatch = fieldMax.y - fieldMin.y;
-        ui.panel->content.AddRect(fieldMin, {fieldMin.x + swatch, fieldMax.y}, {color.r, color.g, color.b, 1.0f});
-        ui.panel->content.AddRectOutline(fieldMin, {fieldMin.x + swatch, fieldMax.y}, style.panelBorder);
+        const Vector2f swatchMax{fieldMin.x + swatch, fieldMax.y};
+        bool changed = false;
+        if (ui.colorPicker) {
+            const Impl::Interaction interaction = ui.Behavior(Hash(id, "#nuancier"), fieldMin, swatchMax);
+            if (interaction.clicked) {
+                LinearColor picked = color;
+                if (ui.colorPicker(picked) && !(picked == color)) {
+                    color = picked;
+                    changed = true;
+                }
+            }
+            if (interaction.hovered) {
+                ui.panel->content.AddRectOutline(fieldMin - Vector2f{1.0f, 1.0f}, swatchMax + Vector2f{1.0f, 1.0f},
+                                                 style.checkMark);
+            }
+        }
+        ui.panel->content.AddRect(fieldMin, swatchMax, {color.r, color.g, color.b, 1.0f});
+        ui.panel->content.AddRectOutline(fieldMin, swatchMax, style.panelBorder);
         const float start = fieldMin.x + swatch + style.itemSpacing;
         const float width = (fieldMax.x - start - 2.0f * style.itemSpacing) / 3.0f;
         float* channels[3] = {&color.r, &color.g, &color.b};
         const LinearColor* colors[3] = {&style.axisX, &style.axisY, &style.axisZ};
-        bool changed = false;
         for (int channel = 0; channel < 3; ++channel) {
             const float x = start + static_cast<float>(channel) * (width + style.itemSpacing);
             // Sans arrondi : un glissement lent s'accumule au lieu d'être perdu à chaque frame.

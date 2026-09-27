@@ -1,5 +1,6 @@
 #include "Flux/Core/Engine.hpp"
 
+#include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
@@ -79,6 +80,13 @@ namespace Flux {
         }
         m_renderer = std::move(renderer.value());
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
+        m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
+            const std::optional<Math::LinearColor> picked = Platform::ShowColorDialog(*window, color);
+            if (picked) {
+                color = *picked;
+            }
+            return picked.has_value();
+        });
 
         // Un peu en arrière et au-dessus de la grille de test, légèrement vers le bas.
         m_camera.position.offset = {0.0, 6.0, 30.0};
