@@ -230,6 +230,16 @@ namespace FluxEditor {
             m_screenRects.clear();
             return; // vue écrasée par les panneaux
         }
+        if (engine.GetGameState() != GameState::Stopped) {
+            // Mode Jouer : la vue montre le jeu tel quel, sans sélection ni gizmo ; le clic appartient au jeu.
+            m_drag.axis = -1;
+            m_screenDrag.active = false;
+            m_hoveredAxis = -1;
+            m_screenRects.clear();
+            ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max,
+                           {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); }});
+            return;
+        }
 
         const ScreenProjection projection(camera, view.min, view.max);
         const Vector2f mouse = input.GetMousePosition();
