@@ -22,8 +22,14 @@ namespace FluxEditor {
             return {text.begin(), text.end()};
         }
 
+        constexpr std::string_view SceneExtension = ".scene.json";
+
         bool IsScene(const std::filesystem::path& path) {
-            return ToUtf8(path.filename()).ends_with(".scene.json");
+            return ToUtf8(path.filename()).ends_with(SceneExtension);
+        }
+
+        std::filesystem::path FromUtf8(const std::string& text) {
+            return std::filesystem::path(std::u8string(text.begin(), text.end()));
         }
     }
 
@@ -56,6 +62,7 @@ namespace FluxEditor {
             }
         }
         ui.EndPanel();
+        DrawRenameWindow(engine, document);
     }
 
     void ContentBrowser::Scan(const std::filesystem::path& root) {
@@ -115,6 +122,10 @@ namespace FluxEditor {
         if (scene && ui.MenuItem("Ouvrir")) {
             document.OpenFile(engine, entry.path);
         }
+        if (scene && ui.MenuItem("Renommer...")) {
+            m_renaming = entry.path;
+            m_newName = entry.name.substr(0, entry.name.size() - SceneExtension.size());
+        }
         if (scene && ui.MenuItem("Définir comme scène de démarrage", {}, !IsStartupScene(engine, entry.path))) {
             SetStartupScene(engine, entry.path);
         }
@@ -167,5 +178,66 @@ namespace FluxEditor {
             project->startupScene = previous; // le fichier n'a pas changé : le projet en mémoire non plus
             Platform::ShowError(engine.GetWindow(), "Scène de démarrage", "Projet non enregistré : " + saved.error());
         }
+    }
+
+    void ContentBrowser::DrawRenameWindow(Engine& engine, SceneDocument& document) {
+        if (m_renaming.empty()) {
+            return;
+        }
+        UI::Context& ui = engine.GetUi();
+        const Math::Vector2i screen = engine.GetWindow().GetSize();
+        const float width = 400.0f;
+        if (ui.BeginPanel("Renommer la scène", {(static_cast<float>(screen.x) - width) * 0.5f, static_cast<float>(screen.y) * 0.3f},
+                          width)) {
+            ui.TextDisabled(ToUtf8(m_renaming.filename()));
+            // Entrée dans le champ valide aussi ; l'extension .scene.json est ajoutée d'office.
+            const bool entered = ui.InputText("Nouveau nom", m_newName);
+            ui.Separator();
+            if ((ui.Button("Renommer") || entered) && Rename(engine, document, m_newName)) {
+                m_renaming.clear();
+            }
+            ui.SameLine();
+            if (ui.Button("Annuler")) {
+                m_renaming.clear();
+            }
+        }
+        ui.EndPanel();
+    }
+
+    bool ContentBrowser::Rename(Engine& engine, SceneDocument& document, const std::string& name) {
+        const Window& window = engine.GetWindow();
+        std::string fileName = name;
+        if (fileName.ends_with(SceneExtension)) {
+            fileName.resize(fileName.size() - SceneExtension.size());
+        }
+        // Caractères refusés par Windows dans un nom de fichier.
+        if (fileName.empty() || fileName.find_first_of("\\/:*?\"<>|") != std::string::npos || fileName.back() == '.'
+            || fileName.back() == ' ') {
+            Platform::ShowError(window, "Renommer", "Nom invalide : il ne doit pas être vide ni contenir \\ / : * ? \" < > |");
+            return false;
+        }
+        fileName += SceneExtension;
+        const std::filesystem::path from = m_renaming;
+        const std::filesystem::path to = from.parent_path() / FromUtf8(fileName);
+        if (to.filename() == from.filename()) {
+            return true; // rien à faire
+        }
+        std::error_code error;
+        if (std::filesystem::exists(to, error)) {
+            Platform::ShowError(window, "Renommer", "« " + fileName + " » existe déjà.");
+            return false;
+        }
+        const bool startup = IsStartupScene(engine, from);
+        std::filesystem::rename(from, to, error);
+        if (error) {
+            Platform::ShowError(window, "Renommer", "Renommage impossible : " + error.message());
+            return false;
+        }
+        document.FileRenamed(from, to);
+        if (startup) {
+            SetStartupScene(engine, to); // sinon Game.exe chercherait l'ancien nom
+        }
+        m_sinceScan = ScanInterval; // relu à la prochaine frame
+        return true;
     }
 }

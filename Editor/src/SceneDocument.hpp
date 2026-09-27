@@ -39,6 +39,8 @@ namespace FluxEditor {
         const std::filesystem::path& GetPath() const { return m_path; }
         // Le fichier de la scène ouverte a été supprimé : la scène reste en mémoire, sans titre et à enregistrer.
         void ForgetFile(const std::filesystem::path& path);
+        // Le fichier de la scène ouverte a été renommé : la suite s'enregistre sous le nouveau nom.
+        void FileRenamed(const std::filesystem::path& from, const std::filesystem::path& to);
 
         private:
         void NewScene(Flux::Engine& engine);
