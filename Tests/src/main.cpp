@@ -16,6 +16,7 @@ int main() {
         {"textes et images à l'écran", RunScreenUiTests},
         {"changement de scène", RunSceneChangeTests},
         {"modèles 3D (glTF)", RunModelTests},
+        {"physique (Jolt)", RunPhysicsTests},
     };
 
     int failures = 0;

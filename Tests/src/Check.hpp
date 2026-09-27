@@ -20,3 +20,4 @@ bool RunScreenUiTests();
 bool RunImageTests();
 bool RunSceneChangeTests();
 bool RunModelTests();
+bool RunPhysicsTests();

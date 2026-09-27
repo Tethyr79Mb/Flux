@@ -70,6 +70,53 @@ namespace Flux {
         Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie les couleurs du modèle (blanc : inchangées)
     };
 
+    enum class ColliderShape : std::uint8_t {
+        Box,     // size
+        Sphere,  // radius
+        Capsule, // radius et height, debout selon y
+    };
+
+    // Forme de collision (physique, Jolt), dans le repère de l'entité : suit sa transformation, échelle comprise.
+    // Sans RigidBodyComponent, l'entité est un décor immobile (sol, mur). Pendant le jeu seulement.
+    struct ColliderComponent
+    {
+        ColliderShape shape = ColliderShape::Box;
+        Math::Vector3f size{1.0f, 1.0f, 1.0f}; // boîte : le cube unité par défaut, comme le maillage Cube
+        float radius = 0.5f;
+        float height = 2.0f; // capsule : hauteur totale, extrémités arrondies comprises
+        Math::Vector3f center; // décalage du centre de la forme
+    };
+
+    enum class BodyMotion : std::uint8_t {
+        Dynamic,   // soumis à la gravité et aux chocs
+        Kinematic, // déplacé par le jeu (plateforme, porte), pousse les autres sans être poussé
+        Static,    // immobile
+    };
+
+    // Corps physique d'une entité qui a un ColliderComponent. Un corps dynamique doit être une racine de la
+    // hiérarchie (sans parent) : la physique réécrit sa position et sa rotation.
+    struct RigidBodyComponent
+    {
+        BodyMotion motion = BodyMotion::Dynamic;
+        float mass = 0.0f;          // kg ; 0 : d'après le volume (densité de 1000 kg/m³, celle de l'eau)
+        float friction = 0.5f;
+        float restitution = 0.0f;   // rebond : 0 aucun, 1 parfait
+        float gravityFactor = 1.0f; // 0 : flotte (dans l'espace)
+    };
+
+    // Personnage qui marche (Jolt CharacterVirtual) : une capsule debout dont le bas est l'origine de l'entité,
+    // comme les pieds d'un modèle glTF. Doit être une racine. Le joueur le dirige au clavier pendant le jeu
+    // (ZQSD, Maj pour courir, Espace pour sauter) et la caméra le suit.
+    struct CharacterComponent
+    {
+        float radius = 0.3f;
+        float height = 1.8f;     // taille totale
+        float walkSpeed = 2.0f;  // m/s
+        float runSpeed = 5.0f;
+        float jumpSpeed = 4.5f;  // m/s vers le haut au départ du saut (environ 1 m de haut)
+        bool player = true;      // dirigé par le joueur ; sinon, immobile (soumis à la gravité seulement)
+    };
+
     // Point de l'écran (ou de la vue de l'éditeur) auquel un élément d'interface est accroché.
     enum class ScreenAnchor : std::uint8_t {
         TopLeft,

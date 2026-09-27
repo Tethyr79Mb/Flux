@@ -34,7 +34,8 @@ namespace FluxEditor {
             constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Modèle 3D...", "Modèle"},
                                            {"Texte à l'écran", "Texte"},
                                            {"Image à l'écran", "Image"},
-                                           {"Changement de scène", "Changement de scène"}};
+                                           {"Changement de scène", "Changement de scène"},
+                                           {"Sol", "Sol"}, {"Cube physique", "Cube physique"}, {"Personnage...", "Joueur"}};
             return Infos[item];
         }
 
@@ -73,6 +74,12 @@ namespace FluxEditor {
             ui.Separator();
             ui.TextDisabled("Logique");
             button(Item::SceneChange);
+            ui.Separator();
+            ui.TextDisabled("Physique (en mode Jouer)");
+            button(Item::Floor);
+            ui.SameLine();
+            button(Item::PhysicsCube);
+            button(Item::Character);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
         }
@@ -123,13 +130,13 @@ namespace FluxEditor {
         // et l'entité porte son nom.
         std::string name = info.name;
         std::optional<std::string> model;
-        if (item == Item::Model) {
+        if (item == Item::Model || item == Item::Character) {
             model = ChooseAsset(engine, AssetType::Model, "");
             if (!model) {
                 return;
             }
             std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*model).stem());
-            if (!stem.empty()) {
+            if (!stem.empty() && item == Item::Model) {
                 name = std::move(stem);
             }
         }
@@ -157,6 +164,19 @@ namespace FluxEditor {
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
             } else if (item == Item::Model) {
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
+            } else if (item == Item::Floor) {
+                // Dalle de 20 x 20 m, immobile : un cube aplati et sa collision.
+                scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(110, 115, 120));
+                scene.Add<ColliderComponent>(entity);
+                scene.Get<TransformComponent>(entity).scale = {20.0f, 0.2f, 20.0f};
+            } else if (item == Item::PhysicsCube) {
+                scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(200, 140, 60));
+                scene.Add<ColliderComponent>(entity);
+                scene.Add<RigidBodyComponent>(entity);
+            } else if (item == Item::Character) {
+                // Les pieds du modèle (son origine) posés sur celle de l'entité, comme la capsule.
+                scene.Add<ModelComponent>(entity).model = std::move(*model);
+                scene.Add<CharacterComponent>(entity);
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();

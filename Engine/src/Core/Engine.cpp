@@ -4,6 +4,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Platform/Input.hpp"
+#include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <format>
+#include <numbers>
 #include <string>
 #include <utility>
 
@@ -131,13 +133,23 @@ namespace Flux {
             // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
                              !m_window->IsCursorLocked());
-            m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
+            // Pendant le jeu, la caméra suit le personnage du joueur s'il y en a un ; sinon, vol libre.
+            if (GetFollowedPlayer() != NullEntity) {
+                RotateFollowCamera();
+            } else {
+                m_followRotating = false;
+                m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
+            }
             if (m_gameState != GameState::Stopped) {
                 const double gameDelta = m_gameState == GameState::Running ? deltaSeconds : 0.0;
                 UpdateGameSystems(gameDelta);
                 if (m_gameUpdate) {
                     m_gameUpdate(*this, gameDelta);
                 }
+            }
+            // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
+            if (const Entity player = GetFollowedPlayer(); player != NullEntity) {
+                PlaceFollowCamera(player);
             }
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
@@ -178,6 +190,68 @@ namespace Flux {
         if (std::optional<std::string> next = SceneChange::Update(m_scene, deltaSeconds, confirmed)) {
             RequestScene(std::move(*next));
         }
+
+        // Personnage du joueur : ZQSD (WASD en QWERTY) par rapport à la caméra, Maj pour courir, Espace pour sauter.
+        CharacterInput character;
+        if (!m_ui->WantsKeyboard()) {
+            const auto axis = [&](Key positive, Key negative) {
+                return (input.IsKeyDown(positive) ? 1.0f : 0.0f) - (input.IsKeyDown(negative) ? 1.0f : 0.0f);
+            };
+            // Avant et droite de la caméra, ramenés à l'horizontale.
+            const Math::Vector3f forward{-std::sin(m_camera.yaw), 0.0f, -std::cos(m_camera.yaw)};
+            const Math::Vector3f right{std::cos(m_camera.yaw), 0.0f, -std::sin(m_camera.yaw)};
+            character.move = forward * axis(Key::W, Key::S) + right * axis(Key::D, Key::A);
+            character.run = input.IsKeyDown(Key::LeftShift);
+            character.jump = input.WasKeyPressed(Key::Space);
+        }
+        if (!m_physics) {
+            m_physics = std::make_unique<PhysicsWorld>();
+        }
+        m_physics->Update(m_scene, deltaSeconds, character);
+    }
+
+    void Engine::SetGameState(GameState state) {
+        m_gameState = state;
+        if (state == GameState::Stopped) {
+            m_physics.reset();
+        }
+    }
+
+    Entity Engine::GetFollowedPlayer() const {
+        if (m_gameState == GameState::Stopped || !m_physics) {
+            return NullEntity;
+        }
+        const Entity player = m_physics->GetPlayer();
+        return m_scene.IsValid(player) ? player : NullEntity;
+    }
+
+    void Engine::RotateFollowCamera() {
+        // Comme le vol libre : clic droit maintenu (commencé hors de l'interface) pour tourner autour du personnage.
+        const Input& input = m_window->GetInput();
+        const bool held = m_window->HasFocus() && input.IsMouseButtonDown(MouseButton::Right);
+        const bool started = input.WasMouseButtonPressed(MouseButton::Right) && !m_ui->WantsMouse();
+        m_followRotating = held && (m_followRotating || started);
+        m_window->SetCursorLocked(m_followRotating);
+        if (m_followRotating) {
+            constexpr float Sensitivity = 0.0025f;
+            constexpr float MaxPitch = 1.3f; // un peu moins que la verticale, au-dessus comme en dessous
+            const Math::Vector2f mouse = input.GetMouseDelta();
+            m_camera.yaw = std::remainder(m_camera.yaw - mouse.x * Sensitivity, 2.0f * std::numbers::pi_v<float>);
+            m_camera.pitch = std::clamp(m_camera.pitch - mouse.y * Sensitivity, -MaxPitch, MaxPitch);
+        }
+        if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse()) {
+            m_followDistance = std::clamp(m_followDistance * std::pow(0.85f, wheel), 1.0f, 30.0f);
+        }
+    }
+
+    void Engine::PlaceFollowCamera(Entity player) {
+        // Derrière le personnage, visant un peu sous le haut de sa tête.
+        const auto* character = m_scene.TryGet<CharacterComponent>(player);
+        const double eyeHeight = character ? character->height * 0.9 : 1.6;
+        Math::WorldPosition target = m_scene.GetWorldPosition(player);
+        target += Math::Vector3d{0.0, eyeHeight, 0.0};
+        m_camera.position = target;
+        m_camera.position += Math::Vector3d(m_camera.GetForward()) * -static_cast<double>(m_followDistance);
     }
 
     void Engine::LoadRequestedScene() {
@@ -192,7 +266,9 @@ namespace Flux {
         const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(*requested);
         if (auto loaded = SceneSerializer::Load(m_scene, m_components, path); !loaded) {
             std::fprintf(stderr, "Flux : scène %s : %s\n", requested->c_str(), loaded.error().c_str());
+            return;
         }
+        m_physics.reset(); // les corps de l'ancienne scène : recréés d'après la nouvelle à la prochaine image
     }
 
     void Engine::SetGameUpdate(UpdateFunction update) {
@@ -230,16 +306,28 @@ namespace Flux {
         if (m_scene.TryGet<MeshRendererComponent>(entity)) {
             return Math::Box3f{};
         }
-        const auto* model = m_scene.TryGet<ModelComponent>(entity);
-        if (!model) {
-            return std::nullopt;
-        }
-        if (m_project && !model->model.empty()) {
-            if (auto bounds = m_renderer->LoadModel(m_project->assetsDirectory / Platform::PathFromUtf8(model->model))) {
-                return bounds;
+        if (const auto* model = m_scene.TryGet<ModelComponent>(entity)) {
+            if (m_project && !model->model.empty()) {
+                if (auto bounds = m_renderer->LoadModel(m_project->assetsDirectory / Platform::PathFromUtf8(model->model))) {
+                    return bounds;
+                }
             }
+            return Math::Box3f{}; // pas (encore) de fichier : le cube unité, pour pouvoir le sélectionner quand même
         }
-        return Math::Box3f{}; // pas (encore) de fichier : le cube unité, pour pouvoir le sélectionner quand même
+        // Invisibles en jeu, mais sélectionnables dans l'éditeur : un personnage sans modèle, un mur invisible.
+        if (const auto* character = m_scene.TryGet<CharacterComponent>(entity)) {
+            return Math::Box3f{{-character->radius, 0.0f, -character->radius}, {character->radius, character->height, character->radius}};
+        }
+        if (const auto* collider = m_scene.TryGet<ColliderComponent>(entity)) {
+            Math::Vector3f half = collider->size * 0.5f;
+            if (collider->shape == ColliderShape::Sphere) {
+                half = {collider->radius, collider->radius, collider->radius};
+            } else if (collider->shape == ColliderShape::Capsule) {
+                half = {collider->radius, collider->height * 0.5f, collider->radius};
+            }
+            return Math::Box3f{collider->center - half, collider->center + half};
+        }
+        return std::nullopt;
     }
 
     UI::Context& Engine::GetUi() {
