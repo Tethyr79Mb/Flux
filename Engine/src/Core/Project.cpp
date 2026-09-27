@@ -5,6 +5,7 @@
 #include <format>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 
 namespace Flux::ProjectFile {
     namespace {
@@ -17,6 +18,12 @@ namespace Flux::ProjectFile {
 
         std::string ToUtf8(const std::filesystem::path& path) {
             const std::u8string text = path.u8string();
+            return {text.begin(), text.end()};
+        }
+
+        // Avec des « / » : le fichier est le même sous Windows et ailleurs, et se lit mieux.
+        std::string ToGenericUtf8(const std::filesystem::path& path) {
+            const std::u8string text = path.generic_u8string();
             return {text.begin(), text.end()};
         }
 
@@ -79,5 +86,33 @@ namespace Flux::ProjectFile {
         } else {
             return project;
         }
+    }
+
+    std::string ToString(const Project& project) {
+        nlohmann::ordered_json document;
+        document["format"] = FormatName;
+        document["version"] = FormatVersion;
+        document["name"] = project.name;
+        document["assets"] = ToGenericUtf8(project.assetsDirectory.lexically_relative(project.file.parent_path()));
+        document["startupScene"] = ToGenericUtf8(project.startupScene);
+        return document.dump(2) + '\n';
+    }
+
+    std::expected<void, std::string> Save(const Project& project) {
+        const std::string text = ToString(project);
+        std::filesystem::path temporary = project.file;
+        temporary += ".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            if (!stream.write(text.data(), static_cast<std::streamsize>(text.size()))) {
+                return std::unexpected("écriture impossible : " + ToUtf8(temporary));
+            }
+        }
+        std::error_code error;
+        std::filesystem::rename(temporary, project.file, error);
+        if (error) {
+            return std::unexpected(std::format("remplacement de {} : {}", ToUtf8(project.file), error.message()));
+        }
+        return {};
     }
 }

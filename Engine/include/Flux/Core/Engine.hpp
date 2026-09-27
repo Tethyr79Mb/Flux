@@ -67,6 +67,7 @@ namespace Flux {
         // Projet ouvert (nullptr sans projet) : dossier des assets, scène de démarrage.
         void SetProject(Project project) { m_project = std::move(project); }
         const Project* GetProject() const { return m_project ? &*m_project : nullptr; }
+        Project* GetProject() { return m_project ? &*m_project : nullptr; }
 
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
