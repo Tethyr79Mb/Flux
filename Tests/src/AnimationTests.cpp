@@ -183,7 +183,7 @@ namespace {
         const Entity hero = scene.CreateEntity("Héros");
         scene.Add<CharacterComponent>(hero, CharacterComponent{.walkSpeed = 2.0f, .runSpeed = 5.0f});
         scene.Add<AnimatorComponent>(hero, AnimatorComponent{.animation = "Marche", .idleAnimation = "Repos",
-                                                             .runAnimation = "Course"});
+                                                             .runAnimation = "Course", .airAnimation = "Chute"});
         const auto& animator = scene.Get<AnimatorComponent>(hero);
         auto& character = scene.Get<CharacterComponent>(hero);
 
@@ -203,6 +203,20 @@ namespace {
         CHECK(animator.playing == "Course" && animator.previous == "Marche" && std::abs(animator.time - 0.08) < 1.0e-6);
         Animator::Update(scene, 1.0);
         CHECK(animator.fade == 1.0f);
+        // En l'air un instant (une marche) : rien ne change ; plus longtemps (saut) : l'animation en l'air.
+        character.groundSpeed = 0.0f;
+        character.airTime = 0.1f;
+        Animator::Update(scene, 0.1);
+        CHECK(animator.playing == "Repos");
+        character.airTime = 0.3f;
+        Animator::Update(scene, 0.1);
+        CHECK(animator.playing == "Chute" && animator.previous == "Repos");
+        character.airTime = 0.0f;
+        Animator::Update(scene, 1.0);
+        CHECK(animator.playing == "Repos");
+        character.groundSpeed = 4.0f;
+        Animator::Update(scene, 1.0);
+        CHECK(animator.playing == "Course");
         // Sans animation de repos, la marche se fige à l'arrêt.
         scene.Get<AnimatorComponent>(hero).idleAnimation.clear();
         scene.Get<AnimatorComponent>(hero).runAnimation.clear();

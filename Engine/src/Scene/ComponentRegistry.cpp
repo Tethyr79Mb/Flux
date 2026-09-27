@@ -73,6 +73,7 @@ namespace Flux {
             .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
             .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)
             .Asset("runAnimation", "En courant", &AnimatorComponent::runAnimation, AssetType::Animation)
+            .Asset("airAnimation", "En l'air", &AnimatorComponent::airAnimation, AssetType::Animation)
             .Field("speed", "Vitesse", &AnimatorComponent::speed, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("loop", "En boucle", &AnimatorComponent::loop);
         registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")

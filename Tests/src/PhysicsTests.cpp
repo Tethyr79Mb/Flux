@@ -141,11 +141,15 @@ namespace {
         jump.jump = true;
         world.Update(scene, Frame, jump);
         double highest = 0.0;
+        float longestAir = 0.0f;
         for (int frame = 0; frame < 120; ++frame) {
             world.Update(scene, Frame, {});
             highest = std::max(highest, scene.Get<TransformComponent>(hero).position.y);
+            longestAir = std::max(longestAir, scene.Get<CharacterComponent>(hero).airTime);
         }
         CHECK(highest > 0.8 && highest < 1.3);
+        // Environ 0,9 s en l'air (4,5 m/s vers le haut, gravité 9,81), puis de nouveau au sol.
+        CHECK(longestAir > 0.7f && longestAir < 1.1f && scene.Get<CharacterComponent>(hero).airTime == 0.0f);
         CHECK(std::abs(scene.Get<TransformComponent>(hero).position.y) < 0.05);
         return true;
     }
