@@ -15,6 +15,15 @@ bool RunProjectTests() {
     CHECK(project->assetsDirectory == (project->file.parent_path() / "assets").lexically_normal());
     CHECK(project->GetStartupScenePath().filename().u8string() == u8"Démarrage.scene.json");
 
+    // Aller-retour par ToString : mêmes chemins, écrits avec des « / ».
+    Project changed = *project;
+    changed.startupScene = std::filesystem::path("scenes") / "Titre.scene.json";
+    const std::string saved = ProjectFile::ToString(changed);
+    CHECK(saved.find("\"scenes/Titre.scene.json\"") != std::string::npos);
+    const auto reread = ProjectFile::Parse(saved, file);
+    CHECK(reread && reread->name == "Démo" && reread->assetsDirectory == project->assetsDirectory
+          && reread->startupScene == changed.startupScene);
+
     // Sans nom : celui du fichier.
     const auto unnamed = ProjectFile::Parse(R"({"format": "flux.project", "version": 1,
         "assets": ".", "startupScene": "a.scene.json"})", file);

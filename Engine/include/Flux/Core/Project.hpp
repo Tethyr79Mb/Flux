@@ -28,5 +28,10 @@ namespace Flux {
         // file : chemin du projet, auquel les chemins du fichier sont relatifs.
         FLUX_API std::expected<Project, std::string> Parse(std::string_view json, const std::filesystem::path& file);
         FLUX_API std::expected<Project, std::string> Load(const std::filesystem::path& file);
+
+        // Texte du fichier (chemins relatifs, avec des « / ») ; les dossiers doivent rester sous celui du projet.
+        FLUX_API std::string ToString(const Project& project);
+        // Écrit project.file (d'abord dans un fichier temporaire : une coupure n'abîme pas l'ancien).
+        FLUX_API std::expected<void, std::string> Save(const Project& project);
     }
 }

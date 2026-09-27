@@ -96,7 +96,9 @@ namespace FluxEditor {
             }
         } else {
             const bool current = document.GetPath().lexically_normal() == entry.path.lexically_normal();
-            const UI::Context::TreeNodeResult node = ui.TreeNode(entry.name, current, true);
+            // La scène que Game.exe charge au lancement est signalée.
+            const std::string label = IsStartupScene(engine, entry.path) ? entry.name + "  (démarrage)" : entry.name;
+            const UI::Context::TreeNodeResult node = ui.TreeNode(label, current, true);
             if (node.doubleClicked && IsScene(entry.path) && !current) {
                 document.OpenFile(engine, entry.path);
             }
@@ -113,6 +115,9 @@ namespace FluxEditor {
         if (scene && ui.MenuItem("Ouvrir")) {
             document.OpenFile(engine, entry.path);
         }
+        if (scene && ui.MenuItem("Définir comme scène de démarrage", {}, !IsStartupScene(engine, entry.path))) {
+            SetStartupScene(engine, entry.path);
+        }
         if (ui.MenuItem("Afficher dans l'explorateur")) {
             Platform::ShowInExplorer(entry.path);
         }
@@ -125,8 +130,7 @@ namespace FluxEditor {
 
     void ContentBrowser::Delete(Engine& engine, SceneDocument& document, const Entry& entry) {
         const Window& window = engine.GetWindow();
-        const Project* project = engine.GetProject();
-        if (project && project->GetStartupScenePath().lexically_normal() == entry.path.lexically_normal()) {
+        if (IsStartupScene(engine, entry.path)) {
             Platform::ShowError(window, "Supprimer", "« " + entry.name + " » est la scène de démarrage du projet : "
                                                      "Game.exe ne pourrait plus démarrer.");
             return;
@@ -140,5 +144,28 @@ namespace FluxEditor {
         }
         document.ForgetFile(entry.path);
         m_sinceScan = ScanInterval; // relu à la prochaine frame
+    }
+
+    bool ContentBrowser::IsStartupScene(const Engine& engine, const std::filesystem::path& path) {
+        const Project* project = engine.GetProject();
+        return project && project->GetStartupScenePath().lexically_normal() == path.lexically_normal();
+    }
+
+    void ContentBrowser::SetStartupScene(Engine& engine, const std::filesystem::path& path) {
+        Project* project = engine.GetProject();
+        if (!project) {
+            return;
+        }
+        // Chemin relatif au dossier des assets, comme dans le fichier : le projet sert aussi depuis bin/.
+        const std::filesystem::path relative = path.lexically_normal().lexically_relative(project->assetsDirectory);
+        if (relative.empty() || *relative.begin() == "..") {
+            Platform::ShowError(engine.GetWindow(), "Scène de démarrage", "La scène doit être dans le dossier des assets.");
+            return;
+        }
+        const std::filesystem::path previous = std::exchange(project->startupScene, relative);
+        if (auto saved = ProjectFile::Save(*project); !saved) {
+            project->startupScene = previous; // le fichier n'a pas changé : le projet en mémoire non plus
+            Platform::ShowError(engine.GetWindow(), "Scène de démarrage", "Projet non enregistré : " + saved.error());
+        }
     }
 }
