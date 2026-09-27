@@ -18,6 +18,12 @@ if(NOT WIN32)
     message(FATAL_ERROR "Flux ne cible que Windows pour l'instant (Platform/Win32).")
 endif()
 
+if(MSVC)
+    # Sources en UTF-8 (accents des chaînes et des commentaires) : sans ça, MSVC les lit dans la page de code de Windows.
+    # /Zc:__cplusplus : __cplusplus donne la vraie version du standard (MSVC reste sinon à 199711L).
+    add_compile_options(/utf-8 /Zc:__cplusplus)
+endif()
+
 include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
 include(cmake/FluxResources.cmake)
