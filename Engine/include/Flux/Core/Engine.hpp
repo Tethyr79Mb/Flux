@@ -77,6 +77,12 @@ namespace Flux {
         // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
         std::optional<UI::TextureInfo> LoadAssetTexture(std::string_view relativePath);
 
+        // Remplace la scène par celle du fichier (chemin relatif au dossier des assets, « scenes/Demo.scene.json »)
+        // à la fin de la frame en cours : ce qui se passe pendant la frame voit encore l'ancienne scène.
+        // Utilisé par SceneChangeComponent, et par le code du jeu. Sans effet si le jeu est arrêté (éditeur hors du
+        // mode Jouer) ; en cas d'échec (fichier absent...), la scène actuelle reste et l'erreur va dans la console.
+        void RequestScene(std::string relativePath);
+
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
         void SetGameState(GameState state) { m_gameState = state; }
@@ -103,5 +109,10 @@ namespace Flux {
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
         bool m_drawScreenUi = true;
+        std::optional<std::string> m_requestedScene;
+
+        // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
+        void UpdateGameSystems(double deltaSeconds);
+        void LoadRequestedScene();
     };
 }

@@ -20,8 +20,11 @@ namespace FluxEditor {
             const char* folder; // sous-dossier des assets où ranger un fichier venu d'ailleurs
         };
 
-        // Seules les images existent pour l'instant (None n'arrive pas ici : champ texte ordinaire).
-        AssetKind GetKind([[maybe_unused]] AssetType type) {
+        // None n'arrive pas ici : champ texte ordinaire.
+        AssetKind GetKind(AssetType type) {
+            if (type == AssetType::Scene) {
+                return {{"Scènes Flux", ".scene.json"}, "Choisir une scène", "scenes"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 
@@ -79,7 +82,7 @@ namespace FluxEditor {
         if (fs::exists(target, error)) {
             Platform::ShowError(window, kind.title,
                                 "Un fichier « " + name + " » existe déjà dans assets/" + kind.folder
-                                    + ".\nRenommez l'image, ou choisissez directement celle du projet.");
+                                    + ".\nRenommez-le, ou choisissez directement celui du projet.");
             return std::nullopt;
         }
         fs::create_directories(target.parent_path(), error);

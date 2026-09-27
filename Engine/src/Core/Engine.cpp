@@ -3,7 +3,10 @@
 #include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
+#include "Flux/Platform/Input.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/Scene/SceneChange.hpp"
+#include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -129,8 +132,12 @@ namespace Flux {
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
                              !m_window->IsCursorLocked());
             m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
-            if (m_gameUpdate && m_gameState != GameState::Stopped) {
-                m_gameUpdate(*this, m_gameState == GameState::Running ? deltaSeconds : 0.0);
+            if (m_gameState != GameState::Stopped) {
+                const double gameDelta = m_gameState == GameState::Running ? deltaSeconds : 0.0;
+                UpdateGameSystems(gameDelta);
+                if (m_gameUpdate) {
+                    m_gameUpdate(*this, gameDelta);
+                }
             }
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
@@ -148,8 +155,43 @@ namespace Flux {
             if (!m_renderer->RenderFrame(m_scene, m_camera)) {
                 return 1;
             }
+            LoadRequestedScene();
         }
         return 0;
+    }
+
+    void Engine::RequestScene(std::string relativePath) {
+        m_requestedScene = std::move(relativePath);
+    }
+
+    void Engine::UpdateGameSystems(double deltaSeconds) {
+        if (m_gameState != GameState::Running) {
+            return; // en pause : ni minuterie ni clic
+        }
+        // Clic ou touche de confirmation, sauf s'ils visent l'interface (panneaux de l'éditeur, champ en saisie).
+        const Input& input = m_window->GetInput();
+        const bool confirmed = (input.WasMouseButtonPressed(MouseButton::Left) && !m_ui->WantsMouse())
+                            || ((input.WasKeyPressed(Key::Enter) || input.WasKeyPressed(Key::NumpadEnter)
+                                 || input.WasKeyPressed(Key::Space))
+                                && !m_ui->WantsKeyboard());
+        if (std::optional<std::string> next = SceneChange::Update(m_scene, deltaSeconds, confirmed)) {
+            RequestScene(std::move(*next));
+        }
+    }
+
+    void Engine::LoadRequestedScene() {
+        std::optional<std::string> requested = std::exchange(m_requestedScene, std::nullopt);
+        if (!requested || m_gameState == GameState::Stopped) {
+            return; // demande faite juste avant l'arrêt du jeu (éditeur) : la scène éditée est déjà restaurée
+        }
+        if (!m_project) {
+            std::fprintf(stderr, "Flux : changement de scène sans projet ouvert (%s)\n", requested->c_str());
+            return;
+        }
+        const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(*requested);
+        if (auto loaded = SceneSerializer::Load(m_scene, m_components, path); !loaded) {
+            std::fprintf(stderr, "Flux : scène %s : %s\n", requested->c_str(), loaded.error().c_str());
+        }
     }
 
     void Engine::SetGameUpdate(UpdateFunction update) {

@@ -37,6 +37,7 @@ namespace Flux {
     enum class AssetType : std::uint8_t {
         None,
         Image, // PNG, JPEG, TGA, BMP
+        Scene, // .scene.json
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).
