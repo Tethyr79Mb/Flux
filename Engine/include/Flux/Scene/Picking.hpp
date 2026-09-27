@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Flux/Export.hpp"
+#include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Scene.hpp"
 
+#include <functional>
 #include <optional>
 #include <span>
 
@@ -44,13 +46,16 @@ namespace Flux {
         Math::Vector2f m_center;
     };
 
-    // Distance le long du rayon jusqu'au cube unité centré (le maillage Cube) placé par transform ;
-    // nullopt s'il le manque. Un rayon qui part de l'intérieur touche à 0.
-    FLUX_API std::optional<double> IntersectCube(const Ray& ray, const RelativeTransform& transform);
+    // Distance le long du rayon jusqu'à la boîte box (repère local ; par défaut le cube unité centré) placée par
+    // transform ; nullopt s'il la manque. Un rayon qui part de l'intérieur touche à 0.
+    FLUX_API std::optional<double> IntersectBox(const Ray& ray, const RelativeTransform& transform, const Math::Box3f& box = {});
 
-    // Entité visible (MeshRendererComponent) la plus proche touchée par le rayon ; NullEntity si aucune.
+    // Boîte locale du maillage d'une entité, nullopt si elle n'est pas dessinée en 3D (Engine::GetMeshBounds).
+    using MeshBoundsFunction = std::function<std::optional<Math::Box3f>(Entity)>;
+
+    // Entité dessinée la plus proche touchée par le rayon (par sa boîte englobante) ; NullEntity si aucune.
     // transforms : ceux de Scene::ComputeRelativeTransforms, relatifs à l'origine du rayon.
-    FLUX_API Entity PickEntity(const Scene& scene, std::span<const RelativeTransform> transforms, const Ray& ray);
+    FLUX_API Entity PickEntity(std::span<const RelativeTransform> transforms, const Ray& ray, const MeshBoundsFunction& boundsOf);
 
     // Paramètre t du point de la droite point + t * direction (unitaire) le plus proche du rayon ;
     // nullopt si la droite est presque parallèle au rayon (le point le plus proche file à l'infini).

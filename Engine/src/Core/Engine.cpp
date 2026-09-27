@@ -152,6 +152,7 @@ namespace Flux {
             }
             m_ui->EndFrame(m_renderer->GetOverlay());
 
+            m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             if (!m_renderer->RenderFrame(m_scene, m_camera)) {
                 return 1;
             }
@@ -223,6 +224,22 @@ namespace Flux {
             return std::nullopt;
         }
         return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+    }
+
+    std::optional<Math::Box3f> Engine::GetMeshBounds(Entity entity) {
+        if (m_scene.TryGet<MeshRendererComponent>(entity)) {
+            return Math::Box3f{};
+        }
+        const auto* model = m_scene.TryGet<ModelComponent>(entity);
+        if (!model) {
+            return std::nullopt;
+        }
+        if (m_project && !model->model.empty()) {
+            if (auto bounds = m_renderer->LoadModel(m_project->assetsDirectory / Platform::PathFromUtf8(model->model))) {
+                return bounds;
+            }
+        }
+        return Math::Box3f{}; // pas (encore) de fichier : le cube unité, pour pouvoir le sélectionner quand même
     }
 
     UI::Context& Engine::GetUi() {

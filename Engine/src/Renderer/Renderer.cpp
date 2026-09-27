@@ -3,6 +3,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Image.hpp"
+#include "Flux/Renderer/Model.hpp"
 #include "Flux/Scene/Camera.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -33,60 +34,50 @@ namespace Flux {
         // Profondeur 32 bits flottante : obligatoire pour que le reverse-Z tienne l'échelle galaxie.
         constexpr VkFormat DepthFormat = VK_FORMAT_D32_SFLOAT;
 
-        // Doit correspondre à VertexInput dans shaders/Mesh.slang.
-        struct MeshVertex {
-            Math::Vector3f position;
-            float shade;
-        };
+        static_assert(sizeof(ModelVertex) == 32, "ModelVertex doit correspondre à VertexInput dans shaders/Mesh.slang");
 
-        // Doit correspondre à MeshParams dans shaders/Mesh.slang.
+        // Doit correspondre à MeshParams dans shaders/Mesh.slang : 128 octets, le minimum garanti des push constants.
         struct MeshParams {
             Math::Matrix4f modelViewProjection;
+            std::array<std::array<float, 4>, 3> normalColumns; // normalColumns[0][3] : seuil d'alpha
             Math::LinearColor color;
         };
-        static_assert(sizeof(MeshParams) == 80);
+        static_assert(sizeof(MeshParams) == 128);
 
-        struct CubeMesh {
-            std::array<MeshVertex, 24> vertices;
-            std::array<uint16_t, 36> indices;
-        };
-
-        // Cube unité centré ; chaque face a ses 4 sommets pour garder un éclairage uniforme par face.
-        constexpr CubeMesh BuildCube() {
+        // Cube unité centré ; chaque face a ses 4 sommets (normale propre, image entière).
+        ModelData BuildCube() {
             struct Face {
                 Math::Vector3f normal;
                 Math::Vector3f tangent;
-                float shade; // éclairage fixe : le dessus clair, le dessous sombre
             };
             constexpr std::array<Face, 6> faces{{
-                {{1, 0, 0}, {0, 0, -1}, 0.75f},
-                {{-1, 0, 0}, {0, 0, 1}, 0.75f},
-                {{0, 1, 0}, {1, 0, 0}, 1.0f},
-                {{0, -1, 0}, {1, 0, 0}, 0.35f},
-                {{0, 0, 1}, {1, 0, 0}, 0.55f},
-                {{0, 0, -1}, {-1, 0, 0}, 0.55f},
+                {{1, 0, 0}, {0, 0, -1}},
+                {{-1, 0, 0}, {0, 0, 1}},
+                {{0, 1, 0}, {1, 0, 0}},
+                {{0, -1, 0}, {1, 0, 0}},
+                {{0, 0, 1}, {1, 0, 0}},
+                {{0, 0, -1}, {-1, 0, 0}},
             }};
-            CubeMesh mesh{};
-            for (std::size_t f = 0; f < faces.size(); ++f) {
-                const Face& face = faces[f];
+            ModelData mesh;
+            for (const Face& face : faces) {
                 // bitangent = normal x tangent, donc tangent x bitangent = normal : sens antihoraire vu de l'extérieur.
                 const Math::Vector3f bitangent = Math::Cross(face.normal, face.tangent);
                 const Math::Vector3f center = face.normal * 0.5f;
                 const Math::Vector3f u = face.tangent * 0.5f;
                 const Math::Vector3f v = bitangent * 0.5f;
-                const auto base = static_cast<uint16_t>(f * 4);
-                mesh.vertices[base + 0] = {center - u - v, face.shade};
-                mesh.vertices[base + 1] = {center + u - v, face.shade};
-                mesh.vertices[base + 2] = {center + u + v, face.shade};
-                mesh.vertices[base + 3] = {center - u + v, face.shade};
-                const std::array<uint16_t, 6> quad{0, 1, 2, 0, 2, 3};
-                for (std::size_t i = 0; i < quad.size(); ++i) {
-                    mesh.indices[f * 6 + i] = static_cast<uint16_t>(base + quad[i]);
+                const auto base = static_cast<uint32_t>(mesh.vertices.size());
+                mesh.vertices.push_back({center - u - v, face.normal, {0.0f, 1.0f}});
+                mesh.vertices.push_back({center + u - v, face.normal, {1.0f, 1.0f}});
+                mesh.vertices.push_back({center + u + v, face.normal, {1.0f, 0.0f}});
+                mesh.vertices.push_back({center - u + v, face.normal, {0.0f, 0.0f}});
+                for (const uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u}) {
+                    mesh.indices.push_back(base + corner);
                 }
             }
+            mesh.primitives.push_back({0, static_cast<uint32_t>(mesh.indices.size()), 0});
+            mesh.materials.emplace_back();
             return mesh;
         }
-        constexpr CubeMesh Cube = BuildCube();
 
         // Doit correspondre à OverlayParams dans shaders/Overlay.slang.
         struct OverlayParams {
@@ -109,6 +100,37 @@ namespace Flux {
             Math::Vector2i size;
             std::filesystem::file_time_type writeTime{};
             std::chrono::steady_clock::time_point checked{};
+        };
+
+        // Matériaux de modèles chargés au plus : un descriptor set chacun (son image de couleur de base).
+        constexpr uint32_t MaxMaterials = 4096;
+
+        struct GpuMaterial {
+            Math::LinearColor baseColor{1.0f, 1.0f, 1.0f, 1.0f};
+            float alphaCutoff = 0.0f;
+            bool doubleSided = false;
+            VkDescriptorSet set = VK_NULL_HANDLE; // VK_NULL_HANDLE : celui de l'image blanche
+        };
+
+        // Modèle 3D envoyé au GPU (le cube du moteur, ou un fichier glTF), et de quoi voir si le fichier a changé.
+        struct GpuModel {
+            Vk::Buffer vertices;
+            Vk::Buffer indices; // 32 bits
+            std::vector<Vk::Image> images;
+            std::vector<GpuMaterial> materials;
+            std::vector<ModelPrimitive> primitives;
+            Math::Box3f bounds;
+            bool loaded = false;
+            std::filesystem::file_time_type writeTime{};
+            std::chrono::steady_clock::time_point checked{};
+        };
+
+        // Une entité à dessiner : son modèle et ses matrices, calculées pour la frame.
+        struct MeshDraw {
+            const GpuModel* model;
+            Math::Matrix4f modelViewProjection;
+            std::array<std::array<float, 4>, 3> normalColumns;
+            Math::LinearColor tint;
         };
 
         // Taille minimale d'un vertex buffer d'overlay : évite de réallouer pour quelques caractères de plus.
@@ -155,12 +177,21 @@ namespace Flux {
         uint32_t frameIndex = 0;
         // Déclarés après device : détruits avant lui.
         Vk::Image depthImage;
-        Vk::Buffer cubeVertexBuffer;
-        Vk::Buffer cubeIndexBuffer;
+        // Maillages : faces arrière éliminées, ou gardées (matériaux double face). Même layout pour les deux.
         Vk::GraphicsPipeline meshPipeline;
+        Vk::GraphicsPipeline meshPipelineDoubleSided;
+        VkSampler meshSampler = VK_NULL_HANDLE;
+        VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool materialDescriptorPool = VK_NULL_HANDLE;
+        Vk::Image whiteImage; // 1 x 1 : matériaux sans image
+        VkDescriptorSet whiteSet = VK_NULL_HANDLE;
+        GpuModel cube;
+        // Modèles des fichiers, par chemin (UTF-8, normalisé) ; les échecs aussi, pour ne pas relire à chaque frame.
+        std::unordered_map<std::string, GpuModel> models;
+        std::filesystem::path assetsDirectory;
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une frame à l'autre.
         std::vector<RelativeTransform> relativeTransforms;
-        std::vector<MeshParams> meshDraws;
+        std::vector<MeshDraw> meshDraws;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
         bool vsyncChanged = false;
@@ -190,6 +221,9 @@ namespace Flux {
             }
             device->WaitIdle();
             const VkDevice vkDevice = device->GetHandle();
+            vkDestroyDescriptorPool(vkDevice, materialDescriptorPool, nullptr); // libère aussi les sets des matériaux
+            vkDestroyDescriptorSetLayout(vkDevice, materialSetLayout, nullptr);
+            vkDestroySampler(vkDevice, meshSampler, nullptr);
             vkDestroyDescriptorPool(vkDevice, overlayDescriptorPool, nullptr); // libère aussi overlaySets
             vkDestroyDescriptorSetLayout(vkDevice, overlaySetLayout, nullptr);
             vkDestroySampler(vkDevice, atlasSampler, nullptr);
@@ -249,46 +283,241 @@ namespace Flux {
         }
 
         std::expected<void, std::string> CreateMeshes() {
-            auto vertices = Vk::Buffer::Create(device->GetAllocator(), sizeof(Cube.vertices),
-                                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
-            if (!vertices) {
-                return std::unexpected(vertices.error());
-            }
-            vertices->Write(Cube.vertices.data(), sizeof(Cube.vertices));
-            cubeVertexBuffer = std::move(*vertices);
+            const VkDevice vkDevice = device->GetHandle();
 
-            auto indices = Vk::Buffer::Create(device->GetAllocator(), sizeof(Cube.indices),
-                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT, Vk::Buffer::Memory::Upload);
-            if (!indices) {
-                return std::unexpected(indices.error());
+            // Répété (les UV des modèles sortent souvent de [0, 1]), filtré entre les mips.
+            VkSamplerCreateInfo samplerInfo{};
+            samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+            samplerInfo.magFilter = VK_FILTER_LINEAR;
+            samplerInfo.minFilter = VK_FILTER_LINEAR;
+            samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+            if (!Vk::Check(vkCreateSampler(vkDevice, &samplerInfo, nullptr, &meshSampler), "vkCreateSampler")) {
+                return std::unexpected("création du sampler des maillages");
             }
-            indices->Write(Cube.indices.data(), sizeof(Cube.indices));
-            cubeIndexBuffer = std::move(*indices);
 
-            const VkVertexInputBindingDescription binding{0, sizeof(MeshVertex), VK_VERTEX_INPUT_RATE_VERTEX};
+            const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                                       VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+            VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
+            setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            setLayoutInfo.bindingCount = 1;
+            setLayoutInfo.pBindings = &binding;
+            if (!Vk::Check(vkCreateDescriptorSetLayout(vkDevice, &setLayoutInfo, nullptr, &materialSetLayout), "vkCreateDescriptorSetLayout")) {
+                return std::unexpected("création du descriptor set layout des matériaux");
+            }
+
+            // Sets libérables un par un : un modèle rechargé rend ceux de l'ancienne version.
+            const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + MaxMaterials};
+            VkDescriptorPoolCreateInfo poolInfo{};
+            poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+            poolInfo.maxSets = 1 + MaxMaterials;
+            poolInfo.poolSizeCount = 1;
+            poolInfo.pPoolSizes = &poolSize;
+            if (!Vk::Check(vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &materialDescriptorPool), "vkCreateDescriptorPool")) {
+                return std::unexpected("création du descriptor pool des matériaux");
+            }
+
+            constexpr std::array<uint8_t, 4> white{255, 255, 255, 255};
+            auto image = Vk::Image::CreateTexture(*device, VK_FORMAT_R8G8B8A8_SRGB, {1, 1}, white);
+            if (!image) {
+                return std::unexpected(image.error());
+            }
+            whiteImage = std::move(*image);
+            whiteSet = AllocateMaterialSet(whiteImage);
+            if (whiteSet == VK_NULL_HANDLE) {
+                return std::unexpected("allocation du descriptor set de l'image blanche");
+            }
+
+            const VkVertexInputBindingDescription vertexBinding{0, sizeof(ModelVertex), VK_VERTEX_INPUT_RATE_VERTEX};
             const std::array attributes{
-                VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(MeshVertex, position)},
-                VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32_SFLOAT, offsetof(MeshVertex, shade)},
+                VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(ModelVertex, position)},
+                VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(ModelVertex, normal)},
+                VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ModelVertex, uv)},
             };
             const VkPushConstantRange pushConstants{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshParams)};
 
             Vk::GraphicsPipelineDesc desc;
             desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
-            desc.vertexBindings = {&binding, 1};
+            desc.vertexBindings = {&vertexBinding, 1};
             desc.vertexAttributes = attributes;
+            desc.setLayouts = {&materialSetLayout, 1};
             desc.pushConstants = {&pushConstants, 1};
             desc.colorFormat = swapchain->GetFormat();
             desc.depthFormat = DepthFormat;
             desc.depthTest = true;
             desc.depthWrite = true;
             desc.cullMode = VK_CULL_MODE_BACK_BIT;
-
-            auto pipeline = Vk::GraphicsPipeline::Create(device->GetHandle(), desc);
+            auto pipeline = Vk::GraphicsPipeline::Create(vkDevice, desc);
             if (!pipeline) {
                 return std::unexpected(pipeline.error());
             }
             meshPipeline = std::move(*pipeline);
+
+            desc.cullMode = VK_CULL_MODE_NONE;
+            auto doubleSided = Vk::GraphicsPipeline::Create(vkDevice, desc);
+            if (!doubleSided) {
+                return std::unexpected(doubleSided.error());
+            }
+            meshPipelineDoubleSided = std::move(*doubleSided);
+
+            auto uploaded = UploadModel(BuildCube(), "cube");
+            if (!uploaded) {
+                return std::unexpected(uploaded.error());
+            }
+            cube = std::move(*uploaded);
             return {};
+        }
+
+        VkDescriptorSet AllocateMaterialSet(const Vk::Image& image) const {
+            VkDescriptorSetAllocateInfo allocateInfo{};
+            allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocateInfo.descriptorPool = materialDescriptorPool;
+            allocateInfo.descriptorSetCount = 1;
+            allocateInfo.pSetLayouts = &materialSetLayout;
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            // Pool épuisé : pas une erreur fatale, le matériau prendra l'image blanche.
+            if (vkAllocateDescriptorSets(device->GetHandle(), &allocateInfo, &set) != VK_SUCCESS) {
+                return VK_NULL_HANDLE;
+            }
+            const VkDescriptorImageInfo imageInfo{meshSampler, image.GetView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = set;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imageInfo;
+            vkUpdateDescriptorSets(device->GetHandle(), 1, &write, 0, nullptr);
+            return set;
+        }
+
+        // Buffer en mémoire vidéo, rempli par une copie depuis un buffer intermédiaire (attend la fin de la copie).
+        std::expected<Vk::Buffer, std::string> CreateStaticBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage) const {
+            auto staging = Vk::Buffer::Create(device->GetAllocator(), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Upload);
+            if (!staging) {
+                return std::unexpected(staging.error());
+            }
+            staging->Write(data, size);
+            auto buffer = Vk::Buffer::Create(device->GetAllocator(), size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                             Vk::Buffer::Memory::GpuOnly);
+            if (!buffer) {
+                return std::unexpected(buffer.error());
+            }
+            const bool copied = device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
+                const VkBufferCopy region{0, 0, size};
+                vkCmdCopyBuffer(commandBuffer, staging->GetHandle(), buffer->GetHandle(), 1, &region);
+            });
+            if (!copied) {
+                return std::unexpected("envoi d'un maillage au GPU");
+            }
+            return buffer;
+        }
+
+        // Sommets, indices, images et matériaux envoyés au GPU. Une image refusée par le GPU laisse son matériau blanc.
+        std::expected<GpuModel, std::string> UploadModel(const ModelData& data, std::string_view name) {
+            GpuModel model;
+            auto vertices = CreateStaticBuffer(data.vertices.data(), data.vertices.size() * sizeof(ModelVertex),
+                                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            if (!vertices) {
+                return std::unexpected(vertices.error());
+            }
+            model.vertices = std::move(*vertices);
+            auto indices = CreateStaticBuffer(data.indices.data(), data.indices.size() * sizeof(uint32_t),
+                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            if (!indices) {
+                return std::unexpected(indices.error());
+            }
+            model.indices = std::move(*indices);
+
+            std::vector<int> imageSlots(data.images.size(), -1); // indice dans model.images
+            for (std::size_t i = 0; i < data.images.size(); ++i) {
+                const ImageData& pixels = data.images[i];
+                auto image = Vk::Image::CreateTexture(*device, VK_FORMAT_R8G8B8A8_SRGB,
+                                                      {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
+                                                      pixels.rgba, true);
+                if (!image) {
+                    std::fprintf(stderr, "Flux : modèle %.*s : image %zu : %s\n", static_cast<int>(name.size()), name.data(), i,
+                                 image.error().c_str());
+                    continue;
+                }
+                imageSlots[i] = static_cast<int>(model.images.size());
+                model.images.push_back(std::move(*image));
+            }
+            for (const ModelMaterial& source : data.materials) {
+                GpuMaterial material;
+                material.baseColor = source.baseColor;
+                material.alphaCutoff = source.alphaCutoff;
+                material.doubleSided = source.doubleSided;
+                if (source.baseColorImage >= 0 && imageSlots[static_cast<std::size_t>(source.baseColorImage)] >= 0) {
+                    material.set = AllocateMaterialSet(model.images[static_cast<std::size_t>(imageSlots[static_cast<std::size_t>(source.baseColorImage)])]);
+                    if (material.set == VK_NULL_HANDLE) {
+                        std::fprintf(stderr, "Flux : plus de %u matériaux chargés, « %s » sans image\n", MaxMaterials, source.name.c_str());
+                    }
+                }
+                model.materials.push_back(material);
+            }
+            model.primitives = data.primitives;
+            model.bounds = data.bounds;
+            model.loaded = true;
+            return model;
+        }
+
+        void FreeMaterialSets(GpuModel& model) const {
+            for (GpuMaterial& material : model.materials) {
+                if (material.set != VK_NULL_HANDLE) {
+                    vkFreeDescriptorSets(device->GetHandle(), materialDescriptorPool, 1, &material.set);
+                    material.set = VK_NULL_HANDLE;
+                }
+            }
+        }
+
+        // Lit le fichier et remplace le modèle ; en cas d'échec, l'ancienne version (s'il y en a une) reste.
+        void ReloadModel(const std::filesystem::path& path, GpuModel& model) {
+            const std::string name = Platform::ToUtf8(path.filename());
+            auto data = LoadModelFile(path);
+            if (!data) {
+                std::fprintf(stderr, "Flux : modèle %s\n", data.error().c_str());
+                return;
+            }
+            for (const std::string& warning : data->warnings) {
+                std::fprintf(stderr, "Flux : modèle %s : %s\n", name.c_str(), warning.c_str());
+            }
+            // Rechargement (fichier retouché) : les frames en vol dessinent peut-être encore l'ancienne version.
+            // Rare : attendre le GPU suffit, et les envois ci-dessous l'attendent de toute façon.
+            device->WaitIdle();
+            auto uploaded = UploadModel(*data, name);
+            if (!uploaded) {
+                std::fprintf(stderr, "Flux : modèle %s : %s\n", name.c_str(), uploaded.error().c_str());
+                return;
+            }
+            FreeMaterialSets(model);
+            const std::filesystem::file_time_type writeTime = model.writeTime;
+            const std::chrono::steady_clock::time_point checked = model.checked;
+            model = std::move(*uploaded);
+            model.writeTime = writeTime;
+            model.checked = checked;
+        }
+
+        // Modèle du fichier, chargé au premier appel puis relu s'il change ; nullptr s'il est illisible.
+        const GpuModel* FindModel(const std::filesystem::path& path) {
+            const auto now = std::chrono::steady_clock::now();
+            auto [found, created] = models.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
+            GpuModel& model = found->second;
+            if (created || now - model.checked >= TextureCheckInterval) {
+                model.checked = now;
+                std::error_code error;
+                const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, error);
+                // Fichier absent : essayé une fois (pour le signaler), puis de nouveau quand il apparaît.
+                if (created || (!error && writeTime != model.writeTime)) {
+                    model.writeTime = error ? std::filesystem::file_time_type{} : writeTime;
+                    ReloadModel(path, model);
+                }
+            }
+            return model.loaded ? &model : nullptr;
         }
 
         std::expected<void, std::string> CreateOverlay() {
@@ -523,19 +752,42 @@ namespace Flux {
             const VkViewport viewport{static_cast<float>(scissor.offset.x), static_cast<float>(scissor.offset.y),
                                       static_cast<float>(scissor.extent.width), static_cast<float>(scissor.extent.height),
                                       0.0f, 1.0f};
-            const VkBuffer vertexBuffer = cubeVertexBuffer.GetHandle();
-            const VkDeviceSize offset = 0;
-
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline.GetHandle());
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
-            vkCmdBindIndexBuffer(commandBuffer, cubeIndexBuffer.GetHandle(), 0, VK_INDEX_TYPE_UINT16);
 
-            for (const MeshParams& params : meshDraws) {
-                vkCmdPushConstants(commandBuffer, meshPipeline.GetLayout(),
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
-                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(Cube.indices.size()), 1, 0, 0, 0);
+            // Changements d'état seulement quand il le faut : les entités d'un même modèle se suivent souvent.
+            const Vk::GraphicsPipeline* boundPipeline = nullptr;
+            const GpuModel* boundModel = nullptr;
+            VkDescriptorSet boundSet = VK_NULL_HANDLE;
+            for (const MeshDraw& draw : meshDraws) {
+                const GpuModel& model = *draw.model;
+                if (&model != boundModel) {
+                    boundModel = &model;
+                    const VkBuffer vertexBuffer = model.vertices.GetHandle();
+                    const VkDeviceSize offset = 0;
+                    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offset);
+                    vkCmdBindIndexBuffer(commandBuffer, model.indices.GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+                }
+                for (const ModelPrimitive& primitive : model.primitives) {
+                    const GpuMaterial& material = model.materials[primitive.material];
+                    const Vk::GraphicsPipeline& pipeline = material.doubleSided ? meshPipelineDoubleSided : meshPipeline;
+                    if (&pipeline != boundPipeline) {
+                        boundPipeline = &pipeline;
+                        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetHandle());
+                    }
+                    const VkDescriptorSet set = material.set != VK_NULL_HANDLE ? material.set : whiteSet;
+                    if (set != boundSet) {
+                        boundSet = set;
+                        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetLayout(), 0, 1, &set, 0, nullptr);
+                    }
+                    MeshParams params{draw.modelViewProjection, draw.normalColumns,
+                                      {material.baseColor.r * draw.tint.r, material.baseColor.g * draw.tint.g,
+                                       material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a}};
+                    params.normalColumns[0][3] = material.alphaCutoff;
+                    vkCmdPushConstants(commandBuffer, pipeline.GetLayout(),
+                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
+                    vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1, primitive.firstIndex, 0, 0);
+                }
             }
         }
 
@@ -549,14 +801,32 @@ namespace Flux {
             scene.ComputeRelativeTransforms(camera.position, relativeTransforms);
             meshDraws.clear();
             for (const RelativeTransform& transform : relativeTransforms) {
-                const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity);
-                if (!renderer) {
+                const GpuModel* model = nullptr;
+                Math::LinearColor tint;
+                if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
+                    model = &cube;
+                    tint = renderer->color;
+                } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
+                           component && !component->model.empty() && !assetsDirectory.empty()) {
+                    model = FindModel(assetsDirectory / Platform::PathFromUtf8(component->model));
+                    tint = component->tint;
+                }
+                if (!model) {
                     continue;
                 }
-                const Math::Matrix4f model = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
+                const Math::Matrix4f world = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
                                            * transform.rotation.ToMatrix()
                                            * Math::Matrix4f::Scale(transform.scale);
-                meshDraws.push_back({viewProjection * model, renderer->color});
+                // Normales : rotation x inverse de l'échelle (une échelle non uniforme penche les normales).
+                // Échelle nulle (objet aplati) : un grand nombre plutôt qu'une division par zéro.
+                const auto inverse = [](float scale) { return std::abs(scale) > 1.0e-12f ? 1.0f / scale : 1.0e12f; };
+                const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{inverse(transform.scale.x), 0.0f, 0.0f});
+                const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, inverse(transform.scale.y), 0.0f});
+                const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, inverse(transform.scale.z)});
+                const std::array<std::array<float, 4>, 3> normalColumns{{{x.x, x.y, x.z, 0.0f},
+                                                                         {y.x, y.y, y.z, 0.0f},
+                                                                         {z.x, z.y, z.z, 0.0f}}};
+                meshDraws.push_back({model, viewProjection * world, normalColumns, tint});
             }
         }
 
@@ -820,6 +1090,19 @@ namespace Flux {
 
     std::optional<UI::TextureInfo> Renderer::LoadTexture(const std::filesystem::path& path) {
         return m_impl->LoadTexture(path);
+    }
+
+    void Renderer::SetAssetsDirectory(const std::filesystem::path& directory) {
+        if (directory != m_impl->assetsDirectory) {
+            m_impl->assetsDirectory = directory;
+        }
+    }
+
+    std::optional<Math::Box3f> Renderer::LoadModel(const std::filesystem::path& path) {
+        if (const GpuModel* model = m_impl->FindModel(path)) {
+            return model->bounds;
+        }
+        return std::nullopt;
     }
 
     UI::DrawList& Renderer::GetOverlay() {

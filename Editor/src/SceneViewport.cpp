@@ -81,11 +81,12 @@ namespace FluxEditor {
 
         // Les 12 arêtes du cube unité placé par transform.
         void DrawBoxEdges(UI::DrawList& list, const ScreenProjection& projection, const RelativeTransform& transform,
-                          Math::LinearColor color) {
+                          const Math::Box3f& box, Math::LinearColor color) {
             std::array<Vector3d, 8> corners;
             for (int i = 0; i < 8; ++i) {
-                const Vector3d local{(i & 1 ? 0.5 : -0.5) * transform.scale.x, (i & 2 ? 0.5 : -0.5) * transform.scale.y,
-                                     (i & 4 ? 0.5 : -0.5) * transform.scale.z};
+                const Vector3d local{(i & 1 ? box.max.x : box.min.x) * transform.scale.x,
+                                     (i & 2 ? box.max.y : box.min.y) * transform.scale.y,
+                                     (i & 4 ? box.max.z : box.min.z) * transform.scale.z};
                 corners[i] = transform.position + transform.rotation.Rotate(local);
             }
             // Arêtes : coins qui ne diffèrent que d'un bit (un seul axe).
@@ -244,7 +245,9 @@ namespace FluxEditor {
                     }
                 } else {
                     // Clic dans le vide : désélectionne.
-                    sceneEditor.Select(scene, PickEntity(scene, m_transforms, ray));
+                    sceneEditor.Select(scene, PickEntity(m_transforms, ray, [&engine](Entity entity) {
+                        return engine.GetMeshBounds(entity);
+                    }));
                 }
             }
         }
@@ -269,8 +272,8 @@ namespace FluxEditor {
                 list.AddRectOutline(rect->min - margin, rect->max + margin, Math::LinearColor::FromSrgb8(255, 165, 40), 2.0f);
             }
         }
-        if (scene.TryGet<MeshRendererComponent>(selected)) {
-            DrawBoxEdges(list, projection, *selectedTransform, Math::LinearColor::FromSrgb8(255, 165, 40));
+        if (const std::optional<Math::Box3f> box = engine.GetMeshBounds(selected)) {
+            DrawBoxEdges(list, projection, *selectedTransform, *box, Math::LinearColor::FromSrgb8(255, 165, 40));
         }
         if (arrows) {
             const UI::Style& style = ui.GetStyle();

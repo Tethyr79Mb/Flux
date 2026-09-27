@@ -2,6 +2,7 @@
 
 #include "Flux/Core/Project.hpp"
 #include "Flux/Export.hpp"
+#include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/Camera.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -76,6 +77,11 @@ namespace Flux {
         // Image du projet (chemin relatif au dossier des assets, « textures/logo.png ») chargée pour l'overlay :
         // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
         std::optional<UI::TextureInfo> LoadAssetTexture(std::string_view relativePath);
+
+        // Boîte englobante du maillage d'une entité, dans son repère (avant sa transformation) : le cube unité pour
+        // un cube (MeshRendererComponent) ou un modèle sans fichier lisible, celle du modèle sinon (chargé au besoin).
+        // nullopt si l'entité n'a rien à dessiner en 3D. Sert à la sélection dans la vue et à son contour.
+        std::optional<Math::Box3f> GetMeshBounds(Entity entity);
 
         // Remplace la scène par celle du fichier (chemin relatif au dossier des assets, « scenes/Demo.scene.json »)
         // à la fin de la frame en cours : ce qui se passe pendant la frame voit encore l'ancienne scène.

@@ -15,6 +15,7 @@ int main() {
         {"images et textures", RunImageTests},
         {"textes et images à l'écran", RunScreenUiTests},
         {"changement de scène", RunSceneChangeTests},
+        {"modèles 3D (glTF)", RunModelTests},
     };
 
     int failures = 0;

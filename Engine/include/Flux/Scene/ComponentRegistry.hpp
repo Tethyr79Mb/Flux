@@ -38,6 +38,7 @@ namespace Flux {
         None,
         Image, // PNG, JPEG, TGA, BMP
         Scene, // .scene.json
+        Model, // .glb, .gltf
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).

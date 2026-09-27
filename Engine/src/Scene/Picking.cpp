@@ -64,30 +64,32 @@ namespace Flux {
         return pixels * depth / m_focal;
     }
 
-    std::optional<double> IntersectCube(const Ray& ray, const RelativeTransform& transform) {
+    std::optional<double> IntersectBox(const Ray& ray, const RelativeTransform& transform, const Math::Box3f& box) {
         const Vector3d scale(transform.scale);
         if (scale.x == 0.0 || scale.y == 0.0 || scale.z == 0.0) {
-            return std::nullopt; // cube aplati : rien à toucher
+            return std::nullopt; // boîte aplatie : rien à toucher
         }
-        // Rayon dans l'espace du cube, où il devient une boîte [-0.5, 0.5]. Le paramètre t est conservé
+        // Rayon dans l'espace local, où la boîte redevient box. Le paramètre t est conservé
         // (la direction n'est pas renormalisée) : c'est toujours une distance le long du rayon d'origine.
         const Math::Quaternionf inverse = transform.rotation.Conjugate();
         const Vector3d origin = inverse.Rotate(ray.origin - transform.position);
         const Vector3d direction = inverse.Rotate(ray.direction);
         const double o[3] = {origin.x / scale.x, origin.y / scale.y, origin.z / scale.z};
         const double d[3] = {direction.x / scale.x, direction.y / scale.y, direction.z / scale.z};
+        const double low[3] = {box.min.x, box.min.y, box.min.z};
+        const double high[3] = {box.max.x, box.max.y, box.max.z};
 
         double tEntry = 0.0;
         double tExit = std::numeric_limits<double>::max();
         for (int axis = 0; axis < 3; ++axis) {
             if (d[axis] == 0.0) {
-                if (std::abs(o[axis]) > 0.5) {
+                if (o[axis] < low[axis] || o[axis] > high[axis]) {
                     return std::nullopt; // parallèle à cette tranche et en dehors
                 }
                 continue;
             }
-            double t0 = (-0.5 - o[axis]) / d[axis];
-            double t1 = (0.5 - o[axis]) / d[axis];
+            double t0 = (low[axis] - o[axis]) / d[axis];
+            double t1 = (high[axis] - o[axis]) / d[axis];
             if (t0 > t1) {
                 std::swap(t0, t1);
             }
@@ -100,14 +102,15 @@ namespace Flux {
         return tEntry;
     }
 
-    Entity PickEntity(const Scene& scene, std::span<const RelativeTransform> transforms, const Ray& ray) {
+    Entity PickEntity(std::span<const RelativeTransform> transforms, const Ray& ray, const MeshBoundsFunction& boundsOf) {
         Entity best = NullEntity;
         double bestDistance = std::numeric_limits<double>::max();
         for (const RelativeTransform& transform : transforms) {
-            if (!scene.TryGet<MeshRendererComponent>(transform.entity)) {
+            const std::optional<Math::Box3f> box = boundsOf(transform.entity);
+            if (!box) {
                 continue;
             }
-            const std::optional<double> distance = IntersectCube(ray, transform);
+            const std::optional<double> distance = IntersectBox(ray, transform, *box);
             if (distance && *distance < bestDistance) {
                 bestDistance = *distance;
                 best = transform.entity;

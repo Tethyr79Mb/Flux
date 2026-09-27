@@ -19,3 +19,4 @@ bool RunPickingTests();
 bool RunScreenUiTests();
 bool RunImageTests();
 bool RunSceneChangeTests();
+bool RunModelTests();
