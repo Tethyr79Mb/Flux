@@ -62,8 +62,7 @@ namespace FluxEditor {
         void DrawToolbar(Flux::Engine& engine, const Flux::UI::Rect& view);
         // Applique le glissement en cours à la transformation locale de l'entité.
         void UpdateDrag(Flux::Engine& engine, Flux::Entity selected, Flux::RelativeTransform& selectedTransform,
-                        const Flux::RelativeTransform* parentTransform, const Flux::Ray& ray,
-                        const Flux::ScreenProjection& projection);
+                        const Flux::RelativeTransform* parentTransform, const Flux::Ray& ray);
 
         // Glissement d'un élément à l'écran (texte, image) : son décalage suit la souris.
         struct ScreenDrag

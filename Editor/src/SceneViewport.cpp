@@ -350,8 +350,7 @@ namespace FluxEditor {
     }
 
     void SceneViewport::UpdateDrag(Engine& engine, Entity selected, RelativeTransform& selectedTransform,
-                                   const RelativeTransform* parentTransform, const Ray& ray,
-                                   const ScreenProjection& projection) {
+                                   const RelativeTransform* parentTransform, const Ray& ray) {
         Scene& scene = engine.GetScene();
         const Input& input = engine.GetWindow().GetInput();
         TransformComponent& local = scene.Get<TransformComponent>(selected);
@@ -492,7 +491,7 @@ namespace FluxEditor {
             if (!selectedTransform || scene.GetId(selected) != m_drag.entity) {
                 m_drag.axis = -1; // entité supprimée ou sélection changée ailleurs
             } else {
-                UpdateDrag(engine, selected, *selectedTransform, parentTransform, ray, projection);
+                UpdateDrag(engine, selected, *selectedTransform, parentTransform, ray);
             }
         }
 
