@@ -152,6 +152,7 @@ namespace Flux {
             JPH::Ref<JPH::CharacterVirtual> character;
             float yaw = 0.0f; // direction du regard (le modèle regarde vers +z en glTF)
             float groundSpeed = 0.0f; // vitesse horizontale au dernier pas, pour les animations
+            float airTime = 0.0f;     // secondes sans toucher un sol où tenir debout (saut, chute, pente trop raide)
         };
     }
 
@@ -387,8 +388,10 @@ namespace Flux {
                 if (body.GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround) {
                     const JPH::Vec3 moved = JPH::Vec3(body.GetPosition() - before) / StepSeconds - body.GetGroundVelocity();
                     character.groundSpeed = (moved - up * moved.Dot(up)).Length();
+                    character.airTime = 0.0f;
                 } else {
                     character.groundSpeed = 0.0f;
+                    character.airTime += StepSeconds;
                 }
             }
         }
@@ -420,7 +423,9 @@ namespace Flux {
             }
             for (const auto& [entity, character] : characters) {
                 WriteRoot(scene, entity, character.character->GetPosition(), character.character->GetRotation());
-                scene.Get<CharacterComponent>(entity).groundSpeed = character.groundSpeed;
+                CharacterComponent& component = scene.Get<CharacterComponent>(entity);
+                component.groundSpeed = character.groundSpeed;
+                component.airTime = character.airTime;
             }
         }
 

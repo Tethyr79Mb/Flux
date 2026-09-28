@@ -15,7 +15,9 @@ namespace Flux::Animator {
             if (const auto* character = scene.TryGet<CharacterComponent>(entity)) {
                 const float speed = character->groundSpeed;
                 const float runThreshold = (character->walkSpeed + character->runSpeed) * 0.5f;
-                if (speed < IdleSpeed) {
+                if (!animator.airAnimation.empty() && character->airTime > AirDelay) {
+                    wanted = &animator.airAnimation;
+                } else if (speed < IdleSpeed) {
                     if (!animator.idleAnimation.empty()) {
                         wanted = &animator.idleAnimation;
                     } else {
