@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Flux/Core/Uuid.hpp>
+#include <Flux/Math/Quaternion.hpp>
 #include <Flux/Math/Vector3.hpp>
 #include <Flux/Math/WorldPosition.hpp>
+#include <Flux/Scene/Picking.hpp>
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/Scene/ScreenUi.hpp>
 #include <Flux/UI/Context.hpp>
@@ -17,11 +19,15 @@ namespace Flux {
 namespace FluxEditor {
     class SceneEditor;
 
-    // Vue 3D de l'éditeur : clic gauche pour sélectionner un objet, contour de la sélection,
-    // et gizmo de déplacement (une flèche par axe du monde, à glisser). Les textes et images à l'écran de la scène
-    // y sont dessinés comme dans le jeu, et se déplacent en les glissant.
+    // Vue 3D de l'éditeur : clic gauche pour sélectionner un objet, contour de la sélection, et gizmo à glisser :
+    // déplacement (une flèche par axe du monde), rotation (un anneau par axe du monde) ou échelle (un axe par axe de
+    // l'objet, et le carré du centre pour les trois à la fois). Mode choisi par les boutons en haut à gauche de la
+    // vue ou les touches W, E, R. Les textes et images à l'écran de la scène y sont dessinés comme dans le jeu, et se
+    // déplacent en les glissant.
     class SceneViewport {
         public:
+        enum class GizmoMode { Move, Rotate, Scale };
+
         // view : rectangle de la vue 3D (retourné par EditorLayout::Update).
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, const Flux::UI::Rect& view);
         // Vrai si la scène a été modifiée (déplacement au gizmo, d'un texte ou d'une image) depuis le dernier appel.
@@ -30,16 +36,35 @@ namespace FluxEditor {
         bool IsDragging() const { return m_drag.axis >= 0 || m_screenDrag.active; }
 
         private:
-        // Glissement d'une flèche du gizmo en cours.
+        // Glissement d'une poignée du gizmo en cours.
         struct Drag
         {
-            int axis = -1; // -1 : pas de glissement
+            int axis = -1; // -1 : pas de glissement ; 0 à 2 : x, y, z ; 3 : échelle des trois axes (carré du centre)
+            GizmoMode mode = GizmoMode::Move;
             Flux::Uuid entity;
-            Flux::Math::Vector3d startLocalPosition;  // à restaurer si Échap annule
+            // État local de départ, à restaurer si Échap annule.
+            Flux::Math::Vector3d startLocalPosition;
+            Flux::Math::Quaternionf startLocalRotation;
+            Flux::Math::Vector3f startLocalScale{1.0f, 1.0f, 1.0f};
+            Flux::Math::Quaternionf startRotation;    // rotation dans le monde au départ (axes de l'échelle)
+            Flux::Math::Quaternionf parentRotation;   // rotation du parent dans le monde (identité à la racine)
             Flux::Math::Vector3d startPoint;          // origine du gizmo, relative à startCamera
             Flux::Math::WorldPosition startCamera;    // la caméra peut bouger pendant le glissement (clic droit)
             double startParameter = 0.0;              // point de l'axe saisi, en mètres depuis startPoint
+            Flux::Math::Vector2f startMouse;
+            float lastAngle = 0.0f;                   // rotation : angle de la souris autour du centre à l'écran
+            float turned = 0.0f;                      // rotation : angle parcouru depuis le départ, radians
+            float applied = 0.0f;                     // rotation : angle appliqué (par pas de 15° avec Ctrl)
         };
+
+        void HandleShortcuts(Flux::Engine& engine);
+        // Boutons de mode en haut à gauche de la vue ; retourne true si la souris en a cliqué un.
+        bool UpdateToolbar(Flux::Engine& engine, const Flux::UI::Rect& view, bool mouseInView);
+        void DrawToolbar(Flux::Engine& engine, const Flux::UI::Rect& view);
+        // Applique le glissement en cours à la transformation locale de l'entité.
+        void UpdateDrag(Flux::Engine& engine, Flux::Entity selected, Flux::RelativeTransform& selectedTransform,
+                        const Flux::RelativeTransform* parentTransform, const Flux::Ray& ray,
+                        const Flux::ScreenProjection& projection);
 
         // Glissement d'un élément à l'écran (texte, image) : son décalage suit la souris.
         struct ScreenDrag
@@ -54,6 +79,8 @@ namespace FluxEditor {
         // Déplace l'élément tenu ; le glissement finit au relâchement, ou Échap le remet à sa place.
         void UpdateScreenDrag(Flux::Engine& engine, Flux::Entity selected, const Flux::UI::Rect& view);
 
+        GizmoMode m_mode = GizmoMode::Move;
+        int m_hoveredButton = -1;
         Drag m_drag;
         ScreenDrag m_screenDrag;
         int m_hoveredAxis = -1;

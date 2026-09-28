@@ -12,8 +12,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <optional>
+#include <string>
 
 namespace FluxEditor {
     using namespace Flux;
@@ -26,7 +28,44 @@ namespace FluxEditor {
         constexpr float HeadHalfWidth = 6.0f;
         constexpr float GrabPixels = 7.0f;       // distance de saisie d'une flèche
         constexpr float MinVisiblePixels = 12.0f; // axe pointé vers la caméra : trop court, masqué
+        constexpr float ScaleBoxHalf = 5.0f;     // carré au bout d'un axe d'échelle
+        constexpr float CenterHalf = 7.0f;       // carré du centre : échelle des trois axes
+        constexpr float RingPixels = 90.0f;      // rayon des anneaux de rotation à l'écran
+        constexpr int RingSegments = 48;
+        constexpr double SnapRadians = std::numbers::pi / 12.0; // Ctrl pendant une rotation : pas de 15°
+        constexpr float MinScale = 0.001f;       // comme l'inspecteur
+        constexpr float MaxScale = 1.0e6f;
+        constexpr float UniformScalePixels = 200.0f; // glisser de 200 pixels multiplie l'échelle par e
         constexpr Vector3d Axes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+
+        // Boutons de mode, en haut à gauche de la vue.
+        struct ToolbarButton
+        {
+            SceneViewport::GizmoMode mode;
+            const char* label;
+        };
+        constexpr ToolbarButton ToolbarButtons[3] = {{SceneViewport::GizmoMode::Move, "Déplacer (W)"},
+                                                     {SceneViewport::GizmoMode::Rotate, "Tourner (E)"},
+                                                     {SceneViewport::GizmoMode::Scale, "Échelle (R)"}};
+        constexpr float ToolbarTextSize = 14.0f;
+        constexpr Vector2f ToolbarPadding{8.0f, 4.0f};
+        constexpr Vector2f ToolbarMargin{8.0f, 8.0f};
+
+        float& Component(Math::Vector3f& v, int axis) {
+            return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
+        }
+
+        // Angle ramené dans [-pi, pi] : le tour de la souris autour du centre passe par ±pi sans sauter.
+        float WrapAngle(float angle) {
+            constexpr float Pi = std::numbers::pi_v<float>;
+            while (angle > Pi) {
+                angle -= 2.0f * Pi;
+            }
+            while (angle < -Pi) {
+                angle += 2.0f * Pi;
+            }
+            return angle;
+        }
 
         float Length(Vector2f v) {
             return std::sqrt(v.x * v.x + v.y * v.y);
@@ -51,8 +90,10 @@ namespace FluxEditor {
             Vector2f normal; // demi-largeur de la pointe
         };
 
-        // Flèches du gizmo placé en origin (relatif à la caméra) ; nullopt s'il est derrière la caméra.
-        std::optional<std::array<Arrow, 3>> ProjectGizmo(const ScreenProjection& projection, const Vector3d& origin) {
+        // Flèches du gizmo placé en origin (relatif à la caméra), le long des axes tournés par rotation ; nullopt s'il
+        // est derrière la caméra.
+        std::optional<std::array<Arrow, 3>> ProjectGizmo(const ScreenProjection& projection, const Vector3d& origin,
+                                                         const Math::Quaternionf& rotation = {}) {
             const std::optional<Vector2f> start = projection.ToScreen(origin);
             if (!start) {
                 return std::nullopt;
@@ -63,7 +104,7 @@ namespace FluxEditor {
                 Arrow& arrow = arrows[axis];
                 Vector2f a;
                 Vector2f b;
-                if (!projection.ProjectSegment(origin, origin + Axes[axis] * length, a, b)) {
+                if (!projection.ProjectSegment(origin, origin + rotation.Rotate(Axes[axis]) * length, a, b)) {
                     continue;
                 }
                 const float pixels = Length(b - *start);
@@ -78,6 +119,46 @@ namespace FluxEditor {
                 arrow.normal = Vector2f{-direction.y, direction.x} * HeadHalfWidth;
             }
             return arrows;
+        }
+
+        // Anneau de rotation d'un axe du monde : cercle dans le plan perpendiculaire, découpé en segments à l'écran.
+        struct Ring
+        {
+            std::array<std::pair<Vector2f, Vector2f>, RingSegments> segments;
+            int count = 0;
+        };
+
+        std::array<Ring, 3> ProjectRings(const ScreenProjection& projection, const Vector3d& origin) {
+            const double radius = projection.PixelsToMeters(RingPixels, projection.GetDepth(origin));
+            std::array<Ring, 3> rings;
+            for (int axis = 0; axis < 3; ++axis) {
+                const Vector3d u = Axes[(axis + 1) % 3] * radius;
+                const Vector3d v = Axes[(axis + 2) % 3] * radius;
+                Vector3d previous = origin + u;
+                for (int i = 1; i <= RingSegments; ++i) {
+                    const double angle = 2.0 * std::numbers::pi * i / RingSegments;
+                    const Vector3d next = origin + u * std::cos(angle) + v * std::sin(angle);
+                    Vector2f a;
+                    Vector2f b;
+                    if (projection.ProjectSegment(previous, next, a, b)) {
+                        rings[axis].segments[rings[axis].count++] = {a, b};
+                    }
+                    previous = next;
+                }
+            }
+            return rings;
+        }
+
+        float DistanceToRing(Vector2f p, const Ring& ring) {
+            float closest = std::numeric_limits<float>::max();
+            for (int i = 0; i < ring.count; ++i) {
+                closest = std::min(closest, DistanceToSegment(p, ring.segments[i].first, ring.segments[i].second));
+            }
+            return closest;
+        }
+
+        bool IsInSquare(Vector2f p, Vector2f center, float half) {
+            return std::abs(p.x - center.x) <= half && std::abs(p.y - center.y) <= half;
         }
 
         // Les 12 arêtes du cube unité placé par transform.
@@ -218,6 +299,162 @@ namespace FluxEditor {
         }
     }
 
+    // W, E, R : déplacer, tourner, mettre à l'échelle (par la lettre de la touche, comme Ctrl+Z). Pas pendant une
+    // saisie, un raccourci Ctrl ou le vol libre (ZQSD).
+    void SceneViewport::HandleShortcuts(Engine& engine) {
+        const Input& input = engine.GetWindow().GetInput();
+        if (engine.GetUi().WantsKeyboard() || input.IsControlDown() || engine.GetCameraController().IsActive()) {
+            return;
+        }
+        if (input.WasLetterPressed('W')) {
+            m_mode = GizmoMode::Move;
+        } else if (input.WasLetterPressed('E')) {
+            m_mode = GizmoMode::Rotate;
+        } else if (input.WasLetterPressed('R')) {
+            m_mode = GizmoMode::Scale;
+        }
+    }
+
+    namespace {
+        // Rectangle du bouton index de la barre de modes.
+        UI::Rect ToolbarRect(const UI::DrawList& list, const UI::Rect& view, int index) {
+            Vector2f min = view.min + ToolbarMargin;
+            for (int i = 0;; ++i) {
+                const Vector2f size = list.MeasureText(ToolbarButtons[i].label, ToolbarTextSize) + ToolbarPadding * 2.0f;
+                if (i == index) {
+                    return {min, min + size};
+                }
+                min.x += size.x + 2.0f;
+            }
+        }
+    }
+
+    bool SceneViewport::UpdateToolbar(Engine& engine, const UI::Rect& view, bool mouseInView) {
+        const Input& input = engine.GetWindow().GetInput();
+        const Vector2f mouse = input.GetMousePosition();
+        const UI::DrawList& list = engine.GetRenderer().GetOverlay();
+        m_hoveredButton = -1;
+        for (int i = 0; mouseInView && i < 3; ++i) {
+            const UI::Rect rect = ToolbarRect(list, view, i);
+            if (mouse.x >= rect.min.x && mouse.x < rect.max.x && mouse.y >= rect.min.y && mouse.y < rect.max.y) {
+                m_hoveredButton = i;
+            }
+        }
+        if (m_hoveredButton >= 0 && input.WasMouseButtonPressed(MouseButton::Left)) {
+            m_mode = ToolbarButtons[m_hoveredButton].mode;
+            return true;
+        }
+        return false;
+    }
+
+    void SceneViewport::DrawToolbar(Engine& engine, const UI::Rect& view) {
+        UI::DrawList& list = engine.GetRenderer().GetOverlay();
+        const UI::Style& style = engine.GetUi().GetStyle();
+        list.SetClipRect(view.min, view.max);
+        for (int i = 0; i < 3; ++i) {
+            const UI::Rect rect = ToolbarRect(list, view, i);
+            const bool current = ToolbarButtons[i].mode == m_mode;
+            list.AddRect(rect.min, rect.max, current ? style.buttonActive : i == m_hoveredButton ? style.buttonHovered : style.button);
+            list.AddText(rect.min + ToolbarPadding, ToolbarButtons[i].label, ToolbarTextSize, style.text);
+        }
+        list.ResetClipRect();
+    }
+
+    void SceneViewport::UpdateDrag(Engine& engine, Entity selected, RelativeTransform& selectedTransform,
+                                   const RelativeTransform* parentTransform, const Ray& ray,
+                                   const ScreenProjection& projection) {
+        Scene& scene = engine.GetScene();
+        const Input& input = engine.GetWindow().GetInput();
+        TransformComponent& local = scene.Get<TransformComponent>(selected);
+        const auto apply = [&](const Vector3d& position, const Math::Quaternionf& rotation, const Math::Vector3f& scale) {
+            if (position != local.position || !(rotation == local.rotation) || scale != local.scale) {
+                local.position = position;
+                local.rotation = rotation;
+                local.scale = scale;
+                m_modified = true;
+            }
+        };
+        if (input.WasKeyPressed(Key::Escape) && !engine.GetUi().WantsKeyboard()) {
+            // Annulé : retour à l'état de départ.
+            apply(m_drag.startLocalPosition, m_drag.startLocalRotation, m_drag.startLocalScale);
+            m_drag.axis = -1;
+            return;
+        }
+        // Origine du gizmo au départ, vue depuis la caméra actuelle.
+        const Vector3d startPoint = m_drag.startPoint + Math::Delta(engine.GetCamera().position, m_drag.startCamera);
+        const Vector2f mouse = input.GetMousePosition();
+        switch (m_drag.mode) {
+            case GizmoMode::Move: {
+                // Le point de l'axe saisi suit le point de l'axe le plus proche de la souris.
+                const Vector3d axis = Axes[m_drag.axis];
+                Vector3d move{};
+                if (const std::optional<double> t = ClosestPointOnLine(ray, startPoint, axis)) {
+                    move = axis * (*t - m_drag.startParameter);
+                }
+                // Déplacement dans le monde ramené dans l'espace du parent (sa rotation et son échelle).
+                Vector3d localMove = move;
+                if (parentTransform) {
+                    const Vector3d scale(parentTransform->scale);
+                    const Vector3d rotated = parentTransform->rotation.Conjugate().Rotate(move);
+                    localMove = {scale.x != 0.0 ? rotated.x / scale.x : 0.0, scale.y != 0.0 ? rotated.y / scale.y : 0.0,
+                                 scale.z != 0.0 ? rotated.z / scale.z : 0.0};
+                }
+                apply(m_drag.startLocalPosition + localMove, local.rotation, local.scale);
+                selectedTransform.position = startPoint + move; // pour dessiner le gizmo sans décalage d'une frame
+                break;
+            }
+            case GizmoMode::Rotate: {
+                // L'angle de la souris autour du centre à l'écran, cumulé (plusieurs tours possibles).
+                if (const std::optional<Vector2f> center = projection.ToScreen(startPoint)) {
+                    const float angle = std::atan2(mouse.y - center->y, mouse.x - center->x);
+                    m_drag.turned += WrapAngle(angle - m_drag.lastAngle);
+                    m_drag.lastAngle = angle;
+                }
+                // Vu depuis la pointe de l'axe, un angle positif tourne dans le sens inverse des aiguilles d'une
+                // montre ; à l'écran (y vers le bas), c'est un angle de souris qui diminue.
+                const Vector3d axis = Axes[m_drag.axis];
+                const bool facing = Math::Dot(axis, -startPoint) > 0.0;
+                double turned = facing ? -m_drag.turned : m_drag.turned;
+                if (input.IsControlDown()) {
+                    turned = std::round(turned / SnapRadians) * SnapRadians;
+                }
+                m_drag.applied = static_cast<float>(turned);
+                // Rotation autour de l'axe du monde, ramenée dans l'espace du parent : local = P⁻¹ R P L.
+                const Math::Quaternionf world = Math::Quaternionf::FromAxisAngle(Math::Vector3f(axis), static_cast<float>(turned));
+                const Math::Quaternionf& parent = m_drag.parentRotation;
+                apply(local.position, Math::Normalize(parent.Conjugate() * world * parent * m_drag.startLocalRotation),
+                      local.scale);
+                selectedTransform.rotation = Math::Normalize(world * m_drag.startRotation);
+                break;
+            }
+            case GizmoMode::Scale: {
+                Math::Vector3f scale = m_drag.startLocalScale;
+                if (m_drag.axis == 3) {
+                    // Carré du centre : vers la droite ou le haut, plus grand ; les trois axes ensemble.
+                    const float pixels = (mouse.x - m_drag.startMouse.x) - (mouse.y - m_drag.startMouse.y);
+                    scale = scale * std::exp(pixels / UniformScalePixels);
+                } else {
+                    // Axe de l'objet : le point saisi suit la souris le long de l'axe, l'échelle dans la même proportion.
+                    const Vector3d axis = m_drag.startRotation.Rotate(Axes[m_drag.axis]);
+                    if (const std::optional<double> t = ClosestPointOnLine(ray, startPoint, axis)) {
+                        Component(scale, m_drag.axis) *= static_cast<float>(*t / m_drag.startParameter);
+                    }
+                }
+                for (int axis = 0; axis < 3; ++axis) {
+                    Component(scale, axis) = std::clamp(Component(scale, axis), MinScale, MaxScale);
+                }
+                // Échelle dans le monde : celle du parent fois la locale ; mise à jour pour le contour de cette frame.
+                const Math::Vector3f parentScale = parentTransform ? parentTransform->scale : Math::Vector3f{1.0f, 1.0f, 1.0f};
+                selectedTransform.scale = {parentScale.x * scale.x, parentScale.y * scale.y, parentScale.z * scale.z};
+                apply(local.position, local.rotation, scale);
+                break;
+            }
+        }
+        if (!input.IsMouseButtonDown(MouseButton::Left)) {
+            m_drag.axis = -1;
+        }
+    }
+
     void SceneViewport::Update(Engine& engine, SceneEditor& sceneEditor, const UI::Rect& view) {
         UI::Context& ui = engine.GetUi();
         const Input& input = engine.GetWindow().GetInput();
@@ -258,70 +495,99 @@ namespace FluxEditor {
             UpdateScreenDrag(engine, selected, view);
         }
 
-        // Glissement d'une flèche : le point de l'axe saisi suit le point de l'axe le plus proche de la souris.
+        const RelativeTransform* parentTransform = nullptr;
+        if (selected != NullEntity) {
+            if (const Entity parent = scene.GetParent(selected); parent != NullEntity) {
+                parentTransform = findTransform(parent);
+            }
+        }
         if (m_drag.axis >= 0) {
             if (!selectedTransform || scene.GetId(selected) != m_drag.entity) {
                 m_drag.axis = -1; // entité supprimée ou sélection changée ailleurs
             } else {
-                auto& position = scene.Get<TransformComponent>(selected).position;
-                const Vector3d axis = Axes[m_drag.axis];
-                // Origine du gizmo au départ, vue depuis la caméra actuelle.
-                const Vector3d startPoint = m_drag.startPoint + Math::Delta(camera.position, m_drag.startCamera);
-                Vector3d move{};
-                if (input.WasKeyPressed(Key::Escape) && !ui.WantsKeyboard()) {
-                    m_drag.axis = -1; // annulé : retour à la position de départ
-                } else if (const std::optional<double> t = ClosestPointOnLine(ray, startPoint, axis)) {
-                    move = axis * (*t - m_drag.startParameter);
-                }
-                // Déplacement dans le monde ramené dans l'espace du parent (sa rotation et son échelle).
-                Vector3d localMove = move;
-                if (const Entity parent = scene.GetParent(selected); parent != NullEntity) {
-                    if (const RelativeTransform* parentTransform = findTransform(parent)) {
-                        const Vector3d scale(parentTransform->scale);
-                        const Vector3d rotated = parentTransform->rotation.Conjugate().Rotate(move);
-                        localMove = {scale.x != 0.0 ? rotated.x / scale.x : 0.0, scale.y != 0.0 ? rotated.y / scale.y : 0.0,
-                                     scale.z != 0.0 ? rotated.z / scale.z : 0.0};
-                    }
-                }
-                const Vector3d newPosition = m_drag.startLocalPosition + localMove;
-                if (newPosition != position) {
-                    position = newPosition;
-                    m_modified = true;
-                }
-                selectedTransform->position = startPoint + move; // pour dessiner le gizmo sans décalage d'une frame
-                if (!input.IsMouseButtonDown(MouseButton::Left)) {
-                    m_drag.axis = -1;
-                }
+                UpdateDrag(engine, selected, *selectedTransform, parentTransform, ray, projection);
             }
         }
-
-        const std::optional<std::array<Arrow, 3>> arrows = selectedTransform && !selectedIsScreen
-                                                               ? ProjectGizmo(projection, selectedTransform->position)
-                                                               : std::nullopt;
 
         // La souris est à la vue : pas de panneau survolé ni de widget en main, pas de vol libre en cours.
         const bool mouseInView = mouse.x >= view.min.x && mouse.x < view.max.x && mouse.y >= view.min.y
                               && mouse.y < view.max.y && !ui.WantsMouse() && !engine.GetWindow().IsCursorLocked()
                               && !engine.GetCameraController().IsActive();
-        if (m_drag.axis < 0 && !m_screenDrag.active) {
+        if (m_drag.axis < 0) {
+            HandleShortcuts(engine);
+        }
+        const bool toolbarClicked = m_drag.axis < 0 && !m_screenDrag.active && UpdateToolbar(engine, view, mouseInView);
+
+        // Poignées du gizmo à l'écran, selon le mode : flèches (déplacement, axes du monde), axes de l'objet
+        // (échelle) ou anneaux (rotation, axes du monde).
+        const bool showGizmo = selectedTransform && !selectedIsScreen;
+        const std::optional<std::array<Arrow, 3>> arrows =
+            showGizmo && m_mode != GizmoMode::Rotate
+                ? ProjectGizmo(projection, selectedTransform->position,
+                               m_mode == GizmoMode::Scale ? selectedTransform->rotation : Math::Quaternionf{})
+                : std::nullopt;
+        const std::optional<Vector2f> center = showGizmo ? projection.ToScreen(selectedTransform->position) : std::nullopt;
+        std::array<Ring, 3> rings{};
+        if (showGizmo && m_mode == GizmoMode::Rotate && center) {
+            rings = ProjectRings(projection, selectedTransform->position);
+        }
+
+        if (m_drag.axis < 0 && !m_screenDrag.active && !toolbarClicked) {
             m_hoveredAxis = -1;
-            if (mouseInView && arrows) {
+            if (mouseInView && center) {
                 float closest = GrabPixels;
-                for (int axis = 0; axis < 3; ++axis) {
-                    const Arrow& arrow = (*arrows)[axis];
-                    if (arrow.visible) {
-                        const float distance = DistanceToSegment(mouse, arrow.start, arrow.tip);
-                        if (distance < closest) {
+                if (m_mode == GizmoMode::Rotate) {
+                    for (int axis = 0; axis < 3; ++axis) {
+                        if (const float distance = DistanceToRing(mouse, rings[axis]); distance < closest) {
                             closest = distance;
                             m_hoveredAxis = axis;
+                        }
+                    }
+                } else if (m_mode == GizmoMode::Scale && IsInSquare(mouse, *center, CenterHalf)) {
+                    m_hoveredAxis = 3; // le centre passe avant les axes qui en partent
+                } else if (arrows) {
+                    for (int axis = 0; axis < 3; ++axis) {
+                        const Arrow& arrow = (*arrows)[axis];
+                        if (arrow.visible) {
+                            const float distance = DistanceToSegment(mouse, arrow.start, arrow.tip);
+                            if (distance < closest) {
+                                closest = distance;
+                                m_hoveredAxis = axis;
+                            }
                         }
                     }
                 }
             }
             if (mouseInView && input.WasMouseButtonPressed(MouseButton::Left)) {
-                std::optional<double> grabbed;
+                bool grabbed = false;
                 if (m_hoveredAxis >= 0) {
-                    grabbed = ClosestPointOnLine(ray, selectedTransform->position, Axes[m_hoveredAxis]);
+                    const TransformComponent& local = scene.Get<TransformComponent>(selected);
+                    Drag drag;
+                    drag.axis = m_hoveredAxis;
+                    drag.mode = m_mode;
+                    drag.entity = scene.GetId(selected);
+                    drag.startLocalPosition = local.position;
+                    drag.startLocalRotation = local.rotation;
+                    drag.startLocalScale = local.scale;
+                    drag.startRotation = selectedTransform->rotation;
+                    drag.parentRotation = parentTransform ? parentTransform->rotation : Math::Quaternionf{};
+                    drag.startPoint = selectedTransform->position;
+                    drag.startCamera = camera.position;
+                    drag.startMouse = mouse;
+                    grabbed = true;
+                    if (m_mode == GizmoMode::Rotate) {
+                        drag.lastAngle = std::atan2(mouse.y - center->y, mouse.x - center->x);
+                    } else if (m_hoveredAxis < 3) {
+                        const Vector3d axis = m_mode == GizmoMode::Scale ? selectedTransform->rotation.Rotate(Axes[m_hoveredAxis])
+                                                                         : Axes[m_hoveredAxis];
+                        const std::optional<double> t = ClosestPointOnLine(ray, selectedTransform->position, axis);
+                        // Échelle : le point saisi sert de référence (facteur = distance actuelle / distance saisie).
+                        grabbed = t && (m_mode == GizmoMode::Move || std::abs(*t) > 1.0e-9);
+                        drag.startParameter = t.value_or(0.0);
+                    }
+                    if (grabbed) {
+                        m_drag = drag;
+                    }
                 }
                 // Élément à l'écran sous la souris (le dernier dessiné est au-dessus) : il passe avant les objets 3D
                 // qu'il recouvre.
@@ -330,8 +596,7 @@ namespace FluxEditor {
                         && mouse.y >= rect.min.y && mouse.y < rect.max.y;
                 });
                 if (grabbed) {
-                    m_drag = {m_hoveredAxis, scene.GetId(selected), scene.Get<TransformComponent>(selected).position,
-                              selectedTransform->position, camera.position, *grabbed};
+                    // La poignée est saisie : ni sélection, ni élément à l'écran.
                 } else if (item != m_screenRects.rend() && ScreenUi::IsScreenElement(scene, item->entity)) {
                     sceneEditor.Select(scene, item->entity);
                     // Une image étirée ou qui couvre l'écran se sélectionne mais ne se déplace pas.
@@ -355,6 +620,7 @@ namespace FluxEditor {
                        {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); },
                         .rects = &m_screenRects,
                         .placeholders = true});
+        DrawToolbar(engine, view);
         if (!selectedTransform) {
             return;
         }
@@ -372,23 +638,51 @@ namespace FluxEditor {
         }
         // La collision en vert, par-dessus : on voit si elle épouse l'objet.
         DrawColliderEdges(list, projection, scene, *selectedTransform, Math::LinearColor::FromSrgb8(80, 220, 120));
-        if (arrows) {
+        if (center) {
             const UI::Style& style = ui.GetStyle();
             const Math::LinearColor colors[3] = {style.axisX, style.axisY, style.axisZ};
             const Math::LinearColor highlight = Math::LinearColor::FromSrgb8(255, 220, 60);
+            const Math::LinearColor white = Math::LinearColor::FromSrgb8(235, 235, 235);
             const int active = m_drag.axis >= 0 ? m_drag.axis : m_hoveredAxis;
-            for (int axis = 0; axis < 3; ++axis) {
-                const Arrow& arrow = (*arrows)[axis];
-                if (!arrow.visible || (m_drag.axis >= 0 && axis != m_drag.axis)) {
-                    continue; // pendant un glissement, seule la flèche saisie reste
+            // Pendant un glissement, seule la poignée saisie reste.
+            const auto shown = [&](int axis) { return m_drag.axis < 0 || axis == m_drag.axis; };
+            if (m_mode == GizmoMode::Rotate) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    if (shown(axis)) {
+                        const Math::LinearColor color = axis == active ? highlight : colors[axis];
+                        for (int i = 0; i < rings[axis].count; ++i) {
+                            list.AddLine(rings[axis].segments[i].first, rings[axis].segments[i].second, color, 2.5f);
+                        }
+                    }
                 }
-                const Math::LinearColor color = axis == active ? highlight : colors[axis];
-                list.AddLine(arrow.start, arrow.end, color, 3.0f);
-                list.AddTriangle(arrow.tip, arrow.end + arrow.normal, arrow.end - arrow.normal, color);
+                if (m_drag.axis >= 0) {
+                    // Angle tourné, près de la souris, et le rayon du centre vers elle.
+                    list.AddLine(*center, mouse, highlight, 1.0f);
+                    const double degrees = m_drag.applied * 180.0 / std::numbers::pi;
+                    list.AddText(mouse + Vector2f{16.0f, 8.0f}, std::to_string(static_cast<int>(std::lround(degrees))) + "°",
+                                 ToolbarTextSize, white);
+                }
+            } else if (arrows) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    const Arrow& arrow = (*arrows)[axis];
+                    if (!arrow.visible || !shown(axis)) {
+                        continue;
+                    }
+                    const Math::LinearColor color = axis == active ? highlight : colors[axis];
+                    list.AddLine(arrow.start, arrow.end, color, 3.0f);
+                    if (m_mode == GizmoMode::Move) {
+                        list.AddTriangle(arrow.tip, arrow.end + arrow.normal, arrow.end - arrow.normal, color);
+                    } else {
+                        const Vector2f half{ScaleBoxHalf, ScaleBoxHalf};
+                        list.AddRect(arrow.end - half, arrow.end + half, color);
+                    }
+                }
             }
-            if (const std::optional<Vector2f> center = projection.ToScreen(selectedTransform->position)) {
-                list.AddRect(*center - Vector2f{3.0f, 3.0f}, *center + Vector2f{3.0f, 3.0f},
-                             Math::LinearColor::FromSrgb8(235, 235, 235));
+            if (m_mode == GizmoMode::Scale && shown(3)) {
+                const Vector2f half{CenterHalf, CenterHalf};
+                list.AddRectOutline(*center - half, *center + half, active == 3 ? highlight : white, 2.0f);
+            } else {
+                list.AddRect(*center - Vector2f{3.0f, 3.0f}, *center + Vector2f{3.0f, 3.0f}, white);
             }
         }
         list.ResetClipRect();
