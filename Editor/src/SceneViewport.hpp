@@ -52,8 +52,7 @@ namespace FluxEditor {
             Flux::Math::WorldPosition startCamera;    // la caméra peut bouger pendant le glissement (clic droit)
             double startParameter = 0.0;              // point de l'axe saisi, en mètres depuis startPoint
             Flux::Math::Vector2f startMouse;
-            float lastAngle = 0.0f;                   // rotation : angle de la souris autour du centre à l'écran
-            float turned = 0.0f;                      // rotation : angle parcouru depuis le départ, radians
+            Flux::Math::Vector2f tangent;             // rotation : sens du glissement qui fait tourner, à l'écran
             float applied = 0.0f;                     // rotation : angle appliqué (par pas de 15° avec Ctrl)
         };
 

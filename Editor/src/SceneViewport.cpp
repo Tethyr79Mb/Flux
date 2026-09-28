@@ -33,6 +33,7 @@ namespace FluxEditor {
         constexpr float RingPixels = 90.0f;      // rayon des anneaux de rotation à l'écran
         constexpr int RingSegments = 48;
         constexpr double SnapRadians = std::numbers::pi / 12.0; // Ctrl pendant une rotation : pas de 15°
+        constexpr float RadiansPerPixel = 0.5f * std::numbers::pi_v<float> / 180.0f; // 0,5° par pixel glissé
         constexpr float MinScale = 0.001f;       // comme l'inspecteur
         constexpr float MaxScale = 1.0e6f;
         constexpr float UniformScalePixels = 200.0f; // glisser de 200 pixels multiplie l'échelle par e
@@ -53,18 +54,6 @@ namespace FluxEditor {
 
         float& Component(Math::Vector3f& v, int axis) {
             return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
-        }
-
-        // Angle ramené dans [-pi, pi] : le tour de la souris autour du centre passe par ±pi sans sauter.
-        float WrapAngle(float angle) {
-            constexpr float Pi = std::numbers::pi_v<float>;
-            while (angle > Pi) {
-                angle -= 2.0f * Pi;
-            }
-            while (angle < -Pi) {
-                angle += 2.0f * Pi;
-            }
-            return angle;
         }
 
         float Length(Vector2f v) {
@@ -404,17 +393,15 @@ namespace FluxEditor {
                 break;
             }
             case GizmoMode::Rotate: {
-                // L'angle de la souris autour du centre à l'écran, cumulé (plusieurs tours possibles).
-                if (const std::optional<Vector2f> center = projection.ToScreen(startPoint)) {
-                    const float angle = std::atan2(mouse.y - center->y, mouse.x - center->x);
-                    m_drag.turned += WrapAngle(angle - m_drag.lastAngle);
-                    m_drag.lastAngle = angle;
-                }
+                // Glisser le long de l'anneau (sa tangente au point saisi) : 0,5° par pixel, sans limite de tours.
+                // Plus lent et plus régulier que de suivre l'angle de la souris autour du centre, trop vif près de lui.
+                const Vector2f moved = mouse - m_drag.startMouse;
+                const float turnedOnScreen = (moved.x * m_drag.tangent.x + moved.y * m_drag.tangent.y) * RadiansPerPixel;
                 // Vu depuis la pointe de l'axe, un angle positif tourne dans le sens inverse des aiguilles d'une
                 // montre ; à l'écran (y vers le bas), c'est un angle de souris qui diminue.
                 const Vector3d axis = Axes[m_drag.axis];
                 const bool facing = Math::Dot(axis, -startPoint) > 0.0;
-                double turned = facing ? -m_drag.turned : m_drag.turned;
+                double turned = facing ? -turnedOnScreen : turnedOnScreen;
                 if (input.IsControlDown()) {
                     turned = std::round(turned / SnapRadians) * SnapRadians;
                 }
@@ -576,7 +563,11 @@ namespace FluxEditor {
                     drag.startMouse = mouse;
                     grabbed = true;
                     if (m_mode == GizmoMode::Rotate) {
-                        drag.lastAngle = std::atan2(mouse.y - center->y, mouse.x - center->x);
+                        // Tangente à l'anneau au point saisi, dans le sens où l'angle de la souris autour du centre
+                        // augmente ; repli vers la droite si la souris est sur le centre.
+                        const Vector2f radius = mouse - *center;
+                        const float length = Length(radius);
+                        drag.tangent = length > 1.0f ? Vector2f{-radius.y, radius.x} * (1.0f / length) : Vector2f{1.0f, 0.0f};
                     } else if (m_hoveredAxis < 3) {
                         const Vector3d axis = m_mode == GizmoMode::Scale ? selectedTransform->rotation.Rotate(Axes[m_hoveredAxis])
                                                                          : Axes[m_hoveredAxis];
