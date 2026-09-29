@@ -22,8 +22,9 @@ namespace Flux {
     // un corps, créé à leur première mise à jour. Aucun type Jolt ici.
     //
     // Échelle galaxie : la simulation se fait en float autour d'une ancre (le secteur du premier objet physique
-    // rencontré), précise au millimètre à des kilomètres de là. Plus tard, un vaisseau ou une station aura son
-    // propre monde, ancré sur lui : on y marche pendant qu'il vole.
+    // rencontré), précise au millimètre à des kilomètres de là. Chaque vaisseau ou station (ShipComponent) a son
+    // propre monde, dans son repère, pour ses descendants : on y marche pendant qu'il vole ou tourne. Une entité
+    // change de monde quand elle change de parent (sortir d'un vaisseau : la détacher de lui).
     class FLUX_API PhysicsWorld {
         public:
         PhysicsWorld();

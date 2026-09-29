@@ -14,6 +14,7 @@
 #include <Flux/UI/DrawList.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <string>
 
 namespace FluxEditor {
@@ -23,6 +24,33 @@ namespace FluxEditor {
     namespace {
         constexpr float DragThreshold = 4.0f; // pixels avant qu'un bouton tenu devienne un glisser-déposer
         constexpr double PlaceDistance = 5.0; // mètres devant la caméra (ou le long du rayon de la souris)
+        constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
+
+        // Maquette de vaisseau en cubes, dans son repère (-z : l'avant, le pont à y = 0) : une cabine de 6 x 3 x 16 m
+        // ouverte à l'arrière, avec une console à l'avant. De quoi essayer la marche à bord avant le vrai modèle.
+        void AddShipBlockout(Scene& scene, Entity ship) {
+            struct Part
+            {
+                const char* name;
+                Math::Vector3d position;
+                Math::Vector3f scale;
+                std::uint8_t grey;
+            };
+            constexpr Part Parts[] = {{"Pont", {0.0, -0.1, 0.0}, {6.4f, 0.2f, 16.0f}, 90},
+                                      {"Plafond", {0.0, 3.1, 0.0}, {6.4f, 0.2f, 16.0f}, 120},
+                                      {"Paroi bâbord", {-3.1, 1.5, 0.0}, {0.2f, 3.0f, 16.0f}, 150},
+                                      {"Paroi tribord", {3.1, 1.5, 0.0}, {0.2f, 3.0f, 16.0f}, 150},
+                                      {"Cloison avant", {0.0, 1.5, -8.1}, {6.4f, 3.0f, 0.2f}, 130},
+                                      {"Console", {0.0, 0.5, -7.2}, {3.0f, 1.0f, 0.8f}, 60}};
+            for (const Part& part : Parts) {
+                const Entity entity = scene.CreateEntity(part.name, ship);
+                TransformComponent& transform = scene.Get<TransformComponent>(entity);
+                transform.position = part.position;
+                transform.scale = part.scale;
+                scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(part.grey, part.grey, part.grey + 8));
+                scene.Add<ColliderComponent>(entity);
+            }
+        }
 
         struct ItemInfo
         {
@@ -35,7 +63,8 @@ namespace FluxEditor {
                                            {"Texte à l'écran", "Texte"},
                                            {"Image à l'écran", "Image"},
                                            {"Changement de scène", "Changement de scène"},
-                                           {"Personnage...", "Joueur"}};
+                                           {"Personnage...", "Joueur"},
+                                           {"Vaisseau (maquette)", "Vaisseau"}};
             return Infos[item];
         }
 
@@ -83,6 +112,7 @@ namespace FluxEditor {
             ui.Separator();
             ui.TextDisabled("Physique (en mode Jouer)");
             button(Item::Character);
+            button(Item::Ship);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
             ui.EndDisabled();
@@ -175,13 +205,16 @@ namespace FluxEditor {
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
                 scene.Add<CharacterComponent>(entity);
                 scene.Add<AnimatorComponent>(entity); // sans effet si le modèle n'a pas d'animation
+            } else if (item == Item::Ship) {
+                scene.Add<ShipComponent>(entity);
+                AddShipBlockout(scene, entity);
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();
             const Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
                                                   : Math::Vector3d(camera.GetForward());
             Math::WorldPosition position = camera.position;
-            position += direction * PlaceDistance;
+            position += direction * (item == Item::Ship ? ShipDistance : PlaceDistance);
             scene.Get<TransformComponent>(entity).position = position.offset;
             if (position.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, position.sector);
@@ -189,7 +222,9 @@ namespace FluxEditor {
         }
 
         sceneEditor.Select(scene, entity);
-        history.Push(std::string("Placer : ") + info.label, scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
+        // Avec ses enfants (la maquette) : annuler retire tout, rétablir remet tout.
+        history.Push(std::string("Placer : ") + info.label, scene.GetId(entity), {},
+                     UndoHistory::Capture(engine, scene.GetId(entity), item == Item::Ship));
         if (item == Item::Character) {
             sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
         }

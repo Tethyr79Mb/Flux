@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -156,18 +157,52 @@ namespace Flux {
         };
     }
 
+    namespace {
+        // Un monde Jolt : celui de la scène, ou celui d'un vaisseau (ShipComponent), dont les corps sont dans son
+        // repère.
+        struct Grid {
+            Entity frame = NullEntity; // vaisseau ; NullEntity : le monde, autour de l'ancre
+            std::unique_ptr<JPH::PhysicsSystem> system;
+            std::unordered_map<Entity, JPH::BodyID> bodies;
+            std::unordered_map<Entity, Character> characters;
+            // Repère du vaisseau par rapport à l'ancre, pour cette mise à jour : les corps n'y voient ni sa position
+            // ni sa rotation, seulement son échelle (celle de ses enfants dans le monde).
+            Math::Vector3d framePosition;
+            Math::Quaternionf frameRotation;
+            Math::Vector3f frameScale{1.0f, 1.0f, 1.0f};
+
+            // Transformation relative à l'ancre ramenée dans le repère de ce monde.
+            RelativeTransform InFrame(const RelativeTransform& transform) const {
+                if (frame == NullEntity) {
+                    return transform;
+                }
+                const Math::Quaternionf inverse = frameRotation.Conjugate();
+                return {transform.entity, inverse.Rotate(transform.position - framePosition),
+                        Math::Normalize(inverse * transform.rotation), transform.scale};
+            }
+        };
+
+        // Vaisseau le plus proche au-dessus de l'entité (elle-même exclue) : le monde physique où elle vit.
+        Entity FrameOf(const Scene& scene, Entity entity) {
+            for (Entity parent = scene.GetParent(entity); parent != NullEntity; parent = scene.GetParent(parent)) {
+                if (scene.TryGet<ShipComponent>(parent)) {
+                    return parent;
+                }
+            }
+            return NullEntity;
+        }
+    }
+
     struct PhysicsWorld::Impl {
         BroadPhaseLayers broadPhaseLayers;
         ObjectVsBroadPhase objectVsBroadPhase;
         ObjectPairs objectPairs;
         std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
         std::unique_ptr<JPH::JobSystemThreadPool> jobSystem;
-        std::unique_ptr<JPH::PhysicsSystem> system;
+        std::vector<std::unique_ptr<Grid>> grids; // [0] : le monde ; puis un par vaisseau
 
         bool anchored = false;
-        Math::WorldPosition anchor; // origine de la simulation
-        std::unordered_map<Entity, JPH::BodyID> bodies;
-        std::unordered_map<Entity, Character> characters;
+        Math::WorldPosition anchor; // origine du monde de la scène
         std::vector<RelativeTransform> transforms;
         double accumulator = 0.0;
         Entity player = NullEntity;
@@ -179,25 +214,49 @@ namespace Flux {
             // Tous les cœurs sauf un (le thread principal, qui dessine), au moins un.
             const int threads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
             jobSystem = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
-            system = std::make_unique<JPH::PhysicsSystem>();
-            constexpr JPH::uint MaxBodies = 65536;
-            constexpr JPH::uint BodyMutexes = 0; // 0 : valeur par défaut de Jolt
-            constexpr JPH::uint MaxBodyPairs = 65536;
-            constexpr JPH::uint MaxContacts = 10240;
-            system->Init(MaxBodies, BodyMutexes, MaxBodyPairs, MaxContacts, broadPhaseLayers, objectVsBroadPhase, objectPairs);
+            grids.push_back(CreateGrid(NullEntity));
         }
 
         ~Impl() {
-            characters.clear(); // leurs corps internes vivent dans le système
-            JPH::BodyInterface& bodyInterface = system->GetBodyInterface();
-            for (const auto& [entity, id] : bodies) {
-                bodyInterface.RemoveBody(id);
-                bodyInterface.DestroyBody(id);
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                DestroyGrid(*grid);
             }
-            system.reset();
+            grids.clear();
             jobSystem.reset();
             tempAllocator.reset();
             ReleaseJolt();
+        }
+
+        std::unique_ptr<Grid> CreateGrid(Entity frame) {
+            auto grid = std::make_unique<Grid>();
+            grid->frame = frame;
+            grid->system = std::make_unique<JPH::PhysicsSystem>();
+            // Le monde de la scène peut être grand ; un vaisseau, beaucoup moins.
+            const bool world = frame == NullEntity;
+            const JPH::uint maxBodies = world ? 65536 : 8192;
+            constexpr JPH::uint BodyMutexes = 0; // 0 : valeur par défaut de Jolt
+            const JPH::uint maxBodyPairs = world ? 65536 : 8192;
+            const JPH::uint maxContacts = world ? 10240 : 4096;
+            grid->system->Init(maxBodies, BodyMutexes, maxBodyPairs, maxContacts, broadPhaseLayers, objectVsBroadPhase, objectPairs);
+            return grid;
+        }
+
+        static void DestroyGrid(Grid& grid) {
+            grid.characters.clear(); // leurs corps internes vivent dans le système
+            JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
+            for (const auto& [entity, id] : grid.bodies) {
+                if (!id.IsInvalid()) {
+                    bodyInterface.RemoveBody(id);
+                    bodyInterface.DestroyBody(id);
+                }
+            }
+            grid.bodies.clear();
+            grid.system.reset();
+        }
+
+        Grid* FindGrid(Entity frame) {
+            const auto found = std::ranges::find(grids, frame, [](const std::unique_ptr<Grid>& grid) { return grid->frame; });
+            return found == grids.end() ? nullptr : found->get();
         }
 
         // Transformation d'une entité par rapport à l'ancre, d'après la liste calculée pour cette mise à jour.
@@ -209,25 +268,63 @@ namespace Flux {
         void ChooseAnchor(const Scene& scene) {
             // Le secteur du premier objet physique : la simulation se passe autour de lui.
             const entt::registry& registry = scene.GetRegistry();
-            for (const Entity entity : registry.view<const ColliderComponent>()) {
-                anchor = {scene.GetWorldPosition(entity).sector, {}};
-                anchored = true;
-                return;
+            const auto first = [&](auto view) {
+                for (const Entity entity : view) {
+                    anchor = {scene.GetWorldPosition(entity).sector, {}};
+                    anchored = true;
+                    return;
+                }
+            };
+            first(registry.view<const ColliderComponent>());
+            if (!anchored) {
+                first(registry.view<const CharacterComponent>());
             }
-            for (const Entity entity : registry.view<const CharacterComponent>()) {
-                anchor = {scene.GetWorldPosition(entity).sector, {}};
-                anchored = true;
-                return;
+            if (!anchored) {
+                first(registry.view<const ShipComponent>());
             }
         }
 
-        void CreateBody(const Scene& scene, Entity entity, const ColliderComponent& collider, const RelativeTransform& transform) {
-            bool simulated = collider.simulatePhysics;
-            if (simulated && scene.GetParent(entity) != NullEntity) {
-                // La physique réécrirait la position locale comme si elle était celle du monde.
+        // Mouvement d'essai des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes.
+        static void MoveShips(Scene& scene, double deltaSeconds) {
+            for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
+                if (ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
+                    continue;
+                }
+                TransformComponent& transform = scene.Get<TransformComponent>(entity);
+                const Math::Vector3d move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
+                constexpr float RadiansPerDegree = JPH::JPH_PI / 180.0f;
+                const float speed = Math::Length(ship.angularVelocity) * RadiansPerDegree;
+                if (speed > 0.0f) {
+                    const Math::Quaternionf turn = Math::Quaternionf::FromAxisAngle(ship.angularVelocity, speed * static_cast<float>(deltaSeconds));
+                    transform.rotation = Math::Normalize(transform.rotation * turn);
+                }
+                if (scene.GetParent(entity) != NullEntity) {
+                    transform.position += move; // dans l'espace de son parent (vaisseau dans un vaisseau)
+                    continue;
+                }
+                // Racine : son secteur change quand il en franchit la limite.
+                const SectorComponent* sector = scene.TryGet<SectorComponent>(entity);
+                Math::WorldPosition world{sector ? sector->sector : Math::Vector3i64{}, transform.position};
+                world += move;
+                transform.position = world.offset;
+                if (world.sector != Math::Vector3i64{}) {
+                    scene.Add<SectorComponent>(entity, world.sector);
+                } else if (sector) {
+                    scene.Remove<SectorComponent>(entity);
+                }
+            }
+        }
+
+        void CreateBody(const Scene& scene, Grid& grid, Entity entity, const ColliderComponent& collider,
+                        const RelativeTransform& transform) {
+            // Coque d'un vaisseau : elle bouge avec lui, les objets de son parent s'y cognent.
+            const bool hull = scene.TryGet<ShipComponent>(entity) != nullptr;
+            bool simulated = collider.simulatePhysics && !hull;
+            if (simulated && scene.GetParent(entity) != grid.frame) {
+                // La physique réécrirait la position locale comme si elle était celle de son repère.
                 if (!warnedChild) {
-                    std::fprintf(stderr, "Flux : un objet simulé doit être une racine de la hiérarchie : "
-                                         "« %s » est traité comme immobile\n",
+                    std::fprintf(stderr, "Flux : un objet simulé doit être une racine de la hiérarchie ou un enfant direct "
+                                         "d'un vaisseau : « %s » est traité comme immobile\n",
                                  scene.Get<NameComponent>(entity).name.c_str());
                     warnedChild = true;
                 }
@@ -235,12 +332,15 @@ namespace Flux {
             }
             const JPH::RefConst<JPH::Shape> shape = CreateShape(collider, transform.scale, simulated);
             if (!shape) {
-                bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
+                grid.bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
                 return;
             }
+            const JPH::EMotionType motion = hull ? JPH::EMotionType::Kinematic
+                                          : simulated ? JPH::EMotionType::Dynamic
+                                                      : JPH::EMotionType::Static;
+            const bool moving = motion != JPH::EMotionType::Static;
             JPH::BodyCreationSettings settings(shape, JPH::RVec3(ToJolt(transform.position)), ToJoltRotation(transform.rotation),
-                                               simulated ? JPH::EMotionType::Dynamic : JPH::EMotionType::Static,
-                                               simulated ? Layers::Moving : Layers::NonMoving);
+                                               motion, moving ? Layers::Moving : Layers::NonMoving);
             settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(entity));
             settings.mFriction = collider.friction;
             settings.mRestitution = collider.restitution;
@@ -249,12 +349,12 @@ namespace Flux {
                 settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
                 settings.mMassPropertiesOverride.mMass = collider.mass;
             }
-            const JPH::BodyID id = system->GetBodyInterface().CreateAndAddBody(
-                settings, simulated ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
-            bodies.emplace(entity, id);
+            const JPH::BodyID id = grid.system->GetBodyInterface().CreateAndAddBody(
+                settings, moving ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
+            grid.bodies.emplace(entity, id);
         }
 
-        void CreateCharacter(const Scene& scene, Entity entity, const CharacterComponent& component, const RelativeTransform& transform) {
+        void CreateCharacter(Grid& grid, Entity entity, const CharacterComponent& component, const RelativeTransform& transform) {
             const float radius = std::max(component.radius, 0.05f);
             const float halfCylinder = std::max(component.height * 0.5f - radius, 0.01f);
             // Capsule posée sur l'origine de l'entité : ses pieds.
@@ -281,28 +381,56 @@ namespace Flux {
             character.yaw = std::atan2(forward.x, forward.z);
             character.character = new JPH::CharacterVirtual(settings, JPH::RVec3(ToJolt(transform.position)),
                                                             JPH::Quat::sRotation(JPH::Vec3::sAxisY(), character.yaw),
-                                                            static_cast<JPH::uint64>(entt::to_integral(entity)), system.get());
-            characters.emplace(entity, std::move(character));
-            (void)scene;
+                                                            static_cast<JPH::uint64>(entt::to_integral(entity)), grid.system.get());
+            grid.characters.emplace(entity, std::move(character));
         }
 
-        // Nouvelles entités, entités détruites, composants ajoutés ou retirés.
-        void Synchronize(Scene& scene) {
-            JPH::BodyInterface& bodyInterface = system->GetBodyInterface();
-            std::erase_if(bodies, [&](const auto& entry) {
-                const auto [entity, id] = entry;
-                if (scene.IsValid(entity) && scene.TryGet<ColliderComponent>(entity) && !scene.TryGet<CharacterComponent>(entity)) {
+        // Vaisseaux apparus ou disparus, repère de chacun pour cette mise à jour.
+        void SynchronizeGrids(const Scene& scene) {
+            std::erase_if(grids, [&](const std::unique_ptr<Grid>& grid) {
+                if (grid->frame == NullEntity || (scene.IsValid(grid->frame) && scene.TryGet<ShipComponent>(grid->frame))) {
                     return false;
                 }
-                if (!id.IsInvalid()) {
-                    bodyInterface.RemoveBody(id);
-                    bodyInterface.DestroyBody(id);
-                }
+                DestroyGrid(*grid);
                 return true;
             });
-            std::erase_if(characters, [&](const auto& entry) {
-                return !scene.IsValid(entry.first) || !scene.TryGet<CharacterComponent>(entry.first);
-            });
+            for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
+                Grid* grid = FindGrid(entity);
+                if (!grid) {
+                    grids.push_back(CreateGrid(entity));
+                    grid = grids.back().get();
+                }
+                if (const RelativeTransform* transform = FindTransform(entity)) {
+                    grid->framePosition = transform->position;
+                    grid->frameRotation = transform->rotation;
+                    grid->frameScale = transform->scale;
+                }
+                grid->system->SetGravity(JPH::Vec3(0.0f, -ship.gravity, 0.0f)); // le sol du pont
+            }
+        }
+
+        // Nouvelles entités, entités détruites, composants ajoutés ou retirés, entités passées d'un repère à l'autre.
+        void Synchronize(Scene& scene) {
+            SynchronizeGrids(scene);
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                JPH::BodyInterface& bodyInterface = grid->system->GetBodyInterface();
+                std::erase_if(grid->bodies, [&](const auto& entry) {
+                    const auto [entity, id] = entry;
+                    if (scene.IsValid(entity) && scene.TryGet<ColliderComponent>(entity) && !scene.TryGet<CharacterComponent>(entity)
+                        && FrameOf(scene, entity) == grid->frame) {
+                        return false;
+                    }
+                    if (!id.IsInvalid()) {
+                        bodyInterface.RemoveBody(id);
+                        bodyInterface.DestroyBody(id);
+                    }
+                    return true;
+                });
+                std::erase_if(grid->characters, [&](const auto& entry) {
+                    const Entity entity = entry.first;
+                    return !scene.IsValid(entity) || !scene.TryGet<CharacterComponent>(entity) || scene.GetParent(entity) != grid->frame;
+                });
+            }
 
             entt::registry& registry = scene.GetRegistry();
             player = NullEntity;
@@ -310,29 +438,54 @@ namespace Flux {
                 if (component.player && player == NullEntity) {
                     player = entity;
                 }
-                if (!characters.contains(entity)) {
-                    if (scene.GetParent(entity) != NullEntity) {
-                        continue; // un personnage enfant suivrait deux maîtres : ignoré
-                    }
-                    if (const RelativeTransform* transform = FindTransform(entity)) {
-                        CreateCharacter(scene, entity, component, *transform);
-                    }
+                // Racine, ou enfant direct d'un vaisseau : sinon il suivrait deux maîtres (ignoré).
+                const Entity frame = FrameOf(scene, entity);
+                if (scene.GetParent(entity) != frame) {
+                    continue;
+                }
+                Grid* grid = FindGrid(frame);
+                const RelativeTransform* transform = FindTransform(entity);
+                if (grid && transform && !grid->characters.contains(entity)) {
+                    CreateCharacter(*grid, entity, component, grid->InFrame(*transform));
                 }
             }
             for (const auto [entity, collider] : registry.view<const ColliderComponent>().each()) {
-                if (bodies.contains(entity) || registry.all_of<CharacterComponent>(entity)) {
+                if (registry.all_of<CharacterComponent>(entity)) {
                     continue;
                 }
-                if (const RelativeTransform* transform = FindTransform(entity)) {
-                    CreateBody(scene, entity, collider, *transform);
+                Grid* grid = FindGrid(FrameOf(scene, entity));
+                const RelativeTransform* transform = FindTransform(entity);
+                if (grid && transform && !grid->bodies.contains(entity)) {
+                    CreateBody(scene, *grid, entity, collider, grid->InFrame(*transform));
                 }
             }
         }
 
-        void UpdateCharacters(const Scene& scene, const CharacterInput& input) {
-            const JPH::Vec3 gravity = system->GetGravity();
+        // Coques des vaisseaux : amenées là où le vaisseau est maintenant, en steps pas (vitesse comprise : ce qui
+        // les touche est poussé, un personnage posé dessus est emporté).
+        void MoveHulls(const Scene& scene, int steps) {
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                JPH::BodyInterface& bodyInterface = grid->system->GetBodyInterface();
+                for (const auto& [entity, id] : grid->bodies) {
+                    if (id.IsInvalid() || !scene.TryGet<ShipComponent>(entity)) {
+                        continue;
+                    }
+                    if (const RelativeTransform* transform = FindTransform(entity)) {
+                        const RelativeTransform target = grid->InFrame(*transform);
+                        bodyInterface.MoveKinematic(id, JPH::RVec3(ToJolt(target.position)), ToJoltRotation(target.rotation),
+                                                    StepSeconds * static_cast<float>(steps));
+                    }
+                }
+            }
+        }
+
+        void UpdateCharacters(Grid& grid, const Scene& scene, const CharacterInput& input) {
+            JPH::PhysicsSystem& system = *grid.system;
+            const JPH::Vec3 gravity = system.GetGravity();
             const JPH::Vec3 up = -gravity.NormalizedOr(JPH::Vec3(0.0f, -1.0f, 0.0f));
-            for (auto& [entity, character] : characters) {
+            // Commandes dans le repère du monde, ramenées dans celui du vaisseau.
+            const Math::Vector3f move = grid.frameRotation.Conjugate().Rotate(input.move);
+            for (auto& [entity, character] : grid.characters) {
                 const CharacterComponent& component = scene.Get<CharacterComponent>(entity);
                 JPH::CharacterVirtual& body = *character.character;
                 body.SetUp(up);
@@ -341,7 +494,7 @@ namespace Flux {
                 JPH::Vec3 wanted = JPH::Vec3::sZero();
                 bool jump = false;
                 if (component.player && entity == player) {
-                    wanted = ToJolt(input.move);
+                    wanted = ToJolt(grid.frame == NullEntity ? input.move : move);
                     wanted -= up * wanted.Dot(up); // dans le plan du sol
                     if (wanted.LengthSq() > 1.0f) {
                         wanted = wanted.Normalized();
@@ -380,8 +533,8 @@ namespace Flux {
                 update.mStickToFloorStepDown = -up * 0.5f;
                 update.mWalkStairsStepUp = up * 0.4f;
                 const JPH::RVec3 before = body.GetPosition();
-                body.ExtendedUpdate(StepSeconds, gravity, update, system->GetDefaultBroadPhaseLayerFilter(Layers::Moving),
-                                    system->GetDefaultLayerFilter(Layers::Moving), {}, {}, *tempAllocator);
+                body.ExtendedUpdate(StepSeconds, gravity, update, system.GetDefaultBroadPhaseLayerFilter(Layers::Moving),
+                                    system.GetDefaultLayerFilter(Layers::Moving), {}, {}, *tempAllocator);
 
                 // Vitesse des pas : le chemin vraiment parcouru (nulle contre un mur), par rapport au sol qui peut
                 // bouger, dans le plan du sol ; nulle en l'air.
@@ -396,13 +549,21 @@ namespace Flux {
             }
         }
 
-        // Position d'une racine d'après la simulation : secteur et décalage.
-        void WriteRoot(Scene& scene, Entity entity, JPH::RVec3Arg position, JPH::QuatArg rotation) {
+        // Position d'une entité d'après la simulation : secteur et décalage pour une racine du monde, position locale
+        // pour un enfant direct d'un vaisseau (dans son espace, à son échelle).
+        void Write(Scene& scene, const Grid& grid, Entity entity, JPH::RVec3Arg position, JPH::QuatArg rotation) {
+            TransformComponent& transform = scene.Get<TransformComponent>(entity);
+            transform.rotation = FromJolt(rotation.Normalized());
+            if (grid.frame != NullEntity) {
+                const Math::Vector3f& scale = grid.frameScale;
+                const auto unscale = [](double value, float factor) { return factor != 0.0f ? value / factor : 0.0; };
+                transform.position = {unscale(position.GetX(), scale.x), unscale(position.GetY(), scale.y),
+                                      unscale(position.GetZ(), scale.z)};
+                return;
+            }
             Math::WorldPosition world = anchor;
             world += Math::Vector3d{position.GetX(), position.GetY(), position.GetZ()};
-            TransformComponent& transform = scene.Get<TransformComponent>(entity);
             transform.position = world.offset;
-            transform.rotation = FromJolt(rotation.Normalized());
             if (world.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, world.sector);
             } else if (scene.TryGet<SectorComponent>(entity)) {
@@ -410,19 +571,19 @@ namespace Flux {
             }
         }
 
-        void WriteBack(Scene& scene) {
-            JPH::BodyInterface& bodyInterface = system->GetBodyInterface();
-            for (const auto& [entity, id] : bodies) {
+        void WriteBack(Scene& scene, const Grid& grid) {
+            JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
+            for (const auto& [entity, id] : grid.bodies) {
                 if (id.IsInvalid() || bodyInterface.GetMotionType(id) != JPH::EMotionType::Dynamic || !bodyInterface.IsActive(id)) {
-                    continue; // endormi : n'a pas bougé
+                    continue; // immobile, coque (suit son vaisseau) ou endormi : n'a pas bougé de lui-même
                 }
                 JPH::RVec3 position;
                 JPH::Quat rotation;
                 bodyInterface.GetPositionAndRotation(id, position, rotation);
-                WriteRoot(scene, entity, position, rotation);
+                Write(scene, grid, entity, position, rotation);
             }
-            for (const auto& [entity, character] : characters) {
-                WriteRoot(scene, entity, character.character->GetPosition(), character.character->GetRotation());
+            for (const auto& [entity, character] : grid.characters) {
+                Write(scene, grid, entity, character.character->GetPosition(), character.character->GetRotation());
                 CharacterComponent& component = scene.Get<CharacterComponent>(entity);
                 component.groundSpeed = character.groundSpeed;
                 component.airTime = character.airTime;
@@ -436,19 +597,25 @@ namespace Flux {
                     return; // rien de physique dans la scène
                 }
             }
+            MoveShips(scene, deltaSeconds);
             scene.ComputeRelativeTransforms(anchor, transforms);
             Synchronize(scene);
 
             accumulator = std::min(accumulator + deltaSeconds, static_cast<double>(StepSeconds * MaxStepsPerUpdate));
-            bool stepped = false;
-            while (accumulator >= StepSeconds) {
-                accumulator -= StepSeconds;
-                UpdateCharacters(scene, input);
-                system->Update(StepSeconds, 1, tempAllocator.get(), jobSystem.get());
-                stepped = true;
+            const int steps = static_cast<int>(accumulator / StepSeconds);
+            if (steps == 0) {
+                return;
             }
-            if (stepped) {
-                WriteBack(scene);
+            accumulator -= steps * static_cast<double>(StepSeconds);
+            MoveHulls(scene, steps);
+            for (int step = 0; step < steps; ++step) {
+                for (const std::unique_ptr<Grid>& grid : grids) {
+                    UpdateCharacters(*grid, scene, input);
+                    grid->system->Update(StepSeconds, 1, tempAllocator.get(), jobSystem.get());
+                }
+            }
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                WriteBack(scene, *grid);
             }
         }
     };
@@ -462,11 +629,11 @@ namespace Flux {
     }
 
     void PhysicsWorld::SetGravity(const Math::Vector3f& gravity) {
-        m_impl->system->SetGravity(ToJolt(gravity));
+        m_impl->grids.front()->system->SetGravity(ToJolt(gravity));
     }
 
     Math::Vector3f PhysicsWorld::GetGravity() const {
-        return FromJolt(m_impl->system->GetGravity());
+        return FromJolt(m_impl->grids.front()->system->GetGravity());
     }
 
     Entity PhysicsWorld::GetPlayer() const {
@@ -474,6 +641,10 @@ namespace Flux {
     }
 
     int PhysicsWorld::GetBodyCount() const {
-        return static_cast<int>(std::ranges::count_if(m_impl->bodies, [](const auto& entry) { return !entry.second.IsInvalid(); }));
+        int count = 0;
+        for (const std::unique_ptr<Grid>& grid : m_impl->grids) {
+            count += static_cast<int>(std::ranges::count_if(grid->bodies, [](const auto& entry) { return !entry.second.IsInvalid(); }));
+        }
+        return count;
     }
 }
