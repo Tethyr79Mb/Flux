@@ -985,12 +985,13 @@ namespace Flux {
                 return;
             }
             const std::string& playing = animator->playing.empty() ? animator->animation : animator->playing;
-            const AnimationSample to{FindAnimation(model.skeleton, playing), animator->time, animator->loop};
+            const AnimationSample to{FindAnimation(model.skeleton, playing), animator->time, animator->loop && !animator->playingOnce};
             if (animator->fade >= 1.0f) {
                 poseEvaluator.Evaluate(model.skeleton, to);
                 return;
             }
-            const AnimationSample from{FindAnimation(model.skeleton, animator->previous), animator->previousTime, animator->loop};
+            const AnimationSample from{FindAnimation(model.skeleton, animator->previous), animator->previousTime,
+                                       animator->loop && !animator->previousOnce};
             poseEvaluator.Evaluate(model.skeleton, from, to, animator->fade);
         }
 
@@ -1292,6 +1293,12 @@ namespace Flux {
             }
         }
         return names;
+    }
+
+    float Renderer::GetAnimationDuration(const std::filesystem::path& path, std::string_view name) {
+        const GpuModel* model = m_impl->FindModel(path);
+        const ModelAnimation* animation = model ? FindAnimation(model->skeleton, name) : nullptr;
+        return animation ? animation->duration : 0.0f;
     }
 
     UI::DrawList& Renderer::GetOverlay() {

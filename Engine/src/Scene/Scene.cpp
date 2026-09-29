@@ -140,6 +140,23 @@ namespace Flux {
         return world;
     }
 
+    Entity Scene::GetShip(Entity entity) const {
+        for (Entity parent = GetParent(entity); parent != NullEntity; parent = GetParent(parent)) {
+            if (m_registry.all_of<ShipComponent>(parent)) {
+                return parent;
+            }
+        }
+        return NullEntity;
+    }
+
+    Math::Quaternionf Scene::GetWorldRotation(Entity entity) const {
+        Math::Quaternionf rotation = m_registry.get<TransformComponent>(entity).rotation;
+        for (Entity parent = GetParent(entity); parent != NullEntity; parent = GetParent(parent)) {
+            rotation = m_registry.get<TransformComponent>(parent).rotation * rotation;
+        }
+        return Math::Normalize(rotation);
+    }
+
     void Scene::ComputeRelativeTransforms(const Math::WorldPosition& origin, std::vector<RelativeTransform>& out) const {
         out.clear();
         ForEachRoot([&](Entity root) {

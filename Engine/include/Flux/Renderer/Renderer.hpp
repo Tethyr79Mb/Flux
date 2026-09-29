@@ -11,8 +11,8 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 #include <string_view>
+#include <vector>
 
 namespace Flux {
     class Window;
@@ -65,6 +65,8 @@ namespace Flux {
         std::optional<Math::Box3f> LoadModel(const std::filesystem::path& path);
         // Noms des animations du modèle, dans l'ordre du fichier (chargé au besoin) ; vide s'il n'en a pas.
         std::vector<std::string> GetAnimationNames(const std::filesystem::path& path);
+        // Durée d'une animation de ce modèle, en secondes ; 0 si le modèle n'est pas chargé ou ne l'a pas.
+        float GetAnimationDuration(const std::filesystem::path& path, std::string_view name);
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;

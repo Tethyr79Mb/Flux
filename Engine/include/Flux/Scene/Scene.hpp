@@ -57,6 +57,11 @@ namespace Flux {
 
         // Position absolue (secteur + décalage), en composant toute la hiérarchie.
         Math::WorldPosition GetWorldPosition(Entity entity) const;
+        // Vaisseau (ShipComponent) le plus proche au-dessus de l'entité, elle-même exclue ; NullEntity s'il n'y en a pas.
+        // Son monde physique est celui de l'entité.
+        Entity GetShip(Entity entity) const;
+        // Rotation absolue, en composant toute la hiérarchie.
+        Math::Quaternionf GetWorldRotation(Entity entity) const;
 
         // Transformations de toutes les entités, relatives à origin (parents avant enfants).
         void ComputeRelativeTransforms(const Math::WorldPosition& origin, std::vector<RelativeTransform>& out) const;

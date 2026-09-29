@@ -3,6 +3,7 @@
 
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/Seats.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -290,8 +291,79 @@ namespace {
         CHECK(world.CastCamera(scene, hero, inside, {-1.0f, 0.0f, 0.0f}, 2.5f, Radius) == 2.5f);
         return true;
     }
+
+    // Poste de pilotage : le joueur s'y assoit (E), y reste posé pendant que le vaisseau accélère et vire sous ses
+    // commandes, puis se relève devant le siège.
+    bool RunSeatTests() {
+        Scene scene;
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = {0.0, 10.0, 0.0};
+        scene.Add<ShipComponent>(ship);
+        const Entity deck = scene.CreateEntity("Pont", ship);
+        TransformComponent& deckTransform = scene.Get<TransformComponent>(deck);
+        deckTransform.position = {0.0, -0.1, 0.0};
+        deckTransform.scale = {10.0f, 0.2f, 20.0f};
+        scene.Add<ColliderComponent>(deck);
+        const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
+        scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -3.0};
+        scene.Add<SeatComponent>(seat).pilot = true;
+        const Entity hero = scene.CreateEntity("Joueur", ship);
+        scene.Get<TransformComponent>(hero).position = {3.0, 0.0, -2.0};
+        scene.Add<CharacterComponent>(hero);
+
+        PhysicsWorld world;
+        const Seats::DurationsFunction durations = [](Entity) { return Seats::Durations{1.0f, 1.0f}; };
+        const auto frames = [&](double seconds, const SeatInput& input) {
+            for (int frame = 0; frame < static_cast<int>(std::lround(seconds / Frame)); ++frame) {
+                Seats::Update(scene, world.GetPlayer(), Frame, input, durations);
+                world.Update(scene, Frame, {});
+            }
+        };
+        const SeatInput interact{.interact = true};
+        frames(0.5, {});
+        // Trop loin (plus de 1,5 m) : rien.
+        frames(Frame, interact);
+        const CharacterComponent& character = scene.Get<CharacterComponent>(hero);
+        CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
+
+        // Il s'approche (vers -x, 1,4 s à 2 m/s), puis s'assoit, posé sur le siège dès le début de l'animation.
+        Run(world, scene, 1.4, Walk(-1.0f));
+        frames(0.3, {});
+        frames(Frame, interact);
+        CHECK(character.seat == seat && character.seatState == SeatState::SittingDown);
+        frames(0.5, {});
+        const Math::Vector3d onSeat = scene.Get<TransformComponent>(hero).position;
+        CHECK(std::abs(onSeat.x) < 0.01 && std::abs(onSeat.z + 3.0) < 0.01);
+        CHECK(Seats::GetPilotSeat(scene, hero) == NullEntity); // pas encore assis
+        frames(0.6, {});
+        CHECK(character.seatState == SeatState::Seated && Seats::GetPilotSeat(scene, hero) == seat);
+
+        // Aux commandes : 2 s de poussée à 10 m/s², puis le vaisseau vire à gauche tant que Q est tenue.
+        frames(2.0, {.thrust = 1.0f});
+        const ShipComponent& shipComponent = scene.Get<ShipComponent>(ship);
+        CHECK(std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
+        frames(1.0, {.yaw = 1.0f});
+        CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
+        frames(Frame, {});
+        CHECK(shipComponent.angularVelocity == Math::Vector3f{});
+        // Il a suivi le vaisseau sans bouger de son siège.
+        const Math::Vector3d still = scene.Get<TransformComponent>(hero).position;
+        CHECK(std::abs(still.x) < 0.01 && std::abs(still.z + 3.0) < 0.01 && std::abs(still.y) < 0.01);
+        CHECK(Math::Length(Math::Delta(scene.GetWorldPosition(seat), scene.GetWorldPosition(hero))) < 0.01);
+
+        // Il se relève : toujours posé pendant l'animation, puis debout un demi-mètre devant le siège.
+        frames(Frame, interact);
+        CHECK(character.seatState == SeatState::StandingUp);
+        frames(1.1, {});
+        CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
+        frames(0.5, {});
+        const Math::Vector3d stood = scene.Get<TransformComponent>(hero).position;
+        CHECK(std::abs(stood.x) < 0.05 && std::abs(stood.z + 3.5) < 0.05 && std::abs(stood.y) < 0.05);
+        return true;
+    }
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests() && RunCameraTests();
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests() && RunCameraTests()
+        && RunSeatTests();
 }
