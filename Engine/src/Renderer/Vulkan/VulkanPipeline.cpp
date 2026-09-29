@@ -1,4 +1,4 @@
-#include "Graphics/Vulkan/VulkanPipeline.hpp"
+#include "Renderer/Vulkan/VulkanPipeline.hpp"
 
 #include <array>
 #include <cstdint>

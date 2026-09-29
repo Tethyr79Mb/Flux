@@ -1,6 +1,7 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
 #include <Flux/Core/Project.hpp>
+#include <Flux/Platform/Console.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
@@ -8,6 +9,8 @@
 #include <cstdio>
 
 int main() {
+    Flux::Platform::UseUtf8Console();
+
     // Le projet est copié à côté de l'exe par le build : ses chemins relatifs pointent vers bin/assets.
     auto project = Flux::ProjectFile::Load(Flux::Platform::GetExecutableDirectory() / "Game.fluxproject");
     if (!project) {

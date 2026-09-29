@@ -1,4 +1,4 @@
-#include "Graphics/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/Vulkan/VulkanBuffer.hpp"
 
 #include <cstring>
 #include <utility>

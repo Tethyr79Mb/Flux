@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Graphics/Vulkan/Vulkan.hpp"
+#include "Renderer/Vulkan/Vulkan.hpp"
 
 #include <expected>
 #include <string>

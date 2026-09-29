@@ -2,7 +2,7 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Platform/Window.hpp>
-#include <Flux/Graphics/Renderer.hpp>
+#include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
 namespace FluxEditor {

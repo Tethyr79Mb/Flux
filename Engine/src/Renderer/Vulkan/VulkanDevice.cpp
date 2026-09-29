@@ -1,4 +1,4 @@
-#include "Graphics/Vulkan/VulkanDevice.hpp"
+#include "Renderer/Vulkan/VulkanDevice.hpp"
 
 #include <windows.h>
 

@@ -1,6 +1,7 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
 #include <Flux/Core/Project.hpp>
+#include <Flux/Platform/Console.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
@@ -82,6 +83,8 @@ namespace {
 }
 
 int main(int argc, char** argv) {
+    Flux::Platform::UseUtf8Console();
+
     // Déclarés avant le moteur, donc détruits après lui : les fonctions qui les référencent ne leur survivent pas.
     FluxEditor::SceneDocument document;
     FluxEditor::SceneEditor sceneEditor;

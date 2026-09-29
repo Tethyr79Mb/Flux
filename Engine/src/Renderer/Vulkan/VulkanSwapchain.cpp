@@ -1,6 +1,6 @@
-#include "Graphics/Vulkan/VulkanSwapchain.hpp"
+#include "Renderer/Vulkan/VulkanSwapchain.hpp"
 
-#include "Graphics/Vulkan/VulkanDevice.hpp"
+#include "Renderer/Vulkan/VulkanDevice.hpp"
 
 namespace Flux::Vk {
     Swapchain::Swapchain(const Device& device) : m_device(device) {}

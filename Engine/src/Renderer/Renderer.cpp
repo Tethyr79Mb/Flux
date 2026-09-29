@@ -1,4 +1,4 @@
-#include "Flux/Graphics/Renderer.hpp"
+#include "Flux/Renderer/Renderer.hpp"
 
 #include "Flux/Animation/Animation.hpp"
 #include "Flux/Assets/Image.hpp"
@@ -9,11 +9,11 @@
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/UI/DrawList.hpp"
-#include "Graphics/Vulkan/VulkanBuffer.hpp"
-#include "Graphics/Vulkan/VulkanDevice.hpp"
-#include "Graphics/Vulkan/VulkanImage.hpp"
-#include "Graphics/Vulkan/VulkanPipeline.hpp"
-#include "Graphics/Vulkan/VulkanSwapchain.hpp"
+#include "Renderer/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/Vulkan/VulkanDevice.hpp"
+#include "Renderer/Vulkan/VulkanImage.hpp"
+#include "Renderer/Vulkan/VulkanPipeline.hpp"
+#include "Renderer/Vulkan/VulkanSwapchain.hpp"
 
 #include <algorithm>
 #include <array>

@@ -1,7 +1,7 @@
-#include "Graphics/Vulkan/VulkanImage.hpp"
+#include "Renderer/Vulkan/VulkanImage.hpp"
 
-#include "Graphics/Vulkan/VulkanBuffer.hpp"
-#include "Graphics/Vulkan/VulkanDevice.hpp"
+#include "Renderer/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/Vulkan/VulkanDevice.hpp"
 
 #include <algorithm>
 #include <bit>
