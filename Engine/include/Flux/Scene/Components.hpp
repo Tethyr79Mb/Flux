@@ -96,10 +96,19 @@ namespace Flux {
         float gravityFactor = 1.0f; // 0 : flotte (dans l'espace)
     };
 
+    // Étape d'un personnage qui s'assoit (SeatComponent) : les animations « s'asseoir » et « se lever » se jouent
+    // en entier avant qu'il soit assis ou debout.
+    enum class SeatState : std::uint8_t {
+        Standing,
+        SittingDown,
+        Seated,
+        StandingUp,
+    };
+
     // Personnage qui marche (Jolt CharacterVirtual) : une capsule debout dont le bas est l'origine de l'entité,
     // comme les pieds d'un modèle glTF. Doit être une racine ou un enfant direct d'un vaisseau (ShipComponent).
     // Le joueur le dirige au clavier pendant le jeu
-    // (ZQSD, Maj pour courir, Espace pour sauter) et la caméra le suit.
+    // (ZQSD, Maj pour courir, Espace pour sauter, E pour s'asseoir) et la caméra le suit.
     struct CharacterComponent
     {
         float radius = 0.3f;
@@ -110,37 +119,62 @@ namespace Flux {
         bool player = true;      // dirigé par le joueur ; sinon, immobile (soumis à la gravité seulement)
         float groundSpeed = 0.0f; // vitesse horizontale mesurée pendant le jeu, m/s ; 0 en l'air (non enregistrée)
         float airTime = 0.0f;     // secondes passées en l'air (saut, chute) pendant le jeu ; 0 au sol (non enregistrée)
+        // Siège occupé pendant le jeu (non enregistrés) : tant qu'il en a un, le personnage y est posé, sans physique.
+        Entity seat = NullEntity;
+        SeatState seatState = SeatState::Standing;
+        float seatTime = 0.0f; // secondes depuis le début de l'étape en cours
+    };
+
+    // Siège : le joueur s'y assoit (touche E, à moins de SeatReach mètres de lui) et s'en relève (E). Son origine est
+    // au sol, là où se posent les pieds du personnage, et il regarde vers son -z : le personnage assis aussi. Debout,
+    // on en sort à un demi-mètre devant. Le poste de pilotage dirige le vaisseau au-dessus de lui (ShipComponent) :
+    // Z/S pour accélérer et freiner, Q/D pour virer, Espace/Ctrl pour cabrer et piquer ; vue depuis l'œil du pilote
+    // (V : vue extérieure).
+    struct SeatComponent
+    {
+        bool pilot = false;
+        Math::Vector3f eye{0.0f, 1.25f, -0.2f}; // œil du personnage assis dans le repère du siège (vue cockpit)
     };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
     // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou
     // tourne, sans glisser. Sa propre collision, s'il en a une, reste dans le repère de son parent (sa coque).
-    // Pour l'essayer avant le pilotage : un mouvement constant pendant le jeu.
+    // Pendant le jeu, il avance et tourne selon sa vitesse, que le pilote change depuis un poste de pilotage
+    // (SeatComponent::pilot) ; la vitesse enregistrée est celle du départ.
     struct ShipComponent
     {
         float gravity = 9.81f;         // m/s², gravité artificielle ; 0 : apesanteur à bord
         Math::Vector3f velocity;       // m/s, dans les axes du vaisseau (-z : vers l'avant)
         Math::Vector3f angularVelocity; // °/s autour de ses axes (y : virer, x : tangage, z : roulis)
+        float maxSpeed = 100.0f;       // m/s, en marche avant (le quart en arrière)
+        float acceleration = 10.0f;    // m/s², moteurs à fond
+        float turnRate = 30.0f;        // °/s, lacet et tangage commandés par le pilote
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
     // la première image de son animation. Sur un personnage (CharacterComponent), le choix suit ses pas : repos
     // quand il est immobile, marche, puis course au-delà de la moitié entre ses vitesses de marche et de course,
-    // chacune jouée d'autant plus vite qu'il va vite, et « en l'air » pendant un saut ou une chute ; fondu entre elles.
+    // chacune jouée d'autant plus vite qu'il va vite, « en l'air » pendant un saut ou une chute, et sur un siège :
+    // s'asseoir (une fois), assis, se lever (une fois) ; fondu entre elles.
     struct AnimatorComponent
     {
         std::string animation{};     // nom dans le fichier (marche d'un personnage) ; vide : la première
         std::string idleAnimation{}; // personnage immobile ; vide : l'animation principale se fige
         std::string runAnimation{};  // personnage qui court ; vide : l'animation principale, accélérée
         std::string airAnimation{};  // personnage en l'air (saut, chute) ; vide : celle du sol continue
+        std::string sitDownAnimation{}; // personnage qui s'assoit, jouée une fois ; vide : assis d'un coup
+        std::string seatedAnimation{};  // personnage assis ; vide : celle du repos
+        std::string standUpAnimation{}; // personnage qui se lève, jouée une fois ; vide : debout d'un coup
         float speed = 1.0f;          // vitesse de lecture (2 : deux fois plus vite)
         bool loop = true;            // sinon, s'arrête sur sa dernière image
 
         // Lecture en cours (non enregistrée) : animation jouée et son instant, animation qui s'efface, fondu.
         std::string playing{};
         double time = 0.0;
+        bool playingOnce = false; // jouée une fois (s'asseoir, se lever), même si loop
         std::string previous{};
         double previousTime = 0.0;
+        bool previousOnce = false;
         float fade = 1.0f; // part de playing dans la pose, de 0 à 1
     };
 

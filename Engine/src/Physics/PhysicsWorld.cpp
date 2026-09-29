@@ -1,6 +1,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/Seats.hpp"
 
 // Jolt : ses en-têtes seulement ici (et jamais dans un en-tête public).
 #include <Jolt/Jolt.h>
@@ -30,6 +31,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace Flux {
@@ -158,6 +160,7 @@ namespace Flux {
             float yaw = 0.0f; // direction du regard (le modèle regarde vers +z en glTF)
             float groundSpeed = 0.0f; // vitesse horizontale au dernier pas, pour les animations
             float airTime = 0.0f;     // secondes sans toucher un sol où tenir debout (saut, chute, pente trop raide)
+            Entity seat = NullEntity; // siège où il était posé au dernier pas
         };
     }
 
@@ -186,15 +189,6 @@ namespace Flux {
             }
         };
 
-        // Vaisseau le plus proche au-dessus de l'entité (elle-même exclue) : le monde physique où elle vit.
-        Entity FrameOf(const Scene& scene, Entity entity) {
-            for (Entity parent = scene.GetParent(entity); parent != NullEntity; parent = scene.GetParent(parent)) {
-                if (scene.TryGet<ShipComponent>(parent)) {
-                    return parent;
-                }
-            }
-            return NullEntity;
-        }
     }
 
     struct PhysicsWorld::Impl {
@@ -421,7 +415,7 @@ namespace Flux {
                 std::erase_if(grid->bodies, [&](const auto& entry) {
                     const auto [entity, id] = entry;
                     if (scene.IsValid(entity) && scene.TryGet<ColliderComponent>(entity) && !scene.TryGet<CharacterComponent>(entity)
-                        && FrameOf(scene, entity) == grid->frame) {
+                        && scene.GetShip(entity) == grid->frame) {
                         return false;
                     }
                     if (!id.IsInvalid()) {
@@ -443,7 +437,7 @@ namespace Flux {
                     player = entity;
                 }
                 // Racine, ou enfant direct d'un vaisseau : sinon il suivrait deux maîtres (ignoré).
-                const Entity frame = FrameOf(scene, entity);
+                const Entity frame = scene.GetShip(entity);
                 if (scene.GetParent(entity) != frame) {
                     continue;
                 }
@@ -457,7 +451,7 @@ namespace Flux {
                 if (registry.all_of<CharacterComponent>(entity)) {
                     continue;
                 }
-                Grid* grid = FindGrid(FrameOf(scene, entity));
+                Grid* grid = FindGrid(scene.GetShip(entity));
                 const RelativeTransform* transform = FindTransform(entity);
                 if (grid && transform && !grid->bodies.contains(entity)) {
                     CreateBody(scene, *grid, entity, collider, grid->InFrame(*transform));
@@ -483,6 +477,38 @@ namespace Flux {
             }
         }
 
+        // Personnage sur un siège : posé dessus, face à son -z, sans physique (true). En se relevant, il est remis
+        // debout devant le siège.
+        bool Sit(const Grid& grid, Character& character, Entity seat) {
+            if (seat == NullEntity && character.seat == NullEntity) {
+                return false; // debout, comme d'habitude
+            }
+            JPH::CharacterVirtual& body = *character.character;
+            const Entity previous = std::exchange(character.seat, NullEntity);
+            const RelativeTransform* found = FindTransform(seat != NullEntity ? seat : previous);
+            if (!found) {
+                return false; // pas de siège, ou siège disparu : il reste où il est
+            }
+            const RelativeTransform transform = grid.InFrame(*found);
+            const Math::Vector3f forward = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+            JPH::Vec3 position = ToJolt(transform.position);
+            if (seat == NullEntity) {
+                position += ToJolt(forward) * Seats::StandOffset; // vient de se relever
+                body.SetPosition(JPH::RVec3(position));
+                body.SetLinearVelocity(JPH::Vec3::sZero());
+                return false;
+            }
+            // Le modèle regarde vers son +z : dans le sens du siège.
+            character.yaw = std::atan2(forward.x, forward.z);
+            body.SetPosition(JPH::RVec3(position));
+            body.SetRotation(JPH::Quat::sRotation(JPH::Vec3::sAxisY(), character.yaw));
+            body.SetLinearVelocity(JPH::Vec3::sZero());
+            character.groundSpeed = 0.0f;
+            character.airTime = 0.0f;
+            character.seat = seat;
+            return true;
+        }
+
         void UpdateCharacters(Grid& grid, const Scene& scene, const CharacterInput& input) {
             JPH::PhysicsSystem& system = *grid.system;
             const JPH::Vec3 gravity = system.GetGravity();
@@ -493,6 +519,9 @@ namespace Flux {
                 const CharacterComponent& component = scene.Get<CharacterComponent>(entity);
                 JPH::CharacterVirtual& body = *character.character;
                 body.SetUp(up);
+                if (Sit(grid, character, component.seat)) {
+                    continue;
+                }
                 body.UpdateGroundVelocity();
 
                 JPH::Vec3 wanted = JPH::Vec3::sZero();
@@ -630,7 +659,7 @@ namespace Flux {
             }
             // Coques des vaisseaux où se trouve le joueur : la caméra est dedans, elles ne l'arrêtent pas.
             std::unordered_set<Entity> aboard;
-            for (Entity ship = FrameOf(scene, followed); ship != NullEntity; ship = FrameOf(scene, ship)) {
+            for (Entity ship = scene.GetShip(followed); ship != NullEntity; ship = scene.GetShip(ship)) {
                 aboard.insert(ship);
             }
             const Math::Vector3d start = Math::Delta(anchor, from);

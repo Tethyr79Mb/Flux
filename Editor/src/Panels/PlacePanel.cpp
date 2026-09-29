@@ -42,14 +42,24 @@ namespace FluxEditor {
                                       {"Paroi tribord", {3.1, 1.5, 0.0}, {0.2f, 3.0f, 16.0f}, 150},
                                       {"Cloison avant", {0.0, 1.5, -8.1}, {6.4f, 3.0f, 0.2f}, 130},
                                       {"Console", {0.0, 0.5, -7.2}, {3.0f, 1.0f, 0.8f}, 60}};
-            for (const Part& part : Parts) {
-                const Entity entity = scene.CreateEntity(part.name, ship);
+            const auto addPart = [&](const Part& part, Entity parent) {
+                const Entity entity = scene.CreateEntity(part.name, parent);
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 transform.position = part.position;
                 transform.scale = part.scale;
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(part.grey, part.grey, part.grey + 8));
                 scene.Add<ColliderComponent>(entity);
+            };
+            for (const Part& part : Parts) {
+                addPart(part, ship);
             }
+            // Poste de pilotage face à la console : l'origine du siège est au sol, sous les hanches du pilote assis.
+            // Assise courte devant, pour que le personnage qui se relève (un demi-mètre devant) ne la touche pas.
+            const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
+            scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -5.9};
+            scene.Add<SeatComponent>(seat).pilot = true;
+            addPart({"Assise", {0.0, 0.43, 0.02}, {0.6f, 0.1f, 0.45f}, 70}, seat);
+            addPart({"Dossier", {0.0, 0.9, 0.32}, {0.6f, 0.8f, 0.1f}, 70}, seat);
         }
 
         struct ItemInfo

@@ -71,13 +71,22 @@ namespace Flux {
             .Field("player", "Dirigé par le joueur", &CharacterComponent::player);
         registry.Register<ShipComponent>("ship", "Vaisseau")
             .Field("gravity", "Gravité à bord (m/s²)", &ShipComponent::gravity, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2})
-            .Field("velocity", "Vitesse d'essai (m/s)", &ShipComponent::velocity, {.speed = 0.1, .min = -1.0e5, .max = 1.0e5})
-            .Field("angularVelocity", "Rotation d'essai (°/s)", &ShipComponent::angularVelocity, {.speed = 0.5, .min = -720.0, .max = 720.0});
+            .Field("velocity", "Vitesse au départ (m/s)", &ShipComponent::velocity, {.speed = 0.1, .min = -1.0e5, .max = 1.0e5})
+            .Field("angularVelocity", "Rotation au départ (°/s)", &ShipComponent::angularVelocity, {.speed = 0.5, .min = -720.0, .max = 720.0})
+            .Field("maxSpeed", "Vitesse max (m/s)", &ShipComponent::maxSpeed, {.speed = 0.5, .min = 0.0, .max = 1.0e5, .decimals = 1})
+            .Field("acceleration", "Accélération (m/s²)", &ShipComponent::acceleration, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1})
+            .Field("turnRate", "Virage (°/s)", &ShipComponent::turnRate, {.speed = 0.5, .min = 0.0, .max = 720.0, .decimals = 1});
+        registry.Register<SeatComponent>("seat", "Siège")
+            .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
+            .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01});
         registry.Register<AnimatorComponent>("animator", "Animation")
             .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
             .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)
             .Asset("runAnimation", "En courant", &AnimatorComponent::runAnimation, AssetType::Animation)
             .Asset("airAnimation", "En l'air", &AnimatorComponent::airAnimation, AssetType::Animation)
+            .Asset("sitDownAnimation", "S'asseoir", &AnimatorComponent::sitDownAnimation, AssetType::Animation)
+            .Asset("seatedAnimation", "Assis", &AnimatorComponent::seatedAnimation, AssetType::Animation)
+            .Asset("standUpAnimation", "Se lever", &AnimatorComponent::standUpAnimation, AssetType::Animation)
             .Field("speed", "Vitesse", &AnimatorComponent::speed, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("loop", "En boucle", &AnimatorComponent::loop);
         registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")

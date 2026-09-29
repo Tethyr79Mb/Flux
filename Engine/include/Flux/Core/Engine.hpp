@@ -131,6 +131,13 @@ namespace Flux {
         float m_followDistance = 4.0f;
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
+        // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
+        Entity m_followShip = NullEntity;
+        Math::Quaternionf m_followShipRotation;
+        // Aux commandes d'un vaisseau : vue depuis l'œil du pilote (V : vue extérieure), et où il regarde (clic droit).
+        bool m_cockpitView = true;
+        float m_lookYaw = 0.0f;
+        float m_lookPitch = 0.0f;
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
@@ -139,5 +146,8 @@ namespace Flux {
         Entity GetFollowedPlayer() const;
         void RotateFollowCamera();
         void PlaceFollowCamera(Entity player, double deltaSeconds);
+        // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
+        Entity GetCockpitSeat(Entity player) const;
+        void TurnWithShip(Entity player);
     };
 }

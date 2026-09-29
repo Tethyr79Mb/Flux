@@ -9,6 +9,7 @@
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
+#include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -25,6 +26,9 @@
 namespace Flux {
     namespace {
         using Clock = std::chrono::steady_clock;
+
+        // Caméra qui suit le personnage : un peu moins que la verticale, au-dessus comme en dessous.
+        constexpr float FollowMaxPitch = 1.3f;
 
         // Moyenne sur une fenêtre glissante d'une demi-seconde : lisible, sans chiffres qui clignotent.
         class FrameStats {
@@ -139,6 +143,7 @@ namespace Flux {
                 RotateFollowCamera();
             } else {
                 m_followRotating = false;
+                m_camera.roll = 0.0f; // vol libre : l'horizon reste droit, même après la vue cockpit
                 m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
             }
             if (m_gameState != GameState::Stopped) {
@@ -153,6 +158,7 @@ namespace Flux {
                 PlaceFollowCamera(player, deltaSeconds);
             } else {
                 m_followShown = -1.0f;
+                m_followShip = NullEntity;
             }
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
@@ -194,22 +200,51 @@ namespace Flux {
             RequestScene(std::move(*next));
         }
 
-        // Personnage du joueur : ZQSD (WASD en QWERTY) par rapport à la caméra, Maj pour courir, Espace pour sauter.
-        CharacterInput character;
-        if (!m_ui->WantsKeyboard()) {
-            const auto axis = [&](Key positive, Key negative) {
-                return (input.IsKeyDown(positive) ? 1.0f : 0.0f) - (input.IsKeyDown(negative) ? 1.0f : 0.0f);
-            };
-            // Avant et droite de la caméra, ramenés à l'horizontale.
-            const Math::Vector3f forward{-std::sin(m_camera.yaw), 0.0f, -std::cos(m_camera.yaw)};
-            const Math::Vector3f right{std::cos(m_camera.yaw), 0.0f, -std::sin(m_camera.yaw)};
-            character.move = forward * axis(Key::W, Key::S) + right * axis(Key::D, Key::A);
-            character.run = input.IsKeyDown(Key::LeftShift);
-            character.jump = input.WasKeyPressed(Key::Space);
-        }
         if (!m_physics) {
             m_physics = std::make_unique<PhysicsWorld>();
         }
+        const Entity player = m_physics->GetPlayer();
+        const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;
+        const bool seated = playerCharacter && playerCharacter->seat != NullEntity;
+        const auto axis = [&](Key positive, Key negative) {
+            return (input.IsKeyDown(positive) ? 1.0f : 0.0f) - (input.IsKeyDown(negative) ? 1.0f : 0.0f);
+        };
+
+        // Personnage du joueur : ZQSD (WASD en QWERTY) par rapport à la caméra, Maj pour courir, Espace pour sauter.
+        // Assis : les mêmes touches pilotent le vaisseau (poste de pilotage).
+        CharacterInput character;
+        SeatInput seatInput;
+        if (!m_ui->WantsKeyboard()) {
+            seatInput.interact = input.WasKeyPressed(Key::E);
+            if (seated) {
+                seatInput.thrust = axis(Key::W, Key::S);
+                seatInput.yaw = axis(Key::A, Key::D);
+                seatInput.pitch = axis(Key::Space, Key::LeftControl);
+                if (input.WasKeyPressed(Key::V)) {
+                    m_cockpitView = !m_cockpitView;
+                }
+            } else {
+                // Avant et droite de la caméra, ramenés à l'horizontale.
+                const Math::Vector3f forward{-std::sin(m_camera.yaw), 0.0f, -std::cos(m_camera.yaw)};
+                const Math::Vector3f right{std::cos(m_camera.yaw), 0.0f, -std::sin(m_camera.yaw)};
+                character.move = forward * axis(Key::W, Key::S) + right * axis(Key::D, Key::A);
+                character.run = input.IsKeyDown(Key::LeftShift);
+                character.jump = input.WasKeyPressed(Key::Space);
+            }
+        }
+        Seats::Update(m_scene, player, deltaSeconds, seatInput, [this](Entity entity) {
+            // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
+            const auto* animator = m_scene.TryGet<AnimatorComponent>(entity);
+            const auto* model = m_scene.TryGet<ModelComponent>(entity);
+            if (!m_project || !animator || !model || model->model.empty() || animator->speed <= 0.0f) {
+                return Seats::Durations{};
+            }
+            const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(model->model);
+            const auto duration = [&](const std::string& name) {
+                return name.empty() ? 0.0f : m_renderer->GetAnimationDuration(path, name) / animator->speed;
+            };
+            return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
+        });
         m_physics->Update(m_scene, deltaSeconds, character);
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
@@ -238,17 +273,56 @@ namespace Flux {
         m_window->SetCursorLocked(m_followRotating);
         if (m_followRotating) {
             constexpr float Sensitivity = 0.0025f;
-            constexpr float MaxPitch = 1.3f; // un peu moins que la verticale, au-dessus comme en dessous
             const Math::Vector2f mouse = input.GetMouseDelta();
-            m_camera.yaw = std::remainder(m_camera.yaw - mouse.x * Sensitivity, 2.0f * std::numbers::pi_v<float>);
-            m_camera.pitch = std::clamp(m_camera.pitch - mouse.y * Sensitivity, -MaxPitch, MaxPitch);
+            if (GetCockpitSeat(GetFollowedPlayer()) != NullEntity) {
+                // Aux commandes : on tourne la tête, sans perdre le vaisseau de vue.
+                m_lookYaw = std::clamp(m_lookYaw - mouse.x * Sensitivity, -2.0f, 2.0f);
+                m_lookPitch = std::clamp(m_lookPitch - mouse.y * Sensitivity, -1.2f, 1.2f);
+            } else {
+                m_camera.yaw = std::remainder(m_camera.yaw - mouse.x * Sensitivity, 2.0f * std::numbers::pi_v<float>);
+                m_camera.pitch = std::clamp(m_camera.pitch - mouse.y * Sensitivity, -FollowMaxPitch, FollowMaxPitch);
+            }
         }
         if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse()) {
             m_followDistance = std::clamp(m_followDistance * std::pow(0.85f, wheel), 1.0f, 30.0f);
         }
     }
 
+    Entity Engine::GetCockpitSeat(Entity player) const {
+        return m_cockpitView && player != NullEntity ? Seats::GetPilotSeat(m_scene, player) : NullEntity;
+    }
+
+    void Engine::TurnWithShip(Entity player) {
+        // Le vaisseau a tourné depuis la dernière image : la caméra aussi, comme la tête de quelqu'un à bord.
+        const Entity ship = m_scene.GetShip(player);
+        const Math::Quaternionf rotation = ship != NullEntity ? m_scene.GetWorldRotation(ship) : Math::Quaternionf{};
+        if (ship != NullEntity && ship == m_followShip) {
+            const Math::Quaternionf turn = Math::Normalize(rotation * m_followShipRotation.Conjugate());
+            const Math::Vector3f forward = turn.Rotate(m_camera.GetForward());
+            m_camera.yaw = std::atan2(-forward.x, -forward.z);
+            m_camera.pitch = std::clamp(std::asin(std::clamp(forward.y, -1.0f, 1.0f)), -FollowMaxPitch, FollowMaxPitch);
+        }
+        m_followShip = ship;
+        m_followShipRotation = rotation;
+    }
+
     void Engine::PlaceFollowCamera(Entity player, double deltaSeconds) {
+        TurnWithShip(player);
+        if (const Entity seat = GetCockpitSeat(player); seat != NullEntity) {
+            // Vue cockpit : depuis l'œil du pilote, dans l'axe du siège (roulis du vaisseau compris).
+            const Math::Quaternionf seatRotation = m_scene.GetWorldRotation(seat);
+            m_camera.position = m_scene.GetWorldPosition(seat);
+            m_camera.position += Math::Vector3d(seatRotation.Rotate(m_scene.Get<SeatComponent>(seat).eye));
+            m_camera.SetRotation(seatRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
+                                 * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch));
+            m_followShown = -1.0f; // en ressortant, la caméra se replace d'un coup derrière le personnage
+            return;
+        }
+        m_lookYaw = 0.0f;
+        m_lookPitch = 0.0f;
+        m_camera.roll = 0.0f;
+        m_camera.pitch = std::clamp(m_camera.pitch, -FollowMaxPitch, FollowMaxPitch);
+
         // Derrière le personnage, visant un peu sous le haut de sa tête.
         const auto* character = m_scene.TryGet<CharacterComponent>(player);
         const double eyeHeight = character ? character->height * 0.9 : 1.6;

@@ -37,6 +37,14 @@ bool RunPickingTests() {
     CHECK(!projection.ToScreen({0.0, 0.0, 5.0})); // derrière la caméra
     CHECK(Near(projection.PixelsToMeters(50.0, 10.0), 10.0 * std::tan(std::numbers::pi / 6.0)));
 
+    // Roulis (vue cockpit) : la rotation de la caméra se retrouve, et ses axes restent ceux de la rotation.
+    Camera tilted;
+    const Math::Quaternionf rotation = Math::Quaternionf::FromYawPitchRoll(0.7f, -0.3f, 0.4f);
+    tilted.SetRotation(rotation);
+    CHECK(Near(tilted.yaw, 0.7) && Near(tilted.pitch, -0.3) && Near(tilted.roll, 0.4));
+    CHECK(Near(Math::Vector3d(tilted.GetRight()), Math::Vector3d(rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f})), 1e-5));
+    CHECK(Near(Math::Vector3d(tilted.GetUp()), Math::Vector3d(rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f})), 1e-5));
+
     // Segment traversant le plan proche : coupé, sa partie visible reste projetée.
     Math::Vector2f a;
     Math::Vector2f b;
