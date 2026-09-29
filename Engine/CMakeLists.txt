@@ -19,7 +19,7 @@ target_include_directories(FluxEngine
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# windows.h reste confiné aux .cpp de Platform/Win32 et RHI/Vulkan.
+# windows.h reste confiné aux .cpp de Platform/Win32 et Renderer/Vulkan.
 target_compile_definitions(FluxEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 
 # EnTT est public : les modules de jeu manipulent directement la scène.

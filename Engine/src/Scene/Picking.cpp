@@ -1,6 +1,6 @@
 #include "Flux/Scene/Picking.hpp"
 
-#include "Flux/Scene/Camera.hpp"
+#include "Flux/Graphics/Camera.hpp"
 
 #include <algorithm>
 #include <cmath>

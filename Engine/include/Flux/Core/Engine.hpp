@@ -2,11 +2,11 @@
 
 #include "Flux/Core/Project.hpp"
 #include "Flux/Export.hpp"
+#include "Flux/Graphics/Camera.hpp"
+#include "Flux/Graphics/FlyCameraController.hpp"
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Vector2.hpp"
-#include "Flux/Scene/Camera.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
-#include "Flux/Scene/FlyCameraController.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/UI/DrawList.hpp"
 

@@ -1,6 +1,7 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
 #include <Flux/Core/Project.hpp>
+#include <Flux/Platform/Console.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
@@ -8,16 +9,16 @@
 
 #include <Flux/UI/Context.hpp>
 
-#include "CameraPanel.hpp"
-#include "ContentBrowser.hpp"
+#include "Document/PlayMode.hpp"
+#include "Document/SceneDocument.hpp"
+#include "Document/UndoHistory.hpp"
 #include "EditorLayout.hpp"
-#include "PlacePanel.hpp"
-#include "PlayMode.hpp"
-#include "SceneDocument.hpp"
-#include "SceneEditor.hpp"
-#include "SceneViewport.hpp"
-#include "SettingsWindow.hpp"
-#include "UndoHistory.hpp"
+#include "Panels/CameraPanel.hpp"
+#include "Panels/ContentBrowser.hpp"
+#include "Panels/PlacePanel.hpp"
+#include "Panels/SceneEditor.hpp"
+#include "Panels/SceneViewport.hpp"
+#include "Panels/SettingsWindow.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -82,6 +83,8 @@ namespace {
 }
 
 int main(int argc, char** argv) {
+    Flux::Platform::UseUtf8Console();
+
     // Déclarés avant le moteur, donc détruits après lui : les fonctions qui les référencent ne leur survivent pas.
     FluxEditor::SceneDocument document;
     FluxEditor::SceneEditor sceneEditor;
