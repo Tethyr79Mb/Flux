@@ -11,6 +11,9 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
@@ -26,6 +29,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Flux {
@@ -618,6 +622,51 @@ namespace Flux {
                 WriteBack(scene, *grid);
             }
         }
+        // Recul libre d'une sphère (la caméra) : fraction de `sweep` parcourue avant de toucher, dans chaque monde.
+        float CastSphere(const Scene& scene, Entity followed, const Math::WorldPosition& from, const Math::Vector3f& sweep,
+                         float radius) const {
+            if (!anchored) {
+                return 1.0f;
+            }
+            // Coques des vaisseaux où se trouve le joueur : la caméra est dedans, elles ne l'arrêtent pas.
+            std::unordered_set<Entity> aboard;
+            for (Entity ship = FrameOf(scene, followed); ship != NullEntity; ship = FrameOf(scene, ship)) {
+                aboard.insert(ship);
+            }
+            const Math::Vector3d start = Math::Delta(anchor, from);
+            const JPH::RefConst<JPH::Shape> sphere = new JPH::SphereShape(radius);
+            float fraction = 1.0f;
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                // Les objets simulés (caisses) et les personnages ne repoussent pas la caméra : elle sauterait sans
+                // cesse. Seuls les décors immobiles et les coques comptent.
+                class Filter final : public JPH::BodyFilter {
+                    public:
+                    Filter(const Grid& grid, const std::unordered_set<Entity>& aboard) : m_grid(grid), m_aboard(aboard) {}
+                    bool ShouldCollideLocked(const JPH::Body& body) const override {
+                        const auto entity = static_cast<Entity>(static_cast<entt::id_type>(body.GetUserData()));
+                        return !body.IsDynamic() && !m_grid.characters.contains(entity) && !m_aboard.contains(entity);
+                    }
+
+                    private:
+                    const Grid& m_grid;
+                    const std::unordered_set<Entity>& m_aboard;
+                };
+                const Filter filter(*grid, aboard);
+                const Math::Quaternionf inverse = grid->frameRotation.Conjugate();
+                const bool world = grid->frame == NullEntity;
+                const Math::Vector3d origin = world ? start : inverse.Rotate(start - grid->framePosition);
+                const Math::Vector3f direction = world ? sweep : inverse.Rotate(sweep);
+                const JPH::RShapeCast cast(sphere, JPH::Vec3::sOne(), JPH::RMat44::sTranslation(JPH::RVec3(ToJolt(origin))),
+                                           ToJolt(direction));
+                JPH::ShapeCastSettings settings;
+                JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
+                grid->system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
+                if (collector.HadHit()) {
+                    fraction = std::min(fraction, collector.mHit.mFraction);
+                }
+            }
+            return fraction;
+        }
     };
 
     PhysicsWorld::PhysicsWorld() : m_impl(std::make_unique<Impl>()) {}
@@ -646,5 +695,13 @@ namespace Flux {
             count += static_cast<int>(std::ranges::count_if(grid->bodies, [](const auto& entry) { return !entry.second.IsInvalid(); }));
         }
         return count;
+    }
+
+    float PhysicsWorld::CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from,
+                                   const Math::Vector3f& direction, float distance, float radius) const {
+        if (distance <= 0.0f) {
+            return 0.0f;
+        }
+        return distance * m_impl->CastSphere(scene, player, from, direction * distance, radius);
     }
 }

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 
 using namespace Flux;
 
@@ -235,8 +236,62 @@ namespace {
         CHECK(world.GetBodyCount() == 1 && world.GetPlayer() == NullEntity);
         return true;
     }
+
+    // Caméra qui suit le joueur : les murs et les coques l'arrêtent, pas les caisses, les personnages ni la coque
+    // du vaisseau où il se trouve.
+    bool RunCameraTests() {
+        const auto addBox = [](Scene& scene, const char* name, Entity parent, Math::Vector3d position, Math::Vector3f scale) {
+            const Entity entity = scene.CreateEntity(name, parent);
+            TransformComponent& transform = scene.Get<TransformComponent>(entity);
+            transform.position = position;
+            transform.scale = scale;
+            scene.Add<ColliderComponent>(entity);
+            return entity;
+        };
+        constexpr float Radius = 0.2f;
+        const Math::Vector3f forward{0.0f, 0.0f, 1.0f};
+
+        Scene scene;
+        AddFloor(scene);
+        const Entity hero = scene.CreateEntity("Joueur");
+        scene.Add<CharacterComponent>(hero);
+        addBox(scene, "Mur", NullEntity, {0.0, 2.5, 5.0}, {10.0f, 5.0f, 0.2f}); // face avant à z = 4,9
+        const Entity crate = addBox(scene, "Caisse", NullEntity, {0.0, 1.6, 2.0}, {1.0f, 1.0f, 1.0f});
+        scene.Get<ColliderComponent>(crate).simulatePhysics = true;
+        const Entity crew = scene.CreateEntity("PNJ");
+        scene.Get<TransformComponent>(crew).position = {0.0, 0.0, 3.0};
+        scene.Add<CharacterComponent>(crew).player = false;
+
+        PhysicsWorld world;
+        world.Update(scene, 0.0, {}); // corps créés, rien n'a bougé
+        const Math::WorldPosition eye{{}, {0.0, 1.6, 0.0}};
+        CHECK(std::abs(world.CastCamera(scene, hero, eye, forward, 10.0f, Radius) - 4.7f) < 0.05f);
+        CHECK(world.CastCamera(scene, hero, eye, forward, 3.0f, Radius) == 3.0f);
+        CHECK(world.CastCamera(scene, hero, eye, forward * -1.0f, 3.0f, Radius) == 3.0f);
+
+        // Un vaisseau (coque pleine de 6 x 4 x 6 m) au loin derrière : sa coque arrête la caméra.
+        const Entity ship = addBox(scene, "Vaisseau", NullEntity, {0.0, 2.0, -10.0}, {6.0f, 4.0f, 6.0f});
+        scene.Add<ShipComponent>(ship);
+        world.Update(scene, 0.0, {});
+        CHECK(std::abs(world.CastCamera(scene, hero, eye, forward * -1.0f, 20.0f, Radius) - 6.8f) < 0.05f);
+
+        // Le joueur monte à bord (le vaisseau tourné d'un quart de tour) : la coque ne gêne plus, la cloison
+        // intérieure si, dans le repère du vaisseau.
+        TransformComponent& shipTransform = scene.Get<TransformComponent>(ship);
+        shipTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, std::numbers::pi_v<float> / 2.0f);
+        shipTransform.scale = {1.0f, 1.0f, 1.0f};
+        scene.Get<ColliderComponent>(ship).size = {6.0f, 4.0f, 6.0f};
+        addBox(scene, "Cloison", ship, {0.0, 0.0, 2.0}, {6.0f, 4.0f, 0.2f}); // locale +z : +x dans le monde
+        scene.SetParent(hero, ship);
+        scene.Get<TransformComponent>(hero).position = {0.0, -2.0, 0.0};
+        world.Update(scene, 0.0, {});
+        const Math::WorldPosition inside{{}, {0.0, 1.6, -10.0}};
+        CHECK(std::abs(world.CastCamera(scene, hero, inside, {1.0f, 0.0f, 0.0f}, 10.0f, Radius) - 1.7f) < 0.05f);
+        CHECK(world.CastCamera(scene, hero, inside, {-1.0f, 0.0f, 0.0f}, 2.5f, Radius) == 2.5f);
+        return true;
+    }
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests();
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests() && RunCameraTests();
 }
