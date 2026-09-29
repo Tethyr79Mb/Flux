@@ -69,6 +69,10 @@ namespace Flux {
             .Field("runSpeed", "Course (m/s)", &CharacterComponent::runSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("jumpSpeed", "Saut (m/s)", &CharacterComponent::jumpSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("player", "Dirigé par le joueur", &CharacterComponent::player);
+        registry.Register<ShipComponent>("ship", "Vaisseau")
+            .Field("gravity", "Gravité à bord (m/s²)", &ShipComponent::gravity, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("velocity", "Vitesse d'essai (m/s)", &ShipComponent::velocity, {.speed = 0.1, .min = -1.0e5, .max = 1.0e5})
+            .Field("angularVelocity", "Rotation d'essai (°/s)", &ShipComponent::angularVelocity, {.speed = 0.5, .min = -720.0, .max = 720.0});
         registry.Register<AnimatorComponent>("animator", "Animation")
             .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
             .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)

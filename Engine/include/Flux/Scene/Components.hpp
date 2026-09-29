@@ -79,7 +79,8 @@ namespace Flux {
     // Collision et physique (Jolt) d'une entité, pendant le jeu seulement. La forme est dans le repère de l'entité :
     // elle suit sa transformation, échelle comprise. Comme « Simulate Physics » d'Unreal : sans simulation, l'entité
     // est un décor immobile (sol, mur) ; avec, elle tombe et se cogne. Un objet simulé doit être une racine de la
-    // hiérarchie (sans parent) : la physique réécrit sa position et sa rotation.
+    // hiérarchie (sans parent) ou un enfant direct d'un vaisseau (ShipComponent) : la physique réécrit sa position et
+    // sa rotation.
     struct ColliderComponent
     {
         ColliderShape shape = ColliderShape::Box;
@@ -96,7 +97,8 @@ namespace Flux {
     };
 
     // Personnage qui marche (Jolt CharacterVirtual) : une capsule debout dont le bas est l'origine de l'entité,
-    // comme les pieds d'un modèle glTF. Doit être une racine. Le joueur le dirige au clavier pendant le jeu
+    // comme les pieds d'un modèle glTF. Doit être une racine ou un enfant direct d'un vaisseau (ShipComponent).
+    // Le joueur le dirige au clavier pendant le jeu
     // (ZQSD, Maj pour courir, Espace pour sauter) et la caméra le suit.
     struct CharacterComponent
     {
@@ -108,6 +110,17 @@ namespace Flux {
         bool player = true;      // dirigé par le joueur ; sinon, immobile (soumis à la gravité seulement)
         float groundSpeed = 0.0f; // vitesse horizontale mesurée pendant le jeu, m/s ; 0 en l'air (non enregistrée)
         float airTime = 0.0f;     // secondes passées en l'air (saut, chute) pendant le jeu ; 0 au sol (non enregistrée)
+    };
+
+    // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
+    // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou
+    // tourne, sans glisser. Sa propre collision, s'il en a une, reste dans le repère de son parent (sa coque).
+    // Pour l'essayer avant le pilotage : un mouvement constant pendant le jeu.
+    struct ShipComponent
+    {
+        float gravity = 9.81f;         // m/s², gravité artificielle ; 0 : apesanteur à bord
+        Math::Vector3f velocity;       // m/s, dans les axes du vaisseau (-z : vers l'avant)
+        Math::Vector3f angularVelocity; // °/s autour de ses axes (y : virer, x : tangage, z : roulis)
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

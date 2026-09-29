@@ -179,8 +179,64 @@ namespace {
         }
         return true;
     }
+
+    // Vaisseau qui avance et vire, sans sol dans le monde : à bord, le joueur, un PNJ et une caisse restent posés
+    // sur le pont, et le joueur y marche normalement.
+    bool RunShipTests() {
+        Scene scene;
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = {100.0, 50.0, -30.0};
+        scene.Add<ShipComponent>(ship, ShipComponent{.velocity = {0.0f, 0.0f, -20.0f}, .angularVelocity = {0.0f, 30.0f, 0.0f}});
+        const Entity deck = scene.CreateEntity("Pont", ship);
+        TransformComponent& deckTransform = scene.Get<TransformComponent>(deck);
+        deckTransform.position = {0.0, -0.1, 0.0};
+        deckTransform.scale = {10.0f, 0.2f, 20.0f};
+        scene.Add<ColliderComponent>(deck);
+        const Entity hero = scene.CreateEntity("Joueur", ship);
+        scene.Get<TransformComponent>(hero).position = {0.0, 0.3, 0.0};
+        scene.Add<CharacterComponent>(hero);
+        const Entity crew = scene.CreateEntity("PNJ", ship);
+        scene.Get<TransformComponent>(crew).position = {-2.0, 0.0, 3.0};
+        scene.Add<CharacterComponent>(crew).player = false;
+        const Entity crate = scene.CreateEntity("Caisse", ship);
+        scene.Get<TransformComponent>(crate).position = {2.0, 1.0, 0.0};
+        scene.Add<ColliderComponent>(crate).simulatePhysics = true;
+
+        PhysicsWorld world;
+        Run(world, scene, 5.0);
+        CHECK(world.GetBodyCount() == 2 && world.GetPlayer() == hero);
+        // Le vaisseau a bien bougé (20 m/s pendant 5 s, en virant) et tourné (30°/s).
+        const Math::WorldPosition shipPosition = scene.GetWorldPosition(ship);
+        const double travelled = Math::Length(Math::Delta(Math::WorldPosition{{}, {100.0, 50.0, -30.0}}, shipPosition));
+        CHECK(travelled > 50.0 && travelled < 101.0);
+        // À bord, rien n'a glissé ni décollé (positions dans le repère du vaisseau).
+        const Math::Vector3d heroLocal = scene.Get<TransformComponent>(hero).position;
+        CHECK(std::abs(heroLocal.y) < 0.05 && std::abs(heroLocal.x) < 0.05 && std::abs(heroLocal.z) < 0.05);
+        const Math::Vector3d crewLocal = scene.Get<TransformComponent>(crew).position;
+        CHECK(std::abs(crewLocal.y) < 0.05 && std::abs(crewLocal.x + 2.0) < 0.05 && std::abs(crewLocal.z - 3.0) < 0.05);
+        CHECK(std::abs(scene.Get<TransformComponent>(crate).position.y - 0.5) < 0.05);
+        // Dans le monde, le joueur a suivi le vaisseau.
+        CHECK(Math::Length(Math::Delta(shipPosition, scene.GetWorldPosition(hero))) < 0.1);
+
+        // Il marche (vers +x du monde, 2 m/s pendant 1 s) : 2 m sur le pont, dans le repère du vaisseau.
+        Run(world, scene, 1.0, Walk(1.0f));
+        const Math::Vector3d walked = scene.Get<TransformComponent>(hero).position;
+        CHECK(std::abs(walked.y) < 0.05);
+        const double distance = std::sqrt(walked.x * walked.x + walked.z * walked.z);
+        CHECK(distance > 1.7 && distance < 2.2);
+
+        // La caisse sort du vaisseau (plus d'enfant) : son corps passe dans le monde de la scène.
+        scene.SetParent(crate, NullEntity);
+        world.Update(scene, Frame, {});
+        CHECK(world.GetBodyCount() == 2);
+        // Le vaisseau disparaît : son monde avec lui.
+        scene.DestroyEntity(ship);
+        world.Update(scene, Frame, {});
+        CHECK(world.GetBodyCount() == 1 && world.GetPlayer() == NullEntity);
+        return true;
+    }
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests();
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests();
 }
