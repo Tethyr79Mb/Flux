@@ -129,6 +129,7 @@ namespace Flux {
         std::unique_ptr<PhysicsWorld> m_physics;
         // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette).
         float m_followDistance = 4.0f;
+        float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
@@ -137,6 +138,6 @@ namespace Flux {
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
         Entity GetFollowedPlayer() const;
         void RotateFollowCamera();
-        void PlaceFollowCamera(Entity player);
+        void PlaceFollowCamera(Entity player, double deltaSeconds);
     };
 }

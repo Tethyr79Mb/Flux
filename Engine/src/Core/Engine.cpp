@@ -150,7 +150,9 @@ namespace Flux {
             }
             // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
             if (const Entity player = GetFollowedPlayer(); player != NullEntity) {
-                PlaceFollowCamera(player);
+                PlaceFollowCamera(player, deltaSeconds);
+            } else {
+                m_followShown = -1.0f;
             }
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
@@ -246,14 +248,29 @@ namespace Flux {
         }
     }
 
-    void Engine::PlaceFollowCamera(Entity player) {
+    void Engine::PlaceFollowCamera(Entity player, double deltaSeconds) {
         // Derrière le personnage, visant un peu sous le haut de sa tête.
         const auto* character = m_scene.TryGet<CharacterComponent>(player);
         const double eyeHeight = character ? character->height * 0.9 : 1.6;
         Math::WorldPosition target = m_scene.GetWorldPosition(player);
         target += Math::Vector3d{0.0, eyeHeight, 0.0};
+
+        // Un mur entre le personnage et la caméra : elle s'avance devant lui. Sphère un peu plus grosse que ce que
+        // le plan proche découpe (0,1 m devant l'œil, écran 16/9 : 0,12 m au coin), pour ne jamais voir à travers.
+        constexpr float CameraRadius = 0.2f;
+        const Math::Vector3f back = m_camera.GetForward() * -1.0f;
+        const float free = m_physics->CastCamera(m_scene, player, target, back, m_followDistance, CameraRadius);
+        // Elle rentre d'un coup (sinon on verrait le mur de l'intérieur) et ressort en douceur (pas de bond quand
+        // le mur ne cache plus rien, par exemple en passant une porte).
+        if (m_followShown < 0.0f || free < m_followShown) {
+            m_followShown = free;
+        } else {
+            constexpr double ReturnRate = 6.0; // par seconde : les deux tiers du chemin en 1/6 s
+            m_followShown += (free - m_followShown) * static_cast<float>(1.0 - std::exp(-ReturnRate * deltaSeconds));
+        }
+
         m_camera.position = target;
-        m_camera.position += Math::Vector3d(m_camera.GetForward()) * -static_cast<double>(m_followDistance);
+        m_camera.position += Math::Vector3d(back) * static_cast<double>(m_followShown);
     }
 
     void Engine::LoadRequestedScene() {

@@ -45,6 +45,12 @@ namespace Flux {
 
         // Personnage dirigé par le joueur (le premier trouvé), NullEntity s'il n'y en a pas : la caméra le suit.
         Entity GetPlayer() const;
+        // Distance libre (0 à `distance`) pour une sphère de rayon `radius` partant de `from` dans `direction`
+        // (unitaire) : où poser la caméra qui suit `player` sans qu'elle entre dans un mur. Seuls les décors
+        // immobiles et les coques l'arrêtent : ni les objets simulés, ni les personnages, ni la coque du vaisseau
+        // où se trouve le joueur.
+        float CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from, const Math::Vector3f& direction,
+                         float distance, float radius) const;
         // Nombre de corps (hors personnages), pour les tests et le panneau Moteur.
         int GetBodyCount() const;
 
