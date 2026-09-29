@@ -1,12 +1,12 @@
 // Tests de FluxUI sans fenêtre ni GPU : souris et clavier simulés frame par frame.
 #include "Check.hpp"
 
+#include "Flux/Graphics/Font.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Input.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
-#include "Flux/UI/Font.hpp"
 
 #include <cmath>
 #include <functional>

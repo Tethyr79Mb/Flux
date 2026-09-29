@@ -1,10 +1,10 @@
 // Lecture des images (stb_image) et commandes de dessin par texture de la DrawList.
 #include "Check.hpp"
 
+#include "Flux/Assets/Image.hpp"
+#include "Flux/Graphics/Font.hpp"
 #include "Flux/Platform/Filesystem.hpp"
-#include "Flux/Renderer/Image.hpp"
 #include "Flux/UI/DrawList.hpp"
-#include "Flux/UI/Font.hpp"
 
 #include <array>
 #include <cstdint>

@@ -1,13 +1,13 @@
 // Textes et images à l'écran : placement selon l'ancre, le décalage et la taille de la vue ; sauvegarde des composants.
 #include "Check.hpp"
 
+#include "Flux/Graphics/Font.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/DrawList.hpp"
-#include "Flux/UI/Font.hpp"
 
 #include <cmath>
 #include <optional>

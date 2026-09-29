@@ -2,9 +2,9 @@
 // choix de l'animation d'un personnage selon ses pas (Animator).
 #include "Check.hpp"
 
-#include "Flux/Renderer/Animation.hpp"
-#include "Flux/Renderer/Model.hpp"
-#include "Flux/Scene/Animator.hpp"
+#include "Flux/Animation/Animation.hpp"
+#include "Flux/Animation/Animator.hpp"
+#include "Flux/Assets/Model.hpp"
 #include "Flux/Scene/Scene.hpp"
 
 #include <cmath>

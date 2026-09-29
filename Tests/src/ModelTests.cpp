@@ -1,8 +1,8 @@
 // Lecture des modèles glTF (cgltf) : sommets, transformations des nœuds, matériaux, fichiers .gltf et .glb.
 #include "Check.hpp"
 
+#include "Flux/Assets/Model.hpp"
 #include "Flux/Platform/Filesystem.hpp"
-#include "Flux/Renderer/Model.hpp"
 
 #include <array>
 #include <cmath>

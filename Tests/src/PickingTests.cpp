@@ -1,7 +1,7 @@
 // Tests de la sélection dans la vue 3D : rayons, projection à l'écran, cubes touchés, axe du gizmo.
 #include "Check.hpp"
 
-#include "Flux/Scene/Camera.hpp"
+#include "Flux/Graphics/Camera.hpp"
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Scene.hpp"
 
