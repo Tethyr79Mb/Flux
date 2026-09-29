@@ -133,7 +133,7 @@ namespace Flux {
     struct SeatComponent
     {
         bool pilot = false;
-        Math::Vector3f eye{0.0f, 1.25f, -0.2f}; // œil du personnage assis dans le repère du siège (vue cockpit)
+        Math::Vector3f eye{0.0f, 1.3f, -0.35f}; // œil du personnage assis dans le repère du siège (vue cockpit)
     };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
