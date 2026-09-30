@@ -4,6 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Math/Vector3.hpp"
+#include "Flux/UI/DrawList.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -184,6 +185,8 @@ namespace Flux::UI {
         void EndMenu();
         // Menu contextuel du dernier widget décrit, ouvert par un clic droit sur lui ; id le distingue des autres.
         // Vrai s'il est ouvert : décrire ses éléments (MenuItem) puis appeler EndMenu.
+        // Un seul menu s'ouvre par clic : celui du premier widget décrit sous la souris (une vignette avant le fond
+        // de sa zone).
         bool BeginContextMenu(std::string_view id = "contexte");
         // Vrai au clic, qui referme le menu. shortcut n'est qu'affiché : le raccourci reste à gérer par l'appelant.
         bool MenuItem(std::string_view label, std::string_view shortcut = {}, bool enabled = true);
@@ -240,6 +243,28 @@ namespace Flux::UI {
         void TreePop();
         // Force l'état déplié du prochain TreeNode (pour montrer une sélection faite ailleurs, par exemple).
         void SetNextTreeNodeOpen(bool open);
+
+        // Vignette d'une grille (explorateur de fichiers) : une icône, la bande du type pour un fichier, le nom dessous
+        // (raccourci s'il déborde). image : icône à dessiner (celle du système) ; sans elle, un dossier jaune ou une
+        // page à coin corné. badge : court texte du type (« 3D », « Image ») sur une bande de couleur, fichiers
+        // seulement. Les suivantes avec SameLine tant que GetAvailableWidth le permet.
+        enum class TileIcon { Folder, File };
+        struct TileResult
+        {
+            bool clicked = false;
+            bool doubleClicked = false;
+        };
+        TileResult Tile(std::string_view label, TileIcon icon, std::string_view badge, Math::LinearColor badgeColor,
+                        bool selected, float width, const TextureInfo* image = nullptr);
+
+        // Zone de taille donnée dans le panneau, avec son propre défilement (molette au-dessus d'elle) : deux
+        // colonnes qui défilent chacune de leur côté, par exemple. width ou height <= 0 : tout ce qui reste de la
+        // ligne ou du panneau. Décrire son contenu puis appeler EndChild ; elle compte ensuite comme un widget
+        // (SameLine, BeginContextMenu pour un clic droit dans son fond).
+        void BeginChild(std::string_view id, float width, float height);
+        void EndChild();
+        // Largeur libre de la ligne en cours (panneau ou zone), pour ranger des vignettes en grille.
+        float GetAvailableWidth() const;
 
         void Separator();
         // Le prochain widget se place à droite du précédent au lieu d'en dessous.

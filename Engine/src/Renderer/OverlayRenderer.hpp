@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Assets/Image.hpp"
 #include "Flux/Graphics/Font.hpp"
 #include "Flux/UI/DrawList.hpp"
 #include "Renderer/RHI/RHI.hpp"
@@ -11,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -26,6 +28,8 @@ namespace Flux {
 
         // Voir Renderer::LoadTexture.
         std::optional<UI::TextureInfo> LoadTexture(const std::filesystem::path& path);
+        // Voir Renderer::CreateTexture.
+        std::optional<UI::TextureInfo> CreateTexture(const ImageData& image);
 
         // Sommets de la liste envoyés au GPU. Après Device::BeginFrame : le buffer de l'image frameIndex est libre.
         bool Upload(std::uint32_t frameIndex);
@@ -44,6 +48,7 @@ namespace Flux {
 
         explicit OverlayRenderer(RHI::Device& device) : m_device(device) {}
         void Reload(const std::filesystem::path& path, Texture& texture);
+        void Store(const ImageData& pixels, Texture& texture, std::string_view name);
 
         RHI::Device& m_device;
         std::unique_ptr<UI::Font> m_font;
@@ -53,6 +58,8 @@ namespace Flux {
         std::unique_ptr<RHI::Texture> m_atlas;
         // Images de l'interface, par chemin (UTF-8, normalisé).
         std::unordered_map<std::string, Texture> m_textures;
+        // Images créées en mémoire (CreateTexture), gardées jusqu'à la fermeture.
+        std::vector<std::unique_ptr<Texture>> m_created;
         // Un groupe par texture, indexé par UI::TextureId : [0] est l'atlas de la police. Rendus avant leur layout.
         std::vector<std::unique_ptr<RHI::BindGroup>> m_groups;
         std::unique_ptr<RHI::Pipeline> m_pipeline;

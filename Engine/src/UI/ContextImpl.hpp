@@ -186,6 +186,7 @@ namespace Flux::UI {
         std::vector<WidgetId> previousOverlays; // ceux de la frame précédente, pour le survol
         WidgetId openMenu = 0;                  // titre du menu ouvert (ou menu contextuel)
         Vector2f contextPosition;               // où le menu contextuel ouvert est apparu
+        std::uint64_t contextOpenedFrame = 0;   // frame où un menu contextuel s'est ouvert (un seul par clic)
         bool openMenuSeen = false;
         bool menuBarDrawn = false;
         float menuBarHeight = 0.0f;             // à la frame précédente
@@ -209,6 +210,22 @@ namespace Flux::UI {
             float lastSpacing = 0.0f;
         };
         std::optional<Layout> menuParent;
+
+        // Zones à défilement propre (BeginChild) : défilement gardé d'une frame à l'autre, zones en cours de
+        // description (imbricables) avec la mise en page du parent à reprendre.
+        struct ChildScroll {
+            float scrollY = 0.0f;
+            float contentHeight = 0.0f; // à la dernière frame
+        };
+        std::unordered_map<WidgetId, ChildScroll> childScrolls;
+        struct ChildFrame {
+            Layout parent;
+            WidgetId id = 0;
+            Vector2f min;
+            Vector2f max;
+            float contentTop = 0.0f; // haut du contenu sans défilement
+        };
+        std::vector<ChildFrame> childStack;
 
         // Ancrage (Docking.cpp) : arbre de zones stocké à plat, la racine en 0.
         std::vector<DockNode> dockNodes;

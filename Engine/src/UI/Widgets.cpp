@@ -71,6 +71,95 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    Context::TileResult Context::Tile(std::string_view label, TileIcon icon, std::string_view badge, LinearColor badgeColor,
+                                      bool selected, float width, const TextureInfo* image) {
+        Impl& ui = *m_impl;
+        TileResult result;
+        if (!ui.panel) {
+            return result;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        // De haut en bas : l'icône (carré de 48 pixels au plus), la bande du type, le nom.
+        const float side = std::min(width - 16.0f, 48.0f);
+        const float bandHeight = ui.LineHeight() + 2.0f;
+        const float nameTop = 4.0f + side + 3.0f + bandHeight + 5.0f;
+        const float height = nameTop + ui.LineHeight() + 4.0f;
+        const Vector2f min = ui.ItemRect({width, height});
+        const Vector2f max = min + Vector2f{width, height};
+        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        if (interaction.clicked) {
+            result.clicked = true;
+            result.doubleClicked = ui.lastClickId == id && ui.time - ui.lastClickTime < 0.35;
+            ui.lastClickId = result.doubleClicked ? 0 : id;
+            ui.lastClickTime = ui.time;
+        }
+
+        DrawList& list = ui.panel->content;
+        if (selected) {
+            list.AddRect(min, max, style.selection);
+        } else if (interaction.hovered) {
+            list.AddRect(min, max, style.frame);
+        }
+        const float centerX = std::floor(min.x + width * 0.5f);
+        const float x0 = centerX - side * 0.5f;
+        const float x1 = centerX + side * 0.5f;
+        const float y0 = min.y + 4.0f;
+        const float y1 = y0 + side;
+        if (image && image->size.x > 0 && image->size.y > 0) {
+            // Icône fournie (celle du système) : dans le carré, proportions gardées, jamais agrandie au-delà de 1:1
+            // tant qu'elle tient (une icône de 48 reste nette).
+            const float scale = std::min(side / static_cast<float>(std::max(image->size.x, image->size.y)), 1.0f);
+            const Vector2f size{std::floor(static_cast<float>(image->size.x) * scale), std::floor(static_cast<float>(image->size.y) * scale)};
+            const Vector2f at{std::floor(centerX - size.x * 0.5f), std::floor(y0 + (side - size.y) * 0.5f)};
+            list.AddImage(at, at + size, image->id);
+        } else if (icon == TileIcon::Folder) {
+            // Dessinés à défaut : onglet, dos du dossier, puis rabat avant plus clair.
+            const LinearColor back = LinearColor::FromSrgb8(196, 150, 58);
+            const float top = y0 + side * 0.12f;
+            const float h = side * 0.78f;
+            const float tab = std::floor(side * 0.42f);
+            list.AddRect({x0, top}, {x0 + tab, top + h * 0.2f}, back);
+            list.AddTriangle({x0 + tab, top}, {x0 + tab, top + h * 0.2f}, {x0 + tab + h * 0.14f, top + h * 0.2f}, back);
+            list.AddRect({x0, top + h * 0.12f}, {x1, top + h}, back);
+            list.AddRect({x0, top + h * 0.3f}, {x1, top + h}, LinearColor::FromSrgb8(232, 186, 82));
+        } else {
+            // Page au coin corné.
+            const float corner = std::floor(side * 0.26f);
+            const float pageX0 = centerX - side * 0.38f;
+            const float pageX1 = centerX + side * 0.38f;
+            const LinearColor paper = LinearColor::FromSrgb8(214, 218, 226);
+            list.AddRect({pageX0, y0}, {pageX1 - corner, y0 + corner}, paper);
+            list.AddRect({pageX0, y0 + corner}, {pageX1, y1}, paper);
+            list.AddTriangle({pageX1 - corner, y0}, {pageX1 - corner, y0 + corner}, {pageX1, y0 + corner},
+                             LinearColor{paper.r * 0.65f, paper.g * 0.65f, paper.b * 0.65f, paper.a});
+        }
+        // Bande du type (fichiers) : « 3D », « Image »..., à la largeur du texte.
+        if (icon == TileIcon::File && !badge.empty()) {
+            const Vector2f badgeSize = ui.MeasureText(badge);
+            const float bandWidth = std::min(width - 8.0f, std::max(badgeSize.x + 10.0f, 30.0f));
+            const Vector2f bandMin{std::floor(centerX - bandWidth * 0.5f), y1 + 3.0f};
+            const Vector2f bandMax{bandMin.x + bandWidth, bandMin.y + bandHeight};
+            list.AddRect(bandMin, bandMax, badgeColor);
+            ui.ClippedText({std::max(bandMin.x + 2.0f, centerX - badgeSize.x * 0.5f), (bandMin.y + bandMax.y - badgeSize.y) * 0.5f},
+                           bandMax.x - 2.0f, badge, style.text, bandMin.x);
+        }
+
+        // Nom centré, raccourci par « ... » s'il ne tient pas.
+        std::string name(VisibleLabel(label));
+        const float room = width - 4.0f;
+        if (ui.MeasureText(name).x > room) {
+            while (!name.empty() && ui.MeasureText(name + "...").x > room) {
+                name.erase(PreviousBoundary(name, name.size()));
+            }
+            name += "...";
+        }
+        const float nameWidth = ui.MeasureText(name).x;
+        ui.ClippedText({min.x + std::max(2.0f, (width - nameWidth) * 0.5f), min.y + nameTop}, max.x - 2.0f, name, style.text,
+                       min.x);
+        return result;
+    }
+
     bool Context::Tab(std::string_view label, bool selected) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

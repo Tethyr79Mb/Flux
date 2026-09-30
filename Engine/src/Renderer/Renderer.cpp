@@ -184,6 +184,10 @@ namespace Flux {
         return m_impl->overlay->LoadTexture(path);
     }
 
+    std::optional<UI::TextureInfo> Renderer::CreateTexture(const ImageData& image) {
+        return m_impl->overlay->CreateTexture(image);
+    }
+
     void Renderer::SetAssetsDirectory(const std::filesystem::path& directory) {
         if (directory != m_impl->assetsDirectory) {
             m_impl->assetsDirectory = directory;

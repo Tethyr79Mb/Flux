@@ -1,7 +1,12 @@
 #pragma once
 
+#include <Flux/Math/Vector2.hpp>
+#include <Flux/UI/DrawList.hpp>
+
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Flux {
@@ -15,8 +20,10 @@ namespace Flux {
 namespace FluxEditor {
     class SceneDocument;
 
-    // Panneau « Contenu » : les assets du projet (modèles, images...), en arbre ; les scènes sont à part, dans
-    // l'onglet « Scènes », qui utilise GetScenes et ShowSceneMenu d'ici.
+    // Panneau « Contenu » : les assets du projet (modèles, images...), comme un explorateur de fichiers : l'arbre des
+    // dossiers à gauche, le contenu du dossier choisi à droite en vignettes. On y crée des dossiers et on y range
+    // les fichiers en les glissant sur un dossier ; les scènes qui les utilisent sont mises à jour. Les scènes sont à
+    // part, dans l'onglet « Scènes », qui utilise GetScenes et ShowSceneMenu d'ici.
     // Le dossier est relu régulièrement : un fichier ajouté hors de l'éditeur apparaît tout seul.
     class ContentBrowser {
         public:
@@ -38,9 +45,32 @@ namespace FluxEditor {
             std::vector<Entry> children;
         };
 
+        // Fenêtre qui demande un nom : nouveau dossier (dans path) ou nouveau nom d'un fichier ou dossier (path).
+        enum class NameRequest { None, NewFolder, Rename };
+
+        // Fichier ou dossier glissé vers un dossier.
+        struct Drag
+        {
+            std::filesystem::path path; // vide : rien
+            Flux::Math::Vector2f pressMouse;
+            bool dragging = false;
+            std::filesystem::path target; // dossier survolé cette frame (vide : aucun)
+        };
+
         void Scan(const std::filesystem::path& root);
-        void DrawEntry(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry);
+        const Entry* FindFolder(const std::filesystem::path& path) const;
+        void DrawFolder(Flux::UI::Context& ui, const Entry& folder);
+        void DrawFiles(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& folder);
+        // Icône de l'explorateur de Windows pour ce dossier ou ce type de fichier, demandée une fois par type ;
+        // nullptr si Windows n'en donne pas (la vignette dessine alors la sienne).
+        const Flux::UI::TextureInfo* GetIcon(Flux::Engine& engine, const Entry& entry);
         void ShowContextMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry);
+        // Dossier survolé pendant un glisser-déposer : cible, et cadre autour de sa ligne ou de sa vignette.
+        void DropTarget(Flux::UI::Context& ui, const std::filesystem::path& folder);
+        void DrawNameWindow(Flux::Engine& engine, SceneDocument& document);
+        // Déplace ou renomme un fichier ou un dossier des assets, et met à jour ce qui le désigne : champs des scènes
+        // (fichiers et scène ouverte), scène de démarrage. false (avec un message) si c'est impossible.
+        bool Move(Flux::Engine& engine, SceneDocument& document, const std::filesystem::path& from, const std::filesystem::path& to);
         void Delete(Flux::Engine& engine, SceneDocument& document, const std::filesystem::path& path);
         // Fenêtre « Renommer » ouverte par le menu clic droit d'une scène.
         void DrawRenameWindow(Flux::Engine& engine, SceneDocument& document);
@@ -50,7 +80,15 @@ namespace FluxEditor {
         static void SetStartupScene(Flux::Engine& engine, const std::filesystem::path& path);
 
         std::filesystem::path m_root;
-        std::vector<Entry> m_entries;
+        Entry m_tree; // le dossier des assets, sans les scènes
+        std::filesystem::path m_folder;   // dossier affiché à droite
+        std::filesystem::path m_selected; // vignette sélectionnée
+        Drag m_drag;
+        NameRequest m_request = NameRequest::None;
+        std::filesystem::path m_requestPath;
+        std::string m_requestName;
+        // Icônes du système par extension en minuscules (« / » : dossier) ; nullopt : pas d'icône, ne pas redemander.
+        std::unordered_map<std::string, std::optional<Flux::UI::TextureInfo>> m_icons;
         std::vector<std::filesystem::path> m_scenes;
         double m_sinceScan = 0.0;
         std::filesystem::path m_renaming; // scène en cours de renommage (vide : fenêtre fermée)

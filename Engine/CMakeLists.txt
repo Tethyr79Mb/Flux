@@ -37,8 +37,8 @@ target_link_libraries(FluxEngine PRIVATE cgltf_header)
 target_link_libraries(FluxEngine PRIVATE Jolt)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
 target_link_libraries(FluxEngine PRIVATE comdlg32)
-# Corbeille et explorateur (SHFileOperationW, ShellExecuteW).
-target_link_libraries(FluxEngine PRIVATE shell32)
+# Corbeille, explorateur et icônes des fichiers (SHFileOperationW, ShellExecuteW, SHGetImageList).
+target_link_libraries(FluxEngine PRIVATE shell32 ole32)
 
 target_compile_definitions(FluxEngine PRIVATE
         VK_NO_PROTOTYPES
