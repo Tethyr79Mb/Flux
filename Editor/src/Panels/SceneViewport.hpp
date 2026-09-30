@@ -19,7 +19,8 @@ namespace Flux {
 namespace FluxEditor {
     class SceneEditor;
 
-    // Vue 3D de l'éditeur : clic gauche pour sélectionner un objet, contour de la sélection, et gizmo à glisser :
+    // Vue 3D de l'éditeur : clic gauche pour sélectionner un objet (une pièce fixe d'un vaisseau sélectionne le
+    // vaisseau), contour de la sélection, et gizmo à glisser :
     // déplacement (une flèche par axe du monde), rotation (un anneau par axe du monde) ou échelle (un axe par axe de
     // l'objet, et le carré du centre pour les trois à la fois). Mode choisi par les boutons en haut à gauche de la
     // vue ou les touches W, E, R. Les textes et images à l'écran de la scène y sont dessinés comme dans le jeu, et se
