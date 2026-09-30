@@ -33,6 +33,8 @@ namespace Flux {
         // Seuil d'alpha sous lequel le pixel est jeté (feuillages, cheveux) ; 0 : opaque.
         float alphaCutoff = 0.0f;
         bool doubleSided = false; // faces arrière dessinées aussi
+        // Transparent (alphaMode BLEND) : mélangé à ce qui est derrière selon l'alpha, dessiné après les opaques.
+        bool blend = false;
     };
 
     // Suite de triangles d'un même matériau : indices [firstIndex, firstIndex + indexCount) de ModelData::indices.

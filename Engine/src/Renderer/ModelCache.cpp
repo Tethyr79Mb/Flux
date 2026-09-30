@@ -131,6 +131,7 @@ namespace Flux {
             material.baseColor = source.baseColor;
             material.alphaCutoff = source.alphaCutoff;
             material.doubleSided = source.doubleSided;
+            material.blend = source.blend;
             if (source.baseColorImage >= 0 && imageSlots[static_cast<std::size_t>(source.baseColorImage)] >= 0) {
                 material.group = m_device.CreateBindGroup(*m_materialLayout);
                 if (material.group) {
