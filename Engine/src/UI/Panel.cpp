@@ -115,6 +115,84 @@ namespace Flux::UI {
         return !panel.collapsed;
     }
 
+    void Context::BeginChild(std::string_view label, float width, float height) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        const float left = ui.sameLine ? ui.lastItemMax.x + style.itemSpacing : ui.contentMin.x + ui.indent;
+        const float bottom = ui.panel->fixedHeight > 0.0f ? ui.panel->position.y + ui.panel->fixedHeight - style.panelPadding
+                                                         : ui.cursorY + 200.0f;
+        const Vector2f size{width > 0.0f ? width : std::max(1.0f, ui.contentMaxX - left),
+                            height > 0.0f ? height : std::max(1.0f, bottom - ui.cursorY)};
+        const Vector2f min = ui.ItemRect(size);
+        const Vector2f max = min + size;
+
+        Impl::ChildScroll& scroll = ui.childScrolls[id];
+        const float padding = 4.0f;
+        const float viewHeight = size.y - 2.0f * padding;
+        const float maxScroll = std::max(0.0f, scroll.contentHeight - viewHeight);
+        if (ui.wheel != 0.0f && ui.IsMouseOver(min, max)) {
+            scroll.scrollY -= ui.wheel * 3.0f * (ui.TreeRowHeight() + 1.0f);
+            ui.wheel = 0.0f; // la zone la plus proche défile, pas celles qui l'entourent
+        }
+        scroll.scrollY = std::clamp(scroll.scrollY, 0.0f, maxScroll);
+
+        ui.panel->content.AddRect(min, max, style.frame);
+        ui.childStack.push_back({ui.SaveLayout(), id, min, max, min.y + padding});
+        ui.idStack.push_back(id);
+        const float scrollbarWidth = maxScroll > 0.0f ? 8.0f : 0.0f;
+        ui.contentMin = {min.x + padding, min.y + padding - scroll.scrollY};
+        ui.contentMaxX = max.x - padding - scrollbarWidth;
+        ui.cursorY = ui.contentMin.y;
+        ui.indent = 0.0f;
+        ui.sameLine = false;
+        ui.clipMin = {std::max(min.x, ui.clipMin.x), std::max(min.y, ui.clipMin.y)};
+        ui.clipMax = {std::min(max.x, ui.clipMax.x), std::min(max.y, ui.clipMax.y)};
+        ui.RestorePanelClip();
+    }
+
+    void Context::EndChild() {
+        Impl& ui = *m_impl;
+        if (!ui.panel || ui.childStack.empty()) {
+            return;
+        }
+        const Impl::ChildFrame child = ui.childStack.back();
+        ui.childStack.pop_back();
+        Impl::ChildScroll& scroll = ui.childScrolls[child.id];
+        const bool empty = ui.cursorY == ui.contentMin.y;
+        scroll.contentHeight = empty ? 0.0f : ui.cursorY - ui.lastSpacing - (child.contentTop - scroll.scrollY);
+
+        ui.RestoreLayout(child.parent);
+        ui.idStack.pop_back();
+        ui.RestorePanelClip();
+        // Barre de défilement (indicateur) ; la molette fait défiler.
+        const float viewHeight = child.max.y - child.min.y - 8.0f;
+        const float maxScroll = std::max(0.0f, scroll.contentHeight - viewHeight);
+        if (maxScroll > 0.0f) {
+            const float trackTop = child.min.y + 3.0f;
+            const float trackHeight = child.max.y - child.min.y - 6.0f;
+            const float thumbHeight = std::max(20.0f, trackHeight * viewHeight / scroll.contentHeight);
+            const float thumbY = trackTop + (trackHeight - thumbHeight) * scroll.scrollY / maxScroll;
+            ui.panel->content.AddRect({child.max.x - 7.0f, thumbY}, {child.max.x - 3.0f, thumbY + thumbHeight},
+                                      ui.style.frameActive);
+        }
+        // La zone entière est le dernier widget : SameLine, clic droit dans son fond.
+        ui.lastItemMin = child.min;
+        ui.lastItemMax = child.max;
+    }
+
+    float Context::GetAvailableWidth() const {
+        const Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return 0.0f;
+        }
+        const float left = ui.sameLine ? ui.lastItemMax.x + ui.style.itemSpacing : ui.contentMin.x + ui.indent;
+        return std::max(0.0f, ui.contentMaxX - left);
+    }
+
     void Context::EndPanel() {
         Impl& ui = *m_impl;
         if (!ui.panel) {

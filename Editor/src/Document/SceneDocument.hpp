@@ -26,6 +26,7 @@ namespace FluxEditor {
         void UpdateTitle(Flux::Engine& engine);
         // Pendant le jeu : ni ouverture, ni enregistrement (la scène est une copie jetable).
         void SetLocked(bool locked) { m_locked = locked; }
+        bool IsLocked() const { return m_locked; }
         // Vrai si une autre scène a remplacé la scène éditée (nouvelle, ouverte) depuis le dernier appel.
         bool TakeReplaced() { return std::exchange(m_replaced, false); }
         // Une modification faite dans l'éditeur (pas l'animation du jeu) : le titre prend une étoile.

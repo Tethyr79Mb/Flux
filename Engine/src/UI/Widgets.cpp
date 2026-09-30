@@ -71,6 +71,55 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    Context::TileResult Context::Tile(std::string_view label, std::string_view badge, LinearColor badgeColor, bool selected,
+                                      float width) {
+        Impl& ui = *m_impl;
+        TileResult result;
+        if (!ui.panel) {
+            return result;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        const float iconHeight = std::floor(width * 0.7f);
+        const float height = iconHeight + ui.LineHeight() + 8.0f;
+        const Vector2f min = ui.ItemRect({width, height});
+        const Vector2f max = min + Vector2f{width, height};
+        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        if (interaction.clicked) {
+            result.clicked = true;
+            result.doubleClicked = ui.lastClickId == id && ui.time - ui.lastClickTime < 0.35;
+            ui.lastClickId = result.doubleClicked ? 0 : id;
+            ui.lastClickTime = ui.time;
+        }
+
+        DrawList& list = ui.panel->content;
+        if (selected) {
+            list.AddRect(min, max, style.selection);
+        } else if (interaction.hovered) {
+            list.AddRect(min, max, style.frame);
+        }
+        const Vector2f iconMin{min.x + 6.0f, min.y + 4.0f};
+        const Vector2f iconMax{max.x - 6.0f, min.y + iconHeight};
+        list.AddRect(iconMin, iconMax, badgeColor);
+        const Vector2f badgeSize = ui.MeasureText(badge);
+        ui.ClippedText({(iconMin.x + iconMax.x - badgeSize.x) * 0.5f, (iconMin.y + iconMax.y - badgeSize.y) * 0.5f},
+                       iconMax.x, badge, style.text, iconMin.x);
+
+        // Nom centré, raccourci par « ... » s'il ne tient pas.
+        std::string name(VisibleLabel(label));
+        const float room = width - 4.0f;
+        if (ui.MeasureText(name).x > room) {
+            while (!name.empty() && ui.MeasureText(name + "...").x > room) {
+                name.erase(PreviousBoundary(name, name.size()));
+            }
+            name += "...";
+        }
+        const float nameWidth = ui.MeasureText(name).x;
+        ui.ClippedText({min.x + std::max(2.0f, (width - nameWidth) * 0.5f), min.y + iconHeight + 4.0f}, max.x - 2.0f, name,
+                       style.text, min.x);
+        return result;
+    }
+
     bool Context::Tab(std::string_view label, bool selected) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

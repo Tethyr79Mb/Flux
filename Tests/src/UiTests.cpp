@@ -551,6 +551,56 @@ namespace {
         return true;
     }
 
+    // Vignettes dans une zone enfant (fenêtre Contenu) : double-clic, et un seul menu contextuel par clic droit
+    // quand la vignette et le fond de la zone en ont chacun un.
+    bool RunTileTests(const UI::Font& font) {
+        Harness harness(font);
+        int clicks = 0;
+        int doubleClicks = 0;
+        bool tileMenu = false;
+        bool backgroundMenu = false;
+        Vector2f tileMin;
+        const auto describe = [&](UI::Context& ui) {
+            tileMenu = backgroundMenu = false;
+            if (ui.BeginPanel("Contenu", {0.0f, 0.0f}, 400.0f)) {
+                ui.BeginChild("fichiers", 0.0f, 200.0f);
+                const auto tile = ui.Tile("Robot.glb", "3D", Math::LinearColor{0.2f, 0.3f, 0.5f, 1.0f}, false, 84.0f);
+                tileMin = ui.GetItemRect().min;
+                clicks += tile.clicked ? 1 : 0;
+                doubleClicks += tile.doubleClicked ? 1 : 0;
+                if (ui.BeginContextMenu()) {
+                    tileMenu = true;
+                    ui.EndMenu();
+                }
+                ui.EndChild();
+                if (ui.BeginContextMenu()) {
+                    backgroundMenu = true;
+                    ui.EndMenu();
+                }
+            }
+            ui.EndPanel();
+        };
+        harness.Frame([] {}, describe);
+        const Vector2f onTile = tileMin + Vector2f{40.0f, 20.0f};
+        harness.Click(onTile, describe);
+        CHECK(clicks == 1 && doubleClicks == 0);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
+        harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, false); }, describe);
+        CHECK(clicks == 2 && doubleClicks == 1);
+
+        const auto rightClick = [&](Vector2f at) {
+            harness.Move(at, describe);
+            harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Right, true); }, describe);
+            harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Right, false); }, describe);
+        };
+        rightClick(onTile);
+        CHECK(tileMenu && !backgroundMenu);
+        harness.Key(Key::Escape, describe);
+        rightClick(tileMin + Vector2f{200.0f, 150.0f}); // fond de la zone, hors vignette
+        CHECK(backgroundMenu && !tileMenu);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -577,5 +627,5 @@ bool RunUiTests() {
         return false;
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
-        && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font);
+        && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font);
 }

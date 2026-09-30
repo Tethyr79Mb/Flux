@@ -119,10 +119,11 @@ namespace Flux::UI {
         }
         const WidgetId popupId = Hash(ui.GetId(id), "#contexte");
         // Clic droit sur le dernier widget décrit : le menu s'ouvre sous la souris.
-        if (ui.mouseEnabled && ui.input->WasMouseButtonPressed(MouseButton::Right)
+        if (ui.mouseEnabled && ui.input->WasMouseButtonPressed(MouseButton::Right) && ui.contextOpenedFrame != ui.frame
             && ui.IsMouseOver(ui.lastItemMin, ui.lastItemMax)) {
             ui.openMenu = popupId;
             ui.contextPosition = ui.mouse;
+            ui.contextOpenedFrame = ui.frame;
         }
         if (ui.openMenu != popupId) {
             return false;

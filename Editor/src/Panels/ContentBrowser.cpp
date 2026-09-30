@@ -8,7 +8,14 @@
 #include <Flux/Platform/Window.hpp>
 #include <Flux/UI/Context.hpp>
 
+#include <Flux/Scene/ComponentRegistry.hpp>
+#include <Flux/Scene/Scene.hpp>
+#include <Flux/Scene/SceneSerializer.hpp>
+
 #include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <optional>
 #include <system_error>
 #include <utility>
 
@@ -23,6 +30,68 @@ namespace FluxEditor {
         bool IsScene(const std::filesystem::path& path) {
             return Platform::ToUtf8(path.filename()).ends_with(SceneExtension);
         }
+
+        constexpr float DragThreshold = 4.0f; // pixels avant qu'une vignette tenue devienne un glisser-déposer
+
+        // Caractères refusés par Windows dans un nom de fichier.
+        bool IsValidName(std::string_view name) {
+            return !name.empty() && name.find_first_of("\\/:*?\"<>|") == std::string_view::npos && name.back() != '.'
+                && name.back() != ' ';
+        }
+
+        // Badge et couleur d'une vignette, d'après le type du fichier.
+        std::pair<std::string, Math::LinearColor> Badge(const auto& entry) {
+            if (entry.directory) {
+                return {"Dossier", Math::LinearColor::FromSrgb8(150, 118, 52)};
+            }
+            std::string extension = Platform::ToUtf8(entry.path.extension());
+            std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (extension == ".glb" || extension == ".gltf") {
+                return {"3D", Math::LinearColor::FromSrgb8(52, 92, 150)};
+            }
+            if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga" || extension == ".bmp") {
+                return {"Image", Math::LinearColor::FromSrgb8(52, 128, 80)};
+            }
+            if (extension == ".ttf" || extension == ".otf") {
+                return {"Police", Math::LinearColor::FromSrgb8(120, 72, 140)};
+            }
+            if (extension == ".wav" || extension == ".ogg" || extension == ".mp3") {
+                return {"Son", Math::LinearColor::FromSrgb8(150, 80, 60)};
+            }
+            std::string upper = extension.empty() ? std::string("?") : extension.substr(1);
+            std::ranges::transform(upper, upper.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            return {upper, Math::LinearColor::FromSrgb8(84, 84, 92)};
+        }
+
+        // Champs de fichiers (modèle, image, scène) qui désignent `from` ou un fichier sous lui (dossier déplacé) :
+        // réécrits vers `to`. true si quelque chose a changé.
+        bool ReplaceReferences(Scene& scene, const ComponentRegistry& components, const std::string& from, const std::string& to) {
+            bool changed = false;
+            entt::registry& registry = scene.GetRegistry();
+            for (std::size_t c = 0; c < components.GetCount(); ++c) {
+                const ComponentInfo& info = components.Get(c);
+                for (const FieldInfo& field : info.fields) {
+                    if (field.type != FieldType::String || field.asset == AssetType::None || field.asset == AssetType::Animation) {
+                        continue;
+                    }
+                    for (const entt::entity entity : registry.view<IdComponent>()) {
+                        void* component = info.get(registry, entity);
+                        if (!component) {
+                            continue;
+                        }
+                        std::string& value = *static_cast<std::string*>(field.access(component));
+                        if (value == from) {
+                            value = to;
+                            changed = true;
+                        } else if (value.starts_with(from + "/")) {
+                            value = to + value.substr(from.size());
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            return changed;
+        }
     }
 
     void ContentBrowser::Update(Engine& engine, SceneDocument& document, double deltaSeconds) {
@@ -30,31 +99,82 @@ namespace FluxEditor {
         const std::filesystem::path root = project ? project->assetsDirectory : std::filesystem::path{};
         m_sinceScan += deltaSeconds;
         if (root != m_root || m_sinceScan >= ScanInterval) {
+            if (root != m_root) {
+                m_folder = root;
+                m_selected.clear();
+            }
             m_root = root;
             m_sinceScan = 0.0;
             Scan(root);
         }
+        // Dossier affiché supprimé ou renommé hors de l'éditeur : retour à la racine.
+        const Entry* folder = FindFolder(m_folder);
+        if (!folder) {
+            m_folder = m_root;
+            folder = &m_tree;
+        }
 
         UI::Context& ui = engine.GetUi();
+        const Input& input = engine.GetWindow().GetInput();
         const Math::Vector2i screen = engine.GetWindow().GetSize();
+        m_drag.target.clear();
         // Position sans ancrage (l'éditeur l'ancre en bas) : à droite, sous le panneau « Démo » du jeu.
         const float top = 150.0f + ui.GetMenuBarHeight();
         if (ui.BeginPanel("Contenu", {std::max(316.0f, static_cast<float>(screen.x) - 368.0f), top}, 360.0f,
                           std::max(160.0f, static_cast<float>(screen.y) - top - 8.0f))) {
             if (!project) {
                 ui.TextDisabled("Aucun projet ouvert.");
-            } else if (m_entries.empty()) {
-                ui.TextDisabled((m_scenes.empty() ? "Dossier des assets vide ou introuvable :\n" : "Aucun asset hors des scènes dans :\n")
-                                + Platform::ToUtf8(root));
+            } else if (root.empty() || !std::filesystem::is_directory(root)) {
+                ui.TextDisabled("Dossier des assets introuvable :\n" + Platform::ToUtf8(root));
             } else {
-                ui.TextDisabled("Clic droit pour les actions. Les scènes sont dans l'onglet Scènes.");
-                ui.Separator();
-                for (const Entry& entry : m_entries) {
-                    DrawEntry(ui, engine, document, entry);
+                // Chemin du dossier affiché, et de quoi remonter d'un cran.
+                ui.BeginDisabled(m_folder == m_root);
+                if (ui.Button("Remonter")) {
+                    m_folder = m_folder.parent_path();
+                    m_selected.clear();
+                }
+                ui.EndDisabled();
+                ui.SameLine();
+                const std::filesystem::path relative = m_folder.lexically_relative(m_root);
+                ui.TextDisabled(relative.empty() || relative == "." ? "assets" : "assets/" + Platform::ToGenericUtf8(relative));
+
+                const float treeWidth = std::clamp(ui.GetAvailableWidth() * 0.3f, 120.0f, 260.0f);
+                ui.BeginChild("dossiers", treeWidth, 0.0f);
+                DrawFolder(ui, m_tree);
+                ui.EndChild();
+                ui.SameLine();
+                ui.BeginChild("fichiers", 0.0f, 0.0f);
+                DrawFiles(ui, engine, document, *folder);
+                ui.EndChild();
+                // Clic droit dans le fond (hors vignette) : actions sur le dossier affiché.
+                if (ui.BeginContextMenu("fond")) {
+                    if (ui.MenuItem("Nouveau dossier...", {}, !document.IsLocked())) {
+                        m_request = NameRequest::NewFolder;
+                        m_requestPath = m_folder;
+                        m_requestName = "Nouveau dossier";
+                    }
+                    if (ui.MenuItem("Afficher dans l'explorateur")) {
+                        Platform::ShowInExplorer(m_folder);
+                    }
+                    ui.EndMenu();
                 }
             }
         }
         ui.EndPanel();
+
+        // Glisser-déposer : commencé en tenant une vignette, posé en relâchant sur un dossier.
+        if (!m_drag.path.empty()) {
+            const Math::Vector2f moved = input.GetMousePosition() - m_drag.pressMouse;
+            m_drag.dragging |= std::sqrt(moved.x * moved.x + moved.y * moved.y) > DragThreshold;
+            if (!input.IsMouseButtonDown(MouseButton::Left)) {
+                if (m_drag.dragging && !m_drag.target.empty()) {
+                    const std::filesystem::path from = m_drag.path;
+                    Move(engine, document, from, m_drag.target / from.filename());
+                }
+                m_drag = {};
+            }
+        }
+        DrawNameWindow(engine, document);
         DrawRenameWindow(engine, document);
     }
 
@@ -89,33 +209,124 @@ namespace FluxEditor {
             });
             return entries;
         };
-        m_entries = root.empty() ? std::vector<Entry>{} : read(read, root);
+        m_tree = {root, "assets", true, root.empty() ? std::vector<Entry>{} : read(read, root)};
         std::ranges::sort(m_scenes, [](const std::filesystem::path& a, const std::filesystem::path& b) {
             return a.parent_path() != b.parent_path() ? a.parent_path() < b.parent_path() : a.filename() < b.filename();
         });
     }
 
-    void ContentBrowser::DrawEntry(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
-        ui.PushId(entry.name);
-        if (entry.directory) {
-            const bool open = ui.TreeNode(entry.name + "/", false, entry.children.empty(), true).open;
-            ShowContextMenu(ui, engine, document, entry);
-            if (open) {
-                for (const Entry& child : entry.children) {
-                    DrawEntry(ui, engine, document, child);
-                }
-                ui.TreePop();
+    const ContentBrowser::Entry* ContentBrowser::FindFolder(const std::filesystem::path& path) const {
+        const auto find = [&](const auto& self, const Entry& entry) -> const Entry* {
+            if (entry.path == path) {
+                return &entry;
             }
-        } else {
-            ui.TreeNode(entry.name, false, true);
-            ShowContextMenu(ui, engine, document, entry);
+            for (const Entry& child : entry.children) {
+                if (child.directory) {
+                    if (const Entry* found = self(self, child)) {
+                        return found;
+                    }
+                }
+            }
+            return nullptr;
+        };
+        return m_root.empty() ? nullptr : find(find, m_tree);
+    }
+
+    void ContentBrowser::DropTarget(UI::Context& ui, const std::filesystem::path& folder) {
+        if (!m_drag.dragging || !ui.IsMouseOverItem() || folder == m_drag.path.parent_path()) {
+            return;
+        }
+        // Pas dans lui-même ni dans un de ses sous-dossiers.
+        const std::filesystem::path relative = folder.lexically_relative(m_drag.path);
+        if (!relative.empty() && *relative.begin() != "..") {
+            return;
+        }
+        m_drag.target = folder;
+        if (UI::DrawList* list = ui.GetPanelDrawList()) {
+            const UI::Rect rect = ui.GetItemRect();
+            list->AddRectOutline(rect.min, rect.max, ui.GetStyle().checkMark, 2.0f);
+        }
+    }
+
+    // Arbre des dossiers seulement (les fichiers sont à droite). Clic : affiche le dossier.
+    void ContentBrowser::DrawFolder(UI::Context& ui, const Entry& folder) {
+        const bool hasFolders = std::ranges::any_of(folder.children, &Entry::directory);
+        ui.PushId(folder.name);
+        // Le dossier affiché et ses parents se déplient d'eux-mêmes (après un double-clic à droite).
+        const std::filesystem::path relative = m_folder.lexically_relative(folder.path);
+        if (hasFolders && folder.path != m_folder && !relative.empty() && *relative.begin() != "..") {
+            ui.SetNextTreeNodeOpen(true);
+        }
+        const UI::Context::TreeNodeResult node = ui.TreeNode(folder.name, folder.path == m_folder, !hasFolders,
+                                                            folder.path == m_root);
+        if (node.clicked) {
+            m_folder = folder.path;
+            m_selected.clear();
+        }
+        DropTarget(ui, folder.path);
+        if (node.open) {
+            for (const Entry& child : folder.children) {
+                if (child.directory) {
+                    DrawFolder(ui, child);
+                }
+            }
+            ui.TreePop();
         }
         ui.PopId();
+    }
+
+    // Contenu du dossier en vignettes : ses dossiers puis ses fichiers, en grille.
+    void ContentBrowser::DrawFiles(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& folder) {
+        if (folder.children.empty()) {
+            ui.TextDisabled("Dossier vide. Clic droit : nouveau dossier.\nGlisser une vignette sur un dossier pour l'y ranger.");
+            return;
+        }
+        constexpr float TileWidth = 84.0f;
+        const float spacing = ui.GetStyle().itemSpacing;
+        const int columns = std::max(1, static_cast<int>((ui.GetAvailableWidth() + spacing) / (TileWidth + spacing)));
+        int column = 0;
+        for (const Entry& entry : folder.children) {
+            if (column++ % columns != 0) {
+                ui.SameLine();
+            }
+            const auto [badge, color] = Badge(entry);
+            ui.PushId(entry.name);
+            const UI::Context::TileResult tile = ui.Tile(entry.name, badge, color, entry.path == m_selected, TileWidth);
+            if (tile.clicked) {
+                m_selected = entry.path;
+            }
+            if (tile.doubleClicked && entry.directory) {
+                m_folder = entry.path;
+                m_selected.clear();
+            }
+            if (ui.IsItemActive() && m_drag.path.empty() && !document.IsLocked()) {
+                m_drag = {};
+                m_drag.path = entry.path;
+                m_drag.pressMouse = engine.GetWindow().GetInput().GetMousePosition();
+            }
+            if (entry.directory) {
+                DropTarget(ui, entry.path);
+            }
+            ShowContextMenu(ui, engine, document, entry);
+            ui.PopId();
+            if (tile.doubleClicked && entry.directory) {
+                break; // le contenu affiché change : la suite de la liste n'est plus la bonne
+            }
+        }
     }
 
     void ContentBrowser::ShowContextMenu(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
         if (!ui.BeginContextMenu()) {
             return;
+        }
+        if (entry.directory && ui.MenuItem("Ouvrir")) {
+            m_folder = entry.path;
+            m_selected.clear();
+        }
+        if (ui.MenuItem("Renommer...", {}, !document.IsLocked())) {
+            m_request = NameRequest::Rename;
+            m_requestPath = entry.path;
+            m_requestName = entry.name;
         }
         if (ui.MenuItem("Afficher dans l'explorateur")) {
             Platform::ShowInExplorer(entry.path);
@@ -125,6 +336,136 @@ namespace FluxEditor {
             Delete(engine, document, entry.path);
         }
         ui.EndMenu();
+    }
+
+    void ContentBrowser::DrawNameWindow(Engine& engine, SceneDocument& document) {
+        if (m_request == NameRequest::None) {
+            return;
+        }
+        UI::Context& ui = engine.GetUi();
+        const Math::Vector2i screen = engine.GetWindow().GetSize();
+        const float width = 400.0f;
+        const bool create = m_request == NameRequest::NewFolder;
+        if (ui.BeginPanel(create ? "Nouveau dossier" : "Renommer", {(static_cast<float>(screen.x) - width) * 0.5f,
+                                                                    static_cast<float>(screen.y) * 0.3f},
+                          width)) {
+            if (!create) {
+                ui.TextDisabled(Platform::ToUtf8(m_requestPath.filename()));
+            }
+            const bool entered = ui.InputText("Nom", m_requestName);
+            ui.Separator();
+            if (ui.Button(create ? "Créer" : "Renommer") || entered) {
+                const Window& window = engine.GetWindow();
+                if (!IsValidName(m_requestName)) {
+                    Platform::ShowError(window, "Nom", "Nom invalide : il ne doit pas être vide ni contenir \\ / : * ? \" < > |");
+                } else if (create) {
+                    const std::filesystem::path folder = m_requestPath / Platform::PathFromUtf8(m_requestName);
+                    std::error_code error;
+                    if (std::filesystem::exists(folder, error)) {
+                        Platform::ShowError(window, "Nouveau dossier", "« " + m_requestName + " » existe déjà.");
+                    } else if (!std::filesystem::create_directory(folder, error)) {
+                        Platform::ShowError(window, "Nouveau dossier", "Création impossible : " + error.message());
+                    } else {
+                        m_request = NameRequest::None;
+                        m_sinceScan = ScanInterval; // relu à la prochaine frame
+                    }
+                } else if (Move(engine, document, m_requestPath, m_requestPath.parent_path() / Platform::PathFromUtf8(m_requestName))) {
+                    m_request = NameRequest::None;
+                }
+            }
+            ui.SameLine();
+            if (ui.Button("Annuler")) {
+                m_request = NameRequest::None;
+            }
+        }
+        ui.EndPanel();
+    }
+
+    bool ContentBrowser::Move(Engine& engine, SceneDocument& document, const std::filesystem::path& from,
+                              const std::filesystem::path& to) {
+        const Window& window = engine.GetWindow();
+        const std::string name = Platform::ToUtf8(from.filename());
+        if (to == from) {
+            return true;
+        }
+        if (document.IsLocked()) {
+            Platform::ShowError(window, "Déplacer", "Arrêter le mode Jouer avant de ranger les fichiers.");
+            return false;
+        }
+        // Un .gltf désigne ses .bin et ses images à côté de lui : seul, il les perdrait.
+        if (Platform::ToUtf8(from.extension()) == ".gltf") {
+            Platform::ShowError(window, "Déplacer", "« " + name + " » utilise des fichiers à côté de lui (.bin, images) : "
+                                                    "déplacer ou renommer plutôt le dossier qui les contient.");
+            return false;
+        }
+        // Un dossier dans lui-même ou dans un de ses sous-dossiers.
+        if (const std::filesystem::path inside = to.lexically_normal().lexically_relative(from.lexically_normal());
+            !inside.empty() && *inside.begin() != "..") {
+            Platform::ShowError(window, "Déplacer", "« " + name + " » ne peut pas aller dans lui-même.");
+            return false;
+        }
+        std::error_code error;
+        if (std::filesystem::exists(to, error)) {
+            Platform::ShowError(window, "Déplacer", "« " + Platform::ToUtf8(to.filename()) + " » existe déjà à cet endroit.");
+            return false;
+        }
+        std::filesystem::rename(from, to, error);
+        if (error) {
+            Platform::ShowError(window, "Déplacer", "Déplacement impossible : " + error.message());
+            return false;
+        }
+
+        // Nouveau chemin de tout ce qui était sous `from` (lui compris) ; std::nullopt pour le reste.
+        const auto moved = [&](const std::filesystem::path& path) -> std::optional<std::filesystem::path> {
+            const std::filesystem::path relative = path.lexically_normal().lexically_relative(from.lexically_normal());
+            if (relative.empty() || *relative.begin() == "..") {
+                return std::nullopt;
+            }
+            return relative == "." ? to : to / relative;
+        };
+        const std::string oldReference = Platform::ToGenericUtf8(from.lexically_relative(m_root));
+        const std::string newReference = Platform::ToGenericUtf8(to.lexically_relative(m_root));
+        const ComponentRegistry& components = engine.GetComponents();
+
+        // Scènes du projet (à leur nouvelle place si elles ont bougé aussi), puis la scène ouverte, en mémoire.
+        std::vector<std::string> failures;
+        for (const std::filesystem::path& scenePath : m_scenes) {
+            const std::filesystem::path path = moved(scenePath).value_or(scenePath);
+            Scene scene;
+            if (!SceneSerializer::Load(scene, components, path)) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+                continue;
+            }
+            if (ReplaceReferences(scene, components, oldReference, newReference)
+                && !SceneSerializer::Save(scene, components, path)) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+            }
+        }
+        ReplaceReferences(engine.GetScene(), components, oldReference, newReference);
+        if (const std::optional<std::filesystem::path> openScene = moved(document.GetPath())) {
+            document.FileRenamed(document.GetPath(), *openScene);
+        }
+        if (Project* project = engine.GetProject()) {
+            if (const std::optional<std::filesystem::path> startup = moved(project->GetStartupScenePath())) {
+                SetStartupScene(engine, *startup);
+            }
+        }
+        if (m_selected == from) {
+            m_selected = to;
+        }
+        if (const std::optional<std::filesystem::path> folder = moved(m_folder)) {
+            m_folder = *folder;
+        }
+        m_sinceScan = ScanInterval; // relu à la prochaine frame
+        if (!failures.empty()) {
+            std::string list;
+            for (const std::string& failure : failures) {
+                list += "\n  " + failure;
+            }
+            Platform::ShowError(window, "Déplacer", "« " + name + " » a été déplacé, mais ces scènes n'ont pas pu être "
+                                                    "mises à jour (à corriger à la main) :" + list);
+        }
+        return true;
     }
 
     void ContentBrowser::ShowSceneMenu(UI::Context& ui, Engine& engine, SceneDocument& document,
@@ -225,8 +566,7 @@ namespace FluxEditor {
             fileName.resize(fileName.size() - SceneExtension.size());
         }
         // Caractères refusés par Windows dans un nom de fichier.
-        if (fileName.empty() || fileName.find_first_of("\\/:*?\"<>|") != std::string::npos || fileName.back() == '.'
-            || fileName.back() == ' ') {
+        if (!IsValidName(fileName)) {
             Platform::ShowError(window, "Renommer", "Nom invalide : il ne doit pas être vide ni contenir \\ / : * ? \" < > |");
             return false;
         }
