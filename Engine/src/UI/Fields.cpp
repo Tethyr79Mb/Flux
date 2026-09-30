@@ -252,6 +252,14 @@ namespace Flux::UI {
     }
 
     bool Context::ColorEdit3(std::string_view label, Math::LinearColor& color) {
+        return ColorEdit(label, color, false);
+    }
+
+    bool Context::ColorEdit4(std::string_view label, Math::LinearColor& color) {
+        return ColorEdit(label, color, true);
+    }
+
+    bool Context::ColorEdit(std::string_view label, Math::LinearColor& color, bool alpha) {
         Impl& ui = *m_impl;
         if (!ui.panel) {
             return false;
@@ -282,11 +290,22 @@ namespace Flux::UI {
         ui.panel->content.AddRect(fieldMin, swatchMax, {color.r, color.g, color.b, 1.0f});
         ui.panel->content.AddRectOutline(fieldMin, swatchMax, style.panelBorder);
         const float start = fieldMin.x + swatch + style.itemSpacing;
-        const float width = (fieldMax.x - start - 2.0f * style.itemSpacing) / 3.0f;
+        const int count = alpha ? 4 : 3;
+        const float width = (fieldMax.x - start - static_cast<float>(count - 1) * style.itemSpacing) / static_cast<float>(count);
         float* channels[3] = {&color.r, &color.g, &color.b};
         const LinearColor* colors[3] = {&style.axisX, &style.axisY, &style.axisZ};
-        for (int channel = 0; channel < 3; ++channel) {
+        for (int channel = 0; channel < count; ++channel) {
             const float x = start + static_cast<float>(channel) * (width + style.itemSpacing);
+            if (channel == 3) {
+                // Opacité : linéaire (pas de sRGB), 255 = opaque.
+                double value = static_cast<double>(std::clamp(color.a, 0.0f, 1.0f)) * 255.0;
+                if (ui.DragScalar(Hash(id, &channel, sizeof(channel)), {x, fieldMin.y}, {x + width, fieldMax.y}, value, 1.0,
+                                  0.0, 255.0, 0, nullptr)) {
+                    color.a = static_cast<float>(value / 255.0);
+                    changed = true;
+                }
+                continue;
+            }
             // Sans arrondi : un glissement lent s'accumule au lieu d'être perdu à chaque frame.
             double value = static_cast<double>(Math::LinearColor::LinearToSrgb(std::clamp(*channels[channel], 0.0f, 1.0f))) * 255.0;
             if (ui.DragScalar(Hash(id, &channel, sizeof(channel)), {x, fieldMin.y}, {x + width, fieldMax.y}, value, 1.0,

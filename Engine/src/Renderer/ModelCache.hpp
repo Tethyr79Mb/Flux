@@ -20,6 +20,7 @@ namespace Flux {
         Math::LinearColor baseColor{1.0f, 1.0f, 1.0f, 1.0f};
         float alphaCutoff = 0.0f;
         bool doubleSided = false;
+        bool blend = false; // transparent : dessiné dans la passe triée
         std::unique_ptr<RHI::BindGroup> group; // son image de couleur de base ; nullptr : l'image blanche
     };
 

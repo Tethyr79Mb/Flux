@@ -19,7 +19,8 @@ namespace Flux {
         struct MeshParams
         {
             Math::Matrix4f modelViewProjection;
-            // normalColumns[0][3] : seuil d'alpha ; normalColumns[1][3] : premier os (bits d'un entier), modèle animé
+            // normalColumns[0][3] : seuil d'alpha ; normalColumns[1][3] : premier os (bits d'un entier), modèle animé ;
+            // normalColumns[2][3] : 1 pour un transparent
             std::array<std::array<float, 4>, 3> normalColumns;
             Math::LinearColor color;
         };
@@ -99,19 +100,31 @@ namespace Flux {
         desc.depthTest = true;
         desc.depthWrite = true;
 
-        const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode) -> std::expected<void, std::string> {
-            desc.cullMode = cullMode;
-            auto created = m_device.CreatePipeline(desc);
-            if (!created) {
-                return std::unexpected(created.error());
+        const auto createAll = [&](Pipelines& pipelines) -> std::expected<void, std::string> {
+            const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent) {
+                desc.cullMode = cullMode;
+                // Transparents : mélangés à ce qui est déjà dessiné, cachés par les opaques plus proches, mais sans
+                // écrire la profondeur (un transparent ne doit pas masquer ce qui est derrière lui).
+                desc.depthWrite = !transparent;
+                desc.blend = transparent ? RHI::BlendMode::Alpha : RHI::BlendMode::Opaque;
+                auto created = m_device.CreatePipeline(desc);
+                if (created) {
+                    pipeline = std::move(*created);
+                }
+                return created.has_value() ? std::expected<void, std::string>{} : std::unexpected(created.error());
+            };
+            if (auto result = create(pipelines.opaque, RHI::CullMode::Back, false); !result) {
+                return result;
             }
-            pipeline = std::move(*created);
-            return {};
+            if (auto result = create(pipelines.opaqueDoubleSided, RHI::CullMode::None, false); !result) {
+                return result;
+            }
+            if (auto result = create(pipelines.transparent, RHI::CullMode::Back, true); !result) {
+                return result;
+            }
+            return create(pipelines.transparentBack, RHI::CullMode::Front, true);
         };
-        if (auto result = create(m_static, RHI::CullMode::Back); !result) {
-            return result;
-        }
-        if (auto result = create(m_staticDoubleSided, RHI::CullMode::None); !result) {
+        if (auto result = createAll(m_static); !result) {
             return result;
         }
 
@@ -120,10 +133,7 @@ namespace Flux {
         desc.vertexBuffers = vertexBuffers;
         desc.vertexAttributes = attributes;
         desc.bindGroupLayouts = layouts;
-        if (auto result = create(m_skinned, RHI::CullMode::Back); !result) {
-            return result;
-        }
-        return create(m_skinnedDoubleSided, RHI::CullMode::None);
+        return createAll(m_skinned);
     }
 
     // Buffer des os de l'image f agrandi à size octets au moins, et son groupe mis à jour. Appelé quand le GPU
@@ -184,9 +194,32 @@ namespace Flux {
                 const std::span<const Math::Matrix4f> joints = m_poseEvaluator.GetJointMatrices();
                 m_jointMatrices.insert(m_jointMatrices.end(), joints.begin(), joints.end());
             }
-            m_draws.push_back({model, viewProjection * world, normalColumns, tint, firstJoint});
+            const Math::Vector3f center = model->bounds.GetCenter();
+            const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
+            const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
+            m_draws.push_back({model, viewProjection * world, normalColumns, tint, firstJoint, Math::Length(relativeCenter)});
         }
         UploadJoints(frameIndex);
+
+        // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
+        // centre de sa boîte) : deux transparents qui s'entrecroisent peuvent se superposer dans le mauvais ordre.
+        m_transparent.clear();
+        for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
+            const GpuModel& model = *m_draws[d].model;
+            for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
+                if (IsTransparent(m_draws[d], model.materials[model.primitives[p].material])) {
+                    m_transparent.push_back({d, p});
+                }
+            }
+        }
+        // Stable : les primitives d'une même entité gardent l'ordre du fichier.
+        std::stable_sort(m_transparent.begin(), m_transparent.end(), [this](const TransparentDraw& a, const TransparentDraw& b) {
+            return m_draws[a.draw].distance > m_draws[b.draw].distance;
+        });
+    }
+
+    bool MeshRenderer::IsTransparent(const MeshDraw& draw, const GpuMaterial& material) {
+        return material.blend || draw.tint.a < 1.0f;
     }
 
     // Pose d'un modèle animé, d'après la lecture de son AnimatorComponent ; sans lui, la pose de repos.
@@ -222,49 +255,66 @@ namespace Flux {
         }
     }
 
+    void MeshRenderer::DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
+                                     const MeshDraw& draw, const ModelPrimitive& primitive, const RHI::Pipeline& pipeline) const {
+        const GpuModel& model = *draw.model;
+        const bool animated = model.IsAnimated();
+        if (&model != state.model) {
+            state.model = &model;
+            const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
+            commands.BindVertexBuffers(0, std::span(vertexBuffers).first(animated ? 2 : 1));
+            commands.BindIndexBuffer(*model.indices);
+        }
+        if (&pipeline != state.pipeline) {
+            // Autre pipeline : ses groupes sont reliés, sans compter sur la compatibilité des layouts.
+            state.pipeline = &pipeline;
+            state.group = nullptr;
+            state.jointsBound = false;
+            commands.BindPipeline(pipeline);
+        }
+        if (animated && !state.jointsBound) {
+            state.jointsBound = true;
+            commands.SetBindGroup(1, *m_jointGroups[frameIndex]);
+        }
+        const GpuMaterial& material = model.materials[primitive.material];
+        const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
+        if (group != state.group) {
+            state.group = group;
+            commands.SetBindGroup(0, *group);
+        }
+        MeshParams params{draw.modelViewProjection, draw.normalColumns,
+                          {material.baseColor.r * draw.tint.r, material.baseColor.g * draw.tint.g,
+                           material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a}};
+        params.normalColumns[0][3] = material.alphaCutoff;
+        params.normalColumns[1][3] = std::bit_cast<float>(draw.firstJoint);
+        params.normalColumns[2][3] = IsTransparent(draw, material) ? 1.0f : 0.0f;
+        commands.PushConstants(&params, sizeof(params));
+        commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
+    }
+
     void MeshRenderer::Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         // Changements d'état seulement quand il le faut : les entités d'un même modèle se suivent souvent.
-        const RHI::Pipeline* boundPipeline = nullptr;
-        const GpuModel* boundModel = nullptr;
-        const RHI::BindGroup* boundGroup = nullptr;
-        bool jointsBound = false;
+        BindState state;
         for (const MeshDraw& draw : m_draws) {
-            const GpuModel& model = *draw.model;
-            const bool animated = model.IsAnimated();
-            if (&model != boundModel) {
-                boundModel = &model;
-                const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
-                commands.BindVertexBuffers(0, std::span(vertexBuffers).first(animated ? 2 : 1));
-                commands.BindIndexBuffer(*model.indices);
+            const Pipelines& pipelines = draw.model->IsAnimated() ? m_skinned : m_static;
+            for (const ModelPrimitive& primitive : draw.model->primitives) {
+                const GpuMaterial& material = draw.model->materials[primitive.material];
+                if (!IsTransparent(draw, material)) {
+                    DrawPrimitive(commands, state, frameIndex, draw, primitive,
+                                  material.doubleSided ? *pipelines.opaqueDoubleSided : *pipelines.opaque);
+                }
             }
-            for (const ModelPrimitive& primitive : model.primitives) {
-                const GpuMaterial& material = model.materials[primitive.material];
-                const RHI::Pipeline& pipeline = animated ? (material.doubleSided ? *m_skinnedDoubleSided : *m_skinned)
-                                                         : (material.doubleSided ? *m_staticDoubleSided : *m_static);
-                if (&pipeline != boundPipeline) {
-                    // Autre pipeline : ses groupes sont reliés, sans compter sur la compatibilité des layouts.
-                    boundPipeline = &pipeline;
-                    boundGroup = nullptr;
-                    jointsBound = false;
-                    commands.BindPipeline(pipeline);
-                }
-                if (animated && !jointsBound) {
-                    jointsBound = true;
-                    commands.SetBindGroup(1, *m_jointGroups[frameIndex]);
-                }
-                const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
-                if (group != boundGroup) {
-                    boundGroup = group;
-                    commands.SetBindGroup(0, *group);
-                }
-                MeshParams params{draw.modelViewProjection, draw.normalColumns,
-                                  {material.baseColor.r * draw.tint.r, material.baseColor.g * draw.tint.g,
-                                   material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a}};
-                params.normalColumns[0][3] = material.alphaCutoff;
-                params.normalColumns[1][3] = std::bit_cast<float>(draw.firstJoint);
-                commands.PushConstants(&params, sizeof(params));
-                commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
+        }
+        for (const TransparentDraw& item : m_transparent) {
+            const MeshDraw& draw = m_draws[item.draw];
+            const Pipelines& pipelines = draw.model->IsAnimated() ? m_skinned : m_static;
+            const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
+            // Double face : les faces arrière (le fond de l'objet) d'abord, puis les faces avant par-dessus.
+            // Exact pour une forme convexe (bulle de verrière, cube).
+            if (draw.model->materials[primitive.material].doubleSided) {
+                DrawPrimitive(commands, state, frameIndex, draw, primitive, *pipelines.transparentBack);
             }
+            DrawPrimitive(commands, state, frameIndex, draw, primitive, *pipelines.transparent);
         }
     }
 }

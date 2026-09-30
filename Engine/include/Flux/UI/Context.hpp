@@ -152,6 +152,8 @@ namespace Flux::UI {
         // Couleur linéaire éditée en sRGB 0-255 (les valeurs d'un sélecteur de couleur), avec un aperçu ;
         // un clic sur l'aperçu ouvre le sélecteur de couleur (SetColorPicker), s'il y en a un.
         bool ColorEdit3(std::string_view label, Math::LinearColor& color);
+        // Idem, plus l'opacité (alpha, 0 : invisible, 255 : opaque), linéaire.
+        bool ColorEdit4(std::string_view label, Math::LinearColor& color);
 
         // Entiers : même principe que les champs numériques, sans décimales.
         bool DragInt(std::string_view label, std::int32_t& value, float speed = 0.2f, double min = NoMin, double max = NoMax);
@@ -256,6 +258,8 @@ namespace Flux::UI {
         void SetColorPicker(ColorPicker picker);
 
         private:
+        bool ColorEdit(std::string_view label, Math::LinearColor& color, bool alpha);
+
         struct Impl;
         std::unique_ptr<Impl> m_impl;
     };

@@ -1,4 +1,4 @@
-// Maillages opaques (cubes et modèles glTF) : position transformée par une matrice calculée sur le CPU, relative
+// Maillages (cubes et modèles glTF), opaques ou transparents : position transformée par une matrice calculée sur le CPU, relative
 // à la caméra ; couleur de base (facteur x image) éclairée par un soleil fixe et une lumière ambiante.
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 
@@ -11,6 +11,7 @@ struct MeshParams
     float4 mvpColumn3;
     // Matrice des normales (repère du monde), par colonnes dans xyz. normalColumn0.w : seuil d'alpha (0 : opaque).
     // normalColumn1.w : premier os du modèle dans jointColumns (bits d'un entier), modèles animés seulement.
+    // normalColumn2.w : 1 pour un transparent (l'alpha sort vers le mélange), 0 pour un opaque (alpha 1).
     float4 normalColumn0;
     float4 normalColumn1;
     float4 normalColumn2;
@@ -113,5 +114,6 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     float3 normal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
     const float sun = max(dot(normal, SunDirection), 0.0);
     const float shade = 0.3 + 0.1 * normal.y + 0.6 * sun;
-    return float4(base.rgb * shade, 1.0);
+    const bool transparent = params.normalColumn2.w > 0.5;
+    return float4(base.rgb * shade, transparent ? base.a : 1.0);
 }

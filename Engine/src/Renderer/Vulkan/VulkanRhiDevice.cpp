@@ -290,7 +290,11 @@ namespace Flux::Vk {
         vkDesc.depthTest = desc.depthTest;
         vkDesc.depthWrite = desc.depthWrite;
         vkDesc.depthCompare = ToVulkan(desc.depthCompare);
-        vkDesc.cullMode = desc.cullMode == RHI::CullMode::Back ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        switch (desc.cullMode) {
+            case RHI::CullMode::None: vkDesc.cullMode = VK_CULL_MODE_NONE; break;
+            case RHI::CullMode::Back: vkDesc.cullMode = VK_CULL_MODE_BACK_BIT; break;
+            case RHI::CullMode::Front: vkDesc.cullMode = VK_CULL_MODE_FRONT_BIT; break;
+        }
         vkDesc.alphaBlend = desc.blend == RHI::BlendMode::Alpha;
         auto pipeline = GraphicsPipeline::Create(m_device->GetHandle(), vkDesc);
         if (!pipeline) {

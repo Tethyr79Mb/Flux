@@ -150,7 +150,7 @@ namespace Flux::RHI {
         std::uint32_t offset = 0;
     };
 
-    enum class CullMode : std::uint8_t { None, Back }; // faces avant : sens antihoraire
+    enum class CullMode : std::uint8_t { None, Back, Front }; // faces avant : sens antihoraire
     enum class CompareOp : std::uint8_t { Greater, GreaterOrEqual, Less, Always };
     enum class BlendMode : std::uint8_t {
         Opaque,
