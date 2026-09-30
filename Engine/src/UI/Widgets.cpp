@@ -71,7 +71,7 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
-    Context::TileResult Context::Tile(std::string_view label, TileIcon icon, std::string_view badge, LinearColor badgeColor,
+    Context::TileResult Context::Tile(std::string_view label, Icon icon, std::string_view badge, LinearColor badgeColor,
                                       bool selected, float width, const TextureInfo* image) {
         Impl& ui = *m_impl;
         TileResult result;
@@ -103,7 +103,6 @@ namespace Flux::UI {
         }
         const float centerX = std::floor(min.x + width * 0.5f);
         const float x0 = centerX - side * 0.5f;
-        const float x1 = centerX + side * 0.5f;
         const float y0 = min.y + 4.0f;
         const float y1 = y0 + side;
         if (image && image->size.x > 0 && image->size.y > 0) {
@@ -113,31 +112,13 @@ namespace Flux::UI {
             const Vector2f size{std::floor(static_cast<float>(image->size.x) * scale), std::floor(static_cast<float>(image->size.y) * scale)};
             const Vector2f at{std::floor(centerX - size.x * 0.5f), std::floor(y0 + (side - size.y) * 0.5f)};
             list.AddImage(at, at + size, image->id);
-        } else if (icon == TileIcon::Folder) {
-            // Dessinés à défaut : onglet, dos du dossier, puis rabat avant plus clair.
-            const LinearColor back = LinearColor::FromSrgb8(196, 150, 58);
-            const float top = y0 + side * 0.12f;
-            const float h = side * 0.78f;
-            const float tab = std::floor(side * 0.42f);
-            list.AddRect({x0, top}, {x0 + tab, top + h * 0.2f}, back);
-            list.AddTriangle({x0 + tab, top}, {x0 + tab, top + h * 0.2f}, {x0 + tab + h * 0.14f, top + h * 0.2f}, back);
-            list.AddRect({x0, top + h * 0.12f}, {x1, top + h}, back);
-            list.AddRect({x0, top + h * 0.3f}, {x1, top + h}, LinearColor::FromSrgb8(232, 186, 82));
         } else {
-            // Page au coin corné.
-            const float corner = std::floor(side * 0.26f);
-            const float pageX0 = centerX - side * 0.38f;
-            const float pageX1 = centerX + side * 0.38f;
-            const LinearColor paper = LinearColor::FromSrgb8(214, 218, 226);
-            list.AddRect({pageX0, y0}, {pageX1 - corner, y0 + corner}, paper);
-            list.AddRect({pageX0, y0 + corner}, {pageX1, y1}, paper);
-            list.AddTriangle({pageX1 - corner, y0}, {pageX1 - corner, y0 + corner}, {pageX1, y0 + corner},
-                             LinearColor{paper.r * 0.65f, paper.g * 0.65f, paper.b * 0.65f, paper.a});
+            DrawIcon(list, icon, {x0, y0}, side);
         }
-        // Bande du type (fichiers) : « 3D », « Image »..., à la largeur du texte.
-        if (icon == TileIcon::File && !badge.empty()) {
+        // Bande du type : « 3D », « Image »..., à la largeur du texte.
+        if (!badge.empty()) {
             const Vector2f badgeSize = ui.MeasureText(badge);
-            const float bandWidth = std::min(width - 8.0f, std::max(badgeSize.x + 10.0f, 30.0f));
+            const float bandWidth = std::min(width - 2.0f, std::max(badgeSize.x + 10.0f, 30.0f));
             const Vector2f bandMin{std::floor(centerX - bandWidth * 0.5f), y1 + 3.0f};
             const Vector2f bandMax{bandMin.x + bandWidth, bandMin.y + bandHeight};
             list.AddRect(bandMin, bandMax, badgeColor);

@@ -23,7 +23,7 @@ namespace FluxEditor {
     // Panneau « Contenu » : les assets du projet (modèles, images...), comme un explorateur de fichiers : l'arbre des
     // dossiers à gauche, le contenu du dossier choisi à droite en vignettes. On y crée des dossiers et on y range
     // les fichiers en les glissant sur un dossier ; les scènes qui les utilisent sont mises à jour. Les scènes sont à
-    // part, dans l'onglet « Scènes », qui utilise GetScenes et ShowSceneMenu d'ici.
+    // part, dans l'onglet « Scènes », qui les montre avec DrawSceneBrowser (mêmes dossiers, mêmes gestes).
     // Le dossier est relu régulièrement : un fichier ajouté hors de l'éditeur apparaît tout seul.
     class ContentBrowser {
         public:
@@ -35,6 +35,10 @@ namespace FluxEditor {
         void ShowSceneMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document,
                            const std::filesystem::path& path);
         static bool IsStartupScene(const Flux::Engine& engine, const std::filesystem::path& path);
+        // Les scènes du projet en vignettes, rangées dans leurs dossiers (ceux qui en contiennent, et les vides) :
+        // double-clic sur une scène pour l'ouvrir, glisser sur un dossier pour l'y ranger. height : hauteur de la
+        // zone des vignettes. Appelé dans un panneau, avant Update dans la frame (le glisser-déposer finit là).
+        void DrawSceneBrowser(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, float height);
 
         private:
         struct Entry
@@ -58,13 +62,15 @@ namespace FluxEditor {
         };
 
         void Scan(const std::filesystem::path& root);
-        const Entry* FindFolder(const std::filesystem::path& path) const;
+        const Entry* FindFolder(const Entry& tree, const std::filesystem::path& path) const;
         void DrawFolder(Flux::UI::Context& ui, const Entry& folder);
-        void DrawFiles(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& folder);
+        void DrawTiles(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& shown,
+                       std::filesystem::path& folder, bool scenes);
         // Icône de l'explorateur de Windows pour ce dossier ou ce type de fichier, demandée une fois par type ;
         // nullptr si Windows n'en donne pas (la vignette dessine alors la sienne).
         const Flux::UI::TextureInfo* GetIcon(Flux::Engine& engine, const Entry& entry);
-        void ShowContextMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry);
+        void ShowContextMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry,
+                             std::filesystem::path& folder);
         // Dossier survolé pendant un glisser-déposer : cible, et cadre autour de sa ligne ou de sa vignette.
         void DropTarget(Flux::UI::Context& ui, const std::filesystem::path& folder);
         void DrawNameWindow(Flux::Engine& engine, SceneDocument& document);
@@ -80,7 +86,10 @@ namespace FluxEditor {
         static void SetStartupScene(Flux::Engine& engine, const std::filesystem::path& path);
 
         std::filesystem::path m_root;
-        Entry m_tree; // le dossier des assets, sans les scènes
+        Entry m_tree;      // le dossier des assets, sans les scènes
+        Entry m_sceneTree; // les scènes et leurs dossiers
+        std::filesystem::path m_sceneFolder; // dossier affiché dans l'onglet Scènes
+        std::filesystem::path m_shownScene;  // scène ouverte à la dernière frame (son dossier est affiché quand elle change)
         std::filesystem::path m_folder;   // dossier affiché à droite
         std::filesystem::path m_selected; // vignette sélectionnée
         Drag m_drag;

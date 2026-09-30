@@ -30,6 +30,7 @@ namespace FluxEditor {
     namespace {
         constexpr float DegreesPerRadian = 180.0f / std::numbers::pi_v<float>;
         constexpr float DragThreshold = 4.0f; // pixels avant qu'une ligne tenue devienne un glisser-déposer
+        constexpr float SceneTilesHeight = 214.0f; // zone des scènes : deux rangées de vignettes
 
         // ancestor est entity ou l'un de ses ancêtres.
         bool IsSelfOrAncestor(const Scene& scene, Entity ancestor, Entity entity) {
@@ -59,36 +60,43 @@ namespace FluxEditor {
         {
             std::string_view key; // du composant (ComponentInfo::key)
             std::string_view title;
+            UI::Icon icon;
         };
         constexpr Category Categories[] = {
-            {"ship", "Vaisseaux"},
-            {"character", "Personnages"},
-            {"model", "Modèles 3D"},
-            {"meshRenderer", "Cubes"},
-            {"collider", "Collisions"},
-            {"seat", "Sièges"},
-            {"screenText", "Textes à l'écran"},
-            {"screenImage", "Images à l'écran"},
-            {"sceneChange", "Changements de scène"},
+            {"ship", "Vaisseaux", UI::Icon::Ship},
+            {"character", "Personnages", UI::Icon::Character},
+            {"model", "Modèles 3D", UI::Icon::Model},
+            {"meshRenderer", "Cubes", UI::Icon::Cube},
+            {"collider", "Collisions", UI::Icon::Collider},
+            {"seat", "Sièges", UI::Icon::Seat},
+            {"screenText", "Textes à l'écran", UI::Icon::Text},
+            {"screenImage", "Images à l'écran", UI::Icon::Image},
+            {"sceneChange", "Changements de scène", UI::Icon::SceneChange},
         };
         constexpr std::string_view EmptyTitle = "Objets vides";
 
-        // Titre du groupe d'une racine : sa catégorie ; sinon le nom de son premier composant (ceux du jeu) ;
-        // sinon « Objets vides ». rank ordonne les groupes : catégories, composants du jeu, objets vides.
-        std::pair<int, std::string> CategoryOf(const Scene& scene, const ComponentRegistry& components, Entity entity) {
+        // Groupe d'une racine (et icône de toute entité) : sa catégorie ; sinon le nom de son premier composant (ceux
+        // du jeu) ; sinon « Objets vides ». rank ordonne les groupes : catégories, composants du jeu, objets vides.
+        struct Kind
+        {
+            int rank;
+            std::string title;
+            UI::Icon icon;
+        };
+        Kind KindOf(const Scene& scene, const ComponentRegistry& components, Entity entity) {
             for (int i = 0; i < static_cast<int>(std::size(Categories)); ++i) {
                 const ComponentInfo* info = components.Find(Categories[i].key);
                 if (info && info->get(scene.GetRegistry(), entity)) {
-                    return {i, std::string(Categories[i].title)};
+                    return {i, std::string(Categories[i].title), Categories[i].icon};
                 }
             }
             for (std::size_t i = 0; i < components.GetCount(); ++i) {
                 const ComponentInfo& info = components.Get(i);
                 if (info.removable && info.get(scene.GetRegistry(), entity)) {
-                    return {static_cast<int>(std::size(Categories)), info.label};
+                    return {static_cast<int>(std::size(Categories)), info.label, UI::Icon::Component};
                 }
             }
-            return {static_cast<int>(std::size(Categories)) + 1, std::string(EmptyTitle)};
+            return {static_cast<int>(std::size(Categories)) + 1, std::string(EmptyTitle), UI::Icon::Empty};
         }
 
         // Nom affiché d'une scène : son fichier sans « .scene.json ».
@@ -138,45 +146,19 @@ namespace FluxEditor {
                 ui.TextDisabled("Mode Jouer : scène non modifiable.");
                 ui.Separator();
             }
-
             const Input& input = engine.GetWindow().GetInput();
             m_mouse = input.GetMousePosition();
             m_hierarchyDrag.target = {};
-            const std::filesystem::path current = document.GetPath().lexically_normal();
-            // Une autre scène vient d'être ouverte : dépliée une fois (on peut la replier ensuite).
-            const bool reveal = current != m_shownScene;
-            m_shownScene = current;
-            bool listed = false;
-            const auto drawScene = [&](const std::filesystem::path& path, const std::string& name, bool file) {
-                const bool open = path == current;
-                ui.PushId(Platform::ToUtf8(path));
-                if (open && reveal) {
-                    ui.SetNextTreeNodeOpen(true);
-                }
-                const std::string label = file && ContentBrowser::IsStartupScene(engine, path) ? name + "  (démarrage)" : name;
-                // Une scène fermée n'a rien à déplier : ses objets ne sont connus qu'une fois ouverte.
-                const UI::Context::TreeNodeResult node = ui.TreeNode(label, open, !open, true);
-                if (node.clicked && !open && !m_readOnly) {
-                    document.OpenFile(engine, path); // propose d'enregistrer la scène en cours d'abord
-                }
-                if (file && !m_readOnly) {
-                    files.ShowSceneMenu(ui, engine, document, path);
-                }
-                if (open && node.open) {
-                    DrawObjects(ui, engine, scene);
-                    ui.TreePop();
-                }
-                ui.PopId();
-            };
-            for (const std::filesystem::path& path : files.GetScenes()) {
-                const std::filesystem::path normal = path.lexically_normal();
-                listed |= normal == current;
-                drawScene(normal, SceneName(normal), true);
-            }
-            // Scène jamais enregistrée (Fichier > Nouvelle scène), ou hors du dossier des assets.
-            if (!listed) {
-                drawScene(current, current.empty() ? std::string("(nouvelle scène)") : SceneName(current), false);
-            }
+
+            // En haut, les fichiers de scène en vignettes (deux rangées visibles) ; en dessous, les objets de la
+            // scène ouverte.
+            files.DrawSceneBrowser(ui, engine, document, SceneTilesHeight);
+            const std::filesystem::path& path = document.GetPath();
+            const std::string name = path.empty() ? std::string("nouvelle scène") : SceneName(path);
+            ui.Text("Objets de « " + name + " »");
+            ui.BeginChild("objets", 0.0f, 0.0f);
+            DrawObjects(ui, engine, scene);
+            ui.EndChild();
 
             HierarchyDrag& drag = m_hierarchyDrag;
             if (drag.entity) {
@@ -202,17 +184,28 @@ namespace FluxEditor {
             return;
         }
         const ComponentRegistry& components = engine.GetComponents();
-        std::map<std::pair<int, std::string>, std::vector<Entity>> groups;
-        scene.ForEachRoot([&](Entity root) { groups[CategoryOf(scene, components, root)].push_back(root); });
-        for (const auto& [category, roots] : groups) {
-            ui.PushId(category.second);
+        std::map<std::pair<int, std::string>, std::pair<UI::Icon, std::vector<Entity>>> groups;
+        scene.ForEachRoot([&](Entity root) {
+            Kind kind = KindOf(scene, components, root);
+            auto& group = groups[{kind.rank, std::move(kind.title)}];
+            group.first = kind.icon;
+            group.second.push_back(root);
+        });
+        for (const auto& [key, group] : groups) {
+            const struct
+            {
+                const std::string& title;
+                UI::Icon icon;
+            } category{key.second, group.first};
+            const std::vector<Entity>& roots = group.second;
+            ui.PushId(category.title);
             // Un groupe se déplie de lui-même quand il contient l'entité à montrer (sélectionnée dans la vue 3D).
             if (m_revealRoot && std::ranges::any_of(roots, [&](Entity root) { return scene.GetId(root) == m_revealRoot; })) {
                 ui.SetNextTreeNodeOpen(true);
                 m_revealRoot = {};
             }
-            const std::string title = category.second + " (" + std::to_string(roots.size()) + ")";
-            const bool open = ui.TreeNode(title, false, false, true).open;
+            const std::string title = category.title + " (" + std::to_string(roots.size()) + ")";
+            const bool open = ui.TreeNode(title, false, false, true, category.icon).open;
             // Un enfant glissé sur le titre d'un groupe redevient une racine (il rejoint le groupe de son type).
             HierarchyDrag& drag = m_hierarchyDrag;
             const Entity dragged = drag.dragging ? scene.FindById(drag.entity) : NullEntity;
@@ -226,7 +219,7 @@ namespace FluxEditor {
             }
             if (open) {
                 for (const Entity root : roots) {
-                    DrawNode(ui, scene, root);
+                    DrawNode(ui, engine, scene, root);
                 }
                 ui.TreePop();
             }
@@ -234,7 +227,7 @@ namespace FluxEditor {
         }
     }
 
-    void SceneEditor::DrawNode(UI::Context& ui, Scene& scene, Entity entity) {
+    void SceneEditor::DrawNode(UI::Context& ui, Engine& engine, Scene& scene, Entity entity) {
         const Uuid id = scene.GetId(entity);
         bool leaf = true;
         scene.ForEachChild(entity, [&](Entity) { leaf = false; });
@@ -245,7 +238,8 @@ namespace FluxEditor {
         }
         // Portée d'identifiant par entité : plusieurs « Cube » ne se confondent pas, et l'état déplié suit l'entité.
         ui.PushId(id.value);
-        const UI::Context::TreeNodeResult node = ui.TreeNode(DisplayName(scene, entity), id == m_selection, leaf);
+        const UI::Context::TreeNodeResult node = ui.TreeNode(DisplayName(scene, entity), id == m_selection, leaf, false,
+                                                             KindOf(scene, engine.GetComponents(), entity).icon);
         if (node.clicked) {
             m_selection = id;
         }
@@ -276,7 +270,7 @@ namespace FluxEditor {
             }
         }
         if (node.open) {
-            scene.ForEachChild(entity, [&](Entity child) { DrawNode(ui, scene, child); });
+            scene.ForEachChild(entity, [&](Entity child) { DrawNode(ui, engine, scene, child); });
             ui.TreePop();
         }
         ui.PopId();

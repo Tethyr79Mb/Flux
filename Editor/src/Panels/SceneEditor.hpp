@@ -82,7 +82,7 @@ namespace FluxEditor {
 
         void DrawScenes(Flux::Engine& engine, Flux::Scene& scene, SceneDocument& document, ContentBrowser& files);
         void DrawObjects(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene);
-        void DrawNode(Flux::UI::Context& ui, Flux::Scene& scene, Flux::Entity entity);
+        void DrawNode(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene, Flux::Entity entity);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
         bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
@@ -102,7 +102,6 @@ namespace FluxEditor {
         // Ancêtres à déplier une fois, pour montrer une entité sélectionnée ou créée hors de l'arbre.
         std::unordered_set<Flux::Uuid> m_reveal;
         Flux::Uuid m_revealRoot; // racine dont le groupe est à déplier une fois
-        std::filesystem::path m_shownScene; // scène dépliée dans l'onglet (la déplier encore quand elle change)
 
         // Angles affichés pour les rotations de l'entité inspectée (clé : "composant/champ") : recalculés seulement
         // si la rotation a changé ailleurs, sinon un glissement franchissant la verticale ferait sauter les valeurs.
