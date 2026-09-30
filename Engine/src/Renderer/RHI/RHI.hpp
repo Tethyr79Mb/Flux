@@ -117,6 +117,9 @@ namespace Flux::RHI {
         Filter filter = Filter::Linear;
         Filter mipFilter = Filter::Linear;
         AddressMode address = AddressMode::Repeat;
+        // Carte d'ombres : la lecture compare une profondeur donnée à celle de la texture (1 si elle est plus proche
+        // ou égale, 0 sinon) ; filtrée, la comparaison adoucit le bord des ombres.
+        bool compare = false;
     };
 
     // Une ressource d'un groupe : texture échantillonnée (avec son sampler) ou buffer de stockage en lecture.
@@ -151,7 +154,7 @@ namespace Flux::RHI {
     };
 
     enum class CullMode : std::uint8_t { None, Back, Front }; // faces avant : sens antihoraire
-    enum class CompareOp : std::uint8_t { Greater, GreaterOrEqual, Less, Always };
+    enum class CompareOp : std::uint8_t { Greater, GreaterOrEqual, Less, LessOrEqual, Always };
     enum class BlendMode : std::uint8_t {
         Opaque,
         Alpha, // mélange classique, couleur non prémultipliée (interface, texte)
@@ -172,7 +175,7 @@ namespace Flux::RHI {
         // Petites constantes envoyées avec chaque appel de dessin (CommandList::PushConstants), vues des deux
         // étapes ; 128 octets au plus sont garantis partout.
         std::uint32_t pushConstantsSize = 0;
-        Format colorFormat = Format::Undefined;
+        Format colorFormat = Format::Undefined; // Undefined : pas de couleur (passe de profondeur seule)
         // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.
         Format depthFormat = Format::Undefined;
         bool depthTest = false;
@@ -180,6 +183,9 @@ namespace Flux::RHI {
         CompareOp depthCompare = CompareOp::Greater; // reverse-Z : plus proche = plus grand
         CullMode cullMode = CullMode::None;
         BlendMode blend = BlendMode::Opaque;
+        // Décalage de la profondeur écrite (carte d'ombres) : constant, et selon la pente de la face.
+        float depthBiasConstant = 0.0f;
+        float depthBiasSlope = 0.0f;
     };
 
     class Buffer {
@@ -221,11 +227,14 @@ namespace Flux::RHI {
     };
 
     // Passe qui dessine dans l'image de la swapchain, effacée, avec un tampon de profondeur effacé (s'il y en a un).
+    // Sans couleur (color = false) : profondeur seule dans `depth` (carte d'ombres, CreateRenderTarget sampled),
+    // lisible par les shaders après EndRenderPass.
     struct RenderPassDesc
     {
         Math::LinearColor clearColor;
-        const Texture* depth = nullptr; // Format::D32Float, de la taille de la swapchain
+        const Texture* depth = nullptr; // Format::D32Float, de la taille de la swapchain (ou de la carte d'ombres)
         float clearDepth = 0.0f;        // reverse-Z : 0 = infiniment loin
+        bool color = true;
     };
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
@@ -274,8 +283,9 @@ namespace Flux::RHI {
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTexture(Format format, Extent extent,
                                                                                    std::span<const std::uint8_t> pixels,
                                                                                    bool mipmaps = false) = 0;
-        // Cible de rendu vierge (tampon de profondeur).
-        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent) = 0;
+        // Cible de rendu vierge (tampon de profondeur). sampled : lue ensuite par les shaders (carte d'ombres).
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
+                                                                                        bool sampled = false) = 0;
         virtual std::expected<std::unique_ptr<Sampler>, std::string> CreateSampler(const SamplerDesc& desc) = 0;
         virtual std::expected<std::unique_ptr<BindGroupLayout>, std::string> CreateBindGroupLayout(const BindGroupLayoutDesc& desc) = 0;
         // nullptr si le layout a atteint son maximum de groupes.

@@ -118,11 +118,14 @@ namespace Flux::Vk {
         void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) override;
 
         private:
+        void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc);
+
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
         VkImage m_image = VK_NULL_HANDLE;
         VkImageView m_view = VK_NULL_HANDLE;
         VkExtent2D m_extent{};
         VkPipelineLayout m_layout = VK_NULL_HANDLE; // du pipeline lié
+        const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
     };
 
     class RhiDevice final : public RHI::Device {
@@ -137,7 +140,8 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
                                                                                 std::span<const std::uint8_t> pixels,
                                                                                 bool mipmaps) override;
-        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent,
+                                                                                     bool sampled) override;
         std::expected<std::unique_ptr<RHI::Sampler>, std::string> CreateSampler(const RHI::SamplerDesc& desc) override;
         std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) override;
         std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;

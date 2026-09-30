@@ -18,6 +18,7 @@ int main() {
         {"modèles 3D (glTF)", RunModelTests},
         {"physique (Jolt)", RunPhysicsTests},
         {"animation squelettique", RunAnimationTests},
+        {"cascades d'ombres", RunShadowTests},
     };
 
     int failures = 0;

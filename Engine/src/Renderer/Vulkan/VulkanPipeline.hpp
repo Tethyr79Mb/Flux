@@ -31,6 +31,9 @@ namespace Flux::Vk {
         VkCullModeFlags cullMode = VK_CULL_MODE_NONE;
         // Mélange alpha classique (couleur non prémultipliée), pour l'UI et le texte.
         bool alphaBlend = false;
+        // Décalage de profondeur (cartes d'ombres) ; 0 et 0 : aucun.
+        float depthBiasConstant = 0.0f;
+        float depthBiasSlope = 0.0f;
     };
 
     // Pipeline graphique pour le dynamic rendering ; viewport et scissor sont dynamiques.

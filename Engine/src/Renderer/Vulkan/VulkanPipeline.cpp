@@ -86,6 +86,11 @@ namespace Flux::Vk {
         rasterization.cullMode = desc.cullMode;
         rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterization.lineWidth = 1.0f;
+        if (desc.depthBiasConstant != 0.0f || desc.depthBiasSlope != 0.0f) {
+            rasterization.depthBiasEnable = VK_TRUE;
+            rasterization.depthBiasConstantFactor = desc.depthBiasConstant;
+            rasterization.depthBiasSlopeFactor = desc.depthBiasSlope;
+        }
 
         VkPipelineMultisampleStateCreateInfo multisample{};
         multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -112,7 +117,8 @@ namespace Flux::Vk {
 
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlend.attachmentCount = 1;
+        const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED; // sinon : profondeur seule
+        colorBlend.attachmentCount = hasColor ? 1 : 0;
         colorBlend.pAttachments = &blendAttachment;
 
         constexpr std::array dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -124,7 +130,7 @@ namespace Flux::Vk {
         // Dynamic rendering : on déclare les formats des attachments au lieu d'un VkRenderPass.
         VkPipelineRenderingCreateInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingInfo.colorAttachmentCount = 1;
+        renderingInfo.colorAttachmentCount = hasColor ? 1 : 0;
         renderingInfo.pColorAttachmentFormats = &desc.colorFormat;
         renderingInfo.depthAttachmentFormat = desc.depthFormat;
 

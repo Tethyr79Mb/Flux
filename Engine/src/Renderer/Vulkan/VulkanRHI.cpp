@@ -1,6 +1,7 @@
 #include "Renderer/Vulkan/VulkanRHI.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace Flux::Vk {
     VkFormat ToVulkan(RHI::Format format) {
@@ -96,6 +97,10 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::BeginRenderPass(const RHI::RenderPassDesc& desc) {
+        if (!desc.color) {
+            BeginDepthOnlyPass(desc);
+            return;
+        }
         // Le contenu précédent est jeté : on efface tout de suite après.
         TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
@@ -138,8 +143,42 @@ namespace Flux::Vk {
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
+    // Carte d'ombres : l'image précédente la lisait peut-être encore (même file : la barrière attend ses lectures).
+    void RhiCommandList::BeginDepthOnlyPass(const RHI::RenderPassDesc& desc) {
+        const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
+        m_depthOnly = &depth;
+        TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        depth.GetAspect());
+        VkRenderingAttachmentInfo depthAttachment{};
+        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView = depth.GetImage().GetView();
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // lue ensuite
+        depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
+
+        VkRenderingInfo renderingInfo{};
+        renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        renderingInfo.renderArea = {{0, 0}, depth.GetImage().GetExtent()};
+        renderingInfo.layerCount = 1;
+        renderingInfo.pDepthAttachment = &depthAttachment;
+        vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
+    }
+
     void RhiCommandList::EndRenderPass() {
         vkCmdEndRendering(m_commandBuffer);
+        if (const RhiTexture* depth = std::exchange(m_depthOnly, nullptr)) {
+            TransitionImage(m_commandBuffer, depth->GetImage().GetHandle(),
+                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                            depth->GetAspect());
+        }
     }
 
     void RhiCommandList::TransitionToPresent() {

@@ -22,3 +22,4 @@ bool RunSceneChangeTests();
 bool RunModelTests();
 bool RunPhysicsTests();
 bool RunAnimationTests();
+bool RunShadowTests();
