@@ -2,6 +2,7 @@
 
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
+#include "Panels/ContentBrowser.hpp"
 #include "Panels/AssetPicker.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -98,17 +99,9 @@ namespace FluxEditor {
             }
             return name;
         }
-
-        // Nouvelle entité visible : un cube gris.
-        Entity CreateCube(Scene& scene, Entity parent) {
-            const Entity entity = scene.CreateEntity(parent == NullEntity ? "Cube" : "Enfant", parent);
-            scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
-            return entity;
-        }
     }
 
-    void SceneEditor::Update(Engine& engine, UndoHistory& history, SceneDocument& document,
-                             std::span<const std::filesystem::path> scenes) {
+    void SceneEditor::Update(Engine& engine, UndoHistory& history, SceneDocument& document, ContentBrowser& files) {
         Scene& scene = engine.GetScene();
         // Mode Jouer : la scène du jeu est jetée à l'arrêt, la modifier ne servirait qu'à perdre des changements.
         // On peut toujours sélectionner et regarder les valeurs.
@@ -118,7 +111,7 @@ namespace FluxEditor {
             RequestDelete();
         }
         Entity selected = m_selection ? scene.FindById(m_selection) : NullEntity;
-        DrawScenes(engine, scene, document, scenes);
+        DrawScenes(engine, scene, document, files);
         DrawInspector(engine, scene, selected);
         ApplyAction(engine, scene, selected, history);
     }
@@ -134,48 +127,40 @@ namespace FluxEditor {
         m_revealRoot = root == NullEntity ? Uuid{} : scene.GetId(root);
     }
 
-    void SceneEditor::DrawScenes(Engine& engine, Scene& scene, SceneDocument& document,
-                                 std::span<const std::filesystem::path> scenes) {
+    void SceneEditor::DrawScenes(Engine& engine, Scene& scene, SceneDocument& document, ContentBrowser& files) {
         UI::Context& ui = engine.GetUi();
         const float screenHeight = static_cast<float>(engine.GetWindow().GetSize().y);
         // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Placer ») : jusqu'en bas.
         const float top = 350.0f + ui.GetMenuBarHeight();
         if (ui.BeginPanel("Scènes", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
+            // Les objets se créent dans l'onglet « Placer ».
             if (m_readOnly) {
                 ui.TextDisabled("Mode Jouer : scène non modifiable.");
-            } else if (ui.Button("Nouveau cube")) {
-                m_pendingAction = Action::CreateRoot;
+                ui.Separator();
             }
-            if (m_selection && !m_readOnly) {
-                ui.SameLine();
-                if (ui.Button("Enfant")) {
-                    m_pendingAction = Action::CreateChild;
-                }
-            }
-            ui.Separator();
 
             const Input& input = engine.GetWindow().GetInput();
             m_mouse = input.GetMousePosition();
             m_hierarchyDrag.target = {};
-            const Project* project = engine.GetProject();
             const std::filesystem::path current = document.GetPath().lexically_normal();
-            const std::filesystem::path startup = project ? project->GetStartupScenePath().lexically_normal()
-                                                          : std::filesystem::path{};
             // Une autre scène vient d'être ouverte : dépliée une fois (on peut la replier ensuite).
             const bool reveal = current != m_shownScene;
             m_shownScene = current;
             bool listed = false;
-            const auto drawScene = [&](const std::filesystem::path& path, const std::string& name) {
+            const auto drawScene = [&](const std::filesystem::path& path, const std::string& name, bool file) {
                 const bool open = path == current;
                 ui.PushId(Platform::ToUtf8(path));
                 if (open && reveal) {
                     ui.SetNextTreeNodeOpen(true);
                 }
-                const std::string label = !path.empty() && path == startup ? name + "  (démarrage)" : name;
+                const std::string label = file && ContentBrowser::IsStartupScene(engine, path) ? name + "  (démarrage)" : name;
                 // Une scène fermée n'a rien à déplier : ses objets ne sont connus qu'une fois ouverte.
                 const UI::Context::TreeNodeResult node = ui.TreeNode(label, open, !open, true);
                 if (node.clicked && !open && !m_readOnly) {
                     document.OpenFile(engine, path); // propose d'enregistrer la scène en cours d'abord
+                }
+                if (file && !m_readOnly) {
+                    files.ShowSceneMenu(ui, engine, document, path);
                 }
                 if (open && node.open) {
                     DrawObjects(ui, engine, scene);
@@ -183,14 +168,14 @@ namespace FluxEditor {
                 }
                 ui.PopId();
             };
-            for (const std::filesystem::path& path : scenes) {
+            for (const std::filesystem::path& path : files.GetScenes()) {
                 const std::filesystem::path normal = path.lexically_normal();
                 listed |= normal == current;
-                drawScene(normal, SceneName(normal));
+                drawScene(normal, SceneName(normal), true);
             }
             // Scène jamais enregistrée (Fichier > Nouvelle scène), ou hors du dossier des assets.
             if (!listed) {
-                drawScene(current, current.empty() ? std::string("(nouvelle scène)") : SceneName(current));
+                drawScene(current, current.empty() ? std::string("(nouvelle scène)") : SceneName(current), false);
             }
 
             HierarchyDrag& drag = m_hierarchyDrag;
@@ -502,7 +487,7 @@ namespace FluxEditor {
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {
         const Action action = std::exchange(m_pendingAction, Action::None);
         if (action == Action::None || m_readOnly
-            || (action != Action::CreateRoot && action != Action::Move && selected == NullEntity)) {
+            || (action != Action::Move && selected == NullEntity)) {
             m_pendingComponent.clear();
             return;
         }
@@ -510,29 +495,6 @@ namespace FluxEditor {
         switch (action) {
             case Action::None:
                 break;
-            case Action::CreateRoot: {
-                // Cinq mètres devant la caméra, dans son secteur : visible tout de suite, même à une année-lumière.
-                const Camera& camera = engine.GetCamera();
-                Math::WorldPosition position = camera.position;
-                position += Math::Vector3d(camera.GetForward()) * 5.0;
-                const Entity entity = CreateCube(scene, NullEntity);
-                scene.Get<TransformComponent>(entity).position = position.offset;
-                if (position.sector != Math::Vector3i64{}) {
-                    scene.Add<SectorComponent>(entity, position.sector);
-                }
-                Select(scene, entity);
-                history.Push("Créer un cube", scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
-                break;
-            }
-            case Action::CreateChild: {
-                const Entity entity = CreateCube(scene, selected);
-                auto& transform = scene.Get<TransformComponent>(entity);
-                transform.position = {1.5, 0.0, 0.0};
-                transform.scale = {0.5f, 0.5f, 0.5f};
-                Select(scene, entity);
-                history.Push("Créer un enfant", scene.GetId(entity), {}, UndoHistory::Capture(engine, scene.GetId(entity)));
-                break;
-            }
             case Action::Delete: {
                 // Avec ses descendants, et sa place parmi ses frères : annuler la remet exactement où elle était.
                 const Uuid id = scene.GetId(selected);

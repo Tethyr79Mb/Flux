@@ -44,9 +44,10 @@ namespace FluxEditor {
             if (!project) {
                 ui.TextDisabled("Aucun projet ouvert.");
             } else if (m_entries.empty()) {
-                ui.TextDisabled("Dossier des assets vide ou introuvable :\n" + Platform::ToUtf8(root));
+                ui.TextDisabled((m_scenes.empty() ? "Dossier des assets vide ou introuvable :\n" : "Aucun asset hors des scènes dans :\n")
+                                + Platform::ToUtf8(root));
             } else {
-                ui.TextDisabled("Double-clic sur une scène pour l'ouvrir,\nclic droit pour les autres actions.");
+                ui.TextDisabled("Clic droit pour les actions. Les scènes sont dans l'onglet Scènes.");
                 ui.Separator();
                 for (const Entry& entry : m_entries) {
                     DrawEntry(ui, engine, document, entry);
@@ -59,7 +60,9 @@ namespace FluxEditor {
 
     void ContentBrowser::Scan(const std::filesystem::path& root) {
         // Récursif ; erreurs ignorées (fichier supprimé pendant la lecture, droits) : l'entrée manque, c'est tout.
-        const auto read = [](const auto& self, const std::filesystem::path& directory) -> std::vector<Entry> {
+        // Les scènes vont dans m_scenes, pas dans l'arbre ; un dossier qui ne contenait que des scènes disparaît.
+        m_scenes.clear();
+        const auto read = [this](const auto& self, const std::filesystem::path& directory) -> std::vector<Entry> {
             std::vector<Entry> entries;
             std::error_code error;
             for (auto it = std::filesystem::directory_iterator(directory, error);
@@ -69,7 +72,14 @@ namespace FluxEditor {
                 entry.name = Platform::ToUtf8(entry.path.filename());
                 entry.directory = it->is_directory(error);
                 if (entry.directory) {
+                    const std::size_t scenes = m_scenes.size();
                     entry.children = self(self, entry.path);
+                    if (entry.children.empty() && m_scenes.size() > scenes) {
+                        continue;
+                    }
+                } else if (IsScene(entry.path)) {
+                    m_scenes.push_back(entry.path);
+                    continue;
                 }
                 entries.push_back(std::move(entry));
             }
@@ -80,18 +90,9 @@ namespace FluxEditor {
             return entries;
         };
         m_entries = root.empty() ? std::vector<Entry>{} : read(read, root);
-
-        m_scenes.clear();
-        const auto collect = [this](const auto& self, const std::vector<Entry>& entries) -> void {
-            for (const Entry& entry : entries) {
-                if (entry.directory) {
-                    self(self, entry.children);
-                } else if (IsScene(entry.path)) {
-                    m_scenes.push_back(entry.path);
-                }
-            }
-        };
-        collect(collect, m_entries);
+        std::ranges::sort(m_scenes, [](const std::filesystem::path& a, const std::filesystem::path& b) {
+            return a.parent_path() != b.parent_path() ? a.parent_path() < b.parent_path() : a.filename() < b.filename();
+        });
     }
 
     void ContentBrowser::DrawEntry(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
@@ -106,13 +107,7 @@ namespace FluxEditor {
                 ui.TreePop();
             }
         } else {
-            const bool current = document.GetPath().lexically_normal() == entry.path.lexically_normal();
-            // La scène que Game.exe charge au lancement est signalée.
-            const std::string label = IsStartupScene(engine, entry.path) ? entry.name + "  (démarrage)" : entry.name;
-            const UI::Context::TreeNodeResult node = ui.TreeNode(label, current, true);
-            if (node.doubleClicked && IsScene(entry.path) && !current) {
-                document.OpenFile(engine, entry.path);
-            }
+            ui.TreeNode(entry.name, false, true);
             ShowContextMenu(ui, engine, document, entry);
         }
         ui.PopId();
@@ -122,42 +117,57 @@ namespace FluxEditor {
         if (!ui.BeginContextMenu()) {
             return;
         }
-        const bool scene = !entry.directory && IsScene(entry.path);
-        if (scene && ui.MenuItem("Ouvrir")) {
-            document.OpenFile(engine, entry.path);
-        }
-        if (scene && ui.MenuItem("Renommer...")) {
-            m_renaming = entry.path;
-            m_newName = entry.name.substr(0, entry.name.size() - SceneExtension.size());
-        }
-        if (scene && ui.MenuItem("Définir comme scène de démarrage", {}, !IsStartupScene(engine, entry.path))) {
-            SetStartupScene(engine, entry.path);
-        }
         if (ui.MenuItem("Afficher dans l'explorateur")) {
             Platform::ShowInExplorer(entry.path);
         }
         // Les dossiers se suppriment dans l'explorateur : trop facile de perdre beaucoup d'un coup ici.
         if (!entry.directory && ui.MenuItem("Supprimer")) {
-            Delete(engine, document, entry);
+            Delete(engine, document, entry.path);
         }
         ui.EndMenu();
     }
 
-    void ContentBrowser::Delete(Engine& engine, SceneDocument& document, const Entry& entry) {
+    void ContentBrowser::ShowSceneMenu(UI::Context& ui, Engine& engine, SceneDocument& document,
+                                       const std::filesystem::path& path) {
+        if (!ui.BeginContextMenu()) {
+            return;
+        }
+        if (ui.MenuItem("Ouvrir", {}, document.GetPath().lexically_normal() != path.lexically_normal())) {
+            document.OpenFile(engine, path);
+        }
+        if (ui.MenuItem("Renommer...")) {
+            const std::string name = Platform::ToUtf8(path.filename());
+            m_renaming = path;
+            m_newName = name.substr(0, name.size() - SceneExtension.size());
+        }
+        if (ui.MenuItem("Définir comme scène de démarrage", {}, !IsStartupScene(engine, path))) {
+            SetStartupScene(engine, path);
+        }
+        if (ui.MenuItem("Afficher dans l'explorateur")) {
+            Platform::ShowInExplorer(path);
+        }
+        if (ui.MenuItem("Supprimer")) {
+            Delete(engine, document, path);
+        }
+        ui.EndMenu();
+    }
+
+    void ContentBrowser::Delete(Engine& engine, SceneDocument& document, const std::filesystem::path& path) {
         const Window& window = engine.GetWindow();
-        if (IsStartupScene(engine, entry.path)) {
-            Platform::ShowError(window, "Supprimer", "« " + entry.name + " » est la scène de démarrage du projet : "
+        const std::string name = Platform::ToUtf8(path.filename());
+        if (IsStartupScene(engine, path)) {
+            Platform::ShowError(window, "Supprimer", "« " + name + " » est la scène de démarrage du projet : "
                                                      "Game.exe ne pourrait plus démarrer.");
             return;
         }
-        if (!Platform::AskYesNo(window, "Supprimer", "Envoyer « " + entry.name + " » à la corbeille ?")) {
+        if (!Platform::AskYesNo(window, "Supprimer", "Envoyer « " + name + " » à la corbeille ?")) {
             return;
         }
-        if (auto deleted = Platform::MoveToRecycleBin(entry.path); !deleted) {
+        if (auto deleted = Platform::MoveToRecycleBin(path); !deleted) {
             Platform::ShowError(window, "Supprimer", deleted.error());
             return;
         }
-        document.ForgetFile(entry.path);
+        document.ForgetFile(path);
         m_sinceScan = ScanInterval; // relu à la prochaine frame
     }
 

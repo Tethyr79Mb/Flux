@@ -7,7 +7,6 @@
 #include <Flux/Scene/Components.hpp>
 
 #include <filesystem>
-#include <span>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -26,6 +25,7 @@ namespace Flux {
 }
 
 namespace FluxEditor {
+    class ContentBrowser;
     class SceneDocument;
     class UndoHistory;
 
@@ -37,8 +37,8 @@ namespace FluxEditor {
     class SceneEditor {
         public:
         // Les actions ponctuelles (créer, supprimer, ajouter un composant) sont enregistrées dans history.
-        void Update(Flux::Engine& engine, UndoHistory& history, SceneDocument& document,
-                    std::span<const std::filesystem::path> scenes);
+        // files : la liste des scènes et leur menu clic droit.
+        void Update(Flux::Engine& engine, UndoHistory& history, SceneDocument& document, ContentBrowser& files);
         // Vrai si un champ de l'inspecteur a modifié l'entité sélectionnée depuis le dernier appel.
         bool TakeModified() { return std::exchange(m_modified, false); }
 
@@ -63,7 +63,7 @@ namespace FluxEditor {
         }
 
         private:
-        enum class Action { None, CreateRoot, CreateChild, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer };
+        enum class Action { None, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer };
 
         // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée.
         enum class DropZone { Before, After, Inside };
@@ -79,8 +79,7 @@ namespace FluxEditor {
             DropZone zone = DropZone::Inside;
         };
 
-        void DrawScenes(Flux::Engine& engine, Flux::Scene& scene, SceneDocument& document,
-                        std::span<const std::filesystem::path> scenes);
+        void DrawScenes(Flux::Engine& engine, Flux::Scene& scene, SceneDocument& document, ContentBrowser& files);
         void DrawObjects(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene);
         void DrawNode(Flux::UI::Context& ui, Flux::Scene& scene, Flux::Entity entity);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
