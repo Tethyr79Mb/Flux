@@ -5,6 +5,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/UI/DrawList.hpp"
+#include "Flux/UI/Icons.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -239,23 +240,24 @@ namespace Flux::UI {
             bool doubleClicked = false;
         };
         // defaultOpen ne sert qu'à la première apparition du nœud.
-        TreeNodeResult TreeNode(std::string_view label, bool selected, bool leaf = false, bool defaultOpen = false);
+        // icon : pictogramme devant le nom (type de l'objet...).
+        TreeNodeResult TreeNode(std::string_view label, bool selected, bool leaf = false, bool defaultOpen = false,
+                                Icon icon = Icon::None);
         void TreePop();
         // Force l'état déplié du prochain TreeNode (pour montrer une sélection faite ailleurs, par exemple).
         void SetNextTreeNodeOpen(bool open);
 
-        // Vignette d'une grille (explorateur de fichiers) : une icône, la bande du type pour un fichier, le nom dessous
-        // (raccourci s'il déborde). image : icône à dessiner (celle du système) ; sans elle, un dossier jaune ou une
-        // page à coin corné. badge : court texte du type (« 3D », « Image ») sur une bande de couleur, fichiers
-        // seulement. Les suivantes avec SameLine tant que GetAvailableWidth le permet.
-        enum class TileIcon { Folder, File };
+        // Vignette d'une grille (explorateur de fichiers) : une icône, une bande de couleur portant badge (court texte
+        // du type : « 3D », « Image » ; pas de bande s'il est vide), le nom dessous (raccourci s'il déborde).
+        // image : icône à dessiner (celle du système) à la place du pictogramme icon.
+        // Les suivantes avec SameLine tant que GetAvailableWidth le permet.
         struct TileResult
         {
             bool clicked = false;
             bool doubleClicked = false;
         };
-        TileResult Tile(std::string_view label, TileIcon icon, std::string_view badge, Math::LinearColor badgeColor,
-                        bool selected, float width, const TextureInfo* image = nullptr);
+        TileResult Tile(std::string_view label, Icon icon, std::string_view badge, Math::LinearColor badgeColor, bool selected,
+                        float width, const TextureInfo* image = nullptr);
 
         // Zone de taille donnée dans le panneau, avec son propre défilement (molette au-dessus d'elle) : deux
         // colonnes qui défilent chacune de leur côté, par exemple. width ou height <= 0 : tout ce qui reste de la

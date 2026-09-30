@@ -33,6 +33,15 @@ namespace FluxEditor {
             return Platform::ToUtf8(path.filename()).ends_with(SceneExtension);
         }
 
+        // Nom affiché d'une scène : son fichier sans « .scene.json ».
+        std::string SceneName(const std::filesystem::path& path) {
+            std::string name = Platform::ToUtf8(path.filename());
+            if (name.ends_with(SceneExtension)) {
+                name.resize(name.size() - SceneExtension.size());
+            }
+            return name;
+        }
+
         constexpr float DragThreshold = 4.0f; // pixels avant qu'une vignette tenue devienne un glisser-déposer
 
         // Caractères refusés par Windows dans un nom de fichier.
@@ -103,6 +112,7 @@ namespace FluxEditor {
         if (root != m_root || m_sinceScan >= ScanInterval) {
             if (root != m_root) {
                 m_folder = root;
+                m_sceneFolder = root;
                 m_selected.clear();
             }
             m_root = root;
@@ -110,7 +120,7 @@ namespace FluxEditor {
             Scan(root);
         }
         // Dossier affiché supprimé ou renommé hors de l'éditeur : retour à la racine.
-        const Entry* folder = FindFolder(m_folder);
+        const Entry* folder = FindFolder(m_tree, m_folder);
         if (!folder) {
             m_folder = m_root;
             folder = &m_tree;
@@ -119,7 +129,6 @@ namespace FluxEditor {
         UI::Context& ui = engine.GetUi();
         const Input& input = engine.GetWindow().GetInput();
         const Math::Vector2i screen = engine.GetWindow().GetSize();
-        m_drag.target.clear();
         // Position sans ancrage (l'éditeur l'ancre en bas) : à droite, sous le panneau « Démo » du jeu.
         const float top = 150.0f + ui.GetMenuBarHeight();
         if (ui.BeginPanel("Contenu", {std::max(316.0f, static_cast<float>(screen.x) - 368.0f), top}, 360.0f,
@@ -146,7 +155,7 @@ namespace FluxEditor {
                 ui.EndChild();
                 ui.SameLine();
                 ui.BeginChild("fichiers", 0.0f, 0.0f);
-                DrawFiles(ui, engine, document, *folder);
+                DrawTiles(ui, engine, document, *folder, m_folder, false);
                 ui.EndChild();
                 // Clic droit dans le fond (hors vignette) : actions sur le dossier affiché.
                 if (ui.BeginContextMenu("fond")) {
@@ -164,7 +173,8 @@ namespace FluxEditor {
         }
         ui.EndPanel();
 
-        // Glisser-déposer : commencé en tenant une vignette, posé en relâchant sur un dossier.
+        // Glisser-déposer : commencé en tenant une vignette (ici ou dans l'onglet Scènes, décrit plus tôt dans la
+        // frame), posé en relâchant sur un dossier. La cible est effacée après : chaque frame la recalcule.
         if (!m_drag.path.empty()) {
             const Math::Vector2f moved = input.GetMousePosition() - m_drag.pressMouse;
             m_drag.dragging |= std::sqrt(moved.x * moved.x + moved.y * moved.y) > DragThreshold;
@@ -176,16 +186,23 @@ namespace FluxEditor {
                 m_drag = {};
             }
         }
+        m_drag.target.clear();
         DrawNameWindow(engine, document);
         DrawRenameWindow(engine, document);
     }
 
     void ContentBrowser::Scan(const std::filesystem::path& root) {
         // Récursif ; erreurs ignorées (fichier supprimé pendant la lecture, droits) : l'entrée manque, c'est tout.
-        // Les scènes vont dans m_scenes, pas dans l'arbre ; un dossier qui ne contenait que des scènes disparaît.
+        // Un seul parcours pour deux arbres : les assets sans les scènes (un dossier qui ne contenait que des scènes
+        // n'y apparaît pas), et les scènes avec les dossiers qui en contiennent ou qui sont vides (tout juste créés).
         m_scenes.clear();
-        const auto read = [this](const auto& self, const std::filesystem::path& directory) -> std::vector<Entry> {
-            std::vector<Entry> entries;
+        struct Trees
+        {
+            std::vector<Entry> assets;
+            std::vector<Entry> scenes;
+        };
+        const auto read = [this](const auto& self, const std::filesystem::path& directory) -> Trees {
+            Trees trees;
             std::error_code error;
             for (auto it = std::filesystem::directory_iterator(directory, error);
                  !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
@@ -194,30 +211,39 @@ namespace FluxEditor {
                 entry.name = Platform::ToUtf8(entry.path.filename());
                 entry.directory = it->is_directory(error);
                 if (entry.directory) {
-                    const std::size_t scenes = m_scenes.size();
-                    entry.children = self(self, entry.path);
-                    if (entry.children.empty() && m_scenes.size() > scenes) {
-                        continue;
+                    Trees children = self(self, entry.path);
+                    const bool empty = children.assets.empty() && children.scenes.empty();
+                    if (!children.scenes.empty() || empty) {
+                        trees.scenes.push_back({entry.path, entry.name, true, std::move(children.scenes)});
+                    }
+                    if (!children.assets.empty() || empty) {
+                        entry.children = std::move(children.assets);
+                        trees.assets.push_back(std::move(entry));
                     }
                 } else if (IsScene(entry.path)) {
                     m_scenes.push_back(entry.path);
-                    continue;
+                    trees.scenes.push_back(std::move(entry));
+                } else {
+                    trees.assets.push_back(std::move(entry));
                 }
-                entries.push_back(std::move(entry));
             }
             // Dossiers d'abord, puis ordre alphabétique : le même d'une lecture à l'autre.
-            std::ranges::sort(entries, [](const Entry& a, const Entry& b) {
+            const auto order = [](const Entry& a, const Entry& b) {
                 return a.directory != b.directory ? a.directory : a.name < b.name;
-            });
-            return entries;
+            };
+            std::ranges::sort(trees.assets, order);
+            std::ranges::sort(trees.scenes, order);
+            return trees;
         };
-        m_tree = {root, "assets", true, root.empty() ? std::vector<Entry>{} : read(read, root)};
+        Trees trees = root.empty() ? Trees{} : read(read, root);
+        m_tree = {root, "assets", true, std::move(trees.assets)};
+        m_sceneTree = {root, "assets", true, std::move(trees.scenes)};
         std::ranges::sort(m_scenes, [](const std::filesystem::path& a, const std::filesystem::path& b) {
             return a.parent_path() != b.parent_path() ? a.parent_path() < b.parent_path() : a.filename() < b.filename();
         });
     }
 
-    const ContentBrowser::Entry* ContentBrowser::FindFolder(const std::filesystem::path& path) const {
+    const ContentBrowser::Entry* ContentBrowser::FindFolder(const Entry& tree, const std::filesystem::path& path) const {
         const auto find = [&](const auto& self, const Entry& entry) -> const Entry* {
             if (entry.path == path) {
                 return &entry;
@@ -231,7 +257,7 @@ namespace FluxEditor {
             }
             return nullptr;
         };
-        return m_root.empty() ? nullptr : find(find, m_tree);
+        return m_root.empty() ? nullptr : find(find, tree);
     }
 
     void ContentBrowser::DropTarget(UI::Context& ui, const std::filesystem::path& folder) {
@@ -277,30 +303,44 @@ namespace FluxEditor {
         ui.PopId();
     }
 
-    // Contenu du dossier en vignettes : ses dossiers puis ses fichiers, en grille.
-    void ContentBrowser::DrawFiles(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& folder) {
-        if (folder.children.empty()) {
-            ui.TextDisabled("Dossier vide. Clic droit : nouveau dossier.\nGlisser une vignette sur un dossier pour l'y ranger.");
+    // Contenu d'un dossier en vignettes : ses dossiers puis ses fichiers, en grille. scenes : l'onglet Scènes
+    // (vignettes de scènes, double-clic pour ouvrir, la scène ouverte en surbrillance) ; folder : le dossier affiché
+    // du panneau, changé par un double-clic sur un dossier.
+    void ContentBrowser::DrawTiles(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& shown,
+                                   std::filesystem::path& folder, bool scenes) {
+        if (shown.children.empty()) {
+            ui.TextDisabled(scenes ? "Aucune scène ici. Clic droit : nouveau dossier." :
+                                     "Dossier vide. Clic droit : nouveau dossier.\nGlisser une vignette sur un dossier pour l'y ranger.");
             return;
         }
         constexpr float TileWidth = 84.0f;
         const float spacing = ui.GetStyle().itemSpacing;
         const int columns = std::max(1, static_cast<int>((ui.GetAvailableWidth() + spacing) / (TileWidth + spacing)));
+        const std::filesystem::path openScene = document.GetPath().lexically_normal();
         int column = 0;
-        for (const Entry& entry : folder.children) {
+        for (const Entry& entry : shown.children) {
             if (column++ % columns != 0) {
                 ui.SameLine();
             }
-            const auto [badge, color] = Badge(entry);
+            const bool scene = scenes && !entry.directory;
+            const bool startup = scene && IsStartupScene(engine, entry.path);
+            const auto [badge, color] = scene     ? std::pair<std::string, Math::LinearColor>{startup ? "Démarrage" : "",
+                                                                                            Math::LinearColor::FromSrgb8(52, 128, 80)}
+                                        : entry.directory ? std::pair<std::string, Math::LinearColor>{}
+                                                          : Badge(entry);
+            const UI::Icon icon = entry.directory ? UI::Icon::Folder : scene ? UI::Icon::Scene : UI::Icon::File;
+            const bool selected = scene ? entry.path.lexically_normal() == openScene : entry.path == m_selected;
             ui.PushId(entry.name);
-            const UI::Context::TileResult tile = ui.Tile(entry.name, entry.directory ? UI::Context::TileIcon::Folder : UI::Context::TileIcon::File,
-                                                                  badge, color, entry.path == m_selected, TileWidth,
-                                                                  GetIcon(engine, entry));
-            if (tile.clicked) {
+            const UI::Context::TileResult tile = ui.Tile(scene ? SceneName(entry.path) : entry.name, icon, badge, color, selected,
+                                                         TileWidth, scene ? nullptr : GetIcon(engine, entry));
+            if (tile.clicked && !scene) {
                 m_selected = entry.path;
             }
+            if (tile.doubleClicked && scene && !selected && !document.IsLocked()) {
+                document.OpenFile(engine, entry.path); // propose d'enregistrer la scène en cours d'abord
+            }
             if (tile.doubleClicked && entry.directory) {
-                m_folder = entry.path;
+                folder = entry.path;
                 m_selected.clear();
             }
             if (ui.IsItemActive() && m_drag.path.empty() && !document.IsLocked()) {
@@ -311,11 +351,58 @@ namespace FluxEditor {
             if (entry.directory) {
                 DropTarget(ui, entry.path);
             }
-            ShowContextMenu(ui, engine, document, entry);
+            if (scene) {
+                if (!document.IsLocked()) {
+                    ShowSceneMenu(ui, engine, document, entry.path);
+                }
+            } else {
+                ShowContextMenu(ui, engine, document, entry, folder);
+            }
             ui.PopId();
             if (tile.doubleClicked && entry.directory) {
                 break; // le contenu affiché change : la suite de la liste n'est plus la bonne
             }
+        }
+    }
+
+    void ContentBrowser::DrawSceneBrowser(UI::Context& ui, Engine& engine, SceneDocument& document, float height) {
+        if (m_root.empty()) {
+            return; // pas encore lu (première frame), ou pas de projet
+        }
+        // Une autre scène vient d'être ouverte : son dossier est affiché.
+        const std::filesystem::path open = document.GetPath().lexically_normal();
+        if (open != m_shownScene) {
+            m_shownScene = open;
+            if (!open.empty() && FindFolder(m_sceneTree, open.parent_path())) {
+                m_sceneFolder = open.parent_path();
+            }
+        }
+        const Entry* shown = FindFolder(m_sceneTree, m_sceneFolder);
+        if (!shown) {
+            m_sceneFolder = m_root;
+            shown = &m_sceneTree;
+        }
+        ui.BeginDisabled(m_sceneFolder == m_root);
+        if (ui.Button("Remonter")) {
+            m_sceneFolder = m_sceneFolder.parent_path();
+        }
+        ui.EndDisabled();
+        ui.SameLine();
+        const std::filesystem::path relative = m_sceneFolder.lexically_relative(m_root);
+        ui.TextDisabled(relative.empty() || relative == "." ? "assets" : "assets/" + Platform::ToGenericUtf8(relative));
+        ui.BeginChild("scenes", 0.0f, height);
+        DrawTiles(ui, engine, document, *shown, m_sceneFolder, true);
+        ui.EndChild();
+        if (ui.BeginContextMenu("fond")) {
+            if (ui.MenuItem("Nouveau dossier...", {}, !document.IsLocked())) {
+                m_request = NameRequest::NewFolder;
+                m_requestPath = m_sceneFolder;
+                m_requestName = "Nouveau dossier";
+            }
+            if (ui.MenuItem("Afficher dans l'explorateur")) {
+                Platform::ShowInExplorer(m_sceneFolder);
+            }
+            ui.EndMenu();
         }
     }
 
@@ -334,12 +421,13 @@ namespace FluxEditor {
         return found->second ? &*found->second : nullptr;
     }
 
-    void ContentBrowser::ShowContextMenu(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
+    void ContentBrowser::ShowContextMenu(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry,
+                                         std::filesystem::path& folder) {
         if (!ui.BeginContextMenu()) {
             return;
         }
         if (entry.directory && ui.MenuItem("Ouvrir")) {
-            m_folder = entry.path;
+            folder = entry.path;
             m_selected.clear();
         }
         if (ui.MenuItem("Renommer...", {}, !document.IsLocked())) {
@@ -475,6 +563,9 @@ namespace FluxEditor {
         if (const std::optional<std::filesystem::path> folder = moved(m_folder)) {
             m_folder = *folder;
         }
+        if (const std::optional<std::filesystem::path> folder = moved(m_sceneFolder)) {
+            m_sceneFolder = *folder;
+        }
         m_sinceScan = ScanInterval; // relu à la prochaine frame
         if (!failures.empty()) {
             std::string list;
@@ -600,17 +691,7 @@ namespace FluxEditor {
             Platform::ShowError(window, "Renommer", "« " + fileName + " » existe déjà.");
             return false;
         }
-        const bool startup = IsStartupScene(engine, from);
-        std::filesystem::rename(from, to, error);
-        if (error) {
-            Platform::ShowError(window, "Renommer", "Renommage impossible : " + error.message());
-            return false;
-        }
-        document.FileRenamed(from, to);
-        if (startup) {
-            SetStartupScene(engine, to); // sinon Game.exe chercherait l'ancien nom
-        }
-        m_sinceScan = ScanInterval; // relu à la prochaine frame
-        return true;
+        // Move met aussi à jour les changements de scène qui la désignent, la scène ouverte et celle de démarrage.
+        return Move(engine, document, from, to);
     }
 }

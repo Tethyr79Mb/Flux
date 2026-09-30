@@ -570,7 +570,7 @@ namespace {
                 ui.EndChild();
                 ui.SameLine();
                 ui.BeginChild("fichiers", 0.0f, 0.0f);
-                const auto tile = ui.Tile("Robot.glb", UI::Context::TileIcon::File, "3D", Math::LinearColor{0.2f, 0.3f, 0.5f, 1.0f}, false, 84.0f);
+                const auto tile = ui.Tile("Robot.glb", UI::Icon::File, "3D", Math::LinearColor{0.2f, 0.3f, 0.5f, 1.0f}, false, 84.0f);
                 tileMin = ui.GetItemRect().min;
                 clicks += tile.clicked ? 1 : 0;
                 doubleClicks += tile.doubleClicked ? 1 : 0;

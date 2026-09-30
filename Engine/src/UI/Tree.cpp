@@ -2,7 +2,7 @@
 #include "ContextImpl.hpp"
 
 namespace Flux::UI {
-    Context::TreeNodeResult Context::TreeNode(std::string_view label, bool selected, bool leaf, bool defaultOpen) {
+    Context::TreeNodeResult Context::TreeNode(std::string_view label, bool selected, bool leaf, bool defaultOpen, Icon icon) {
         Impl& ui = *m_impl;
         TreeNodeResult result;
         if (!ui.panel) {
@@ -55,7 +55,13 @@ namespace Flux::UI {
                                  {x + size * 0.95f, centerY}, style.text);
             }
         }
-        ui.ClippedText({min.x + arrowWidth, min.y + 2.0f}, max.x - 2.0f, VisibleLabel(label), style.text);
+        float textX = min.x + arrowWidth;
+        if (icon != Icon::None) {
+            const float iconSize = std::floor(rowHeight - 4.0f);
+            DrawIcon(list, icon, {textX, min.y + 2.0f}, iconSize);
+            textX += iconSize + 4.0f;
+        }
+        ui.ClippedText({textX, min.y + 2.0f}, max.x - 2.0f, VisibleLabel(label), style.text);
 
         result.open = open && !leaf;
         if (result.open) {
