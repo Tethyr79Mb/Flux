@@ -65,8 +65,9 @@ namespace FluxEditor {
         private:
         enum class Action { None, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer };
 
-        // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée.
-        enum class DropZone { Before, After, Inside };
+        // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée. Root : sur le titre d'un
+        // groupe (Cubes, Vaisseaux...), elle devient une racine.
+        enum class DropZone { Before, After, Inside, Root };
 
         // Glisser-déposer dans la hiérarchie : change l'ordre (donc l'ordre d'affichage de l'interface à l'écran)
         // ou le parent.

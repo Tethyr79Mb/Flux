@@ -212,7 +212,19 @@ namespace FluxEditor {
                 m_revealRoot = {};
             }
             const std::string title = category.second + " (" + std::to_string(roots.size()) + ")";
-            if (ui.TreeNode(title, false, false, true).open) {
+            const bool open = ui.TreeNode(title, false, false, true).open;
+            // Un enfant glissé sur le titre d'un groupe redevient une racine (il rejoint le groupe de son type).
+            HierarchyDrag& drag = m_hierarchyDrag;
+            const Entity dragged = drag.dragging ? scene.FindById(drag.entity) : NullEntity;
+            if (dragged != NullEntity && scene.GetParent(dragged) != NullEntity && ui.IsMouseOverItem()) {
+                drag.target = drag.entity;
+                drag.zone = DropZone::Root;
+                if (UI::DrawList* list = ui.GetPanelDrawList()) {
+                    const UI::Rect row = ui.GetItemRect();
+                    list->AddRectOutline(row.min, row.max, ui.GetStyle().checkMark, 2.0f);
+                }
+            }
+            if (open) {
                 for (const Entity root : roots) {
                     DrawNode(ui, scene, root);
                 }
@@ -507,12 +519,16 @@ namespace FluxEditor {
             case Action::Move: {
                 const Entity entity = scene.FindById(m_pendingMove.entity);
                 const Entity target = scene.FindById(m_pendingMove.target);
-                if (entity == NullEntity || target == NullEntity || entity == target) {
+                const bool toRoot = m_pendingMove.zone == DropZone::Root;
+                if (entity == NullEntity || target == NullEntity || (entity == target && !toRoot)) {
                     break;
                 }
                 Entity parent = scene.GetParent(target);
                 Entity before = target;
-                if (m_pendingMove.zone == DropZone::Inside) {
+                if (toRoot) {
+                    parent = NullEntity;
+                    before = NullEntity; // dernière racine : dessinée par-dessus les autres
+                } else if (m_pendingMove.zone == DropZone::Inside) {
                     parent = target;
                     before = NullEntity; // dernier enfant : dessiné par-dessus ses frères
                     m_reveal.insert(m_pendingMove.target);
