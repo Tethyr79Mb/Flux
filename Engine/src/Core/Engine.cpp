@@ -202,6 +202,7 @@ namespace Flux {
 
         if (!m_physics) {
             m_physics = std::make_unique<PhysicsWorld>();
+            m_physics->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
         }
         const Entity player = m_physics->GetPlayer();
         const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;

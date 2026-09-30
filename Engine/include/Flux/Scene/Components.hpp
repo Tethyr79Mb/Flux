@@ -74,6 +74,7 @@ namespace Flux {
         Box,     // size
         Sphere,  // radius
         Capsule, // radius et height, debout selon y
+        Mesh,    // triangles d'un modèle glTF (mesh, sinon le modèle de l'entité) : décor ou coque, jamais simulé
     };
 
     // Collision et physique (Jolt) d'une entité, pendant le jeu seulement. La forme est dans le repère de l'entité :
@@ -88,6 +89,9 @@ namespace Flux {
         float radius = 0.5f;
         float height = 2.0f; // capsule : hauteur totale, extrémités arrondies comprises
         Math::Vector3f center; // décalage du centre de la forme
+        // Maillage : fichier .glb/.gltf relatif aux assets du projet, souvent une version simplifiée du modèle
+        // (sols, parois, marches). Vide : le modèle affiché (ModelComponent) de l'entité.
+        std::string mesh;
 
         bool simulatePhysics = false;
         float mass = 0.0f;          // kg, objet simulé ; 0 : d'après le volume (densité de 1000 kg/m³, celle de l'eau)
@@ -134,6 +138,9 @@ namespace Flux {
     {
         bool pilot = false;
         Math::Vector3f eye{0.0f, 1.3f, -0.35f}; // œil du personnage assis dans le repère du siège (vue cockpit)
+        // Où le personnage se retrouve debout en se relevant, dans le repère du siège : un demi-mètre devant par
+        // défaut (là où finit l'animation « se lever »), derrière dans un cockpit trop étroit pour passer devant.
+        Math::Vector3f exit{0.0f, 0.0f, -0.5f};
     };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés

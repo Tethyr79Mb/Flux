@@ -22,8 +22,6 @@ namespace Flux {
     namespace Seats {
         // Distance du joueur au siège pour s'y asseoir, en mètres.
         inline constexpr float Reach = 1.5f;
-        // Debout, le personnage sort à tant de mètres devant le siège (là où finit l'animation « se lever »).
-        inline constexpr float StandOffset = 0.5f;
 
         // Durées des animations « s'asseoir » et « se lever » d'un personnage, en secondes (0 : immédiat).
         struct Durations

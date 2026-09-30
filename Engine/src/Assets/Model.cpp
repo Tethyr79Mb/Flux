@@ -209,6 +209,7 @@ namespace Flux {
         struct Loader {
             const cgltf_data& gltf;
             std::filesystem::path directory; // pour les images à côté du fichier
+            bool images = true;              // false : images ignorées (triangles seulement)
             ModelData model{};
             // Image du fichier -> indice dans model.images (-1 : pas encore lue, -2 : illisible).
             std::vector<int> imageSlots{};
@@ -282,7 +283,9 @@ namespace Flux {
                         material.baseColor = {factor[0], factor[1], factor[2], factor[3]};
                         texture = source.pbr_specular_glossiness.diffuse_texture.texture;
                     }
-                    if (texture && texture->image) {
+                    if (!images) {
+                        // Triangles seulement : ni image, ni avertissement.
+                    } else if (texture && texture->image) {
                         material.baseColorImage = LoadImage(texture->image);
                     } else if (texture) {
                         model.warnings.push_back("matériau « " + material.name + " » : image dans un format non géré (KTX2, WebP)");
@@ -753,7 +756,7 @@ namespace Flux {
         }
     }
 
-    std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path) {
+    std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images) {
         const std::string fileName = Platform::ToUtf8(path.filename());
         const cgltf_options options = FileOptions();
         auto parsed = Parse(path, options);
@@ -780,7 +783,7 @@ namespace Flux {
             return std::unexpected("« " + fileName + " » : " + Describe(result));
         }
 
-        Loader loader{.gltf = *gltf, .directory = path.parent_path()};
+        Loader loader{.gltf = *gltf, .directory = path.parent_path(), .images = images};
         loader.Load();
         if (loader.model.indices.empty()) {
             return std::unexpected("« " + fileName + " » : aucun triangle");
