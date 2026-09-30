@@ -138,6 +138,18 @@ namespace {
         CHECK(glassModel && glassModel->materials.size() == 1);
         CHECK(glassModel->materials[0].blend && glassModel->materials[0].alphaCutoff == 0.0f);
         CHECK(glassModel->materials[0].baseColor.a == 0.25f && glassModel->warnings.empty());
+        CHECK(glassModel->materials[0].emissive.r == 0.0f && glassModel->materials[0].emissiveImage == -1);
+        CHECK(skin.emissive.r == 0.0f && skin.emissive.g == 0.0f && skin.emissive.b == 0.0f);
+
+        // Émissif : facteur multiplié par KHR_materials_emissive_strength.
+        const std::string screen = R"(, "materials": [{"name": "Écran", "emissiveFactor": [1, 0.5, 0.25],
+                "extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 4}}}])";
+        const std::string screenJson = TriangleJson(true, buffer.size(), R"(, "uri": "donn%C3%A9es%20%C3%A9.bin")", "", screen);
+        WriteFile(directory / "ecran.gltf", screenJson.data(), screenJson.size());
+        const auto screenModel = LoadModelFile(directory / "ecran.gltf");
+        CHECK(screenModel && screenModel->materials.size() == 1);
+        const ModelMaterial& lit = screenModel->materials[0];
+        CHECK(lit.emissive.r == 4.0f && lit.emissive.g == 2.0f && lit.emissive.b == 1.0f && lit.emissiveImage == -1);
 
         // À copier avec le .gltf : le .bin (l'image est intégrée).
         const auto files = ListModelFiles(path);

@@ -18,10 +18,12 @@ namespace Flux {
     struct GpuMaterial
     {
         Math::LinearColor baseColor{1.0f, 1.0f, 1.0f, 1.0f};
+        Math::LinearColor emissive{0.0f, 0.0f, 0.0f, 1.0f}; // multiplie l'image émissive
         float alphaCutoff = 0.0f;
         bool doubleSided = false;
         bool blend = false; // transparent : dessiné dans la passe triée
-        std::unique_ptr<RHI::BindGroup> group; // son image de couleur de base ; nullptr : l'image blanche
+        // Ses images (couleur de base, émissive ; blanche si absente) ; nullptr : aucune image, le groupe blanc.
+        std::unique_ptr<RHI::BindGroup> group;
     };
 
     // Modèle 3D envoyé au GPU (le cube du moteur, ou un fichier glTF), et de quoi voir si le fichier a changé.
@@ -43,13 +45,13 @@ namespace Flux {
     };
 
     // Modèles des fichiers glTF (et le cube du moteur) sur le GPU : chargés au premier appel, relus si le fichier
-    // change, avec leurs matériaux (une image de couleur de base chacun, groupe 0 des shaders de maillage).
+    // change, avec leurs matériaux (images de couleur de base et émissive, groupe 0 des shaders de maillage).
     class ModelCache {
         public:
         static std::expected<std::unique_ptr<ModelCache>, std::string> Create(RHI::Device& device);
 
         const RHI::BindGroupLayout& GetMaterialLayout() const { return *m_materialLayout; }
-        // Matériau sans image.
+        // Matériau sans image (les deux emplacements sur l'image blanche).
         const RHI::BindGroup& GetWhiteGroup() const { return *m_whiteGroup; }
         const GpuModel& GetCube() const { return m_cube; }
 

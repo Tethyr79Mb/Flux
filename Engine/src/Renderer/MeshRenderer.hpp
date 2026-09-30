@@ -43,6 +43,7 @@ namespace Flux {
         {
             const GpuModel* model;
             Math::LinearColor tint;
+            Math::LinearColor emissive; // cube qui émet (MeshRendererComponent::emission), ajouté à celui du matériau
             Math::Vector3f center; // de sa boîte, relatif à la caméra
             float radius = 0.0f;   // sphère englobant sa boîte : tri des cascades
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
@@ -55,6 +56,22 @@ namespace Flux {
             Math::Matrix4f world;
             // Matrice des normales par colonnes ; normal[1][3] : premier os dans le buffer des os (bits d'un entier)
             std::array<std::array<float, 4>, 3> normal;
+        };
+
+        // Doit correspondre à LightData dans shaders/Mesh.slang : une lumière de la scène.
+        struct LightData
+        {
+            std::array<float, 4> positionRange; // relative à la caméra ; portée
+            std::array<float, 4> color;         // couleur x intensité ; 1 spot, 0 ponctuelle
+            std::array<float, 4> direction;     // axe du spot ; cosinus du demi-angle
+            std::array<float, 4> spot;          // 1 / (cosinus du début du fondu - cosinus du demi-angle)
+        };
+
+        // Lumière retenue pour l'image, et sa distance à la caméra (les plus proches d'abord s'il y en a trop).
+        struct PreparedLight
+        {
+            LightData data;
+            float distance;
         };
 
         // Primitive transparente d'une entité, dessinée après les opaques.
@@ -86,6 +103,7 @@ namespace Flux {
         explicit MeshRenderer(RHI::Device& device) : m_device(device) {}
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
+        void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
         void Pose(const GpuModel& model, const AnimatorComponent* animator);
         void Upload(const Camera& camera, float aspect, std::uint32_t frameIndex);
         static bool IsTransparent(const MeshDraw& draw, const GpuMaterial& material);
@@ -103,6 +121,7 @@ namespace Flux {
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_jointBuffers;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_drawBuffers;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_frameBuffers;
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_lightBuffers;
         std::array<std::unique_ptr<RHI::BindGroup>, RHI::FramesInFlight> m_frameGroups;
         // Une seule carte pour les deux images en vol : la passe d'ombres d'une image attend (même file) que la
         // précédente ait fini de la lire.
@@ -116,6 +135,8 @@ namespace Flux {
         std::vector<DrawData> m_drawData; // une par entité de m_draws, envoyées au GPU
         std::vector<TransparentDraw> m_transparent; // triés du plus loin au plus proche
         std::vector<Math::Matrix4f> m_jointMatrices;
+        std::vector<PreparedLight> m_lights;
+        std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         PoseEvaluator m_poseEvaluator;
     };
 }

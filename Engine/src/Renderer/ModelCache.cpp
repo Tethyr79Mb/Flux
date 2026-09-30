@@ -8,7 +8,7 @@
 
 namespace Flux {
     namespace {
-        // Matériaux de modèles chargés au plus : un groupe chacun (son image de couleur de base).
+        // Matériaux de modèles chargés au plus : un groupe chacun (ses images).
         constexpr std::uint32_t MaxMaterials = 4096;
         // Intervalle entre deux vérifications de la date d'un fichier (relu s'il a changé) : assez court pour voir
         // une retouche aussitôt, assez long pour ne pas interroger le disque à chaque image.
@@ -62,8 +62,10 @@ namespace Flux {
         }
         cache->m_sampler = std::move(*sampler);
 
-        constexpr RHI::Binding binding{0, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
-        auto layout = device.CreateBindGroupLayout({.bindings = {&binding, 1}, .maxGroups = 1 + MaxMaterials});
+        // 0 : couleur de base, 1 : émissive.
+        constexpr std::array bindings{RHI::Binding{0, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+                                      RHI::Binding{1, RHI::BindingType::Texture, RHI::ShaderStage::Fragment}};
+        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 1 + MaxMaterials});
         if (!layout) {
             return std::unexpected(layout.error());
         }
@@ -80,6 +82,7 @@ namespace Flux {
             return std::unexpected("allocation du groupe de l'image blanche");
         }
         cache->m_whiteGroup->SetTexture(0, *cache->m_whiteImage, *cache->m_sampler);
+        cache->m_whiteGroup->SetTexture(1, *cache->m_whiteImage, *cache->m_sampler);
 
         auto cube = cache->Upload(BuildCube(), "cube");
         if (!cube) {
@@ -126,17 +129,27 @@ namespace Flux {
             imageSlots[i] = static_cast<int>(model.images.size());
             model.images.push_back(std::move(*image));
         }
+        // Image envoyée au GPU pour cet indice de ModelData::images ; nullptr si aucune (ou refusée).
+        const auto imageFor = [&](int index) -> const RHI::Texture* {
+            if (index < 0 || imageSlots[static_cast<std::size_t>(index)] < 0) {
+                return nullptr;
+            }
+            return model.images[static_cast<std::size_t>(imageSlots[static_cast<std::size_t>(index)])].get();
+        };
         for (const ModelMaterial& source : data.materials) {
             GpuMaterial material;
             material.baseColor = source.baseColor;
+            material.emissive = source.emissive;
             material.alphaCutoff = source.alphaCutoff;
             material.doubleSided = source.doubleSided;
             material.blend = source.blend;
-            if (source.baseColorImage >= 0 && imageSlots[static_cast<std::size_t>(source.baseColorImage)] >= 0) {
+            const RHI::Texture* baseColor = imageFor(source.baseColorImage);
+            const RHI::Texture* emissive = imageFor(source.emissiveImage);
+            if (baseColor || emissive) {
                 material.group = m_device.CreateBindGroup(*m_materialLayout);
                 if (material.group) {
-                    const auto slot = static_cast<std::size_t>(imageSlots[static_cast<std::size_t>(source.baseColorImage)]);
-                    material.group->SetTexture(0, *model.images[slot], *m_sampler);
+                    material.group->SetTexture(0, baseColor ? *baseColor : *m_whiteImage, *m_sampler);
+                    material.group->SetTexture(1, emissive ? *emissive : *m_whiteImage, *m_sampler);
                 } else {
                     std::fprintf(stderr, "Flux : plus de %u matériaux chargés, « %s » sans image\n", MaxMaterials, source.name.c_str());
                 }

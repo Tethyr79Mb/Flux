@@ -24,7 +24,8 @@ namespace FluxEditor {
     // déplacement (une flèche par axe du monde), rotation (un anneau par axe du monde) ou échelle (un axe par axe de
     // l'objet, et le carré du centre pour les trois à la fois). Mode choisi par les boutons en haut à gauche de la
     // vue ou les touches W, E, R. Les textes et images à l'écran de la scène y sont dessinés comme dans le jeu, et se
-    // déplacent en les glissant.
+    // déplacent en les glissant. Les lumières y sont montrées par une ampoule (sélection au clic) et, sélectionnées,
+    // par leur portée.
     class SceneViewport {
         public:
         enum class GizmoMode { Move, Rotate, Scale };
@@ -87,5 +88,12 @@ namespace FluxEditor {
         std::vector<Flux::RelativeTransform> m_transforms; // gardé d'une frame à l'autre : pas d'allocation
         // Éléments à l'écran dessinés à la frame précédente (sélection au clic).
         std::vector<Flux::ScreenUi::ItemRect> m_screenRects;
+        // Ampoules des lumières à l'écran, à cette frame (dessin et sélection au clic).
+        struct LightIcon
+        {
+            Flux::Entity entity;
+            Flux::Math::Vector2f center;
+        };
+        std::vector<LightIcon> m_lightIcons;
     };
 }

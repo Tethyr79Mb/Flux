@@ -30,6 +30,10 @@ namespace Flux {
         std::string name;
         Math::LinearColor baseColor{1.0f, 1.0f, 1.0f, 1.0f}; // multiplie l'image
         int baseColorImage = -1; // indice dans ModelData::images ; -1 : pas d'image
+        // Lumière propre (écrans, voyants), ajoutée à l'éclairage : facteur x image (KHR_materials_emissive_strength
+        // compris). Noir : aucune.
+        Math::LinearColor emissive{0.0f, 0.0f, 0.0f, 1.0f};
+        int emissiveImage = -1;
         // Seuil d'alpha sous lequel le pixel est jeté (feuillages, cheveux) ; 0 : opaque.
         float alphaCutoff = 0.0f;
         bool doubleSided = false; // faces arrière dessinées aussi
@@ -127,10 +131,10 @@ namespace Flux {
     };
 
     // glTF 2.0, texte (.gltf avec ses .bin et images à côté) ou binaire (.glb). Lit les maillages en triangles,
-    // la couleur de base (facteur et image), l'alpha masqué et les faces doubles, les squelettes et les animations
-    // (pas les morph targets). Les extensions de compression (Draco,
+    // la couleur de base (facteur et image), l'émissif (facteur, image, intensité), l'alpha masqué et les faces
+    // doubles, les squelettes et les animations (pas les morph targets). Les extensions de compression (Draco,
     // meshopt, KTX2) ne sont pas gérées : le fichier est refusé. images = false : les images ne sont pas décodées
-    // (ModelData::images vide, baseColorImage à -1), pour qui n'a besoin que des triangles (collisions).
+    // (ModelData::images vide, baseColorImage et emissiveImage à -1), pour qui n'a besoin que des triangles (collisions).
     FLUX_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true);
 
     // Fichiers dont dépend un modèle (.bin, images), relatifs à son dossier, avec des « / » : ce qu'il faut copier

@@ -8,6 +8,7 @@
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/Scene/Picking.hpp>
 #include <Flux/UI/DrawList.hpp>
+#include <Flux/UI/Icons.hpp>
 
 #include <algorithm>
 #include <array>
@@ -38,6 +39,8 @@ namespace FluxEditor {
         constexpr float MaxScale = 1.0e6f;
         constexpr float UniformScalePixels = 200.0f; // glisser de 200 pixels multiplie l'échelle par e
         constexpr Vector3d Axes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+        constexpr float LightIconSize = 24.0f;   // ampoule qui montre une lumière (invisible sinon), cliquable
+        constexpr int CircleSegments = 48;       // cercles de la portée d'une lumière
 
         // Boutons de mode, en haut à gauche de la vue.
         struct ToolbarButton
@@ -122,6 +125,50 @@ namespace FluxEditor {
             }
             const Entity ship = scene.GetShip(entity);
             return ship != NullEntity ? ship : entity;
+        }
+
+        // Cercle de centre center dans le plan (u, v) (unitaires, perpendiculaires), en segments à l'écran.
+        void DrawCircle(UI::DrawList& list, const ScreenProjection& projection, const Vector3d& center, const Vector3d& u,
+                        const Vector3d& v, double radius, Math::LinearColor color) {
+            for (int i = 0; i < CircleSegments; ++i) {
+                const double a0 = 2.0 * std::numbers::pi * i / CircleSegments;
+                const double a1 = 2.0 * std::numbers::pi * (i + 1) / CircleSegments;
+                Vector2f p0;
+                Vector2f p1;
+                if (projection.ProjectSegment(center + (u * std::cos(a0) + v * std::sin(a0)) * radius,
+                                              center + (u * std::cos(a1) + v * std::sin(a1)) * radius, p0, p1)) {
+                    list.AddLine(p0, p1, color, 1.5f);
+                }
+            }
+        }
+
+        // Portée de la lumière sélectionnée : trois cercles pour une ponctuelle (la sphère qu'elle éclaire), le cône et
+        // son fond pour un spot.
+        void DrawLightRange(UI::DrawList& list, const ScreenProjection& projection, const RelativeTransform& transform,
+                            const LightComponent& light, Math::LinearColor color) {
+            const Vector3d center = transform.position;
+            const double range = light.range;
+            if (light.type == LightType::Point) {
+                DrawCircle(list, projection, center, Axes[0], Axes[1], range, color);
+                DrawCircle(list, projection, center, Axes[1], Axes[2], range, color);
+                DrawCircle(list, projection, center, Axes[2], Axes[0], range, color);
+                return;
+            }
+            const Vector3d axis = transform.rotation.Rotate(Vector3d{0.0, 0.0, -1.0});
+            const Vector3d u = transform.rotation.Rotate(Axes[0]);
+            const Vector3d v = transform.rotation.Rotate(Axes[1]);
+            const double half = 0.5 * std::clamp(static_cast<double>(light.angle), 1.0, 179.0) * std::numbers::pi / 180.0;
+            // Le fond du cône sur la sphère de portée : à range x cos devant, de rayon range x sin.
+            const Vector3d baseCenter = center + axis * (range * std::cos(half));
+            const double baseRadius = range * std::sin(half);
+            DrawCircle(list, projection, baseCenter, u, v, baseRadius, color);
+            for (const Vector3d& side : {u, -u, v, -v}) {
+                Vector2f a;
+                Vector2f b;
+                if (projection.ProjectSegment(center, baseCenter + side * baseRadius, a, b)) {
+                    list.AddLine(a, b, color, 1.5f);
+                }
+            }
         }
 
         // Anneau de rotation d'un axe du monde : cercle dans le plan perpendiculaire, découpé en segments à l'écran.
@@ -484,6 +531,15 @@ namespace FluxEditor {
         const Vector2f mouse = input.GetMousePosition();
         const Ray ray = projection.GetRay(mouse);
         scene.ComputeRelativeTransforms(camera.position, m_transforms);
+        // Lumières : invisibles en elles-mêmes, une ampoule à l'écran les montre et se clique.
+        m_lightIcons.clear();
+        for (const RelativeTransform& transform : m_transforms) {
+            if (scene.TryGet<LightComponent>(transform.entity)) {
+                if (const std::optional<Vector2f> point = projection.ToScreen(transform.position)) {
+                    m_lightIcons.push_back({transform.entity, *point});
+                }
+            }
+        }
         const auto findTransform = [&](Entity entity) -> RelativeTransform* {
             const auto found = std::ranges::find(m_transforms, entity, &RelativeTransform::entity);
             return found == m_transforms.end() ? nullptr : &*found;
@@ -609,6 +665,12 @@ namespace FluxEditor {
                     if (const std::optional<ScreenUi::Offset> offset = ScreenUi::FindOffset(scene, item->entity)) {
                         m_screenDrag = {true, scene.GetId(item->entity), *offset->x, *offset->y, mouse};
                     }
+                } else if (const auto icon = std::ranges::find_if(m_lightIcons.rbegin(), m_lightIcons.rend(), [&](const auto& light) {
+                               return std::abs(mouse.x - light.center.x) <= 0.5f * LightIconSize
+                                   && std::abs(mouse.y - light.center.y) <= 0.5f * LightIconSize;
+                           });
+                           icon != m_lightIcons.rend()) {
+                    sceneEditor.Select(scene, icon->entity);
                 } else {
                     // Clic dans le vide : désélectionne.
                     sceneEditor.Select(scene, SelectableOf(scene, PickEntity(m_transforms, ray, [&engine](Entity entity) {
@@ -626,11 +688,24 @@ namespace FluxEditor {
                        {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); },
                         .rects = &m_screenRects,
                         .placeholders = true});
+        list.SetClipRect(view.min, view.max);
+        for (const LightIcon& icon : m_lightIcons) {
+            const Vector2f half{0.5f * LightIconSize, 0.5f * LightIconSize};
+            if (icon.entity == selected) {
+                list.AddRectOutline(icon.center - half - Vector2f{2.0f, 2.0f}, icon.center + half + Vector2f{2.0f, 2.0f},
+                                    Math::LinearColor::FromSrgb8(255, 165, 40), 2.0f);
+            }
+            UI::DrawIcon(list, UI::Icon::Light, icon.center - half, LightIconSize);
+        }
+        list.ResetClipRect();
         DrawToolbar(engine, view);
         if (!selectedTransform) {
             return;
         }
         list.SetClipRect(view.min, view.max);
+        if (const auto* light = scene.TryGet<LightComponent>(selected)) {
+            DrawLightRange(list, projection, *selectedTransform, *light, Math::LinearColor::FromSrgb8(250, 214, 90));
+        }
         if (selectedIsScreen) {
             // Le dernier rectangle de l'entité : son texte s'il y en a un (dessiné après l'image).
             const auto rect = std::ranges::find(m_screenRects.rbegin(), m_screenRects.rend(), selected, &ScreenUi::ItemRect::entity);
