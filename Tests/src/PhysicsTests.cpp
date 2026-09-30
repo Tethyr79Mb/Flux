@@ -7,8 +7,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <numbers>
+#include <string>
+#include <vector>
 
 using namespace Flux;
 
@@ -359,11 +365,94 @@ namespace {
         frames(0.5, {});
         const Math::Vector3d stood = scene.Get<TransformComponent>(hero).position;
         CHECK(std::abs(stood.x) < 0.05 && std::abs(stood.z + 3.5) < 0.05 && std::abs(stood.y) < 0.05);
+
+        // Sortie réglée derrière le siège (cockpit étroit) : il se relève 1,2 m derrière.
+        scene.Get<SeatComponent>(seat).exit = {0.0f, 0.0f, 1.2f};
+        frames(Frame, interact);
+        frames(1.1, {});
+        CHECK(character.seatState == SeatState::Seated);
+        frames(Frame, interact);
+        frames(1.6, {});
+        const Math::Vector3d behind = scene.Get<TransformComponent>(hero).position;
+        CHECK(character.seatState == SeatState::Standing);
+        CHECK(std::abs(behind.x) < 0.05 && std::abs(behind.z + 1.8) < 0.05 && std::abs(behind.y) < 0.05);
+        return true;
+    }
+
+    // Sol en maillage (ColliderShape::Mesh) : un carré de 10 m en deux triangles, dans un .gltf à côté de son .bin.
+    void WriteMeshFloor(const std::filesystem::path& directory) {
+        const float positions[] = {-5.0f, 0.0f, -5.0f, 5.0f, 0.0f, -5.0f, 5.0f, 0.0f, 5.0f, -5.0f, 0.0f, 5.0f};
+        const std::uint32_t indices[] = {0, 2, 1, 0, 3, 2}; // antihoraires vus du dessus
+        std::vector<char> buffer(sizeof(positions) + sizeof(indices));
+        std::memcpy(buffer.data(), positions, sizeof(positions));
+        std::memcpy(buffer.data() + sizeof(positions), indices, sizeof(indices));
+        std::ofstream(directory / "sol.bin", std::ios::binary).write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::string json = R"({"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+            "accessors": [{"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3", "min": [-5, 0, -5], "max": [5, 0, 5]},
+                          {"bufferView": 1, "componentType": 5125, "count": 6, "type": "SCALAR"}],
+            "bufferViews": [{"buffer": 0, "byteLength": 48}, {"buffer": 0, "byteOffset": 48, "byteLength": 24}],
+            "buffers": [{"byteLength": 72, "uri": "sol.bin"}]})";
+        std::ofstream(directory / "sol.gltf", std::ios::binary) << json;
+    }
+
+    bool RunMeshTests() {
+        const std::filesystem::path directory = std::filesystem::temp_directory_path() / "FluxPhysicsTests";
+        std::error_code error;
+        std::filesystem::remove_all(directory, error);
+        std::filesystem::create_directories(directory);
+        WriteMeshFloor(directory);
+
+        Scene scene;
+        // Le carré agrandi 2 fois (20 m) : un personnage lâché à 8 m du centre, hors du carré d'origine, s'y pose.
+        const Entity floor = scene.CreateEntity("Sol");
+        scene.Get<TransformComponent>(floor).scale = {2.0f, 1.0f, 2.0f};
+        ColliderComponent& collider = scene.Add<ColliderComponent>(floor);
+        collider.shape = ColliderShape::Mesh;
+        collider.mesh = "sol.gltf";
+        collider.simulatePhysics = true; // impossible pour un maillage : reste immobile
+        const Entity hero = scene.CreateEntity("Joueur");
+        scene.Get<TransformComponent>(hero).position = {8.0, 2.0, 8.0};
+        scene.Add<CharacterComponent>(hero);
+        // Le même carré à 1,2 m, qui n'arrête que la caméra (une verrière) : le personnage le traverse en tombant.
+        const Entity glass = scene.CreateEntity("Verrière");
+        TransformComponent& glassTransform = scene.Get<TransformComponent>(glass);
+        glassTransform.position = {0.0, 1.2, 0.0};
+        glassTransform.scale = {2.0f, 1.0f, 2.0f};
+        ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
+        glassCollider.shape = ColliderShape::Mesh;
+        glassCollider.mesh = "sol.gltf";
+        glassCollider.cameraOnly = true;
+        // Sans fichier (ni maillage, ni modèle) : pas de collision, sans planter.
+        const Entity empty = scene.CreateEntity("Vide");
+        scene.Get<TransformComponent>(empty).position = {0.0, -50.0, 0.0};
+        scene.Add<ColliderComponent>(empty).shape = ColliderShape::Mesh;
+        // Fichier absent : de même.
+        const Entity missing = scene.CreateEntity("Absent");
+        scene.Get<TransformComponent>(missing).position = {0.0, -60.0, 0.0};
+        ColliderComponent& missingCollider = scene.Add<ColliderComponent>(missing);
+        missingCollider.shape = ColliderShape::Mesh;
+        missingCollider.mesh = "absent.glb";
+
+        PhysicsWorld world;
+        world.SetAssetsDirectory(directory);
+        Run(world, scene, 1.5);
+        const Math::Vector3d landed = scene.Get<TransformComponent>(hero).position;
+        CHECK(std::abs(landed.y) < 0.05 && std::abs(landed.x - 8.0) < 0.05);
+        CHECK(scene.Get<TransformComponent>(floor).position == Math::Vector3d{});
+        CHECK(world.GetBodyCount() == 2);
+        // La caméra s'y arrête, par-dessus comme par-dessous (envers des faces, vu d'un cockpit).
+        constexpr float Radius = 0.2f;
+        const Math::WorldPosition above{{}, {8.0, 3.0, 8.0}};
+        const Math::WorldPosition below{{}, {8.0, 0.5, 8.0}};
+        CHECK(std::abs(world.CastCamera(scene, hero, above, {0.0f, -1.0f, 0.0f}, 5.0f, Radius) - 1.6f) < 0.05f);
+        CHECK(std::abs(world.CastCamera(scene, hero, below, {0.0f, 1.0f, 0.0f}, 5.0f, Radius) - 0.5f) < 0.05f);
+        std::filesystem::remove_all(directory, error);
         return true;
     }
 }
 
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests() && RunCameraTests()
-        && RunSeatTests();
+        && RunSeatTests() && RunMeshTests();
 }

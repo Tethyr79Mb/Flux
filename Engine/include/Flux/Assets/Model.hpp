@@ -127,8 +127,9 @@ namespace Flux {
     // glTF 2.0, texte (.gltf avec ses .bin et images à côté) ou binaire (.glb). Lit les maillages en triangles,
     // la couleur de base (facteur et image), l'alpha masqué et les faces doubles, les squelettes et les animations
     // (pas les morph targets). Les extensions de compression (Draco,
-    // meshopt, KTX2) ne sont pas gérées : le fichier est refusé.
-    FLUX_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path);
+    // meshopt, KTX2) ne sont pas gérées : le fichier est refusé. images = false : les images ne sont pas décodées
+    // (ModelData::images vide, baseColorImage à -1), pour qui n'a besoin que des triangles (collisions).
+    FLUX_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true);
 
     // Fichiers dont dépend un modèle (.bin, images), relatifs à son dossier, avec des « / » : ce qu'il faut copier
     // avec un .gltf pour qu'il reste lisible ailleurs. Vide pour un .glb autonome.

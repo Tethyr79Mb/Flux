@@ -25,6 +25,7 @@ namespace FluxEditor {
         constexpr float DragThreshold = 4.0f; // pixels avant qu'un bouton tenu devienne un glisser-déposer
         constexpr double PlaceDistance = 5.0; // mètres devant la caméra (ou le long du rayon de la souris)
         constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
+        constexpr double FighterDistance = 32.0; // le chasseur fait 20 m de long et 15 m d'envergure
 
         // Maquette de vaisseau en cubes, dans son repère (-z : l'avant, le pont à y = 0) : une cabine de 6 x 3 x 16 m
         // ouverte à l'arrière, avec une console à l'avant. De quoi essayer la marche à bord avant le vrai modèle.
@@ -62,6 +63,30 @@ namespace FluxEditor {
             addPart({"Dossier", {0.0, 0.9, 0.32}, {0.6f, 0.8f, 0.1f}, 70}, seat);
         }
 
+        // Chasseur monoplace (modèle du projet, dans Modeles/Chasseur) : coque affichée et collision en maillage
+        // simplifié (sols, parois, marches, rampe), verrière qui retient la caméra, poste de pilotage. Origine du
+        // vaisseau : le plancher du cockpit, l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. On y monte par
+        // la rampe arrière et la soute ; en se relevant, le pilote sort derrière son siège, en haut des marches (devant,
+        // les consoles le coinceraient).
+        void AddFighter(Scene& scene, Entity ship) {
+            const Entity hull = scene.CreateEntity("Coque", ship);
+            scene.Add<ModelComponent>(hull).model = "Modeles/Chasseur/Chasseur.glb";
+            ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
+            collider.shape = ColliderShape::Mesh;
+            collider.mesh = "Modeles/Chasseur/Chasseur-collision.glb";
+            // La verrière n'arrête que la caméra : debout dans le cockpit, le personnage la frôle.
+            const Entity glass = scene.CreateEntity("Verrière", ship);
+            ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
+            glassCollider.shape = ColliderShape::Mesh;
+            glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
+            glassCollider.cameraOnly = true;
+            const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
+            scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -4.0};
+            SeatComponent& component = scene.Add<SeatComponent>(seat);
+            component.pilot = true;
+            component.exit = {0.0f, 0.0f, 1.2f};
+        }
+
         struct ItemInfo
         {
             const char* label;
@@ -74,7 +99,8 @@ namespace FluxEditor {
                                            {"Image à l'écran", "Image"},
                                            {"Changement de scène", "Changement de scène"},
                                            {"Personnage...", "Joueur"},
-                                           {"Vaisseau (maquette)", "Vaisseau"}};
+                                           {"Vaisseau (maquette)", "Vaisseau"},
+                                           {"Chasseur", "Chasseur"}};
             return Infos[item];
         }
 
@@ -123,6 +149,8 @@ namespace FluxEditor {
             ui.TextDisabled("Physique (en mode Jouer)");
             button(Item::Character);
             button(Item::Ship);
+            ui.SameLine();
+            button(Item::Fighter);
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
             ui.EndDisabled();
@@ -218,13 +246,16 @@ namespace FluxEditor {
             } else if (item == Item::Ship) {
                 scene.Add<ShipComponent>(entity);
                 AddShipBlockout(scene, entity);
+            } else if (item == Item::Fighter) {
+                scene.Add<ShipComponent>(entity);
+                AddFighter(scene, entity);
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();
             const Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
                                                   : Math::Vector3d(camera.GetForward());
             Math::WorldPosition position = camera.position;
-            position += direction * (item == Item::Ship ? ShipDistance : PlaceDistance);
+            position += direction * (item == Item::Ship ? ShipDistance : item == Item::Fighter ? FighterDistance : PlaceDistance);
             scene.Get<TransformComponent>(entity).position = position.offset;
             if (position.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, position.sector);
@@ -232,9 +263,9 @@ namespace FluxEditor {
         }
 
         sceneEditor.Select(scene, entity);
-        // Avec ses enfants (la maquette) : annuler retire tout, rétablir remet tout.
+        // Avec ses enfants (maquette, chasseur) : annuler retire tout, rétablir remet tout.
         history.Push(std::string("Placer : ") + info.label, scene.GetId(entity), {},
-                     UndoHistory::Capture(engine, scene.GetId(entity), item == Item::Ship));
+                     UndoHistory::Capture(engine, scene.GetId(entity), item == Item::Ship || item == Item::Fighter));
         if (item == Item::Character) {
             sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
         }

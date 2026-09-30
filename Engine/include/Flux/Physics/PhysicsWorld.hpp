@@ -5,6 +5,7 @@
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/Scene/Components.hpp"
 
+#include <filesystem>
 #include <memory>
 
 namespace Flux {
@@ -38,6 +39,10 @@ namespace Flux {
         // (corps dynamiques et personnages). Les réglages d'une forme ou d'un corps modifiés après sa création
         // sont ignorés jusqu'au prochain monde.
         void Update(Scene& scene, double deltaSeconds, const CharacterInput& input);
+
+        // Dossier des assets du projet, d'où sont lus les maillages de collision (ColliderShape::Mesh), une fois par
+        // fichier. Vide : pas de collision en maillage.
+        void SetAssetsDirectory(const std::filesystem::path& directory);
 
         // « Bas » de ce monde : (0, -9.81, 0) par défaut. Gravité artificielle d'une station : le sol du pont.
         void SetGravity(const Math::Vector3f& gravity);

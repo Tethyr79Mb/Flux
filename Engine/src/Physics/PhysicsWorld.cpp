@@ -1,5 +1,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 
+#include "Flux/Assets/Model.hpp"
+#include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
 
@@ -17,7 +19,9 @@
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -28,6 +32,7 @@
 #include <cstdio>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -41,11 +46,13 @@ namespace Flux {
         // Au plus tant de pas par image : après un blocage, la simulation ralentit au lieu de s'emballer.
         constexpr int MaxStepsPerUpdate = 4;
 
-        // Deux calques : les objets immobiles ne se testent pas entre eux.
+        // Calques : les objets immobiles ne se testent pas entre eux ; ceux qui n'arrêtent que la caméra (verrière)
+        // ne touchent rien, seul le lancer de la caméra les voit.
         namespace Layers {
             constexpr JPH::ObjectLayer NonMoving = 0;
             constexpr JPH::ObjectLayer Moving = 1;
-            constexpr JPH::uint Count = 2;
+            constexpr JPH::ObjectLayer CameraOnly = 2;
+            constexpr JPH::uint Count = 3;
         }
 
         class BroadPhaseLayers final : public JPH::BroadPhaseLayerInterface {
@@ -56,7 +63,11 @@ namespace Flux {
             }
 #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
             const char* GetBroadPhaseLayerName(JPH::BroadPhaseLayer layer) const override {
-                return static_cast<JPH::BroadPhaseLayer::Type>(layer) == Layers::NonMoving ? "immobile" : "mobile";
+                switch (static_cast<JPH::BroadPhaseLayer::Type>(layer)) {
+                    case Layers::NonMoving: return "immobile";
+                    case Layers::Moving: return "mobile";
+                    default: return "caméra";
+                }
             }
 #endif
         };
@@ -64,13 +75,20 @@ namespace Flux {
         class ObjectVsBroadPhase final : public JPH::ObjectVsBroadPhaseLayerFilter {
             public:
             bool ShouldCollide(JPH::ObjectLayer layer, JPH::BroadPhaseLayer broadPhase) const override {
-                return layer == Layers::Moving || static_cast<JPH::BroadPhaseLayer::Type>(broadPhase) == Layers::Moving;
+                const auto other = static_cast<JPH::BroadPhaseLayer::Type>(broadPhase);
+                if (layer == Layers::CameraOnly || other == Layers::CameraOnly) {
+                    return false;
+                }
+                return layer == Layers::Moving || other == Layers::Moving;
             }
         };
 
         class ObjectPairs final : public JPH::ObjectLayerPairFilter {
             public:
             bool ShouldCollide(JPH::ObjectLayer a, JPH::ObjectLayer b) const override {
+                if (a == Layers::CameraOnly || b == Layers::CameraOnly) {
+                    return false;
+                }
                 return a == Layers::Moving || b == Layers::Moving;
             }
         };
@@ -114,12 +132,19 @@ namespace Flux {
             return std::max({std::abs(v.x), std::abs(v.y), std::abs(v.z)});
         }
 
-        // Forme de base de la collision (sans le décalage du centre), à l'échelle de l'entité.
-        JPH::ShapeSettings::ShapeResult CreateBaseShape(const ColliderComponent& collider, const Math::Vector3f& absScale,
-                                                        bool simulated) {
+        // Forme de base de la collision (sans le décalage du centre), à l'échelle de l'entité. mesh : triangles déjà
+        // prêts (ColliderShape::Mesh), dans le repère du modèle.
+        JPH::ShapeSettings::ShapeResult CreateBaseShape(const ColliderComponent& collider, const Math::Vector3f& scale,
+                                                        bool simulated, const JPH::Shape* mesh) {
+            const Math::Vector3f absScale{std::abs(scale.x), std::abs(scale.y), std::abs(scale.z)};
             // Une forme plate ou nulle n'a pas de volume : Jolt la refuserait. Un objet simulé minuscule (quelques
             // milligrammes, inertie quasi nulle) rend la simulation instable jusqu'aux NaN : 5 cm au moins.
             const float MinSize = simulated ? 0.05f : 1.0e-3f;
+            if (collider.shape == ColliderShape::Mesh) {
+                // Échelle de l'entité (miroir compris) ; une échelle nulle écraserait tout en un plan.
+                const auto axis = [](float value) { return std::copysign(std::max(std::abs(value), 1.0e-3f), value); };
+                return JPH::ScaledShapeSettings(mesh, JPH::Vec3(axis(scale.x), axis(scale.y), axis(scale.z))).Create();
+            }
             if (collider.shape == ColliderShape::Sphere) {
                 return JPH::SphereShapeSettings(std::max(collider.radius * MaxComponent(absScale), MinSize)).Create();
             }
@@ -136,14 +161,20 @@ namespace Flux {
         }
 
         // Forme de la collision, à l'échelle de l'entité. nullptr (et un message) si Jolt la refuse.
-        JPH::RefConst<JPH::Shape> CreateShape(const ColliderComponent& collider, const Math::Vector3f& scale, bool simulated) {
-            const Math::Vector3f absScale{std::abs(scale.x), std::abs(scale.y), std::abs(scale.z)};
-            JPH::ShapeSettings::ShapeResult result = CreateBaseShape(collider, absScale, simulated);
-            if (result.HasError()) {
-                std::fprintf(stderr, "Flux : forme de collision refusée : %s\n", result.GetError().c_str());
-                return nullptr;
+        JPH::RefConst<JPH::Shape> CreateShape(const ColliderComponent& collider, const Math::Vector3f& scale, bool simulated,
+                                              const JPH::Shape* mesh) {
+            JPH::RefConst<JPH::Shape> shape;
+            JPH::ShapeSettings::ShapeResult result;
+            if (collider.shape == ColliderShape::Mesh && scale == Math::Vector3f{1.0f, 1.0f, 1.0f}) {
+                shape = mesh; // partagé par toutes les entités du même fichier
+            } else {
+                result = CreateBaseShape(collider, scale, simulated, mesh);
+                if (result.HasError()) {
+                    std::fprintf(stderr, "Flux : forme de collision refusée : %s\n", result.GetError().c_str());
+                    return nullptr;
+                }
+                shape = result.Get();
             }
-            JPH::RefConst<JPH::Shape> shape = result.Get();
             const Math::Vector3f center{collider.center.x * scale.x, collider.center.y * scale.y, collider.center.z * scale.z};
             if (center != Math::Vector3f{}) {
                 result = JPH::RotatedTranslatedShapeSettings(ToJolt(center), JPH::Quat::sIdentity(), shape).Create();
@@ -153,6 +184,39 @@ namespace Flux {
                 shape = result.Get();
             }
             return shape;
+        }
+
+        // Triangles d'un fichier glTF pour une collision (ColliderShape::Mesh). nullptr (et un message) s'il est
+        // illisible ou animé : ses sommets ne sont pas dans la pose affichée.
+        JPH::RefConst<JPH::Shape> LoadMeshShape(const std::filesystem::path& path) {
+            const std::string name = Platform::ToUtf8(path.filename());
+            std::expected<ModelData, std::string> model = LoadModelFile(path, false);
+            if (!model) {
+                std::fprintf(stderr, "Flux : maillage de collision illisible : %s\n", model.error().c_str());
+                return nullptr;
+            }
+            if (model->IsAnimated()) {
+                std::fprintf(stderr, "Flux : « %s » est animé : pas de collision sur ses triangles (prendre une capsule "
+                                     "ou un fichier statique)\n", name.c_str());
+                return nullptr;
+            }
+            JPH::VertexList vertices;
+            vertices.reserve(model->vertices.size());
+            for (const ModelVertex& vertex : model->vertices) {
+                vertices.push_back(JPH::Float3(vertex.position.x, vertex.position.y, vertex.position.z));
+            }
+            JPH::IndexedTriangleList triangles;
+            triangles.reserve(model->indices.size() / 3);
+            for (std::size_t i = 0; i + 2 < model->indices.size(); i += 3) {
+                triangles.push_back(JPH::IndexedTriangle(model->indices[i], model->indices[i + 1], model->indices[i + 2]));
+            }
+            // Les triangles plats (arêtes confondues) sont retirés par Jolt.
+            const JPH::ShapeSettings::ShapeResult result = JPH::MeshShapeSettings(std::move(vertices), std::move(triangles)).Create();
+            if (result.HasError()) {
+                std::fprintf(stderr, "Flux : maillage de collision « %s » refusé : %s\n", name.c_str(), result.GetError().c_str());
+                return nullptr;
+            }
+            return result.Get();
         }
 
         struct Character {
@@ -205,6 +269,10 @@ namespace Flux {
         double accumulator = 0.0;
         Entity player = NullEntity;
         bool warnedChild = false;
+        bool warnedMeshSimulated = false;
+        std::filesystem::path assetsDirectory; // pour les maillages de collision
+        // Maillages de collision déjà lus, par chemin relatif aux assets (nullptr : illisible, pas de nouvel essai).
+        std::unordered_map<std::string, JPH::RefConst<JPH::Shape>> meshes;
 
         Impl() {
             AcquireJolt();
@@ -317,7 +385,7 @@ namespace Flux {
                         const RelativeTransform& transform) {
             // Coque d'un vaisseau : elle bouge avec lui, les objets de son parent s'y cognent.
             const bool hull = scene.TryGet<ShipComponent>(entity) != nullptr;
-            bool simulated = collider.simulatePhysics && !hull;
+            bool simulated = collider.simulatePhysics && !hull && !collider.cameraOnly;
             if (simulated && scene.GetParent(entity) != grid.frame) {
                 // La physique réécrirait la position locale comme si elle était celle de son repère.
                 if (!warnedChild) {
@@ -328,7 +396,22 @@ namespace Flux {
                 }
                 simulated = false;
             }
-            const JPH::RefConst<JPH::Shape> shape = CreateShape(collider, transform.scale, simulated);
+            const JPH::Shape* mesh = nullptr;
+            if (collider.shape == ColliderShape::Mesh) {
+                // Jolt ne simule pas un maillage (ni masse ni volume) : décor immobile ou coque.
+                if (simulated && !warnedMeshSimulated) {
+                    std::fprintf(stderr, "Flux : « %s » : une collision en maillage ne peut pas être simulée, elle reste immobile\n",
+                                 scene.Get<NameComponent>(entity).name.c_str());
+                    warnedMeshSimulated = true;
+                }
+                simulated = false;
+                mesh = FindMesh(scene, entity, collider);
+                if (!mesh) {
+                    grid.bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
+                    return;
+                }
+            }
+            const JPH::RefConst<JPH::Shape> shape = CreateShape(collider, transform.scale, simulated, mesh);
             if (!shape) {
                 grid.bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
                 return;
@@ -338,7 +421,9 @@ namespace Flux {
                                                       : JPH::EMotionType::Static;
             const bool moving = motion != JPH::EMotionType::Static;
             JPH::BodyCreationSettings settings(shape, JPH::RVec3(ToJolt(transform.position)), ToJoltRotation(transform.rotation),
-                                               motion, moving ? Layers::Moving : Layers::NonMoving);
+                                               motion, collider.cameraOnly ? Layers::CameraOnly
+                                                       : moving           ? Layers::Moving
+                                                                          : Layers::NonMoving);
             settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(entity));
             settings.mFriction = collider.friction;
             settings.mRestitution = collider.restitution;
@@ -350,6 +435,26 @@ namespace Flux {
             const JPH::BodyID id = grid.system->GetBodyInterface().CreateAndAddBody(
                 settings, moving ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
             grid.bodies.emplace(entity, id);
+        }
+
+        // Maillage de collision d'une entité : son fichier, ou à défaut celui de son modèle. Lu une fois par fichier.
+        const JPH::Shape* FindMesh(const Scene& scene, Entity entity, const ColliderComponent& collider) {
+            std::string relative = collider.mesh;
+            if (relative.empty()) {
+                if (const auto* model = scene.TryGet<ModelComponent>(entity)) {
+                    relative = model->model;
+                }
+            }
+            if (relative.empty() || assetsDirectory.empty()) {
+                std::fprintf(stderr, "Flux : « %s » : collision en maillage sans fichier (ni maillage, ni modèle 3D)\n",
+                             scene.Get<NameComponent>(entity).name.c_str());
+                return nullptr;
+            }
+            auto found = meshes.find(relative);
+            if (found == meshes.end()) {
+                found = meshes.emplace(relative, LoadMeshShape(assetsDirectory / Platform::PathFromUtf8(relative))).first;
+            }
+            return found->second.GetPtr();
         }
 
         void CreateCharacter(Grid& grid, Entity entity, const CharacterComponent& component, const RelativeTransform& transform) {
@@ -479,7 +584,7 @@ namespace Flux {
 
         // Personnage sur un siège : posé dessus, face à son -z, sans physique (true). En se relevant, il est remis
         // debout devant le siège.
-        bool Sit(const Grid& grid, Character& character, Entity seat) {
+        bool Sit(const Scene& scene, const Grid& grid, Character& character, Entity seat) {
             if (seat == NullEntity && character.seat == NullEntity) {
                 return false; // debout, comme d'habitude
             }
@@ -493,7 +598,10 @@ namespace Flux {
             const Math::Vector3f forward = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
             JPH::Vec3 position = ToJolt(transform.position);
             if (seat == NullEntity) {
-                position += ToJolt(forward) * Seats::StandOffset; // vient de se relever
+                // Vient de se relever : à la sortie du siège, dans son repère.
+                const auto* component = scene.IsValid(previous) ? scene.TryGet<SeatComponent>(previous) : nullptr;
+                const Math::Vector3f exit = component ? component->exit : SeatComponent{}.exit;
+                position += ToJolt(transform.rotation.Rotate(exit));
                 body.SetPosition(JPH::RVec3(position));
                 body.SetLinearVelocity(JPH::Vec3::sZero());
                 return false;
@@ -519,7 +627,7 @@ namespace Flux {
                 const CharacterComponent& component = scene.Get<CharacterComponent>(entity);
                 JPH::CharacterVirtual& body = *character.character;
                 body.SetUp(up);
-                if (Sit(grid, character, component.seat)) {
+                if (Sit(scene, grid, character, component.seat)) {
                     continue;
                 }
                 body.UpdateGroundVelocity();
@@ -688,6 +796,8 @@ namespace Flux {
                 const JPH::RShapeCast cast(sphere, JPH::Vec3::sOne(), JPH::RMat44::sTranslation(JPH::RVec3(ToJolt(origin))),
                                            ToJolt(direction));
                 JPH::ShapeCastSettings settings;
+                // Vue de l'intérieur, une verrière ou une coque en maillage montre l'envers de ses faces.
+                settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
                 JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
                 grid->system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
                 if (collector.HadHit()) {
@@ -708,6 +818,13 @@ namespace Flux {
 
     void PhysicsWorld::SetGravity(const Math::Vector3f& gravity) {
         m_impl->grids.front()->system->SetGravity(ToJolt(gravity));
+    }
+
+    void PhysicsWorld::SetAssetsDirectory(const std::filesystem::path& directory) {
+        if (directory != m_impl->assetsDirectory) {
+            m_impl->assetsDirectory = directory;
+            m_impl->meshes.clear();
+        }
     }
 
     Math::Vector3f PhysicsWorld::GetGravity() const {

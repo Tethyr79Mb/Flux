@@ -4,6 +4,7 @@
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
 
 #include <expected>
@@ -30,7 +31,8 @@ namespace Flux {
         Renderer& operator=(const Renderer&) = delete;
 
         // Retourne false sur une erreur irrécupérable (device perdu, etc.).
-        bool RenderFrame(const Scene& scene, const Camera& camera);
+        // `hidden` et ses descendants ne sont pas dessinés : le personnage quand la caméra est dans sa tête.
+        bool RenderFrame(const Scene& scene, const Camera& camera, Entity hidden = NullEntity);
 
         void SetClearColor(Math::LinearColor color);
 

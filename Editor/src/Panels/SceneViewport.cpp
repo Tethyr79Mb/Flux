@@ -255,6 +255,8 @@ namespace FluxEditor {
                     DrawCapsule(list, projection, transform, collider->center, collider->radius,
                                 std::max(collider->height * 0.5f - collider->radius, 0.0f), color);
                     break;
+                case ColliderShape::Mesh:
+                    break; // des milliers de triangles : le contour orange du modèle suffit
             }
         }
     }

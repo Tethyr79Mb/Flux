@@ -50,12 +50,15 @@ namespace Flux {
             .Enum("shape", "Forme", &ColliderComponent::shape,
                   {{"box", "Boîte", ColliderShape::Box},
                    {"sphere", "Sphère", ColliderShape::Sphere},
-                   {"capsule", "Capsule", ColliderShape::Capsule}})
+                   {"capsule", "Capsule", ColliderShape::Capsule},
+                   {"mesh", "Maillage", ColliderShape::Mesh}})
             .Field("size", "Taille (boîte)", &ColliderComponent::size, {.speed = 0.01, .min = 0.001, .max = 1.0e6})
             .Field("radius", "Rayon", &ColliderComponent::radius, {.speed = 0.01, .min = 0.001, .max = 1.0e6, .decimals = 2})
             .Field("height", "Hauteur (capsule)", &ColliderComponent::height, {.speed = 0.01, .min = 0.001, .max = 1.0e6, .decimals = 2})
             .Field("center", "Centre", &ColliderComponent::center, {.speed = 0.01})
+            .Asset("mesh", "Maillage (vide : le modèle)", &ColliderComponent::mesh, AssetType::Model)
             .Field("simulatePhysics", "Simuler la physique", &ColliderComponent::simulatePhysics)
+            .Field("cameraOnly", "Arrête seulement la caméra", &ColliderComponent::cameraOnly)
             .Field("mass", "Masse (kg, 0 : auto)", &ColliderComponent::mass, {.speed = 0.1, .min = 0.0, .max = 1.0e9, .decimals = 1})
             .Field("friction", "Frottement", &ColliderComponent::friction, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
             .Field("restitution", "Rebond", &ColliderComponent::restitution, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
@@ -78,7 +81,8 @@ namespace Flux {
             .Field("turnRate", "Virage (°/s)", &ShipComponent::turnRate, {.speed = 0.5, .min = 0.0, .max = 720.0, .decimals = 1});
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
-            .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01});
+            .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})
+            .Field("exit", "Sortie", &SeatComponent::exit, {.speed = 0.01});
         registry.Register<AnimatorComponent>("animator", "Animation")
             .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
             .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)
