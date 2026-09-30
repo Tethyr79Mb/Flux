@@ -5,7 +5,9 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
+#include <Flux/Platform/Icons.hpp>
 #include <Flux/Platform/Window.hpp>
+#include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
 #include <Flux/Scene/ComponentRegistry.hpp>
@@ -292,7 +294,8 @@ namespace FluxEditor {
             const auto [badge, color] = Badge(entry);
             ui.PushId(entry.name);
             const UI::Context::TileResult tile = ui.Tile(entry.name, entry.directory ? UI::Context::TileIcon::Folder : UI::Context::TileIcon::File,
-                                                                  badge, color, entry.path == m_selected, TileWidth);
+                                                                  badge, color, entry.path == m_selected, TileWidth,
+                                                                  GetIcon(engine, entry));
             if (tile.clicked) {
                 m_selected = entry.path;
             }
@@ -314,6 +317,21 @@ namespace FluxEditor {
                 break; // le contenu affiché change : la suite de la liste n'est plus la bonne
             }
         }
+    }
+
+    const UI::TextureInfo* ContentBrowser::GetIcon(Engine& engine, const Entry& entry) {
+        std::string key = "/";
+        if (!entry.directory) {
+            key = Platform::ToUtf8(entry.path.extension());
+            std::ranges::transform(key, key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        }
+        auto [found, created] = m_icons.try_emplace(key);
+        if (created) {
+            if (const std::optional<ImageData> icon = Platform::GetShellIcon(entry.directory ? std::string_view{} : key)) {
+                found->second = engine.GetRenderer().CreateTexture(*icon);
+            }
+        }
+        return found->second ? &*found->second : nullptr;
     }
 
     void ContentBrowser::ShowContextMenu(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {

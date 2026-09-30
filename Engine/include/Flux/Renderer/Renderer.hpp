@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Assets/Image.hpp"
 #include "Flux/Export.hpp"
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
@@ -55,6 +56,9 @@ namespace Flux {
         // fichier est relu s'il a changé (vérifié une fois par seconde). nullopt si le fichier est absent ou illisible
         // (message dans la console). Au plus 256 images différentes.
         std::optional<UI::TextureInfo> LoadTexture(const std::filesystem::path& path);
+        // Image déjà en mémoire (icône du système...) : une nouvelle texture à chaque appel, gardée jusqu'à la
+        // fermeture ; l'appelant garde le résultat. Compte dans les 256 images. nullopt si l'image est invalide.
+        std::optional<UI::TextureInfo> CreateTexture(const ImageData& image);
 
         // Dossier des assets du projet : les modèles de la scène (ModelComponent) y sont cherchés. Vide (sans projet) :
         // aucun modèle dessiné, les cubes seulement.

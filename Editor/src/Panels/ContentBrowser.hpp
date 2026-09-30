@@ -1,9 +1,12 @@
 #pragma once
 
 #include <Flux/Math/Vector2.hpp>
+#include <Flux/UI/DrawList.hpp>
 
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Flux {
@@ -58,6 +61,9 @@ namespace FluxEditor {
         const Entry* FindFolder(const std::filesystem::path& path) const;
         void DrawFolder(Flux::UI::Context& ui, const Entry& folder);
         void DrawFiles(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& folder);
+        // Icône de l'explorateur de Windows pour ce dossier ou ce type de fichier, demandée une fois par type ;
+        // nullptr si Windows n'en donne pas (la vignette dessine alors la sienne).
+        const Flux::UI::TextureInfo* GetIcon(Flux::Engine& engine, const Entry& entry);
         void ShowContextMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& entry);
         // Dossier survolé pendant un glisser-déposer : cible, et cadre autour de sa ligne ou de sa vignette.
         void DropTarget(Flux::UI::Context& ui, const std::filesystem::path& folder);
@@ -81,6 +87,8 @@ namespace FluxEditor {
         NameRequest m_request = NameRequest::None;
         std::filesystem::path m_requestPath;
         std::string m_requestName;
+        // Icônes du système par extension en minuscules (« / » : dossier) ; nullopt : pas d'icône, ne pas redemander.
+        std::unordered_map<std::string, std::optional<Flux::UI::TextureInfo>> m_icons;
         std::vector<std::filesystem::path> m_scenes;
         double m_sinceScan = 0.0;
         std::filesystem::path m_renaming; // scène en cours de renommage (vide : fenêtre fermée)

@@ -102,17 +102,23 @@ namespace Flux {
             std::fprintf(stderr, "Flux : image %s\n", pixels.error().c_str());
             return;
         }
+        Store(*pixels, texture, Platform::ToUtf8(path));
+    }
+
+    // Envoie l'image au GPU dans la texture (nouvelle ou déjà utilisée) ; name sert aux messages d'erreur.
+    void OverlayRenderer::Store(const ImageData& pixels, Texture& texture, std::string_view name) {
         // SRGB : les couleurs d'une image sont en sRGB, le GPU les ramène en linéaire à la lecture.
         auto image = m_device.CreateTexture(RHI::Format::RGBA8Srgb,
-                                            {static_cast<std::uint32_t>(pixels->size.x), static_cast<std::uint32_t>(pixels->size.y)},
-                                            pixels->rgba);
+                                            {static_cast<std::uint32_t>(pixels.size.x), static_cast<std::uint32_t>(pixels.size.y)},
+                                            pixels.rgba);
         if (!image) {
-            std::fprintf(stderr, "Flux : image %s : %s\n", Platform::ToUtf8(path).c_str(), image.error().c_str());
+            std::fprintf(stderr, "Flux : image %.*s : %s\n", static_cast<int>(name.size()), name.data(), image.error().c_str());
             return;
         }
         if (texture.id == UI::FontTexture) {
             if (m_groups.size() > MaxTextures) {
-                std::fprintf(stderr, "Flux : plus de %u images chargées, %s ignorée\n", MaxTextures, Platform::ToUtf8(path).c_str());
+                std::fprintf(stderr, "Flux : plus de %u images chargées, %.*s ignorée\n", MaxTextures, static_cast<int>(name.size()),
+                             name.data());
                 return;
             }
             std::unique_ptr<RHI::BindGroup> group = m_device.CreateBindGroup(*m_layout);
@@ -127,8 +133,22 @@ namespace Flux {
             m_device.WaitIdle();
         }
         texture.image = std::move(*image);
-        texture.size = pixels->size;
+        texture.size = pixels.size;
         m_groups[texture.id]->SetTexture(0, *texture.image, *m_sampler);
+    }
+
+    std::optional<UI::TextureInfo> OverlayRenderer::CreateTexture(const ImageData& image) {
+        if (image.size.x <= 0 || image.size.y <= 0
+            || image.rgba.size() != static_cast<std::size_t>(image.size.x) * static_cast<std::size_t>(image.size.y) * 4) {
+            return std::nullopt;
+        }
+        Texture& texture = *m_created.emplace_back(std::make_unique<Texture>());
+        Store(image, texture, "en mémoire");
+        if (texture.id == UI::FontTexture) {
+            m_created.pop_back();
+            return std::nullopt;
+        }
+        return UI::TextureInfo{texture.id, texture.size};
     }
 
     std::optional<UI::TextureInfo> OverlayRenderer::LoadTexture(const std::filesystem::path& path) {

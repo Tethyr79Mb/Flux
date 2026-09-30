@@ -4,6 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Math/Vector3.hpp"
+#include "Flux/UI/DrawList.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -243,9 +244,10 @@ namespace Flux::UI {
         // Force l'état déplié du prochain TreeNode (pour montrer une sélection faite ailleurs, par exemple).
         void SetNextTreeNodeOpen(bool open);
 
-        // Vignette d'une grille (explorateur de fichiers) : une icône, le nom dessous (raccourci s'il déborde).
-        // Folder : un dossier jaune ; File : une page à coin corné, avec une bande de couleur portant un court badge
-        // (« 3D », « Image »). Les suivantes avec SameLine tant que GetAvailableWidth le permet.
+        // Vignette d'une grille (explorateur de fichiers) : une icône, la bande du type pour un fichier, le nom dessous
+        // (raccourci s'il déborde). image : icône à dessiner (celle du système) ; sans elle, un dossier jaune ou une
+        // page à coin corné. badge : court texte du type (« 3D », « Image ») sur une bande de couleur, fichiers
+        // seulement. Les suivantes avec SameLine tant que GetAvailableWidth le permet.
         enum class TileIcon { Folder, File };
         struct TileResult
         {
@@ -253,7 +255,7 @@ namespace Flux::UI {
             bool doubleClicked = false;
         };
         TileResult Tile(std::string_view label, TileIcon icon, std::string_view badge, Math::LinearColor badgeColor,
-                        bool selected, float width);
+                        bool selected, float width, const TextureInfo* image = nullptr);
 
         // Zone de taille donnée dans le panneau, avec son propre défilement (molette au-dessus d'elle) : deux
         // colonnes qui défilent chacune de leur côté, par exemple. width ou height <= 0 : tout ce qui reste de la
