@@ -244,6 +244,48 @@ namespace {
         return true;
     }
 
+    // Vaisseau posé (tourné d'un quart de tour) avec un pont 20 cm au-dessus du sol : le joueur descend du pont et
+    // marche sur le sol du monde sans le traverser, puis remonte à bord. Il change de parent à chaque fois.
+    bool RunBoardingTests() {
+        Scene scene;
+        AddFloor(scene);
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        TransformComponent& shipTransform = scene.Get<TransformComponent>(ship);
+        shipTransform.position = {5.0, 0.0, 0.0};
+        shipTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, std::numbers::pi_v<float> / 2.0f);
+        scene.Add<ShipComponent>(ship);
+        const Entity deck = scene.CreateEntity("Pont", ship);
+        TransformComponent& deckTransform = scene.Get<TransformComponent>(deck);
+        deckTransform.position = {0.0, 0.1, 0.0};
+        deckTransform.scale = {4.0f, 0.2f, 4.0f}; // x de 3 à 7 dans le monde
+        scene.Add<ColliderComponent>(deck);
+        const Entity hero = scene.CreateEntity("Joueur", ship);
+        scene.Get<TransformComponent>(hero).position = {0.0, 0.2, 0.0};
+        scene.Add<CharacterComponent>(hero);
+
+        PhysicsWorld world;
+        Run(world, scene, 0.5);
+        CHECK(scene.GetParent(hero) == ship);
+        CHECK(std::abs(scene.Get<TransformComponent>(hero).position.y - 0.2) < 0.05);
+
+        // Il descend vers +x (2 m/s) : sorti du vaisseau, debout sur le sol.
+        Run(world, scene, 1.8, Walk(1.0f));
+        Run(world, scene, 0.5);
+        CHECK(scene.GetParent(hero) == NullEntity);
+        const Math::Vector3d outside = scene.GetWorldPosition(hero).offset;
+        CHECK(std::abs(outside.y) < 0.05 && outside.x > 7.5);
+        // Du dehors, le pont est solide (copie dans le monde) : pas de corps en plus comptés.
+        CHECK(world.GetBodyCount() == 2);
+
+        // Il revient (vers -x) : il monte sur le pont et repasse à bord.
+        Run(world, scene, 2.0, Walk(-1.0f));
+        Run(world, scene, 0.5);
+        CHECK(scene.GetParent(hero) == ship);
+        const Math::Vector3d aboard = scene.GetWorldPosition(hero).offset;
+        CHECK(std::abs(aboard.y - 0.2) < 0.05 && aboard.x > 3.0 && aboard.x < 7.0);
+        return true;
+    }
+
     // Caméra qui suit le joueur : les murs et les coques l'arrêtent, pas les caisses, les personnages ni la coque
     // du vaisseau où il se trouve.
     bool RunCameraTests() {
@@ -453,6 +495,6 @@ namespace {
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests() && RunCameraTests()
-        && RunSeatTests() && RunMeshTests();
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
+        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunMeshTests();
 }

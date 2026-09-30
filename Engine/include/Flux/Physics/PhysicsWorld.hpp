@@ -25,7 +25,9 @@ namespace Flux {
     // Échelle galaxie : la simulation se fait en float autour d'une ancre (le secteur du premier objet physique
     // rencontré), précise au millimètre à des kilomètres de là. Chaque vaisseau ou station (ShipComponent) a son
     // propre monde, dans son repère, pour ses descendants : on y marche pendant qu'il vole ou tourne. Une entité
-    // change de monde quand elle change de parent (sortir d'un vaisseau : la détacher de lui).
+    // change de monde quand elle change de parent (sortir d'un vaisseau : la détacher de lui). Un personnage le fait
+    // de lui-même : il passe à bord en montant sur le décor d'un vaisseau (rampe, pont), et en sort quand il quitte
+    // ce décor au-dessus du sol du dehors ; il devient alors enfant du vaisseau, ou de ce qui l'entoure.
     class FLUX_API PhysicsWorld {
         public:
         PhysicsWorld();
