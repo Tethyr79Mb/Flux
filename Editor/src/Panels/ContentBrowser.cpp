@@ -291,7 +291,8 @@ namespace FluxEditor {
             }
             const auto [badge, color] = Badge(entry);
             ui.PushId(entry.name);
-            const UI::Context::TileResult tile = ui.Tile(entry.name, badge, color, entry.path == m_selected, TileWidth);
+            const UI::Context::TileResult tile = ui.Tile(entry.name, entry.directory ? UI::Context::TileIcon::Folder : UI::Context::TileIcon::File,
+                                                                  badge, color, entry.path == m_selected, TileWidth);
             if (tile.clicked) {
                 m_selected = entry.path;
             }

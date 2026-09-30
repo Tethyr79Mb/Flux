@@ -243,15 +243,17 @@ namespace Flux::UI {
         // Force l'état déplié du prochain TreeNode (pour montrer une sélection faite ailleurs, par exemple).
         void SetNextTreeNodeOpen(bool open);
 
-        // Vignette d'une grille (fichier d'un explorateur) : un carré coloré portant un court badge (« 3D », « IMG »),
-        // le nom dessous (raccourci s'il déborde). Les suivantes avec SameLine tant que GetAvailableWidth le permet.
+        // Vignette d'une grille (explorateur de fichiers) : une icône, le nom dessous (raccourci s'il déborde).
+        // Folder : un dossier jaune ; File : une page à coin corné, avec une bande de couleur portant un court badge
+        // (« 3D », « Image »). Les suivantes avec SameLine tant que GetAvailableWidth le permet.
+        enum class TileIcon { Folder, File };
         struct TileResult
         {
             bool clicked = false;
             bool doubleClicked = false;
         };
-        TileResult Tile(std::string_view label, std::string_view badge, Math::LinearColor badgeColor, bool selected,
-                        float width);
+        TileResult Tile(std::string_view label, TileIcon icon, std::string_view badge, Math::LinearColor badgeColor,
+                        bool selected, float width);
 
         // Zone de taille donnée dans le panneau, avec son propre défilement (molette au-dessus d'elle) : deux
         // colonnes qui défilent chacune de leur côté, par exemple. width ou height <= 0 : tout ce qui reste de la

@@ -122,11 +122,13 @@ namespace Flux::UI {
         }
         const Style& style = ui.style;
         const WidgetId id = ui.GetId(label);
+        // Sur la même ligne qu'un widget, la zone commence en haut de celui-ci, pas sous lui (cursorY y est déjà).
         const float left = ui.sameLine ? ui.lastItemMax.x + style.itemSpacing : ui.contentMin.x + ui.indent;
+        const float top = ui.sameLine ? ui.lastItemMin.y : ui.cursorY;
         const float bottom = ui.panel->fixedHeight > 0.0f ? ui.panel->position.y + ui.panel->fixedHeight - style.panelPadding
-                                                         : ui.cursorY + 200.0f;
+                                                         : top + 200.0f;
         const Vector2f size{width > 0.0f ? width : std::max(1.0f, ui.contentMaxX - left),
-                            height > 0.0f ? height : std::max(1.0f, bottom - ui.cursorY)};
+                            height > 0.0f ? height : std::max(1.0f, bottom - top)};
         const Vector2f min = ui.ItemRect(size);
         const Vector2f max = min + size;
 

@@ -551,7 +551,7 @@ namespace {
         return true;
     }
 
-    // Vignettes dans une zone enfant (fenêtre Contenu) : double-clic, et un seul menu contextuel par clic droit
+    // Vignettes dans une zone enfant à droite d'une autre (fenêtre Contenu) : double-clic, et un seul menu contextuel par clic droit
     // quand la vignette et le fond de la zone en ont chacun un.
     bool RunTileTests(const UI::Font& font) {
         Harness harness(font);
@@ -560,11 +560,17 @@ namespace {
         bool tileMenu = false;
         bool backgroundMenu = false;
         Vector2f tileMin;
+        float leftTop = 0.0f;
         const auto describe = [&](UI::Context& ui) {
             tileMenu = backgroundMenu = false;
-            if (ui.BeginPanel("Contenu", {0.0f, 0.0f}, 400.0f)) {
-                ui.BeginChild("fichiers", 0.0f, 200.0f);
-                const auto tile = ui.Tile("Robot.glb", "3D", Math::LinearColor{0.2f, 0.3f, 0.5f, 1.0f}, false, 84.0f);
+            if (ui.BeginPanel("Contenu", {0.0f, 0.0f}, 400.0f, 300.0f)) {
+                ui.BeginChild("dossiers", 100.0f, 0.0f);
+                ui.Button("assets");
+                leftTop = ui.GetItemRect().min.y;
+                ui.EndChild();
+                ui.SameLine();
+                ui.BeginChild("fichiers", 0.0f, 0.0f);
+                const auto tile = ui.Tile("Robot.glb", UI::Context::TileIcon::File, "3D", Math::LinearColor{0.2f, 0.3f, 0.5f, 1.0f}, false, 84.0f);
                 tileMin = ui.GetItemRect().min;
                 clicks += tile.clicked ? 1 : 0;
                 doubleClicks += tile.doubleClicked ? 1 : 0;
@@ -581,6 +587,8 @@ namespace {
             ui.EndPanel();
         };
         harness.Frame([] {}, describe);
+        // À droite de l'arbre, pas sous lui : la zone sur la même ligne garde toute la hauteur.
+        CHECK(tileMin.y < leftTop + 10.0f);
         const Vector2f onTile = tileMin + Vector2f{40.0f, 20.0f};
         harness.Click(onTile, describe);
         CHECK(clicks == 1 && doubleClicks == 0);
