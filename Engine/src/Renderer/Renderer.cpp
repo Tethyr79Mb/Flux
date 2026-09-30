@@ -931,7 +931,7 @@ namespace Flux {
 
         // Une matrice par maillage visible, calculée relativement à la caméra : la soustraction des positions
         // se fait en double (secteurs compris), le GPU ne voit que de petits nombres.
-        void PrepareScene(const Scene& scene, const Camera& camera) {
+        void PrepareScene(const Scene& scene, const Camera& camera, Entity hidden) {
             const VkExtent2D extent = SceneRect().extent;
             const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
             const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
@@ -950,7 +950,7 @@ namespace Flux {
                     model = FindModel(assetsDirectory / Platform::PathFromUtf8(component->model));
                     tint = component->tint;
                 }
-                if (!model) {
+                if (!model || IsInside(scene, transform.entity, hidden)) {
                     continue;
                 }
                 const Math::Matrix4f world = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
@@ -1105,7 +1105,20 @@ namespace Flux {
                             VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
         }
 
-        bool RenderFrame(const Scene& scene, const Camera& camera) {
+        // `entity` est `ancestor` ou l'un de ses descendants.
+        static bool IsInside(const Scene& scene, Entity entity, Entity ancestor) {
+            if (ancestor == NullEntity) {
+                return false;
+            }
+            for (; entity != NullEntity; entity = scene.GetParent(entity)) {
+                if (entity == ancestor) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool RenderFrame(const Scene& scene, const Camera& camera, Entity hidden) {
             const VkExtent2D extent = WindowExtent();
             if (extent.width == 0 || extent.height == 0) {
                 return true; // fenêtre réduite : rien à présenter
@@ -1146,7 +1159,7 @@ namespace Flux {
             beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
             vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
-            PrepareScene(scene, camera);
+            PrepareScene(scene, camera, hidden);
             Record(frame.commandBuffer, imageIndex);
             if (!Vk::Check(vkEndCommandBuffer(frame.commandBuffer), "vkEndCommandBuffer")) {
                 return false;
@@ -1232,8 +1245,8 @@ namespace Flux {
 
     Renderer::~Renderer() = default;
 
-    bool Renderer::RenderFrame(const Scene& scene, const Camera& camera) {
-        const bool ok = m_impl->RenderFrame(scene, camera);
+    bool Renderer::RenderFrame(const Scene& scene, const Camera& camera, Entity hidden) {
+        const bool ok = m_impl->RenderFrame(scene, camera, hidden);
         m_impl->overlay->Clear(); // même si la frame n'a pas été présentée (fenêtre réduite, swapchain recréée)
         return ok;
     }

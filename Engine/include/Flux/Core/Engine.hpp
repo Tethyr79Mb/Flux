@@ -130,6 +130,7 @@ namespace Flux {
         // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette).
         float m_followDistance = 4.0f;
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
+        Entity m_hiddenPlayer = NullEntity; // caméra dans sa tête (vue cockpit, ou coincée contre un mur) : pas dessiné
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;

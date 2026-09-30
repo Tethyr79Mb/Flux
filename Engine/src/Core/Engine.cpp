@@ -154,6 +154,7 @@ namespace Flux {
                 }
             }
             // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
+            m_hiddenPlayer = NullEntity;
             if (const Entity player = GetFollowedPlayer(); player != NullEntity) {
                 PlaceFollowCamera(player, deltaSeconds);
             } else {
@@ -174,7 +175,7 @@ namespace Flux {
             m_ui->EndFrame(m_renderer->GetOverlay());
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
-            if (!m_renderer->RenderFrame(m_scene, m_camera)) {
+            if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
                 return 1;
             }
             LoadRequestedScene();
@@ -317,6 +318,7 @@ namespace Flux {
             m_camera.SetRotation(seatRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
                                  * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch));
             m_followShown = -1.0f; // en ressortant, la caméra se replace d'un coup derrière le personnage
+            m_hiddenPlayer = player;
             return;
         }
         m_lookYaw = 0.0f;
@@ -346,6 +348,12 @@ namespace Flux {
 
         m_camera.position = target;
         m_camera.position += Math::Vector3d(back) * static_cast<double>(m_followShown);
+        // Caméra poussée contre la tête (dos au mur, sous une verrière) : on verrait l'intérieur du crâne, on ne
+        // dessine plus le personnage (vue à la première personne), comme la vue cockpit.
+        constexpr float HideDistance = 0.5f;
+        if (m_followShown < HideDistance) {
+            m_hiddenPlayer = player;
+        }
     }
 
     void Engine::LoadRequestedScene() {
