@@ -58,6 +58,7 @@ namespace Flux {
             .Field("center", "Centre", &ColliderComponent::center, {.speed = 0.01})
             .Asset("mesh", "Maillage (vide : le modèle)", &ColliderComponent::mesh, AssetType::Model)
             .Field("simulatePhysics", "Simuler la physique", &ColliderComponent::simulatePhysics)
+            .Field("cameraOnly", "Arrête seulement la caméra", &ColliderComponent::cameraOnly)
             .Field("mass", "Masse (kg, 0 : auto)", &ColliderComponent::mass, {.speed = 0.1, .min = 0.0, .max = 1.0e9, .decimals = 1})
             .Field("friction", "Frottement", &ColliderComponent::friction, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
             .Field("restitution", "Rebond", &ColliderComponent::restitution, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})

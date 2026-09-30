@@ -412,8 +412,17 @@ namespace {
         collider.mesh = "sol.gltf";
         collider.simulatePhysics = true; // impossible pour un maillage : reste immobile
         const Entity hero = scene.CreateEntity("Joueur");
-        scene.Get<TransformComponent>(hero).position = {8.0, 1.0, 8.0};
+        scene.Get<TransformComponent>(hero).position = {8.0, 2.0, 8.0};
         scene.Add<CharacterComponent>(hero);
+        // Le même carré à 1,2 m, qui n'arrête que la caméra (une verrière) : le personnage le traverse en tombant.
+        const Entity glass = scene.CreateEntity("Verrière");
+        TransformComponent& glassTransform = scene.Get<TransformComponent>(glass);
+        glassTransform.position = {0.0, 1.2, 0.0};
+        glassTransform.scale = {2.0f, 1.0f, 2.0f};
+        ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
+        glassCollider.shape = ColliderShape::Mesh;
+        glassCollider.mesh = "sol.gltf";
+        glassCollider.cameraOnly = true;
         // Sans fichier (ni maillage, ni modèle) : pas de collision, sans planter.
         const Entity empty = scene.CreateEntity("Vide");
         scene.Get<TransformComponent>(empty).position = {0.0, -50.0, 0.0};
@@ -431,7 +440,13 @@ namespace {
         const Math::Vector3d landed = scene.Get<TransformComponent>(hero).position;
         CHECK(std::abs(landed.y) < 0.05 && std::abs(landed.x - 8.0) < 0.05);
         CHECK(scene.Get<TransformComponent>(floor).position == Math::Vector3d{});
-        CHECK(world.GetBodyCount() == 1);
+        CHECK(world.GetBodyCount() == 2);
+        // La caméra s'y arrête, par-dessus comme par-dessous (envers des faces, vu d'un cockpit).
+        constexpr float Radius = 0.2f;
+        const Math::WorldPosition above{{}, {8.0, 3.0, 8.0}};
+        const Math::WorldPosition below{{}, {8.0, 0.5, 8.0}};
+        CHECK(std::abs(world.CastCamera(scene, hero, above, {0.0f, -1.0f, 0.0f}, 5.0f, Radius) - 1.6f) < 0.05f);
+        CHECK(std::abs(world.CastCamera(scene, hero, below, {0.0f, 1.0f, 0.0f}, 5.0f, Radius) - 0.5f) < 0.05f);
         std::filesystem::remove_all(directory, error);
         return true;
     }

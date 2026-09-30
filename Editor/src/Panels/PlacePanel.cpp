@@ -64,15 +64,22 @@ namespace FluxEditor {
         }
 
         // Chasseur monoplace (modèle du projet, dans Modeles/Chasseur) : coque affichée et collision en maillage
-        // simplifié (sols, parois, marches, rampe), poste de pilotage. Origine du vaisseau : le plancher du cockpit,
-        // l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. On y monte par la rampe arrière et la soute ; en
-        // se relevant, le pilote sort derrière son siège, en haut des marches (devant, les consoles le coinceraient).
+        // simplifié (sols, parois, marches, rampe), verrière qui retient la caméra, poste de pilotage. Origine du
+        // vaisseau : le plancher du cockpit, l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. On y monte par
+        // la rampe arrière et la soute ; en se relevant, le pilote sort derrière son siège, en haut des marches (devant,
+        // les consoles le coinceraient).
         void AddFighter(Scene& scene, Entity ship) {
             const Entity hull = scene.CreateEntity("Coque", ship);
             scene.Add<ModelComponent>(hull).model = "Modeles/Chasseur/Chasseur.glb";
             ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
             collider.shape = ColliderShape::Mesh;
             collider.mesh = "Modeles/Chasseur/Chasseur-collision.glb";
+            // La verrière n'arrête que la caméra : debout dans le cockpit, le personnage la frôle.
+            const Entity glass = scene.CreateEntity("Verrière", ship);
+            ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
+            glassCollider.shape = ColliderShape::Mesh;
+            glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
+            glassCollider.cameraOnly = true;
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
             scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -4.0};
             SeatComponent& component = scene.Add<SeatComponent>(seat);

@@ -94,6 +94,8 @@ namespace Flux {
         std::string mesh;
 
         bool simulatePhysics = false;
+        // N'arrête que la caméra qui suit le joueur (verrière d'un cockpit) : personnages et objets la traversent.
+        bool cameraOnly = false;
         float mass = 0.0f;          // kg, objet simulé ; 0 : d'après le volume (densité de 1000 kg/m³, celle de l'eau)
         float friction = 0.5f;
         float restitution = 0.0f;   // rebond : 0 aucun, 1 parfait

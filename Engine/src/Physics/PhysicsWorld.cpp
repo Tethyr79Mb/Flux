@@ -46,11 +46,13 @@ namespace Flux {
         // Au plus tant de pas par image : après un blocage, la simulation ralentit au lieu de s'emballer.
         constexpr int MaxStepsPerUpdate = 4;
 
-        // Deux calques : les objets immobiles ne se testent pas entre eux.
+        // Calques : les objets immobiles ne se testent pas entre eux ; ceux qui n'arrêtent que la caméra (verrière)
+        // ne touchent rien, seul le lancer de la caméra les voit.
         namespace Layers {
             constexpr JPH::ObjectLayer NonMoving = 0;
             constexpr JPH::ObjectLayer Moving = 1;
-            constexpr JPH::uint Count = 2;
+            constexpr JPH::ObjectLayer CameraOnly = 2;
+            constexpr JPH::uint Count = 3;
         }
 
         class BroadPhaseLayers final : public JPH::BroadPhaseLayerInterface {
@@ -61,7 +63,11 @@ namespace Flux {
             }
 #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
             const char* GetBroadPhaseLayerName(JPH::BroadPhaseLayer layer) const override {
-                return static_cast<JPH::BroadPhaseLayer::Type>(layer) == Layers::NonMoving ? "immobile" : "mobile";
+                switch (static_cast<JPH::BroadPhaseLayer::Type>(layer)) {
+                    case Layers::NonMoving: return "immobile";
+                    case Layers::Moving: return "mobile";
+                    default: return "caméra";
+                }
             }
 #endif
         };
@@ -69,13 +75,20 @@ namespace Flux {
         class ObjectVsBroadPhase final : public JPH::ObjectVsBroadPhaseLayerFilter {
             public:
             bool ShouldCollide(JPH::ObjectLayer layer, JPH::BroadPhaseLayer broadPhase) const override {
-                return layer == Layers::Moving || static_cast<JPH::BroadPhaseLayer::Type>(broadPhase) == Layers::Moving;
+                const auto other = static_cast<JPH::BroadPhaseLayer::Type>(broadPhase);
+                if (layer == Layers::CameraOnly || other == Layers::CameraOnly) {
+                    return false;
+                }
+                return layer == Layers::Moving || other == Layers::Moving;
             }
         };
 
         class ObjectPairs final : public JPH::ObjectLayerPairFilter {
             public:
             bool ShouldCollide(JPH::ObjectLayer a, JPH::ObjectLayer b) const override {
+                if (a == Layers::CameraOnly || b == Layers::CameraOnly) {
+                    return false;
+                }
                 return a == Layers::Moving || b == Layers::Moving;
             }
         };
@@ -372,7 +385,7 @@ namespace Flux {
                         const RelativeTransform& transform) {
             // Coque d'un vaisseau : elle bouge avec lui, les objets de son parent s'y cognent.
             const bool hull = scene.TryGet<ShipComponent>(entity) != nullptr;
-            bool simulated = collider.simulatePhysics && !hull;
+            bool simulated = collider.simulatePhysics && !hull && !collider.cameraOnly;
             if (simulated && scene.GetParent(entity) != grid.frame) {
                 // La physique réécrirait la position locale comme si elle était celle de son repère.
                 if (!warnedChild) {
@@ -408,7 +421,9 @@ namespace Flux {
                                                       : JPH::EMotionType::Static;
             const bool moving = motion != JPH::EMotionType::Static;
             JPH::BodyCreationSettings settings(shape, JPH::RVec3(ToJolt(transform.position)), ToJoltRotation(transform.rotation),
-                                               motion, moving ? Layers::Moving : Layers::NonMoving);
+                                               motion, collider.cameraOnly ? Layers::CameraOnly
+                                                       : moving           ? Layers::Moving
+                                                                          : Layers::NonMoving);
             settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(entity));
             settings.mFriction = collider.friction;
             settings.mRestitution = collider.restitution;
@@ -781,6 +796,8 @@ namespace Flux {
                 const JPH::RShapeCast cast(sphere, JPH::Vec3::sOne(), JPH::RMat44::sTranslation(JPH::RVec3(ToJolt(origin))),
                                            ToJolt(direction));
                 JPH::ShapeCastSettings settings;
+                // Vue de l'intérieur, une verrière ou une coque en maillage montre l'envers de ses faces.
+                settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
                 JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
                 grid->system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
                 if (collector.HadHit()) {
