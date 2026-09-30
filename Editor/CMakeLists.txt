@@ -12,3 +12,4 @@ add_dependencies(FluxEditor GameModule)
 target_compile_definitions(FluxEditor PRIVATE FLUX_DEFAULT_PROJECT="${PROJECT_SOURCE_DIR}/Game/Module/Game.fluxproject")
 
 flux_set_warnings(FluxEditor)
+flux_precompile_headers(FluxEditor)

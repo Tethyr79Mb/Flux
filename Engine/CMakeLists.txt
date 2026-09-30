@@ -47,6 +47,7 @@ target_compile_definitions(FluxEngine PRIVATE
         VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
 
 flux_set_warnings(FluxEngine)
+flux_precompile_headers(FluxEngine)
 
 flux_add_shaders(FluxShaders
         shaders/Mesh.slang

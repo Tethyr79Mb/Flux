@@ -38,7 +38,7 @@ jobs:
       # Dépendances téléchargées par FetchContent : gardées d'une exécution à l'autre.
       - uses: actions/cache@v4
         with:
-          path: out/build/${{ matrix.preset }}/_deps
+          path: out/deps/${{ matrix.preset }}
           key: deps-${{ matrix.preset }}-${{ hashFiles('cmake/FluxDependencies.cmake') }}
 
       - name: Configurer
