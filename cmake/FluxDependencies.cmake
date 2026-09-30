@@ -1,5 +1,8 @@
 # Dépendances tierces, figées sur des versions précises et compilées depuis les sources
 # (les binaires précompilés du SDK Vulkan visent MSVC).
+# Les préréglages (CMakePresets.json) les rangent dans out/deps/<préréglage>, hors du dossier de compilation :
+# « Supprimer le cache et reconfigurer » ne les fait pas retélécharger. Un dossier par préréglage : Debug et Release
+# ne peuvent pas partager les dossiers de compilation des dépendances que FetchContent y met aussi.
 include(FetchContent)
 
 # Headers Vulkan figés : la compilation ne dépend pas du SDK installé.
@@ -125,6 +128,10 @@ target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 # Le header seul : l'implémentation (CGLTF_IMPLEMENTATION) est compilée dans Model.cpp.
 add_library(cgltf_header INTERFACE)
 target_include_directories(cgltf_header SYSTEM INTERFACE ${cgltf_SOURCE_DIR})
+
+# Jolt en « unity build » : ses ~150 .cpp regroupés par paquets de 16 en une dizaine de gros fichiers ; les en-têtes
+# communs ne sont lus qu'une fois par paquet. Il n'est recompilé que si le dossier de compilation est vidé.
+set_target_properties(Jolt PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16)
 
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 # Bibliothèques statiques liées dans FluxEngine.dll.

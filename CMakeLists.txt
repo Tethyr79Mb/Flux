@@ -28,6 +28,7 @@ include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
 include(cmake/FluxResources.cmake)
 include(cmake/FluxSources.cmake)
+include(cmake/FluxPrecompiled.cmake)
 
 add_subdirectory(Engine)
 add_subdirectory(Game)
