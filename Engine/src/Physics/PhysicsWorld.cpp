@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
@@ -236,6 +237,10 @@ namespace Flux {
             std::unique_ptr<JPH::PhysicsSystem> system;
             std::unordered_map<Entity, JPH::BodyID> bodies;
             std::unordered_map<Entity, Character> characters;
+            // Décors des vaisseaux posés dans ce monde (enfants immobiles d'un vaisseau qui y vit) : une copie
+            // cinématique qui le suit, vue du dehors. On s'y cogne, on y monte par la rampe. Clé : l'entité copiée ;
+            // donnée du corps : le vaisseau, comme sa coque.
+            std::unordered_map<Entity, JPH::BodyID> mirrors;
             // Repère du vaisseau par rapport à l'ancre, pour cette mise à jour : les corps n'y voient ni sa position
             // ni sa rotation, seulement son échelle (celle de ses enfants dans le monde).
             Math::Vector3d framePosition;
@@ -267,6 +272,10 @@ namespace Flux {
         Math::WorldPosition anchor; // origine du monde de la scène
         std::vector<RelativeTransform> transforms;
         double accumulator = 0.0;
+        double time = 0.0; // simulé, en secondes
+        // Dernier passage de chaque personnage d'un monde à l'autre : pas de nouveau passage juste après (au bas de
+        // la rampe, il toucherait les deux sols à la fois).
+        std::unordered_map<Entity, double> transfers;
         Entity player = NullEntity;
         bool warnedChild = false;
         bool warnedMeshSimulated = false;
@@ -310,13 +319,15 @@ namespace Flux {
         static void DestroyGrid(Grid& grid) {
             grid.characters.clear(); // leurs corps internes vivent dans le système
             JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
-            for (const auto& [entity, id] : grid.bodies) {
-                if (!id.IsInvalid()) {
-                    bodyInterface.RemoveBody(id);
-                    bodyInterface.DestroyBody(id);
+            for (auto* map : {&grid.bodies, &grid.mirrors}) {
+                for (const auto& [entity, id] : *map) {
+                    if (!id.IsInvalid()) {
+                        bodyInterface.RemoveBody(id);
+                        bodyInterface.DestroyBody(id);
+                    }
                 }
+                map->clear();
             }
-            grid.bodies.clear();
             grid.system.reset();
         }
 
@@ -431,6 +442,12 @@ namespace Flux {
             if (simulated && collider.mass > 0.0f) {
                 settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
                 settings.mMassPropertiesOverride.mMass = collider.mass;
+            } else if (hull && mesh) {
+                // Coque en maillage : ni masse ni volume, mais Jolt en exige une pour un corps qui bouge (jamais
+                // utilisée : rien ne pousse un corps cinématique).
+                settings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
+                settings.mMassPropertiesOverride.mMass = 1.0f;
+                settings.mMassPropertiesOverride.mInertia = JPH::Mat44::sIdentity();
             }
             const JPH::BodyID id = grid.system->GetBodyInterface().CreateAndAddBody(
                 settings, moving ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
@@ -562,6 +579,66 @@ namespace Flux {
                     CreateBody(scene, *grid, entity, collider, grid->InFrame(*transform));
                 }
             }
+            SynchronizeMirrors(scene);
+        }
+
+        // Monde où vit le vaisseau d'un monde de vaisseau (celui de la scène, ou d'un vaisseau plus grand).
+        Grid* FindOuterGrid(const Scene& scene, const Grid& grid) {
+            return grid.frame == NullEntity ? nullptr : FindGrid(scene.GetShip(grid.frame));
+        }
+
+        // Copies, dans le monde qui l'entoure, des décors immobiles de chaque vaisseau : sans elles, on traverserait
+        // le vaisseau du dehors et on ne pourrait pas monter à bord.
+        void SynchronizeMirrors(const Scene& scene) {
+            for (const std::unique_ptr<Grid>& outer : grids) {
+                JPH::BodyInterface& outerBodies = outer->system->GetBodyInterface();
+                std::erase_if(outer->mirrors, [&](const auto& entry) {
+                    const auto [entity, id] = entry;
+                    // Gardée tant que l'original existe, dans un vaisseau qui vit dans ce monde.
+                    if (scene.IsValid(entity)) {
+                        const Grid* inner = FindGrid(scene.GetShip(entity));
+                        if (inner && FindOuterGrid(scene, *inner) == outer.get()) {
+                            const auto source = inner->bodies.find(entity);
+                            if (source != inner->bodies.end() && !source->second.IsInvalid()) {
+                                return false;
+                            }
+                        }
+                    }
+                    outerBodies.RemoveBody(id);
+                    outerBodies.DestroyBody(id);
+                    return true;
+                });
+            }
+            for (const std::unique_ptr<Grid>& inner : grids) {
+                Grid* outer = FindOuterGrid(scene, *inner);
+                if (!outer) {
+                    continue;
+                }
+                const JPH::BodyInterface& innerBodies = inner->system->GetBodyInterface();
+                for (const auto& [entity, id] : inner->bodies) {
+                    if (id.IsInvalid() || outer->mirrors.contains(entity)
+                        || innerBodies.GetMotionType(id) != JPH::EMotionType::Static
+                        || innerBodies.GetObjectLayer(id) != Layers::NonMoving) {
+                        continue; // caisses (dans le vaisseau seulement), verrière (caméra seulement)
+                    }
+                    const RelativeTransform* transform = FindTransform(entity);
+                    if (!transform) {
+                        continue;
+                    }
+                    const RelativeTransform target = outer->InFrame(*transform);
+                    JPH::BodyCreationSettings settings(innerBodies.GetShape(id), JPH::RVec3(ToJolt(target.position)),
+                                                       ToJoltRotation(target.rotation), JPH::EMotionType::Kinematic,
+                                                       Layers::Moving);
+                    settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(inner->frame));
+                    settings.mFriction = innerBodies.GetFriction(id);
+                    // Un maillage n'a ni masse ni volume : Jolt en exige une pour un corps qui bouge, jamais utilisée
+                    // (cinématique : rien ne le pousse).
+                    settings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
+                    settings.mMassPropertiesOverride.mMass = 1.0f;
+                    settings.mMassPropertiesOverride.mInertia = JPH::Mat44::sIdentity();
+                    outer->mirrors.emplace(entity, outer->system->GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::Activate));
+                }
+            }
         }
 
         // Coques des vaisseaux : amenées là où le vaisseau est maintenant, en steps pas (vitesse comprise : ce qui
@@ -579,6 +656,99 @@ namespace Flux {
                                                     StepSeconds * static_cast<float>(steps));
                     }
                 }
+                for (const auto& [entity, id] : grid->mirrors) {
+                    if (const RelativeTransform* transform = FindTransform(entity)) {
+                        const RelativeTransform target = grid->InFrame(*transform);
+                        bodyInterface.MoveKinematic(id, JPH::RVec3(ToJolt(target.position)), ToJoltRotation(target.rotation),
+                                                    StepSeconds * static_cast<float>(steps));
+                    }
+                }
+            }
+        }
+
+        // Point d'un monde (dans son repère) ramené dans celui d'un autre.
+        static Math::Vector3d Convert(const Grid& from, const Grid& to, JPH::RVec3Arg point) {
+            Math::Vector3d position{point.GetX(), point.GetY(), point.GetZ()};
+            if (from.frame != NullEntity) {
+                position = from.framePosition + Math::Vector3d(from.frameRotation.Rotate(Math::Vector3f(position)));
+            }
+            return to.InFrame({NullEntity, position, {}, {1.0f, 1.0f, 1.0f}}).position;
+        }
+
+        // Un sol sous ces pieds (point du monde `to`, dans son repère) qui n'est pas le vaisseau `ignored`.
+        bool HasGroundBelow(const Grid& to, const Math::Vector3d& feet, Entity ignored) const {
+            class Filter final : public JPH::BodyFilter {
+                public:
+                Filter(const Grid& grid, Entity ignored) : m_grid(grid), m_ignored(ignored) {}
+                bool ShouldCollideLocked(const JPH::Body& body) const override {
+                    const auto entity = static_cast<Entity>(static_cast<entt::id_type>(body.GetUserData()));
+                    return entity != m_ignored && !m_grid.characters.contains(entity);
+                }
+
+                private:
+                const Grid& m_grid;
+                Entity m_ignored;
+            };
+            const Filter filter(to, ignored);
+            // Du genou (30 cm au-dessus des pieds) à 30 cm sous eux, vers le bas de ce monde.
+            const JPH::Vec3 down = to.system->GetGravity().NormalizedOr(JPH::Vec3(0.0f, -1.0f, 0.0f));
+            constexpr float Reach = 0.3f;
+            const JPH::RRayCast ray(JPH::RVec3(ToJolt(feet)) - down * Reach, down * (2.0f * Reach));
+            JPH::RayCastResult hit;
+            return to.system->GetNarrowPhaseQuery().CastRay(ray, hit, to.system->GetDefaultBroadPhaseLayerFilter(Layers::Moving),
+                                                            to.system->GetDefaultLayerFilter(Layers::Moving), filter);
+        }
+
+        // Monde où un personnage doit passer, d'après ce qui le porte : monter sur le décor d'un vaisseau (sa copie
+        // dans ce monde) le fait passer à bord ; en l'air à bord, avec le sol du dehors sous les pieds, il en sort.
+        // nullptr : il reste où il est.
+        Grid* FindTransfer(const Scene& scene, const Grid& grid, const Character& character) {
+            const JPH::CharacterVirtual& body = *character.character;
+            const auto state = body.GetGroundState();
+            if (state == JPH::CharacterVirtual::EGroundState::OnGround) {
+                const auto ground = static_cast<Entity>(static_cast<entt::id_type>(body.GetGroundUserData()));
+                if (ground != grid.frame && scene.IsValid(ground) && scene.TryGet<ShipComponent>(ground)
+                    && scene.GetShip(ground) == grid.frame) {
+                    return FindGrid(ground);
+                }
+                return nullptr;
+            }
+            Grid* outer = FindOuterGrid(scene, grid);
+            if (state != JPH::CharacterVirtual::EGroundState::InAir || !outer) {
+                return nullptr;
+            }
+            return HasGroundBelow(*outer, Convert(grid, *outer, body.GetPosition()), grid.frame) ? outer : nullptr;
+        }
+
+        // Personnages passés à bord d'un vaisseau ou sortis : ils changent de parent, à la même place dans le monde ;
+        // leur corps change de monde à la prochaine mise à jour.
+        void TransferCharacters(Scene& scene) {
+            constexpr double Cooldown = 0.5; // secondes
+            std::erase_if(transfers, [&](const auto& entry) { return time - entry.second >= Cooldown; });
+            std::vector<std::pair<Entity, Grid*>> moves;
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                for (const auto& [entity, character] : grid->characters) {
+                    const auto last = transfers.find(entity);
+                    if (character.seat != NullEntity || (last != transfers.end() && time - last->second < Cooldown)) {
+                        continue;
+                    }
+                    if (Grid* target = FindTransfer(scene, *grid, character)) {
+                        moves.emplace_back(entity, target);
+                    }
+                }
+            }
+            for (const auto& [entity, target] : moves) {
+                const Grid* from = FindGrid(scene.GetShip(entity));
+                const Character& character = from->characters.at(entity);
+                const JPH::CharacterVirtual& body = *character.character;
+                const Math::Vector3d position = Convert(*from, *target, body.GetPosition());
+                // Debout dans le nouveau repère, même cap dans le monde (les repères du monde sont l'identité).
+                const Math::Quaternionf rotation = target->frameRotation.Conjugate() * from->frameRotation * FromJolt(body.GetRotation());
+                const Math::Vector3f forward = rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
+                const float yaw = std::atan2(forward.x, forward.z);
+                scene.SetParent(entity, target->frame);
+                Write(scene, *target, entity, JPH::RVec3(ToJolt(position)), JPH::Quat::sRotation(JPH::Vec3::sAxisY(), yaw));
+                transfers[entity] = time;
             }
         }
 
@@ -755,9 +925,11 @@ namespace Flux {
                     grid->system->Update(StepSeconds, 1, tempAllocator.get(), jobSystem.get());
                 }
             }
+            time += steps * static_cast<double>(StepSeconds);
             for (const std::unique_ptr<Grid>& grid : grids) {
                 WriteBack(scene, *grid);
             }
+            TransferCharacters(scene);
         }
         // Recul libre d'une sphère (la caméra) : fraction de `sweep` parcourue avant de toucher, dans chaque monde.
         float CastSphere(const Scene& scene, Entity followed, const Math::WorldPosition& from, const Math::Vector3f& sweep,
