@@ -113,6 +113,20 @@ namespace FluxEditor {
             return arrows;
         }
 
+        // Ce qu'un clic dans la vue sélectionne quand il touche l'entité : une pièce fixe d'un vaisseau (coque, paroi,
+        // console) sélectionne le vaisseau entier, qu'on déplace d'un bloc ; un personnage ou un objet simulé à bord se
+        // sélectionne lui-même. Les pièces restent accessibles dans l'onglet Scènes.
+        Entity SelectableOf(const Scene& scene, Entity entity) {
+            if (entity == NullEntity || scene.TryGet<CharacterComponent>(entity)) {
+                return entity;
+            }
+            if (const auto* collider = scene.TryGet<ColliderComponent>(entity); collider && collider->simulatePhysics) {
+                return entity;
+            }
+            const Entity ship = scene.GetShip(entity);
+            return ship != NullEntity ? ship : entity;
+        }
+
         // Cercle de centre center dans le plan (u, v) (unitaires, perpendiculaires), en segments à l'écran.
         void DrawCircle(UI::DrawList& list, const ScreenProjection& projection, const Vector3d& center, const Vector3d& u,
                         const Vector3d& v, double radius, Math::LinearColor color) {
@@ -659,9 +673,9 @@ namespace FluxEditor {
                     sceneEditor.Select(scene, icon->entity);
                 } else {
                     // Clic dans le vide : désélectionne.
-                    sceneEditor.Select(scene, PickEntity(m_transforms, ray, [&engine](Entity entity) {
-                        return engine.GetMeshBounds(entity);
-                    }));
+                    sceneEditor.Select(scene, SelectableOf(scene, PickEntity(m_transforms, ray, [&engine](Entity entity) {
+                                                               return engine.GetMeshBounds(entity);
+                                                           })));
                 }
             }
         }
@@ -700,8 +714,18 @@ namespace FluxEditor {
                 list.AddRectOutline(rect->min - margin, rect->max + margin, Math::LinearColor::FromSrgb8(255, 165, 40), 2.0f);
             }
         }
+        const Math::LinearColor selectionColor = Math::LinearColor::FromSrgb8(255, 165, 40);
         if (const std::optional<Math::Box3f> box = engine.GetMeshBounds(selected)) {
-            DrawBoxEdges(list, projection, *selectedTransform, *box, Math::LinearColor::FromSrgb8(255, 165, 40));
+            DrawBoxEdges(list, projection, *selectedTransform, *box, selectionColor);
+        } else if (scene.TryGet<ShipComponent>(selected)) {
+            // Vaisseau : sans maillage à lui, le contour de ses pièces (celles qu'un clic sélectionne avec lui).
+            for (const RelativeTransform& transform : m_transforms) {
+                if (scene.GetShip(transform.entity) == selected && SelectableOf(scene, transform.entity) == selected) {
+                    if (const std::optional<Math::Box3f> part = engine.GetMeshBounds(transform.entity)) {
+                        DrawBoxEdges(list, projection, transform, *part, selectionColor);
+                    }
+                }
+            }
         }
         // La collision en vert, par-dessus : on voit si elle épouse l'objet.
         DrawColliderEdges(list, projection, scene, *selectedTransform, Math::LinearColor::FromSrgb8(80, 220, 120));
