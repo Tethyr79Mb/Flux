@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
 
         const Flux::UI::Rect view = layout.Update(e);
         placePanel.Update(e, sceneEditor, history, view);
-        sceneEditor.Update(e, history);
+        sceneEditor.Update(e, history, document, contentBrowser.GetScenes());
         viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
         contentBrowser.Update(e, document, deltaSeconds);
         FluxEditor::DrawCameraPanel(e);

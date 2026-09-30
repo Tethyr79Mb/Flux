@@ -1,9 +1,11 @@
 #include "Panels/SceneEditor.hpp"
 
+#include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
@@ -14,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -47,6 +50,55 @@ namespace FluxEditor {
             return name.empty() ? "(sans nom)" : name;
         }
 
+        constexpr std::string_view SceneExtension = ".scene.json";
+
+        // Groupes de l'onglet Scènes, dans l'ordre d'affichage : le premier composant trouvé donne le type d'une
+        // racine (un Chasseur est un vaisseau avant d'être un modèle 3D, un personnage aussi).
+        struct Category
+        {
+            std::string_view key; // du composant (ComponentInfo::key)
+            std::string_view title;
+        };
+        constexpr Category Categories[] = {
+            {"ship", "Vaisseaux"},
+            {"character", "Personnages"},
+            {"model", "Modèles 3D"},
+            {"meshRenderer", "Cubes"},
+            {"collider", "Collisions"},
+            {"seat", "Sièges"},
+            {"screenText", "Textes à l'écran"},
+            {"screenImage", "Images à l'écran"},
+            {"sceneChange", "Changements de scène"},
+        };
+        constexpr std::string_view EmptyTitle = "Objets vides";
+
+        // Titre du groupe d'une racine : sa catégorie ; sinon le nom de son premier composant (ceux du jeu) ;
+        // sinon « Objets vides ». rank ordonne les groupes : catégories, composants du jeu, objets vides.
+        std::pair<int, std::string> CategoryOf(const Scene& scene, const ComponentRegistry& components, Entity entity) {
+            for (int i = 0; i < static_cast<int>(std::size(Categories)); ++i) {
+                const ComponentInfo* info = components.Find(Categories[i].key);
+                if (info && info->get(scene.GetRegistry(), entity)) {
+                    return {i, std::string(Categories[i].title)};
+                }
+            }
+            for (std::size_t i = 0; i < components.GetCount(); ++i) {
+                const ComponentInfo& info = components.Get(i);
+                if (info.removable && info.get(scene.GetRegistry(), entity)) {
+                    return {static_cast<int>(std::size(Categories)), info.label};
+                }
+            }
+            return {static_cast<int>(std::size(Categories)) + 1, std::string(EmptyTitle)};
+        }
+
+        // Nom affiché d'une scène : son fichier sans « .scene.json ».
+        std::string SceneName(const std::filesystem::path& path) {
+            std::string name = Platform::ToUtf8(path.filename());
+            if (name.ends_with(SceneExtension)) {
+                name.resize(name.size() - SceneExtension.size());
+            }
+            return name;
+        }
+
         // Nouvelle entité visible : un cube gris.
         Entity CreateCube(Scene& scene, Entity parent) {
             const Entity entity = scene.CreateEntity(parent == NullEntity ? "Cube" : "Enfant", parent);
@@ -55,7 +107,8 @@ namespace FluxEditor {
         }
     }
 
-    void SceneEditor::Update(Engine& engine, UndoHistory& history) {
+    void SceneEditor::Update(Engine& engine, UndoHistory& history, SceneDocument& document,
+                             std::span<const std::filesystem::path> scenes) {
         Scene& scene = engine.GetScene();
         // Mode Jouer : la scène du jeu est jetée à l'arrêt, la modifier ne servirait qu'à perdre des changements.
         // On peut toujours sélectionner et regarder les valeurs.
@@ -65,25 +118,29 @@ namespace FluxEditor {
             RequestDelete();
         }
         Entity selected = m_selection ? scene.FindById(m_selection) : NullEntity;
-        DrawHierarchy(engine, scene);
+        DrawScenes(engine, scene, document, scenes);
         DrawInspector(engine, scene, selected);
         ApplyAction(engine, scene, selected, history);
     }
 
     void SceneEditor::Select(Scene& scene, Entity entity) {
         m_selection = entity == NullEntity ? Uuid{} : scene.GetId(entity);
+        Entity root = entity;
         for (Entity parent = entity == NullEntity ? NullEntity : scene.GetParent(entity); parent != NullEntity;
              parent = scene.GetParent(parent)) {
             m_reveal.insert(scene.GetId(parent));
+            root = parent;
         }
+        m_revealRoot = root == NullEntity ? Uuid{} : scene.GetId(root);
     }
 
-    void SceneEditor::DrawHierarchy(Engine& engine, Scene& scene) {
+    void SceneEditor::DrawScenes(Engine& engine, Scene& scene, SceneDocument& document,
+                                 std::span<const std::filesystem::path> scenes) {
         UI::Context& ui = engine.GetUi();
         const float screenHeight = static_cast<float>(engine.GetWindow().GetSize().y);
-        // Position sans ancrage (l'éditeur l'ancre à gauche) : sous le panneau « Moteur », jusqu'en bas.
+        // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Placer ») : jusqu'en bas.
         const float top = 350.0f + ui.GetMenuBarHeight();
-        if (ui.BeginPanel("Hiérarchie", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
+        if (ui.BeginPanel("Scènes", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
             if (m_readOnly) {
                 ui.TextDisabled("Mode Jouer : scène non modifiable.");
             } else if (ui.Button("Nouveau cube")) {
@@ -96,13 +153,45 @@ namespace FluxEditor {
                 }
             }
             ui.Separator();
-            if (scene.GetEntityCount() == 0) {
-                ui.TextDisabled("Scène vide");
-            }
+
             const Input& input = engine.GetWindow().GetInput();
             m_mouse = input.GetMousePosition();
             m_hierarchyDrag.target = {};
-            scene.ForEachRoot([&](Entity root) { DrawNode(ui, scene, root); });
+            const Project* project = engine.GetProject();
+            const std::filesystem::path current = document.GetPath().lexically_normal();
+            const std::filesystem::path startup = project ? project->GetStartupScenePath().lexically_normal()
+                                                          : std::filesystem::path{};
+            // Une autre scène vient d'être ouverte : dépliée une fois (on peut la replier ensuite).
+            const bool reveal = current != m_shownScene;
+            m_shownScene = current;
+            bool listed = false;
+            const auto drawScene = [&](const std::filesystem::path& path, const std::string& name) {
+                const bool open = path == current;
+                ui.PushId(Platform::ToUtf8(path));
+                if (open && reveal) {
+                    ui.SetNextTreeNodeOpen(true);
+                }
+                const std::string label = !path.empty() && path == startup ? name + "  (démarrage)" : name;
+                // Une scène fermée n'a rien à déplier : ses objets ne sont connus qu'une fois ouverte.
+                const UI::Context::TreeNodeResult node = ui.TreeNode(label, open, !open, true);
+                if (node.clicked && !open && !m_readOnly) {
+                    document.OpenFile(engine, path); // propose d'enregistrer la scène en cours d'abord
+                }
+                if (open && node.open) {
+                    DrawObjects(ui, engine, scene);
+                    ui.TreePop();
+                }
+                ui.PopId();
+            };
+            for (const std::filesystem::path& path : scenes) {
+                const std::filesystem::path normal = path.lexically_normal();
+                listed |= normal == current;
+                drawScene(normal, SceneName(normal));
+            }
+            // Scène jamais enregistrée (Fichier > Nouvelle scène), ou hors du dossier des assets.
+            if (!listed) {
+                drawScene(current, current.empty() ? std::string("(nouvelle scène)") : SceneName(current));
+            }
 
             HierarchyDrag& drag = m_hierarchyDrag;
             if (drag.entity) {
@@ -118,6 +207,34 @@ namespace FluxEditor {
             }
         }
         ui.EndPanel();
+    }
+
+    // Objets de la scène ouverte : les racines rangées par type, dans l'ordre de la scène à l'intérieur d'un groupe
+    // (l'ordre d'affichage de l'interface à l'écran), chacune avec ses enfants en arbre.
+    void SceneEditor::DrawObjects(UI::Context& ui, Engine& engine, Scene& scene) {
+        if (scene.GetEntityCount() == 0) {
+            ui.TextDisabled("Scène vide");
+            return;
+        }
+        const ComponentRegistry& components = engine.GetComponents();
+        std::map<std::pair<int, std::string>, std::vector<Entity>> groups;
+        scene.ForEachRoot([&](Entity root) { groups[CategoryOf(scene, components, root)].push_back(root); });
+        for (const auto& [category, roots] : groups) {
+            ui.PushId(category.second);
+            // Un groupe se déplie de lui-même quand il contient l'entité à montrer (sélectionnée dans la vue 3D).
+            if (m_revealRoot && std::ranges::any_of(roots, [&](Entity root) { return scene.GetId(root) == m_revealRoot; })) {
+                ui.SetNextTreeNodeOpen(true);
+                m_revealRoot = {};
+            }
+            const std::string title = category.second + " (" + std::to_string(roots.size()) + ")";
+            if (ui.TreeNode(title, false, false, true).open) {
+                for (const Entity root : roots) {
+                    DrawNode(ui, scene, root);
+                }
+                ui.TreePop();
+            }
+            ui.PopId();
+        }
     }
 
     void SceneEditor::DrawNode(UI::Context& ui, Scene& scene, Entity entity) {
@@ -174,7 +291,7 @@ namespace FluxEditor {
         // Position sans ancrage (l'éditeur l'ancre à droite) : entre la vue et le panneau « Démo » du jeu.
         if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screenWidth - 752.0f), 8.0f}, 368.0f)) {
             if (selected == NullEntity) {
-                ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans la hiérarchie.");
+                ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans l'onglet Scènes.");
             } else {
                 const Uuid id = scene.GetId(selected);
                 if (m_anglesFor != id) {

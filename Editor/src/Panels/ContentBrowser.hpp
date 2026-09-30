@@ -21,6 +21,8 @@ namespace FluxEditor {
     class ContentBrowser {
         public:
         void Update(Flux::Engine& engine, SceneDocument& document, double deltaSeconds);
+        // Fichiers de scène du dossier assets (sous-dossiers compris), dans l'ordre du panneau : l'onglet « Scènes ».
+        const std::vector<std::filesystem::path>& GetScenes() const { return m_scenes; }
 
         private:
         struct Entry
@@ -45,6 +47,7 @@ namespace FluxEditor {
 
         std::filesystem::path m_root;
         std::vector<Entry> m_entries;
+        std::vector<std::filesystem::path> m_scenes;
         double m_sinceScan = 0.0;
         std::filesystem::path m_renaming; // scène en cours de renommage (vide : fenêtre fermée)
         std::string m_newName;            // sans « .scene.json »

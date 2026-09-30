@@ -80,6 +80,18 @@ namespace FluxEditor {
             return entries;
         };
         m_entries = root.empty() ? std::vector<Entry>{} : read(read, root);
+
+        m_scenes.clear();
+        const auto collect = [this](const auto& self, const std::vector<Entry>& entries) -> void {
+            for (const Entry& entry : entries) {
+                if (entry.directory) {
+                    self(self, entry.children);
+                } else if (IsScene(entry.path)) {
+                    m_scenes.push_back(entry.path);
+                }
+            }
+        };
+        collect(collect, m_entries);
     }
 
     void ContentBrowser::DrawEntry(UI::Context& ui, Engine& engine, SceneDocument& document, const Entry& entry) {
