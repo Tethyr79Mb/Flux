@@ -124,7 +124,7 @@ namespace FluxEditor {
                 held = item;
             }
         };
-        // Position sans ancrage (l'éditeur l'ancre à gauche, au-dessus de la hiérarchie).
+        // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Scènes »).
         // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (boutons grisés et inertes).
         const bool playing = engine.GetGameState() != GameState::Stopped;
         if (ui.BeginPanel("Placer", {8.0f, 8.0f + ui.GetMenuBarHeight()}, 300.0f)) {
