@@ -290,6 +290,13 @@ namespace Flux {
                     } else if (texture) {
                         model.warnings.push_back("matériau « " + material.name + " » : image dans un format non géré (KTX2, WebP)");
                     }
+                    const float strength = source.has_emissive_strength ? source.emissive_strength.emissive_strength : 1.0f;
+                    material.emissive = {source.emissive_factor[0] * strength, source.emissive_factor[1] * strength,
+                                         source.emissive_factor[2] * strength, 1.0f};
+                    const cgltf_texture* emissive = source.emissive_texture.texture;
+                    if (images && emissive && emissive->image) {
+                        material.emissiveImage = LoadImage(emissive->image);
+                    }
                     if (source.alpha_mode == cgltf_alpha_mode_mask) {
                         material.alphaCutoff = std::max(source.alpha_cutoff, 1.0e-4f);
                     } else if (source.alpha_mode == cgltf_alpha_mode_blend) {

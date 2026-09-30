@@ -1,5 +1,6 @@
 // Maillages (cubes et modèles glTF), opaques ou transparents : position relative à la caméra, couleur de base
-// (facteur x image) éclairée par un soleil et une lumière ambiante, avec les ombres du soleil (cascades).
+// (facteur x image) éclairée par un soleil et une lumière ambiante, avec les ombres du soleil (cascades), et par les
+// lumières de la scène (ponctuelles et spots, sans ombre) ; plus la lumière propre du matériau (émissif).
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Cartes d'ombres (vertexShadow, vertexShadowSkinned, fragmentShadow) : profondeur vue du soleil, rien d'autre.
 
@@ -12,6 +13,16 @@ struct FrameData
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
     float4 cameraForward;     // xyz
     float4 toSun;             // xyz : direction du soleil (unitaire)
+    uint4 lightCount;         // x : nombre de lumières dans lights
+};
+
+// Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
+struct LightData
+{
+    float4 positionRange;     // xyz : position relative à la caméra ; w : portée (m)
+    float4 color;             // rgb : couleur x intensité ; w : 1 spot, 0 ponctuelle
+    float4 direction;         // xyz : axe du spot (unitaire) ; w : cosinus du demi-angle du cône
+    float4 spot;              // x : 1 / (cosinus du début du fondu - w de direction)
 };
 
 // Doit correspondre à DrawData dans MeshRenderer.cpp : une entité dessinée.
@@ -27,6 +38,7 @@ struct DrawData
 struct DrawParams
 {
     float4 color;             // linéaire : couleur de base du matériau x teinte de l'entité
+    float4 emissive;          // linéaire : lumière propre du matériau (rgb), multipliée par l'image émissive
     uint draw;                // dans draws
     uint cascade;             // carte d'ombres en cours de dessin
     float alphaCutoff;        // 0 : pas de seuil
@@ -35,8 +47,9 @@ struct DrawParams
 
 [[vk::push_constant]] ConstantBuffer<DrawParams> params;
 
-// Groupe 0 : le matériau. Couleur de base (blanc 1 x 1 sans image), en sRGB : le GPU la ramène en linéaire à la lecture.
+// Groupe 0 : le matériau. Images en sRGB (le GPU les ramène en linéaire à la lecture), blanc 1 x 1 sans image.
 [[vk::binding(0, 0)]] Sampler2D baseColorTexture;
+[[vk::binding(1, 0)]] Sampler2D emissiveTexture;
 
 // Groupe 1 : l'image en cours.
 // Matrices des os de tous les modèles animés de l'image (monde du modèle x inverse de liaison), 4 colonnes par os.
@@ -45,6 +58,8 @@ struct DrawParams
 [[vk::binding(2, 1)]] StructuredBuffer<FrameData> frame;
 // Cartes des cascades, en 2 x 2 dans une seule texture (cascade c : colonne c % 2, ligne c / 2).
 [[vk::binding(3, 1)]] Sampler2DShadow shadowMap;
+// Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
+[[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 
 struct VertexInput
 {
@@ -168,6 +183,40 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return lit;
 }
 
+// Lumière reçue des lumières de la scène (ponctuelles et spots). Affaiblie comme 1 / (1 + d²) (d en mètres : la
+// moitié à 1 m, sans l'infini d'une vraie source ponctuelle collée à la surface), puis éteinte en douceur à la portée.
+float3 SceneLights(float3 worldPosition, float3 normal)
+{
+    float3 sum = float3(0.0);
+    const uint count = frame[0].lightCount.x;
+    for (uint i = 0; i < count; ++i) {
+        const LightData light = lights[i];
+        const float3 toLight = light.positionRange.xyz - worldPosition;
+        const float distanceSquared = dot(toLight, toLight);
+        const float range = light.positionRange.w;
+        if (distanceSquared >= range * range) {
+            continue;
+        }
+        const float distance = sqrt(distanceSquared);
+        const float3 direction = toLight / max(distance, 1.0e-4);
+        const float facing = dot(normal, direction);
+        if (facing <= 0.0) {
+            continue;
+        }
+        const float ratio = distanceSquared / (range * range);
+        const float window = saturate(1.0 - ratio * ratio);
+        float attenuation = window * window / (1.0 + distanceSquared);
+        if (light.color.w > 0.5) {
+            // Spot : plein dans le cœur du cône, fondu vers son bord.
+            const float cosine = dot(-direction, light.direction.xyz);
+            const float edge = saturate((cosine - light.direction.w) * light.spot.x);
+            attenuation *= edge * edge;
+        }
+        sum += light.color.rgb * (facing * attenuation);
+    }
+    return sum;
+}
+
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target
 {
@@ -181,7 +230,12 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     const float sunFacing = dot(normal, toSun);
     const float sun = sunFacing > 0.0 ? sunFacing * SunVisibility(input.worldPosition, normal, sunFacing) : 0.0;
     const float shade = 0.3 + 0.1 * normal.y + 0.6 * sun;
-    return float4(base.rgb * shade, params.transparent != 0 ? base.a : 1.0);
+    float3 emissive = float3(0.0);
+    if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
+        emissive = params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;
+    }
+    const float3 lit = base.rgb * (shade + SceneLights(input.worldPosition, normal)) + emissive;
+    return float4(lit, params.transparent != 0 ? base.a : 1.0);
 }
 
 // Cartes d'ombres : la position vue du soleil (cascade params.cascade), et l'image seulement pour le seuil d'alpha.

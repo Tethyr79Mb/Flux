@@ -157,6 +157,15 @@ namespace Flux::UI {
                 pen.Triangle({0.52f, 0.14f}, {0.94f, 0.5f}, {0.52f, 0.86f}, color);
                 break;
             }
+            case Icon::Light: {
+                const LinearColor glass = LinearColor::FromSrgb8(250, 214, 90);
+                pen.Disc(0.5f, 0.4f, 0.32f, glass);
+                pen.Rect(0.36f, 0.56f, 0.64f, 0.74f, glass);                           // col de l'ampoule
+                pen.Rect(0.34f, 0.74f, 0.66f, 0.84f, LinearColor::FromSrgb8(170, 172, 180)); // culot
+                pen.Rect(0.4f, 0.84f, 0.6f, 0.94f, LinearColor::FromSrgb8(120, 122, 130));
+                pen.Disc(0.4f, 0.3f, 0.08f, LinearColor::FromSrgb8(255, 248, 210));     // reflet
+                break;
+            }
             case Icon::Component: {
                 const LinearColor color = LinearColor::FromSrgb8(200, 200, 120);
                 pen.Quad({0.5f, 0.06f}, {0.94f, 0.5f}, {0.5f, 0.94f}, {0.06f, 0.5f}, color);

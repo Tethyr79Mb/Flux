@@ -67,6 +67,7 @@ namespace FluxEditor {
             {"character", "Personnages", UI::Icon::Character},
             {"model", "Modèles 3D", UI::Icon::Model},
             {"meshRenderer", "Cubes", UI::Icon::Cube},
+            {"light", "Lumières", UI::Icon::Light},
             {"collider", "Collisions", UI::Icon::Collider},
             {"seat", "Sièges", UI::Icon::Seat},
             {"screenText", "Textes à l'écran", UI::Icon::Text},
@@ -420,7 +421,8 @@ namespace FluxEditor {
                 return changed;
             }
             case FieldType::Color:
-                return ui.ColorEdit4(label, *static_cast<Math::LinearColor*>(value));
+                return field.options.alpha ? ui.ColorEdit4(label, *static_cast<Math::LinearColor*>(value))
+                                           : ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
             case FieldType::String: {
                 auto& text = *static_cast<std::string*>(value);
                 if (field.asset == AssetType::Animation) {

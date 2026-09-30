@@ -22,6 +22,7 @@ namespace Flux::UI {
         Text,
         Image,
         SceneChange, // flèche vers une autre scène
+        Light,       // ampoule
         Component,   // composant du jeu, sans pictogramme à lui
         Empty,       // objet sans composant
     };
