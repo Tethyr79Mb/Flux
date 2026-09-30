@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <numbers>
 #include <span>
 
 namespace Flux {
@@ -24,30 +25,39 @@ namespace Flux {
             std::array<float, 4> cascadeTexels;
             std::array<float, 4> cameraForward;
             std::array<float, 4> toSun;
+            std::array<std::uint32_t, 4> lightCount; // x
         };
-        static_assert(sizeof(FrameData) == 384 && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 400 && ShadowCascadeCount == 4);
+
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
         struct DrawParams
         {
             Math::LinearColor color;
+            Math::LinearColor emissive;
             std::uint32_t draw;
             std::uint32_t cascade;
             float alphaCutoff;
             std::uint32_t transparent;
         };
-        static_assert(sizeof(DrawParams) == 32);
+        static_assert(sizeof(DrawParams) == 48);
 
         // Emplacements du groupe 1 (voir shaders/Mesh.slang).
         constexpr std::uint32_t JointSlot = 0;
         constexpr std::uint32_t DrawSlot = 1;
         constexpr std::uint32_t FrameSlot = 2;
         constexpr std::uint32_t ShadowMapSlot = 3;
+        constexpr std::uint32_t LightSlot = 4;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
         constexpr std::uint64_t MinJointBufferSize = 64 * 1024;
         constexpr std::uint64_t MinDrawBufferSize = 64 * 1024;
+        constexpr std::uint64_t MinLightBufferSize = 16 * 1024;
+
+        // Lumières envoyées au GPU au plus, les plus proches de la caméra parmi celles qui touchent son champ.
+        // Chaque pixel les parcourt toutes : le coût croît avec leur nombre (voir SceneLights dans shaders/Mesh.slang).
+        constexpr std::size_t MaxLights = 256;
 
         // Carte d'ombres : 2 x 2 cascades de 2048 texels de côté (64 Mo en profondeur 32 bits).
         constexpr std::uint32_t ShadowCascadeResolution = 2048;
@@ -69,7 +79,22 @@ namespace Flux {
             return false;
         }
 
-        std::array<float, 4> ToArray(const Math::Vector3f& v) { return {v.x, v.y, v.z, 0.0f}; }
+        std::array<float, 4> ToArray(const Math::Vector3f& v, float w = 0.0f) { return {v.x, v.y, v.z, w}; }
+
+        // La sphère (relative à la caméra) touche le champ de la caméra : devant elle et entre ses quatre bords.
+        bool InView(const Camera& camera, float aspect, const Math::Vector3f& center, float radius) {
+            const float depth = Math::Dot(center, camera.GetForward());
+            if (depth < -radius) {
+                return false;
+            }
+            const float tanY = std::tan(0.5f * camera.verticalFov);
+            const float tanX = tanY * aspect;
+            // Distance signée au plan d'un bord (dehors si positive) : (côté - profondeur x tan) / sqrt(1 + tan²).
+            const auto outside = [&](float side, float tangent) {
+                return (std::abs(side) - depth * tangent) / std::sqrt(1.0f + tangent * tangent) > radius;
+            };
+            return !outside(Math::Dot(center, camera.GetRight()), tanX) && !outside(Math::Dot(center, camera.GetUp()), tanY);
+        }
     }
 
     std::expected<std::unique_ptr<MeshRenderer>, std::string> MeshRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
@@ -99,6 +124,7 @@ namespace Flux {
             RHI::Binding{DrawSlot, RHI::BindingType::StorageBuffer, both},
             RHI::Binding{FrameSlot, RHI::BindingType::StorageBuffer, both},
             RHI::Binding{ShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -112,7 +138,8 @@ namespace Flux {
             }
             if (!renderer->GrowBuffer(renderer->m_jointBuffers[f], f, JointSlot, MinJointBufferSize)
                 || !renderer->GrowBuffer(renderer->m_drawBuffers[f], f, DrawSlot, MinDrawBufferSize)
-                || !renderer->GrowBuffer(renderer->m_frameBuffers[f], f, FrameSlot, sizeof(FrameData))) {
+                || !renderer->GrowBuffer(renderer->m_frameBuffers[f], f, FrameSlot, sizeof(FrameData))
+                || !renderer->GrowBuffer(renderer->m_lightBuffers[f], f, LightSlot, MinLightBufferSize)) {
                 return std::unexpected("création des buffers de l'image");
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
@@ -228,12 +255,18 @@ namespace Flux {
         m_draws.clear();
         m_drawData.clear();
         m_jointMatrices.clear();
+        m_lights.clear();
         for (const RelativeTransform& transform : m_relativeTransforms) {
+            if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
+                AddLight(camera, aspect, transform, *light);
+            }
             const GpuModel* model = nullptr;
             Math::LinearColor tint;
+            Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 model = &m_models->GetCube();
                 tint = renderer->color;
+                emissive = {tint.r * renderer->emission, tint.g * renderer->emission, tint.b * renderer->emission};
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
                        component && !component->model.empty() && !assetsDirectory.empty()) {
                 model = m_models->Find(assetsDirectory / Platform::PathFromUtf8(component->model));
@@ -269,7 +302,7 @@ namespace Flux {
                                             half.z * std::abs(transform.scale.z)};
             const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
             const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            m_draws.push_back({model, tint, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
+            m_draws.push_back({model, tint, emissive, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
                                !IsInside(scene, transform.entity, hidden)});
         }
         Upload(camera, aspect, frameIndex);
@@ -292,6 +325,25 @@ namespace Flux {
         std::stable_sort(m_transparent.begin(), m_transparent.end(), [this](const TransparentDraw& a, const TransparentDraw& b) {
             return m_draws[a.draw].distance > m_draws[b.draw].distance;
         });
+    }
+
+    // Lumière de l'entité, si sa portée touche le champ de la caméra. Un spot éclaire vers le -z de l'entité.
+    void MeshRenderer::AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light) {
+        const Math::Vector3f position(transform.position);
+        if (light.range <= 0.0f || light.intensity <= 0.0f || !InView(camera, aspect, position, light.range)) {
+            return;
+        }
+        const Math::Vector3f color{light.color.r * light.intensity, light.color.g * light.intensity, light.color.b * light.intensity};
+        LightData data{ToArray(position, light.range), ToArray(color, light.type == LightType::Spot ? 1.0f : 0.0f), {}, {}};
+        if (light.type == LightType::Spot) {
+            constexpr float RadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
+            const float half = 0.5f * std::clamp(light.angle, 1.0f, 179.0f) * RadiansPerDegree;
+            const float outer = std::cos(half);
+            const float inner = std::cos(half * (1.0f - std::clamp(light.softness, 0.0f, 1.0f)));
+            data.direction = ToArray(Math::Normalize(transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f})), outer);
+            data.spot = {1.0f / std::max(inner - outer, 1.0e-4f), 0.0f, 0.0f, 0.0f};
+        }
+        m_lights.push_back({data, Math::Length(position)});
     }
 
     bool MeshRenderer::IsTransparent(const MeshDraw& draw, const GpuMaterial& material) {
@@ -320,7 +372,7 @@ namespace Flux {
     // et les données de l'image (caméra, cascades). Si un buffer ne peut grandir (mémoire épuisée), rien n'est dessiné
     // plutôt que lu hors du buffer.
     void MeshRenderer::Upload(const Camera& camera, float aspect, std::uint32_t frameIndex) {
-        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 112);
+        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 112 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
         if (!GrowBuffer(m_jointBuffers[frameIndex], frameIndex, JointSlot, jointBytes)
@@ -334,6 +386,21 @@ namespace Flux {
         if (drawBytes > 0) {
             m_drawBuffers[frameIndex]->Write(m_drawData.data(), drawBytes);
         }
+        // Trop de lumières : les plus proches de la caméra.
+        if (m_lights.size() > MaxLights) {
+            std::ranges::nth_element(m_lights, m_lights.begin() + MaxLights, {}, &PreparedLight::distance);
+            m_lights.resize(MaxLights);
+        }
+        m_lightData.clear();
+        for (const PreparedLight& light : m_lights) {
+            m_lightData.push_back(light.data);
+        }
+        const std::uint64_t lightBytes = m_lightData.size() * sizeof(LightData);
+        if (!GrowBuffer(m_lightBuffers[frameIndex], frameIndex, LightSlot, lightBytes)) {
+            m_lightData.clear(); // pas de place : aucune lumière plutôt qu'une lecture hors du buffer
+        } else if (lightBytes > 0) {
+            m_lightBuffers[frameIndex]->Write(m_lightData.data(), lightBytes);
+        }
 
         m_cascades = ComputeShadowCascades(camera, aspect, ToSun, ShadowCascadeResolution);
         FrameData frame{};
@@ -345,6 +412,7 @@ namespace Flux {
         }
         frame.cameraForward = ToArray(camera.GetForward());
         frame.toSun = ToArray(ToSun);
+        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), 0, 0, 0};
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
 
@@ -392,6 +460,8 @@ namespace Flux {
         }
         const DrawParams params{{material.baseColor.r * draw.tint.r, material.baseColor.g * draw.tint.g,
                                  material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a},
+                                {material.emissive.r + draw.emissive.r, material.emissive.g + draw.emissive.g,
+                                 material.emissive.b + draw.emissive.b, 0.0f},
                                 drawIndex, cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u};
         commands.PushConstants(&params, sizeof(params));
         commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);

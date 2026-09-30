@@ -61,6 +61,9 @@ namespace Flux {
     {
         MeshType mesh = MeshType::Cube;
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
+        // Lumière propre de la surface (écran, voyant, néon), ajoutée à l'éclairage : couleur x émission. 0 : aucune.
+        // N'éclaire pas les objets voisins (il faut une lumière pour cela).
+        float emission = 0.0f;
     };
 
     // Modèle 3D importé (glTF : .gltf ou .glb), placé par la transformation de l'entité. 1 unité du fichier = 1 mètre.
@@ -68,6 +71,24 @@ namespace Flux {
     {
         std::string model; // relatif au dossier des assets du projet, avec des « / » (models/Personnage.glb)
         Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie les couleurs du modèle (blanc : inchangées)
+    };
+
+    enum class LightType : std::uint8_t {
+        Point, // dans toutes les directions (ampoule)
+        Spot,  // dans un cône, vers le -z de l'entité (projecteur, lampe de plafond)
+    };
+
+    // Lumière placée dans la scène : éclaire les maillages à moins de `range` mètres, en s'affaiblissant avec la
+    // distance jusqu'à s'éteindre à `range`. Ne fait pas d'ombre : elle traverse les murs (réglez la portée).
+    struct LightComponent
+    {
+        LightType type = LightType::Point;
+        Math::LinearColor color{1.0f, 1.0f, 1.0f};
+        // Éclairement d'une surface face à la lumière à 1 m : intensity / 2 (1 : le plein soleil) ; à 2 m, intensity / 5.
+        float intensity = 5.0f;
+        float range = 10.0f;     // mètres
+        float angle = 60.0f;     // spot : ouverture totale du cône, en degrés
+        float softness = 0.25f;  // spot : part du bord du cône qui s'estompe (0 : bord net, 1 : fondu depuis l'axe)
     };
 
     enum class ColliderShape : std::uint8_t {

@@ -51,6 +51,7 @@ namespace Flux {
         double min = std::numeric_limits<double>::lowest();
         double max = std::numeric_limits<double>::max();
         int decimals = 3;
+        bool alpha = true; // couleur : opacité réglable (4e valeur) ; false pour une lumière
     };
 
     struct EnumOption

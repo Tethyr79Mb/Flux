@@ -42,10 +42,19 @@ namespace Flux {
             .NotRemovable();
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")
             .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}})
-            .Field("color", "Couleur", &MeshRendererComponent::color);
+            .Field("color", "Couleur", &MeshRendererComponent::color)
+            .Field("emission", "Émission", &MeshRendererComponent::emission, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2});
         registry.Register<ModelComponent>("model", "Modèle 3D")
             .Asset("model", "Fichier", &ModelComponent::model, AssetType::Model)
             .Field("tint", "Teinte", &ModelComponent::tint);
+        registry.Register<LightComponent>("light", "Lumière")
+            .Enum("type", "Type", &LightComponent::type,
+                  {{"point", "Ponctuelle", LightType::Point}, {"spot", "Spot", LightType::Spot}})
+            .Field("color", "Couleur", &LightComponent::color, {.alpha = false})
+            .Field("intensity", "Intensité", &LightComponent::intensity, {.speed = 0.05, .min = 0.0, .max = 1.0e4, .decimals = 2})
+            .Field("range", "Portée (m)", &LightComponent::range, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
+            .Field("angle", "Ouverture du spot (°)", &LightComponent::angle, {.speed = 0.5, .min = 1.0, .max = 179.0, .decimals = 1})
+            .Field("softness", "Bord du spot adouci", &LightComponent::softness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<ColliderComponent>("collider", "Collision")
             .Enum("shape", "Forme", &ColliderComponent::shape,
                   {{"box", "Boîte", ColliderShape::Box},

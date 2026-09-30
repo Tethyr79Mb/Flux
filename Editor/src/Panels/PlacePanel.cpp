@@ -14,6 +14,7 @@
 #include <Flux/UI/DrawList.hpp>
 
 #include <cmath>
+#include <numbers>
 #include <cstdint>
 #include <string>
 
@@ -100,7 +101,9 @@ namespace FluxEditor {
                                            {"Changement de scène", "Changement de scène"},
                                            {"Personnage...", "Joueur"},
                                            {"Vaisseau (maquette)", "Vaisseau"},
-                                           {"Chasseur", "Chasseur"}};
+                                           {"Chasseur", "Chasseur"},
+                                           {"Lumière", "Lumière"},
+                                           {"Spot", "Spot"}};
             return Infos[item];
         }
 
@@ -137,6 +140,11 @@ namespace FluxEditor {
             ui.SameLine();
             button(Item::Cube);
             button(Item::Model);
+            ui.Separator();
+            ui.TextDisabled("Lumières");
+            button(Item::Light);
+            ui.SameLine();
+            button(Item::Spot);
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
@@ -249,6 +257,14 @@ namespace FluxEditor {
             } else if (item == Item::Fighter) {
                 scene.Add<ShipComponent>(entity);
                 AddFighter(scene, entity);
+            } else if (item == Item::Light || item == Item::Spot) {
+                LightComponent& light = scene.Add<LightComponent>(entity);
+                if (item == Item::Spot) {
+                    // Tourné vers le bas (son -z vers -y du monde) : une lampe de plafond, à orienter ensuite.
+                    light.type = LightType::Spot;
+                    scene.Get<TransformComponent>(entity).rotation =
+                        Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.5f * std::numbers::pi_v<float>);
+                }
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();
