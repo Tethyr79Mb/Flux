@@ -137,6 +137,9 @@ namespace Flux {
             RHI::VertexAttribute{3, 1, RHI::Format::RGBA16Uint, offsetof(ModelSkinVertex, joints)},
             RHI::VertexAttribute{4, 1, RHI::Format::RGBA32Float, offsetof(ModelSkinVertex, weights)},
         };
+        // Ombres : la normale n'est pas lue (profondeur seule) ; la déclarer quand même fait avertir la validation
+        // Vulkan (attribut non consommé, lu pour rien par le GPU).
+        const std::array shadowAttributes{attributes[0], attributes[2], attributes[3], attributes[4]};
         const std::array<const RHI::BindGroupLayout*, 2> layouts{&m_models->GetMaterialLayout(), m_frameLayout.get()};
 
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
@@ -162,6 +165,7 @@ namespace Flux {
             // pente) évite qu'une surface s'ombre elle-même par endroits (« acné »), avec le décalage le long de la
             // normale fait à la lecture.
             desc.vertexEntryPoint = skinned ? "vertexShadowSkinned" : "vertexShadow";
+            desc.vertexAttributes = std::span(shadowAttributes).first(skinned ? 4 : 2);
             desc.fragmentEntryPoint = "fragmentShadow";
             desc.colorFormat = RHI::Format::Undefined;
             desc.depthFormat = RHI::Format::D32Float;
@@ -174,6 +178,7 @@ namespace Flux {
             }
 
             desc.vertexEntryPoint = skinned ? "vertexSkinned" : "vertexMain";
+            desc.vertexAttributes = std::span(attributes).first(skinned ? 5 : 3);
             desc.fragmentEntryPoint = "fragmentMain";
             desc.colorFormat = colorFormat;
             desc.depthFormat = depthFormat;
