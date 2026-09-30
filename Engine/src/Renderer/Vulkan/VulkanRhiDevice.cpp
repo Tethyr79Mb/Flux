@@ -53,6 +53,7 @@ namespace Flux::Vk {
                 case RHI::CompareOp::Greater: return VK_COMPARE_OP_GREATER;
                 case RHI::CompareOp::GreaterOrEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
                 case RHI::CompareOp::Less: return VK_COMPARE_OP_LESS;
+                case RHI::CompareOp::LessOrEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
                 case RHI::CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
             }
             return VK_COMPARE_OP_ALWAYS;
@@ -176,12 +177,15 @@ namespace Flux::Vk {
         return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
-    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent) {
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,
+                                                                                            bool sampled) {
         const bool depth = format == RHI::Format::D32Float;
         const VkImageAspectFlags aspect = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-        auto image = Image::CreateAttachment(*m_device, ToVulkan(format), {extent.width, extent.height},
-                                             depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                             aspect);
+        VkImageUsageFlags usage = depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        if (sampled) {
+            usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+        auto image = Image::CreateAttachment(*m_device, ToVulkan(format), {extent.width, extent.height}, usage, aspect);
         if (!image) {
             return std::unexpected(image.error());
         }
@@ -200,6 +204,10 @@ namespace Flux::Vk {
         samplerInfo.addressModeV = address;
         samplerInfo.addressModeW = address;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE; // tous les niveaux de mip de la texture
+        if (desc.compare) {
+            samplerInfo.compareEnable = VK_TRUE;
+            samplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL; // éclairé si le point est devant l'obstacle le plus proche
+        }
         VkSampler sampler = VK_NULL_HANDLE;
         if (!Check(vkCreateSampler(m_device->GetHandle(), &samplerInfo, nullptr, &sampler), "vkCreateSampler")) {
             return std::unexpected("création d'un sampler");
@@ -296,6 +304,8 @@ namespace Flux::Vk {
             case RHI::CullMode::Front: vkDesc.cullMode = VK_CULL_MODE_FRONT_BIT; break;
         }
         vkDesc.alphaBlend = desc.blend == RHI::BlendMode::Alpha;
+        vkDesc.depthBiasConstant = desc.depthBiasConstant;
+        vkDesc.depthBiasSlope = desc.depthBiasSlope;
         auto pipeline = GraphicsPipeline::Create(m_device->GetHandle(), vkDesc);
         if (!pipeline) {
             return std::unexpected(pipeline.error());

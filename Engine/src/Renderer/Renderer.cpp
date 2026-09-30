@@ -17,8 +17,8 @@ namespace Flux {
         constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
     }
 
-    // Une image : la scène (MeshRenderer) dans sa zone, puis l'interface (OverlayRenderer) sur toute la fenêtre, en
-    // une passe. Aucune API graphique ici : tout passe par le RHI.
+    // Une image : la carte d'ombres, puis la scène (MeshRenderer) dans sa zone et l'interface (OverlayRenderer) sur
+    // toute la fenêtre, dans la passe principale. Aucune API graphique ici : tout passe par le RHI.
     struct Renderer::Impl {
         Window& window;
         // Déclaré en premier : détruit en dernier, après les ressources créées par lui.
@@ -104,6 +104,7 @@ namespace Flux {
                             assetsDirectory, frameIndex);
 
             RHI::CommandList& commands = device->GetCommandList();
+            meshes->DrawShadows(commands, frameIndex);
             commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
             commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
                                   static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
