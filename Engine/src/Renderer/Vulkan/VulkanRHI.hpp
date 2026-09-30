@@ -1,0 +1,178 @@
+#pragma once
+
+// Backend Vulkan du RHI : chaque interface de Renderer/RHI/RHI.hpp y est implémentée sur les enveloppes Vk::
+// (Device, Swapchain, Buffer, Image, GraphicsPipeline).
+
+#include "Renderer/RHI/RHI.hpp"
+#include "Renderer/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/Vulkan/VulkanDevice.hpp"
+#include "Renderer/Vulkan/VulkanImage.hpp"
+#include "Renderer/Vulkan/VulkanPipeline.hpp"
+#include "Renderer/Vulkan/VulkanSwapchain.hpp"
+
+#include <array>
+#include <vector>
+
+namespace Flux::Vk {
+    VkFormat ToVulkan(RHI::Format format);
+    RHI::Format FromVulkan(VkFormat format);
+
+    class RhiBuffer final : public RHI::Buffer {
+        public:
+        explicit RhiBuffer(Vk::Buffer buffer) : m_buffer(std::move(buffer)) {}
+        std::uint64_t GetSize() const override { return m_buffer.GetSize(); }
+        void Write(const void* data, std::uint64_t size, std::uint64_t offset) override { m_buffer.Write(data, size, offset); }
+        VkBuffer GetHandle() const { return m_buffer.GetHandle(); }
+
+        private:
+        Vk::Buffer m_buffer;
+    };
+
+    class RhiTexture final : public RHI::Texture {
+        public:
+        RhiTexture(Image image, RHI::Format format, VkImageAspectFlags aspect)
+            : m_image(std::move(image)), m_format(format), m_aspect(aspect) {}
+        RHI::Extent GetExtent() const override { return {m_image.GetExtent().width, m_image.GetExtent().height}; }
+        RHI::Format GetFormat() const override { return m_format; }
+        const Image& GetImage() const { return m_image; }
+        VkImageAspectFlags GetAspect() const { return m_aspect; }
+
+        private:
+        Image m_image;
+        RHI::Format m_format;
+        VkImageAspectFlags m_aspect;
+    };
+
+    class RhiSampler final : public RHI::Sampler {
+        public:
+        RhiSampler(VkDevice device, VkSampler sampler) : m_device(device), m_sampler(sampler) {}
+        ~RhiSampler() override { vkDestroySampler(m_device, m_sampler, nullptr); }
+        RhiSampler(const RhiSampler&) = delete;
+        RhiSampler& operator=(const RhiSampler&) = delete;
+        VkSampler GetHandle() const { return m_sampler; }
+
+        private:
+        VkDevice m_device;
+        VkSampler m_sampler;
+    };
+
+    // Le layout et son pool : ses groupes y sont pris, et y retournent un par un.
+    class RhiBindGroupLayout final : public RHI::BindGroupLayout {
+        public:
+        RhiBindGroupLayout(VkDevice device, VkDescriptorSetLayout layout, VkDescriptorPool pool)
+            : m_device(device), m_layout(layout), m_pool(pool) {}
+        ~RhiBindGroupLayout() override;
+        RhiBindGroupLayout(const RhiBindGroupLayout&) = delete;
+        RhiBindGroupLayout& operator=(const RhiBindGroupLayout&) = delete;
+        VkDescriptorSetLayout GetHandle() const { return m_layout; }
+        VkDescriptorPool GetPool() const { return m_pool; }
+
+        private:
+        VkDevice m_device;
+        VkDescriptorSetLayout m_layout;
+        VkDescriptorPool m_pool;
+    };
+
+    class RhiBindGroup final : public RHI::BindGroup {
+        public:
+        RhiBindGroup(VkDevice device, VkDescriptorPool pool, VkDescriptorSet set) : m_device(device), m_pool(pool), m_set(set) {}
+        ~RhiBindGroup() override { vkFreeDescriptorSets(m_device, m_pool, 1, &m_set); }
+        RhiBindGroup(const RhiBindGroup&) = delete;
+        RhiBindGroup& operator=(const RhiBindGroup&) = delete;
+        void SetTexture(std::uint32_t slot, const RHI::Texture& texture, const RHI::Sampler& sampler) override;
+        void SetBuffer(std::uint32_t slot, const RHI::Buffer& buffer) override;
+        VkDescriptorSet GetHandle() const { return m_set; }
+
+        private:
+        VkDevice m_device;
+        VkDescriptorPool m_pool;
+        VkDescriptorSet m_set;
+    };
+
+    class RhiPipeline final : public RHI::Pipeline {
+        public:
+        explicit RhiPipeline(GraphicsPipeline pipeline) : m_pipeline(std::move(pipeline)) {}
+        const GraphicsPipeline& Get() const { return m_pipeline; }
+
+        private:
+        GraphicsPipeline m_pipeline;
+    };
+
+    // Liste de commandes de l'image en cours, et l'image de la swapchain où dessine sa passe.
+    class RhiCommandList final : public RHI::CommandList {
+        public:
+        void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent);
+        // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
+        void TransitionToPresent();
+
+        void BeginRenderPass(const RHI::RenderPassDesc& desc) override;
+        void EndRenderPass() override;
+        void SetViewport(const RHI::Viewport& viewport) override;
+        void SetScissor(const RHI::Rect& rect) override;
+        void BindPipeline(const RHI::Pipeline& pipeline) override;
+        void SetBindGroup(std::uint32_t index, const RHI::BindGroup& group) override;
+        void BindVertexBuffers(std::uint32_t first, std::span<const RHI::Buffer* const> buffers) override;
+        void BindIndexBuffer(const RHI::Buffer& buffer) override;
+        void PushConstants(const void* data, std::uint32_t size) override;
+        void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) override;
+        void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) override;
+
+        private:
+        VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+        VkImage m_image = VK_NULL_HANDLE;
+        VkImageView m_view = VK_NULL_HANDLE;
+        VkExtent2D m_extent{};
+        VkPipelineLayout m_layout = VK_NULL_HANDLE; // du pipeline lié
+    };
+
+    class RhiDevice final : public RHI::Device {
+        public:
+        static std::expected<std::unique_ptr<RhiDevice>, std::string> Create(void* nativeWindowHandle, RHI::Extent extent, bool vsync);
+        ~RhiDevice() override;
+
+        std::string_view GetName() const override { return m_device->GetName(); }
+        void WaitIdle() override { m_device->WaitIdle(); }
+
+        std::expected<std::unique_ptr<RHI::Buffer>, std::string> CreateBuffer(const RHI::BufferDesc& desc, const void* data) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
+                                                                                std::span<const std::uint8_t> pixels,
+                                                                                bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent) override;
+        std::expected<std::unique_ptr<RHI::Sampler>, std::string> CreateSampler(const RHI::SamplerDesc& desc) override;
+        std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) override;
+        std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;
+        std::expected<std::unique_ptr<RHI::Pipeline>, std::string> CreatePipeline(const RHI::PipelineDesc& desc) override;
+
+        bool ResizeSwapchain(RHI::Extent extent, bool vsync) override;
+        RHI::Extent GetSwapchainExtent() const override;
+        RHI::Format GetSwapchainFormat() const override;
+        RHI::PresentMode GetPresentMode() const override;
+
+        RHI::FrameStatus BeginFrame() override;
+        RHI::CommandList& GetCommandList() override { return m_commandList; }
+        std::uint32_t GetFrameIndex() const override { return m_frameIndex; }
+        bool EndFrame() override;
+
+        private:
+        struct Frame
+        {
+            VkCommandPool commandPool = VK_NULL_HANDLE;
+            VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+            VkSemaphore imageAvailable = VK_NULL_HANDLE;
+            VkFence inFlight = VK_NULL_HANDLE;
+        };
+
+        RhiDevice() = default;
+        bool CreateFrames();
+        bool RecreateSwapchain();
+
+        std::unique_ptr<Vk::Device> m_device;
+        std::unique_ptr<Swapchain> m_swapchain;
+        std::array<Frame, RHI::FramesInFlight> m_frames{};
+        std::uint32_t m_frameIndex = 0;
+        std::uint32_t m_imageIndex = 0;
+        RHI::Extent m_extent;
+        bool m_vsync = true;
+        RhiCommandList m_commandList;
+    };
+}

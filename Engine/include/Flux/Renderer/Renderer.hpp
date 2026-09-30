@@ -20,7 +20,7 @@ namespace Flux {
     struct Camera;
     class Scene;
 
-    // Aucun type Vulkan ici : tout vit dans Impl (Renderer.cpp).
+    // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.
     class FLUX_API Renderer {
         public:
         static std::expected<std::unique_ptr<Renderer>, std::string> Create(Window& window);
@@ -44,7 +44,7 @@ namespace Flux {
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
         void SetVSync(bool enabled);
         bool IsVSyncEnabled() const;
-        // Mode de présentation Vulkan réellement utilisé, lisible (FIFO, MAILBOX...).
+        // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 
         // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
