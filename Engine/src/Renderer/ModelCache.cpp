@@ -1,0 +1,193 @@
+#include "Renderer/ModelCache.hpp"
+
+#include "Flux/Assets/Image.hpp"
+#include "Flux/Platform/Filesystem.hpp"
+
+#include <array>
+#include <cstdio>
+
+namespace Flux {
+    namespace {
+        // Matériaux de modèles chargés au plus : un groupe chacun (son image de couleur de base).
+        constexpr std::uint32_t MaxMaterials = 4096;
+        // Intervalle entre deux vérifications de la date d'un fichier (relu s'il a changé) : assez court pour voir
+        // une retouche aussitôt, assez long pour ne pas interroger le disque à chaque image.
+        constexpr std::chrono::milliseconds CheckInterval{1000};
+
+        // Cube unité centré ; chaque face a ses 4 sommets (normale propre, image entière).
+        ModelData BuildCube() {
+            struct Face
+            {
+                Math::Vector3f normal;
+                Math::Vector3f tangent;
+            };
+            constexpr std::array<Face, 6> faces{{
+                {{1, 0, 0}, {0, 0, -1}},
+                {{-1, 0, 0}, {0, 0, 1}},
+                {{0, 1, 0}, {1, 0, 0}},
+                {{0, -1, 0}, {1, 0, 0}},
+                {{0, 0, 1}, {1, 0, 0}},
+                {{0, 0, -1}, {-1, 0, 0}},
+            }};
+            ModelData mesh;
+            for (const Face& face : faces) {
+                // bitangent = normal x tangent, donc tangent x bitangent = normal : sens antihoraire vu de l'extérieur.
+                const Math::Vector3f bitangent = Math::Cross(face.normal, face.tangent);
+                const Math::Vector3f center = face.normal * 0.5f;
+                const Math::Vector3f u = face.tangent * 0.5f;
+                const Math::Vector3f v = bitangent * 0.5f;
+                const auto base = static_cast<uint32_t>(mesh.vertices.size());
+                mesh.vertices.push_back({center - u - v, face.normal, {0.0f, 1.0f}});
+                mesh.vertices.push_back({center + u - v, face.normal, {1.0f, 1.0f}});
+                mesh.vertices.push_back({center + u + v, face.normal, {1.0f, 0.0f}});
+                mesh.vertices.push_back({center - u + v, face.normal, {0.0f, 0.0f}});
+                for (const uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u}) {
+                    mesh.indices.push_back(base + corner);
+                }
+            }
+            mesh.primitives.push_back({0, static_cast<uint32_t>(mesh.indices.size()), 0});
+            mesh.materials.emplace_back();
+            return mesh;
+        }
+    }
+
+    std::expected<std::unique_ptr<ModelCache>, std::string> ModelCache::Create(RHI::Device& device) {
+        std::unique_ptr<ModelCache> cache(new ModelCache(device));
+
+        // Répété (les UV des modèles sortent souvent de [0, 1]), filtré entre les mips.
+        auto sampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Linear,
+                                             .address = RHI::AddressMode::Repeat});
+        if (!sampler) {
+            return std::unexpected(sampler.error());
+        }
+        cache->m_sampler = std::move(*sampler);
+
+        constexpr RHI::Binding binding{0, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
+        auto layout = device.CreateBindGroupLayout({.bindings = {&binding, 1}, .maxGroups = 1 + MaxMaterials});
+        if (!layout) {
+            return std::unexpected(layout.error());
+        }
+        cache->m_materialLayout = std::move(*layout);
+
+        constexpr std::array<std::uint8_t, 4> white{255, 255, 255, 255};
+        auto image = device.CreateTexture(RHI::Format::RGBA8Srgb, {1, 1}, white);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        cache->m_whiteImage = std::move(*image);
+        cache->m_whiteGroup = device.CreateBindGroup(*cache->m_materialLayout);
+        if (!cache->m_whiteGroup) {
+            return std::unexpected("allocation du groupe de l'image blanche");
+        }
+        cache->m_whiteGroup->SetTexture(0, *cache->m_whiteImage, *cache->m_sampler);
+
+        auto cube = cache->Upload(BuildCube(), "cube");
+        if (!cube) {
+            return std::unexpected(cube.error());
+        }
+        cache->m_cube = std::move(*cube);
+        return cache;
+    }
+
+    // Sommets, indices, images et matériaux envoyés au GPU. Une image refusée par le GPU laisse son matériau blanc.
+    std::expected<GpuModel, std::string> ModelCache::Upload(const ModelData& data, std::string_view name) {
+        GpuModel model;
+        auto vertices = m_device.CreateBuffer({data.vertices.size() * sizeof(ModelVertex), RHI::BufferUsage::Vertex}, data.vertices.data());
+        if (!vertices) {
+            return std::unexpected(vertices.error());
+        }
+        model.vertices = std::move(*vertices);
+        auto indices = m_device.CreateBuffer({data.indices.size() * sizeof(uint32_t), RHI::BufferUsage::Index}, data.indices.data());
+        if (!indices) {
+            return std::unexpected(indices.error());
+        }
+        model.indices = std::move(*indices);
+        if (data.IsAnimated()) {
+            auto skin = m_device.CreateBuffer({data.skinVertices.size() * sizeof(ModelSkinVertex), RHI::BufferUsage::Vertex},
+                                              data.skinVertices.data());
+            if (!skin) {
+                return std::unexpected(skin.error());
+            }
+            model.skin = std::move(*skin);
+            model.skeleton = data.skeleton;
+        }
+
+        std::vector<int> imageSlots(data.images.size(), -1); // indice dans model.images
+        for (std::size_t i = 0; i < data.images.size(); ++i) {
+            const ImageData& pixels = data.images[i];
+            auto image = m_device.CreateTexture(RHI::Format::RGBA8Srgb,
+                                                {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
+                                                pixels.rgba, true);
+            if (!image) {
+                std::fprintf(stderr, "Flux : modèle %.*s : image %zu : %s\n", static_cast<int>(name.size()), name.data(), i,
+                             image.error().c_str());
+                continue;
+            }
+            imageSlots[i] = static_cast<int>(model.images.size());
+            model.images.push_back(std::move(*image));
+        }
+        for (const ModelMaterial& source : data.materials) {
+            GpuMaterial material;
+            material.baseColor = source.baseColor;
+            material.alphaCutoff = source.alphaCutoff;
+            material.doubleSided = source.doubleSided;
+            if (source.baseColorImage >= 0 && imageSlots[static_cast<std::size_t>(source.baseColorImage)] >= 0) {
+                material.group = m_device.CreateBindGroup(*m_materialLayout);
+                if (material.group) {
+                    const auto slot = static_cast<std::size_t>(imageSlots[static_cast<std::size_t>(source.baseColorImage)]);
+                    material.group->SetTexture(0, *model.images[slot], *m_sampler);
+                } else {
+                    std::fprintf(stderr, "Flux : plus de %u matériaux chargés, « %s » sans image\n", MaxMaterials, source.name.c_str());
+                }
+            }
+            model.materials.push_back(std::move(material));
+        }
+        model.primitives = data.primitives;
+        model.bounds = data.bounds;
+        model.loaded = true;
+        return model;
+    }
+
+    // Lit le fichier et remplace le modèle ; en cas d'échec, l'ancienne version (s'il y en a une) reste.
+    void ModelCache::Reload(const std::filesystem::path& path, GpuModel& model) {
+        const std::string name = Platform::ToUtf8(path.filename());
+        auto data = LoadModelFile(path);
+        if (!data) {
+            std::fprintf(stderr, "Flux : modèle %s\n", data.error().c_str());
+            return;
+        }
+        for (const std::string& warning : data->warnings) {
+            std::fprintf(stderr, "Flux : modèle %s : %s\n", name.c_str(), warning.c_str());
+        }
+        // Rechargement (fichier retouché) : les images en vol dessinent peut-être encore l'ancienne version.
+        // Rare : attendre le GPU suffit, et les envois ci-dessous l'attendent de toute façon.
+        m_device.WaitIdle();
+        auto uploaded = Upload(*data, name);
+        if (!uploaded) {
+            std::fprintf(stderr, "Flux : modèle %s : %s\n", name.c_str(), uploaded.error().c_str());
+            return;
+        }
+        const std::filesystem::file_time_type writeTime = model.writeTime;
+        const std::chrono::steady_clock::time_point checked = model.checked;
+        model = std::move(*uploaded); // l'ancienne version rend ses groupes et ses buffers
+        model.writeTime = writeTime;
+        model.checked = checked;
+    }
+
+    const GpuModel* ModelCache::Find(const std::filesystem::path& path) {
+        const auto now = std::chrono::steady_clock::now();
+        auto [found, created] = m_models.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
+        GpuModel& model = found->second;
+        if (created || now - model.checked >= CheckInterval) {
+            model.checked = now;
+            std::error_code error;
+            const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, error);
+            // Fichier absent : essayé une fois (pour le signaler), puis de nouveau quand il apparaît.
+            if (created || (!error && writeTime != model.writeTime)) {
+                model.writeTime = error ? std::filesystem::file_time_type{} : writeTime;
+                Reload(path, model);
+            }
+        }
+        return model.loaded ? &model : nullptr;
+    }
+}
