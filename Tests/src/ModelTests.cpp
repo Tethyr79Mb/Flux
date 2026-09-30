@@ -127,6 +127,17 @@ namespace {
         CHECK(skin.baseColorImage == 0 && model->images.size() == 1);
         CHECK(model->images[0].size.x == 3 && model->images[0].size.y == 2);
         CHECK(model->warnings.empty());
+        CHECK(!skin.blend);
+
+        // Matériau transparent (BLEND) : mélangé, sans seuil ni avertissement.
+        const std::string glass = R"(, "materials": [{"name": "Verre", "pbrMetallicRoughness": {
+                "baseColorFactor": [0.6, 0.8, 1, 0.25]}, "alphaMode": "BLEND"}])";
+        const std::string glassJson = TriangleJson(true, buffer.size(), R"(, "uri": "donn%C3%A9es%20%C3%A9.bin")", "", glass);
+        WriteFile(directory / "verre.gltf", glassJson.data(), glassJson.size());
+        const auto glassModel = LoadModelFile(directory / "verre.gltf");
+        CHECK(glassModel && glassModel->materials.size() == 1);
+        CHECK(glassModel->materials[0].blend && glassModel->materials[0].alphaCutoff == 0.0f);
+        CHECK(glassModel->materials[0].baseColor.a == 0.25f && glassModel->warnings.empty());
 
         // À copier avec le .gltf : le .bin (l'image est intégrée).
         const auto files = ListModelFiles(path);

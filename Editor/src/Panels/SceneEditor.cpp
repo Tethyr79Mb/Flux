@@ -429,7 +429,7 @@ namespace FluxEditor {
                 return changed;
             }
             case FieldType::Color:
-                return ui.ColorEdit3(label, *static_cast<Math::LinearColor*>(value));
+                return ui.ColorEdit4(label, *static_cast<Math::LinearColor*>(value));
             case FieldType::String: {
                 auto& text = *static_cast<std::string*>(value);
                 if (field.asset == AssetType::Animation) {

@@ -293,9 +293,7 @@ namespace Flux {
                     if (source.alpha_mode == cgltf_alpha_mode_mask) {
                         material.alphaCutoff = std::max(source.alpha_cutoff, 1.0e-4f);
                     } else if (source.alpha_mode == cgltf_alpha_mode_blend) {
-                        // Pas encore de transparence triée : un seuil à mi-hauteur garde la forme (vitres, cheveux).
-                        material.alphaCutoff = 0.5f;
-                        model.warnings.push_back("matériau « " + material.name + " » : transparence remplacée par un seuil");
+                        material.blend = true;
                     }
                     material.doubleSided = source.double_sided;
                     model.materials.push_back(std::move(material));
