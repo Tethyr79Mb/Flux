@@ -44,6 +44,8 @@ namespace Flux {
             const GpuModel* model;
             Math::LinearColor tint;
             Math::LinearColor emissive; // cube qui émet (MeshRendererComponent::emission), ajouté à celui du matériau
+            float metallic = 1.0f;  // multiplie celui du matériau (cube : celui de son MeshRendererComponent)
+            float roughness = 1.0f; // idem
             Math::Vector3f center; // de sa boîte, relatif à la caméra
             float radius = 0.0f;   // sphère englobant sa boîte : tri des cascades
             float distance = 0.0f; // du centre à la caméra : ordre des transparents

@@ -277,11 +277,16 @@ namespace Flux {
                         const float* factor = source.pbr_metallic_roughness.base_color_factor;
                         material.baseColor = {factor[0], factor[1], factor[2], factor[3]};
                         texture = source.pbr_metallic_roughness.base_color_texture.texture;
+                        material.metallic = std::clamp(source.pbr_metallic_roughness.metallic_factor, 0.0f, 1.0f);
+                        material.roughness = std::clamp(source.pbr_metallic_roughness.roughness_factor, 0.0f, 1.0f);
                     } else if (source.has_pbr_specular_glossiness) {
-                        // Ancienne extension (exports de 2018-2020) : la couleur diffuse tient lieu de couleur de base.
+                        // Ancienne extension (exports de 2018-2020) : la couleur diffuse tient lieu de couleur de base,
+                        // la brillance donne la rugosité (son image n'est pas lue).
                         const float* factor = source.pbr_specular_glossiness.diffuse_factor;
                         material.baseColor = {factor[0], factor[1], factor[2], factor[3]};
                         texture = source.pbr_specular_glossiness.diffuse_texture.texture;
+                        material.metallic = 0.0f;
+                        material.roughness = std::clamp(1.0f - source.pbr_specular_glossiness.glossiness_factor, 0.0f, 1.0f);
                     }
                     if (!images) {
                         // Triangles seulement : ni image, ni avertissement.
@@ -296,6 +301,19 @@ namespace Flux {
                     const cgltf_texture* emissive = source.emissive_texture.texture;
                     if (images && emissive && emissive->image) {
                         material.emissiveImage = LoadImage(emissive->image);
+                    }
+                    if (images) {
+                        // Images de données (pas des couleurs) : lues telles quelles, sans conversion sRGB.
+                        const auto load = [&](const cgltf_texture* data) {
+                            return data && data->image ? LoadImage(data->image) : -1;
+                        };
+                        if (source.has_pbr_metallic_roughness) {
+                            material.metallicRoughnessImage = load(source.pbr_metallic_roughness.metallic_roughness_texture.texture);
+                        }
+                        material.normalImage = load(source.normal_texture.texture);
+                        material.normalScale = source.normal_texture.scale;
+                        material.occlusionImage = load(source.occlusion_texture.texture);
+                        material.occlusionStrength = std::clamp(source.occlusion_texture.scale, 0.0f, 1.0f);
                     }
                     if (source.alpha_mode == cgltf_alpha_mode_mask) {
                         material.alphaCutoff = std::max(source.alpha_cutoff, 1.0e-4f);

@@ -34,6 +34,17 @@ namespace Flux {
         // compris). Noir : aucune.
         Math::LinearColor emissive{0.0f, 0.0f, 0.0f, 1.0f};
         int emissiveImage = -1;
+        // Métal et rugosité (0 à 1), multipliés par l'image (canal bleu : métal, vert : rugosité) si elle existe.
+        // Valeurs par défaut de glTF : un matériau sans ces facteurs est un métal rugueux.
+        float metallic = 1.0f;
+        float roughness = 1.0f;
+        int metallicRoughnessImage = -1;
+        // Relief : carte de normales (repère tangent, comme glTF), creusée ou accentuée par normalScale.
+        int normalImage = -1;
+        float normalScale = 1.0f;
+        // Lumière ambiante bloquée par les creux (canal rouge de l'image) ; 0 : aucun effet, 1 : plein effet.
+        int occlusionImage = -1;
+        float occlusionStrength = 1.0f;
         // Seuil d'alpha sous lequel le pixel est jeté (feuillages, cheveux) ; 0 : opaque.
         float alphaCutoff = 0.0f;
         bool doubleSided = false; // faces arrière dessinées aussi
@@ -131,10 +142,11 @@ namespace Flux {
     };
 
     // glTF 2.0, texte (.gltf avec ses .bin et images à côté) ou binaire (.glb). Lit les maillages en triangles,
-    // la couleur de base (facteur et image), l'émissif (facteur, image, intensité), l'alpha masqué et les faces
-    // doubles, les squelettes et les animations (pas les morph targets). Les extensions de compression (Draco,
+    // la couleur de base (facteur et image), métal et rugosité, les cartes de normales et d'occlusion, l'émissif
+    // (facteur, image, intensité), l'alpha masqué et les faces doubles, les squelettes et les animations (pas les
+    // morph targets). Les extensions de compression (Draco,
     // meshopt, KTX2) ne sont pas gérées : le fichier est refusé. images = false : les images ne sont pas décodées
-    // (ModelData::images vide, baseColorImage et emissiveImage à -1), pour qui n'a besoin que des triangles (collisions).
+    // (ModelData::images vide, indices d'image à -1), pour qui n'a besoin que des triangles (collisions).
     FLUX_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true);
 
     // Fichiers dont dépend un modèle (.bin, images), relatifs à son dossier, avec des « / » : ce qu'il faut copier
