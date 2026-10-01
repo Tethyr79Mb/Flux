@@ -81,6 +81,14 @@ namespace Flux {
             float distance;
         };
 
+        // Volume intérieur retenu pour l'image (InteriorComponent), relatif à la caméra.
+        struct PreparedInterior
+        {
+            RelativeTransform transform;
+            const InteriorComponent* interior;
+            float distance; // de la caméra à la boîte : les plus proches d'abord s'il y en a trop
+        };
+
         // Primitive transparente d'une entité, dessinée après les opaques.
         struct TransparentDraw
         {
@@ -146,6 +154,7 @@ namespace Flux {
         std::vector<Math::Matrix4f> m_jointMatrices;
         std::vector<PreparedLight> m_lights;
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
+        std::vector<PreparedInterior> m_interiors;
         PoseEvaluator m_poseEvaluator;
     };
 }

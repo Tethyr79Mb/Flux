@@ -86,6 +86,11 @@ namespace FluxEditor {
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
             component.exit = {0.0f, 0.0f, 1.2f};
+            // Soute et passage vers le cockpit (fighter.py) : le ciel n'y entre pas. Le cockpit, sous la verrière, reste
+            // éclairé par le ciel ; le fondu fait la transition dans le passage.
+            const Entity interior = scene.CreateEntity("Intérieur", ship);
+            scene.Get<TransformComponent>(interior).position = {0.0, 0.275, 3.95};
+            scene.Add<InteriorComponent>(interior).size = {2.6f, 2.45f, 10.3f};
             // Plafonniers de la soute (fighter.py) : leur matériau brille mais n'éclaire rien ; une vraie lumière
             // sous chacun, tournée vers le sol. Courte portée : sans ombre, elle traverserait la coque.
             for (const double z : {7.1, 4.9, 2.7, 0.5}) {
@@ -119,7 +124,8 @@ namespace FluxEditor {
                                            {"Chasseur", "Chasseur"},
                                            {"Lumière", "Lumière"},
                                            {"Spot", "Spot"},
-                                           {"Ciel", "Ciel"}};
+                                           {"Ciel", "Ciel"},
+                                           {"Volume intérieur", "Intérieur"}};
             return Infos[item];
         }
 
@@ -163,6 +169,7 @@ namespace FluxEditor {
             button(Item::Spot);
             ui.SameLine();
             button(Item::Sky);
+            button(Item::Interior);
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
@@ -285,6 +292,8 @@ namespace FluxEditor {
             } else if (item == Item::Fighter) {
                 scene.Add<ShipComponent>(entity);
                 AddFighter(scene, entity);
+            } else if (item == Item::Interior) {
+                scene.Add<InteriorComponent>(entity);
             } else if (item == Item::Light || item == Item::Spot) {
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 if (item == Item::Spot) {

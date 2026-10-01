@@ -127,6 +127,17 @@ namespace Flux {
         float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
     };
 
+    // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec
+    // elle. Dedans, la lumière ambiante et les reflets ne viennent plus du ciel (qui n'y entre pas) mais de `ambient`,
+    // avec un fondu de `fade` mètres depuis les bords. Le soleil, lui, est arrêté par les ombres.
+    struct InteriorComponent
+    {
+        Math::Vector3f size{2.0f, 2.5f, 4.0f}; // mètres, multipliés par l'échelle de l'entité
+        Math::LinearColor ambient{0.25f, 0.25f, 0.27f};
+        float intensity = 1.0f;
+        float fade = 0.5f;
+    };
+
     enum class ColliderShape : std::uint8_t {
         Box,     // size
         Sphere,  // radius

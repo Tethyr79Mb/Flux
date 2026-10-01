@@ -16,6 +16,20 @@ namespace Flux {
         static_assert(sizeof(ModelVertex) == 32, "ModelVertex doit correspondre à VertexInput dans shaders/Mesh.slang");
         static_assert(sizeof(ModelSkinVertex) == 24, "ModelSkinVertex doit correspondre à SkinnedVertexInput dans shaders/Mesh.slang");
 
+        // Volumes intérieurs envoyés au GPU au plus (les plus proches de la caméra) : chaque pixel les parcourt.
+        constexpr std::size_t MaxInteriors = 8;
+
+        // Doit correspondre à InteriorData dans shaders/Mesh.slang : une boîte (InteriorComponent).
+        struct InteriorData
+        {
+            // Lignes de la rotation inverse ; w : de quoi passer d'une position relative à la caméra au repère de la
+            // boîte (local = dot(axe.xyz, p) + axe.w).
+            std::array<std::array<float, 4>, 3> axes;
+            std::array<float, 4> halfSize; // w : fondu (m)
+            std::array<float, 4> ambient;  // couleur x intensité
+        };
+        static_assert(sizeof(InteriorData) == 80);
+
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
         {
@@ -29,9 +43,10 @@ namespace Flux {
             // x : multiplie la texture cube du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des
             // reflets les plus flous ; w : exposition
             std::array<float, 4> environment;
-            std::array<std::uint32_t, 4> lightCount; // x
+            std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs
+            std::array<InteriorData, MaxInteriors> interiors;
         };
-        static_assert(sizeof(FrameData) == 432 && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) && ShadowCascadeCount == 4);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
@@ -274,9 +289,22 @@ namespace Flux {
         m_drawData.clear();
         m_jointMatrices.clear();
         m_lights.clear();
+        m_interiors.clear();
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
+            }
+            if (const auto* interior = scene.TryGet<InteriorComponent>(transform.entity)) {
+                // Distance de la caméra (l'origine) à la boîte : 0 dedans.
+                const Math::Vector3f center(transform.position);
+                const Math::Vector3f local = transform.rotation.Conjugate().Rotate(-center);
+                const auto outside = [&](float value, float size, float scale) {
+                    return std::max(std::abs(value) - 0.5f * size * std::abs(scale), 0.0f);
+                };
+                const Math::Vector3f gap{outside(local.x, interior->size.x, transform.scale.x),
+                                         outside(local.y, interior->size.y, transform.scale.y),
+                                         outside(local.z, interior->size.z, transform.scale.z)};
+                m_interiors.push_back({transform, interior, Math::Length(gap)});
             }
             const GpuModel* model = nullptr;
             Math::LinearColor tint;
@@ -448,7 +476,28 @@ namespace Flux {
         // net (rugosité 0) à ce même flou (rugosité 1).
         const float diffuseMip = static_cast<float>(sky.environmentMips > 3 ? sky.environmentMips - 3 : 0);
         frame.environment = {sky.ambient, diffuseMip, diffuseMip, sky.exposure};
-        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), 0, 0, 0};
+        // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
+        if (m_interiors.size() > MaxInteriors) {
+            std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);
+            m_interiors.resize(MaxInteriors);
+        }
+        for (std::size_t i = 0; i < m_interiors.size(); ++i) {
+            const RelativeTransform& transform = m_interiors[i].transform;
+            const InteriorComponent& interior = *m_interiors[i].interior;
+            const Math::Vector3f center(transform.position);
+            InteriorData& data = frame.interiors[i];
+            const std::array axes{Math::Vector3f{1.0f, 0.0f, 0.0f}, Math::Vector3f{0.0f, 1.0f, 0.0f}, Math::Vector3f{0.0f, 0.0f, 1.0f}};
+            for (std::size_t a = 0; a < 3; ++a) {
+                const Math::Vector3f axis = transform.rotation.Rotate(axes[a]);
+                data.axes[a] = ToArray(axis, -Math::Dot(axis, center));
+            }
+            data.halfSize = {0.5f * std::max(interior.size.x, 0.0f) * std::abs(transform.scale.x),
+                             0.5f * std::max(interior.size.y, 0.0f) * std::abs(transform.scale.y),
+                             0.5f * std::max(interior.size.z, 0.0f) * std::abs(transform.scale.z), std::max(interior.fade, 1.0e-3f)};
+            const float intensity = std::max(interior.intensity, 0.0f);
+            data.ambient = {interior.ambient.r * intensity, interior.ambient.g * intensity, interior.ambient.b * intensity, 0.0f};
+        }
+        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()), 0, 0};
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
 
