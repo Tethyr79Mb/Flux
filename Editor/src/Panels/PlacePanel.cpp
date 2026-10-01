@@ -86,6 +86,21 @@ namespace FluxEditor {
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
             component.exit = {0.0f, 0.0f, 1.2f};
+            // Plafonniers de la soute (fighter.py) : leur matériau brille mais n'éclaire rien ; une vraie lumière
+            // sous chacun, tournée vers le sol. Courte portée : sans ombre, elle traverserait la coque.
+            for (const double z : {7.1, 4.9, 2.7, 0.5}) {
+                const Entity lamp = scene.CreateEntity("Plafonnier", ship);
+                TransformComponent& transform = scene.Get<TransformComponent>(lamp);
+                transform.position = {0.0, 1.38, z};
+                transform.rotation = Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.5f * std::numbers::pi_v<float>);
+                LightComponent& light = scene.Add<LightComponent>(lamp);
+                light.type = LightType::Spot;
+                light.color = {0.95f, 0.93f, 0.88f};
+                light.intensity = 4.0f;
+                light.range = 4.0f;
+                light.angle = 140.0f;
+                light.softness = 0.6f;
+            }
         }
 
         struct ItemInfo
