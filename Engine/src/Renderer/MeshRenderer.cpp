@@ -26,11 +26,12 @@ namespace Flux {
             std::array<float, 4> cameraForward;
             std::array<float, 4> toSun;
             std::array<float, 4> sunColor;      // couleur x intensité
-            std::array<float, 4> skyAmbient;    // ambiante venue d'en haut ; w : exposition
-            std::array<float, 4> groundAmbient; // venue d'en bas
+            // x : multiplie la texture cube du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des
+            // reflets les plus flous ; w : exposition
+            std::array<float, 4> environment;
             std::array<std::uint32_t, 4> lightCount; // x
         };
-        static_assert(sizeof(FrameData) == 448 && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 432 && ShadowCascadeCount == 4);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
@@ -46,8 +47,10 @@ namespace Flux {
             float roughness;
             float normalScale;
             float occlusionStrength;
+            std::uint32_t materialOverride;
+            std::array<float, 3> padding;
         };
-        static_assert(sizeof(DrawParams) == 64);
+        static_assert(sizeof(DrawParams) == 80);
 
         // Emplacements du groupe 1 (voir shaders/Mesh.slang).
         constexpr std::uint32_t JointSlot = 0;
@@ -55,6 +58,7 @@ namespace Flux {
         constexpr std::uint32_t FrameSlot = 2;
         constexpr std::uint32_t ShadowMapSlot = 3;
         constexpr std::uint32_t LightSlot = 4;
+        constexpr std::uint32_t EnvironmentSlot = 5;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -69,15 +73,6 @@ namespace Flux {
         // Carte d'ombres : 2 x 2 cascades de 2048 texels de côté (64 Mo en profondeur 32 bits).
         constexpr std::uint32_t ShadowCascadeResolution = 2048;
         constexpr std::uint32_t ShadowMapResolution = 2 * ShadowCascadeResolution;
-
-        // Direction du soleil, fixe dans le monde pour l'instant (la lumière de la scène viendra d'un composant).
-        const Math::Vector3f ToSun = Math::Normalize(Math::Vector3f{0.36f, 0.89f, 0.27f});
-        // Éclairage fixe lui aussi, en attendant un ciel : soleil légèrement chaud, ambiante bleutée en haut et plus
-        // sombre en bas (le sol renvoie moins que le ciel). Valeurs avant l'exposition et la courbe de tons
-        // (shaders/Mesh.slang) : 1 donne à peu près le blanc d'une surface blanche face à la lumière.
-        constexpr std::array<float, 4> SunColor{1.45f, 1.4f, 1.3f, 0.0f};
-        constexpr std::array<float, 4> SkyAmbient{0.42f, 0.45f, 0.5f, 1.0f}; // w : exposition
-        constexpr std::array<float, 4> GroundAmbient{0.2f, 0.19f, 0.18f, 0.0f};
 
         // `entity` est `ancestor` ou l'un de ses descendants.
         bool IsInside(const Scene& scene, Entity entity, Entity ancestor) {
@@ -138,6 +133,7 @@ namespace Flux {
             RHI::Binding{FrameSlot, RHI::BindingType::StorageBuffer, both},
             RHI::Binding{ShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
+            RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -266,8 +262,12 @@ namespace Flux {
         return true;
     }
 
-    void MeshRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden,
+    void MeshRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                                const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex) {
+        if (sky.environment && sky.environment != m_boundEnvironment[frameIndex]) {
+            m_frameGroups[frameIndex]->SetTexture(EnvironmentSlot, *sky.environment, *sky.environmentSampler);
+            m_boundEnvironment[frameIndex] = sky.environment;
+        }
         // La soustraction des positions se fait en double (secteurs compris) : le GPU ne voit que de petits nombres.
         scene.ComputeRelativeTransforms(camera.position, m_relativeTransforms);
         m_draws.clear();
@@ -283,6 +283,7 @@ namespace Flux {
             Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
             float metallic = 1.0f;
             float roughness = 1.0f;
+            bool materialOverride = false;
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 model = &m_models->GetCube();
                 tint = renderer->color;
@@ -293,6 +294,11 @@ namespace Flux {
                        component && !component->model.empty() && !assetsDirectory.empty()) {
                 model = m_models->Find(assetsDirectory / Platform::PathFromUtf8(component->model));
                 tint = component->tint;
+                if (component->overrideMaterial) {
+                    materialOverride = true;
+                    metallic = std::clamp(component->metallic, 0.0f, 1.0f);
+                    roughness = std::clamp(component->roughness, 0.0f, 1.0f);
+                }
             }
             if (!model) {
                 continue;
@@ -324,10 +330,13 @@ namespace Flux {
                                             half.z * std::abs(transform.scale.z)};
             const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
             const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            m_draws.push_back({model, tint, emissive, metallic, roughness, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
+            m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
                                !IsInside(scene, transform.entity, hidden)});
         }
-        Upload(camera, aspect, frameIndex);
+        if (!m_boundEnvironment[frameIndex]) {
+            m_draws.clear(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
+        }
+        Upload(camera, aspect, sky, frameIndex);
 
         // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
         // centre de sa boîte) : deux transparents qui s'entrecroisent peuvent se superposer dans le mauvais ordre.
@@ -393,7 +402,7 @@ namespace Flux {
     // Envoie au GPU les matrices des os (par colonnes comme jointColumns dans shaders/Mesh.slang), celles des entités
     // et les données de l'image (caméra, cascades). Si un buffer ne peut grandir (mémoire épuisée), rien n'est dessiné
     // plutôt que lu hors du buffer.
-    void MeshRenderer::Upload(const Camera& camera, float aspect, std::uint32_t frameIndex) {
+    void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex) {
         static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 112 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
@@ -424,7 +433,7 @@ namespace Flux {
             m_lightBuffers[frameIndex]->Write(m_lightData.data(), lightBytes);
         }
 
-        m_cascades = ComputeShadowCascades(camera, aspect, ToSun, ShadowCascadeResolution);
+        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
         FrameData frame{};
         frame.viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
@@ -433,10 +442,12 @@ namespace Flux {
             frame.cascadeTexels[c] = m_cascades[c].texelSize;
         }
         frame.cameraForward = ToArray(camera.GetForward());
-        frame.toSun = ToArray(ToSun);
-        frame.sunColor = SunColor;
-        frame.skyAmbient = SkyAmbient;
-        frame.groundAmbient = GroundAmbient;
+        frame.toSun = ToArray(sky.toSun);
+        frame.sunColor = ToArray(sky.sunColor);
+        // Lumière diffuse : la texture réduite à 4 x 4 par face, une moyenne de tout un côté du ciel. Reflets : de
+        // net (rugosité 0) à ce même flou (rugosité 1).
+        const float diffuseMip = static_cast<float>(sky.environmentMips > 3 ? sky.environmentMips - 3 : 0);
+        frame.environment = {sky.ambient, diffuseMip, diffuseMip, sky.exposure};
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), 0, 0, 0};
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
@@ -488,8 +499,9 @@ namespace Flux {
                                 {material.emissive.r + draw.emissive.r, material.emissive.g + draw.emissive.g,
                                  material.emissive.b + draw.emissive.b, 0.0f},
                                 drawIndex, cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u,
-                                material.metallic * draw.metallic, material.roughness * draw.roughness,
-                                material.normalScale, material.occlusionStrength};
+                                draw.materialOverride ? draw.metallic : material.metallic * draw.metallic,
+                                draw.materialOverride ? draw.roughness : material.roughness * draw.roughness,
+                                material.normalScale, material.occlusionStrength, draw.materialOverride ? 1u : 0u, {}};
         commands.PushConstants(&params, sizeof(params));
         commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
     }
@@ -521,7 +533,7 @@ namespace Flux {
         commands.EndRenderPass();
     }
 
-    void MeshRenderer::Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+    void MeshRenderer::DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         // Changements d'état seulement quand il le faut : les entités d'un même modèle se suivent souvent.
         BindState state;
         for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
@@ -538,6 +550,10 @@ namespace Flux {
                 }
             }
         }
+    }
+
+    void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        BindState state;
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = draw.model->IsAnimated() ? m_skinned : m_static;

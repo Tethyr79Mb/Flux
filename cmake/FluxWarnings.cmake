@@ -6,4 +6,11 @@ function(flux_set_warnings target)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Werror=return-type)
     endif()
+    # Format objet étendu de Windows : un fichier comme ComponentRegistry.cpp (une fonction générée par champ de
+    # composant) dépasse le nombre de sections d'un .obj ordinaire (« file too big », erreur C1128).
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /bigobj)
+    elseif(WIN32)
+        target_compile_options(${target} PRIVATE -Wa,-mbig-obj)
+    endif()
 endfunction()

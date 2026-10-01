@@ -6,6 +6,7 @@
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
+#include "Renderer/SkyRenderer.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -27,13 +28,14 @@ namespace Flux {
         }
     }
 
-    // Une image : la carte d'ombres, puis la scène (MeshRenderer) dans sa zone et l'interface (OverlayRenderer) sur
-    // toute la fenêtre, dans la passe principale. Aucune API graphique ici : tout passe par le RHI.
+    // Une image : la carte d'ombres, puis la scène dans sa zone (opaques, fond du ciel, transparents) et l'interface
+    // (OverlayRenderer) sur toute la fenêtre, dans la passe principale. Aucune API graphique ici : tout passe par le RHI.
     struct Renderer::Impl {
         Window& window;
         // Déclaré en premier : détruit en dernier, après les ressources créées par lui.
         std::unique_ptr<RHI::Device> device;
         std::unique_ptr<RHI::Texture> depth; // de la taille de la swapchain
+        std::unique_ptr<SkyRenderer> sky;
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<OverlayRenderer> overlay;
         std::filesystem::path assetsDirectory;
@@ -113,8 +115,10 @@ namespace Flux {
                 return false;
             }
             const RHI::Rect scene3d = SceneRect();
-            meshes->Prepare(scene, camera, static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height), hidden,
-                            assetsDirectory, frameIndex);
+            const float aspect = static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height);
+            const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height), assetsDirectory,
+                                                      frameIndex);
+            meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
 
             const Clock::time_point recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
@@ -126,7 +130,9 @@ namespace Flux {
             commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
                                   static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
             commands.SetScissor(scene3d);
-            meshes->Draw(commands, frameIndex);
+            meshes->DrawOpaque(commands, frameIndex);
+            sky->Draw(commands, frameIndex);
+            meshes->DrawTransparent(commands, frameIndex);
             commands.WriteTimestamp(SceneDone);
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
@@ -165,6 +171,11 @@ namespace Flux {
             return std::unexpected(depth.error());
         }
         const RHI::Format colorFormat = impl->device->GetSwapchainFormat();
+        auto sky = SkyRenderer::Create(*impl->device, colorFormat, DepthFormat);
+        if (!sky) {
+            return std::unexpected(sky.error());
+        }
+        impl->sky = std::move(*sky);
         auto meshes = MeshRenderer::Create(*impl->device, colorFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());

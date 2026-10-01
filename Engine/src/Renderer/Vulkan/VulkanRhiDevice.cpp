@@ -214,6 +214,16 @@ namespace Flux::Vk {
         return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeTexture(RHI::Format format, std::uint32_t size,
+                                                                                          std::span<const std::uint8_t> pixels,
+                                                                                          bool mipmaps) {
+        auto image = Image::CreateTexture(*m_device, ToVulkan(format), {size, size}, pixels, mipmaps, true);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,
                                                                                             bool sampled) {
         const bool depth = format == RHI::Format::D32Float;

@@ -166,6 +166,17 @@ namespace Flux::UI {
                 pen.Disc(0.4f, 0.3f, 0.08f, LinearColor::FromSrgb8(255, 248, 210));     // reflet
                 break;
             }
+            case Icon::Sky: {
+                const LinearColor night = LinearColor::FromSrgb8(40, 52, 110);
+                pen.Disc(0.5f, 0.5f, 0.44f, night);
+                pen.Disc(0.4f, 0.42f, 0.2f, LinearColor::FromSrgb8(240, 230, 190)); // lune
+                pen.Disc(0.48f, 0.36f, 0.18f, night);                               // son croissant
+                const LinearColor star = LinearColor::FromSrgb8(255, 255, 240);
+                pen.Disc(0.7f, 0.32f, 0.05f, star);
+                pen.Disc(0.64f, 0.66f, 0.04f, star);
+                pen.Disc(0.36f, 0.74f, 0.035f, star);
+                break;
+            }
             case Icon::Component: {
                 const LinearColor color = LinearColor::FromSrgb8(200, 200, 120);
                 pen.Quad({0.5f, 0.06f}, {0.94f, 0.5f}, {0.5f, 0.94f}, {0.06f, 0.5f}, color);

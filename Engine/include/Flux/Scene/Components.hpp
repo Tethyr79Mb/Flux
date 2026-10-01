@@ -75,6 +75,11 @@ namespace Flux {
     {
         std::string model; // relatif au dossier des assets du projet, avec des « / » (models/Personnage.glb)
         Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie les couleurs du modèle (blanc : inchangées)
+        // Coché : métal et rugosité ci-dessous pour tout le modèle, à la place de ceux de ses matériaux (couleur,
+        // relief et occlusion du fichier gardés).
+        bool overrideMaterial = false;
+        float metallic = 1.0f;
+        float roughness = 0.3f;
     };
 
     enum class LightType : std::uint8_t {
@@ -93,6 +98,33 @@ namespace Flux {
         float range = 10.0f;     // mètres
         float angle = 60.0f;     // spot : ouverture totale du cône, en degrés
         float softness = 0.25f;  // spot : part du bord du cône qui s'estompe (0 : bord net, 1 : fondu depuis l'axe)
+    };
+
+    // Ciel de la scène, autour de tout et à l'infini : un fond, la lumière ambiante et ce que reflètent les surfaces
+    // lisses, plus le soleil (lumière principale et ses ombres). Généré (nébuleuse, bande galactique, étoiles) ou
+    // tiré d'une image panoramique. Un seul ciel compte ; sans ciel, pas de fond (couleur unie), une lumière ambiante
+    // grise et le soleil par défaut.
+    struct SkyComponent
+    {
+        // Panorama (image 2:1, projection équirectangulaire) relatif aux assets ; vide : ciel généré.
+        std::string image;
+        float brightness = 1.0f; // du fond comme de la lumière qu'il donne
+        // Lumière ambiante et reflets : multiplie ce que le ciel éclaire (un ciel sombre éclaire peu).
+        float ambient = 3.0f;
+        // Ciel généré : le même pour une même graine.
+        std::int32_t seed = 1;
+        Math::LinearColor nebulaColor{0.30f, 0.10f, 0.45f};
+        Math::LinearColor nebulaColor2{0.05f, 0.25f, 0.45f};
+        float nebula = 0.6f;   // 0 : aucune nébuleuse, 1 : très dense
+        float galaxy = 0.5f;   // bande de la galaxie (une traînée laiteuse sur un grand cercle)
+        float stars = 0.5f;    // 0 : aucune étoile, 1 : beaucoup
+        float starBrightness = 1.0f;
+        // Soleil : d'où vient sa lumière, en degrés (hauteur au-dessus de l'horizon, direction autour de la verticale).
+        float sunElevation = 63.0f;
+        float sunAzimuth = 53.0f;
+        Math::LinearColor sunColor{1.0f, 0.96f, 0.9f};
+        float sunIntensity = 1.45f; // éclairement d'une surface face au soleil (1 : le blanc d'une surface blanche)
+        float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
     };
 
     enum class ColliderShape : std::uint8_t {

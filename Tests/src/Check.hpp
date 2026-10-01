@@ -23,3 +23,4 @@ bool RunModelTests();
 bool RunPhysicsTests();
 bool RunAnimationTests();
 bool RunShadowTests();
+bool RunSkyTests();

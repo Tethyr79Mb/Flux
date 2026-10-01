@@ -86,6 +86,21 @@ namespace FluxEditor {
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
             component.exit = {0.0f, 0.0f, 1.2f};
+            // Plafonniers de la soute (fighter.py) : leur matériau brille mais n'éclaire rien ; une vraie lumière
+            // sous chacun, tournée vers le sol. Courte portée : sans ombre, elle traverserait la coque.
+            for (const double z : {7.1, 4.9, 2.7, 0.5}) {
+                const Entity lamp = scene.CreateEntity("Plafonnier", ship);
+                TransformComponent& transform = scene.Get<TransformComponent>(lamp);
+                transform.position = {0.0, 1.38, z};
+                transform.rotation = Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.5f * std::numbers::pi_v<float>);
+                LightComponent& light = scene.Add<LightComponent>(lamp);
+                light.type = LightType::Spot;
+                light.color = {0.95f, 0.93f, 0.88f};
+                light.intensity = 4.0f;
+                light.range = 4.0f;
+                light.angle = 140.0f;
+                light.softness = 0.6f;
+            }
         }
 
         struct ItemInfo
@@ -103,7 +118,8 @@ namespace FluxEditor {
                                            {"Vaisseau (maquette)", "Vaisseau"},
                                            {"Chasseur", "Chasseur"},
                                            {"Lumière", "Lumière"},
-                                           {"Spot", "Spot"}};
+                                           {"Spot", "Spot"},
+                                           {"Ciel", "Ciel"}};
             return Infos[item];
         }
 
@@ -145,6 +161,8 @@ namespace FluxEditor {
             button(Item::Light);
             ui.SameLine();
             button(Item::Spot);
+            ui.SameLine();
+            button(Item::Sky);
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
@@ -205,6 +223,13 @@ namespace FluxEditor {
                            std::optional<Vector2f> drop, const UI::Rect& view) {
         history.Commit(engine); // un geste en cours est un pas à part, avant celui-ci
         Scene& scene = engine.GetScene();
+        if (item == Item::Sky) {
+            // Un seul ciel compte : s'il y en a déjà un, c'est lui qu'on sélectionne (à régler dans l'inspecteur).
+            for (const auto [existing, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+                sceneEditor.Select(scene, existing);
+                return;
+            }
+        }
         const ItemInfo info = GetInfo(static_cast<int>(item));
         // Un modèle sans fichier ne montrerait rien : le fichier d'abord (copié dans le projet s'il vient d'ailleurs),
         // et l'entité porte son nom.
@@ -239,6 +264,9 @@ namespace FluxEditor {
         } else if (item == Item::SceneChange) {
             // Rien à voir ni à placer : se règle dans l'inspecteur (scène suivante, délai).
             scene.Add<SceneChangeComponent>(entity);
+        } else if (item == Item::Sky) {
+            // Autour de tout, à l'infini : sa position ne compte pas.
+            scene.Add<SkyComponent>(entity);
         } else {
             if (item == Item::Cube) {
                 // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.
