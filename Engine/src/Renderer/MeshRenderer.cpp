@@ -25,9 +25,12 @@ namespace Flux {
             std::array<float, 4> cascadeTexels;
             std::array<float, 4> cameraForward;
             std::array<float, 4> toSun;
+            std::array<float, 4> sunColor;      // couleur x intensité
+            std::array<float, 4> skyAmbient;    // ambiante venue d'en haut ; w : exposition
+            std::array<float, 4> groundAmbient; // venue d'en bas
             std::array<std::uint32_t, 4> lightCount; // x
         };
-        static_assert(sizeof(FrameData) == 400 && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 448 && ShadowCascadeCount == 4);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
@@ -39,8 +42,12 @@ namespace Flux {
             std::uint32_t cascade;
             float alphaCutoff;
             std::uint32_t transparent;
+            float metallic;
+            float roughness;
+            float normalScale;
+            float occlusionStrength;
         };
-        static_assert(sizeof(DrawParams) == 48);
+        static_assert(sizeof(DrawParams) == 64);
 
         // Emplacements du groupe 1 (voir shaders/Mesh.slang).
         constexpr std::uint32_t JointSlot = 0;
@@ -65,6 +72,12 @@ namespace Flux {
 
         // Direction du soleil, fixe dans le monde pour l'instant (la lumière de la scène viendra d'un composant).
         const Math::Vector3f ToSun = Math::Normalize(Math::Vector3f{0.36f, 0.89f, 0.27f});
+        // Éclairage fixe lui aussi, en attendant un ciel : soleil légèrement chaud, ambiante bleutée en haut et plus
+        // sombre en bas (le sol renvoie moins que le ciel). Valeurs avant l'exposition et la courbe de tons
+        // (shaders/Mesh.slang) : 1 donne à peu près le blanc d'une surface blanche face à la lumière.
+        constexpr std::array<float, 4> SunColor{1.45f, 1.4f, 1.3f, 0.0f};
+        constexpr std::array<float, 4> SkyAmbient{0.42f, 0.45f, 0.5f, 1.0f}; // w : exposition
+        constexpr std::array<float, 4> GroundAmbient{0.2f, 0.19f, 0.18f, 0.0f};
 
         // `entity` est `ancestor` ou l'un de ses descendants.
         bool IsInside(const Scene& scene, Entity entity, Entity ancestor) {
@@ -268,10 +281,14 @@ namespace Flux {
             const GpuModel* model = nullptr;
             Math::LinearColor tint;
             Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
+            float metallic = 1.0f;
+            float roughness = 1.0f;
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 model = &m_models->GetCube();
                 tint = renderer->color;
                 emissive = {tint.r * renderer->emission, tint.g * renderer->emission, tint.b * renderer->emission};
+                metallic = std::clamp(renderer->metallic, 0.0f, 1.0f);
+                roughness = std::clamp(renderer->roughness, 0.0f, 1.0f);
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
                        component && !component->model.empty() && !assetsDirectory.empty()) {
                 model = m_models->Find(assetsDirectory / Platform::PathFromUtf8(component->model));
@@ -307,7 +324,7 @@ namespace Flux {
                                             half.z * std::abs(transform.scale.z)};
             const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
             const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            m_draws.push_back({model, tint, emissive, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
+            m_draws.push_back({model, tint, emissive, metallic, roughness, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
                                !IsInside(scene, transform.entity, hidden)});
         }
         Upload(camera, aspect, frameIndex);
@@ -417,6 +434,9 @@ namespace Flux {
         }
         frame.cameraForward = ToArray(camera.GetForward());
         frame.toSun = ToArray(ToSun);
+        frame.sunColor = SunColor;
+        frame.skyAmbient = SkyAmbient;
+        frame.groundAmbient = GroundAmbient;
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), 0, 0, 0};
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
@@ -467,7 +487,9 @@ namespace Flux {
                                  material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a},
                                 {material.emissive.r + draw.emissive.r, material.emissive.g + draw.emissive.g,
                                  material.emissive.b + draw.emissive.b, 0.0f},
-                                drawIndex, cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u};
+                                drawIndex, cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u,
+                                material.metallic * draw.metallic, material.roughness * draw.roughness,
+                                material.normalScale, material.occlusionStrength};
         commands.PushConstants(&params, sizeof(params));
         commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
     }

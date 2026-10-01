@@ -3,6 +3,7 @@
 #include "Flux/Assets/Image.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 
@@ -13,6 +14,13 @@ namespace Flux {
         // Intervalle entre deux vérifications de la date d'un fichier (relu s'il a changé) : assez court pour voir
         // une retouche aussitôt, assez long pour ne pas interroger le disque à chaque image.
         constexpr std::chrono::milliseconds CheckInterval{1000};
+
+        // Emplacements du groupe 0 (voir shaders/Mesh.slang).
+        constexpr std::uint32_t BaseColorSlot = 0;
+        constexpr std::uint32_t EmissiveSlot = 1;
+        constexpr std::uint32_t MetallicRoughnessSlot = 2;
+        constexpr std::uint32_t NormalSlot = 3;
+        constexpr std::uint32_t OcclusionSlot = 4;
 
         // Cube unité centré ; chaque face a ses 4 sommets (normale propre, image entière).
         ModelData BuildCube() {
@@ -62,9 +70,11 @@ namespace Flux {
         }
         cache->m_sampler = std::move(*sampler);
 
-        // 0 : couleur de base, 1 : émissive.
-        constexpr std::array bindings{RHI::Binding{0, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-                                      RHI::Binding{1, RHI::BindingType::Texture, RHI::ShaderStage::Fragment}};
+        constexpr auto binding = [](std::uint32_t slot) {
+            return RHI::Binding{slot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
+        };
+        constexpr std::array bindings{binding(BaseColorSlot), binding(EmissiveSlot), binding(MetallicRoughnessSlot),
+                                      binding(NormalSlot), binding(OcclusionSlot)};
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 1 + MaxMaterials});
         if (!layout) {
             return std::unexpected(layout.error());
@@ -81,8 +91,9 @@ namespace Flux {
         if (!cache->m_whiteGroup) {
             return std::unexpected("allocation du groupe de l'image blanche");
         }
-        cache->m_whiteGroup->SetTexture(0, *cache->m_whiteImage, *cache->m_sampler);
-        cache->m_whiteGroup->SetTexture(1, *cache->m_whiteImage, *cache->m_sampler);
+        for (const RHI::Binding& slot : bindings) {
+            cache->m_whiteGroup->SetTexture(slot.slot, *cache->m_whiteImage, *cache->m_sampler);
+        }
 
         auto cube = cache->Upload(BuildCube(), "cube");
         if (!cube) {
@@ -115,42 +126,72 @@ namespace Flux {
             model.skeleton = data.skeleton;
         }
 
-        std::vector<int> imageSlots(data.images.size(), -1); // indice dans model.images
-        for (std::size_t i = 0; i < data.images.size(); ++i) {
+        // Couleurs (couleur de base, émissive) en sRGB, ramenées en linéaire à la lecture ; données (métal-rugosité,
+        // normales, occlusion) lues telles quelles. Une image servant aux deux est envoyée deux fois.
+        std::vector<bool> colorImages(data.images.size(), false);
+        std::vector<bool> dataImages(data.images.size(), false);
+        const auto mark = [](std::vector<bool>& used, int index) {
+            if (index >= 0 && static_cast<std::size_t>(index) < used.size()) {
+                used[static_cast<std::size_t>(index)] = true;
+            }
+        };
+        for (const ModelMaterial& source : data.materials) {
+            mark(colorImages, source.baseColorImage);
+            mark(colorImages, source.emissiveImage);
+            mark(dataImages, source.metallicRoughnessImage);
+            mark(dataImages, source.normalImage);
+            mark(dataImages, source.occlusionImage);
+        }
+        std::vector<const RHI::Texture*> colorTextures(data.images.size(), nullptr);
+        std::vector<const RHI::Texture*> dataTextures(data.images.size(), nullptr);
+        const auto send = [&](std::size_t i, RHI::Format format) -> const RHI::Texture* {
             const ImageData& pixels = data.images[i];
-            auto image = m_device.CreateTexture(RHI::Format::RGBA8Srgb,
-                                                {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
+            auto image = m_device.CreateTexture(format, {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
                                                 pixels.rgba, true);
             if (!image) {
                 std::fprintf(stderr, "Flux : modèle %.*s : image %zu : %s\n", static_cast<int>(name.size()), name.data(), i,
                              image.error().c_str());
-                continue;
-            }
-            imageSlots[i] = static_cast<int>(model.images.size());
-            model.images.push_back(std::move(*image));
-        }
-        // Image envoyée au GPU pour cet indice de ModelData::images ; nullptr si aucune (ou refusée).
-        const auto imageFor = [&](int index) -> const RHI::Texture* {
-            if (index < 0 || imageSlots[static_cast<std::size_t>(index)] < 0) {
                 return nullptr;
             }
-            return model.images[static_cast<std::size_t>(imageSlots[static_cast<std::size_t>(index)])].get();
+            model.images.push_back(std::move(*image));
+            return model.images.back().get();
+        };
+        for (std::size_t i = 0; i < data.images.size(); ++i) {
+            if (colorImages[i]) {
+                colorTextures[i] = send(i, RHI::Format::RGBA8Srgb);
+            }
+            if (dataImages[i]) {
+                dataTextures[i] = send(i, RHI::Format::RGBA8Unorm);
+            }
+        }
+        // Image envoyée au GPU pour cet indice de ModelData::images ; nullptr si aucune (ou refusée).
+        const auto imageFor = [](const std::vector<const RHI::Texture*>& textures, int index) -> const RHI::Texture* {
+            return index >= 0 && static_cast<std::size_t>(index) < textures.size() ? textures[static_cast<std::size_t>(index)] : nullptr;
         };
         for (const ModelMaterial& source : data.materials) {
             GpuMaterial material;
             material.baseColor = source.baseColor;
             material.emissive = source.emissive;
+            material.metallic = source.metallic;
+            material.roughness = source.roughness;
             material.alphaCutoff = source.alphaCutoff;
             material.doubleSided = source.doubleSided;
             material.blend = source.blend;
-            const RHI::Texture* baseColor = imageFor(source.baseColorImage);
-            const RHI::Texture* emissive = imageFor(source.emissiveImage);
-            if (baseColor || emissive) {
+            const std::array<const RHI::Texture*, 5> images{
+                imageFor(colorTextures, source.baseColorImage), imageFor(colorTextures, source.emissiveImage),
+                imageFor(dataTextures, source.metallicRoughnessImage), imageFor(dataTextures, source.normalImage),
+                imageFor(dataTextures, source.occlusionImage)};
+            material.normalScale = images[NormalSlot] ? source.normalScale : 0.0f;
+            material.occlusionStrength = images[OcclusionSlot] ? source.occlusionStrength : 0.0f;
+            if (std::ranges::any_of(images, [](const RHI::Texture* image) { return image != nullptr; })) {
                 material.group = m_device.CreateBindGroup(*m_materialLayout);
                 if (material.group) {
-                    material.group->SetTexture(0, baseColor ? *baseColor : *m_whiteImage, *m_sampler);
-                    material.group->SetTexture(1, emissive ? *emissive : *m_whiteImage, *m_sampler);
+                    for (std::uint32_t slot = 0; slot < images.size(); ++slot) {
+                        material.group->SetTexture(slot, images[slot] ? *images[slot] : *m_whiteImage, *m_sampler);
+                    }
                 } else {
+                    material.normalScale = 0.0f;
+                    material.occlusionStrength = 0.0f;
                     std::fprintf(stderr, "Flux : plus de %u matériaux chargés, « %s » sans image\n", MaxMaterials, source.name.c_str());
                 }
             }

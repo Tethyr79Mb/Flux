@@ -1,6 +1,8 @@
-// Maillages (cubes et modèles glTF), opaques ou transparents : position relative à la caméra, couleur de base
-// (facteur x image) éclairée par un soleil et une lumière ambiante, avec les ombres du soleil (cascades), et par les
-// lumières de la scène (ponctuelles et spots, sans ombre) ; plus la lumière propre du matériau (émissif).
+// Maillages (cubes et modèles glTF), opaques ou transparents : position relative à la caméra, matériaux PBR comme
+// glTF (couleur de base, métal, rugosité, carte de normales, occlusion) éclairés par un soleil avec ses ombres
+// (cascades), une lumière ambiante (ciel en haut, sol en bas) et les lumières de la scène (ponctuelles et spots, sans
+// ombre) ; plus la lumière propre du matériau (émissif). Puis exposition et courbe de tons (ACES) : la sortie est
+// déjà la couleur affichée (en linéaire, la swapchain sRGB fait le reste).
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Cartes d'ombres (vertexShadow, vertexShadowSkinned, fragmentShadow) : profondeur vue du soleil, rien d'autre.
 
@@ -13,6 +15,9 @@ struct FrameData
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
     float4 cameraForward;     // xyz
     float4 toSun;             // xyz : direction du soleil (unitaire)
+    float4 sunColor;          // rgb : couleur x intensité
+    float4 skyAmbient;        // rgb : lumière ambiante venue d'en haut ; w : exposition
+    float4 groundAmbient;     // rgb : venue d'en bas
     uint4 lightCount;         // x : nombre de lumières dans lights
 };
 
@@ -43,13 +48,21 @@ struct DrawParams
     uint cascade;             // carte d'ombres en cours de dessin
     float alphaCutoff;        // 0 : pas de seuil
     uint transparent;         // 1 : l'alpha sort vers le mélange ; 0 : opaque (alpha 1)
+    float metallic;           // x canal bleu de metallicRoughnessTexture
+    float roughness;          // x canal vert
+    float normalScale;        // 0 : pas de carte de normales
+    float occlusionStrength;  // 0 : pas d'occlusion
 };
 
 [[vk::push_constant]] ConstantBuffer<DrawParams> params;
 
-// Groupe 0 : le matériau. Images en sRGB (le GPU les ramène en linéaire à la lecture), blanc 1 x 1 sans image.
+// Groupe 0 : le matériau, blanc 1 x 1 sans image. Couleurs en sRGB (le GPU les ramène en linéaire à la lecture),
+// données (métal-rugosité, normales, occlusion) telles quelles.
 [[vk::binding(0, 0)]] Sampler2D baseColorTexture;
 [[vk::binding(1, 0)]] Sampler2D emissiveTexture;
+[[vk::binding(2, 0)]] Sampler2D metallicRoughnessTexture; // vert : rugosité, bleu : métal
+[[vk::binding(3, 0)]] Sampler2D normalTexture;            // repère tangent, comme glTF
+[[vk::binding(4, 0)]] Sampler2D occlusionTexture;         // rouge
 
 // Groupe 1 : l'image en cours.
 // Matrices des os de tous les modèles animés de l'image (monde du modèle x inverse de liaison), 4 colonnes par os.
@@ -183,9 +196,66 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return lit;
 }
 
-// Lumière reçue des lumières de la scène (ponctuelles et spots). Affaiblie comme 1 / (1 + d²) (d en mètres : la
-// moitié à 1 m, sans l'infini d'une vraie source ponctuelle collée à la surface), puis éteinte en douceur à la portée.
-float3 SceneLights(float3 worldPosition, float3 normal)
+// Surface vue en un pixel, de quoi l'éclairer (BRDF de Cook-Torrance : GGX, Smith, Schlick, comme glTF).
+struct Surface
+{
+    float3 normal;     // unitaire, vers l'œil pour une face arrière double face
+    float3 toEye;      // unitaire
+    float3 diffuse;    // couleur diffuse (zéro pour un métal)
+    float3 f0;         // reflet vu de face : 4 % pour un isolant, la couleur de base pour un métal
+    float roughness;   // perçue, de 0 (miroir) à 1 (mat)
+};
+
+static const float Pi = 3.14159265;
+
+// Lumière renvoyée vers l'œil par une lumière qui arrive de `toLight` avec l'éclairement `light` (perpendiculaire).
+// Multipliée par pi : une surface blanche mate face à une lumière 1 renvoie 1, comme l'ancien éclairage diffus.
+float3 Shade(Surface s, float3 toLight, float3 light)
+{
+    const float nl = dot(s.normal, toLight);
+    if (nl <= 0.0) {
+        return float3(0.0);
+    }
+    const float3 h = normalize(toLight + s.toEye);
+    const float nv = max(dot(s.normal, s.toEye), 1.0e-4);
+    const float nh = saturate(dot(s.normal, h));
+    const float vh = saturate(dot(s.toEye, h));
+    // Une rugosité nulle donnerait un reflet infiniment fin (et des pixels qui scintillent) : un plancher.
+    const float alpha = max(s.roughness * s.roughness, 0.002);
+    const float a2 = alpha * alpha;
+    const float d = nh * nh * (a2 - 1.0) + 1.0;
+    const float distribution = a2 / (Pi * d * d);
+    // Visibilité de Smith corrélée (masquage de la lumière et du regard par les microfacettes), divisée par 4 nl nv.
+    const float visibility = 0.5 / (nl * sqrt(nv * nv * (1.0 - a2) + a2) + nv * sqrt(nl * nl * (1.0 - a2) + a2));
+    const float3 fresnel = s.f0 + (1.0 - s.f0) * pow(1.0 - vh, 5.0);
+    const float3 specular = fresnel * (distribution * visibility * Pi);
+    return (s.diffuse * (1.0 - fresnel) + specular) * light * nl;
+}
+
+// Lumière ambiante, sans image du ciel : un dégradé du sol (en bas) au ciel (en haut). Le reflet prend la couleur
+// du côté où il part, étalée vers celle de la normale pour une surface rugueuse ; sa part vient de l'approximation
+// de Karis (pré-intégration de la BRDF sur un ciel uniforme).
+float3 Ambient(Surface s, float occlusion)
+{
+    const FrameData f = frame[0];
+    const float3 diffuseLight = lerp(f.groundAmbient.rgb, f.skyAmbient.rgb, s.normal.y * 0.5 + 0.5);
+    const float3 reflected = reflect(-s.toEye, s.normal);
+    const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
+    const float3 specularLight = lerp(f.groundAmbient.rgb, f.skyAmbient.rgb, reflectDirection.y * 0.5 + 0.5);
+    const float nv = saturate(dot(s.normal, s.toEye));
+    const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
+    const float4 r = s.roughness * c0 + c1;
+    const float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    const float2 scaleBias = float2(-1.04, 1.04) * a004 + r.zw;
+    const float3 specular = s.f0 * scaleBias.x + scaleBias.y;
+    return (s.diffuse * diffuseLight + specular * specularLight) * occlusion;
+}
+
+// Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots). Affaiblies comme 1 / (1 + d²)
+// (d en mètres : la moitié à 1 m, sans l'infini d'une vraie source ponctuelle collée à la surface), puis éteintes en
+// douceur à leur portée.
+float3 SceneLights(float3 worldPosition, Surface s)
 {
     float3 sum = float3(0.0);
     const uint count = frame[0].lightCount.x;
@@ -199,8 +269,7 @@ float3 SceneLights(float3 worldPosition, float3 normal)
         }
         const float distance = sqrt(distanceSquared);
         const float3 direction = toLight / max(distance, 1.0e-4);
-        const float facing = dot(normal, direction);
-        if (facing <= 0.0) {
+        if (dot(s.normal, direction) <= 0.0) {
             continue;
         }
         const float ratio = distanceSquared / (range * range);
@@ -212,9 +281,40 @@ float3 SceneLights(float3 worldPosition, float3 normal)
             const float edge = saturate((cosine - light.direction.w) * light.spot.x);
             attenuation *= edge * edge;
         }
-        sum += light.color.rgb * (facing * attenuation);
+        sum += Shade(s, direction, light.color.rgb * attenuation);
     }
     return sum;
+}
+
+// Normale de la carte de normales, sans tangentes dans les sommets : le repère tangent est retrouvé au pixel par
+// les dérivées de la position et des UV (« cotangent frame » de Schüler). Marche aussi avec des UV en miroir.
+float3 PerturbNormal(float3 normal, float3 worldPosition, float2 uv)
+{
+    float3 mapped = normalTexture.Sample(uv).xyz * 2.0 - 1.0;
+    mapped.xy *= params.normalScale;
+    const float3 dp1 = ddx(worldPosition);
+    const float3 dp2 = ddy(worldPosition);
+    const float2 duv1 = ddx(uv);
+    const float2 duv2 = ddy(uv);
+    const float3 dp2perp = cross(dp2, normal);
+    const float3 dp1perp = cross(normal, dp1);
+    // glTF : v des UV vers le bas de l'image, la bitangente de la carte vers son haut.
+    const float3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+    const float3 bitangent = -(dp2perp * duv1.y + dp1perp * duv2.y);
+    const float lengthSquared = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    if (lengthSquared <= 1.0e-20) {
+        return normal; // UV dégénérées (toutes égales) : pas de relief
+    }
+    const float scale = rsqrt(lengthSquared);
+    return normalize(tangent * (mapped.x * scale) + bitangent * (mapped.y * scale) + normal * mapped.z);
+}
+
+// Courbe de tons ACES (approximation de Narkowicz) : les couleurs trop fortes sont adoucies vers le blanc au lieu
+// d'être coupées net.
+float3 ToneMap(float3 color)
+{
+    color *= frame[0].skyAmbient.w * 0.6;
+    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
 }
 
 [shader("fragment")]
@@ -225,17 +325,32 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
         discard;
     }
     // Face arrière d'un matériau double face : éclairée comme vue de son côté.
-    float3 normal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
-    const float3 toSun = frame[0].toSun.xyz;
-    const float sunFacing = dot(normal, toSun);
-    const float sun = sunFacing > 0.0 ? sunFacing * SunVisibility(input.worldPosition, normal, sunFacing) : 0.0;
-    const float shade = 0.3 + 0.1 * normal.y + 0.6 * sun;
-    float3 emissive = float3(0.0);
-    if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
-        emissive = params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;
+    const float3 geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
+    float3 normal = geometryNormal;
+    if (params.normalScale != 0.0) { // le même pour toute la primitive
+        normal = PerturbNormal(geometryNormal, input.worldPosition, input.uv);
     }
-    const float3 lit = base.rgb * (shade + SceneLights(input.worldPosition, normal)) + emissive;
-    return float4(lit, params.transparent != 0 ? base.a : 1.0);
+    const float4 metallicRoughness = metallicRoughnessTexture.Sample(input.uv);
+    const float metallic = saturate(params.metallic * metallicRoughness.b);
+    Surface surface;
+    surface.normal = normal;
+    surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
+    surface.diffuse = base.rgb * (1.0 - metallic);
+    surface.f0 = lerp(float3(0.04), base.rgb, metallic);
+    surface.roughness = saturate(params.roughness * metallicRoughness.g);
+    const float occlusion = 1.0 + params.occlusionStrength * (occlusionTexture.Sample(input.uv).r - 1.0);
+
+    const FrameData f = frame[0];
+    const float3 toSun = f.toSun.xyz;
+    // Ombre lue avec la vraie face (le relief de la carte ne déplace pas les ombres).
+    const float sunFacing = dot(geometryNormal, toSun);
+    const float sun = sunFacing > 0.0 ? SunVisibility(input.worldPosition, geometryNormal, sunFacing) : 0.0;
+    float3 lit = Shade(surface, toSun, f.sunColor.rgb * sun) + Ambient(surface, occlusion)
+               + SceneLights(input.worldPosition, surface);
+    if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
+        lit += params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;
+    }
+    return float4(ToneMap(lit), params.transparent != 0 ? base.a : 1.0);
 }
 
 // Cartes d'ombres : la position vue du soleil (cascade params.cascade), et l'image seulement pour le seuil d'alpha.

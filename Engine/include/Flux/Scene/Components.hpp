@@ -64,6 +64,10 @@ namespace Flux {
         // Lumière propre de la surface (écran, voyant, néon), ajoutée à l'éclairage : couleur x émission. 0 : aucune.
         // N'éclaire pas les objets voisins (il faut une lumière pour cela).
         float emission = 0.0f;
+        // Surface : 0 plastique, peinture, bois ; 1 métal nu (sa couleur teinte ses reflets).
+        float metallic = 0.0f;
+        // 0 : lisse, reflets nets comme un miroir ; 1 : mate, reflets étalés.
+        float roughness = 0.5f;
     };
 
     // Modèle 3D importé (glTF : .gltf ou .glb), placé par la transformation de l'entité. 1 unité du fichier = 1 mètre.
