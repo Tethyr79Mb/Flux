@@ -48,7 +48,10 @@ namespace Flux {
             .Field("roughness", "Rugosité", &MeshRendererComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<ModelComponent>("model", "Modèle 3D")
             .Asset("model", "Fichier", &ModelComponent::model, AssetType::Model)
-            .Field("tint", "Teinte", &ModelComponent::tint);
+            .Field("tint", "Teinte", &ModelComponent::tint)
+            .Field("overrideMaterial", "Remplacer métal et rugosité", &ModelComponent::overrideMaterial)
+            .Field("metallic", "Métal", &ModelComponent::metallic, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("roughness", "Rugosité", &ModelComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<LightComponent>("light", "Lumière")
             .Enum("type", "Type", &LightComponent::type,
                   {{"point", "Ponctuelle", LightType::Point}, {"spot", "Spot", LightType::Spot}})
@@ -57,6 +60,22 @@ namespace Flux {
             .Field("range", "Portée (m)", &LightComponent::range, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
             .Field("angle", "Ouverture du spot (°)", &LightComponent::angle, {.speed = 0.5, .min = 1.0, .max = 179.0, .decimals = 1})
             .Field("softness", "Bord du spot adouci", &LightComponent::softness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
+        registry.Register<SkyComponent>("sky", "Ciel")
+            .Asset("image", "Panorama (vide : généré)", &SkyComponent::image, AssetType::Image)
+            .Field("brightness", "Luminosité", &SkyComponent::brightness, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("ambient", "Lumière ambiante", &SkyComponent::ambient, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("seed", "Graine", &SkyComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            .Field("nebulaColor", "Nébuleuse", &SkyComponent::nebulaColor, {.alpha = false})
+            .Field("nebulaColor2", "Nébuleuse (2e couleur)", &SkyComponent::nebulaColor2, {.alpha = false})
+            .Field("nebula", "Densité de la nébuleuse", &SkyComponent::nebula, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("galaxy", "Bande galactique", &SkyComponent::galaxy, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("stars", "Étoiles", &SkyComponent::stars, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("starBrightness", "Éclat des étoiles", &SkyComponent::starBrightness, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
+            .Field("sunElevation", "Soleil : hauteur (°)", &SkyComponent::sunElevation, {.speed = 0.5, .min = -90.0, .max = 90.0, .decimals = 1})
+            .Field("sunAzimuth", "Soleil : direction (°)", &SkyComponent::sunAzimuth, {.speed = 0.5, .min = -360.0, .max = 360.0, .decimals = 1})
+            .Field("sunColor", "Soleil : couleur", &SkyComponent::sunColor, {.alpha = false})
+            .Field("sunIntensity", "Soleil : intensité", &SkyComponent::sunIntensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2});
         registry.Register<ColliderComponent>("collider", "Collision")
             .Enum("shape", "Forme", &ColliderComponent::shape,
                   {{"box", "Boîte", ColliderShape::Box},

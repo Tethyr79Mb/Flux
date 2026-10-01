@@ -11,7 +11,8 @@
 namespace Flux::Vk {
     std::expected<Image, std::string> Image::Allocate(const Device& device, VkFormat format, VkExtent2D extent,
                                                       VkImageUsageFlags usage, VkImageAspectFlags aspect,
-                                                      std::uint32_t mipLevels) {
+                                                      std::uint32_t mipLevels, bool cube) {
+        const std::uint32_t layers = cube ? 6u : 1u;
         Image image;
         image.m_device = device.GetHandle();
         image.m_allocator = device.GetAllocator();
@@ -24,7 +25,8 @@ namespace Flux::Vk {
         imageInfo.format = format;
         imageInfo.extent = {extent.width, extent.height, 1};
         imageInfo.mipLevels = mipLevels;
-        imageInfo.arrayLayers = 1;
+        imageInfo.arrayLayers = layers;
+        imageInfo.flags = cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         imageInfo.usage = usage;
@@ -43,9 +45,9 @@ namespace Flux::Vk {
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = image.m_image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = format;
-        viewInfo.subresourceRange = {aspect, 0, mipLevels, 0, 1};
+        viewInfo.subresourceRange = {aspect, 0, mipLevels, 0, layers};
         if (!Check(vkCreateImageView(image.m_device, &viewInfo, nullptr, &image.m_view), "vkCreateImageView")) {
             return std::unexpected("création de la vue d'une image");
         }
@@ -58,7 +60,8 @@ namespace Flux::Vk {
     }
 
     std::expected<Image, std::string> Image::CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
-                                                           std::span<const std::uint8_t> pixels, bool mipmaps) {
+                                                           std::span<const std::uint8_t> pixels, bool mipmaps, bool cube) {
+        const std::uint32_t layers = cube ? 6u : 1u;
         auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Upload);
         if (!staging) {
             return std::unexpected(staging.error());
@@ -71,7 +74,7 @@ namespace Flux::Vk {
         if (levels > 1) {
             usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT; // chaque niveau est lu pour produire le suivant
         }
-        auto image = Allocate(device, format, extent, usage, VK_IMAGE_ASPECT_COLOR_BIT, levels);
+        auto image = Allocate(device, format, extent, usage, VK_IMAGE_ASPECT_COLOR_BIT, levels, cube);
         if (!image) {
             return image;
         }
@@ -95,7 +98,7 @@ namespace Flux::Vk {
                 barrier.dstAccessMask = dstAccess;
                 barrier.oldLayout = from;
                 barrier.newLayout = to;
-                barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, count, 0, 1};
+                barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, count, 0, layers};
                 vkCmdPipelineBarrier2(commandBuffer, &dependency);
             };
 
@@ -103,7 +106,7 @@ namespace Flux::Vk {
             transition(0, levels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
             VkBufferImageCopy region{};
-            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers}; // faces à la suite dans le buffer
             region.imageExtent = {extent.width, extent.height, 1};
             vkCmdCopyBufferToImage(commandBuffer, staging->GetHandle(), image->m_image,
                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
@@ -118,9 +121,9 @@ namespace Flux::Vk {
                 const std::int32_t nextWidth = std::max(width / 2, 1);
                 const std::int32_t nextHeight = std::max(height / 2, 1);
                 VkImageBlit blit{};
-                blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1};
+                blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, layers};
                 blit.srcOffsets[1] = {width, height, 1};
-                blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+                blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
                 blit.dstOffsets[1] = {nextWidth, nextHeight, 1};
                 vkCmdBlitImage(commandBuffer, image->m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                image->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);

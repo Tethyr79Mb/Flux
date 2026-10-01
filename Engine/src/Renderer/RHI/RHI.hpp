@@ -4,7 +4,7 @@
 // l'implémente (Renderer/Vulkan) ; un autre backend (DX12) n'aurait qu'à implémenter ces interfaces.
 //
 // Portée actuelle, celle dont le renderer a besoin : une fenêtre (sa swapchain est tenue par le Device), des
-// buffers, des textures 2D, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
+// buffers, des textures 2D et cube, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
 // graphiques et une liste de commandes par image. Une passe dessine dans l'image de la swapchain.
 //
 // Durées de vie : un objet créé par le Device doit être détruit avant lui ; un BindGroup avant son BindGroupLayout.
@@ -297,6 +297,11 @@ namespace Flux::RHI {
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTexture(Format format, Extent extent,
                                                                                    std::span<const std::uint8_t> pixels,
                                                                                    bool mipmaps = false) = 0;
+        // Texture cube (ciel, reflets) : 6 faces carrées de `size` pixels, à la suite dans pixels, dans l'ordre +X, -X,
+        // +Y, -Y, +Z, -Z ; lue par direction (TextureCube dans les shaders).
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeTexture(Format format, std::uint32_t size,
+                                                                                       std::span<const std::uint8_t> pixels,
+                                                                                       bool mipmaps = false) = 0;
         // Cible de rendu vierge (tampon de profondeur). sampled : lue ensuite par les shaders (carte d'ombres).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false) = 0;

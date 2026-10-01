@@ -19,6 +19,7 @@ int main() {
         {"physique (Jolt)", RunPhysicsTests},
         {"animation squelettique", RunAnimationTests},
         {"cascades d'ombres", RunShadowTests},
+        {"ciel", RunSkyTests},
     };
 
     int failures = 0;
