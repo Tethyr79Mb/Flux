@@ -8,6 +8,7 @@
 #include "Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -15,6 +16,15 @@ namespace Flux {
     namespace {
         // Profondeur 32 bits flottante : obligatoire pour que le reverse-Z tienne l'échelle galaxie.
         constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
+
+        // Heures notées par le GPU pendant l'image (RHI::CommandList::WriteTimestamp).
+        enum Timestamp : std::uint32_t { FrameStart, ShadowsDone, SceneDone, InterfaceDone, TimestampCount };
+        static_assert(TimestampCount <= RHI::MaxTimestamps);
+
+        using Clock = std::chrono::steady_clock;
+        double Milliseconds(Clock::duration duration) {
+            return std::chrono::duration<double, std::milli>(duration).count();
+        }
     }
 
     // Une image : la carte d'ombres, puis la scène (MeshRenderer) dans sa zone et l'interface (OverlayRenderer) sur
@@ -31,6 +41,7 @@ namespace Flux {
         bool vsync = true;
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
         Math::Vector2f sceneViewportMax;
+        RenderTimings timings;
 
         explicit Impl(Window& w) : window(w) {}
 
@@ -95,6 +106,8 @@ namespace Flux {
                 case RHI::FrameStatus::Skip: return true;
                 case RHI::FrameStatus::Error: return false;
             }
+            const Clock::time_point prepareStart = Clock::now();
+            ReadTimings();
             const std::uint32_t frameIndex = device->GetFrameIndex();
             if (!overlay->Upload(frameIndex)) {
                 return false;
@@ -103,16 +116,40 @@ namespace Flux {
             meshes->Prepare(scene, camera, static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height), hidden,
                             assetsDirectory, frameIndex);
 
+            const Clock::time_point recordStart = Clock::now();
+            timings.prepare = Milliseconds(recordStart - prepareStart);
             RHI::CommandList& commands = device->GetCommandList();
+            commands.WriteTimestamp(FrameStart);
             meshes->DrawShadows(commands, frameIndex);
+            commands.WriteTimestamp(ShadowsDone);
             commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
             commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
                                   static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
             commands.SetScissor(scene3d);
             meshes->Draw(commands, frameIndex);
+            commands.WriteTimestamp(SceneDone);
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
-            return device->EndFrame();
+            commands.WriteTimestamp(InterfaceDone);
+            const bool presented = device->EndFrame();
+            // Présentation exclue : mesurée à part par le RHI.
+            timings.record = Milliseconds(Clock::now() - recordStart) - device->GetWaitTimes().present;
+            timings.present = device->GetWaitTimes().present;
+            return presented;
+        }
+
+        // Attentes de BeginFrame et heures du GPU relues pour l'image qu'il vient de finir.
+        void ReadTimings() {
+            const RHI::WaitTimes& waits = device->GetWaitTimes();
+            timings.waitGpu = waits.frame;
+            timings.waitImage = waits.acquire;
+            const std::span<const double> stamps = device->GetTimestamps();
+            const auto between = [&](std::uint32_t from, std::uint32_t to) {
+                return to < stamps.size() && stamps[from] >= 0.0 && stamps[to] >= 0.0 ? stamps[to] - stamps[from] : -1.0;
+            };
+            timings.gpuShadows = between(FrameStart, ShadowsDone);
+            timings.gpuScene = between(ShadowsDone, SceneDone);
+            timings.gpuInterface = between(SceneDone, InterfaceDone);
         }
     };
 
@@ -219,6 +256,10 @@ namespace Flux {
 
     UI::DrawList& Renderer::GetOverlay() {
         return m_impl->overlay->GetDrawList();
+    }
+
+    const RenderTimings& Renderer::GetTimings() const {
+        return m_impl->timings;
     }
 
     std::string_view Renderer::GetDeviceName() const {

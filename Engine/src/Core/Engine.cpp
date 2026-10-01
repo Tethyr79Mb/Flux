@@ -15,6 +15,7 @@
 #include "Flux/UI/DrawList.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -30,7 +31,26 @@ namespace Flux {
         // Caméra qui suit le personnage : un peu moins que la verticale, au-dessus comme en dessous.
         constexpr float FollowMaxPitch = 1.3f;
 
-        // Moyenne sur une fenêtre glissante d'une demi-seconde : lisible, sans chiffres qui clignotent.
+        double Milliseconds(Clock::duration duration) {
+            return std::chrono::duration<double, std::milli>(duration).count();
+        }
+
+        // Où passe le temps d'une image (millisecondes) : ce que montre le panneau « Moteur ».
+        enum Cost : std::size_t {
+            UpdateCost,       // CPU : fenêtre, interface, caméra, jeu, éditeur (avant le rendu)
+            GameCost,         // CPU, compris dans le précédent : systèmes du jeu (physique, sièges, animation)
+            PrepareCost,      // CPU : préparation du rendu
+            RecordCost,       // CPU : commandes de dessin
+            WaitGpuCost,      // CPU arrêté : attente du GPU
+            WaitImageCost,    // CPU arrêté : attente d'une image libre et présentation (V-Sync, plafond)
+            GpuShadowsCost,   // GPU
+            GpuSceneCost,
+            GpuInterfaceCost,
+            CostCount,
+        };
+
+        // Moyenne sur une fenêtre glissante d'une demi-seconde : lisible, sans chiffres qui clignotent. Un temps
+        // inconnu (négatif : heures du GPU absentes) n'entre pas dans sa moyenne.
         class FrameStats {
             public:
             void Tick(Clock::time_point now) {
@@ -39,20 +59,40 @@ namespace Flux {
                 if (elapsed.count() >= 0.5) {
                     m_fps = m_frames / elapsed.count();
                     m_frameMilliseconds = 1000.0 * elapsed.count() / m_frames;
+                    for (std::size_t i = 0; i < CostCount; ++i) {
+                        m_averages[i] = m_counts[i] > 0 ? m_sums[i] / m_counts[i] : -1.0;
+                    }
+                    m_sums = {};
+                    m_counts = {};
                     m_frames = 0;
                     m_windowStart = now;
                 }
             }
 
+            void Add(Cost cost, double milliseconds) {
+                if (milliseconds >= 0.0) {
+                    m_sums[cost] += milliseconds;
+                    ++m_counts[cost];
+                }
+            }
+
             double GetFps() const { return m_fps; }
             double GetFrameMilliseconds() const { return m_frameMilliseconds; }
+            double Get(Cost cost) const { return m_averages[cost]; }
 
             private:
             Clock::time_point m_windowStart = Clock::now();
             int m_frames = 0;
             double m_fps = 0.0;
             double m_frameMilliseconds = 0.0;
+            std::array<double, CostCount> m_sums{};
+            std::array<int, CostCount> m_counts{};
+            std::array<double, CostCount> m_averages{};
         };
+
+        std::string FormatCost(double milliseconds) {
+            return milliseconds < 0.0 ? std::string("?") : std::format("{:.2f} ms", milliseconds);
+        }
 
         void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
                              FlyCameraController& controller) {
@@ -64,6 +104,18 @@ namespace Flux {
                     renderer.SetVSync(vsync);
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
+
+                // Lecture : si « Attente » domine alors que le GPU travaille peu, la cadence vient de l'extérieur
+                // (V-Sync, pilote) ; si le GPU est long, c'est le dessin ; sinon, le CPU.
+                ui.Separator();
+                ui.LabelText("CPU mise à jour", FormatCost(stats.Get(UpdateCost)));
+                ui.LabelText("  dont jeu", FormatCost(stats.Get(GameCost)));
+                ui.LabelText("CPU rendu", FormatCost(stats.Get(PrepareCost)) + " + " + FormatCost(stats.Get(RecordCost)));
+                ui.LabelText("Attente GPU", FormatCost(stats.Get(WaitGpuCost)));
+                ui.LabelText("Attente écran", FormatCost(stats.Get(WaitImageCost)));
+                ui.LabelText("GPU ombres", FormatCost(stats.Get(GpuShadowsCost)));
+                ui.LabelText("GPU scène", FormatCost(stats.Get(GpuSceneCost)));
+                ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
 
                 ui.Separator();
                 controller.DrawFields(ui, camera);
@@ -134,6 +186,14 @@ namespace Flux {
             const double deltaSeconds = std::min(std::chrono::duration<double>(now - previousFrame).count(), 0.1);
             previousFrame = now;
             stats.Tick(now);
+            const RenderTimings& render = m_renderer->GetTimings();
+            stats.Add(PrepareCost, render.prepare);
+            stats.Add(RecordCost, render.record);
+            stats.Add(WaitGpuCost, render.waitGpu);
+            stats.Add(WaitImageCost, render.waitImage + render.present);
+            stats.Add(GpuShadowsCost, render.gpuShadows);
+            stats.Add(GpuSceneCost, render.gpuScene);
+            stats.Add(GpuInterfaceCost, render.gpuInterface);
 
             // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
@@ -148,10 +208,12 @@ namespace Flux {
             }
             if (m_gameState != GameState::Stopped) {
                 const double gameDelta = m_gameState == GameState::Running ? deltaSeconds : 0.0;
+                const Clock::time_point gameStart = Clock::now();
                 UpdateGameSystems(gameDelta);
                 if (m_gameUpdate) {
                     m_gameUpdate(*this, gameDelta);
                 }
+                stats.Add(GameCost, Milliseconds(Clock::now() - gameStart));
             }
             // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
             m_hiddenPlayer = NullEntity;
@@ -173,6 +235,7 @@ namespace Flux {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
             }
             m_ui->EndFrame(m_renderer->GetOverlay());
+            stats.Add(UpdateCost, Milliseconds(Clock::now() - now));
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {

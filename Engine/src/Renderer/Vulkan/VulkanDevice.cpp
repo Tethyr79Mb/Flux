@@ -120,6 +120,14 @@ namespace Flux::Vk {
         }
     }
 
+    float Device::GetTimestampPeriod() const {
+        const std::vector<VkQueueFamilyProperties> families = m_physicalDevice.get_queue_families();
+        if (m_graphicsQueueFamily >= families.size() || families[m_graphicsQueueFamily].timestampValidBits == 0) {
+            return 0.0f;
+        }
+        return m_physicalDevice.properties.limits.timestampPeriod;
+    }
+
     void Device::WaitIdle() const {
         Check(vkDeviceWaitIdle(m_device.device), "vkDeviceWaitIdle");
     }

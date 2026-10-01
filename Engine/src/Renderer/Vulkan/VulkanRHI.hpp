@@ -101,7 +101,8 @@ namespace Flux::Vk {
     // Liste de commandes de l'image en cours, et l'image de la swapchain où dessine sa passe.
     class RhiCommandList final : public RHI::CommandList {
         public:
-        void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent);
+        // queryPool : heures notées par WriteTimestamp (VK_NULL_HANDLE : pas d'heures), remise à zéro ici.
+        void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent, VkQueryPool queryPool);
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
         void TransitionToPresent();
 
@@ -116,6 +117,9 @@ namespace Flux::Vk {
         void PushConstants(const void* data, std::uint32_t size) override;
         void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) override;
         void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) override;
+        void WriteTimestamp(std::uint32_t slot) override;
+        // Cases écrites pendant l'image (bit i : case i).
+        std::uint32_t GetWrittenTimestamps() const { return m_writtenTimestamps; }
 
         private:
         void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc);
@@ -126,6 +130,8 @@ namespace Flux::Vk {
         VkExtent2D m_extent{};
         VkPipelineLayout m_layout = VK_NULL_HANDLE; // du pipeline lié
         const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
+        VkQueryPool m_queryPool = VK_NULL_HANDLE;
+        std::uint32_t m_writtenTimestamps = 0;
     };
 
     class RhiDevice final : public RHI::Device {
@@ -156,6 +162,8 @@ namespace Flux::Vk {
         RHI::CommandList& GetCommandList() override { return m_commandList; }
         std::uint32_t GetFrameIndex() const override { return m_frameIndex; }
         bool EndFrame() override;
+        std::span<const double> GetTimestamps() const override { return {m_timestamps.data(), m_timestampCount}; }
+        const RHI::WaitTimes& GetWaitTimes() const override { return m_waitTimes; }
 
         private:
         struct Frame
@@ -164,7 +172,12 @@ namespace Flux::Vk {
             VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
             VkSemaphore imageAvailable = VK_NULL_HANDLE;
             VkFence inFlight = VK_NULL_HANDLE;
+            VkQueryPool queries = VK_NULL_HANDLE;  // RHI::MaxTimestamps heures ; VK_NULL_HANDLE sans heures du GPU
+            std::uint32_t writtenTimestamps = 0;   // cases écrites la dernière fois que l'image a servi
         };
+
+        // Relit les heures de l'image dont le GPU vient de finir (après l'attente de sa barrière).
+        void ReadTimestamps(const Frame& frame);
 
         RhiDevice() = default;
         bool CreateFrames();
@@ -178,5 +191,9 @@ namespace Flux::Vk {
         RHI::Extent m_extent;
         bool m_vsync = true;
         RhiCommandList m_commandList;
+        double m_timestampPeriod = 0.0; // nanosecondes par tic ; 0 : pas d'heures du GPU
+        std::array<double, RHI::MaxTimestamps> m_timestamps{};
+        std::size_t m_timestampCount = 0;
+        RHI::WaitTimes m_waitTimes;
     };
 }
