@@ -28,8 +28,9 @@ struct VertexOutput
 };
 
 // Un triangle qui couvre tout l'écran, à la profondeur 0 (infiniment loin).
+// SV_VulkanVertexID : l'indice brut de Vulkan ; SV_VertexID demanderait la capacité DrawParameters (non activée).
 [shader("vertex")]
-VertexOutput vertexMain(uint vertexId : SV_VertexID)
+VertexOutput vertexMain(uint vertexId : SV_VulkanVertexID)
 {
     const float2 clip = float2((vertexId << 1) & 2, vertexId & 2) * 2.0 - 1.0;
     VertexOutput output;
