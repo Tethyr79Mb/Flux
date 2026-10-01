@@ -75,6 +75,11 @@ namespace Flux {
     {
         std::string model; // relatif au dossier des assets du projet, avec des « / » (models/Personnage.glb)
         Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie les couleurs du modèle (blanc : inchangées)
+        // Coché : métal et rugosité ci-dessous pour tout le modèle, à la place de ceux de ses matériaux (couleur,
+        // relief et occlusion du fichier gardés).
+        bool overrideMaterial = false;
+        float metallic = 1.0f;
+        float roughness = 0.3f;
     };
 
     enum class LightType : std::uint8_t {

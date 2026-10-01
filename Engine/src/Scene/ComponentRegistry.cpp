@@ -48,7 +48,10 @@ namespace Flux {
             .Field("roughness", "Rugosité", &MeshRendererComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<ModelComponent>("model", "Modèle 3D")
             .Asset("model", "Fichier", &ModelComponent::model, AssetType::Model)
-            .Field("tint", "Teinte", &ModelComponent::tint);
+            .Field("tint", "Teinte", &ModelComponent::tint)
+            .Field("overrideMaterial", "Remplacer métal et rugosité", &ModelComponent::overrideMaterial)
+            .Field("metallic", "Métal", &ModelComponent::metallic, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("roughness", "Rugosité", &ModelComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<LightComponent>("light", "Lumière")
             .Enum("type", "Type", &LightComponent::type,
                   {{"point", "Ponctuelle", LightType::Point}, {"spot", "Spot", LightType::Spot}})

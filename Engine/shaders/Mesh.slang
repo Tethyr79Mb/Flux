@@ -53,6 +53,7 @@ struct DrawParams
     float roughness;          // x canal vert
     float normalScale;        // 0 : pas de carte de normales
     float occlusionStrength;  // 0 : pas d'occlusion
+    uint materialOverride;    // 1 : metallic et roughness tels quels, sans l'image métal-rugosité
 };
 
 [[vk::push_constant]] ConstantBuffer<DrawParams> params;
@@ -335,13 +336,14 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
         normal = PerturbNormal(geometryNormal, input.worldPosition, input.uv);
     }
     const float4 metallicRoughness = metallicRoughnessTexture.Sample(input.uv);
-    const float metallic = saturate(params.metallic * metallicRoughness.b);
+    const bool fixed = params.materialOverride != 0;
+    const float metallic = saturate(params.metallic * (fixed ? 1.0 : metallicRoughness.b));
     Surface surface;
     surface.normal = normal;
     surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
-    surface.roughness = saturate(params.roughness * metallicRoughness.g);
+    surface.roughness = saturate(params.roughness * (fixed ? 1.0 : metallicRoughness.g));
     const float occlusion = 1.0 + params.occlusionStrength * (occlusionTexture.Sample(input.uv).r - 1.0);
 
     const FrameData f = frame[0];

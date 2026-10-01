@@ -47,8 +47,10 @@ namespace Flux {
             float roughness;
             float normalScale;
             float occlusionStrength;
+            std::uint32_t materialOverride;
+            std::array<float, 3> padding;
         };
-        static_assert(sizeof(DrawParams) == 64);
+        static_assert(sizeof(DrawParams) == 80);
 
         // Emplacements du groupe 1 (voir shaders/Mesh.slang).
         constexpr std::uint32_t JointSlot = 0;
@@ -281,6 +283,7 @@ namespace Flux {
             Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
             float metallic = 1.0f;
             float roughness = 1.0f;
+            bool materialOverride = false;
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 model = &m_models->GetCube();
                 tint = renderer->color;
@@ -291,6 +294,11 @@ namespace Flux {
                        component && !component->model.empty() && !assetsDirectory.empty()) {
                 model = m_models->Find(assetsDirectory / Platform::PathFromUtf8(component->model));
                 tint = component->tint;
+                if (component->overrideMaterial) {
+                    materialOverride = true;
+                    metallic = std::clamp(component->metallic, 0.0f, 1.0f);
+                    roughness = std::clamp(component->roughness, 0.0f, 1.0f);
+                }
             }
             if (!model) {
                 continue;
@@ -322,7 +330,7 @@ namespace Flux {
                                             half.z * std::abs(transform.scale.z)};
             const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
             const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            m_draws.push_back({model, tint, emissive, metallic, roughness, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
+            m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
                                !IsInside(scene, transform.entity, hidden)});
         }
         if (!m_boundEnvironment[frameIndex]) {
@@ -491,8 +499,9 @@ namespace Flux {
                                 {material.emissive.r + draw.emissive.r, material.emissive.g + draw.emissive.g,
                                  material.emissive.b + draw.emissive.b, 0.0f},
                                 drawIndex, cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u,
-                                material.metallic * draw.metallic, material.roughness * draw.roughness,
-                                material.normalScale, material.occlusionStrength};
+                                draw.materialOverride ? draw.metallic : material.metallic * draw.metallic,
+                                draw.materialOverride ? draw.roughness : material.roughness * draw.roughness,
+                                material.normalScale, material.occlusionStrength, draw.materialOverride ? 1u : 0u, {}};
         commands.PushConstants(&params, sizeof(params));
         commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
     }
