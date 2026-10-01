@@ -76,6 +76,11 @@ namespace Flux {
             .Field("sunColor", "Soleil : couleur", &SkyComponent::sunColor, {.alpha = false})
             .Field("sunIntensity", "Soleil : intensité", &SkyComponent::sunIntensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2});
+        registry.Register<InteriorComponent>("interior", "Intérieur")
+            .Field("size", "Taille (m)", &InteriorComponent::size, {.speed = 0.01, .min = 0.0, .max = 1.0e4})
+            .Field("ambient", "Lumière ambiante", &InteriorComponent::ambient, {.alpha = false})
+            .Field("intensity", "Intensité", &InteriorComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("fade", "Fondu aux bords (m)", &InteriorComponent::fade, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2});
         registry.Register<ColliderComponent>("collider", "Collision")
             .Enum("shape", "Forme", &ColliderComponent::shape,
                   {{"box", "Boîte", ColliderShape::Box},

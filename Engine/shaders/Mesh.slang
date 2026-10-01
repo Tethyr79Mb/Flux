@@ -6,6 +6,16 @@
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Cartes d'ombres (vertexShadow, vertexShadowSkinned, fragmentShadow) : profondeur vue du soleil, rien d'autre.
 
+// Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
+struct InteriorData
+{
+    float4 axes[3];           // local[i] = dot(axes[i].xyz, position relative à la caméra) + axes[i].w
+    float4 halfSize;          // xyz : demi-taille (m) ; w : fondu depuis les bords (m)
+    float4 ambient;           // rgb : lumière ambiante dedans
+};
+
+static const uint MaxInteriors = 8;
+
 // Doit correspondre à FrameData dans MeshRenderer.cpp. Matrices par colonnes : aucune ambiguïté de convention.
 struct FrameData
 {
@@ -19,7 +29,8 @@ struct FrameData
     // x : multiplie la texture du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des reflets les
     // plus flous ; w : exposition
     float4 environment;
-    uint4 lightCount;         // x : nombre de lumières dans lights
+    uint4 lightCount;         // x : nombre de lumières dans lights ; y : nombre de volumes intérieurs
+    InteriorData interiors[MaxInteriors];
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -239,14 +250,32 @@ float3 Shade(Surface s, float3 toLight, float3 light)
 // Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
 // du côté vers lequel la surface est tournée) ; le reflet la lit dans la direction réfléchie, d'autant plus floue
 // que la surface est rugueuse. La part du reflet vient de l'approximation de Karis (pré-intégration de la BRDF).
-float3 Ambient(Surface s, float occlusion)
+float3 Ambient(Surface s, float occlusion, float3 worldPosition)
 {
     const FrameData f = frame[0];
-    const float3 diffuseLight = environmentMap.SampleLevel(s.normal, f.environment.y).rgb;
+    // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
+    float inside = 0.0;
+    float3 interiorLight = float3(0.0);
+    for (uint i = 0; i < f.lightCount.y; ++i) {
+        const InteriorData volume = f.interiors[i];
+        const float3 local = float3(dot(volume.axes[0].xyz, worldPosition) + volume.axes[0].w,
+                                    dot(volume.axes[1].xyz, worldPosition) + volume.axes[1].w,
+                                    dot(volume.axes[2].xyz, worldPosition) + volume.axes[2].w);
+        // Distance au bord le plus proche, positive dedans.
+        const float3 margin = volume.halfSize.xyz - abs(local);
+        const float weight = saturate(min(margin.x, min(margin.y, margin.z)) / volume.halfSize.w);
+        if (weight > inside) {
+            inside = weight;
+            interiorLight = volume.ambient.rgb;
+        }
+    }
+    const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * f.environment.x,
+                                     interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
     // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
-    const float3 specularLight = environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb;
+    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * f.environment.x,
+                                      interiorLight, inside);
     const float nv = saturate(dot(s.normal, s.toEye));
     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
     const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
@@ -254,7 +283,7 @@ float3 Ambient(Surface s, float occlusion)
     const float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
     const float2 scaleBias = float2(-1.04, 1.04) * a004 + r.zw;
     const float3 specular = s.f0 * scaleBias.x + scaleBias.y;
-    return (s.diffuse * diffuseLight + specular * specularLight) * (occlusion * f.environment.x);
+    return (s.diffuse * diffuseLight + specular * specularLight) * occlusion;
 }
 
 // Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots). Affaiblies comme 1 / (1 + d²)
@@ -351,7 +380,7 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     // Ombre lue avec la vraie face (le relief de la carte ne déplace pas les ombres).
     const float sunFacing = dot(geometryNormal, toSun);
     const float sun = sunFacing > 0.0 ? SunVisibility(input.worldPosition, geometryNormal, sunFacing) : 0.0;
-    float3 lit = Shade(surface, toSun, f.sunColor.rgb * sun) + Ambient(surface, occlusion)
+    float3 lit = Shade(surface, toSun, f.sunColor.rgb * sun) + Ambient(surface, occlusion, input.worldPosition)
                + SceneLights(input.worldPosition, surface);
     if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
         lit += params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;

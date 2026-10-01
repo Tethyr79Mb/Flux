@@ -22,7 +22,7 @@ namespace FluxEditor {
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Flux::UI::Rect& view);
 
         private:
-        enum class Item { Empty, Cube, Model, ScreenText, ScreenImage, SceneChange, Character, Ship, Fighter, Light, Spot, Sky };
+        enum class Item { Empty, Cube, Model, ScreenText, ScreenImage, SceneChange, Character, Ship, Fighter, Light, Spot, Sky, Interior };
 
         // drop : point de la vue où l'objet a été lâché ; sans lui, la place par défaut.
         static void Place(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, Item item,
