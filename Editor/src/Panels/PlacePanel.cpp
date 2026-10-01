@@ -103,7 +103,8 @@ namespace FluxEditor {
                                            {"Vaisseau (maquette)", "Vaisseau"},
                                            {"Chasseur", "Chasseur"},
                                            {"Lumière", "Lumière"},
-                                           {"Spot", "Spot"}};
+                                           {"Spot", "Spot"},
+                                           {"Ciel", "Ciel"}};
             return Infos[item];
         }
 
@@ -145,6 +146,8 @@ namespace FluxEditor {
             button(Item::Light);
             ui.SameLine();
             button(Item::Spot);
+            ui.SameLine();
+            button(Item::Sky);
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
@@ -205,6 +208,13 @@ namespace FluxEditor {
                            std::optional<Vector2f> drop, const UI::Rect& view) {
         history.Commit(engine); // un geste en cours est un pas à part, avant celui-ci
         Scene& scene = engine.GetScene();
+        if (item == Item::Sky) {
+            // Un seul ciel compte : s'il y en a déjà un, c'est lui qu'on sélectionne (à régler dans l'inspecteur).
+            for (const auto [existing, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+                sceneEditor.Select(scene, existing);
+                return;
+            }
+        }
         const ItemInfo info = GetInfo(static_cast<int>(item));
         // Un modèle sans fichier ne montrerait rien : le fichier d'abord (copié dans le projet s'il vient d'ailleurs),
         // et l'entité porte son nom.
@@ -239,6 +249,9 @@ namespace FluxEditor {
         } else if (item == Item::SceneChange) {
             // Rien à voir ni à placer : se règle dans l'inspecteur (scène suivante, délai).
             scene.Add<SceneChangeComponent>(entity);
+        } else if (item == Item::Sky) {
+            // Autour de tout, à l'infini : sa position ne compte pas.
+            scene.Add<SkyComponent>(entity);
         } else {
             if (item == Item::Cube) {
                 // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.

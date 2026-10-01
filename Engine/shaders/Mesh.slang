@@ -1,7 +1,7 @@
 // Maillages (cubes et modèles glTF), opaques ou transparents : position relative à la caméra, matériaux PBR comme
 // glTF (couleur de base, métal, rugosité, carte de normales, occlusion) éclairés par un soleil avec ses ombres
-// (cascades), une lumière ambiante (ciel en haut, sol en bas) et les lumières de la scène (ponctuelles et spots, sans
-// ombre) ; plus la lumière propre du matériau (émissif). Puis exposition et courbe de tons (ACES) : la sortie est
+// (cascades), la lumière ambiante et les reflets du ciel (texture cube) et les lumières de la scène (ponctuelles et
+// spots, sans ombre) ; plus la lumière propre du matériau (émissif). Puis exposition et courbe de tons (ACES) : la sortie est
 // déjà la couleur affichée (en linéaire, la swapchain sRGB fait le reste).
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Cartes d'ombres (vertexShadow, vertexShadowSkinned, fragmentShadow) : profondeur vue du soleil, rien d'autre.
@@ -16,8 +16,9 @@ struct FrameData
     float4 cameraForward;     // xyz
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
-    float4 skyAmbient;        // rgb : lumière ambiante venue d'en haut ; w : exposition
-    float4 groundAmbient;     // rgb : venue d'en bas
+    // x : multiplie la texture du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des reflets les
+    // plus flous ; w : exposition
+    float4 environment;
     uint4 lightCount;         // x : nombre de lumières dans lights
 };
 
@@ -73,6 +74,8 @@ struct DrawParams
 [[vk::binding(3, 1)]] Sampler2DShadow shadowMap;
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
+// Le ciel tout autour (SkyRenderer), réduit à chaque niveau de mip : de plus en plus flou.
+[[vk::binding(5, 1)]] SamplerCube environmentMap;
 
 struct VertexInput
 {
@@ -232,16 +235,17 @@ float3 Shade(Surface s, float3 toLight, float3 light)
     return (s.diffuse * (1.0 - fresnel) + specular) * light * nl;
 }
 
-// Lumière ambiante, sans image du ciel : un dégradé du sol (en bas) au ciel (en haut). Le reflet prend la couleur
-// du côté où il part, étalée vers celle de la normale pour une surface rugueuse ; sa part vient de l'approximation
-// de Karis (pré-intégration de la BRDF sur un ciel uniforme).
+// Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
+// du côté vers lequel la surface est tournée) ; le reflet la lit dans la direction réfléchie, d'autant plus floue
+// que la surface est rugueuse. La part du reflet vient de l'approximation de Karis (pré-intégration de la BRDF).
 float3 Ambient(Surface s, float occlusion)
 {
     const FrameData f = frame[0];
-    const float3 diffuseLight = lerp(f.groundAmbient.rgb, f.skyAmbient.rgb, s.normal.y * 0.5 + 0.5);
+    const float3 diffuseLight = environmentMap.SampleLevel(s.normal, f.environment.y).rgb;
     const float3 reflected = reflect(-s.toEye, s.normal);
+    // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
-    const float3 specularLight = lerp(f.groundAmbient.rgb, f.skyAmbient.rgb, reflectDirection.y * 0.5 + 0.5);
+    const float3 specularLight = environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb;
     const float nv = saturate(dot(s.normal, s.toEye));
     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
     const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
@@ -249,7 +253,7 @@ float3 Ambient(Surface s, float occlusion)
     const float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
     const float2 scaleBias = float2(-1.04, 1.04) * a004 + r.zw;
     const float3 specular = s.f0 * scaleBias.x + scaleBias.y;
-    return (s.diffuse * diffuseLight + specular * specularLight) * occlusion;
+    return (s.diffuse * diffuseLight + specular * specularLight) * (occlusion * f.environment.x);
 }
 
 // Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots). Affaiblies comme 1 / (1 + d²)
@@ -310,10 +314,10 @@ float3 PerturbNormal(float3 normal, float3 worldPosition, float2 uv)
 }
 
 // Courbe de tons ACES (approximation de Narkowicz) : les couleurs trop fortes sont adoucies vers le blanc au lieu
-// d'être coupées net.
+// d'être coupées net. La même dans shaders/Sky.slang.
 float3 ToneMap(float3 color)
 {
-    color *= frame[0].skyAmbient.w * 0.6;
+    color *= frame[0].environment.w * 0.6;
     return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
 }
 
