@@ -21,6 +21,20 @@ namespace Flux {
     struct Camera;
     class Scene;
 
+    // Temps de la dernière image rendue, en millisecondes. Les temps du GPU sont ceux d'une image un peu plus ancienne
+    // (relus quand il l'a finie) ; négatifs s'ils sont inconnus (GPU sans heures, ou pas encore mesurés).
+    struct RenderTimings
+    {
+        double prepare = 0.0;  // CPU : matrices, poses, lumières, cascades, envoi des données de l'image
+        double record = 0.0;   // CPU : enregistrement des commandes de dessin et soumission
+        double waitGpu = 0.0;  // CPU arrêté : le GPU n'a pas fini l'image qui utilisait les mêmes ressources
+        double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
+        double present = 0.0;  // CPU : appel de présentation
+        double gpuShadows = -1.0;   // GPU : carte d'ombres
+        double gpuScene = -1.0;     // GPU : maillages de la scène
+        double gpuInterface = -1.0; // GPU : interface (overlay 2D)
+    };
+
     // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.
     class FLUX_API Renderer {
         public:
@@ -73,6 +87,8 @@ namespace Flux {
         std::vector<std::string> GetAnimationNames(const std::filesystem::path& path);
         // Durée d'une animation de ce modèle, en secondes ; 0 si le modèle n'est pas chargé ou ne l'a pas.
         float GetAnimationDuration(const std::filesystem::path& path, std::string_view name);
+
+        const RenderTimings& GetTimings() const;
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;

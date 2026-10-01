@@ -29,6 +29,8 @@ namespace Flux::Vk {
         VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
         uint32_t GetGraphicsQueueFamily() const { return m_graphicsQueueFamily; }
         VkQueue GetPresentQueue() const { return m_presentQueue; }
+        // Nanosecondes par tic des heures du GPU ; 0 si la file graphique ne note pas l'heure.
+        float GetTimestampPeriod() const;
 
         void WaitIdle() const;
 

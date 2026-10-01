@@ -254,6 +254,20 @@ namespace Flux::RHI {
         virtual void PushConstants(const void* data, std::uint32_t size) = 0;
         virtual void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) = 0;
         virtual void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) = 0;
+        // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
+        // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
+        virtual void WriteTimestamp(std::uint32_t slot) = 0;
+    };
+
+    inline constexpr std::uint32_t MaxTimestamps = 8;
+
+    // Temps passés par le CPU à attendre, pendant l'image précédente (millisecondes) : longs, ils disent que le GPU ou
+    // la présentation (V-Sync, plafond du pilote) mène la cadence.
+    struct WaitTimes
+    {
+        double frame = 0.0;   // attente que le GPU ait fini l'image qui utilisait les mêmes ressources
+        double acquire = 0.0; // attente d'une image libre de la swapchain
+        double present = 0.0; // appel de présentation
     };
 
     enum class PresentMode : std::uint8_t { Fifo, FifoRelaxed, Mailbox, Immediate, Other };
@@ -307,5 +321,10 @@ namespace Flux::RHI {
         virtual std::uint32_t GetFrameIndex() const = 0;
         // Envoie les commandes et présente l'image ; false sur une erreur irrécupérable.
         virtual bool EndFrame() = 0;
+
+        // Heures notées par WriteTimestamp, relues à BeginFrame pour la dernière image qui a fini dans ces ressources :
+        // millisecondes depuis la case 0 ; négatif pour une case non écrite. Vide si le GPU ne note pas l'heure.
+        virtual std::span<const double> GetTimestamps() const = 0;
+        virtual const WaitTimes& GetWaitTimes() const = 0;
     };
 }

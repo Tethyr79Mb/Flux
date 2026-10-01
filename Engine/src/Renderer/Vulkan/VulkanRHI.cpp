@@ -88,12 +88,26 @@ namespace Flux::Vk {
         }
     }
 
-    void RhiCommandList::Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent) {
+    void RhiCommandList::Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent,
+                               VkQueryPool queryPool) {
         m_commandBuffer = commandBuffer;
         m_image = image;
         m_view = view;
         m_extent = extent;
         m_layout = VK_NULL_HANDLE;
+        m_queryPool = queryPool;
+        m_writtenTimestamps = 0;
+        if (m_queryPool != VK_NULL_HANDLE) {
+            vkCmdResetQueryPool(m_commandBuffer, m_queryPool, 0, RHI::MaxTimestamps);
+        }
+    }
+
+    void RhiCommandList::WriteTimestamp(std::uint32_t slot) {
+        if (m_queryPool == VK_NULL_HANDLE || slot >= RHI::MaxTimestamps) {
+            return;
+        }
+        vkCmdWriteTimestamp2(m_commandBuffer, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, m_queryPool, slot);
+        m_writtenTimestamps |= 1u << slot;
     }
 
     void RhiCommandList::BeginRenderPass(const RHI::RenderPassDesc& desc) {

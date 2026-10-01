@@ -1,5 +1,6 @@
 #include "Renderer/Vulkan/VulkanRHI.hpp"
 
+#include <chrono>
 #include <unordered_map>
 #include <vector>
 
@@ -74,6 +75,7 @@ namespace Flux::Vk {
         if (!rhi->m_swapchain->Recreate({extent.width, extent.height}, vsync)) {
             return std::unexpected("création de la swapchain");
         }
+        rhi->m_timestampPeriod = rhi->m_device->GetTimestampPeriod();
         if (!rhi->CreateFrames()) {
             return std::unexpected("création des ressources de frame");
         }
@@ -87,6 +89,7 @@ namespace Flux::Vk {
         m_device->WaitIdle();
         const VkDevice device = m_device->GetHandle();
         for (Frame& frame : m_frames) {
+            vkDestroyQueryPool(device, frame.queries, nullptr);
             vkDestroyFence(device, frame.inFlight, nullptr);
             vkDestroySemaphore(device, frame.imageAvailable, nullptr);
             vkDestroyCommandPool(device, frame.commandPool, nullptr);
@@ -127,8 +130,42 @@ namespace Flux::Vk {
             if (!Check(vkCreateFence(device, &fenceInfo, nullptr, &frame.inFlight), "vkCreateFence")) {
                 return false;
             }
+
+            // Heures du GPU (mesure des passes) : facultatives, l'image se dessine sans.
+            if (m_timestampPeriod > 0.0) {
+                VkQueryPoolCreateInfo queryInfo{};
+                queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+                queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+                queryInfo.queryCount = RHI::MaxTimestamps;
+                if (vkCreateQueryPool(device, &queryInfo, nullptr, &frame.queries) != VK_SUCCESS) {
+                    frame.queries = VK_NULL_HANDLE;
+                }
+            }
         }
         return true;
+    }
+
+    void RhiDevice::ReadTimestamps(const Frame& frame) {
+        m_timestampCount = 0;
+        if (frame.queries == VK_NULL_HANDLE || frame.writtenTimestamps == 0) {
+            return;
+        }
+        // Valeur et disponibilité par case ; le GPU a fini l'image (barrière attendue) : pas d'attente ici.
+        std::array<std::uint64_t, 2 * RHI::MaxTimestamps> values{};
+        const VkResult result = vkGetQueryPoolResults(m_device->GetHandle(), frame.queries, 0, RHI::MaxTimestamps,
+                                                      sizeof(values), values.data(), 2 * sizeof(std::uint64_t),
+                                                      VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        if (result != VK_SUCCESS && result != VK_NOT_READY) {
+            return;
+        }
+        const bool firstReady = (frame.writtenTimestamps & 1u) != 0 && values[1] != 0;
+        for (std::uint32_t slot = 0; slot < RHI::MaxTimestamps; ++slot) {
+            const bool ready = firstReady && (frame.writtenTimestamps & (1u << slot)) != 0 && values[2 * slot + 1] != 0;
+            m_timestamps[slot] = ready ? static_cast<double>(values[2 * slot] - values[0]) * m_timestampPeriod * 1.0e-6 : -1.0;
+            if (ready) {
+                m_timestampCount = slot + 1;
+            }
+        }
     }
 
     std::expected<std::unique_ptr<RHI::Buffer>, std::string> RhiDevice::CreateBuffer(const RHI::BufferDesc& desc, const void* data) {
@@ -348,14 +385,21 @@ namespace Flux::Vk {
     }
 
     RHI::FrameStatus RhiDevice::BeginFrame() {
+        using Clock = std::chrono::steady_clock;
+        const auto milliseconds = [](Clock::duration duration) { return std::chrono::duration<double, std::milli>(duration).count(); };
         Frame& frame = m_frames[m_frameIndex];
         const VkDevice device = m_device->GetHandle();
+        const Clock::time_point waitStart = Clock::now();
         if (!Check(vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE, UINT64_MAX), "vkWaitForFences")) {
             return RHI::FrameStatus::Error;
         }
+        const Clock::time_point acquireStart = Clock::now();
+        m_waitTimes.frame = milliseconds(acquireStart - waitStart);
+        ReadTimestamps(frame);
 
         const VkResult acquire = vkAcquireNextImageKHR(device, m_swapchain->GetHandle(), UINT64_MAX, frame.imageAvailable,
                                                        VK_NULL_HANDLE, &m_imageIndex);
+        m_waitTimes.acquire = milliseconds(Clock::now() - acquireStart);
         if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
             return RecreateSwapchain() ? RHI::FrameStatus::Skip : RHI::FrameStatus::Error; // on retentera à l'image suivante
         }
@@ -372,13 +416,14 @@ namespace Flux::Vk {
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
         m_commandList.Begin(frame.commandBuffer, m_swapchain->GetImage(m_imageIndex), m_swapchain->GetImageView(m_imageIndex),
-                            m_swapchain->GetExtent());
+                            m_swapchain->GetExtent(), frame.queries);
         return RHI::FrameStatus::Ready;
     }
 
     bool RhiDevice::EndFrame() {
         Frame& frame = m_frames[m_frameIndex];
         m_commandList.TransitionToPresent();
+        frame.writtenTimestamps = m_commandList.GetWrittenTimestamps();
         if (!Check(vkEndCommandBuffer(frame.commandBuffer), "vkEndCommandBuffer")) {
             return false;
         }
@@ -419,7 +464,9 @@ namespace Flux::Vk {
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &swapchain;
         presentInfo.pImageIndices = &m_imageIndex;
+        const auto presentStart = std::chrono::steady_clock::now();
         const VkResult present = vkQueuePresentKHR(m_device->GetPresentQueue(), &presentInfo);
+        m_waitTimes.present = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - presentStart).count();
 
         m_frameIndex = (m_frameIndex + 1) % RHI::FramesInFlight;
 
