@@ -117,7 +117,8 @@ namespace Flux {
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})
-            .Field("exit", "Sortie", &SeatComponent::exit, {.speed = 0.01});
+            .Field("exit", "Sortie", &SeatComponent::exit, {.speed = 0.01})
+            .Field("reach", "Portée (m)", &SeatComponent::reach, {.speed = 0.05, .min = 0.5, .max = 50.0});
         registry.Register<AnimatorComponent>("animator", "Animation")
             .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
             .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)

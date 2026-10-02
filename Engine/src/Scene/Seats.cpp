@@ -16,23 +16,43 @@ namespace Flux::Seats {
             return false;
         }
 
-        // Siège libre le plus proche, à portée, dans le même vaisseau (le même monde physique) que le personnage.
+        // Siège libre le plus proche, à sa portée (SeatComponent::reach). Il peut être dans un autre vaisseau que le
+        // personnage (il y monte), pas hors de tout vaisseau quand le personnage est à bord d'un.
         Entity FindSeat(const Scene& scene, Entity character) {
             const Math::WorldPosition position = scene.GetWorldPosition(character);
             const Entity ship = scene.GetShip(character);
             Entity best = NullEntity;
             double bestDistance = std::numeric_limits<double>::max();
             for (const auto [seat, component] : scene.GetRegistry().view<const SeatComponent>().each()) {
-                if (scene.GetShip(seat) != ship || IsOccupied(scene, seat)) {
+                const Entity seatShip = scene.GetShip(seat);
+                if ((seatShip != ship && seatShip == NullEntity) || IsOccupied(scene, seat)) {
                     continue;
                 }
                 const double distance = Math::Length(Math::Delta(position, scene.GetWorldPosition(seat)));
-                if (distance <= Reach && distance < bestDistance) {
+                if (distance <= component.reach && distance < bestDistance) {
                     best = seat;
                     bestDistance = distance;
                 }
             }
             return best;
+        }
+
+        // Le personnage monte à bord du vaisseau du siège : il en devient l'enfant direct (la physique le fait
+        // changer de monde), posé sur le siège. Il le reste en se relevant ; une sortie hors de la coque le fait
+        // redescendre dans le monde du dehors (PhysicsWorld, comme en marchant hors d'un vaisseau).
+        void Board(Scene& scene, Entity character, Entity seat) {
+            const Entity ship = scene.GetShip(seat);
+            if (ship == NullEntity || scene.GetShip(character) == ship) {
+                return;
+            }
+            const Math::Vector3d delta = Math::Delta(scene.GetWorldPosition(ship), scene.GetWorldPosition(seat));
+            const Math::Quaternionf inverse = scene.GetWorldRotation(ship).Conjugate();
+            scene.SetParent(character, ship);
+            TransformComponent& transform = scene.Get<TransformComponent>(character);
+            const Math::Vector3f local = inverse.Rotate(Math::Vector3f{static_cast<float>(delta.x), static_cast<float>(delta.y),
+                                                                       static_cast<float>(delta.z)});
+            transform.position = {local.x, local.y, local.z};
+            transform.rotation = Math::Normalize(inverse * scene.GetWorldRotation(seat));
         }
 
         // Le pilote change la vitesse du vaisseau : poussée le long de son -z (sans commande, il garde sa vitesse,
@@ -68,6 +88,7 @@ namespace Flux::Seats {
             case SeatState::Standing:
                 if (input.interact) {
                     if (const Entity seat = FindSeat(scene, player); seat != NullEntity) {
+                        Board(scene, player, seat);
                         character->seat = seat;
                         enter(durations && durations(player).sitDown > 0.0f ? SeatState::SittingDown : SeatState::Seated);
                     }

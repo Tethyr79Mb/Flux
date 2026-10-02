@@ -199,9 +199,10 @@ namespace Flux {
         float seatTime = 0.0f; // secondes depuis le début de l'étape en cours
     };
 
-    // Siège : le joueur s'y assoit (touche E, à moins de SeatReach mètres de lui) et s'en relève (E). Son origine est
+    // Siège : le joueur s'y assoit (touche E, à moins de `reach` mètres de lui) et s'en relève (E). Son origine est
     // au sol, là où se posent les pieds du personnage, et il regarde vers son -z : le personnage assis aussi. Debout,
-    // on en sort à un demi-mètre devant. Le poste de pilotage dirige le vaisseau au-dessus de lui (ShipComponent) :
+    // on en sort à un demi-mètre devant. Un siège d'un autre vaisseau que celui du joueur (ou du dehors) le fait
+    // monter à bord : avec une grande portée, E près du vaisseau met directement au poste de pilotage. Le poste de pilotage dirige le vaisseau au-dessus de lui (ShipComponent) :
     // Z/S pour accélérer et freiner, Q/D pour virer, Espace/Ctrl pour cabrer et piquer ; vue depuis l'œil du pilote
     // (V : vue extérieure).
     struct SeatComponent
@@ -211,6 +212,7 @@ namespace Flux {
         // Où le personnage se retrouve debout en se relevant, dans le repère du siège : un demi-mètre devant par
         // défaut (là où finit l'animation « se lever »), derrière dans un cockpit trop étroit pour passer devant.
         Math::Vector3f exit{0.0f, 0.0f, -0.5f};
+        float reach = 1.5f; // m, distance du personnage au siège pour s'y asseoir
     };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
