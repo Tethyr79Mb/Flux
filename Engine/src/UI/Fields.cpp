@@ -91,7 +91,7 @@ namespace Flux::UI {
 
     void Context::Impl::DrawTextEdit(Vector2f min, Vector2f max) {
         DrawList& list = panel->content;
-        list.AddRect(min, max, style.frameActive);
+        FrameRect(min, max, style.frameActive);
         // Texte décalé vers la gauche quand le curseur sortirait du champ.
         const float visibleWidth = max.x - min.x - 2.0f * style.framePadding.x;
         const float caretOffset = MeasureText(std::string_view(editBuffer).substr(0, caret)).x;
@@ -153,9 +153,9 @@ namespace Flux::UI {
         const bool active = activeId == id || editingId == id;
         const bool hovered = activeId == 0 && IsMouseOver(min, max);
         DrawList& list = panel->content;
-        list.AddRect(min, max, active ? style.frameActive : (hovered ? style.frameHovered : style.frame));
+        FrameRect(min, max, active ? style.frameActive : (hovered ? style.frameHovered : style.frame));
         if (axisColor) {
-            list.AddRect(min, {min.x + 3.0f, max.y}, *axisColor);
+            list.AddRoundedRect(min, {min.x + 3.0f, max.y}, *axisColor, std::min(style.frameRounding, 1.5f));
         }
         const std::string text = FormatNumber(value, decimals);
         const float textWidth = MeasureText(text).x;
@@ -219,7 +219,7 @@ namespace Flux::UI {
         const LinearColor color = interaction.held && interaction.hovered ? style.buttonActive
                                 : interaction.hovered                     ? style.buttonHovered
                                                                           : style.button;
-        ui.panel->content.AddRect(buttonMin, fieldMax, color);
+        ui.FrameRect(buttonMin, fieldMax, color);
         ui.ClippedText(buttonMin + style.framePadding, fieldMax.x, "...", style.text);
         browse = interaction.clicked;
         return ui.TextField(id, fieldMin, {buttonMin.x - style.itemSpacing, fieldMax.y}, value);
@@ -237,7 +237,7 @@ namespace Flux::UI {
             if (changed) {
                 value = ui.editBuffer;
             }
-            ui.panel->content.AddRect(min, max, ui.style.frame);
+            ui.FrameRect(min, max, ui.style.frame);
             ui.ClippedText(min + ui.style.framePadding, max.x - 2.0f, value, ui.style.text);
             return changed;
         }
@@ -246,7 +246,7 @@ namespace Flux::UI {
         if (interaction.clicked) {
             ui.BeginEdit(id, value);
         }
-        ui.panel->content.AddRect(min, max, interaction.hovered ? ui.style.frameHovered : ui.style.frame);
+        ui.FrameRect(min, max, interaction.hovered ? ui.style.frameHovered : ui.style.frame);
         ui.ClippedText(min + ui.style.framePadding, max.x - 2.0f, value, ui.style.text);
         return false;
     }

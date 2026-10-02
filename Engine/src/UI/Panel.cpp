@@ -360,9 +360,22 @@ namespace Flux::UI {
             background.a = 1.0f;
             chrome.AddRect({min.x, viewTop}, max, background);
         } else {
-            chrome.AddRect(min, max, style.panelBackground);
+            // Ombre (ou halo), fond et barre de titre aux coins arrondis : la barre garde les coins du haut seulement,
+            // le bas de son rectangle arrondi est coupé par la découpe.
+            const float rounding = std::min(style.panelRounding, titleHeight * 0.5f);
+            if (style.shadowSize > 0.0f) {
+                chrome.AddShadow(min + Vector2f{0.0f, 3.0f}, max + Vector2f{0.0f, 3.0f}, style.shadow, rounding, style.shadowSize);
+            }
+            chrome.AddRoundedRect(min, max, style.panelBackground, rounding);
             const bool front = ui.order.back() == ui.panelId;
-            chrome.AddRect(min, {max.x, viewTop}, front ? style.titleBackgroundActive : style.titleBackground);
+            const LinearColor titleColor = front ? style.titleBackgroundActive : style.titleBackground;
+            if (panel.collapsed) {
+                chrome.AddRoundedRect(min, max, titleColor, rounding);
+            } else {
+                chrome.SetClipRect(min, {max.x, viewTop});
+                chrome.AddRoundedRect(min, {max.x, viewTop + rounding}, titleColor, rounding);
+                chrome.ResetClipRect();
+            }
 
             // Flèche : vers le bas si déplié, vers la droite si replié.
             const float arrow = style.fontSize * 0.5f;
@@ -387,8 +400,10 @@ namespace Flux::UI {
                 const Vector2f boxMin{max.x - titleHeight, min.y};
                 const Vector2f boxMax{max.x, viewTop};
                 if (panel.closeHovered || panel.closeHeld) {
-                    chrome.AddRect(boxMin, boxMax, panel.closeHeld ? LinearColor::FromSrgb8(150, 30, 30)
-                                                                   : LinearColor::FromSrgb8(196, 43, 28));
+                    const Vector2f inset{3.0f, 3.0f};
+                    chrome.AddRoundedRect(boxMin + inset, boxMax - inset,
+                                          panel.closeHeld ? LinearColor::FromSrgb8(150, 30, 30) : LinearColor::FromSrgb8(196, 43, 28),
+                                          style.frameRounding);
                 }
                 const Vector2f center = (boxMin + boxMax) * 0.5f;
                 const float half = style.fontSize * 0.3f;
@@ -422,7 +437,7 @@ namespace Flux::UI {
         }
         // La barre est dessinée sous le contenu (chrome) mais à droite de celui-ci : pas de chevauchement.
         if (!panel.docked) {
-            chrome.AddRectOutline(min, max, style.panelBorder);
+            chrome.AddRoundedRectOutline(min, max, style.panelBorder, std::min(style.panelRounding, titleHeight * 0.5f));
         }
 
         panel.content.ResetClipRect();

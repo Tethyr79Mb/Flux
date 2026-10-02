@@ -63,7 +63,9 @@ namespace Flux::UI {
     }
 
     void DrawList::AddQuad(Math::Vector2f min, Math::Vector2f max, Math::Vector2f uvMin, Math::Vector2f uvMax,
-                           Math::LinearColor color, TextureId texture) {
+                           Math::LinearColor color, TextureId texture, const Shape& shape, float feather) {
+        // Centre de la forme pris avant la découpe : local reste juste dans la partie gardée.
+        const Math::Vector2f center = (min + max) * 0.5f;
         if (m_clipping) {
             // Quad aligné sur les axes : on rogne la géométrie et on interpole les UV d'autant.
             const float clippedMinX = std::max(min.x, m_clipMin.x);
@@ -85,10 +87,13 @@ namespace Flux::UI {
             uvMin = newUvMin;
             uvMax = newUvMax;
         }
-        const Vertex topLeft{min, uvMin, color};
-        const Vertex topRight{{max.x, min.y}, {uvMax.x, uvMin.y}, color};
-        const Vertex bottomLeft{{min.x, max.y}, {uvMin.x, uvMax.y}, color};
-        const Vertex bottomRight{max, uvMax, color};
+        const auto vertex = [&](Math::Vector2f position, Math::Vector2f uv) {
+            return Vertex{position, uv, color, position - center, feather, 0.0f, shape};
+        };
+        const Vertex topLeft = vertex(min, uvMin);
+        const Vertex topRight = vertex({max.x, min.y}, {uvMax.x, uvMin.y});
+        const Vertex bottomLeft = vertex({min.x, max.y}, {uvMin.x, uvMax.y});
+        const Vertex bottomRight = vertex(max, uvMax);
         const Vertex quad[] = {topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft};
         PushVertices(texture, quad);
     }
@@ -105,6 +110,55 @@ namespace Flux::UI {
         AddRect({max.x - thickness, min.y + thickness}, {max.x, max.y - thickness}, color);
     }
 
+    void DrawList::AddShape(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, const Shape& shape, float margin,
+                            float feather) {
+        if (min.x >= max.x || min.y >= max.y || color.a <= 0.0f) {
+            return;
+        }
+        const Math::Vector2f uv = m_font->GetSolidUV();
+        const Math::Vector2f grow{margin, margin};
+        AddQuad(min - grow, max + grow, uv, uv, color, FontTexture, shape, feather);
+    }
+
+    namespace {
+        Shape RoundedShape(Math::Vector2f min, Math::Vector2f max, float radius, float border) {
+            const Math::Vector2f half = (max - min) * 0.5f;
+            return {half, std::clamp(radius, 0.0f, std::min(half.x, half.y)), std::max(0.0f, border)};
+        }
+    }
+
+    void DrawList::AddRoundedRect(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float radius) {
+        if (radius <= 0.0f) {
+            AddRect(min, max, color);
+            return;
+        }
+        AddShape(min, max, color, RoundedShape(min, max, radius, 0.0f), 0.5f, 1.0f);
+    }
+
+    void DrawList::AddRoundedRectOutline(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float radius,
+                                         float thickness) {
+        if (radius <= 0.0f) {
+            AddRectOutline(min, max, color, thickness);
+            return;
+        }
+        AddShape(min, max, color, RoundedShape(min, max, radius, thickness), 0.5f, 1.0f);
+    }
+
+    void DrawList::AddCircle(Math::Vector2f center, float radius, Math::LinearColor color) {
+        const Math::Vector2f half{radius, radius};
+        AddShape(center - half, center + half, color, {half, radius, 0.0f}, 0.5f, 1.0f);
+    }
+
+    void DrawList::AddCircleOutline(Math::Vector2f center, float radius, Math::LinearColor color, float thickness) {
+        const Math::Vector2f half{radius, radius};
+        AddShape(center - half, center + half, color, {half, radius, std::max(0.0f, thickness)}, 0.5f, 1.0f);
+    }
+
+    void DrawList::AddShadow(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float radius, float blur) {
+        blur = std::max(1.0f, blur);
+        AddShape(min, max, color, RoundedShape(min, max, radius, 0.0f), blur, 2.0f * blur);
+    }
+
     void DrawList::AddTriangle(Math::Vector2f a, Math::Vector2f b, Math::Vector2f c, Math::LinearColor color) {
         if (m_clipping) {
             // Pas de découpe partielle : un triangle (flèche, coche) est entier ou absent.
@@ -116,7 +170,14 @@ namespace Flux::UI {
             }
         }
         const Math::Vector2f uv = m_font->GetSolidUV();
-        const Vertex triangle[] = {{a, uv, color}, {b, uv, color}, {c, uv, color}};
+        Vertex triangle[3];
+        triangle[0].position = a;
+        triangle[1].position = b;
+        triangle[2].position = c;
+        for (Vertex& vertex : triangle) {
+            vertex.uv = uv;
+            vertex.color = color;
+        }
         PushVertices(FontTexture, triangle);
     }
 

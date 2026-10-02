@@ -440,6 +440,11 @@ namespace Flux::UI {
             return result;
         }
 
+        // Fond d'un bouton, d'un champ ou d'une case : coins arrondis du thème.
+        void FrameRect(Vector2f min, Vector2f max, LinearColor color) {
+            panel->content.AddRoundedRect(min, max, color, style.frameRounding);
+        }
+
         // Libellé à gauche d'une ligne de champ ; retourne le rectangle restant pour le champ.
         std::pair<Vector2f, Vector2f> LabeledRow(std::string_view label) {
             const Vector2f min = ItemRect({RowWidth(), FrameHeight()});

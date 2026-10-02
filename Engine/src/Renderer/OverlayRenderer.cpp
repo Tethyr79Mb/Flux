@@ -76,6 +76,8 @@ namespace Flux {
             RHI::VertexAttribute{0, 0, RHI::Format::RG32Float, offsetof(UI::Vertex, position)},
             RHI::VertexAttribute{1, 0, RHI::Format::RG32Float, offsetof(UI::Vertex, uv)},
             RHI::VertexAttribute{2, 0, RHI::Format::RGBA32Float, offsetof(UI::Vertex, color)},
+            RHI::VertexAttribute{3, 0, RHI::Format::RGBA32Float, offsetof(UI::Vertex, local)}, // local, feather, inutilisé
+            RHI::VertexAttribute{4, 0, RHI::Format::RGBA32Float, offsetof(UI::Vertex, shape)},
         };
         const RHI::BindGroupLayout* layouts[] = {overlay->m_layout.get()};
         RHI::PipelineDesc desc;

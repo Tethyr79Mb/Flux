@@ -30,6 +30,7 @@ namespace Flux::UI {
         style.axisX = C::FromSrgb8(210, 70, 70);
         style.axisY = C::FromSrgb8(100, 180, 70);
         style.axisZ = C::FromSrgb8(70, 125, 220);
+        style.shadow = C::FromSrgb8(0, 0, 0, 0.45f);
         return style;
     }
 
@@ -53,6 +54,7 @@ namespace Flux::UI {
         style.axisX = C::FromSrgb8(200, 50, 50);
         style.axisY = C::FromSrgb8(60, 150, 50);
         style.axisZ = C::FromSrgb8(50, 100, 210);
+        style.shadow = C::FromSrgb8(0, 0, 0, 0.2f);
         return style;
     }
 
@@ -76,6 +78,9 @@ namespace Flux::UI {
         style.axisX = C::FromSrgb8(210, 70, 70);
         style.axisY = C::FromSrgb8(100, 180, 70);
         style.axisZ = C::FromSrgb8(70, 125, 220);
+        style.panelRounding = 3.0f;
+        style.frameRounding = 2.0f;
+        style.shadow = C::FromSrgb8(0, 0, 0, 0.5f);
         return style;
     }
 
@@ -99,6 +104,11 @@ namespace Flux::UI {
         style.axisX = C::FromSrgb8(230, 80, 80);
         style.axisY = C::FromSrgb8(110, 200, 80);
         style.axisZ = C::FromSrgb8(80, 140, 240);
+        // Coins presque droits et halo cyan au lieu d'une ombre : une interface de vaisseau.
+        style.panelRounding = 2.0f;
+        style.frameRounding = 2.0f;
+        style.shadowSize = 18.0f;
+        style.shadow = C::FromSrgb8(40, 190, 240, 0.22f);
         return style;
     }
 
