@@ -1,12 +1,52 @@
 #include "Panels/SettingsWindow.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
+#include <nlohmann/json.hpp>
+
+#include <cstdio>
+#include <fstream>
+
 namespace FluxEditor {
     using namespace Flux;
+    using Json = nlohmann::json;
+
+    void SettingsWindow::Load(Engine& engine) {
+        std::ifstream file(FilePath(), std::ios::binary);
+        if (!file.is_open()) {
+            return; // premier lancement : thème par défaut
+        }
+        const Json json = Json::parse(file, nullptr, false);
+        if (json.is_discarded() || !json.is_object()) {
+            return;
+        }
+        if (const auto theme = json.find("theme"); theme != json.end() && theme->is_string()) {
+            const UI::Theme found = UI::ThemeFromName(theme->get<std::string>());
+            if (found != UI::Theme::Count) {
+                m_theme = found;
+                engine.GetUi().SetStyle(UI::Style::FromTheme(m_theme));
+            }
+        }
+    }
+
+    void SettingsWindow::Save() const {
+        const Json json{{"format", "flux.editor-settings"},
+                        {"version", 1},
+                        {"theme", UI::GetThemeNames()[static_cast<std::size_t>(m_theme)]}};
+        std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
+        file << json.dump(2);
+        if (!file) {
+            std::fprintf(stderr, "Paramètres de l'éditeur non enregistrés\n");
+        }
+    }
+
+    std::filesystem::path SettingsWindow::FilePath() {
+        return Platform::GetExecutableDirectory() / "FluxEditor.settings.json";
+    }
 
     void SettingsWindow::Draw(Engine& engine) {
         if (!m_open) {
@@ -17,9 +57,13 @@ namespace FluxEditor {
         const float width = 420.0f;
         // Au milieu de l'écran à la première ouverture ; ensuite là où on l'a laissée.
         if (ui.BeginPanel("Paramètres", {(static_cast<float>(screen.x) - width) * 0.5f, static_cast<float>(screen.y) * 0.25f},
-                          width)) {
+                          width, 0.0f, &m_open)) {
             if (ui.Tab("Graphiques", m_tab == Tab::Graphics)) {
                 m_tab = Tab::Graphics;
+            }
+            ui.SameLine();
+            if (ui.Tab("Interface", m_tab == Tab::Interface)) {
+                m_tab = Tab::Interface;
             }
             ui.Separator();
 
@@ -31,11 +75,13 @@ namespace FluxEditor {
                     renderer.SetVSync(vsync);
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
-            }
-
-            ui.Separator();
-            if (ui.Button("Fermer")) {
-                m_open = false;
+            } else {
+                int theme = static_cast<int>(m_theme);
+                if (ui.Choice("Thème", theme, UI::GetThemeNames())) {
+                    m_theme = static_cast<UI::Theme>(theme);
+                    ui.SetStyle(UI::Style::FromTheme(m_theme)); // visible dès la frame suivante
+                    Save();
+                }
             }
         }
         ui.EndPanel();

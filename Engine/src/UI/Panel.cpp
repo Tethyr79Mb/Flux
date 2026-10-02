@@ -1,8 +1,110 @@
-// Panneaux : flottants (barre de titre, repli, défilement) ou ancrés (Docking.cpp décide de leur place).
+// Panneaux : flottants (barre de titre, repli, croix, défilement, bords à glisser pour les redimensionner) ou ancrés
+// (Docking.cpp décide de leur place).
 #include "ContextImpl.hpp"
 
 namespace Flux::UI {
-    bool Context::BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width, float height) {
+    namespace {
+        constexpr float MinPanelWidth = 120.0f;
+        constexpr float CornerGrip = 12.0f; // près d'un coin, sur un bord : les deux bords à la fois
+
+        enum Edge : int { EdgeLeft = 1, EdgeRight = 2, EdgeTop = 4, EdgeBottom = 8 };
+
+        MouseCursor ResizeCursor(int edges) {
+            const bool horizontal = (edges & (EdgeLeft | EdgeRight)) != 0;
+            const bool vertical = (edges & (EdgeTop | EdgeBottom)) != 0;
+            if (horizontal && vertical) {
+                const bool nwse = ((edges & EdgeLeft) != 0) == ((edges & EdgeTop) != 0); // haut-gauche ou bas-droit
+                return nwse ? MouseCursor::ResizeNwse : MouseCursor::ResizeNesw;
+            }
+            return horizontal ? MouseCursor::ResizeHorizontal : MouseCursor::ResizeVertical;
+        }
+
+        // Bords d'un panneau flottant sous la souris (à ResizeGrip près, dedans ou dehors), 0 si aucun.
+        // Replié, seulement la gauche et la droite. Hauteur et largeur sont celles de la frame précédente.
+        int ResizeEdgesAt(const Vector2f mouse, const Vector2f min, const Vector2f max, bool collapsed) {
+            if (!Contains(min - Vector2f{ResizeGrip, ResizeGrip}, max + Vector2f{ResizeGrip, ResizeGrip}, mouse)) {
+                return 0;
+            }
+            int edges = 0;
+            if (std::abs(mouse.x - min.x) <= ResizeGrip) {
+                edges |= EdgeLeft;
+            } else if (std::abs(mouse.x - max.x) <= ResizeGrip) {
+                edges |= EdgeRight;
+            }
+            if (!collapsed) {
+                if (std::abs(mouse.y - min.y) <= ResizeGrip) {
+                    edges |= EdgeTop;
+                } else if (std::abs(mouse.y - max.y) <= ResizeGrip) {
+                    edges |= EdgeBottom;
+                }
+                // Coins plus faciles à attraper : un bord près d'un coin prend aussi l'autre.
+                if ((edges & (EdgeLeft | EdgeRight)) != 0 && (edges & (EdgeTop | EdgeBottom)) == 0) {
+                    edges |= mouse.y - min.y <= CornerGrip ? EdgeTop : max.y - mouse.y <= CornerGrip ? EdgeBottom : 0;
+                } else if ((edges & (EdgeTop | EdgeBottom)) != 0 && (edges & (EdgeLeft | EdgeRight)) == 0) {
+                    edges |= mouse.x - min.x <= CornerGrip ? EdgeLeft : max.x - mouse.x <= CornerGrip ? EdgeRight : 0;
+                }
+            }
+            return edges;
+        }
+    }
+
+    // Bords et coins d'un panneau flottant : glisser pour changer sa taille (le bord opposé ne bouge pas).
+    // Avant la barre de titre : le haut du panneau est un bord avant d'être la barre.
+    void Context::Impl::ResizePanel(WidgetId id, Panel& resized, float titleHeight) {
+        const WidgetId resizeId = Hash(id, "#taille");
+        // hoveredPanel : panneau affiché à la frame précédente, dont la taille est donc connue.
+        if (activeId == 0 && mouseEnabled && hoveredPanel == id && disabledDepth == 0) {
+            const int edges = ResizeEdgesAt(mouse, resized.position, resized.position + Vector2f{resized.width, resized.height},
+                                            resized.collapsed);
+            if (edges != 0) {
+                cursor = ResizeCursor(edges);
+                if (mousePressed) {
+                    activeId = resizeId;
+                    pressPosition = mouse;
+                    dragOrigin = resized.position;
+                    resizeEdges = edges;
+                    resizeStartSize = {resized.width, resized.height};
+                }
+            }
+        }
+        if (activeId != resizeId) {
+            return;
+        }
+        activeSeen = true;
+        cursor = ResizeCursor(resizeEdges);
+        if (mouseReleased || !mouseDown) {
+            activeId = 0;
+            return;
+        }
+        // Bornes : la zone centrale avec un ancrage (les panneaux flottants y restent), sinon l'écran sous la barre.
+        const bool docking = DockActive();
+        const Vector2f areaMin = docking ? dockCentral.min : Vector2f{-1.0e6f, menuBarHeight};
+        const Vector2f areaMax = docking ? dockCentral.max : Vector2f{1.0e6f, screenSize.y};
+        const float maxWidth = docking ? std::max(MinPanelWidth, areaMax.x - areaMin.x) : std::max(MinPanelWidth, screenSize.x);
+        const float minHeight = titleHeight + 2.0f * style.panelPadding + FrameHeight();
+        const float maxHeight = std::max(minHeight, areaMax.y - areaMin.y);
+        const Vector2f moved = mouse - pressPosition;
+        const Vector2f start = resizeStartSize;
+        const Vector2f startMax = dragOrigin + start; // coin opposé à la position
+
+        if ((resizeEdges & EdgeRight) != 0) {
+            resized.width = std::clamp(start.x + moved.x, MinPanelWidth, std::min(maxWidth, areaMax.x - dragOrigin.x));
+        } else if ((resizeEdges & EdgeLeft) != 0) {
+            resized.width = std::clamp(start.x - moved.x, MinPanelWidth, std::min(maxWidth, startMax.x - areaMin.x));
+            resized.position.x = startMax.x - resized.width;
+        }
+        if ((resizeEdges & EdgeBottom) != 0) {
+            resized.userHeight = std::clamp(start.y + moved.y, minHeight, std::max(minHeight, std::min(maxHeight, areaMax.y - dragOrigin.y)));
+        } else if ((resizeEdges & EdgeTop) != 0) {
+            resized.userHeight = std::clamp(start.y - moved.y, minHeight, std::max(minHeight, std::min(maxHeight, startMax.y - areaMin.y)));
+            resized.position.y = startMax.y - resized.userHeight;
+        }
+        if ((resizeEdges & (EdgeLeft | EdgeRight)) != 0) {
+            resized.userWidth = resized.width;
+        }
+    }
+
+    bool Context::BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width, float height, bool* open) {
         Impl& ui = *m_impl;
         const WidgetId id = ui.GetId(title);
         auto& slot = ui.panels[id];
@@ -10,6 +112,16 @@ namespace Flux::UI {
             slot = std::make_unique<Impl::Panel>(ui.font);
             slot->position = initialPosition;
             slot->width = width;
+            // Flottant à la fermeture de l'éditeur : il reprend sa place et sa taille (LoadDockLayout).
+            if (const auto saved = ui.savedFloating.find(id); saved != ui.savedFloating.end()) {
+                slot->position = saved->second.position;
+                if (saved->second.width > 0.0f) {
+                    slot->width = slot->userWidth = std::max(MinPanelWidth, saved->second.width);
+                }
+                slot->userHeight = std::max(0.0f, saved->second.height);
+                slot->collapsed = saved->second.collapsed;
+                ui.savedFloating.erase(saved);
+            }
             ui.order.push_back(id);
         }
         Impl::Panel& panel = *slot;
@@ -17,6 +129,7 @@ namespace Flux::UI {
         panel.fullTitle = title;
         panel.floatingWidth = width;
         panel.fixedHeight = height;
+        panel.closable = open != nullptr;
         panel.lastFrame = ui.frame;
         panel.chrome.Clear();
         panel.content.Clear();
@@ -49,13 +162,28 @@ namespace Flux::UI {
             }
         }
 
-        // Flottant : barre de titre à glisser pour déplacer, à cliquer pour replier.
+        // Flottant : bords à glisser pour redimensionner, croix pour fermer, barre de titre à glisser pour déplacer
+        // et à cliquer pour replier.
         if (!panel.docked) {
+            ui.ResizePanel(id, panel, titleHeight);
+            if (panel.userHeight > 0.0f) {
+                panel.fixedHeight = panel.userHeight; // la hauteur choisie à la souris l'emporte (avec défilement)
+            }
             const WidgetId titleId = Hash(id, "#titre");
             const bool wasCollapsed = panel.collapsed;
             panel.collapsed = false; // Behavior ignore les panneaux repliés ; la barre de titre, elle, reste active
             ui.clipMin = panel.position;
             ui.clipMax = panel.position + Vector2f{panel.width, titleHeight};
+            panel.closeHovered = panel.closeHeld = false;
+            if (panel.closable) {
+                const Vector2f closeMax = ui.clipMax;
+                const Impl::Interaction close = ui.Behavior(Hash(id, "#fermer"), {closeMax.x - titleHeight, ui.clipMin.y}, closeMax);
+                panel.closeHovered = close.hovered;
+                panel.closeHeld = close.held;
+                if (close.clicked) {
+                    *open = false;
+                }
+            }
             const Impl::Interaction titleBar = ui.Behavior(titleId, ui.clipMin, ui.clipMax);
             panel.collapsed = wasCollapsed;
             if (ui.activeId == titleId && ui.mousePressed) {
@@ -249,9 +377,25 @@ namespace Flux::UI {
                                    {arrowX + arrow * 0.5f, centerY + arrow * 0.45f}, style.text);
             }
             const float titleX = arrowX + arrow + style.framePadding.x;
-            chrome.SetClipRect({titleX, min.y}, {max.x - style.framePadding.x, viewTop});
+            const float titleMaxX = panel.closable ? max.x - titleHeight : max.x - style.framePadding.x;
+            chrome.SetClipRect({titleX, min.y}, {titleMaxX, viewTop});
             chrome.AddText({titleX, min.y + style.framePadding.y}, panel.title, style.fontSize, style.text);
             chrome.ResetClipRect();
+
+            // Croix de fermeture, sur un carré rouge au survol.
+            if (panel.closable) {
+                const Vector2f boxMin{max.x - titleHeight, min.y};
+                const Vector2f boxMax{max.x, viewTop};
+                if (panel.closeHovered || panel.closeHeld) {
+                    chrome.AddRect(boxMin, boxMax, panel.closeHeld ? LinearColor::FromSrgb8(150, 30, 30)
+                                                                   : LinearColor::FromSrgb8(196, 43, 28));
+                }
+                const Vector2f center = (boxMin + boxMax) * 0.5f;
+                const float half = style.fontSize * 0.3f;
+                const LinearColor cross = panel.closeHovered || panel.closeHeld ? LinearColor::FromSrgb8(255, 255, 255) : style.text;
+                chrome.AddLine(center - Vector2f{half, half}, center + Vector2f{half, half}, cross, 1.5f);
+                chrome.AddLine(center + Vector2f{-half, half}, center + Vector2f{half, -half}, cross, 1.5f);
+            }
         }
 
         // Barre de défilement : glisser le curseur, la molette fait le reste.

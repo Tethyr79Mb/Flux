@@ -99,6 +99,7 @@ int main(int argc, char** argv) {
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
                           .drawScreenUi = false}); // la vue dessine l'interface de la scène
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
+    settings.Load(engine); // thème de l'interface choisi la dernière fois
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
         playMode.HandleShortcuts(e);

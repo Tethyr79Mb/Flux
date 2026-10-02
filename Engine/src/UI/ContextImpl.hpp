@@ -23,6 +23,7 @@ namespace Flux::UI {
         using Math::Vector2f;
 
         constexpr WidgetId RootId = 14695981039346656037ull; // base FNV-1a
+        constexpr float ResizeGrip = 4.0f; // bord d'un panneau flottant saisi pour le redimensionner, de part et d'autre
 
         // FNV-1a 64 bits : rapide, et suffisant pour quelques centaines de widgets par panneau.
         inline WidgetId Hash(WidgetId seed, const void* data, std::size_t size) {
@@ -140,6 +141,11 @@ namespace Flux::UI {
             float measuredWidth = 0.0f; // menu déroulant : largeur de ses éléments à la dernière frame
             std::string fullTitle;      // titre donné à BeginPanel, ##suffixe compris (pour l'ancrer)
             float floatingWidth = 0.0f; // largeur demandée par BeginPanel : celle reprise en sortant d'une zone
+            float userWidth = 0.0f;     // largeur choisie à la souris : reprise en sortant d'une zone, avant floatingWidth
+            float userHeight = 0.0f;    // hauteur choisie à la souris : remplace celle de BeginPanel (0 : aucune)
+            bool closable = false;      // croix dans la barre de titre (BeginPanel avec open)
+            bool closeHovered = false;
+            bool closeHeld = false;
             bool docked = false;        // ancré à la dernière frame (sa zone décide de sa place)
             bool hiddenTab = false;     // ancré derrière un autre onglet : ni dessiné, ni survolé
             std::uint64_t lastFrame = 0;
@@ -180,6 +186,21 @@ namespace Flux::UI {
         std::unordered_map<WidgetId, std::unique_ptr<Panel>> panels;
         std::vector<WidgetId> order;
         WidgetId hoveredPanel = 0;
+        MouseCursor cursor = MouseCursor::Arrow; // voulu pour cette frame (GetMouseCursor)
+
+        // Redimensionnement d'un panneau flottant à la souris : bords saisis et taille au moment de la saisie.
+        int resizeEdges = 0;
+        Vector2f resizeStartSize;
+
+        // Panneaux flottants lus avec la disposition (LoadDockLayout) : place et taille reprises à leur apparition.
+        struct FloatingState {
+            Vector2f position;
+            float width = 0.0f;
+            float height = 0.0f; // userHeight
+            bool collapsed = false;
+        };
+        std::unordered_map<WidgetId, FloatingState> savedFloating;    // pas encore réapparus
+        std::unordered_map<WidgetId, std::string> savedFloatingTitles; // leur titre, pour les réenregistrer
 
         // Barre de menus et menu déroulant ouvert : dessinés après les panneaux, survolés avant eux.
         std::vector<WidgetId> overlays;         // décrits pendant la frame en cours
@@ -248,6 +269,8 @@ namespace Flux::UI {
             Vector2f max;
             Rect preview; // place que prendrait le panneau
         };
+
+        void ResizePanel(WidgetId id, Panel& resized, float titleHeight); // Panel.cpp
 
         void RebuildDockIndex();
         void LayoutDock(DockId id, Vector2f min, Vector2f max);

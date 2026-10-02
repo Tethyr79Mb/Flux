@@ -42,6 +42,8 @@ namespace Flux {
         // Curseur caché et immobilisé (vol libre de la caméra) ; libéré automatiquement si la fenêtre perd le focus.
         void SetCursorLocked(bool locked);
         bool IsCursorLocked() const;
+        // Forme du curseur au-dessus de la fenêtre (gardée jusqu'au prochain appel).
+        void SetMouseCursor(MouseCursor cursor);
 
         // HWND sous Windows, pour vkCreateWin32SurfaceKHR.
         void* GetNativeHandle() const;

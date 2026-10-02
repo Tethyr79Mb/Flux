@@ -125,6 +125,9 @@ namespace Flux::UI {
             const Vector2f grip = node.horizontal ? Vector2f{2.0f, 0.0f} : Vector2f{0.0f, 2.0f};
             const bool held = activeId == SplitterId(i);
             const bool hovered = activeId == 0 && DockMouseFree() && Contains(min - grip, max + grip, mouse);
+            if (held || hovered) {
+                cursor = node.horizontal ? MouseCursor::ResizeHorizontal : MouseCursor::ResizeVertical;
+            }
             // Toujours peint : sinon la couleur de fond de la scène apparaît entre deux zones.
             dockChrome.AddRect(min, max, held ? style.checkMark : hovered ? style.frameHovered : style.titleBackground);
         }
@@ -219,7 +222,7 @@ namespace Flux::UI {
         undocked.docked = false;
         undocked.hiddenTab = false;
         undocked.collapsed = false;
-        undocked.width = undocked.floatingWidth > 0.0f ? undocked.floatingWidth : 320.0f;
+        undocked.width = undocked.userWidth > 0.0f ? undocked.userWidth : undocked.floatingWidth > 0.0f ? undocked.floatingWidth : 320.0f;
         undocked.position = mouse - Vector2f{std::min(60.0f, undocked.width * 0.3f), FrameHeight() * 0.5f};
         std::erase(order, id);
         order.push_back(id); // au premier plan
@@ -529,7 +532,26 @@ namespace Flux::UI {
         if (ui.dockNodes.empty()) {
             return {};
         }
-        const Json json{{"format", "flux.dock"}, {"version", 1}, {"root", SaveNode(ui.dockNodes, 0)}};
+        Json json{{"format", "flux.dock"}, {"version", 1}, {"root", SaveNode(ui.dockNodes, 0)}};
+        // Panneaux flottants (hors zone), dans leur ordre d'affichage ; ceux qui ne sont pas encore réapparus
+        // depuis le chargement gardent leur place lue.
+        Json floating = Json::array();
+        const auto saveFloating = [&](std::string_view title, const Impl::FloatingState& state) {
+            floating.push_back({{"title", title}, {"x", state.position.x}, {"y", state.position.y}, {"width", state.width},
+                                {"height", state.height}, {"collapsed", state.collapsed}});
+        };
+        for (const WidgetId id : ui.order) {
+            const Impl::Panel& panel = *ui.panels.at(id);
+            if (!panel.docked && !ui.dockedPanels.contains(id) && !panel.fullTitle.empty() && PanelId(panel.fullTitle) == id) {
+                saveFloating(panel.fullTitle, {panel.position, panel.userWidth, panel.userHeight, panel.collapsed});
+            }
+        }
+        for (const auto& [id, state] : ui.savedFloatingTitles) {
+            if (const auto pending = ui.savedFloating.find(id); pending != ui.savedFloating.end()) {
+                saveFloating(state, pending->second);
+            }
+        }
+        json["floating"] = std::move(floating);
         return json.dump(2);
     }
 
@@ -551,6 +573,27 @@ namespace Flux::UI {
         }
         ui.dockNodes = std::move(nodes);
         ui.RebuildDockIndex();
+        // Facultatif (absent des fichiers plus anciens) ; une entrée abîmée est ignorée, pas la disposition.
+        ui.savedFloating.clear();
+        ui.savedFloatingTitles.clear();
+        if (const auto floating = json.find("floating"); floating != json.end() && floating->is_array()) {
+            for (const Json& entry : *floating) {
+                try {
+                    const std::string title = entry.at("title").get<std::string>();
+                    Impl::FloatingState state;
+                    state.position = {entry.at("x").get<float>(), entry.at("y").get<float>()};
+                    state.width = entry.value("width", 0.0f);
+                    state.height = entry.value("height", 0.0f);
+                    state.collapsed = entry.value("collapsed", false);
+                    if (std::isfinite(state.position.x) && std::isfinite(state.position.y) && std::isfinite(state.width)
+                        && std::isfinite(state.height)) {
+                        ui.savedFloating[PanelId(title)] = state;
+                        ui.savedFloatingTitles[PanelId(title)] = title;
+                    }
+                } catch (const Json::exception&) {
+                }
+            }
+        }
         return true;
     }
 }
