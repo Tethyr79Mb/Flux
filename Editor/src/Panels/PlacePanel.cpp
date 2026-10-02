@@ -81,11 +81,11 @@ namespace FluxEditor {
             glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
             glassCollider.cameraOnly = true;
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
-            scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -4.0};
+            // Le cockpit est tout à l'avant (3,6 m derrière le nez) et l'origine est sous les hanches du pilote.
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
             component.reach = 10.0f;
-            component.exit = {-3.0f, -2.3f, -4.6f};
+            component.exit = {-3.5f, -2.3f, 1.4f};
         }
 
         struct ItemInfo
