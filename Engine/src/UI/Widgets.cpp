@@ -122,8 +122,9 @@ namespace Flux::UI {
             const Vector2f bandMin{std::floor(centerX - bandWidth * 0.5f), y1 + 3.0f};
             const Vector2f bandMax{bandMin.x + bandWidth, bandMin.y + bandHeight};
             list.AddRect(bandMin, bandMax, badgeColor);
+            // Texte clair : les bandes sont foncées, quel que soit le thème.
             ui.ClippedText({std::max(bandMin.x + 2.0f, centerX - badgeSize.x * 0.5f), (bandMin.y + bandMax.y - badgeSize.y) * 0.5f},
-                           bandMax.x - 2.0f, badge, style.text, bandMin.x);
+                           bandMax.x - 2.0f, badge, LinearColor::FromSrgb8(240, 240, 242), bandMin.x);
         }
 
         // Nom centré, raccourci par « ... » s'il ne tient pas.

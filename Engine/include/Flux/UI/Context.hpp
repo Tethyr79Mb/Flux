@@ -4,6 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Math/Vector3.hpp"
+#include "Flux/Platform/Input.hpp"
 #include "Flux/UI/DrawList.hpp"
 #include "Flux/UI/Icons.hpp"
 
@@ -37,6 +38,9 @@ namespace Flux::UI {
     using DockId = int;
     enum class DockSide { Left, Right, Top, Bottom };
 
+    // Thèmes de couleurs prêts à l'emploi (Style::FromTheme), dans l'ordre de GetThemeNames.
+    enum class Theme : std::uint8_t { Dark, Light, Graphite, ArsSolaris, Count };
+
     struct FLUX_API Style
     {
         float fontSize = 15.0f;
@@ -64,8 +68,17 @@ namespace Flux::UI {
         Math::LinearColor axisY;
         Math::LinearColor axisZ;
 
-        static Style Dark();
+        static Style Dark();       // gris bleuté, accents bleus (le thème d'origine)
+        static Style Light();      // fond clair, texte sombre
+        static Style Graphite();   // gris neutres, accents orange
+        static Style ArsSolaris(); // bleu nuit, accents cyan
+        static Style FromTheme(Theme theme);
     };
+
+    // Noms affichés des thèmes (« Sombre », « Clair »...), indexés par Theme ; aussi ceux enregistrés dans les
+    // fichiers de réglages. ThemeFromName retourne Theme::Count pour un nom inconnu.
+    FLUX_API std::span<const std::string_view> GetThemeNames();
+    FLUX_API Theme ThemeFromName(std::string_view name);
 
     // Interface en mode immédiat : les widgets sont décrits à chaque frame par du code ordinaire,
     //     if (ui.Button("Sauver")) { ... }
@@ -105,11 +118,16 @@ namespace Flux::UI {
         // Liste de dessin du contenu du panneau en cours (repères de glisser-déposer...), ou nullptr hors panneau.
         DrawList* GetPanelDrawList();
 
-        // Panneau déplaçable (par sa barre de titre) et repliable (clic sur la barre).
-        // height 0 : hauteur ajustée au contenu ; sinon hauteur fixe, avec défilement (molette ou barre) si le contenu
-        // dépasse. initialPosition ne sert qu'à la première apparition. Retourne false si le panneau est replié :
-        // inutile alors de décrire son contenu. EndPanel doit être appelé dans tous les cas.
-        bool BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width = 320.0f, float height = 0.0f);
+        // Panneau déplaçable (par sa barre de titre), repliable (clic sur la barre) et redimensionnable (bords et
+        // coins, une fois flottant). height 0 : hauteur ajustée au contenu ; sinon hauteur fixe, avec défilement
+        // (molette ou barre) si le contenu dépasse. initialPosition et width ne servent qu'à la première apparition ;
+        // height sert tant que l'utilisateur n'a pas changé la hauteur à la souris (elle devient alors fixe).
+        // open : avec une croix dans la barre de titre, qui le met à false (le panneau est encore décrit dans
+        // cette frame ; à l'appelant de ne plus l'afficher ensuite).
+        // Retourne false si le panneau est replié : inutile alors de décrire son contenu. EndPanel doit être appelé
+        // dans tous les cas.
+        bool BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width = 320.0f, float height = 0.0f,
+                        bool* open = nullptr);
         void EndPanel();
 
         // Widgets : seulement entre BeginPanel et EndPanel.
@@ -226,8 +244,9 @@ namespace Flux::UI {
         // Pose la disposition sur min-max (sous la barre de menus, en général), gère séparateurs et onglets.
         // Retourne le rectangle central.
         Rect DockSpace(Math::Vector2f min, Math::Vector2f max);
-        // Disposition en JSON (proportions, panneaux et onglet affiché de chaque zone), pour la retrouver
-        // au prochain lancement. Load retourne false (disposition inchangée) si le texte n'est pas valide.
+        // Disposition en JSON (proportions, panneaux et onglet affiché de chaque zone, place et taille des panneaux
+        // flottants), pour la retrouver au prochain lancement. Load retourne false (disposition inchangée) si le
+        // texte n'est pas valide ; les panneaux flottants reprennent leur place à leur prochaine apparition.
         std::string SaveDockLayout() const;
         bool LoadDockLayout(std::string_view json);
 
@@ -278,6 +297,12 @@ namespace Flux::UI {
         void PopId();
 
         const Style& GetStyle() const;
+        // Change les couleurs et les tailles (un autre thème, par exemple), dès la frame suivante ; hors des panneaux.
+        void SetStyle(const Style& style);
+
+        // Curseur voulu par l'interface pour cette frame (double flèche au bord d'un panneau ou sur un séparateur) :
+        // Engine le donne à la fenêtre après EndFrame.
+        MouseCursor GetMouseCursor() const;
 
         // Sélecteur de couleur ouvert par l'aperçu de ColorEdit3 (Engine y branche celui du système) :
         // modifie la couleur et retourne true, ou retourne false si l'utilisateur annule.

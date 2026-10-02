@@ -235,6 +235,7 @@ namespace Flux {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
             }
             m_ui->EndFrame(m_renderer->GetOverlay());
+            m_window->SetMouseCursor(m_ui->GetMouseCursor()); // double flèche au bord d'un panneau
             stats.Add(UpdateCost, Milliseconds(Clock::now() - now));
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});

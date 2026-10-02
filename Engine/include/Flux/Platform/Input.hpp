@@ -44,6 +44,15 @@ namespace Flux {
 
     enum class MouseButton : std::uint8_t { Left, Right, Middle, Count };
 
+    // Forme du curseur de la souris (Window::SetMouseCursor) : flèche, ou double flèche au bord d'une fenêtre.
+    enum class MouseCursor : std::uint8_t {
+        Arrow,
+        ResizeHorizontal, // ↔ : bord gauche ou droit, séparateur vertical
+        ResizeVertical,   // ↕ : bord haut ou bas
+        ResizeNwse,       // ⤡ : coins haut-gauche et bas-droit
+        ResizeNesw,       // ⤢ : coins haut-droit et bas-gauche
+    };
+
     // État du clavier et de la souris, mis à jour par Window::HandleEvents.
     class FLUX_API Input {
         public:

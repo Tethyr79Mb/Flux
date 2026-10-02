@@ -24,6 +24,7 @@ namespace Flux {
         bool focused = false;
         bool cursorLocked = false;
         bool closeRequested = false;
+        MouseCursor cursor = MouseCursor::Arrow;
         wchar_t highSurrogate = 0; // WM_CHAR livre les caractères hors BMP en deux moitiés UTF-16
 
         void LockCursor(bool locked) {
@@ -42,6 +43,29 @@ namespace Flux {
                 ClipCursor(nullptr);
                 ShowCursor(TRUE);
             }
+        }
+
+        static HCURSOR CursorHandle(MouseCursor cursor) {
+            switch (cursor) {
+                case MouseCursor::ResizeHorizontal:
+                    return LoadCursorW(nullptr, IDC_SIZEWE);
+                case MouseCursor::ResizeVertical:
+                    return LoadCursorW(nullptr, IDC_SIZENS);
+                case MouseCursor::ResizeNwse:
+                    return LoadCursorW(nullptr, IDC_SIZENWSE);
+                case MouseCursor::ResizeNesw:
+                    return LoadCursorW(nullptr, IDC_SIZENESW);
+                case MouseCursor::Arrow:
+                    break;
+            }
+            return LoadCursorW(nullptr, IDC_ARROW);
+        }
+
+        bool MouseInClient() const {
+            POINT position;
+            RECT client;
+            return GetCursorPos(&position) && ScreenToClient(hwnd, &position) && GetClientRect(hwnd, &client)
+                && PtInRect(&client, position);
         }
 
         static void RegisterRawMouse(HWND hwnd) {
@@ -183,6 +207,13 @@ namespace Flux {
                     case WM_MOUSEWHEEL:
                         impl->input.AddWheelDelta(static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA);
                         return 0;
+                    case WM_SETCURSOR:
+                        // Dans la zone client, la forme choisie par le programme ; sur les bords, celle de Windows.
+                        if (LOWORD(lParam) == HTCLIENT) {
+                            SetCursor(CursorHandle(impl->cursor));
+                            return TRUE;
+                        }
+                        break;
                     case WM_CLOSE:
                         impl->closeRequested = true; // Engine demande confirmation si besoin, puis détruit la fenêtre
                         return 0;
@@ -300,6 +331,17 @@ namespace Flux {
 
     bool Window::IsCursorLocked() const {
         return m_impl && m_impl->cursorLocked;
+    }
+
+    void Window::SetMouseCursor(MouseCursor cursor) {
+        if (!IsOpen() || cursor == m_impl->cursor) {
+            return;
+        }
+        m_impl->cursor = cursor;
+        // Sans attendre que la souris bouge (WM_SETCURSOR) : elle peut être immobile au bord d'une fenêtre.
+        if (m_impl->MouseInClient()) {
+            SetCursor(Impl::CursorHandle(cursor));
+        }
     }
 
     void* Window::GetNativeHandle() const {

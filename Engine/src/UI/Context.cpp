@@ -1,8 +1,16 @@
 #include "ContextImpl.hpp"
 
+#include <iterator>
+
 namespace Flux::UI {
-    Style Style::Dark() {
+    namespace {
         using C = LinearColor;
+
+        constexpr std::string_view ThemeNames[] = {"Sombre", "Clair", "Graphite", "Ars Solaris"};
+        static_assert(std::size(ThemeNames) == static_cast<std::size_t>(Theme::Count));
+    }
+
+    Style Style::Dark() {
         Style style;
         style.text = C::FromSrgb8(230, 230, 232);
         style.textDisabled = C::FromSrgb8(140, 142, 148);
@@ -25,6 +33,99 @@ namespace Flux::UI {
         return style;
     }
 
+    Style Style::Light() {
+        Style style;
+        style.text = C::FromSrgb8(28, 30, 34);
+        style.textDisabled = C::FromSrgb8(122, 126, 134);
+        style.panelBackground = C::FromSrgb8(238, 239, 242, 0.97f);
+        style.panelBorder = C::FromSrgb8(0, 0, 0, 0.28f);
+        style.titleBackground = C::FromSrgb8(214, 217, 223);
+        style.titleBackgroundActive = C::FromSrgb8(164, 196, 240);
+        style.frame = C::FromSrgb8(255, 255, 255);
+        style.frameHovered = C::FromSrgb8(230, 237, 248);
+        style.frameActive = C::FromSrgb8(208, 220, 240);
+        style.button = C::FromSrgb8(200, 215, 238);
+        style.buttonHovered = C::FromSrgb8(178, 200, 234);
+        style.buttonActive = C::FromSrgb8(152, 180, 224);
+        style.checkMark = C::FromSrgb8(36, 110, 214);
+        style.selection = C::FromSrgb8(120, 170, 240, 0.6f);
+        style.separator = C::FromSrgb8(196, 199, 206);
+        style.axisX = C::FromSrgb8(200, 50, 50);
+        style.axisY = C::FromSrgb8(60, 150, 50);
+        style.axisZ = C::FromSrgb8(50, 100, 210);
+        return style;
+    }
+
+    Style Style::Graphite() {
+        Style style;
+        style.text = C::FromSrgb8(222, 222, 222);
+        style.textDisabled = C::FromSrgb8(130, 130, 130);
+        style.panelBackground = C::FromSrgb8(40, 40, 40, 0.96f);
+        style.panelBorder = C::FromSrgb8(0, 0, 0, 0.7f);
+        style.titleBackground = C::FromSrgb8(28, 28, 28);
+        style.titleBackgroundActive = C::FromSrgb8(104, 62, 26);
+        style.frame = C::FromSrgb8(24, 24, 24);
+        style.frameHovered = C::FromSrgb8(34, 34, 34);
+        style.frameActive = C::FromSrgb8(46, 46, 46);
+        style.button = C::FromSrgb8(64, 64, 64);
+        style.buttonHovered = C::FromSrgb8(80, 80, 80);
+        style.buttonActive = C::FromSrgb8(52, 52, 52);
+        style.checkMark = C::FromSrgb8(242, 150, 48);
+        style.selection = C::FromSrgb8(196, 108, 30, 0.75f);
+        style.separator = C::FromSrgb8(60, 60, 60);
+        style.axisX = C::FromSrgb8(210, 70, 70);
+        style.axisY = C::FromSrgb8(100, 180, 70);
+        style.axisZ = C::FromSrgb8(70, 125, 220);
+        return style;
+    }
+
+    Style Style::ArsSolaris() {
+        Style style;
+        style.text = C::FromSrgb8(212, 236, 246);
+        style.textDisabled = C::FromSrgb8(108, 138, 158);
+        style.panelBackground = C::FromSrgb8(8, 16, 30, 0.93f);
+        style.panelBorder = C::FromSrgb8(40, 170, 220, 0.55f);
+        style.titleBackground = C::FromSrgb8(10, 22, 40);
+        style.titleBackgroundActive = C::FromSrgb8(14, 72, 104);
+        style.frame = C::FromSrgb8(14, 30, 50);
+        style.frameHovered = C::FromSrgb8(20, 44, 70);
+        style.frameActive = C::FromSrgb8(28, 60, 92);
+        style.button = C::FromSrgb8(16, 72, 100);
+        style.buttonHovered = C::FromSrgb8(22, 100, 136);
+        style.buttonActive = C::FromSrgb8(12, 56, 80);
+        style.checkMark = C::FromSrgb8(70, 220, 250);
+        style.selection = C::FromSrgb8(30, 140, 190, 0.7f);
+        style.separator = C::FromSrgb8(30, 70, 100);
+        style.axisX = C::FromSrgb8(230, 80, 80);
+        style.axisY = C::FromSrgb8(110, 200, 80);
+        style.axisZ = C::FromSrgb8(80, 140, 240);
+        return style;
+    }
+
+    Style Style::FromTheme(Theme theme) {
+        switch (theme) {
+            case Theme::Light:
+                return Light();
+            case Theme::Graphite:
+                return Graphite();
+            case Theme::ArsSolaris:
+                return ArsSolaris();
+            case Theme::Dark:
+            case Theme::Count:
+                break;
+        }
+        return Dark();
+    }
+
+    std::span<const std::string_view> GetThemeNames() {
+        return ThemeNames;
+    }
+
+    Theme ThemeFromName(std::string_view name) {
+        const auto found = std::ranges::find(ThemeNames, name);
+        return static_cast<Theme>(found - std::begin(ThemeNames));
+    }
+
     Context::Context(const Font& font, const Style& style) : m_impl(std::make_unique<Impl>(font, style)) {}
 
     Context::~Context() = default;
@@ -37,6 +138,7 @@ namespace Flux::UI {
         ui.disabledStack.clear();
         ui.disabledDepth = 0;
         ui.input = &input;
+        ui.cursor = MouseCursor::Arrow;
         ui.screenSize = screenSize;
         ui.time += deltaSeconds;
         ++ui.frame;
@@ -59,12 +161,14 @@ namespace Flux::UI {
                     ui.hoveredPanel = *it;
                 }
             }
-            // Panneaux flottants, puis panneaux ancrés (toujours dessous).
+            // Panneaux flottants (et leurs bords, à saisir pour les redimensionner), puis panneaux ancrés (dessous).
             for (const bool docked : {false, true}) {
+                const Vector2f margin = docked ? Vector2f{} : Vector2f{ResizeGrip, ResizeGrip};
                 for (auto it = ui.order.rbegin(); it != ui.order.rend() && ui.hoveredPanel == 0; ++it) {
                     const Impl::Panel& panel = *ui.panels.at(*it);
                     if (panel.docked == docked && !panel.hiddenTab && panel.lastFrame + 1 == ui.frame
-                        && Contains(panel.position, panel.position + Vector2f{panel.width, panel.height}, ui.mouse)) {
+                        && Contains(panel.position - margin, panel.position + Vector2f{panel.width, panel.height} + margin,
+                                    ui.mouse)) {
                         ui.hoveredPanel = *it;
                     }
                 }
@@ -215,5 +319,18 @@ namespace Flux::UI {
 
     const Style& Context::GetStyle() const {
         return m_impl->style;
+    }
+
+    void Context::SetStyle(const Style& style) {
+        Impl& ui = *m_impl;
+        ui.style = style;
+        if (ui.disabledDepth > 0) {
+            ui.enabledText = style.text; // EndDisabled remettra la couleur du nouveau thème
+            ui.style.text = style.textDisabled;
+        }
+    }
+
+    MouseCursor Context::GetMouseCursor() const {
+        return m_impl->cursor;
     }
 }

@@ -609,6 +609,84 @@ namespace {
         return true;
     }
 
+    // Panneau flottant : bords et coins à glisser (taille), croix, curseur, et place retrouvée après rechargement.
+    bool RunWindowTests(const UI::Font& font) {
+        Harness harness(font);
+        UI::Context& ui = harness.GetUi();
+        const float bar = font.GetLineHeight() * 15.0f + 8.0f; // barre de titre
+        ui.ClearDockLayout(); // une seule zone, centrale : tout l'écran (pour enregistrer la disposition)
+
+        bool open = true;
+        float available = 0.0f;
+        float bottom = 0.0f; // bas du panneau ajusté au contenu : sous le bouton, après la marge
+        const auto describe = [&](UI::Context& context) {
+            context.DockSpace({0.0f, 0.0f}, {1280.0f, 720.0f});
+            if (open) {
+                if (context.BeginPanel("Fenêtre", {100.0f, 100.0f}, 300.0f, 0.0f, &open)) {
+                    context.Button("contenu");
+                    bottom = context.GetItemRect().max.y + 8.0f;
+                    available = context.GetAvailableWidth();
+                }
+                context.EndPanel();
+            }
+        };
+        const auto drag = [&](Vector2f from, Vector2f to) {
+            harness.Move(from, describe);
+            harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
+            harness.Move((from + to) * 0.5f, describe);
+            harness.Move(to, describe);
+            harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, false); }, describe);
+        };
+        harness.Move({640.0f, 600.0f}, describe);
+        harness.Move({640.0f, 600.0f}, describe);
+        CHECK(available == 300.0f - 16.0f);
+        CHECK(ui.GetMouseCursor() == MouseCursor::Arrow);
+
+        // Bord droit (x = 400) : double flèche, puis glissé de 100 px.
+        harness.Move({401.0f, 100.0f + bar + 5.0f}, describe);
+        CHECK(ui.GetMouseCursor() == MouseCursor::ResizeHorizontal && ui.WantsMouse());
+        drag({401.0f, 100.0f + bar + 5.0f}, {501.0f, 100.0f + bar + 5.0f});
+        harness.Move({640.0f, 600.0f}, describe);
+        CHECK(available == 400.0f - 16.0f);
+
+        // Bord gauche ramené de 50 px vers la droite : le bord droit ne bouge pas.
+        drag({100.0f, 100.0f + bar + 5.0f}, {150.0f, 100.0f + bar + 5.0f});
+        harness.Move({640.0f, 600.0f}, describe);
+        CHECK(available == 350.0f - 16.0f);
+        harness.Move({495.0f, 100.0f + bar + 5.0f}, describe);
+        CHECK(ui.WantsMouse());
+        harness.Move({145.0f, 100.0f + bar + 5.0f}, describe);
+        CHECK(!ui.WantsMouse());
+
+        // Coin bas-droit : la hauteur, ajustée au contenu jusque-là, devient celle choisie (300 px).
+        harness.Move({640.0f, 600.0f}, describe);
+        harness.Move({500.0f, 380.0f}, describe);
+        CHECK(!ui.WantsMouse()); // sous le panneau ajusté au contenu
+        drag({500.0f, bottom}, {500.0f, 400.0f});
+        harness.Move({450.0f, 395.0f}, describe);
+        CHECK(ui.WantsMouse());
+        harness.Move({500.0f, 400.0f}, describe);
+        CHECK(ui.GetMouseCursor() == MouseCursor::ResizeNwse);
+
+        // Enregistrée avec la disposition, la fenêtre reprend place et taille dans un autre contexte.
+        const std::string saved = ui.SaveDockLayout();
+        CHECK(saved.find("Fenêtre") != std::string::npos);
+        {
+            Harness other(font);
+            CHECK(other.GetUi().LoadDockLayout(saved));
+            available = 0.0f;
+            other.Move({640.0f, 600.0f}, describe);
+            other.Move({450.0f, 395.0f}, describe);
+            CHECK(available == 350.0f - 16.0f);
+            CHECK(other.GetUi().WantsMouse());
+        }
+
+        // Croix : clic à droite de la barre de titre.
+        harness.Click({490.0f, 100.0f + bar * 0.5f}, describe);
+        CHECK(!open);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -635,5 +713,6 @@ bool RunUiTests() {
         return false;
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
-        && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font);
+        && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
+        && RunWindowTests(**font);
 }
