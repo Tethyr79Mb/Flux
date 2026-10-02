@@ -20,9 +20,6 @@ namespace Flux {
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège
     // (CharacterComponent::seat), l'animation suit CharacterComponent::seatState.
     namespace Seats {
-        // Distance du joueur au siège pour s'y asseoir, en mètres.
-        inline constexpr float Reach = 1.5f;
-
         // Durées des animations « s'asseoir » et « se lever » d'un personnage, en secondes (0 : immédiat).
         struct Durations
         {

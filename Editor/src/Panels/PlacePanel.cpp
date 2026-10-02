@@ -65,47 +65,27 @@ namespace FluxEditor {
         }
 
         // Chasseur monoplace (modèle du projet, dans Modeles/Chasseur) : coque affichée et collision en maillage
-        // simplifié (sols, parois, marches, rampe), verrière qui retient la caméra, poste de pilotage. Origine du
-        // vaisseau : le plancher du cockpit, l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. On y monte par
-        // la rampe arrière et la soute ; en se relevant, le pilote sort derrière son siège, en haut des marches (devant,
-        // les consoles le coinceraient).
+        // simplifié, verrière qui retient la caméra, poste de pilotage. Origine du vaisseau : le plancher du cockpit,
+        // l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : E à moins de 10 m du siège met
+        // directement aux commandes ; en se relevant, le pilote se retrouve au sol, devant l'aile gauche.
         void AddFighter(Scene& scene, Entity ship) {
             const Entity hull = scene.CreateEntity("Coque", ship);
             scene.Add<ModelComponent>(hull).model = "Modeles/Chasseur/Chasseur.glb";
             ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
             collider.shape = ColliderShape::Mesh;
             collider.mesh = "Modeles/Chasseur/Chasseur-collision.glb";
-            // La verrière n'arrête que la caméra : debout dans le cockpit, le personnage la frôle.
+            // La verrière n'arrête que la caméra.
             const Entity glass = scene.CreateEntity("Verrière", ship);
             ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
             glassCollider.shape = ColliderShape::Mesh;
             glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
             glassCollider.cameraOnly = true;
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
-            scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -4.0};
+            // Le cockpit est tout à l'avant (3,6 m derrière le nez) et l'origine est sous les hanches du pilote.
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
-            component.exit = {0.0f, 0.0f, 1.2f};
-            // Soute et passage vers le cockpit (fighter.py) : le ciel n'y entre pas. Le cockpit, sous la verrière, reste
-            // éclairé par le ciel ; le fondu fait la transition dans le passage.
-            const Entity interior = scene.CreateEntity("Intérieur", ship);
-            scene.Get<TransformComponent>(interior).position = {0.0, 0.275, 3.95};
-            scene.Add<InteriorComponent>(interior).size = {2.6f, 2.45f, 10.3f};
-            // Plafonniers de la soute (fighter.py) : leur matériau brille mais n'éclaire rien ; une vraie lumière
-            // sous chacun, tournée vers le sol. Courte portée : sans ombre, elle traverserait la coque.
-            for (const double z : {7.1, 4.9, 2.7, 0.5}) {
-                const Entity lamp = scene.CreateEntity("Plafonnier", ship);
-                TransformComponent& transform = scene.Get<TransformComponent>(lamp);
-                transform.position = {0.0, 1.38, z};
-                transform.rotation = Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.5f * std::numbers::pi_v<float>);
-                LightComponent& light = scene.Add<LightComponent>(lamp);
-                light.type = LightType::Spot;
-                light.color = {0.95f, 0.93f, 0.88f};
-                light.intensity = 4.0f;
-                light.range = 4.0f;
-                light.angle = 140.0f;
-                light.softness = 0.6f;
-            }
+            component.reach = 10.0f;
+            component.exit = {-3.5f, -2.3f, 1.4f};
         }
 
         struct ItemInfo

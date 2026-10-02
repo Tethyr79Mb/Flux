@@ -421,6 +421,56 @@ namespace {
         return true;
     }
 
+    // Siège à grande portée (chasseur) : du dehors, E monte à bord, droit sur le siège ; en se relevant, le joueur
+    // sort au sol à côté du vaisseau et repasse dans le monde du dehors.
+    bool RunSeatBoardingTests() {
+        Scene scene;
+        AddFloor(scene);
+        const Entity ship = scene.CreateEntity("Chasseur");
+        scene.Get<TransformComponent>(ship).position = {0.0, 2.3, 0.0};
+        scene.Add<ShipComponent>(ship);
+        const Entity deck = scene.CreateEntity("Plancher", ship);
+        TransformComponent& deckTransform = scene.Get<TransformComponent>(deck);
+        deckTransform.position = {0.0, -0.1, 0.0};
+        deckTransform.scale = {3.0f, 0.2f, 6.0f};
+        scene.Add<ColliderComponent>(deck);
+        const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
+        scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -1.0};
+        SeatComponent& component = scene.Add<SeatComponent>(seat);
+        component.pilot = true;
+        component.reach = 8.0f;
+        component.exit = {-3.0f, -2.3f, 0.0f}; // au sol, à gauche du vaisseau
+        const Entity hero = scene.CreateEntity("Joueur");
+        scene.Get<TransformComponent>(hero).position = {5.0, 0.0, 0.0};
+        scene.Add<CharacterComponent>(hero);
+
+        PhysicsWorld world;
+        const auto frames = [&](double seconds, const SeatInput& input) {
+            for (int frame = 0; frame < static_cast<int>(std::lround(seconds / Frame)); ++frame) {
+                Seats::Update(scene, world.GetPlayer(), Frame, input, {});
+                world.Update(scene, Frame, {});
+            }
+        };
+        frames(0.5, {});
+        const CharacterComponent& character = scene.Get<CharacterComponent>(hero);
+        // A 5,6 m du siège, dehors : E le met aux commandes, à bord du chasseur.
+        frames(Frame, {.interact = true});
+        CHECK(character.seat == seat && character.seatState == SeatState::Seated);
+        CHECK(scene.GetParent(hero) == ship);
+        frames(0.2, {});
+        CHECK(Math::Length(Math::Delta(scene.GetWorldPosition(seat), scene.GetWorldPosition(hero))) < 0.01);
+        CHECK(Seats::GetPilotSeat(scene, hero) == seat);
+
+        // Il se relève : au sol à côté du vaisseau, puis rendu au monde du dehors.
+        frames(Frame, {.interact = true});
+        CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
+        frames(1.0, {});
+        CHECK(scene.GetParent(hero) == NullEntity);
+        const Math::Vector3d outside = Math::Delta({}, scene.GetWorldPosition(hero));
+        CHECK(std::abs(outside.x + 3.0) < 0.05 && std::abs(outside.y) < 0.05 && std::abs(outside.z + 1.0) < 0.05);
+        return true;
+    }
+
     // Sol en maillage (ColliderShape::Mesh) : un carré de 10 m en deux triangles, dans un .gltf à côté de son .bin.
     void WriteMeshFloor(const std::filesystem::path& directory) {
         const float positions[] = {-5.0f, 0.0f, -5.0f, 5.0f, 0.0f, -5.0f, 5.0f, 0.0f, 5.0f, -5.0f, 0.0f, 5.0f};
@@ -496,5 +546,5 @@ namespace {
 
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
-        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunMeshTests();
+        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests();
 }
