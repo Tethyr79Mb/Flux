@@ -689,6 +689,51 @@ namespace {
 
     // Formes arrondies : un quad dont les sommets portent la forme et leur position par rapport à son centre,
     // même rogné par le rectangle de découpe.
+    // Un panneau apparu après la disposition enregistrée se range à côté d'un autre, et passe devant sur demande.
+    bool RunDockFocusTests(const UI::Font& font) {
+        Harness harness(font);
+        UI::Context& ui = harness.GetUi();
+        const UI::DockId root = ui.ClearDockLayout();
+        const UI::DockId left = ui.SplitDock(root, UI::DockSide::Left, 0.25f).side;
+        ui.DockPanel("Scènes", left);
+        bool withInterface = false;
+        bool scenesOpen = false;
+        bool interfaceOpen = false;
+        const auto describe = [&](UI::Context& context) {
+            context.DockSpace({0.0f, 0.0f}, {1280.0f, 720.0f});
+            scenesOpen = context.BeginPanel("Scènes", {0.0f, 0.0f});
+            context.EndPanel();
+            if (withInterface) {
+                interfaceOpen = context.BeginPanel("Interface", {600.0f, 100.0f});
+                context.EndPanel();
+            }
+        };
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(scenesOpen);
+
+        // Rangé avec Scènes (une seule fois : ensuite, il est connu), puis affiché dès sa première apparition.
+        CHECK(ui.DockPanelNextTo("Interface", "Scènes"));
+        CHECK(!ui.DockPanelNextTo("Interface", "Scènes"));
+        CHECK(!ui.DockPanelNextTo("Propriétés", "Absent")); // voisin introuvable : il flottera
+        ui.FocusPanel("Interface");
+        withInterface = true;
+        harness.Move({640.0f, 400.0f}, describe);
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(interfaceOpen && !scenesOpen);
+
+        // Il disparaît (retour à la scène) : Scènes revient ; redemandé, il repasse devant.
+        withInterface = false;
+        harness.Move({640.0f, 400.0f}, describe);
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(scenesOpen);
+        withInterface = true;
+        ui.FocusPanel("Interface");
+        harness.Move({640.0f, 400.0f}, describe);
+        harness.Move({640.0f, 400.0f}, describe);
+        CHECK(interfaceOpen && !scenesOpen);
+        return true;
+    }
+
     bool RunShapeTests(const UI::Font& font) {
         UI::DrawList list(font);
         list.AddRoundedRect({10.0f, 20.0f}, {110.0f, 60.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, 8.0f);
@@ -739,5 +784,5 @@ bool RunUiTests() {
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
         && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
-        && RunWindowTests(**font) && RunShapeTests(**font);
+        && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font);
 }

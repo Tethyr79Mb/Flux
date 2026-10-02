@@ -8,12 +8,13 @@
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace Flux {
     class Scene;
 
-    // Éléments d'interface de la scène (ScreenTextComponent, ScreenImageComponent) : dessinés à plat par-dessus la 3D, dans l'écran du jeu
+    // Éléments d'interface de la scène (ScreenTextComponent, ScreenImageComponent, InterfaceComponent) : dessinés à plat par-dessus la 3D, dans l'écran du jeu
     // ou dans la vue de l'éditeur.
     namespace ScreenUi {
         // Hauteur d'écran de référence : tailles et décalages sont exprimés pour 1080 lignes, puis mis à l'échelle
@@ -31,9 +32,24 @@ namespace Flux {
         // Texture d'une image de la scène (chemin tel qu'écrit dans le composant) : Engine::LoadAssetTexture.
         using TextureResolver = std::function<std::optional<UI::TextureInfo>(std::string_view imagePath)>;
 
+        // Interface d'une entité (InterfaceComponent) à dessiner dans la vue : Engine::DrawInterface. Retourne le
+        // rectangle qu'elle occupe (pour la sélection), nullopt si rien n'est dessiné.
+        struct InterfaceRequest
+        {
+            Entity entity;
+            const InterfaceComponent& component;
+            UI::DrawList& list;
+            Math::Vector2f viewMin;
+            Math::Vector2f viewMax;
+            bool placeholders;
+            bool needsRect; // l'appelant veut le rectangle (sélection dans l'éditeur) : sinon, inutile de le calculer
+        };
+        using InterfaceDrawer = std::function<std::optional<std::pair<Math::Vector2f, Math::Vector2f>>(const InterfaceRequest&)>;
+
         struct DrawOptions
         {
             TextureResolver textures{}; // sans : les images ne sont pas dessinées
+            InterfaceDrawer interfaces{}; // sans : les interfaces ne sont pas dessinées
             // Reçoit les rectangles des éléments dessinés (découpés à la vue), dans l'ordre du dessin.
             std::vector<ItemRect>* rects = nullptr;
             // Éditeur : un cadre gris remplace une image sans fichier ou introuvable, pour la voir et la sélectionner.

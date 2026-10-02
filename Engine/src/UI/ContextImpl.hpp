@@ -251,6 +251,8 @@ namespace Flux::UI {
         // Ancrage (Docking.cpp) : arbre de zones stocké à plat, la racine en 0.
         std::vector<DockNode> dockNodes;
         std::unordered_map<WidgetId, DockId> dockedPanels; // panneau -> zone, reconstruit à chaque changement
+        // Onglets à afficher dès que leur panneau apparaît (FocusPanel), avec la frame de la demande.
+        std::vector<std::pair<WidgetId, std::uint64_t>> focusRequests;
         std::uint64_t dockFrame = 0;                       // frame du dernier DockSpace
         Rect dockArea;
         Rect dockCentral;

@@ -189,6 +189,29 @@ namespace Flux::UI {
         return m_impl->DragVector3(label, value, speed, min, max, decimals);
     }
 
+    bool Context::DragFloat2(std::string_view label, Math::Vector2f& value, float speed, double min, double max, int decimals) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const WidgetId id = ui.GetId(label);
+        const auto [fieldMin, fieldMax] = ui.LabeledRow(label);
+        const float width = (fieldMax.x - fieldMin.x - ui.style.itemSpacing) / 2.0f;
+        float* components[2] = {&value.x, &value.y};
+        const LinearColor* colors[2] = {&ui.style.axisX, &ui.style.axisY};
+        bool changed = false;
+        for (int axis = 0; axis < 2; ++axis) {
+            const float x = fieldMin.x + static_cast<float>(axis) * (width + ui.style.itemSpacing);
+            double component = *components[axis];
+            if (ui.DragScalar(Hash(id, &axis, sizeof(axis)), {x, fieldMin.y}, {x + width, fieldMax.y}, component, speed, min,
+                              max, decimals, colors[axis])) {
+                *components[axis] = static_cast<float>(component);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     bool Context::DragDouble3(std::string_view label, Math::Vector3d& value, double speed, double min, double max,
                               int decimals) {
         return m_impl->DragVector3(label, value, speed, min, max, decimals);

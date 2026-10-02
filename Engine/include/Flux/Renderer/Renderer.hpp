@@ -54,6 +54,8 @@ namespace Flux {
         // Partie de la fenêtre où la scène est dessinée (en pixels, la vue 3D de l'éditeur) ; l'image garde les
         // proportions de ce rectangle. min == max (par défaut) : toute la fenêtre. L'overlay 2D couvre toujours tout.
         void SetSceneViewport(Math::Vector2f min, Math::Vector2f max);
+        // false : ni ombres, ni scène 3D, ni ciel ; seule l'interface est dessinée (l'éditeur d'interface couvre la vue).
+        void SetSceneVisible(bool visible);
 
         // V-Sync (activée par défaut) : sans elle, autant d'images que le GPU peut en produire.
         // Le changement prend effet à la frame suivante (la swapchain est recréée).

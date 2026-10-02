@@ -31,6 +31,9 @@ namespace FluxEditor {
             if (type == AssetType::Model) {
                 return {{"Modèles glTF", ".glb;.gltf"}, "Choisir un modèle 3D", "models"};
             }
+            if (type == AssetType::Interface) {
+                return {{"Interfaces Flux", ".fluxui"}, "Choisir une interface", "interfaces"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 

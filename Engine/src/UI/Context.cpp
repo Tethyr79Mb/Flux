@@ -343,4 +343,10 @@ namespace Flux::UI {
     MouseCursor Context::GetMouseCursor() const {
         return m_impl->cursor;
     }
+
+    void Context::SetMouseCursor(MouseCursor cursor) {
+        if (m_impl->cursor == MouseCursor::Arrow) {
+            m_impl->cursor = cursor;
+        }
+    }
 }

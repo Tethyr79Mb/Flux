@@ -105,7 +105,8 @@ namespace FluxEditor {
                                            {"Lumière", "Lumière"},
                                            {"Spot", "Spot"},
                                            {"Ciel", "Ciel"},
-                                           {"Volume intérieur", "Intérieur"}};
+                                           {"Volume intérieur", "Intérieur"},
+                                           {"Interface...", "Interface"}};
             return Infos[item];
         }
 
@@ -155,6 +156,8 @@ namespace FluxEditor {
             button(Item::ScreenText);
             ui.SameLine();
             button(Item::ScreenImage);
+            ui.SameLine();
+            button(Item::Interface);
             ui.Separator();
             ui.TextDisabled("Logique");
             button(Item::SceneChange);
@@ -232,9 +235,23 @@ namespace FluxEditor {
                 name = std::move(stem);
             }
         }
+        // Une interface : le fichier .fluxui d'abord (créé dans Contenu, clic droit > Nouvelle interface).
+        std::optional<std::string> interfaceFile;
+        if (item == Item::Interface) {
+            interfaceFile = ChooseAsset(engine, AssetType::Interface, "");
+            if (!interfaceFile) {
+                return;
+            }
+            if (std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*interfaceFile).stem()); !stem.empty()) {
+                name = std::move(stem);
+            }
+        }
         const Entity entity = scene.CreateEntity(name);
 
-        if (item == Item::ScreenText || item == Item::ScreenImage) {
+        if (item == Item::Interface) {
+            // Toute la vue : rien à placer.
+            scene.Add<InterfaceComponent>(entity).file = *interfaceFile;
+        } else if (item == Item::ScreenText || item == Item::ScreenImage) {
             // Accroché au centre ; lâché dans la vue, décalé jusqu'au point de dépôt (en pixels de référence).
             // Une image est créée sans fichier : cadre gris dans la vue, à choisir dans l'inspecteur (« ... »).
             if (item == Item::ScreenText) {

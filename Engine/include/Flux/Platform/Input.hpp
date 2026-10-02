@@ -51,6 +51,7 @@ namespace Flux {
         ResizeVertical,   // ↕ : bord haut ou bas
         ResizeNwse,       // ⤡ : coins haut-gauche et bas-droit
         ResizeNesw,       // ⤢ : coins haut-droit et bas-gauche
+        Move,             // ✥ : élément qu'on peut glisser
     };
 
     // État du clavier et de la souris, mis à jour par Window::HandleEvents.

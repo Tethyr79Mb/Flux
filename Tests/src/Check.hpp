@@ -17,6 +17,7 @@ bool RunUiTests();
 bool RunProjectTests();
 bool RunPickingTests();
 bool RunScreenUiTests();
+bool RunInterfaceTests();
 bool RunImageTests();
 bool RunSceneChangeTests();
 bool RunModelTests();
