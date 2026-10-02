@@ -12,12 +12,25 @@
 namespace Flux::UI {
     class Font;
 
+    // Forme arrondie dessinée par le shader (champ de distance) : rectangle aux coins arrondis, cercle, contour, ombre.
+    // halfSize.x 0 : pas de forme, le quad est dessiné tel quel (texte, rectangles droits, images).
+    struct Shape
+    {
+        Math::Vector2f halfSize; // demi-taille de la forme, pixels
+        float radius = 0.0f;     // rayon des coins (min(halfSize) : cercle ou pilule)
+        float border = 0.0f;     // épaisseur du contour, vers l'intérieur ; 0 : plein
+    };
+
     // Doit correspondre à VertexInput dans shaders/Overlay.slang.
     struct Vertex
     {
         Math::Vector2f position; // pixels, origine en haut à gauche
         Math::Vector2f uv;
         Math::LinearColor color;
+        Math::Vector2f local;    // position par rapport au centre de la forme (pixels)
+        float feather = 1.0f;    // largeur du bord adouci : 1 pixel (anticrénelage) ; plus pour une ombre floue
+        float unused = 0.0f;
+        Shape shape;
     };
 
     // Texture échantillonnée par une primitive : 0 est l'atlas de la police (texte et rectangles pleins),
@@ -61,6 +74,15 @@ namespace Flux::UI {
         void AddTriangle(Math::Vector2f a, Math::Vector2f b, Math::Vector2f c, Math::LinearColor color);
         // Segment épais (thickness pixels) ; avec un rectangle de découpe, seule sa partie intérieure est dessinée.
         void AddLine(Math::Vector2f a, Math::Vector2f b, Math::LinearColor color, float thickness = 1.0f);
+        // Rectangle aux coins arrondis (radius pixels), bords anticrénelés ; thickness > 0 : contour seul, vers
+        // l'intérieur. Découpé au rectangle de découpe comme un rectangle plein.
+        void AddRoundedRect(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float radius);
+        void AddRoundedRectOutline(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float radius,
+                                   float thickness = 1.0f);
+        void AddCircle(Math::Vector2f center, float radius, Math::LinearColor color);
+        void AddCircleOutline(Math::Vector2f center, float radius, Math::LinearColor color, float thickness = 1.0f);
+        // Ombre (ou halo) floue de blur pixels autour du rectangle arrondi : dessinée avant lui, elle déborde de blur.
+        void AddShadow(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, float radius, float blur);
         // Image (texture entière par défaut) étirée sur le rectangle, multipliée par tint (alpha compris) ;
         // découpée au rectangle de découpe comme un rectangle plein.
         void AddImage(Math::Vector2f min, Math::Vector2f max, TextureId texture, Math::LinearColor tint = {1.0f, 1.0f, 1.0f},
@@ -82,7 +104,10 @@ namespace Flux::UI {
         Math::Vector2f LayoutText(Math::Vector2f topLeft, std::string_view utf8, float pixelSize, Emit&& emit) const;
 
         void AddQuad(Math::Vector2f min, Math::Vector2f max, Math::Vector2f uvMin, Math::Vector2f uvMax, Math::LinearColor color,
-                     TextureId texture = FontTexture);
+                     TextureId texture = FontTexture, const Shape& shape = {}, float feather = 1.0f);
+        // Forme centrée dans min-max ; le quad déborde de margin pixels (bord adouci, ombre).
+        void AddShape(Math::Vector2f min, Math::Vector2f max, Math::LinearColor color, const Shape& shape, float margin,
+                      float feather);
         // Ajoute des sommets à la commande en cours, ou en ouvre une si la texture change.
         void PushVertices(TextureId texture, std::span<const Vertex> vertices);
 

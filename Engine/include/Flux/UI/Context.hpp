@@ -48,6 +48,9 @@ namespace Flux::UI {
         Math::Vector2f framePadding{6.0f, 4.0f}; // autour du texte dans les boutons et les champs
         float itemSpacing = 4.0f;            // entre deux widgets
         float labelFraction = 0.38f;         // part de la largeur réservée aux libellés des champs
+        float panelRounding = 6.0f;          // rayon des coins des panneaux flottants et des menus (0 : droits)
+        float frameRounding = 3.0f;          // rayon des coins des boutons, champs et cases
+        float shadowSize = 14.0f;            // flou de l'ombre (ou du halo) sous les panneaux flottants ; 0 : aucune
 
         Math::LinearColor text;
         Math::LinearColor textDisabled;
@@ -67,6 +70,7 @@ namespace Flux::UI {
         Math::LinearColor axisX;
         Math::LinearColor axisY;
         Math::LinearColor axisZ;
+        Math::LinearColor shadow; // ombre des panneaux flottants (un halo coloré avec une couleur claire)
 
         static Style Dark();       // gris bleuté, accents bleus (le thème d'origine)
         static Style Light();      // fond clair, texte sombre

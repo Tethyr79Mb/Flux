@@ -143,9 +143,14 @@ namespace Flux::UI {
         popup.height = (empty ? ui.cursorY : ui.cursorY - ui.lastSpacing) + padding - popup.position.y;
         popup.measuredWidth = ui.menuItemWidth + 2.0f * padding;
         const Vector2f max = popup.position + Vector2f{popup.width, popup.height};
-        popup.chrome.AddRect(popup.position, max, {ui.style.panelBackground.r, ui.style.panelBackground.g,
-                                                   ui.style.panelBackground.b, 1.0f});
-        popup.chrome.AddRectOutline(popup.position, max, ui.style.panelBorder);
+        const float rounding = std::min(ui.style.panelRounding, 4.0f);
+        if (ui.style.shadowSize > 0.0f) {
+            popup.chrome.AddShadow(popup.position + Vector2f{0.0f, 2.0f}, max + Vector2f{0.0f, 2.0f}, ui.style.shadow, rounding,
+                                   ui.style.shadowSize * 0.5f);
+        }
+        popup.chrome.AddRoundedRect(popup.position, max, {ui.style.panelBackground.r, ui.style.panelBackground.g,
+                                                          ui.style.panelBackground.b, 1.0f}, rounding);
+        popup.chrome.AddRoundedRectOutline(popup.position, max, ui.style.panelBorder, rounding);
         popup.content.ResetClipRect();
 
         ui.idStack.pop_back();
@@ -199,9 +204,9 @@ namespace Flux::UI {
         const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
         const bool pressed = interaction.held && interaction.hovered;
         if (highlighted || pressed || interaction.hovered) {
-            ui.panel->content.AddRect(min, max, pressed      ? style.buttonActive
-                                                : highlighted ? style.button
-                                                              : style.frameHovered);
+            ui.FrameRect(min, max, pressed      ? style.buttonActive
+                                   : highlighted ? style.button
+                                                 : style.frameHovered);
         }
         ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
         return interaction.clicked;

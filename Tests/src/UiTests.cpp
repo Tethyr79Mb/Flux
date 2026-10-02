@@ -687,6 +687,31 @@ namespace {
         return true;
     }
 
+    // Formes arrondies : un quad dont les sommets portent la forme et leur position par rapport à son centre,
+    // même rogné par le rectangle de découpe.
+    bool RunShapeTests(const UI::Font& font) {
+        UI::DrawList list(font);
+        list.AddRoundedRect({10.0f, 20.0f}, {110.0f, 60.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, 8.0f);
+        CHECK(list.GetVertices().size() == 6);
+        const UI::Vertex& corner = list.GetVertices()[0];
+        CHECK(corner.shape.halfSize.x == 50.0f && corner.shape.halfSize.y == 20.0f && corner.shape.radius == 8.0f);
+        CHECK(corner.local.x == -50.5f && corner.local.y == -20.5f); // le quad déborde d'un demi-pixel (anticrénelage)
+
+        list.Clear();
+        list.SetClipRect({60.0f, 0.0f}, {200.0f, 200.0f});
+        list.AddRoundedRect({10.0f, 20.0f}, {110.0f, 60.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, 30.0f);
+        CHECK(list.GetVertices().size() == 6);
+        CHECK(list.GetVertices()[0].position.x == 60.0f && list.GetVertices()[0].local.x == 0.0f); // coupé au centre
+        CHECK(list.GetVertices()[0].shape.radius == 20.0f); // rayon borné à la demi-hauteur
+
+        list.Clear();
+        list.AddRoundedRect({0.0f, 0.0f}, {10.0f, 10.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, 0.0f); // rayon 0 : rectangle ordinaire
+        CHECK(list.GetVertices()[0].shape.halfSize.x == 0.0f);
+        list.AddShadow({0.0f, 0.0f}, {10.0f, 10.0f}, {0.0f, 0.0f, 0.0f, 0.5f}, 2.0f, 8.0f);
+        CHECK(list.GetVertices()[6].position.x == -8.0f && list.GetVertices()[6].feather == 16.0f);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -714,5 +739,5 @@ bool RunUiTests() {
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
         && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
-        && RunWindowTests(**font);
+        && RunWindowTests(**font) && RunShapeTests(**font);
 }

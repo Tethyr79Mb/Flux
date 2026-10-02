@@ -66,7 +66,7 @@ namespace Flux::UI {
         const LinearColor color = interaction.held && interaction.hovered ? style.buttonActive
                                 : interaction.hovered                     ? style.buttonHovered
                                                                           : style.button;
-        ui.panel->content.AddRect(min, max, color);
+        ui.FrameRect(min, max, color);
         ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
         return interaction.clicked;
     }
@@ -186,7 +186,7 @@ namespace Flux::UI {
         const LinearColor color = interaction.held && interaction.hovered ? style.frameActive
                                 : interaction.hovered                     ? style.frameHovered
                                                                           : style.frame;
-        list.AddRect(min, min + Vector2f{box, box}, color);
+        list.AddRoundedRect(min, min + Vector2f{box, box}, color, style.frameRounding);
         if (value) {
             const float thickness = std::max(2.0f, box * 0.12f);
             const auto at = [&](float x, float y) { return min + Vector2f{box * x, box * y}; };
@@ -217,9 +217,10 @@ namespace Flux::UI {
         const int count = static_cast<int>(options.size());
 
         DrawList& list = ui.panel->content;
-        list.AddRect(min, max, open || (interaction.held && interaction.hovered) ? style.frameActive
+        list.AddRoundedRect(min, max, open || (interaction.held && interaction.hovered) ? style.frameActive
                                : interaction.hovered                               ? style.frameHovered
-                                                                                   : style.frame);
+                                                                                   : style.frame,
+                            style.frameRounding);
         const std::string_view text = index >= 0 && index < count ? options[static_cast<std::size_t>(index)] : "?";
         const float arrow = style.fontSize * 0.35f;
         ui.ClippedText(min + style.framePadding, max.x - arrow - 2.0f * style.framePadding.x, text, style.text);
@@ -273,7 +274,7 @@ namespace Flux::UI {
         }
 
         DrawList& list = ui.panel->content;
-        list.AddRect(min, max, interaction.hovered ? style.buttonHovered : style.button);
+        list.AddRoundedRect(min, max, interaction.hovered ? style.buttonHovered : style.button, style.frameRounding);
         const float arrowWidth = style.fontSize;
         const float size = style.fontSize * 0.45f;
         const float x = min.x + style.framePadding.x * 0.5f + (arrowWidth - size) * 0.5f;
