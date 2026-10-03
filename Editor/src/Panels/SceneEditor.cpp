@@ -79,6 +79,22 @@ namespace FluxEditor {
         };
         constexpr std::string_view EmptyTitle = "Objets vides";
 
+        // Pictogramme d'un composant (titre de sa section dans l'inspecteur, menu « Ajouter un composant »).
+        UI::Icon ComponentIcon(std::string_view key) {
+            for (const Category& category : Categories) {
+                if (category.key == key) {
+                    return category.icon;
+                }
+            }
+            if (key == "animator") {
+                return UI::Icon::Character;
+            }
+            if (key == "transform") {
+                return UI::Icon::None;
+            }
+            return UI::Icon::Component;
+        }
+
         // Groupe d'une racine (et icône de toute entité) : sa catégorie ; sinon le nom de son premier composant (ceux
         // du jeu) ; sinon « Objets vides ». rank ordonne les groupes : catégories, composants du jeu, objets vides.
         struct Kind
@@ -144,6 +160,7 @@ namespace FluxEditor {
         const float screenHeight = static_cast<float>(engine.GetWindow().GetSize().y);
         // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Placer ») : jusqu'en bas.
         const float top = 350.0f + ui.GetMenuBarHeight();
+        ui.SetNextPanelIcon(UI::Icon::Scene);
         if (ui.BeginPanel("Scènes", {8.0f, top}, 300.0f, std::max(160.0f, screenHeight - top - 8.0f))) {
             // Les objets se créent dans l'onglet « Placer ».
             if (m_readOnly) {
@@ -284,6 +301,7 @@ namespace FluxEditor {
         UI::Context& ui = engine.GetUi();
         const float screenWidth = static_cast<float>(engine.GetWindow().GetSize().x);
         // Position sans ancrage (l'éditeur l'ancre à droite) : entre la vue et le panneau « Démo » du jeu.
+        ui.SetNextPanelIcon(UI::Icon::Inspector);
         if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screenWidth - 752.0f), 8.0f}, 368.0f)) {
             if (selected == NullEntity) {
                 ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans l'onglet Scènes.");
@@ -353,16 +371,24 @@ namespace FluxEditor {
 
                 if (!missing.empty() && !m_readOnly) {
                     ui.Separator();
-                    for (const ComponentInfo* info : missing) {
-                        const auto blocker = std::ranges::find_if(present, [&](const ComponentInfo* other) {
-                            return info->Excludes(*other);
-                        });
-                        if (blocker != present.end()) {
-                            ui.TextDisabled(info->label + " : impossible avec « " + (*blocker)->label + " »");
-                        } else if (ui.Button("Ajouter : " + info->label + "##" + info->key)) {
-                            m_pendingAction = Action::AddComponent;
-                            m_pendingComponent = info->key;
+                    // Un seul bouton, et la liste des composants qui manquent dans un menu.
+                    if (ui.Button("Ajouter un composant", UI::Icon::Plus, true)) {
+                        ui.OpenPopupMenu("ajouter");
+                    }
+                    if (ui.BeginPopupMenu("ajouter")) {
+                        for (const ComponentInfo* info : missing) {
+                            const auto blocker = std::ranges::find_if(present, [&](const ComponentInfo* other) {
+                                return info->Excludes(*other);
+                            });
+                            if (blocker != present.end()) {
+                                ui.MenuItem(info->label + " (pas avec « " + (*blocker)->label + " »)##" + info->key, {}, false,
+                                            ComponentIcon(info->key));
+                            } else if (ui.MenuItem(info->label + "##" + info->key, {}, true, ComponentIcon(info->key))) {
+                                m_pendingAction = Action::AddComponent;
+                                m_pendingComponent = info->key;
+                            }
                         }
+                        ui.EndMenu();
                     }
                 }
                 ui.PopId();
@@ -374,16 +400,18 @@ namespace FluxEditor {
     void SceneEditor::DrawComponent(Engine& engine, const ComponentInfo& info, void* component) {
         UI::Context& ui = engine.GetUi();
         ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
-        if (ui.CollapsingHeader(info.label)) {
+        // Croix au bout du titre pour retirer le composant (pas la transformation, ni pendant le jeu).
+        bool remove = false;
+        if (ui.CollapsingHeader(info.label, true, ComponentIcon(info.key), info.removable && !m_readOnly ? &remove : nullptr)) {
             ui.BeginDisabled(m_readOnly); // l'en-tête reste repliable
             for (const FieldInfo& field : info.fields) {
                 m_modified |= DrawField(engine, info, field, field.access(component));
             }
             ui.EndDisabled();
-            if (info.removable && !m_readOnly && ui.Button("Retirer")) {
-                m_pendingAction = Action::RemoveComponent;
-                m_pendingComponent = info.key;
-            }
+        }
+        if (remove) {
+            m_pendingAction = Action::RemoveComponent;
+            m_pendingComponent = info.key;
         }
         ui.PopId();
     }

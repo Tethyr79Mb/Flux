@@ -39,29 +39,30 @@ namespace Flux::UI {
 
         DrawList& list = ui.panel->content;
         if (selected) {
-            list.AddRect(min, max, style.selection);
+            list.AddRoundedRect(min, max, style.selection, style.frameRounding);
         } else if (interaction.hovered) {
-            list.AddRect(min, max, style.frame);
+            list.AddRoundedRect(min, max, style.frameHovered, style.frameRounding);
         }
         if (!leaf) {
             const float size = style.fontSize * 0.45f;
             const float x = min.x + (arrowWidth - size) * 0.5f;
             const float centerY = min.y + rowHeight * 0.5f;
+            const LinearColor arrow = selected ? style.text : style.textDisabled;
             if (open) {
                 list.AddTriangle({x, centerY - size * 0.35f}, {x + size, centerY - size * 0.35f},
-                                 {x + size * 0.5f, centerY + size * 0.45f}, style.text);
+                                 {x + size * 0.5f, centerY + size * 0.45f}, arrow);
             } else {
                 list.AddTriangle({x + size * 0.15f, centerY - size * 0.5f}, {x + size * 0.15f, centerY + size * 0.5f},
-                                 {x + size * 0.95f, centerY}, style.text);
+                                 {x + size * 0.95f, centerY}, arrow);
             }
         }
         float textX = min.x + arrowWidth;
         if (icon != Icon::None) {
-            const float iconSize = std::floor(rowHeight - 4.0f);
-            DrawIcon(list, icon, {textX, min.y + 2.0f}, iconSize);
-            textX += iconSize + 4.0f;
+            const float iconSize = std::floor(rowHeight - 7.0f);
+            DrawIcon(list, icon, {textX, std::round(min.y + 0.5f * (rowHeight - iconSize))}, iconSize);
+            textX += iconSize + 5.0f;
         }
-        ui.ClippedText({textX, min.y + 2.0f}, max.x - 2.0f, VisibleLabel(label), style.text);
+        ui.ClippedText({textX, min.y + 3.0f}, max.x - 2.0f, VisibleLabel(label), style.text);
 
         result.open = open && !leaf;
         if (result.open) {

@@ -64,8 +64,7 @@ namespace Flux::UI {
         ui.menuBarNextX = ui.contentMin.x;
         ui.menuBarDrawn = true;
         ui.menuBarHeight = height; // dès cette frame pour les panneaux décrits après la barre
-        bar.chrome.AddRect({0.0f, 0.0f}, {width, height}, ui.style.titleBackground);
-        bar.chrome.AddRect({0.0f, height - 1.0f}, {width, height}, ui.style.panelBorder);
+        bar.chrome.AddRect({0.0f, 0.0f}, {width, height}, ui.style.windowBackground);
         return true;
     }
 
@@ -101,7 +100,8 @@ namespace Flux::UI {
         }
         const bool open = ui.openMenu == id;
         if (open || hovered) {
-            ui.panel->content.AddRect(min, max, open ? style.selection : style.frameHovered);
+            ui.panel->content.AddRoundedRect(min + Vector2f{0.0f, 2.0f}, max - Vector2f{0.0f, 2.0f},
+                                             open ? style.selection : style.frameHovered, style.frameRounding);
         }
         ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
         if (!open) {
@@ -132,6 +132,29 @@ namespace Flux::UI {
         return true;
     }
 
+    void Context::OpenPopupMenu(std::string_view id) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || ui.menuParent) {
+            return;
+        }
+        ui.openMenu = Hash(ui.GetId(id), "#menu programme");
+        ui.contextPosition = {ui.lastItemMin.x, ui.lastItemMax.y + 2.0f};
+        ui.contextWidth = ui.lastItemMax.x - ui.lastItemMin.x;
+    }
+
+    bool Context::BeginPopupMenu(std::string_view id) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || ui.menuParent) {
+            return false;
+        }
+        const WidgetId popupId = Hash(ui.GetId(id), "#menu programme");
+        if (ui.openMenu != popupId) {
+            return false;
+        }
+        ui.BeginPopup(popupId, ui.contextPosition, std::max(180.0f, ui.contextWidth));
+        return true;
+    }
+
     void Context::EndMenu() {
         Impl& ui = *m_impl;
         if (!ui.menuParent) {
@@ -158,14 +181,15 @@ namespace Flux::UI {
         ui.menuParent.reset();
     }
 
-    bool Context::MenuItem(std::string_view label, std::string_view shortcut, bool enabled) {
+    bool Context::MenuItem(std::string_view label, std::string_view shortcut, bool enabled, Icon icon) {
         Impl& ui = *m_impl;
         if (!ui.panel || !ui.menuParent) {
             return false;
         }
         const Style& style = ui.style;
         const std::string_view visible = VisibleLabel(label);
-        const float labelWidth = ui.MeasureText(visible).x;
+        const float iconWidth = icon != Icon::None ? std::round(style.fontSize) + style.framePadding.x : 0.0f;
+        const float labelWidth = ui.MeasureText(visible).x + iconWidth;
         const float shortcutWidth = shortcut.empty() ? 0.0f : ui.MeasureText(shortcut).x;
         const float gap = shortcut.empty() ? 0.0f : 3.0f * style.fontSize;
         ui.menuItemWidth = std::max(ui.menuItemWidth, 2.0f * style.framePadding.x + labelWidth + gap + shortcutWidth);
@@ -176,9 +200,14 @@ namespace Flux::UI {
         const Impl::Interaction interaction = enabled ? ui.Behavior(ui.GetId(label), min, max) : Impl::Interaction{};
         DrawList& list = ui.panel->content;
         if (interaction.hovered) {
-            list.AddRect(min, max, style.selection);
+            list.AddRoundedRect(min, max, style.selection, style.frameRounding);
         }
-        list.AddText(min + style.framePadding, visible, style.fontSize, enabled ? style.text : style.textDisabled);
+        if (icon != Icon::None) {
+            const float iconSize = std::round(style.fontSize);
+            DrawIcon(list, icon, {min.x + style.framePadding.x, std::round(0.5f * (min.y + max.y - iconSize))}, iconSize);
+        }
+        list.AddText(min + style.framePadding + Vector2f{iconWidth, 0.0f}, visible, style.fontSize,
+                     enabled ? style.text : style.textDisabled);
         if (!shortcut.empty()) {
             list.AddText({max.x - style.framePadding.x - shortcutWidth, min.y + style.framePadding.y}, shortcut, style.fontSize,
                          style.textDisabled);
@@ -190,25 +219,31 @@ namespace Flux::UI {
         return false;
     }
 
-    bool Context::MenuBarButton(std::string_view label, bool highlighted) {
+    bool Context::MenuBarButton(std::string_view label, bool highlighted, Icon icon) {
         Impl& ui = *m_impl;
         if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
             return false;
         }
         const Style& style = ui.style;
         const std::string_view visible = VisibleLabel(label);
-        const Vector2f size{ui.MeasureText(visible).x + 2.0f * style.framePadding.x, ui.FrameHeight()};
+        const float iconSize = icon != Icon::None ? std::round(style.fontSize * 0.9f) : 0.0f;
+        const float textWidth = visible.empty() ? 0.0f : ui.MeasureText(visible).x;
+        const float gap = iconSize > 0.0f && textWidth > 0.0f ? style.framePadding.x * 0.75f : 0.0f;
+        const Vector2f size{iconSize + gap + textWidth + 2.0f * style.framePadding.x, ui.FrameHeight()};
         const Vector2f min{ui.menuBarNextX, 0.0f};
         const Vector2f max = min + size;
         ui.menuBarNextX = max.x + style.itemSpacing;
         const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
         const bool pressed = interaction.held && interaction.hovered;
         if (highlighted || pressed || interaction.hovered) {
-            ui.FrameRect(min, max, pressed      ? style.buttonActive
-                                   : highlighted ? style.button
-                                                 : style.frameHovered);
+            ui.FrameRect(min + Vector2f{0.0f, 2.0f}, max - Vector2f{0.0f, 2.0f},
+                         pressed ? style.buttonActive : highlighted ? style.button : style.frameHovered);
         }
-        ui.panel->content.AddText(min + style.framePadding, visible, style.fontSize, style.text);
+        if (iconSize > 0.0f) {
+            DrawIcon(ui.panel->content, icon, {min.x + style.framePadding.x, std::round(0.5f * (min.y + max.y - iconSize))},
+                     iconSize);
+        }
+        ui.panel->content.AddText(min + style.framePadding + Vector2f{iconSize + gap, 0.0f}, visible, style.fontSize, style.text);
         return interaction.clicked;
     }
 

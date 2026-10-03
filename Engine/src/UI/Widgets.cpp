@@ -71,6 +71,34 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    bool Context::Button(std::string_view label, Icon icon, bool fullWidth) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const std::string_view visible = VisibleLabel(label);
+        const float iconSize = icon != Icon::None ? std::round(style.fontSize * 0.9f) : 0.0f;
+        const float textWidth = ui.MeasureText(visible).x;
+        const float gap = iconSize > 0.0f && !visible.empty() ? style.framePadding.x * 0.75f : 0.0f;
+        const float contentWidth = iconSize + gap + textWidth;
+        const Vector2f size{fullWidth ? ui.RowWidth() : contentWidth + 2.0f * style.framePadding.x, ui.FrameHeight()};
+        const Vector2f min = ui.ItemRect(size);
+        const Vector2f max = min + size;
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+
+        const LinearColor color = interaction.held && interaction.hovered ? style.buttonActive
+                                : interaction.hovered                     ? style.buttonHovered
+                                                                          : style.button;
+        ui.FrameRect(min, max, color);
+        const float left = fullWidth ? std::round(0.5f * (min.x + max.x - contentWidth)) : min.x + style.framePadding.x;
+        if (iconSize > 0.0f) {
+            DrawIcon(ui.panel->content, icon, {left, std::round(0.5f * (min.y + max.y - iconSize))}, iconSize);
+        }
+        ui.panel->content.AddText({left + iconSize + gap, min.y + style.framePadding.y}, visible, style.fontSize, style.text);
+        return interaction.clicked;
+    }
+
     Context::TileResult Context::Tile(std::string_view label, Icon icon, std::string_view badge, LinearColor badgeColor,
                                       bool selected, float width, const TextureInfo* image) {
         Impl& ui = *m_impl;
@@ -183,15 +211,24 @@ namespace Flux::UI {
         }
 
         DrawList& list = ui.panel->content;
-        const LinearColor color = interaction.held && interaction.hovered ? style.frameActive
-                                : interaction.hovered                     ? style.frameHovered
-                                                                          : style.frame;
-        list.AddRoundedRect(min, min + Vector2f{box, box}, color, style.frameRounding);
+        // Cochée : remplie de la couleur d'accent, coche claire.
+        const float inset = std::round(box * 0.1f);
+        const Vector2f boxMin = min + Vector2f{inset, inset};
+        const Vector2f boxMax = min + Vector2f{box - inset, box - inset};
         if (value) {
-            const float thickness = std::max(2.0f, box * 0.12f);
-            const auto at = [&](float x, float y) { return min + Vector2f{box * x, box * y}; };
-            list.AddLine(at(0.22f, 0.52f), at(0.42f, 0.72f), style.checkMark, thickness);
-            list.AddLine(at(0.40f, 0.72f), at(0.78f, 0.30f), style.checkMark, thickness);
+            const LinearColor accent = interaction.hovered ? LinearColor{style.checkMark.r * 1.15f, style.checkMark.g * 1.15f,
+                                                                         style.checkMark.b * 1.15f, style.checkMark.a}
+                                                           : style.checkMark;
+            list.AddRoundedRect(boxMin, boxMax, accent, style.frameRounding);
+            const float side = boxMax.x - boxMin.x;
+            const float thickness = std::max(2.0f, side * 0.13f);
+            const auto at = [&](float x, float y) { return boxMin + Vector2f{side * x, side * y}; };
+            const LinearColor mark = LinearColor::FromSrgb8(255, 255, 255);
+            list.AddLine(at(0.2f, 0.52f), at(0.42f, 0.74f), mark, thickness);
+            list.AddLine(at(0.40f, 0.74f), at(0.8f, 0.28f), mark, thickness);
+        } else {
+            // Fond des boutons : la case se voit sur le fond des panneaux, plus foncé que les champs.
+            list.AddRoundedRect(boxMin, boxMax, interaction.hovered ? style.buttonHovered : style.button, style.frameRounding);
         }
         if (!visible.empty()) {
             list.AddText({min.x + box + 2.0f * style.itemSpacing, min.y + style.framePadding.y}, visible, style.fontSize,
@@ -252,7 +289,7 @@ namespace Flux::UI {
         return changed;
     }
 
-    bool Context::CollapsingHeader(std::string_view label, bool defaultOpen) {
+    bool Context::CollapsingHeader(std::string_view label, bool defaultOpen, Icon icon, bool* remove) {
         Impl& ui = *m_impl;
         if (!ui.panel) {
             return false;
@@ -265,29 +302,63 @@ namespace Flux::UI {
             ui.nextTreeOpen.reset();
         }
 
-        const float height = ui.FrameHeight();
+        // Un peu d'air au-dessus d'une section qui suit d'autres widgets.
+        if (!ui.sameLine && ui.cursorY > ui.contentMin.y) {
+            ui.cursorY += style.itemSpacing;
+        }
+        const float height = ui.FrameHeight() + 2.0f;
         const Vector2f min = ui.ItemRect({ui.RowWidth(), height});
         const Vector2f max = min + Vector2f{ui.RowWidth(), height};
-        const Impl::Interaction interaction = ui.Behavior(id, min, max);
+        // Croix de retrait au bout du titre : décrite avant le titre, elle prend le clic.
+        const float removeSize = remove ? height : 0.0f;
+        bool removeHovered = false;
+        if (remove) {
+            const Vector2f boxMin{max.x - removeSize, min.y};
+            const Impl::Interaction close = ui.Behavior(Hash(id, "#retirer"), boxMin, max);
+            removeHovered = close.hovered;
+            if (close.clicked) {
+                *remove = true;
+            }
+        }
+        const Impl::Interaction interaction = ui.Behavior(id, min, {max.x - removeSize, max.y});
         if (interaction.clicked) {
             open = !open;
         }
 
         DrawList& list = ui.panel->content;
-        list.AddRoundedRect(min, max, interaction.hovered ? style.buttonHovered : style.button, style.frameRounding);
+        list.AddRoundedRect(min, max, interaction.hovered ? style.headerHovered : style.header, style.frameRounding);
         const float arrowWidth = style.fontSize;
-        const float size = style.fontSize * 0.45f;
+        const float size = style.fontSize * 0.42f;
         const float x = min.x + style.framePadding.x * 0.5f + (arrowWidth - size) * 0.5f;
         const float centerY = min.y + height * 0.5f;
+        const LinearColor arrow = interaction.hovered ? style.text : style.textDisabled;
         if (open) {
             list.AddTriangle({x, centerY - size * 0.35f}, {x + size, centerY - size * 0.35f},
-                             {x + size * 0.5f, centerY + size * 0.45f}, style.text);
+                             {x + size * 0.5f, centerY + size * 0.45f}, arrow);
         } else {
             list.AddTriangle({x + size * 0.15f, centerY - size * 0.5f}, {x + size * 0.15f, centerY + size * 0.5f},
-                             {x + size * 0.95f, centerY}, style.text);
+                             {x + size * 0.95f, centerY}, arrow);
         }
-        ui.ClippedText({min.x + style.framePadding.x * 0.5f + arrowWidth + 2.0f, min.y + style.framePadding.y},
-                       max.x - 2.0f, VisibleLabel(label), style.text);
+        float textX = min.x + style.framePadding.x * 0.5f + arrowWidth + 2.0f;
+        if (icon != Icon::None) {
+            const float iconSize = std::round(style.fontSize);
+            DrawIcon(list, icon, {textX, std::round(centerY - iconSize * 0.5f)}, iconSize);
+            textX += iconSize + style.framePadding.x * 0.75f;
+        }
+        ui.ClippedText({textX, std::round(centerY - ui.LineHeight() * 0.5f)}, max.x - removeSize - 2.0f, VisibleLabel(label),
+                       style.text);
+        if (remove) {
+            const Vector2f center{max.x - removeSize * 0.5f, centerY};
+            if (removeHovered) {
+                list.AddRoundedRect(center - Vector2f{removeSize * 0.36f, removeSize * 0.36f},
+                                    center + Vector2f{removeSize * 0.36f, removeSize * 0.36f},
+                                    LinearColor::FromSrgb8(196, 43, 28), style.frameRounding);
+            }
+            const float half = style.fontSize * 0.26f;
+            const LinearColor cross = removeHovered ? LinearColor::FromSrgb8(255, 255, 255) : style.textDisabled;
+            list.AddLine(center - Vector2f{half, half}, center + Vector2f{half, half}, cross, 1.5f);
+            list.AddLine(center + Vector2f{-half, half}, center + Vector2f{half, -half}, cross, 1.5f);
+        }
         return open;
     }
 }

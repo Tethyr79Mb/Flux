@@ -63,6 +63,7 @@ namespace FluxEditor {
         OpenInterface& open = *GetActive();
         const Input& input = engine.GetWindow().GetInput();
         // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec Scènes).
+        ui.SetNextPanelIcon(UI::Icon::Window);
         if (ui.BeginPanel("Interface", {8.0f, 8.0f + ui.GetMenuBarHeight()}, 300.0f)) {
             ui.Text(open.GetName() + (open.IsModified() ? " *" : ""));
             ui.Separator();
@@ -295,6 +296,7 @@ namespace FluxEditor {
         OpenInterface& open = *GetActive();
         // Position sans ancrage (l'éditeur l'ancre à droite, en onglet avec l'Inspecteur).
         const float width = 340.0f;
+        ui.SetNextPanelIcon(UI::Icon::Inspector);
         if (ui.BeginPanel("Propriétés", {static_cast<float>(engine.GetWindow().GetSize().x) - width - 8.0f, 8.0f + ui.GetMenuBarHeight()},
                           width)) {
             // L'écran d'aperçu : la résolution change la largeur (les ancres font le reste), pas l'interface.

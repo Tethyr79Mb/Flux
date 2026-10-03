@@ -133,6 +133,7 @@ namespace FluxEditor {
         // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Scènes »).
         // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (boutons grisés et inertes).
         const bool playing = engine.GetGameState() != GameState::Stopped;
+        ui.SetNextPanelIcon(UI::Icon::Place);
         if (ui.BeginPanel("Placer", {8.0f, 8.0f + ui.GetMenuBarHeight()}, 300.0f)) {
             if (playing) {
                 ui.TextDisabled("Mode Jouer : arrêter le jeu pour placer.");

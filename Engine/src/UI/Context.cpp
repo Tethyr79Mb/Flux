@@ -12,25 +12,28 @@ namespace Flux::UI {
 
     Style Style::Dark() {
         Style style;
-        style.text = C::FromSrgb8(230, 230, 232);
-        style.textDisabled = C::FromSrgb8(140, 142, 148);
-        style.panelBackground = C::FromSrgb8(30, 31, 34, 0.94f);
-        style.panelBorder = C::FromSrgb8(0, 0, 0, 0.6f);
-        style.titleBackground = C::FromSrgb8(22, 23, 26);
-        style.titleBackgroundActive = C::FromSrgb8(40, 64, 104);
-        style.frame = C::FromSrgb8(50, 52, 57);
-        style.frameHovered = C::FromSrgb8(64, 67, 74);
-        style.frameActive = C::FromSrgb8(78, 82, 90);
-        style.button = C::FromSrgb8(54, 80, 122);
-        style.buttonHovered = C::FromSrgb8(70, 102, 152);
-        style.buttonActive = C::FromSrgb8(44, 64, 98);
-        style.checkMark = C::FromSrgb8(110, 170, 250);
-        style.selection = C::FromSrgb8(60, 110, 190, 0.8f);
-        style.separator = C::FromSrgb8(68, 70, 76);
-        style.axisX = C::FromSrgb8(210, 70, 70);
-        style.axisY = C::FromSrgb8(100, 180, 70);
-        style.axisZ = C::FromSrgb8(70, 125, 220);
-        style.shadow = C::FromSrgb8(0, 0, 0, 0.45f);
+        style.text = C::FromSrgb8(226, 229, 235);
+        style.textDisabled = C::FromSrgb8(134, 140, 152);
+        style.windowBackground = C::FromSrgb8(17, 18, 22);
+        style.panelBackground = C::FromSrgb8(33, 35, 41, 0.96f);
+        style.panelBorder = C::FromSrgb8(0, 0, 0, 0.55f);
+        style.titleBackground = C::FromSrgb8(24, 26, 31);
+        style.titleBackgroundActive = C::FromSrgb8(38, 58, 92);
+        style.frame = C::FromSrgb8(22, 24, 29);
+        style.frameHovered = C::FromSrgb8(52, 56, 66);
+        style.frameActive = C::FromSrgb8(64, 69, 80);
+        style.button = C::FromSrgb8(52, 56, 66);
+        style.buttonHovered = C::FromSrgb8(64, 70, 82);
+        style.buttonActive = C::FromSrgb8(44, 48, 57);
+        style.header = C::FromSrgb8(44, 47, 55);
+        style.headerHovered = C::FromSrgb8(54, 58, 68);
+        style.checkMark = C::FromSrgb8(88, 156, 255);
+        style.selection = C::FromSrgb8(52, 108, 210, 0.85f);
+        style.separator = C::FromSrgb8(52, 55, 63);
+        style.axisX = C::FromSrgb8(226, 76, 76);
+        style.axisY = C::FromSrgb8(110, 196, 76);
+        style.axisZ = C::FromSrgb8(76, 136, 236);
+        style.shadow = C::FromSrgb8(0, 0, 0, 0.5f);
         return style;
     }
 
@@ -38,6 +41,7 @@ namespace Flux::UI {
         Style style;
         style.text = C::FromSrgb8(28, 30, 34);
         style.textDisabled = C::FromSrgb8(122, 126, 134);
+        style.windowBackground = C::FromSrgb8(200, 203, 210);
         style.panelBackground = C::FromSrgb8(238, 239, 242, 0.97f);
         style.panelBorder = C::FromSrgb8(0, 0, 0, 0.28f);
         style.titleBackground = C::FromSrgb8(214, 217, 223);
@@ -48,6 +52,8 @@ namespace Flux::UI {
         style.button = C::FromSrgb8(200, 215, 238);
         style.buttonHovered = C::FromSrgb8(178, 200, 234);
         style.buttonActive = C::FromSrgb8(152, 180, 224);
+        style.header = C::FromSrgb8(222, 225, 232);
+        style.headerHovered = C::FromSrgb8(210, 216, 228);
         style.checkMark = C::FromSrgb8(36, 110, 214);
         style.selection = C::FromSrgb8(120, 170, 240, 0.6f);
         style.separator = C::FromSrgb8(196, 199, 206);
@@ -62,6 +68,7 @@ namespace Flux::UI {
         Style style;
         style.text = C::FromSrgb8(222, 222, 222);
         style.textDisabled = C::FromSrgb8(130, 130, 130);
+        style.windowBackground = C::FromSrgb8(20, 20, 20);
         style.panelBackground = C::FromSrgb8(40, 40, 40, 0.96f);
         style.panelBorder = C::FromSrgb8(0, 0, 0, 0.7f);
         style.titleBackground = C::FromSrgb8(28, 28, 28);
@@ -72,6 +79,8 @@ namespace Flux::UI {
         style.button = C::FromSrgb8(64, 64, 64);
         style.buttonHovered = C::FromSrgb8(80, 80, 80);
         style.buttonActive = C::FromSrgb8(52, 52, 52);
+        style.header = C::FromSrgb8(52, 52, 52);
+        style.headerHovered = C::FromSrgb8(62, 62, 62);
         style.checkMark = C::FromSrgb8(242, 150, 48);
         style.selection = C::FromSrgb8(196, 108, 30, 0.75f);
         style.separator = C::FromSrgb8(60, 60, 60);
@@ -88,6 +97,7 @@ namespace Flux::UI {
         Style style;
         style.text = C::FromSrgb8(212, 236, 246);
         style.textDisabled = C::FromSrgb8(108, 138, 158);
+        style.windowBackground = C::FromSrgb8(4, 9, 18);
         style.panelBackground = C::FromSrgb8(8, 16, 30, 0.93f);
         style.panelBorder = C::FromSrgb8(40, 170, 220, 0.55f);
         style.titleBackground = C::FromSrgb8(10, 22, 40);
@@ -98,6 +108,8 @@ namespace Flux::UI {
         style.button = C::FromSrgb8(16, 72, 100);
         style.buttonHovered = C::FromSrgb8(22, 100, 136);
         style.buttonActive = C::FromSrgb8(12, 56, 80);
+        style.header = C::FromSrgb8(12, 34, 56);
+        style.headerHovered = C::FromSrgb8(18, 48, 76);
         style.checkMark = C::FromSrgb8(70, 220, 250);
         style.selection = C::FromSrgb8(30, 140, 190, 0.7f);
         style.separator = C::FromSrgb8(30, 70, 100);

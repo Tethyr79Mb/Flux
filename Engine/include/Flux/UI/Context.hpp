@@ -44,16 +44,17 @@ namespace Flux::UI {
     struct FLUX_API Style
     {
         float fontSize = 15.0f;
-        float panelPadding = 8.0f;           // marge intérieure des panneaux
-        Math::Vector2f framePadding{6.0f, 4.0f}; // autour du texte dans les boutons et les champs
-        float itemSpacing = 4.0f;            // entre deux widgets
+        float panelPadding = 10.0f;          // marge intérieure des panneaux
+        Math::Vector2f framePadding{7.0f, 5.0f}; // autour du texte dans les boutons et les champs
+        float itemSpacing = 5.0f;            // entre deux widgets
         float labelFraction = 0.38f;         // part de la largeur réservée aux libellés des champs
-        float panelRounding = 6.0f;          // rayon des coins des panneaux flottants et des menus (0 : droits)
-        float frameRounding = 3.0f;          // rayon des coins des boutons, champs et cases
+        float panelRounding = 6.0f;          // rayon des coins des panneaux (flottants, ancrés) et des menus (0 : droits)
+        float frameRounding = 4.0f;          // rayon des coins des boutons, champs et cases
         float shadowSize = 14.0f;            // flou de l'ombre (ou du halo) sous les panneaux flottants ; 0 : aucune
 
         Math::LinearColor text;
         Math::LinearColor textDisabled;
+        Math::LinearColor windowBackground; // derrière les panneaux ancrés : barre de menus, onglets, séparateurs
         Math::LinearColor panelBackground;
         Math::LinearColor panelBorder;
         Math::LinearColor titleBackground;
@@ -64,7 +65,9 @@ namespace Flux::UI {
         Math::LinearColor button;
         Math::LinearColor buttonHovered;
         Math::LinearColor buttonActive;
-        Math::LinearColor checkMark;
+        Math::LinearColor header;        // titres de section repliables (composants de l'inspecteur)
+        Math::LinearColor headerHovered;
+        Math::LinearColor checkMark;     // aussi la couleur d'accent : onglet affiché, case cochée
         Math::LinearColor selection;
         Math::LinearColor separator;
         Math::LinearColor axisX;
@@ -133,6 +136,8 @@ namespace Flux::UI {
         bool BeginPanel(std::string_view title, Math::Vector2f initialPosition, float width = 320.0f, float height = 0.0f,
                         bool* open = nullptr);
         void EndPanel();
+        // Pictogramme du prochain panneau (BeginPanel), devant son titre et dans son onglet.
+        void SetNextPanelIcon(Icon icon);
 
         // Widgets : seulement entre BeginPanel et EndPanel.
         void Text(std::string_view text);
@@ -145,6 +150,8 @@ namespace Flux::UI {
         void LabelText(std::string_view label, std::string_view text);
         // Vrai au clic (bouton relâché sur le widget).
         bool Button(std::string_view label);
+        // Bouton avec un pictogramme devant le libellé ; fullWidth : toute la largeur de la ligne, libellé centré.
+        bool Button(std::string_view label, Icon icon, bool fullWidth = false);
         // Onglet d'une rangée (les suivants avec SameLine) : l'appelant garde l'onglet affiché.
         //     if (ui.Tab("Graphiques", tab == 0)) tab = 0;
         // Vrai au clic.
@@ -191,8 +198,9 @@ namespace Flux::UI {
         bool Choice(std::string_view label, int& index, std::span<const std::string_view> options);
 
         // Titre de section repliable (un composant dans l'inspecteur). Retourne true si la section est dépliée ;
-        // pas de TreePop. defaultOpen ne sert qu'à la première apparition.
-        bool CollapsingHeader(std::string_view label, bool defaultOpen = true);
+        // pas de TreePop. defaultOpen ne sert qu'à la première apparition. icon : pictogramme devant le titre.
+        // remove : une croix au bout du titre, qui le met à true (retirer le composant).
+        bool CollapsingHeader(std::string_view label, bool defaultOpen = true, Icon icon = Icon::None, bool* remove = nullptr);
 
         // Barre de menus en haut de l'écran, au-dessus de tous les panneaux (qui ne peuvent plus passer dessous) :
         //     if (ui.BeginMainMenuBar()) {
@@ -213,11 +221,17 @@ namespace Flux::UI {
         // Un seul menu s'ouvre par clic : celui du premier widget décrit sous la souris (une vignette avant le fond
         // de sa zone).
         bool BeginContextMenu(std::string_view id = "contexte");
+        // Menu ouvert par le programme (un bouton « Ajouter ») sous le dernier widget décrit :
+        //     if (ui.Button("Ajouter")) ui.OpenPopupMenu("ajouter");
+        //     if (ui.BeginPopupMenu("ajouter")) { if (ui.MenuItem(...)) ...; ui.EndMenu(); }
+        void OpenPopupMenu(std::string_view id);
+        bool BeginPopupMenu(std::string_view id);
         // Vrai au clic, qui referme le menu. shortcut n'est qu'affiché : le raccourci reste à gérer par l'appelant.
-        bool MenuItem(std::string_view label, std::string_view shortcut = {}, bool enabled = true);
+        bool MenuItem(std::string_view label, std::string_view shortcut = {}, bool enabled = true, Icon icon = Icon::None);
         // Bouton dans la barre de menus (après les menus, ou à la position donnée par SetMenuBarCursor) ;
         // highlighted : dessiné comme enfoncé (mode en cours). Vrai au clic.
-        bool MenuBarButton(std::string_view label, bool highlighted = false);
+        // icon : pictogramme devant le libellé (libellé vide : le pictogramme seul).
+        bool MenuBarButton(std::string_view label, bool highlighted = false, Icon icon = Icon::None);
         // Position horizontale du prochain élément de la barre (pour centrer des boutons, par exemple).
         void SetMenuBarCursor(float x);
         // Taille d'un texte dans la police de l'interface.

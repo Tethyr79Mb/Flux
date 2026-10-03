@@ -130,6 +130,7 @@ namespace Flux::UI {
         panel.floatingWidth = width;
         panel.fixedHeight = height;
         panel.closable = open != nullptr;
+        panel.icon = std::exchange(ui.nextPanelIcon, Icon::None);
         panel.lastFrame = ui.frame;
         panel.chrome.Clear();
         panel.content.Clear();
@@ -243,6 +244,10 @@ namespace Flux::UI {
         return !panel.collapsed;
     }
 
+    void Context::SetNextPanelIcon(Icon icon) {
+        m_impl->nextPanelIcon = icon;
+    }
+
     void Context::BeginChild(std::string_view label, float width, float height) {
         Impl& ui = *m_impl;
         if (!ui.panel) {
@@ -270,7 +275,7 @@ namespace Flux::UI {
         }
         scroll.scrollY = std::clamp(scroll.scrollY, 0.0f, maxScroll);
 
-        ui.panel->content.AddRect(min, max, style.frame);
+        ui.panel->content.AddRoundedRect(min, max, style.frame, style.frameRounding);
         ui.childStack.push_back({ui.SaveLayout(), id, min, max, min.y + padding});
         ui.idStack.push_back(id);
         const float scrollbarWidth = maxScroll > 0.0f ? 8.0f : 0.0f;
@@ -355,10 +360,14 @@ namespace Flux::UI {
         const Vector2f max = min + Vector2f{panel.width, panel.height};
         DrawList& chrome = panel.chrome;
         if (panel.docked) {
-            // Opaque, et sans barre de titre : la barre d'onglets de la zone est dessinée par DockSpace.
+            // Opaque, et sans barre de titre : la barre d'onglets de la zone est dessinée par DockSpace. Coins du bas
+            // arrondis (le haut touche les onglets) : chaque zone est une carte sur le fond de la fenêtre.
             LinearColor background = style.panelBackground;
             background.a = 1.0f;
-            chrome.AddRect({min.x, viewTop}, max, background);
+            const float rounding = std::min(style.panelRounding, 0.5f * (max.y - viewTop));
+            chrome.SetClipRect({min.x, viewTop}, max);
+            chrome.AddRoundedRect({min.x, viewTop - rounding}, max, background, rounding);
+            chrome.ResetClipRect();
         } else {
             // Ombre (ou halo), fond et barre de titre aux coins arrondis : la barre garde les coins du haut seulement,
             // le bas de son rectangle arrondi est coupé par la découpe.
@@ -389,7 +398,12 @@ namespace Flux::UI {
                 chrome.AddTriangle({arrowX, centerY - arrow * 0.35f}, {arrowX + arrow, centerY - arrow * 0.35f},
                                    {arrowX + arrow * 0.5f, centerY + arrow * 0.45f}, style.text);
             }
-            const float titleX = arrowX + arrow + style.framePadding.x;
+            float titleX = arrowX + arrow + style.framePadding.x;
+            if (panel.icon != Icon::None) {
+                const float iconSize = std::round(style.fontSize);
+                DrawIcon(chrome, panel.icon, {titleX, std::round(centerY - iconSize * 0.5f)}, iconSize);
+                titleX += iconSize + style.framePadding.x * 0.75f;
+            }
             const float titleMaxX = panel.closable ? max.x - titleHeight : max.x - style.framePadding.x;
             chrome.SetClipRect({titleX, min.y}, {titleMaxX, viewTop});
             chrome.AddText({titleX, min.y + style.framePadding.y}, panel.title, style.fontSize, style.text);
