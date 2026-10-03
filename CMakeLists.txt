@@ -21,6 +21,10 @@ endif()
 if(MSVC)
     # Sources en UTF-8 (accents des chaînes et des commentaires) : sans ça, MSVC les lit dans la page de code de Windows.
     # /Zc:__cplusplus : __cplusplus donne la vraie version du standard (MSVC reste sinon à 199711L).
+    # Avec /utf-8, un MSVC en français écrit ses « Remarque : inclusion du fichier : » (espaces insécables) autrement
+    # que lors de la détection par CMake : Ninja ne reconnaît plus ces lignes et ne suit plus les en-têtes (un .cpp
+    # n'était pas recompilé quand un .hpp changeait). CMakePresets.json fait donc parler MSVC en anglais (VSLANG=1033)
+    # et donne le préfixe anglais.
     add_compile_options(/utf-8 /Zc:__cplusplus)
 endif()
 
