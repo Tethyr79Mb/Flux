@@ -10,10 +10,8 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "cl.exe",
         "CMAKE_CXX_COMPILER": "cl.exe",
-        "FETCHCONTENT_BASE_DIR": "${sourceDir}/out/deps/${presetName}",
-        "CMAKE_CL_SHOWINCLUDES_PREFIX": "Note: including file:"
+        "FETCHCONTENT_BASE_DIR": "${sourceDir}/out/deps/${presetName}"
       },
-      "environment": { "VSLANG": "1033" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "vendor": {
         "microsoft.com/VisualStudioSettings/CMake/1.0": { "hostOS": [ "Windows" ] }
