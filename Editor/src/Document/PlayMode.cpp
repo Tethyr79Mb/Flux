@@ -1,6 +1,7 @@
 #include "Document/PlayMode.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
@@ -14,22 +15,20 @@ namespace FluxEditor {
     using namespace Flux;
 
     void PlayMode::DrawToolbar(UI::Context& ui, Engine& engine) {
-        // Au milieu de la barre de menus : Jouer (ou Arrêter pendant le jeu) et Pause, avec leurs pictogrammes.
-        const char* play = m_playing ? "Arrêter (F5)" : "Jouer (F5)";
-        const char* pause = "Pause (F6)";
+        // Au milieu de la barre de menus : Jouer (ou Arrêter pendant le jeu) et Pause, en pictogrammes seuls ; leur nom
+        // et leur raccourci sont dans l'info-bulle.
         const UI::Style& style = ui.GetStyle();
-        const float icon = std::round(style.fontSize * 0.9f) + 0.75f * style.framePadding.x;
-        const float padding = 2.0f * style.framePadding.x;
-        const float width = ui.MeasureText(play).x + ui.MeasureText(pause).x + 2.0f * (padding + icon) + style.itemSpacing;
+        const float button = std::round(style.fontSize * 0.9f) + 2.0f * style.framePadding.x;
+        const float width = 2.0f * button + style.itemSpacing;
         ui.SetMenuBarCursor(std::round((static_cast<float>(engine.GetWindow().GetSize().x) - width) * 0.5f));
-        // Libellés à identifiant fixe : le bouton reste le même widget quand son texte change.
-        if (ui.MenuBarButton(std::string(play) + "##jouer", m_playing, m_playing ? UI::Icon::Stop : UI::Icon::Play)) {
+        if (ui.MenuBarButton("##jouer", m_playing, m_playing ? UI::Icon::Stop : UI::Icon::Play)) {
             m_playing ? Stop(engine) : Start(engine);
         }
-        if (ui.MenuBarButton(std::string(pause) + "##pause", engine.GetGameState() == GameState::Paused, UI::Icon::Pause)
-            && m_playing) {
+        ui.SetItemTooltip(m_playing ? "Arrêter le jeu (F5)" : "Jouer la scène (F5)");
+        if (ui.MenuBarButton("##pause", engine.GetGameState() == GameState::Paused, UI::Icon::Pause) && m_playing) {
             TogglePause(engine);
         }
+        ui.SetItemTooltip(m_playing ? "Pause (F6)" : "Pause (F6), pendant le jeu");
     }
 
     void PlayMode::HandleShortcuts(Engine& engine) {
@@ -54,6 +53,7 @@ namespace FluxEditor {
         m_savedCamera = engine.GetCamera();
         m_playing = true;
         engine.SetGameState(GameState::Running);
+        Log::Info("jeu lancé");
     }
 
     void PlayMode::Stop(Engine& engine) {
@@ -69,6 +69,7 @@ namespace FluxEditor {
         }
         engine.GetCamera() = m_savedCamera;
         m_savedScene.clear();
+        Log::Info("jeu arrêté : retour à la scène éditée");
     }
 
     void PlayMode::TogglePause(Engine& engine) {

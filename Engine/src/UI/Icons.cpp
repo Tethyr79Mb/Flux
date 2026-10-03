@@ -276,6 +276,42 @@ namespace Flux::UI {
                 pen.Quad({0.18f, 0.42f}, {0.98f, 0.42f}, {0.88f, 0.84f}, {0.06f, 0.84f}, color);
                 break;
             }
+            case Icon::Search: {
+                const LinearColor color = LinearColor::FromSrgb8(150, 158, 172);
+                list.AddCircleOutline(pen.At(0.42f, 0.42f), 0.28f * size, color, std::max(1.5f, 0.11f * size));
+                pen.Line(0.62f, 0.62f, 0.9f, 0.9f, color, 0.14f);
+                break;
+            }
+            case Icon::Console: {
+                const LinearColor frame = LinearColor::FromSrgb8(60, 66, 80);
+                const LinearColor prompt = LinearColor::FromSrgb8(110, 210, 130);
+                list.AddRoundedRect(pen.At(0.04f, 0.12f), pen.At(0.96f, 0.88f), frame, 0.1f * size);
+                pen.Line(0.2f, 0.34f, 0.38f, 0.5f, prompt, 0.09f);
+                pen.Line(0.38f, 0.5f, 0.2f, 0.66f, prompt, 0.09f);
+                pen.Rect(0.46f, 0.62f, 0.76f, 0.7f, prompt);
+                break;
+            }
+            case Icon::Info: {
+                list.AddCircle(pen.At(0.5f, 0.5f), 0.44f * size, LinearColor::FromSrgb8(70, 140, 230));
+                const LinearColor white = LinearColor::FromSrgb8(240, 244, 250);
+                pen.Rect(0.44f, 0.42f, 0.56f, 0.76f, white);
+                pen.Rect(0.44f, 0.22f, 0.56f, 0.33f, white);
+                break;
+            }
+            case Icon::Warning: {
+                pen.Triangle({0.5f, 0.06f}, {0.96f, 0.9f}, {0.04f, 0.9f}, LinearColor::FromSrgb8(240, 186, 50));
+                const LinearColor dark = LinearColor::FromSrgb8(40, 32, 10);
+                pen.Rect(0.44f, 0.34f, 0.56f, 0.64f, dark);
+                pen.Rect(0.44f, 0.71f, 0.56f, 0.81f, dark);
+                break;
+            }
+            case Icon::Error: {
+                list.AddCircle(pen.At(0.5f, 0.5f), 0.44f * size, LinearColor::FromSrgb8(222, 70, 64));
+                const LinearColor white = LinearColor::FromSrgb8(250, 240, 240);
+                pen.Line(0.32f, 0.32f, 0.68f, 0.68f, white, 0.12f);
+                pen.Line(0.68f, 0.32f, 0.32f, 0.68f, white, 0.12f);
+                break;
+            }
         }
     }
 }

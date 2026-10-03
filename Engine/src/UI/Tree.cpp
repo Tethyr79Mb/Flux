@@ -21,6 +21,19 @@ namespace Flux::UI {
         const Vector2f min = ui.ItemRect({rowWidth, rowHeight}, 1.0f);
         const Vector2f max = min + Vector2f{rowWidth, rowHeight};
         const float arrowWidth = style.fontSize;
+        // Ligne hors de la partie visible (longue liste qui défile) : sa place est réservée, rien d'autre. Ni survol
+        // ni clic n'y sont possibles ; seul un glissement commencé sur elle reste en cours.
+        if (max.y <= ui.clipMin.y || min.y >= ui.clipMax.y) {
+            ui.lastBehaviorId = id;
+            ui.lastBehaviorMin = min;
+            ui.lastBehaviorMax = max;
+            ui.activeSeen |= ui.activeId == id;
+            result.open = open && !leaf;
+            if (result.open) {
+                ui.indent += arrowWidth;
+            }
+            return result;
+        }
         const Impl::Interaction interaction = ui.Behavior(id, min, max);
         if (interaction.clicked) {
             if (!leaf && ui.mouse.x < min.x + arrowWidth) {

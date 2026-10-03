@@ -1,13 +1,13 @@
 #include "Renderer/SkyRenderer.hpp"
 
 #include "Flux/Assets/Image.hpp"
+#include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <cstdio>
 #include <numbers>
 
 namespace Flux {
@@ -126,13 +126,13 @@ namespace Flux {
         Panorama& panorama = m_panoramas[path];
         auto image = LoadImageFile(path);
         if (!image) {
-            std::fprintf(stderr, "Flux : ciel : %s\n", image.error().c_str());
+            Log::Warning("ciel : {}", image.error());
             return panorama;
         }
         const RHI::Extent extent{static_cast<std::uint32_t>(image->size.x), static_cast<std::uint32_t>(image->size.y)};
         auto texture = m_device.CreateTexture(RHI::Format::RGBA8Srgb, extent, image->rgba, true);
         if (!texture) {
-            std::fprintf(stderr, "Flux : ciel : %s\n", texture.error().c_str());
+            Log::Error("ciel : {}", texture.error());
             return panorama;
         }
         panorama.texture = std::move(*texture);
@@ -171,7 +171,7 @@ namespace Flux {
         }
         auto texture = m_device.CreateCubeTexture(RHI::Format::RGBA8Srgb, m_pixelsSize, m_pixels, true);
         if (!texture) {
-            std::fprintf(stderr, "Flux : ciel : %s\n", texture.error().c_str());
+            Log::Error("ciel : {}", texture.error());
             return; // l'ancienne reste
         }
         m_environments[frameIndex] = std::move(*texture);

@@ -2,6 +2,7 @@
 
 #include "Document/SceneDocument.hpp"
 #include "Interface/InterfaceEditor.hpp"
+#include "Search.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Interface/Interface.hpp>
@@ -172,10 +173,14 @@ namespace FluxEditor {
                     m_folder = m_folder.parent_path();
                     m_selected.clear();
                 }
+                ui.SetItemTooltip("Dossier parent");
                 ui.EndDisabled();
                 ui.SameLine();
                 const std::filesystem::path relative = m_folder.lexically_relative(m_root);
                 ui.TextDisabled(relative.empty() || relative == "." ? "assets" : "assets/" + Platform::ToGenericUtf8(relative));
+                ui.SameLine();
+                ui.SearchField("recherche", m_search, "Rechercher dans les assets...");
+                ui.SetItemTooltip("Cherche dans tous les dossiers, sans tenir compte des majuscules ni des accents");
 
                 const float treeWidth = std::clamp(ui.GetAvailableWidth() * 0.3f, 120.0f, 260.0f);
                 ui.BeginChild("dossiers", treeWidth, 0.0f);
@@ -183,7 +188,21 @@ namespace FluxEditor {
                 ui.EndChild();
                 ui.SameLine();
                 ui.BeginChild("fichiers", 0.0f, 0.0f);
-                DrawTiles(ui, engine, document, *folder, m_folder, false);
+                if (m_search.empty()) {
+                    DrawTiles(ui, engine, document, *folder, m_folder, false);
+                } else {
+                    // Résultats de tous les dossiers ; ouvrir un dossier trouvé y mène et efface la recherche.
+                    const std::filesystem::path shown = m_folder;
+                    const Entry& results = SearchResults();
+                    if (results.children.empty()) {
+                        ui.TextDisabled("Aucun fichier ni dossier ne s'appelle ainsi.");
+                    } else {
+                        DrawTiles(ui, engine, document, results, m_folder, false);
+                    }
+                    if (m_folder != shown) {
+                        m_search.clear();
+                    }
+                }
                 ui.EndChild();
                 // Clic droit dans le fond (hors vignette) : actions sur le dossier affiché.
                 if (ui.BeginContextMenu("fond")) {
@@ -224,7 +243,30 @@ namespace FluxEditor {
         DrawRenameWindow(engine, document);
     }
 
+    const ContentBrowser::Entry& ContentBrowser::SearchResults() {
+        if (m_resultsFor == m_search && m_resultsScan == m_scanCount) {
+            return m_results; // même recherche sur les mêmes fichiers : rien à refaire
+        }
+        m_resultsFor = m_search;
+        m_resultsScan = m_scanCount;
+        m_results = {m_root, "résultats", true, {}};
+        const SearchQuery query(m_search);
+        const auto collect = [&](const auto& self, const Entry& folder) -> void {
+            for (const Entry& entry : folder.children) {
+                if (query.Matches(entry.name)) {
+                    m_results.children.push_back({entry.path, entry.name, entry.directory, {}});
+                }
+                if (entry.directory) {
+                    self(self, entry);
+                }
+            }
+        };
+        collect(collect, m_tree);
+        return m_results;
+    }
+
     void ContentBrowser::Scan(const std::filesystem::path& root) {
+        ++m_scanCount;
         // Récursif ; erreurs ignorées (fichier supprimé pendant la lecture, droits) : l'entrée manque, c'est tout.
         // Un seul parcours pour deux arbres : les assets sans les scènes (un dossier qui ne contenait que des scènes
         // n'y apparaît pas), et les scènes avec les dossiers qui en contiennent ou qui sont vides (tout juste créés).

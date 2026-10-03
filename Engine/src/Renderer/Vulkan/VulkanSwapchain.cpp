@@ -1,5 +1,6 @@
 #include "Renderer/Vulkan/VulkanSwapchain.hpp"
 
+#include "Flux/Core/Log.hpp"
 #include "Renderer/Vulkan/VulkanDevice.hpp"
 
 namespace Flux::Vk {
@@ -29,7 +30,7 @@ namespace Flux::Vk {
             .set_old_swapchain(m_swapchain)
             .build();
         if (!swapchain) {
-            std::fprintf(stderr, "Vulkan : création de la swapchain : %s\n", swapchain.error().message().c_str());
+            Log::Error("Vulkan : création de la swapchain : {}", swapchain.error().message());
             return false;
         }
 

@@ -83,6 +83,7 @@ namespace FluxEditor {
         void DrawScenes(Flux::Engine& engine, Flux::Scene& scene, SceneDocument& document, ContentBrowser& files);
         void DrawObjects(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene);
         void DrawNode(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene, Flux::Entity entity);
+        void DrawSearchResults(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
         bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
@@ -97,6 +98,7 @@ namespace FluxEditor {
         Action m_pendingAction = Action::None;
         std::string m_pendingComponent; // clé du composant à ajouter ou retirer
         HierarchyDrag m_hierarchyDrag;
+        std::string m_search; // recherche d'objets : vide, l'arbre ; sinon la liste des objets trouvés
         HierarchyDrag m_pendingMove;       // dépôt à appliquer (Action::Move)
         Flux::Math::Vector2f m_mouse;      // souris de la frame, pour le glisser-déposer
         // Ancêtres à déplier une fois, pour montrer une entité sélectionnée ou créée hors de l'arbre.

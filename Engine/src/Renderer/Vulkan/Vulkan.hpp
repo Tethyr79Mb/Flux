@@ -5,7 +5,7 @@
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
-#include <cstdio>
+#include "Flux/Core/Log.hpp"
 
 namespace Flux::Vk {
     // Journalise l'échec d'un appel Vulkan ; retourne true si le résultat est un succès.
@@ -13,7 +13,7 @@ namespace Flux::Vk {
         if (result >= VK_SUCCESS) {
             return true;
         }
-        std::fprintf(stderr, "Vulkan : %s a échoué (VkResult %d)\n", call, static_cast<int>(result));
+        Log::Error("Vulkan : {} a échoué (VkResult {})", call, static_cast<int>(result));
         return false;
     }
 }

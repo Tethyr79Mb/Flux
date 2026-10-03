@@ -223,6 +223,8 @@ namespace Flux::UI {
 
         ui.activeSeen = false;
         ui.editingSeen = false;
+        ui.tooltipSeen = false;
+        ui.tooltipText.clear();
         ui.idStack.assign(1, RootId);
         ui.panel = nullptr;
         ui.panelId = 0;
@@ -246,6 +248,11 @@ namespace Flux::UI {
         ui.openMenuSeen = false;
         ui.menuBarHeight = ui.menuBarDrawn ? ui.FrameHeight() : 0.0f;
         ui.menuBarDrawn = false;
+        ui.statusBarHeight = ui.statusBarDrawn ? ui.FrameHeight() : 0.0f;
+        ui.statusBarDrawn = false;
+        if (!ui.tooltipSeen) {
+            ui.tooltipId = 0; // la souris a quitté le widget : le délai recommence au prochain
+        }
 
         // Ancrage (onglets, séparateurs), panneaux ancrés, panneaux flottants, cibles de dépôt, puis menus.
         if (ui.dockFrame == ui.frame) {
@@ -270,6 +277,34 @@ namespace Flux::UI {
         }
         ui.previousOverlays = std::move(ui.overlays);
         ui.overlays.clear();
+
+        // Info-bulle, par-dessus tout : sous la souris, gardée dans l'écran.
+        if (!ui.tooltipText.empty()) {
+            const Style& style = ui.style;
+            DrawList& list = ui.tooltip;
+            list.Clear();
+            const Vector2f padding{style.framePadding.x, style.framePadding.y};
+            const Vector2f size = list.MeasureText(ui.tooltipText, style.fontSize) + padding * 2.0f;
+            Vector2f min = ui.mouse + Vector2f{12.0f, 20.0f};
+            if (min.x + size.x > ui.screenSize.x) {
+                min.x = std::max(0.0f, ui.screenSize.x - size.x);
+            }
+            if (min.y + size.y > ui.screenSize.y) {
+                min.y = std::max(0.0f, ui.mouse.y - size.y - 4.0f); // au-dessus de la souris en bas de l'écran
+            }
+            min = {std::round(min.x), std::round(min.y)};
+            const Vector2f max = min + size;
+            const float rounding = std::min(style.panelRounding, 4.0f);
+            if (style.shadowSize > 0.0f) {
+                list.AddShadow(min + Vector2f{0.0f, 2.0f}, max + Vector2f{0.0f, 2.0f}, style.shadow, rounding,
+                               style.shadowSize * 0.5f);
+            }
+            const LinearColor background = style.panelBackground;
+            list.AddRoundedRect(min, max, {background.r, background.g, background.b, 1.0f}, rounding);
+            list.AddRoundedRectOutline(min, max, style.panelBorder, rounding);
+            list.AddText(min + padding, ui.tooltipText, style.fontSize, style.text);
+            output.Append(list);
+        }
     }
 
     bool Context::WantsMouse() const {

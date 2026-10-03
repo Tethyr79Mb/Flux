@@ -306,6 +306,9 @@ namespace Flux::UI {
         // Barre de défilement (indicateur) ; la molette fait défiler.
         const float viewHeight = child.max.y - child.min.y - 8.0f;
         const float maxScroll = std::max(0.0f, scroll.contentHeight - viewHeight);
+        if (std::exchange(scroll.toEnd, false)) {
+            scroll.scrollY = maxScroll; // pris en compte dès la frame suivante (le contenu est déjà placé)
+        }
         if (maxScroll > 0.0f) {
             const float trackTop = child.min.y + 3.0f;
             const float trackHeight = child.max.y - child.min.y - 6.0f;
@@ -317,6 +320,13 @@ namespace Flux::UI {
         // La zone entière est le dernier widget : SameLine, clic droit dans son fond.
         ui.lastItemMin = child.min;
         ui.lastItemMax = child.max;
+    }
+
+    void Context::SetScrollToEnd() {
+        Impl& ui = *m_impl;
+        if (!ui.childStack.empty()) {
+            ui.childScrolls[ui.childStack.back().id].toEnd = true;
+        }
     }
 
     float Context::GetAvailableWidth() const {

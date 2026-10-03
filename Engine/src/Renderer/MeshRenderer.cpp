@@ -1,5 +1,6 @@
 #include "Renderer/MeshRenderer.hpp"
 
+#include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
@@ -7,7 +8,6 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
-#include <cstdio>
 #include <numbers>
 #include <span>
 
@@ -269,7 +269,7 @@ namespace Flux {
         }
         auto grown = m_device.CreateBuffer({std::bit_ceil(size), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
         if (!grown) {
-            std::fprintf(stderr, "Flux : %s\n", grown.error().c_str());
+            Log::Error("{}", grown.error());
             return false;
         }
         buffer = std::move(*grown);

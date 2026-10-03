@@ -6,6 +6,7 @@
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
+#include <Flux/Scene/Scene.hpp>
 
 #include <Flux/UI/Context.hpp>
 
@@ -15,6 +16,7 @@
 #include "EditorLayout.hpp"
 #include "Interface/InterfaceEditor.hpp"
 #include "Panels/CameraPanel.hpp"
+#include "Panels/ConsolePanel.hpp"
 #include "Panels/ContentBrowser.hpp"
 #include "Panels/PlacePanel.hpp"
 #include "Panels/SceneEditor.hpp"
@@ -74,6 +76,20 @@ namespace {
         ui.EndMenu();
     }
 
+    // Droite de la barre d'état : mode, scène ouverte, nombre d'objets, sélection.
+    std::string StatusDetails(Flux::Engine& engine, const FluxEditor::SceneDocument& document,
+                              const FluxEditor::SceneEditor& sceneEditor, bool playing) {
+        Flux::Scene& scene = engine.GetScene();
+        const std::filesystem::path& path = document.GetPath();
+        std::string details = playing ? "En jeu   ·   " : "";
+        details += path.empty() ? std::string("Nouvelle scène") : Flux::Platform::ToUtf8(path.filename());
+        details += "   ·   " + std::to_string(scene.GetEntityCount()) + " objets";
+        if (const Flux::Entity selected = scene.FindById(sceneEditor.GetSelection()); selected != Flux::NullEntity) {
+            details += "   ·   Sélection : " + scene.Get<Flux::NameComponent>(selected).name;
+        }
+        return details;
+    }
+
     // Ctrl+Z annule, Ctrl+Y ou Ctrl+Maj+Z rétablit (par la lettre de la touche : Z reste Z en AZERTY).
     void HandleEditShortcuts(Flux::Engine& engine, FluxEditor::UndoHistory& history, FluxEditor::SceneEditor& sceneEditor) {
         const Flux::Input& input = engine.GetWindow().GetInput();
@@ -103,6 +119,7 @@ int main(int argc, char** argv) {
     FluxEditor::UndoHistory history;
     FluxEditor::PlacePanel placePanel;
     FluxEditor::InterfaceEditor interfaceEditor;
+    FluxEditor::ConsolePanel console;
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
                           .drawScreenUi = false}); // la vue dessine l'interface de la scène
@@ -144,6 +161,7 @@ int main(int argc, char** argv) {
             playMode.DrawToolbar(ui, e);
             ui.EndMainMenuBar();
         }
+        console.DrawStatusBar(e, StatusDetails(e, document, sceneEditor, playMode.IsPlaying()));
         document.SetLocked(playMode.IsPlaying());
         if (document.TakeReplaced()) {
             history.Clear(); // l'historique parlait de l'ancienne scène
@@ -168,6 +186,7 @@ int main(int argc, char** argv) {
         interfaceEditor.Update(e, view);
         contentBrowser.Update(e, document, deltaSeconds);
         FluxEditor::DrawCameraPanel(e);
+        console.Update(e);
         settings.Draw(e);
 
         if (sceneEditor.TakeModified()) {

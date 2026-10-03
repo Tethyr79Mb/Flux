@@ -61,11 +61,47 @@ namespace Flux::UI {
         ui.clipMin = {0.0f, 0.0f};
         ui.clipMax = {width, height};
         ui.RestorePanelClip();
+        ui.barTop = 0.0f;
         ui.menuBarNextX = ui.contentMin.x;
         ui.menuBarDrawn = true;
         ui.menuBarHeight = height; // dès cette frame pour les panneaux décrits après la barre
         bar.chrome.AddRect({0.0f, 0.0f}, {width, height}, ui.style.windowBackground);
         return true;
+    }
+
+    bool Context::BeginStatusBar() {
+        Impl& ui = *m_impl;
+        if (ui.panel) {
+            return false; // hors de tout panneau
+        }
+        const float height = ui.FrameHeight();
+        const float width = ui.screenSize.x;
+        const float top = ui.screenSize.y - height;
+        Impl::Panel& bar = ui.BeginOverlay(Hash(RootId, "#barre d'état"));
+        bar.position = {0.0f, top};
+        bar.width = width;
+        bar.height = height;
+        ui.contentMin = {ui.style.panelPadding * 0.5f, top};
+        ui.contentMaxX = width;
+        ui.cursorY = top;
+        ui.clipMin = {0.0f, top};
+        ui.clipMax = {width, top + height};
+        ui.RestorePanelClip();
+        ui.barTop = top;
+        ui.menuBarNextX = ui.contentMin.x;
+        ui.statusBarDrawn = true;
+        ui.statusBarHeight = height; // dès cette frame pour les panneaux décrits après la barre
+        bar.chrome.AddRect({0.0f, top}, {width, top + height}, ui.style.windowBackground);
+        bar.chrome.AddRect({0.0f, top}, {width, top + 1.0f}, ui.style.separator);
+        return true;
+    }
+
+    void Context::EndStatusBar() {
+        EndMainMenuBar(); // même fin : la barre cesse d'être le panneau en cours
+    }
+
+    float Context::GetStatusBarHeight() const {
+        return m_impl->statusBarHeight;
     }
 
     void Context::EndMainMenuBar() {
@@ -88,7 +124,7 @@ namespace Flux::UI {
         const WidgetId id = ui.GetId(label);
         const std::string_view visible = VisibleLabel(label);
         const Vector2f size{ui.MeasureText(visible).x + 2.0f * style.framePadding.x, ui.FrameHeight()};
-        const Vector2f min{ui.menuBarNextX, 0.0f};
+        const Vector2f min{ui.menuBarNextX, ui.barTop};
         const Vector2f max = min + size;
         ui.menuBarNextX = max.x;
 
@@ -230,7 +266,7 @@ namespace Flux::UI {
         const float textWidth = visible.empty() ? 0.0f : ui.MeasureText(visible).x;
         const float gap = iconSize > 0.0f && textWidth > 0.0f ? style.framePadding.x * 0.75f : 0.0f;
         const Vector2f size{iconSize + gap + textWidth + 2.0f * style.framePadding.x, ui.FrameHeight()};
-        const Vector2f min{ui.menuBarNextX, 0.0f};
+        const Vector2f min{ui.menuBarNextX, ui.barTop};
         const Vector2f max = min + size;
         ui.menuBarNextX = max.x + style.itemSpacing;
         const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
@@ -245,6 +281,31 @@ namespace Flux::UI {
         }
         ui.panel->content.AddText(min + style.framePadding + Vector2f{iconSize + gap, 0.0f}, visible, style.fontSize, style.text);
         return interaction.clicked;
+    }
+
+    void Context::MenuBarText(std::string_view text, Icon icon, bool disabled) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
+            return;
+        }
+        const Style& style = ui.style;
+        const float iconSize = icon != Icon::None ? std::round(style.fontSize * 0.9f) : 0.0f;
+        const float gap = iconSize > 0.0f && !text.empty() ? style.framePadding.x * 0.75f : 0.0f;
+        const float width = iconSize + gap + ui.MeasureText(text).x + 2.0f * style.framePadding.x;
+        const Vector2f min{ui.menuBarNextX, ui.barTop};
+        const Vector2f max = min + Vector2f{width, ui.FrameHeight()};
+        ui.menuBarNextX = max.x + style.itemSpacing;
+        ui.lastItemMin = min;
+        ui.lastItemMax = max;
+        ui.lastBehaviorId = 0; // pas un widget interactif : son info-bulle se reconnaît à son rectangle
+        ui.lastBehaviorMin = min;
+        ui.lastBehaviorMax = max;
+        if (iconSize > 0.0f) {
+            DrawIcon(ui.panel->content, icon, {min.x + style.framePadding.x, std::round(0.5f * (min.y + max.y - iconSize))},
+                     iconSize);
+        }
+        ui.ClippedText(min + style.framePadding + Vector2f{iconSize + gap, 0.0f}, max.x, text,
+                       disabled ? style.textDisabled : style.text);
     }
 
     void Context::SetMenuBarCursor(float x) {

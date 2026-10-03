@@ -1,8 +1,8 @@
 #include "Interface/InterfaceLibrary.hpp"
 
+#include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
-#include <cstdio>
 #include <system_error>
 
 namespace Flux {
@@ -25,7 +25,7 @@ namespace Flux {
         const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
         if (error) {
             if (entry.valid || inserted) {
-                std::fprintf(stderr, "Flux : interface introuvable : %s\n", std::string(file).c_str());
+                Log::Warning("interface introuvable : {}", file);
             }
             entry.valid = false;
             entry.time = {};
@@ -41,7 +41,7 @@ namespace Flux {
             entry.version = m_nextVersion++;
         } else {
             // Fichier en cours d'écriture ou abîmé : on garde la version d'avant s'il y en a une.
-            std::fprintf(stderr, "Flux : interface %s\n", loaded.error().c_str());
+            Log::Error("interface {}", loaded.error());
         }
         return entry;
     }

@@ -1,12 +1,12 @@
 #include "Renderer/OverlayRenderer.hpp"
 
 #include "Flux/Assets/Image.hpp"
+#include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
 #include <bit>
 #include <cstddef>
-#include <cstdio>
 
 namespace Flux {
     namespace {
@@ -101,7 +101,7 @@ namespace Flux {
     void OverlayRenderer::Reload(const std::filesystem::path& path, Texture& texture) {
         auto pixels = LoadImageFile(path);
         if (!pixels) {
-            std::fprintf(stderr, "Flux : image %s\n", pixels.error().c_str());
+            Log::Warning("image {}", pixels.error());
             return;
         }
         Store(*pixels, texture, Platform::ToUtf8(path));
@@ -114,13 +114,12 @@ namespace Flux {
                                             {static_cast<std::uint32_t>(pixels.size.x), static_cast<std::uint32_t>(pixels.size.y)},
                                             pixels.rgba);
         if (!image) {
-            std::fprintf(stderr, "Flux : image %.*s : %s\n", static_cast<int>(name.size()), name.data(), image.error().c_str());
+            Log::Error("image {} : {}", name, image.error());
             return;
         }
         if (texture.id == UI::FontTexture) {
             if (m_groups.size() > MaxTextures) {
-                std::fprintf(stderr, "Flux : plus de %u images chargées, %.*s ignorée\n", MaxTextures, static_cast<int>(name.size()),
-                             name.data());
+                Log::Warning("plus de {} images chargées, {} ignorée", MaxTextures, name);
                 return;
             }
             std::unique_ptr<RHI::BindGroup> group = m_device.CreateBindGroup(*m_layout);
@@ -185,7 +184,7 @@ namespace Flux {
             auto grown = m_device.CreateBuffer({std::bit_ceil(std::max(bytes, MinBufferSize)), RHI::BufferUsage::Vertex,
                                                 RHI::MemoryType::Upload});
             if (!grown) {
-                std::fprintf(stderr, "Flux : %s\n", grown.error().c_str());
+                Log::Error("{}", grown.error());
                 return false;
             }
             buffer = std::move(*grown);

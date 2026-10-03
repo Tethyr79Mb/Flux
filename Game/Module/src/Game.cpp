@@ -1,5 +1,6 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
@@ -7,7 +8,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 
 // Démo : composants et systèmes du jeu. La scène de démarrage est choisie par le projet (Game.fluxproject).
 namespace {
@@ -87,7 +87,7 @@ FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
         .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
     engine.SetGameUpdate(Update);
     // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
-    engine.RegisterInterfaceFunction("Exemple", [](Engine&) { std::printf("Bouton d'interface : fonction Exemple appelée\n"); });
+    engine.RegisterInterfaceFunction("Exemple", [](Engine&) { Log::Info("bouton d'interface : fonction Exemple appelée"); });
 }
 
 FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {

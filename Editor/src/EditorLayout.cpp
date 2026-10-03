@@ -1,12 +1,12 @@
 #include "EditorLayout.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
-#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -30,7 +30,7 @@ namespace FluxEditor {
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << engine.GetUi().SaveDockLayout();
         if (!file) {
-            std::fprintf(stderr, "Disposition de l'éditeur non enregistrée\n");
+            Log::Warning("disposition de l'éditeur non enregistrée");
         }
     }
 
@@ -50,12 +50,12 @@ namespace FluxEditor {
         }
         const Math::Vector2i size = engine.GetWindow().GetSize();
         const UI::Rect view = ui.DockSpace({0.0f, ui.GetMenuBarHeight()},
-                                           {static_cast<float>(size.x), static_cast<float>(size.y)});
+                                           {static_cast<float>(size.x), static_cast<float>(size.y) - ui.GetStatusBarHeight()});
         engine.GetRenderer().SetSceneViewport(view.min, view.max);
         return view;
     }
 
-    // Placer et Scènes en onglets à gauche, inspecteur à droite, contenu et caméra en bas, la vue 3D au centre.
+    // Placer et Scènes en onglets à gauche, inspecteur à droite, contenu, caméra et console en bas, la vue 3D au centre.
     // Les panneaux du jeu (« Démo ») et les Paramètres flottent dans la vue.
     void EditorLayout::BuildDefault(UI::Context& ui) {
         const UI::DockId root = ui.ClearDockLayout();
@@ -67,6 +67,7 @@ namespace FluxEditor {
         ui.DockPanel("Inspecteur", right);
         ui.DockPanel("Contenu", bottom);
         ui.DockPanel("Caméra", bottom);
+        ui.DockPanel("Console", bottom);
     }
 
     std::filesystem::path EditorLayout::FilePath() {

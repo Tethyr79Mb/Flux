@@ -248,6 +248,85 @@ namespace Flux::UI {
         return ui.TextField(id, fieldMin, {buttonMin.x - style.itemSpacing, fieldMax.y}, value);
     }
 
+    bool Context::SearchField(std::string_view label, std::string& value, std::string_view hint, float width) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const WidgetId id = ui.GetId(label);
+        const float height = ui.FrameHeight();
+        const Vector2f size{width > 0.0f ? width : std::max(height * 3.0f, GetAvailableWidth()), height};
+        const Vector2f min = ui.ItemRect(size);
+        const Vector2f max = min + size;
+        // De gauche à droite : la loupe, le texte, la croix (seulement s'il y a du texte).
+        const float iconSize = std::round(style.fontSize * 0.9f);
+        const Vector2f textMin{min.x + style.framePadding.x * 0.5f + iconSize, min.y};
+        const Vector2f clearMin{max.x - height, min.y};
+        const Vector2f textMax{value.empty() ? max.x : clearMin.x, max.y};
+
+        bool changed = false;
+        bool hovered = false;
+        const bool editing = ui.editingId == id;
+        if (editing) {
+            // Le filtre suit la frappe ; Entrée ou un clic ailleurs gardent le texte, Échap l'efface.
+            const Impl::EditResult result = ui.ProcessTextEdit(min, max, false);
+            if (result == Impl::EditResult::Cancel) {
+                ui.editBuffer.clear();
+            }
+            if (ui.editBuffer != value) {
+                value = ui.editBuffer;
+                changed = true;
+            }
+        } else {
+            const Impl::Interaction interaction = ui.Behavior(id, min, textMax);
+            hovered = interaction.hovered;
+            if (interaction.clicked) {
+                ui.BeginEdit(id, value);
+                ui.selectAll = false; // on continue la recherche en cours plutôt que de la remplacer
+            }
+        }
+        Impl::Interaction clear;
+        if (!value.empty()) {
+            clear = ui.Behavior(Hash(id, "#effacer"), clearMin, max);
+            if (clear.clicked) {
+                value.clear();
+                changed = true;
+                if (ui.editingId == id) {
+                    ui.editBuffer.clear();
+                    ui.caret = 0;
+                }
+            }
+        }
+
+        const bool stillEditing = ui.editingId == id;
+        ui.FrameRect(min, max, stillEditing ? style.frameActive : hovered ? style.frameHovered : style.frame);
+        DrawIcon(ui.panel->content, Icon::Search, {min.x + style.framePadding.x * 0.5f, std::round(0.5f * (min.y + max.y - iconSize))},
+                 iconSize);
+        if (stillEditing) {
+            ui.DrawTextEdit(textMin, textMax);
+        } else {
+            const bool empty = value.empty();
+            ui.ClippedText(textMin + style.framePadding, textMax.x - 2.0f, empty ? hint : std::string_view(value),
+                           empty ? style.textDisabled : style.text);
+        }
+        if (!value.empty()) {
+            // Croix dessinée en deux traits, plus nette qu'un « × » de la police à cette taille.
+            const Vector2f center = (clearMin + max) * 0.5f;
+            const float arm = std::round(style.fontSize * 0.22f);
+            const LinearColor color = clear.hovered ? style.text : style.textDisabled;
+            if (clear.hovered) {
+                ui.panel->content.AddCircle(center, arm * 1.9f, style.frameHovered);
+            }
+            ui.panel->content.AddLine(center - Vector2f{arm, arm}, center + Vector2f{arm, arm}, color, 1.5f);
+            ui.panel->content.AddLine(center + Vector2f{-arm, arm}, center + Vector2f{arm, -arm}, color, 1.5f);
+        }
+        ui.lastBehaviorId = id; // l'info-bulle et IsItemActive parlent du champ, pas de sa croix
+        ui.lastBehaviorMin = min;
+        ui.lastBehaviorMax = max;
+        return changed;
+    }
+
     bool Context::Impl::TextField(WidgetId id, Vector2f min, Vector2f max, std::string& value) {
         Impl& ui = *this;
         if (ui.editingId == id) {
