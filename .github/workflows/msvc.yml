@@ -49,3 +49,11 @@ jobs:
 
       - name: Tests
         run: ctest --test-dir out/build/${{ matrix.preset }} --output-on-failure
+
+      # Ninja doit connaître les en-têtes de chaque .cpp (sinon un .hpp modifié ne recompile rien) : voir CMakeLists.txt.
+      - name: Suivi des en-têtes
+        shell: pwsh
+        run: |
+          $deps = ninja -C out/build/${{ matrix.preset }} -t deps Engine/CMakeFiles/FluxEngine.dir/src/UI/Menus.cpp.obj
+          $deps | Select-Object -First 12
+          if (-not ($deps -match 'ContextImpl\.hpp')) { Write-Error "Ninja n'a pas enregistré ContextImpl.hpp pour Menus.cpp"; exit 1 }
