@@ -31,6 +31,15 @@ namespace Flux::UI {
         Button,
         Checkbox,
         Slider,
+        // Commandes et panneaux de l'éditeur.
+        Play,      // triangle vert
+        Pause,     // deux barres
+        Stop,      // carré rouge
+        Plus,
+        Camera,
+        Inspector, // trois réglettes
+        Place,     // un cube et un plus : poser des objets
+        Content,   // dossier ouvert : fichiers du projet
     };
 
     // Dessine l'icône dans le carré [min, min + size].

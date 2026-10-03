@@ -64,9 +64,9 @@ namespace {
 
     bool RunWidgetTests(const UI::Font& font) {
         Harness harness(font);
-        const float row = font.GetLineHeight() * 15.0f + 8.0f; // hauteur d'un champ (style par défaut)
-        const float top = row + 8.0f;                          // sous la barre de titre, après la marge
-        const auto rowCenter = [&](int index) { return top + static_cast<float>(index) * (row + 4.0f) + row * 0.5f; };
+        const float row = font.GetLineHeight() * 15.0f + 10.0f; // hauteur d'un champ (style par défaut)
+        const float top = row + 10.0f;                          // sous la barre de titre, après la marge
+        const auto rowCenter = [&](int index) { return top + static_cast<float>(index) * (row + 5.0f) + row * 0.5f; };
 
         bool check = true;
         double number = 10.0;
@@ -86,7 +86,7 @@ namespace {
             }
             ui.EndPanel();
         };
-        const float fieldX = 8.0f + std::floor(384.0f * 0.38f) + 30.0f;
+        const float fieldX = 10.0f + std::floor(380.0f * 0.38f) + 30.0f;
 
         // Grisés (BeginDisabled) : ni case cochée, ni glissement, ni saisie, ni clic.
         disabled = true;
@@ -171,16 +171,16 @@ namespace {
 
     bool RunTreeTests(const UI::Font& font) {
         Harness harness(font);
-        const float titleHeight = font.GetLineHeight() * 15.0f + 8.0f;
-        const float treeRow = font.GetLineHeight() * 15.0f + 4.0f + 1.0f; // hauteur + espacement des nœuds
-        const auto rowCenter = [&](int index) { return titleHeight + 8.0f + static_cast<float>(index) * treeRow + treeRow * 0.5f; };
+        const float titleHeight = font.GetLineHeight() * 15.0f + 10.0f;
+        const float treeRow = font.GetLineHeight() * 15.0f + 6.0f + 1.0f; // hauteur + espacement des nœuds
+        const auto rowCenter = [&](int index) { return titleHeight + 10.0f + static_cast<float>(index) * treeRow + treeRow * 0.5f; };
 
         int selected = -1;
         bool childVisible = false;
         const auto describe = [&](UI::Context& ui) {
             childVisible = false;
             // Hauteur fixe de 5 lignes pour 40 nœuds : le panneau défile.
-            if (ui.BeginPanel("Arbre", {0.0f, 0.0f}, 300.0f, titleHeight + 8.0f + 5.0f * treeRow)) {
+            if (ui.BeginPanel("Arbre", {0.0f, 0.0f}, 300.0f, titleHeight + 10.0f + 5.0f * treeRow)) {
                 for (int i = 0; i < 40; ++i) {
                     ui.PushId(static_cast<std::uint64_t>(i));
                     const auto node = ui.TreeNode("Nœud", selected == i, i != 0);
@@ -204,19 +204,19 @@ namespace {
         harness.Click({100.0f, rowCenter(0)}, describe);
         CHECK(selected == 0);
         CHECK(!childVisible);
-        harness.Click({8.0f + 6.0f, rowCenter(0)}, describe); // flèche : déplie sans sélectionner
+        harness.Click({10.0f + 6.0f, rowCenter(0)}, describe); // flèche : déplie sans sélectionner
         CHECK(childVisible);
         CHECK(selected == 0);
         harness.Click({100.0f, rowCenter(1)}, describe);      // l'enfant, en ligne 1
         CHECK(selected == 100);
-        harness.Click({8.0f + 6.0f, rowCenter(0)}, describe); // replier
+        harness.Click({10.0f + 6.0f, rowCenter(0)}, describe); // replier
         CHECK(!childVisible);
 
         // Double-clic sur le libellé : déplie aussi.
         harness.Click({100.0f, rowCenter(0)}, describe);
         harness.Click({100.0f, rowCenter(0)}, describe);
         CHECK(childVisible);
-        harness.Click({8.0f + 6.0f, rowCenter(0)}, describe);
+        harness.Click({10.0f + 6.0f, rowCenter(0)}, describe);
 
         // Molette : trois lignes par cran ; le nœud 3 passe en première ligne visible.
         harness.Frame([&] { harness.GetInput().AddWheelDelta(-1.0f); }, describe);
@@ -238,9 +238,9 @@ namespace {
     // Liste déroulante (Choice) et bouton tenu (IsItemActive, début d'un glisser-déposer).
     bool RunChoiceTests(const UI::Font& font) {
         Harness harness(font);
-        const float row = font.GetLineHeight() * 15.0f + 8.0f;
-        const float top = row + 8.0f;
-        const float fieldX = 8.0f + std::floor(384.0f * 0.38f) + 30.0f;
+        const float row = font.GetLineHeight() * 15.0f + 10.0f;
+        const float top = row + 10.0f;
+        const float fieldX = 10.0f + std::floor(380.0f * 0.38f) + 30.0f;
         const float fieldY = top + row * 0.5f;
         const auto optionY = [&](int index) { return top + row + 4.0f + static_cast<float>(index) * row + row * 0.5f; };
 
@@ -276,7 +276,7 @@ namespace {
         CHECK(index == 2 && changes == 1);
 
         // Bouton tenu : actif jusqu'au relâchement, même souris sortie du bouton.
-        const float buttonY = top + row + 4.0f + row * 0.5f;
+        const float buttonY = top + row + 5.0f + row * 0.5f;
         harness.Move({20.0f, buttonY}, describe);
         harness.Frame([&] { harness.GetInput().SetMouseButton(MouseButton::Left, true); }, describe);
         CHECK(held);
@@ -287,12 +287,55 @@ namespace {
         return true;
     }
 
+    // Menu ouvert par un bouton (OpenPopupMenu) et croix d'un titre de section (retirer un composant).
+    bool RunPopupTests(const UI::Font& font) {
+        Harness harness(font);
+        const float row = font.GetLineHeight() * 15.0f + 10.0f;
+        const float top = row + 10.0f;
+        int added = 0;
+        bool removed = false;
+        bool open = true;
+        const auto describe = [&](UI::Context& ui) {
+            if (ui.BeginPanel("Test", {0.0f, 0.0f}, 400.0f)) {
+                if (ui.Button("Ajouter", UI::Icon::Plus, true)) { // ligne 0, toute la largeur
+                    ui.OpenPopupMenu("ajouter");
+                }
+                if (ui.BeginPopupMenu("ajouter")) {
+                    if (ui.MenuItem("Lumière", {}, true, UI::Icon::Light)) {
+                        ++added;
+                    }
+                    ui.EndMenu();
+                }
+                open = ui.CollapsingHeader("Composant", true, UI::Icon::Component, &removed); // ligne 1
+            }
+            ui.EndPanel();
+        };
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Move({600.0f, 600.0f}, describe);
+        // Le menu s'ouvre sous le bouton (2 px plus bas, 4 px de marge) ; son élément agit et le referme.
+        harness.Click({350.0f, top + row * 0.5f}, describe);
+        const float itemY = top + row + 2.0f + 4.0f + row * 0.5f;
+        harness.Click({100.0f, itemY}, describe);
+        CHECK(added == 1);
+
+        // Section : son titre la replie ; la croix au bout la laisse dépliée et demande le retrait.
+        const float headerY = top + row + 5.0f + 5.0f + (row + 2.0f) * 0.5f;
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Click({100.0f, headerY}, describe);
+        CHECK(!open && !removed);
+        harness.Click({100.0f, headerY}, describe);
+        CHECK(open);
+        harness.Click({390.0f - (row + 2.0f) * 0.5f, headerY}, describe);
+        CHECK(open && removed);
+        return true;
+    }
+
     // Aperçu de ColorEdit3 : un clic ouvre le sélecteur branché (ici simulé), Annuler ne change rien.
     bool RunColorPickerTests(const UI::Font& font) {
         Harness harness(font);
-        const float row = font.GetLineHeight() * 15.0f + 8.0f;
-        const float fieldY = row + 8.0f + row * 0.5f;
-        const float swatchX = 8.0f + std::floor(384.0f * 0.38f) + 5.0f;
+        const float row = font.GetLineHeight() * 15.0f + 10.0f;
+        const float fieldY = row + 10.0f + row * 0.5f;
+        const float swatchX = 10.0f + std::floor(380.0f * 0.38f) + 5.0f;
 
         Math::LinearColor color{0.0f, 0.0f, 1.0f};
         int opened = 0;
@@ -328,7 +371,7 @@ namespace {
 
     bool RunMenuTests(const UI::Font& font) {
         Harness harness(font);
-        const float bar = font.GetLineHeight() * 15.0f + 8.0f; // hauteur de la barre = hauteur d'un champ
+        const float bar = font.GetLineHeight() * 15.0f + 10.0f; // hauteur de la barre = hauteur d'un champ
         const float fileX = 4.0f + 10.0f;                       // dans le titre « Fichier »
         const auto itemY = [&](int index) { return bar + 4.0f + static_cast<float>(index) * bar + bar * 0.5f; };
 
@@ -382,7 +425,7 @@ namespace {
 
         // Clic ailleurs : referme le menu, sans atteindre le bouton du panneau en dessous.
         // Le panneau commence sous la barre : titre, marge, puis le bouton.
-        const float buttonY = bar + bar + 8.0f + bar * 0.5f;
+        const float buttonY = bar + bar + 10.0f + bar * 0.5f;
         harness.Click({320.0f, buttonY}, describe);
         CHECK(!menuOpen);
         CHECK(buttonClicks == 0);
@@ -426,7 +469,7 @@ namespace {
     bool RunDockTests(const UI::Font& font) {
         Harness harness(font);
         UI::Context& ui = harness.GetUi();
-        const float bar = font.GetLineHeight() * 15.0f + 8.0f; // hauteur de la barre d'onglets
+        const float bar = font.GetLineHeight() * 15.0f + 10.0f; // hauteur de la barre d'onglets
 
         // Un panneau à gauche (25 %), deux onglets à droite (30 % du reste), la vue au milieu.
         const UI::DockId root = ui.ClearDockLayout();
@@ -477,7 +520,7 @@ namespace {
         // Onglets : clic sur le second.
         const float tabY = bar * 0.5f + 2.0f;
         const float rightX = view.max.x + 4.0f;
-        const float tabAWidth = ui.MeasureText("A").x + 2.0f * 6.0f + 8.0f; // texte, marges, espace
+        const float tabAWidth = ui.MeasureText("A").x + 2.0f * 7.0f + 8.0f; // texte, marges, espace
         const float tabBX = rightX + 2.0f + tabAWidth + 2.0f + 10.0f;
         harness.Click({tabBX, tabY}, describe);
         harness.Move({tabBX, tabY}, describe);
@@ -613,7 +656,7 @@ namespace {
     bool RunWindowTests(const UI::Font& font) {
         Harness harness(font);
         UI::Context& ui = harness.GetUi();
-        const float bar = font.GetLineHeight() * 15.0f + 8.0f; // barre de titre
+        const float bar = font.GetLineHeight() * 15.0f + 10.0f; // barre de titre
         ui.ClearDockLayout(); // une seule zone, centrale : tout l'écran (pour enregistrer la disposition)
 
         bool open = true;
@@ -624,7 +667,7 @@ namespace {
             if (open) {
                 if (context.BeginPanel("Fenêtre", {100.0f, 100.0f}, 300.0f, 0.0f, &open)) {
                     context.Button("contenu");
-                    bottom = context.GetItemRect().max.y + 8.0f;
+                    bottom = context.GetItemRect().max.y + 10.0f;
                     available = context.GetAvailableWidth();
                 }
                 context.EndPanel();
@@ -639,7 +682,7 @@ namespace {
         };
         harness.Move({640.0f, 600.0f}, describe);
         harness.Move({640.0f, 600.0f}, describe);
-        CHECK(available == 300.0f - 16.0f);
+        CHECK(available == 300.0f - 20.0f);
         CHECK(ui.GetMouseCursor() == MouseCursor::Arrow);
 
         // Bord droit (x = 400) : double flèche, puis glissé de 100 px.
@@ -647,12 +690,12 @@ namespace {
         CHECK(ui.GetMouseCursor() == MouseCursor::ResizeHorizontal && ui.WantsMouse());
         drag({401.0f, 100.0f + bar + 5.0f}, {501.0f, 100.0f + bar + 5.0f});
         harness.Move({640.0f, 600.0f}, describe);
-        CHECK(available == 400.0f - 16.0f);
+        CHECK(available == 400.0f - 20.0f);
 
         // Bord gauche ramené de 50 px vers la droite : le bord droit ne bouge pas.
         drag({100.0f, 100.0f + bar + 5.0f}, {150.0f, 100.0f + bar + 5.0f});
         harness.Move({640.0f, 600.0f}, describe);
-        CHECK(available == 350.0f - 16.0f);
+        CHECK(available == 350.0f - 20.0f);
         harness.Move({495.0f, 100.0f + bar + 5.0f}, describe);
         CHECK(ui.WantsMouse());
         harness.Move({145.0f, 100.0f + bar + 5.0f}, describe);
@@ -677,7 +720,7 @@ namespace {
             available = 0.0f;
             other.Move({640.0f, 600.0f}, describe);
             other.Move({450.0f, 395.0f}, describe);
-            CHECK(available == 350.0f - 16.0f);
+            CHECK(available == 350.0f - 20.0f);
             CHECK(other.GetUi().WantsMouse());
         }
 
@@ -783,6 +826,6 @@ bool RunUiTests() {
         return false;
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
-        && RunChoiceTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
+        && RunChoiceTests(**font) && RunPopupTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
         && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font);
 }

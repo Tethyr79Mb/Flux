@@ -225,6 +225,57 @@ namespace Flux::UI {
                 pen.Disc(0.58f, 0.5f, 0.16f, LinearColor::FromSrgb8(232, 238, 244));
                 break;
             }
+            case Icon::Play:
+                pen.Triangle({0.22f, 0.1f}, {0.9f, 0.5f}, {0.22f, 0.9f}, LinearColor::FromSrgb8(88, 200, 110));
+                break;
+            case Icon::Pause: {
+                const LinearColor color = LinearColor::FromSrgb8(150, 158, 172); // visible sur fond clair et sombre
+                pen.Rect(0.2f, 0.14f, 0.4f, 0.86f, color);
+                pen.Rect(0.6f, 0.14f, 0.8f, 0.86f, color);
+                break;
+            }
+            case Icon::Stop:
+                pen.Rect(0.18f, 0.18f, 0.82f, 0.82f, LinearColor::FromSrgb8(226, 84, 76));
+                break;
+            case Icon::Plus: {
+                const LinearColor color = LinearColor::FromSrgb8(88, 200, 110);
+                pen.Rect(0.42f, 0.12f, 0.58f, 0.88f, color);
+                pen.Rect(0.12f, 0.42f, 0.88f, 0.58f, color);
+                break;
+            }
+            case Icon::Camera: {
+                const LinearColor body = LinearColor::FromSrgb8(150, 160, 178);
+                pen.Rect(0.06f, 0.3f, 0.66f, 0.78f, body);
+                pen.Quad({0.66f, 0.46f}, {0.94f, 0.3f}, {0.94f, 0.78f}, {0.66f, 0.62f}, Shade(body, 0.8f));
+                pen.Disc(0.22f, 0.2f, 0.12f, Shade(body, 0.9f));
+                pen.Disc(0.48f, 0.2f, 0.12f, Shade(body, 0.9f));
+                break;
+            }
+            case Icon::Inspector: {
+                const LinearColor line = LinearColor::FromSrgb8(150, 160, 178);
+                const LinearColor knob = LinearColor::FromSrgb8(88, 156, 255);
+                for (int i = 0; i < 3; ++i) {
+                    const float y = 0.2f + 0.3f * static_cast<float>(i);
+                    pen.Rect(0.08f, y - 0.04f, 0.92f, y + 0.04f, line);
+                    const float x = i == 1 ? 0.66f : i == 0 ? 0.32f : 0.48f;
+                    pen.Rect(x - 0.08f, y - 0.11f, x + 0.08f, y + 0.11f, knob);
+                }
+                break;
+            }
+            case Icon::Place: {
+                DrawCube(Pen{list, min + Vector2f{0.0f, size * 0.12f}, size * 0.72f}, LinearColor::FromSrgb8(90, 140, 220));
+                const LinearColor plus = LinearColor::FromSrgb8(88, 200, 110);
+                pen.Rect(0.72f, 0.04f, 0.84f, 0.44f, plus);
+                pen.Rect(0.58f, 0.18f, 0.98f, 0.30f, plus);
+                break;
+            }
+            case Icon::Content: {
+                const LinearColor color = LinearColor::FromSrgb8(232, 182, 72);
+                pen.Rect(0.06f, 0.16f, 0.42f, 0.3f, Shade(color, 0.85f));
+                pen.Rect(0.06f, 0.26f, 0.9f, 0.84f, Shade(color, 0.7f));
+                pen.Quad({0.18f, 0.42f}, {0.98f, 0.42f}, {0.88f, 0.84f}, {0.06f, 0.84f}, color);
+                break;
+            }
         }
     }
 }

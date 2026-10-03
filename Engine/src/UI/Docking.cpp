@@ -129,7 +129,7 @@ namespace Flux::UI {
                 cursor = node.horizontal ? MouseCursor::ResizeHorizontal : MouseCursor::ResizeVertical;
             }
             // Toujours peint : sinon la couleur de fond de la scène apparaît entre deux zones.
-            dockChrome.AddRect(min, max, held ? style.checkMark : hovered ? style.frameHovered : style.titleBackground);
+            dockChrome.AddRect(min, max, held ? style.checkMark : hovered ? style.frameHovered : style.windowBackground);
         }
     }
 
@@ -150,8 +150,9 @@ namespace Flux::UI {
         std::vector<TabRect> tabs;
         float x = node.min.x + 2.0f;
         for (const WidgetId id : VisibleTabs(node)) {
-            const std::string& title = panels.at(id)->title;
-            const float width = measure.MeasureText(title, style.fontSize).x + 2.0f * style.framePadding.x + 8.0f;
+            const Panel& tabPanel = *panels.at(id);
+            const float icon = tabPanel.icon != Icon::None ? std::round(style.fontSize) + 6.0f : 0.0f;
+            const float width = measure.MeasureText(tabPanel.title, style.fontSize).x + 2.0f * style.framePadding.x + 8.0f + icon;
             tabs.push_back({id, {x, node.min.y + 3.0f}, {x + width, node.min.y + FrameHeight()}});
             x += width + 2.0f;
         }
@@ -198,11 +199,14 @@ namespace Flux::UI {
     void Context::Impl::DrawDockTabs(const DockNode& node) {
         const float barHeight = FrameHeight();
         const std::vector<TabRect> tabs = TabRects(node);
-        dockChrome.AddRect(node.min, {node.max.x, std::min(node.max.y, node.min.y + barHeight)}, style.titleBackground);
+        dockChrome.AddRect(node.min, {node.max.x, std::min(node.max.y, node.min.y + barHeight)}, style.windowBackground);
         if (tabs.empty()) {
             // Zone sans panneau (le jeu ne tourne pas, par exemple) : un fond, pas un trou vers la vue 3D.
             dockChrome.AddRect({node.min.x, node.min.y + barHeight}, node.max, Opaque(style.panelBackground));
         }
+        // Onglets aux coins du haut arrondis ; celui affiché a la couleur du panneau, qu'il prolonge, et un trait
+        // d'accent.
+        const float rounding = std::min(style.panelRounding, 6.0f);
         dockChrome.SetClipRect(node.min, {node.max.x, node.min.y + barHeight});
         for (const TabRect& tab : tabs) {
             const Vector2f min = tab.min;
@@ -210,13 +214,22 @@ namespace Flux::UI {
             const bool hovered = activeId == 0 && DockMouseFree() && Contains(min, max, mouse);
             const bool selected = node.selected == tab.id;
             if (selected) {
-                dockChrome.AddRect(min, max, Opaque(style.panelBackground));
-                dockChrome.AddRect(min, {max.x, min.y + 2.0f}, style.checkMark);
+                dockChrome.AddRoundedRect(min, {max.x, max.y + rounding}, Opaque(style.panelBackground), rounding);
+                dockChrome.SetClipRect(min, {max.x, min.y + 2.0f});
+                dockChrome.AddRoundedRect(min, {max.x, max.y + rounding}, style.checkMark, rounding);
+                dockChrome.SetClipRect(node.min, {node.max.x, node.min.y + barHeight});
             } else if (hovered) {
-                dockChrome.AddRect(min, max, style.frameHovered);
+                dockChrome.AddRoundedRect(min, {max.x, max.y + rounding}, style.titleBackground, rounding);
             }
-            dockChrome.AddText({min.x + style.framePadding.x + 4.0f, node.min.y + style.framePadding.y + 1.0f},
-                               panels.at(tab.id)->title, style.fontSize, selected ? style.text : style.textDisabled);
+            const Panel& tabPanel = *panels.at(tab.id);
+            float textX = min.x + style.framePadding.x + 4.0f;
+            if (tabPanel.icon != Icon::None) {
+                const float iconSize = std::round(style.fontSize);
+                DrawIcon(dockChrome, tabPanel.icon, {textX, std::round(0.5f * (min.y + max.y - iconSize))}, iconSize);
+                textX += iconSize + 6.0f;
+            }
+            dockChrome.AddText({textX, node.min.y + style.framePadding.y + 1.0f}, tabPanel.title, style.fontSize,
+                               selected || hovered ? style.text : style.textDisabled);
         }
         dockChrome.ResetClipRect();
     }

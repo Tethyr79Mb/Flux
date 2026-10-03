@@ -148,6 +148,7 @@ namespace Flux::UI {
             bool closeHeld = false;
             bool docked = false;        // ancré à la dernière frame (sa zone décide de sa place)
             bool hiddenTab = false;     // ancré derrière un autre onglet : ni dessiné, ni survolé
+            Icon icon = Icon::None;     // devant le titre et dans l'onglet (SetNextPanelIcon)
             std::uint64_t lastFrame = 0;
             DrawList chrome;          // fond, bordure et barre de titre, dessinés sous le contenu
             DrawList content;
@@ -207,6 +208,7 @@ namespace Flux::UI {
         std::vector<WidgetId> previousOverlays; // ceux de la frame précédente, pour le survol
         WidgetId openMenu = 0;                  // titre du menu ouvert (ou menu contextuel)
         Vector2f contextPosition;               // où le menu contextuel ouvert est apparu
+        float contextWidth = 0.0f;              // menu ouvert par OpenPopupMenu : largeur du widget qui l'ouvre
         std::uint64_t contextOpenedFrame = 0;   // frame où un menu contextuel s'est ouvert (un seul par clic)
         bool openMenuSeen = false;
         bool menuBarDrawn = false;
@@ -335,6 +337,7 @@ namespace Flux::UI {
         // Arbres : nœuds dépliés, et dernier clic pour reconnaître un double-clic.
         std::unordered_map<WidgetId, bool> treeOpen;
         std::optional<bool> nextTreeOpen;
+        Icon nextPanelIcon = Icon::None;
         // Valeurs en cours de glissement des champs entiers (DragInt3).
         std::unordered_map<WidgetId, double> intAccumulators;
         WidgetId lastClickId = 0;
@@ -351,7 +354,7 @@ namespace Flux::UI {
         float LineHeight() const { return font.GetLineHeight() * style.fontSize; }
         float FrameHeight() const { return LineHeight() + 2.0f * style.framePadding.y; }
         float RowWidth() const { return contentMaxX - (contentMin.x + indent); }
-        float TreeRowHeight() const { return LineHeight() + 4.0f; }
+        float TreeRowHeight() const { return LineHeight() + 6.0f; }
 
         WidgetId GetId(std::string_view label) const { return Hash(idStack.back(), label); }
 

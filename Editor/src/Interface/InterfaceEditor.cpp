@@ -242,8 +242,7 @@ namespace FluxEditor {
         engine.GetRenderer().SetSceneViewport(rest.min, rest.max);
 
         list.SetClipRect(view.min, barMax);
-        list.AddRect(view.min, barMax, style.titleBackground);
-        list.AddRect({view.min.x, barMax.y - 1.0f}, barMax, style.separator);
+        list.AddRect(view.min, barMax, style.windowBackground);
         const Vector2f mouse = input.GetMousePosition();
         const bool mouseFree = !ui.WantsMouse() && Contains(view.min, barMax, mouse);
         const float iconSize = std::round(style.fontSize);

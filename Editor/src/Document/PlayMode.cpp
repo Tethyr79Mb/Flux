@@ -7,21 +7,27 @@
 #include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/UI/Context.hpp>
 
+#include <cmath>
+#include <string>
+
 namespace FluxEditor {
     using namespace Flux;
 
     void PlayMode::DrawToolbar(UI::Context& ui, Engine& engine) {
+        // Au milieu de la barre de menus : Jouer (ou Arrêter pendant le jeu) et Pause, avec leurs pictogrammes.
         const char* play = m_playing ? "Arrêter (F5)" : "Jouer (F5)";
         const char* pause = "Pause (F6)";
-        const float spacing = ui.GetStyle().itemSpacing;
-        const float padding = 2.0f * ui.GetStyle().framePadding.x;
-        const float width = ui.MeasureText(play).x + ui.MeasureText(pause).x + 2.0f * padding + spacing;
-        ui.SetMenuBarCursor((static_cast<float>(engine.GetWindow().GetSize().x) - width) * 0.5f);
+        const UI::Style& style = ui.GetStyle();
+        const float icon = std::round(style.fontSize * 0.9f) + 0.75f * style.framePadding.x;
+        const float padding = 2.0f * style.framePadding.x;
+        const float width = ui.MeasureText(play).x + ui.MeasureText(pause).x + 2.0f * (padding + icon) + style.itemSpacing;
+        ui.SetMenuBarCursor(std::round((static_cast<float>(engine.GetWindow().GetSize().x) - width) * 0.5f));
         // Libellés à identifiant fixe : le bouton reste le même widget quand son texte change.
-        if (ui.MenuBarButton(std::string(play) + "##jouer", m_playing)) {
+        if (ui.MenuBarButton(std::string(play) + "##jouer", m_playing, m_playing ? UI::Icon::Stop : UI::Icon::Play)) {
             m_playing ? Stop(engine) : Start(engine);
         }
-        if (ui.MenuBarButton(std::string(pause) + "##pause", engine.GetGameState() == GameState::Paused) && m_playing) {
+        if (ui.MenuBarButton(std::string(pause) + "##pause", engine.GetGameState() == GameState::Paused, UI::Icon::Pause)
+            && m_playing) {
             TogglePause(engine);
         }
     }

@@ -403,11 +403,22 @@ namespace FluxEditor {
         UI::DrawList& list = engine.GetRenderer().GetOverlay();
         const UI::Style& style = engine.GetUi().GetStyle();
         list.SetClipRect(view.min, view.max);
+        // Les trois boutons dans une barre arrondie, posée sur la vue ; le mode en cours en couleur de sélection.
+        const UI::Rect first = ToolbarRect(list, view, 0);
+        const UI::Rect last = ToolbarRect(list, view, 2);
+        const Vector2f inset{3.0f, 3.0f};
+        Math::LinearColor back = style.panelBackground;
+        back.a = 0.85f;
+        list.AddShadow(first.min - inset, last.max + inset, style.shadow, style.panelRounding, 8.0f);
+        list.AddRoundedRect(first.min - inset, last.max + inset, back, style.panelRounding);
         for (int i = 0; i < 3; ++i) {
             const UI::Rect rect = ToolbarRect(list, view, i);
             const bool current = ToolbarButtons[i].mode == m_mode;
-            list.AddRect(rect.min, rect.max, current ? style.buttonActive : i == m_hoveredButton ? style.buttonHovered : style.button);
-            list.AddText(rect.min + ToolbarPadding, ToolbarButtons[i].label, ToolbarTextSize, style.text);
+            if (current || i == m_hoveredButton) {
+                list.AddRoundedRect(rect.min, rect.max, current ? style.selection : style.buttonHovered, style.frameRounding);
+            }
+            list.AddText(rect.min + ToolbarPadding, ToolbarButtons[i].label, ToolbarTextSize,
+                         current || i == m_hoveredButton ? style.text : style.textDisabled);
         }
         list.ResetClipRect();
     }
