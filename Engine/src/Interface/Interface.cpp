@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <ranges>
 #include <string>
 #include <utility>
 
@@ -20,6 +21,9 @@ namespace Flux::Interface {
             "À droite",         "En bas à gauche", "En bas", "En bas à droite", "Étiré (marges)"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(TextAlign::Count)> AlignNames{"À gauche", "Centré",
                                                                                                       "À droite"};
+        constexpr std::array<std::string_view, static_cast<std::size_t>(ButtonAction::Count)> ActionNames{
+            "Aucune",           "Ouvrir une fenêtre", "Fermer une fenêtre", "Ouvrir ou fermer une fenêtre",
+            "Fermer sa fenêtre", "Changer de scène",  "Quitter le jeu",     "Fonction C++"};
 
         constexpr std::uint32_t Bit(ElementType type) { return 1u << static_cast<unsigned>(type); }
         constexpr std::uint32_t W = Bit(ElementType::Window);
@@ -34,14 +38,14 @@ namespace Flux::Interface {
             Field{"text", "Titre", &Element::text, W},
             Field{"text", "Texte", &Element::text, T},
             Field{"text", "Libellé", &Element::text, B | C},
-            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C, false, 0.5f, 4.0f, 400.0f, 0},
+            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
             Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C},
             Field{"textColor", "Poignée", &Element::textColor, S},
             Field{"align", "Alignement", &Element::align, T | B},
-            Field{"image", "Image", &Element::image, I, true},
+            Field{"image", "Image", &Element::image, I, Field::Text::Image},
             Field{"tint", "Teinte", &Element::tint, I},
             Field{"keepAspect", "Garder les proportions", &Element::keepAspect, I},
-            Field{"titleHeight", "Hauteur du titre", &Element::titleHeight, W, false, 0.5f, 0.0f, 400.0f, 0},
+            Field{"titleHeight", "Hauteur du titre", &Element::titleHeight, W, Field::Text::Plain, 0.5f, 0.0f, 400.0f, 0},
             Field{"titleColor", "Barre de titre", &Element::titleColor, W},
             Field{"background", "Fond", &Element::background, W | F | T | B | C},
             Field{"background", "Piste", &Element::background, S},
@@ -50,14 +54,20 @@ namespace Flux::Interface {
             Field{"accent", "Coche", &Element::accent, C},
             Field{"accent", "Remplissage", &Element::accent, S},
             Field{"border", "Bordure", &Element::border, W | F | B | C},
-            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C, false, 0.1f, 0.0f, 50.0f, 1},
-            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C, false, 0.5f, 0.0f, 500.0f, 0},
+            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
+            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
             Field{"shadow", "Ombre", &Element::shadow, W},
             Field{"movable", "Déplaçable en jeu", &Element::movable, W},
+            Field{"closeButton", "Croix de fermeture", &Element::closeButton, W},
+            Field{"closeOnEscape", "Échap la ferme", &Element::closeOnEscape, W},
+            Field{"openOnEscape", "Échap l'ouvre (menu pause)", &Element::openOnEscape, W},
+            Field{"pausesGame", "Met le jeu en pause", &Element::pausesGame, W},
+            Field{"action", "Action", &Element::action, B},
+            Field{"target", "Cible", &Element::target, B, Field::Text::ActionTarget},
             Field{"checked", "Cochée", &Element::checked, C},
-            Field{"value", "Valeur", &Element::value, S, false, 0.01f, -1.0e6f, 1.0e6f, 2},
-            Field{"minimum", "Minimum", &Element::minimum, S, false, 0.01f, -1.0e6f, 1.0e6f, 2},
-            Field{"maximum", "Maximum", &Element::maximum, S, false, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"value", "Valeur", &Element::value, S, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"minimum", "Minimum", &Element::minimum, S, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"maximum", "Maximum", &Element::maximum, S, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
         };
 
         LinearColor Srgb(int r, int g, int b, float a = 1.0f) { return LinearColor::FromSrgb8(r, g, b, a); }
@@ -134,16 +144,21 @@ namespace Flux::Interface {
 
         bool IsEmpty(const Rect& rect) { return rect.max.x <= rect.min.x || rect.max.y <= rect.min.y; }
 
+        bool Contains(const Element& element, std::uint32_t id) {
+            return std::ranges::any_of(element.children,
+                                       [id](const Element& child) { return child.id == id || Contains(child, id); });
+        }
+
         void ArrangeChildren(const std::vector<Element>& elements, const Rect& parent, const Rect& clip, std::uint32_t parentId,
-                             int depth, float scale, std::vector<Placed>& out) {
+                             int depth, float scale, std::uint32_t reveal, std::vector<Placed>& out) {
             for (const Element& element : elements) {
-                if (!element.visible) {
+                if (!element.visible && (reveal == 0 || (element.id != reveal && !Contains(element, reveal)))) {
                     continue;
                 }
                 const Rect rect = Arrange(element, parent, scale);
                 out.push_back({&element, rect, parent, clip, parentId, depth});
                 if (!element.children.empty()) {
-                    ArrangeChildren(element.children, rect, Intersect(clip, rect), element.id, depth + 1, scale, out);
+                    ArrangeChildren(element.children, rect, Intersect(clip, rect), element.id, depth + 1, scale, reveal, out);
                 }
             }
         }
@@ -194,6 +209,73 @@ namespace Flux::Interface {
             return {rect.min.x + knob, std::max(rect.min.x + knob, rect.max.x - knob)};
         }
 
+        // Croix d'une fenêtre qui en a une : un carré au bout de sa barre de titre.
+        std::optional<Rect> CloseButtonRect(const Element& element, const Rect& rect, float scale) {
+            if (element.type != ElementType::Window || !element.closeButton || element.titleHeight <= 0.0f) {
+                return std::nullopt;
+            }
+            const float side = std::min({element.titleHeight * scale, rect.max.y - rect.min.y, rect.max.x - rect.min.x});
+            return Rect{{rect.max.x - side, rect.min.y}, {rect.max.x, rect.min.y + side}};
+        }
+
+        // Racine qui contient l'élément (lui-même s'il est à la racine), 0 s'il est absent.
+        std::uint32_t RootOf(const Document& document, std::uint32_t id) {
+            for (const Element& root : document.roots) {
+                if (root.id == id || Contains(root, id)) {
+                    return root.id;
+                }
+            }
+            return 0;
+        }
+
+        // Met une fenêtre racine devant les autres (à la fin de la liste) ; sans effet sur les autres éléments, que
+        // le concepteur a rangés (un fond, un HUD).
+        void BringToFront(Document& document, std::uint32_t id) {
+            const auto found = std::ranges::find_if(document.roots, [id](const Element& root) { return root.id == id; });
+            if (found != document.roots.end() && found->type == ElementType::Window) {
+                std::rotate(found, found + 1, document.roots.end());
+            }
+        }
+
+        void SetOpen(Element& element, bool open, std::vector<std::uint32_t>& raise) {
+            element.visible = open;
+            if (open) {
+                raise.push_back(element.id);
+            }
+        }
+
+        // Action d'un bouton cliqué : les fenêtres ici, le reste pour le moteur (Interaction::action).
+        void RunAction(Document& document, const Element& button, Interaction& interaction, std::vector<std::uint32_t>& raise) {
+            switch (button.action) {
+                case ButtonAction::OpenWindow:
+                case ButtonAction::CloseWindow:
+                case ButtonAction::ToggleWindow:
+                    if (Element* window = FindByName(document, button.target)) {
+                        const bool open = button.action == ButtonAction::OpenWindow
+                                       || (button.action == ButtonAction::ToggleWindow && !window->visible);
+                        SetOpen(*window, open, raise);
+                    }
+                    break;
+                case ButtonAction::CloseParent:
+                    for (Element* parent = FindParent(document, button.id); parent; parent = FindParent(document, parent->id)) {
+                        if (parent->type == ElementType::Window) {
+                            parent->visible = false;
+                            break;
+                        }
+                    }
+                    break;
+                case ButtonAction::ChangeScene:
+                case ButtonAction::Quit:
+                case ButtonAction::CallFunction:
+                    interaction.action = button.action;
+                    interaction.target = button.target;
+                    break;
+                case ButtonAction::None:
+                case ButtonAction::Count:
+                    break;
+            }
+        }
+
         struct DrawContext
         {
             UI::DrawList& list;
@@ -228,6 +310,24 @@ namespace Flux::Interface {
             }
         }
 
+        // Croix de fermeture : fond rouge au survol, plus vif quand elle est tenue.
+        void DrawCloseButton(const DrawContext& context, const Element& element, const Rect& box) {
+            const Interaction* interaction = context.options.interaction;
+            const bool hovered = interaction && interaction->closeHovered == element.id;
+            const bool held = interaction && interaction->closePressed && interaction->pressed == element.id;
+            const float side = box.max.x - box.min.x;
+            if (hovered || held) {
+                const float inset = side * 0.14f;
+                context.list.AddRoundedRect(box.min + Vector2f{inset, inset}, box.max - Vector2f{inset, inset},
+                                            held && hovered ? Srgb(220, 60, 60) : Srgb(190, 50, 50, 0.85f), side * 0.18f);
+            }
+            const Vector2f center = (box.min + box.max) * 0.5f;
+            const float arm = side * 0.17f;
+            const float thickness = std::max(1.5f, side * 0.05f);
+            context.list.AddLine(center - Vector2f{arm, arm}, center + Vector2f{arm, arm}, element.textColor, thickness);
+            context.list.AddLine(center + Vector2f{-arm, arm}, center + Vector2f{arm, -arm}, element.textColor, thickness);
+        }
+
         void DrawWindow(const DrawContext& context, const Placed& placed) {
             const Element& element = *placed.element;
             const Rect& rect = placed.rect;
@@ -248,7 +348,12 @@ namespace Flux::Interface {
                     if (element.titleColor.a > 0.0f) {
                         context.list.AddRoundedRect(rect.min, rect.max, element.titleColor, radius);
                     }
-                    DrawLabel(context, element, band, 14.0f * context.scale);
+                    const std::optional<Rect> close = CloseButtonRect(element, rect, context.scale);
+                    DrawLabel(context, element, close ? Rect{band.min, {close->min.x, band.max.y}} : band,
+                              14.0f * context.scale);
+                    if (close) {
+                        DrawCloseButton(context, element, *close);
+                    }
                     context.list.SetClipRect(placed.clip.min, placed.clip.max);
                 }
             }
@@ -366,6 +471,14 @@ namespace Flux::Interface {
         return AlignNames;
     }
 
+    std::span<const std::string_view> GetActionNames() {
+        return ActionNames;
+    }
+
+    bool TargetsWindow(ButtonAction action) {
+        return action == ButtonAction::OpenWindow || action == ButtonAction::CloseWindow || action == ButtonAction::ToggleWindow;
+    }
+
     std::span<const Field> GetFields() {
         return Fields;
     }
@@ -423,6 +536,47 @@ namespace Flux::Interface {
         };
         search(search, document.roots);
         return parent;
+    }
+
+    Element* FindByName(Document& document, std::string_view name) {
+        return const_cast<Element*>(FindByName(std::as_const(document), name));
+    }
+
+    const Element* FindByName(const Document& document, std::string_view name) {
+        const auto search = [name](auto&& self, const std::vector<Element>& elements) -> const Element* {
+            for (const Element& element : elements) {
+                if (element.name == name) {
+                    return &element;
+                }
+                if (const Element* found = self(self, element.children)) {
+                    return found;
+                }
+            }
+            return nullptr;
+        };
+        return name.empty() ? nullptr : search(search, document.roots);
+    }
+
+    bool SetWindowOpen(Document& document, std::string_view name, bool open) {
+        Element* element = FindByName(document, name);
+        if (!element) {
+            return false;
+        }
+        element->visible = open;
+        if (open) {
+            BringToFront(document, element->id);
+        }
+        return true;
+    }
+
+    bool IsPausingGame(const Document& document) {
+        const auto search = [](auto&& self, const std::vector<Element>& elements) -> bool {
+            return std::ranges::any_of(elements, [&self](const Element& element) {
+                return element.visible
+                    && ((element.type == ElementType::Window && element.pausesGame) || self(self, element.children));
+            });
+        };
+        return search(search, document.roots);
     }
 
     std::optional<Element> Remove(Document& document, std::uint32_t id) {
@@ -486,14 +640,15 @@ namespace Flux::Interface {
         return parent.min + Vector2f{size.x * fraction.x, size.y * fraction.y};
     }
 
-    std::vector<Placed> Arrange(const Document& document, Vector2f viewMin, Vector2f viewMax, const std::optional<Rect>& clip) {
+    std::vector<Placed> Arrange(const Document& document, Vector2f viewMin, Vector2f viewMax, const std::optional<Rect>& clip,
+                                std::uint32_t reveal) {
         std::vector<Placed> placed;
         const float scale = GetScale(viewMin, viewMax);
         if (scale <= 0.0f || viewMax.x <= viewMin.x) {
             return placed;
         }
         const Rect view{viewMin, viewMax};
-        ArrangeChildren(document.roots, view, clip ? Intersect(view, *clip) : view, 0, 0, scale, placed);
+        ArrangeChildren(document.roots, view, clip ? Intersect(view, *clip) : view, 0, 0, scale, reveal, placed);
         return placed;
     }
 
@@ -508,8 +663,14 @@ namespace Flux::Interface {
 
     void Update(Document& document, Interaction& interaction, Vector2f viewMin, Vector2f viewMax, const Pointer& pointer) {
         interaction.clicked = 0;
+        interaction.action = ButtonAction::None;
+        interaction.target.clear();
+        interaction.escapeUsed = false;
         const std::vector<Placed> placed = Arrange(document, viewMin, viewMax);
         const float scale = GetScale(viewMin, viewMax);
+        // Fenêtres à mettre devant les autres, à la fin (réordonner les racines déplace les éléments) ; la dernière
+        // finit devant.
+        std::vector<std::uint32_t> raise;
 
         // Élément le plus en avant sous la souris qui l'arrête (le texte et les images la laissent passer).
         const Placed* hit = nullptr;
@@ -523,19 +684,25 @@ namespace Flux::Interface {
         }
         const std::uint32_t hitId = hit ? hit->element->id : 0;
         interaction.hovered = hit && IsInteractive(hit->element->type) ? hitId : 0;
+        const std::optional<Rect> closeBox = hit ? CloseButtonRect(*hit->element, hit->rect, scale) : std::nullopt;
+        interaction.closeHovered = closeBox && closeBox->Contains(pointer.position) ? hitId : 0;
 
         if (pointer.pressed && hit) {
             const Element& element = *hit->element;
-            const bool titleBar = element.type == ElementType::Window && element.movable && element.anchor != Anchor::Stretch
+            const bool onClose = interaction.closeHovered == hitId;
+            const bool titleBar = !onClose && element.type == ElementType::Window && element.movable
+                               && element.anchor != Anchor::Stretch
                                && pointer.position.y < hit->rect.min.y + element.titleHeight * scale;
-            interaction.pressed = IsInteractive(element.type) || titleBar ? hitId : 0;
+            interaction.pressed = IsInteractive(element.type) || titleBar || onClose ? hitId : 0;
+            interaction.closePressed = onClose;
             interaction.dragStart = pointer.position;
             interaction.dragOrigin = element.position;
+            raise.push_back(RootOf(document, hitId)); // un clic dans une fenêtre la met devant
         }
 
         Element* pressed = interaction.pressed != 0 ? Find(document, interaction.pressed) : nullptr;
         if (pressed && pressed->visible) {
-            if (pressed->type == ElementType::Window && scale > 0.0f) {
+            if (pressed->type == ElementType::Window && !interaction.closePressed && scale > 0.0f) {
                 // Souris bornée à la vue : la barre de titre ne peut pas sortir de l'écran.
                 const Vector2f mouse{std::clamp(pointer.position.x, viewMin.x, viewMax.x),
                                      std::clamp(pointer.position.y, viewMin.y, viewMax.y)};
@@ -548,8 +715,13 @@ namespace Flux::Interface {
                 }
             }
             if (pointer.released && hitId == pressed->id) {
-                if (pressed->type == ElementType::Button) {
+                if (pressed->type == ElementType::Window && interaction.closePressed) {
+                    if (interaction.closeHovered == pressed->id) {
+                        pressed->visible = false;
+                    }
+                } else if (pressed->type == ElementType::Button) {
                     interaction.clicked = pressed->id;
+                    RunAction(document, *pressed, interaction, raise);
                 } else if (pressed->type == ElementType::Checkbox) {
                     pressed->checked = !pressed->checked;
                 }
@@ -557,12 +729,39 @@ namespace Flux::Interface {
         }
         if (!pressed || !pressed->visible || pointer.released || !pointer.down) {
             interaction.pressed = 0;
+            interaction.closePressed = false;
+        }
+
+        if (pointer.escape) {
+            // Pile des fenêtres : Échap ferme la plus en avant qui l'accepte ; s'il n'y en a pas, ouvre le menu
+            // prévu pour (pause).
+            const auto open = std::ranges::find_if(document.roots | std::views::reverse, [](const Element& element) {
+                return element.type == ElementType::Window && element.visible && element.closeOnEscape;
+            });
+            if (open != (document.roots | std::views::reverse).end()) {
+                open->visible = false;
+                interaction.escapeUsed = true;
+            } else {
+                const auto menu = std::ranges::find_if(document.roots, [](const Element& element) {
+                    return element.type == ElementType::Window && !element.visible && element.openOnEscape;
+                });
+                if (menu != document.roots.end()) {
+                    menu->visible = true;
+                    raise.push_back(menu->id);
+                    interaction.escapeUsed = true;
+                }
+            }
+        }
+
+        for (const std::uint32_t id : raise) {
+            BringToFront(document, id);
         }
         interaction.wantsMouse = hit != nullptr || interaction.pressed != 0;
+        interaction.pausesGame = IsPausingGame(document);
     }
 
     void Draw(const Document& document, UI::DrawList& list, Vector2f viewMin, Vector2f viewMax, const DrawOptions& options) {
-        const std::vector<Placed> placed = Arrange(document, viewMin, viewMax, options.clip);
+        const std::vector<Placed> placed = Arrange(document, viewMin, viewMax, options.clip, options.reveal);
         if (placed.empty()) {
             return;
         }

@@ -114,6 +114,8 @@ namespace FluxEditor {
         // pendant qu'on le parcourt).
         void DrawElementNode(Flux::Engine& engine, Flux::Interface::Element& element, std::uint32_t& action, int& command);
         void DrawPropertiesPanel(Flux::Engine& engine);
+        // Cible de l'action d'un bouton : une fenêtre du document, une scène, une fonction ; true si changée.
+        bool DrawActionTarget(Flux::Engine& engine, const Flux::Interface::Document& document, Flux::Interface::Element& button);
         void Add(Flux::Interface::ElementType type);
         void Duplicate();
         void Delete();

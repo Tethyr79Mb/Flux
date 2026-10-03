@@ -33,6 +33,9 @@ namespace Flux {
         // changée), ou toutes (jeu arrêté).
         void ForgetInstancesBefore(std::uint64_t frame);
         void ClearInstances() { m_instances.clear(); }
+        // Ouvre ou ferme l'élément de ce nom dans les interfaces en jeu ; false si aucune n'en a.
+        bool SetWindowOpen(std::string_view name, bool open);
+        Interface::Element* FindInInstances(std::string_view name);
 
         private:
         using Clock = std::chrono::steady_clock;

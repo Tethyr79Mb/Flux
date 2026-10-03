@@ -203,7 +203,8 @@ namespace FluxEditor {
         }
         // Place à l'écran avant le déplacement : elle est gardée dans le nouveau parent.
         std::optional<Interface::Rect> rect;
-        if (const Interface::Placed* placed = FindPlaced(Interface::Arrange(document, m_screen.min, m_screen.max), id)) {
+        const std::vector<Interface::Placed> before = Interface::Arrange(document, m_screen.min, m_screen.max, std::nullopt, id);
+        if (const Interface::Placed* placed = FindPlaced(before, id)) {
             rect = placed->rect;
         }
         std::optional<Interface::Element> moving = Interface::Remove(document, id);
@@ -218,7 +219,7 @@ namespace FluxEditor {
             siblings->insert(siblings->begin() + static_cast<std::ptrdiff_t>(index + (zone > 0 ? 1 : 0)), std::move(*moving));
         }
         if (rect && m_scale > 0.0f) {
-            const std::vector<Interface::Placed> placed = Interface::Arrange(document, m_screen.min, m_screen.max);
+            const std::vector<Interface::Placed> placed = Interface::Arrange(document, m_screen.min, m_screen.max, std::nullopt, id);
             const Interface::Element* parent = Interface::FindParent(document, id);
             const Interface::Placed* parentPlaced = parent ? FindPlaced(placed, parent->id) : nullptr;
             if (!parent || parentPlaced) {
@@ -230,6 +231,64 @@ namespace FluxEditor {
         }
         open->selection = id;
         MarkChanged();
+    }
+
+    bool InterfaceEditor::DrawActionTarget(Engine& engine, const Interface::Document& document, Interface::Element& button) {
+        UI::Context& ui = engine.GetUi();
+        std::string& target = button.target;
+        switch (button.action) {
+            case Interface::ButtonAction::OpenWindow:
+            case Interface::ButtonAction::CloseWindow:
+            case Interface::ButtonAction::ToggleWindow: {
+                // Les fenêtres du document, par leur nom ; une cible qui n'existe plus reste affichée comme telle.
+                std::vector<std::string> names;
+                const auto collect = [&names](auto&& self, const std::vector<Interface::Element>& elements) -> void {
+                    for (const Interface::Element& element : elements) {
+                        if (element.type == ElementType::Window && !element.name.empty()
+                            && std::ranges::find(names, element.name) == names.end()) {
+                            names.push_back(element.name);
+                        }
+                        self(self, element.children);
+                    }
+                };
+                collect(collect, document.roots);
+                const bool missing = std::ranges::find(names, target) == names.end();
+                std::vector<std::string_view> options;
+                std::string missingLabel;
+                if (missing) {
+                    missingLabel = target.empty() ? "(choisir une fenêtre)" : "« " + target + " » introuvable";
+                    options.push_back(missingLabel);
+                }
+                options.insert(options.end(), names.begin(), names.end());
+                int index = missing ? 0 : static_cast<int>(std::ranges::find(names, target) - names.begin());
+                if (ui.Choice("Fenêtre", index, options) && !(missing && index == 0)) {
+                    target = names[static_cast<std::size_t>(index - (missing ? 1 : 0))];
+                    return true;
+                }
+                if (names.empty()) {
+                    ui.TextDisabled("Ajoutez d'abord une fenêtre et donnez-lui un nom.");
+                }
+                return false;
+            }
+            case Interface::ButtonAction::ChangeScene: {
+                bool browse = false;
+                bool changed = ui.InputTextBrowse("Scène", target, browse);
+                if (browse) {
+                    if (std::optional<std::string> chosen = ChooseAsset(engine, AssetType::Scene, target)) {
+                        target = std::move(*chosen);
+                        changed = true;
+                    }
+                }
+                return changed;
+            }
+            case Interface::ButtonAction::CallFunction: {
+                const bool changed = ui.InputText("Fonction", target);
+                ui.TextDisabled("Enregistrée par le jeu : Engine::RegisterInterfaceFunction");
+                return changed;
+            }
+            default:
+                return false; // pas de cible : rien à régler
+        }
     }
 
     void InterfaceEditor::DrawPropertiesPanel(Engine& engine) {
@@ -258,12 +317,15 @@ namespace FluxEditor {
                 bool changed = false;
                 ui.LabelText("Type", TypeName(element->type));
                 changed |= ui.InputText("Nom", element->name);
-                changed |= ui.Checkbox("Visible", element->visible);
+                // Une fenêtre fermée au démarrage reste montrée ici tant qu'elle est sélectionnée.
+                changed |= ui.Checkbox(element->type == ElementType::Window ? "Ouverte au démarrage" : "Visible",
+                                       element->visible);
 
                 int anchor = static_cast<int>(element->anchor);
                 if (ui.Choice("Ancre", anchor, Interface::GetAnchorNames())) {
                     // Changer d'ancre ne déplace pas l'élément : il garde sa place à l'écran.
-                    const std::vector<Interface::Placed> placed = Interface::Arrange(open.document, m_screen.min, m_screen.max);
+                    const std::vector<Interface::Placed> placed =
+                        Interface::Arrange(open.document, m_screen.min, m_screen.max, std::nullopt, element->id);
                     const Interface::Placed* item = FindPlaced(placed, element->id);
                     element->anchor = static_cast<Interface::Anchor>(anchor);
                     if (item && m_scale > 0.0f) {
@@ -291,7 +353,9 @@ namespace FluxEditor {
                             auto& value = element->*member;
                             using Value = std::remove_cvref_t<decltype(value)>;
                             if constexpr (std::is_same_v<Value, std::string>) {
-                                if (field.image) {
+                                if (field.text == Interface::Field::Text::ActionTarget) {
+                                    changed |= DrawActionTarget(engine, open.document, *element);
+                                } else if (field.text == Interface::Field::Text::Image) {
                                     bool browse = false;
                                     changed |= ui.InputTextBrowse(field.label, value, browse);
                                     if (browse) {
@@ -313,6 +377,12 @@ namespace FluxEditor {
                                 int index = static_cast<int>(value);
                                 if (ui.Choice(field.label, index, Interface::GetAlignNames())) {
                                     value = static_cast<Interface::TextAlign>(index);
+                                    changed = true;
+                                }
+                            } else if constexpr (std::is_same_v<Value, Interface::ButtonAction>) {
+                                int index = static_cast<int>(value);
+                                if (ui.Choice(field.label, index, Interface::GetActionNames())) {
+                                    value = static_cast<Interface::ButtonAction>(index);
                                     changed = true;
                                 }
                             }

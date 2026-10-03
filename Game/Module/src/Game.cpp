@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 
 // Démo : composants et systèmes du jeu. La scène de démarrage est choisie par le projet (Game.fluxproject).
 namespace {
@@ -85,10 +86,13 @@ FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
         .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
         .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
     engine.SetGameUpdate(Update);
+    // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
+    engine.RegisterInterfaceFunction("Exemple", [](Engine&) { std::printf("Bouton d'interface : fonction Exemple appelée\n"); });
 }
 
 FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {
     // Rien du jeu ne doit survivre au déchargement de la DLL : ni son code (Update), ni ses entités.
     // La scène et les composants enregistrés sont vidés ensuite par le moteur (GameModule::Unregister).
     engine.SetGameUpdate(nullptr);
+    engine.UnregisterInterfaceFunction("Exemple");
 }

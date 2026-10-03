@@ -182,6 +182,8 @@ int main(int argc, char** argv) {
         }
         document.UpdateTitle(e);
     });
+    // Bouton « Quitter le jeu » d'une interface : dans l'éditeur, on revient à la scène éditée.
+    engine.SetGameQuitHandler([&](Flux::Engine& e) { playMode.Stop(e); });
     engine.SetCloseRequestHandler([&](Flux::Engine& e) {
         playMode.Stop(e); // la question porte sur la scène éditée, pas sur sa copie en jeu
         return document.ConfirmClose(e) && interfaceEditor.ConfirmClose(e);

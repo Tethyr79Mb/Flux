@@ -52,17 +52,30 @@ namespace Flux::Interface {
 
     enum class TextAlign : std::uint8_t { Left, Center, Right, Count };
 
+    // Ce que fait un bouton cliqué en jeu. Les fenêtres sont désignées par leur nom (target).
+    enum class ButtonAction : std::uint8_t {
+        None,
+        OpenWindow,   // l'affiche et la met devant les autres
+        CloseWindow,
+        ToggleWindow, // l'ouvre si elle est fermée, la ferme sinon
+        CloseParent,  // ferme la fenêtre qui contient le bouton (« Retour », « Annuler »)
+        ChangeScene,  // target : chemin de la scène, relatif au dossier des assets
+        Quit,         // quitte le jeu (dans l'éditeur : arrête le mode Jouer)
+        CallFunction, // target : nom d'une fonction C++ enregistrée par le jeu (Engine::RegisterInterfaceFunction)
+        Count,
+    };
+
     struct Element
     {
         std::uint32_t id = 0; // unique dans le document, jamais réutilisé
-        std::string name;     // pour s'y retrouver dans l'arbre (et, plus tard, le désigner depuis le jeu)
+        std::string name;     // pour s'y retrouver dans l'arbre, et le désigner (actions des boutons, code du jeu)
         ElementType type = ElementType::Frame;
         Anchor anchor = Anchor::Center;
         // Ancre ordinaire : décalage depuis l'ancre (vers la droite et le bas) et taille.
         // Stretch : marges gauche et haut (position), droite et bas (size).
         Math::Vector2f position;
         Math::Vector2f size{100.0f, 100.0f};
-        bool visible = true;
+        bool visible = true; // fenêtre : ouverte au démarrage
 
         Math::LinearColor background{0.0f, 0.0f, 0.0f, 0.0f};
         Math::LinearColor border{0.0f, 0.0f, 0.0f, 0.0f};
@@ -88,11 +101,18 @@ namespace Flux::Interface {
         Math::LinearColor titleColor{0.0f, 0.0f, 0.0f, 0.0f};
         bool shadow = true;
         bool movable = true;
+        bool closeButton = false;   // croix dans la barre de titre
+        bool closeOnEscape = true;  // Échap ferme la fenêtre ouverte la plus en avant qui l'accepte
+        bool openOnEscape = false;  // ... et sinon ouvre celle-ci (menu pause)
+        bool pausesGame = false;    // le jeu est en pause tant qu'elle est ouverte
 
         bool checked = false; // case
         float value = 0.5f;   // curseur, entre minimum et maximum
         float minimum = 0.0f;
         float maximum = 1.0f;
+
+        ButtonAction action = ButtonAction::None; // bouton
+        std::string target;                       // fenêtre, scène ou fonction visée par l'action
 
         std::vector<Element> children; // fenêtres et cadres seulement ; dessinés par-dessus leur parent
     };
@@ -107,6 +127,9 @@ namespace Flux::Interface {
     FLUX_API std::span<const std::string_view> GetTypeNames();
     FLUX_API std::span<const std::string_view> GetAnchorNames();
     FLUX_API std::span<const std::string_view> GetAlignNames();
+    FLUX_API std::span<const std::string_view> GetActionNames();
+    // L'action vise une fenêtre par son nom (ouvrir, fermer, basculer).
+    FLUX_API bool TargetsWindow(ButtonAction action);
     // Fenêtres et cadres reçoivent des enfants.
     FLUX_API bool IsContainer(ElementType type);
 
@@ -115,13 +138,16 @@ namespace Flux::Interface {
     struct Field
     {
         using Member = std::variant<std::string Element::*, Math::LinearColor Element::*, float Element::*, bool Element::*,
-                                    TextAlign Element::*>;
+                                    TextAlign Element::*, ButtonAction Element::*>;
+        // Texte libre, chemin d'une image (choisi dans l'explorateur), ou cible d'une action (fenêtre, scène,
+        // fonction : l'éditeur propose selon l'action).
+        enum class Text : std::uint8_t { Plain, Image, ActionTarget };
 
         std::string_view key;   // dans le fichier
         std::string_view label; // dans l'éditeur
         Member member;
         std::uint32_t types = 0; // bit 1 << ElementType : types concernés
-        bool image = false;      // chemin d'une image (choisi dans l'explorateur)
+        Text text = Text::Plain; // chaînes seulement
         float speed = 1.0f;      // nombres : variation par pixel glissé, bornes, décimales
         float min = 0.0f;
         float max = 100000.0f;
@@ -141,6 +167,14 @@ namespace Flux::Interface {
     FLUX_API const Element* Find(const Document& document, std::uint32_t id);
     // Parent de l'élément (nullptr : à la racine, ou absent).
     FLUX_API Element* FindParent(Document& document, std::uint32_t id);
+    // Premier élément de ce nom (parcours en profondeur, dans l'ordre du fichier) ; nullptr si aucun.
+    FLUX_API Element* FindByName(Document& document, std::string_view name);
+    FLUX_API const Element* FindByName(const Document& document, std::string_view name);
+    // Ouvre (la met aussi devant les autres fenêtres) ou ferme la fenêtre de ce nom ; false si aucune fenêtre ne
+    // porte ce nom.
+    FLUX_API bool SetWindowOpen(Document& document, std::string_view name, bool open);
+    // Une fenêtre ouverte (et ses parents visibles) met le jeu en pause.
+    FLUX_API bool IsPausingGame(const Document& document);
     // Retire l'élément (avec ses enfants) et le retourne.
     FLUX_API std::optional<Element> Remove(Document& document, std::uint32_t id);
     // Liste qui contient l'élément (racines ou enfants de son parent), et sa place dedans.
@@ -185,9 +219,11 @@ namespace Flux::Interface {
     // Point du parent où se pose l'ancre (le coin haut-gauche du parent pour Stretch).
     FLUX_API Math::Vector2f AnchorPoint(Anchor anchor, const Rect& parent);
     // Tous les éléments visibles, dans l'ordre du dessin (parent avant ses enfants). clip : partie de la vue où
-    // ils peuvent se voir (l'éditeur montre l'écran dans une vue plus petite) ; sans, toute la vue.
+    // ils peuvent se voir (l'éditeur montre l'écran dans une vue plus petite) ; sans, toute la vue. reveal : un
+    // élément montré même s'il est masqué, avec les parents qui le contiennent (l'éditeur montre la fenêtre fermée
+    // qu'on a sélectionnée).
     FLUX_API std::vector<Placed> Arrange(const Document& document, Math::Vector2f viewMin, Math::Vector2f viewMax,
-                                         const std::optional<Rect>& clip = std::nullopt);
+                                         const std::optional<Rect>& clip = std::nullopt, std::uint32_t reveal = 0);
     // Élément visible sous le point, le plus en avant (0 : aucun).
     FLUX_API std::uint32_t FindAt(std::span<const Placed> placed, Math::Vector2f point);
 
@@ -199,6 +235,7 @@ namespace Flux::Interface {
         bool pressed = false;
         bool released = false;
         bool enabled = true; // false : la souris est ailleurs (panneau de l'éditeur), rien n'est survolé
+        bool escape = false; // touche Échap appuyée à cette frame
     };
 
     // État de l'interface en jeu, d'une frame à l'autre.
@@ -208,11 +245,20 @@ namespace Flux::Interface {
         std::uint32_t pressed = 0; // élément tenu depuis le clic
         std::uint32_t clicked = 0; // bouton cliqué à cette frame
         bool wantsMouse = false;   // souris au-dessus de l'interface : le jeu doit ignorer ses clics
+        std::uint32_t closeHovered = 0; // fenêtre dont la croix est survolée
+        bool closePressed = false;      // pressed est une fenêtre tenue par sa croix (pas par sa barre de titre)
         Math::Vector2f dragStart;
         Math::Vector2f dragOrigin;
+        // Résultats de la frame : action d'un bouton cliqué que l'interface ne fait pas elle-même (changer de
+        // scène, quitter, fonction C++), Échap utilisée (une fenêtre fermée ou ouverte), jeu en pause.
+        ButtonAction action = ButtonAction::None;
+        std::string target;
+        bool escapeUsed = false;
+        bool pausesGame = false;
     };
 
-    // Fait réagir l'interface à la souris (cases, curseurs, fenêtres déplacées) : modifie le document.
+    // Fait réagir l'interface à la souris et à Échap (cases, curseurs, fenêtres déplacées, ouvertes, fermées, mises
+    // devant les autres) : modifie le document. Les fenêtres à la racine forment la pile : la dernière est devant.
     FLUX_API void Update(Document& document, Interaction& interaction, Math::Vector2f viewMin, Math::Vector2f viewMax,
                          const Pointer& pointer);
 
@@ -224,6 +270,7 @@ namespace Flux::Interface {
         const Interaction* interaction = nullptr; // survol et appui en jeu
         bool placeholders = false;                // éditeur : un cadre gris pour une image sans fichier
         std::optional<Rect> clip{};               // voir Arrange
+        std::uint32_t reveal = 0;                 // voir Arrange
     };
 
     // Dessine le document dans la vue min-max (découpé à elle).

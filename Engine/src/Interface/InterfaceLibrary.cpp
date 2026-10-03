@@ -72,4 +72,21 @@ namespace Flux {
     void InterfaceLibrary::ForgetInstancesBefore(std::uint64_t frame) {
         std::erase_if(m_instances, [frame](const auto& item) { return item.second.lastFrame < frame; });
     }
+
+    bool InterfaceLibrary::SetWindowOpen(std::string_view name, bool open) {
+        bool found = false;
+        for (auto& [entity, instance] : m_instances) {
+            found = Interface::SetWindowOpen(instance.document, name, open) || found;
+        }
+        return found;
+    }
+
+    Interface::Element* InterfaceLibrary::FindInInstances(std::string_view name) {
+        for (auto& [entity, instance] : m_instances) {
+            if (Interface::Element* element = Interface::FindByName(instance.document, name)) {
+                return element;
+            }
+        }
+        return nullptr;
+    }
 }
