@@ -6,6 +6,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/UI/DrawList.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace Flux;
@@ -205,6 +206,116 @@ namespace {
         CHECK(!list.GetVertices().empty());
         return true;
     }
+    // Fenêtres en jeu : actions des boutons, pile Échap, pause, croix, fenêtre mise devant.
+    bool RunWindowTests() {
+        Interface::Document document;
+        const auto window = [&](std::string name, Vector2f position, bool open) {
+            Interface::Element element = Interface::MakeElement(document, Interface::ElementType::Window);
+            element.name = std::move(name);
+            element.anchor = Interface::Anchor::TopLeft;
+            element.position = position;
+            element.size = {400.0f, 300.0f};
+            element.visible = open;
+            return element;
+        };
+        const auto button = [&](Interface::ButtonAction action, std::string target, Vector2f position) {
+            Interface::Element element = Interface::MakeElement(document, Interface::ElementType::Button);
+            element.anchor = Interface::Anchor::TopLeft;
+            element.position = position;
+            element.size = {100.0f, 40.0f};
+            element.action = action;
+            element.target = std::move(target);
+            return element;
+        };
+        // Menu (ouvert) : un bouton qui ouvre Options, un qui quitte, un qui appelle une fonction.
+        Interface::Element menu = window("Menu", {0.0f, 0.0f}, true);
+        menu.closeOnEscape = false;
+        menu.children = {button(Interface::ButtonAction::OpenWindow, "Options", {10.0f, 50.0f}),
+                         button(Interface::ButtonAction::Quit, "", {10.0f, 100.0f}),
+                         button(Interface::ButtonAction::CallFunction, "Sauver", {10.0f, 150.0f})};
+        // Options (fermée, avec une croix) : un bouton « Retour » qui ferme sa fenêtre.
+        Interface::Element options = window("Options", {200.0f, 100.0f}, false);
+        options.closeButton = true;
+        options.children = {button(Interface::ButtonAction::CloseParent, "", {10.0f, 200.0f})};
+        // Pause (fermée) : ouverte par Échap, met le jeu en pause.
+        Interface::Element pause = window("Pause", {1000.0f, 500.0f}, false);
+        pause.openOnEscape = true;
+        pause.pausesGame = true;
+        const std::uint32_t menuId = menu.id;
+        const std::uint32_t optionsId = options.id;
+        const std::uint32_t pauseId = pause.id;
+        document.roots = {menu, options, pause};
+
+        Interface::Interaction interaction;
+        const Vector2f min{0.0f, 0.0f};
+        const Vector2f max{1920.0f, 1080.0f};
+        const auto frame = [&](Vector2f mouse, bool down, bool pressed, bool released, bool escape = false) {
+            Interface::Update(document, interaction, min, max, {mouse, down, pressed, released, true, escape});
+        };
+        const auto click = [&](Vector2f mouse) {
+            frame(mouse, true, true, false);
+            frame(mouse, false, false, true);
+        };
+        const auto escape = [&] { frame({1900.0f, 1000.0f}, false, false, false, true); };
+        const auto isOpen = [&](std::uint32_t id) { return Interface::Find(document, id)->visible; };
+
+        // Ouvrir par son nom : Options s'ouvre et passe devant.
+        click({50.0f, 70.0f});
+        CHECK(isOpen(optionsId) && document.roots.back().id == optionsId);
+        // Un clic dans le Menu (là où Options ne le couvre pas) le remet devant.
+        click({50.0f, 270.0f});
+        CHECK(document.roots.back().id == menuId);
+        // Quitter et fonction : laissés au moteur, une frame seulement.
+        click({50.0f, 120.0f});
+        CHECK(interaction.action == Interface::ButtonAction::Quit);
+        click({50.0f, 170.0f});
+        CHECK(interaction.action == Interface::ButtonAction::CallFunction && interaction.target == "Sauver");
+        frame({50.0f, 170.0f}, false, false, false);
+        CHECK(interaction.action == Interface::ButtonAction::None);
+
+        // « Fermer sa fenêtre » : le bouton Retour ferme Options.
+        click({220.0f, 320.0f});
+        CHECK(!isOpen(optionsId));
+        // La croix (au bout de la barre de titre de 40) ferme ; appuyée puis relâchée ailleurs, non.
+        CHECK(Interface::SetWindowOpen(document, "Options", true) && isOpen(optionsId));
+        frame({580.0f, 120.0f}, true, true, false);
+        frame({500.0f, 200.0f}, false, false, true);
+        CHECK(isOpen(optionsId) && Near(Interface::Find(document, optionsId)->position, {200.0f, 100.0f}));
+        frame({580.0f, 120.0f}, false, false, false);
+        CHECK(interaction.closeHovered == optionsId);
+        click({580.0f, 120.0f});
+        CHECK(!isOpen(optionsId));
+
+        // Échap : rien d'ouvert qui se ferme ainsi -> ouvre Pause (le jeu se fige) ; encore -> la ferme.
+        CHECK(!interaction.pausesGame);
+        escape();
+        CHECK(isOpen(pauseId) && interaction.escapeUsed && interaction.pausesGame);
+        // Options ouverte par-dessus : Échap la ferme d'abord (la plus en avant), puis Pause.
+        Interface::SetWindowOpen(document, "Options", true);
+        escape();
+        CHECK(!isOpen(optionsId) && isOpen(pauseId));
+        escape();
+        CHECK(!isOpen(pauseId) && !interaction.pausesGame);
+        CHECK(isOpen(menuId)); // « Échap la ferme » décoché
+        CHECK(!Interface::SetWindowOpen(document, "Inconnue", true));
+
+        // Éditeur : une fenêtre fermée est placée quand on la montre (elle ou un de ses enfants sélectionné).
+        CHECK(std::ranges::none_of(Interface::Arrange(document, min, max),
+                                   [&](const Interface::Placed& item) { return item.element->id == optionsId; }));
+        const std::uint32_t backId = Interface::Find(document, optionsId)->children[0].id;
+        const std::vector<Interface::Placed> revealed = Interface::Arrange(document, min, max, std::nullopt, backId);
+        CHECK(revealed.size() == Interface::Arrange(document, min, max).size() + 2);
+
+        // Les nouveaux réglages passent par le fichier.
+        auto loaded = Interface::LoadFromString(Interface::SaveToString(document));
+        CHECK(loaded.has_value());
+        const Interface::Element* back = Interface::Find(*loaded, pauseId);
+        CHECK(back && back->openOnEscape && back->pausesGame && !back->visible);
+        CHECK(Interface::Find(*loaded, optionsId)->closeButton);
+        const Interface::Element* call = Interface::FindByName(*loaded, "Menu");
+        CHECK(call && call->children[2].action == Interface::ButtonAction::CallFunction && call->children[2].target == "Sauver");
+        return true;
+    }
 }
 
 bool RunInterfaceTests() {
@@ -213,5 +324,5 @@ bool RunInterfaceTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font);
+    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests();
 }
