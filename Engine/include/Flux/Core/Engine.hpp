@@ -11,7 +11,9 @@
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/DrawList.hpp"
 
+#include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -31,6 +33,8 @@ namespace Flux {
 
     namespace Interface {
         struct Document;
+        struct Element;
+        enum class ButtonAction : std::uint8_t;
     }
 
     struct EngineConfig {
@@ -55,6 +59,8 @@ namespace Flux {
         using UpdateFunction = std::function<void(Engine& engine, double deltaSeconds)>;
         // Demande de fermeture de la fenêtre : retourne false pour l'annuler (modifications à enregistrer...).
         using CloseFunction = std::function<bool(Engine& engine)>;
+        // Fonction C++ appelée par un bouton d'interface (action « Fonction C++ »), ou à la place de « Quitter le jeu ».
+        using InterfaceFunction = std::function<void(Engine& engine)>;
 
         explicit Engine(const EngineConfig& config = {});
         ~Engine();
@@ -96,6 +102,23 @@ namespace Flux {
         bool InterfaceWantsMouse() const { return m_interfaceWantsMouse; }
         // Éditeur : false fige la caméra en vol libre (la souris et le clavier servent à l'éditeur d'interface).
         void SetCameraInputEnabled(bool enabled) { m_cameraInputEnabled = enabled; }
+
+        // Fonction appelée par les boutons dont l'action est « Fonction C++ » et la cible ce nom (remplace celle du
+        // même nom). Appelée à la fin de la frame, hors du dessin : elle peut changer la scène. Le moteur les retire
+        // toutes quand le module de jeu est déchargé (leur code est dans sa DLL).
+        void RegisterInterfaceFunction(std::string name, InterfaceFunction function);
+        void UnregisterInterfaceFunction(std::string_view name);
+        void ClearInterfaceFunctions();
+        // Remplace la fermeture de la fenêtre pour l'action « Quitter le jeu » (l'éditeur arrête le mode Jouer).
+        void SetGameQuitHandler(InterfaceFunction handler) { m_gameQuitHandler = std::move(handler); }
+        // Interfaces en jeu (une copie par entité, créée quand elle est dessinée la première fois) : ouvre ou ferme
+        // l'élément de ce nom dans toutes ; false si aucune n'en a.
+        bool SetInterfaceWindowOpen(std::string_view name, bool open);
+        // Premier élément de ce nom dans les interfaces en jeu (lire une case, un curseur ; changer un texte) ;
+        // nullptr hors du jeu ou si aucune n'en a. Valable jusqu'à la fin de la frame.
+        Interface::Element* FindInterfaceElement(std::string_view name);
+        // Une fenêtre ouverte « Met le jeu en pause » à l'image précédente : le jeu reçoit un temps écoulé nul.
+        bool IsInterfacePausing() const { return m_interfacePaused; }
 
         // Boîte englobante du maillage d'une entité, dans son repère (avant sa transformation) : le cube unité pour
         // un cube (MeshRendererComponent) ou un modèle sans fichier lisible, celle du modèle sinon (chargé au besoin) ;
@@ -149,6 +172,13 @@ namespace Flux {
         bool m_interfaceWantsMouse = false; // à l'image précédente
         bool m_interfaceMouseNow = false;   // à l'image en cours, d'après les interfaces déjà dessinées
         bool m_cameraInputEnabled = true;
+        bool m_interfacePaused = false;    // à l'image précédente
+        bool m_interfacePausedNow = false; // à l'image en cours
+        bool m_escapeUsed = false;         // Échap a déjà servi à une interface dans cette image
+        std::map<std::string, InterfaceFunction, std::less<>> m_interfaceFunctions;
+        InterfaceFunction m_gameQuitHandler;
+        // Actions des boutons cliqués pendant le dessin des interfaces, faites à la fin de la frame.
+        std::vector<std::pair<Interface::ButtonAction, std::string>> m_interfaceActions;
         // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette).
         float m_followDistance = 4.0f;
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
@@ -165,6 +195,7 @@ namespace Flux {
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
+        void RunInterfaceActions();
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
         Entity GetFollowedPlayer() const;
         void RotateFollowCamera();

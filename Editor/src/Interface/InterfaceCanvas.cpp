@@ -150,7 +150,7 @@ namespace FluxEditor {
         const float scale = Interface::GetScale(screen.min, screen.max);
         m_screen = screen;
         m_scale = scale;
-        std::vector<Interface::Placed> placed = Interface::Arrange(open.document, screen.min, screen.max, area);
+        std::vector<Interface::Placed> placed = Interface::Arrange(open.document, screen.min, screen.max, area, open.selection);
         const Interface::Placed* selected = FindPlaced(placed, open.selection);
 
         // Clic : une poignée de l'élément sélectionné, sinon l'élément le plus en avant sous la souris.
@@ -222,7 +222,7 @@ namespace FluxEditor {
                                       : Vector2f{std::round(element->size.x), std::round(element->size.y)};
                     if (element->position != oldPosition || element->size != oldSize) {
                         MarkChanged();
-                        placed = Interface::Arrange(open.document, screen.min, screen.max, area);
+                        placed = Interface::Arrange(open.document, screen.min, screen.max, area, open.selection);
                     }
                 }
             }
@@ -247,7 +247,8 @@ namespace FluxEditor {
         Interface::Draw(open.document, list, screen.min, screen.max,
                         {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); },
                          .placeholders = true,
-                         .clip = area});
+                         .clip = area,
+                         .reveal = open.selection});
         list.SetClipRect(area.min, area.max);
         list.AddRectOutline(screen.min - Vector2f{1.0f, 1.0f}, screen.max + Vector2f{1.0f, 1.0f}, style.separator, 1.0f);
         const float labelSize = std::round(style.fontSize * 0.85f);

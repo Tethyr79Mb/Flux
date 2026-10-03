@@ -201,6 +201,8 @@ namespace Flux {
             // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.
             ++m_frame;
             m_interfaceWantsMouse = std::exchange(m_interfaceMouseNow, false);
+            m_interfacePaused = std::exchange(m_interfacePausedNow, false);
+            m_escapeUsed = false;
             m_interfaces->ForgetInstancesBefore(m_frame - 1);
             // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
@@ -216,7 +218,8 @@ namespace Flux {
                                           m_cameraInputEnabled && !m_ui->WantsKeyboard());
             }
             if (m_gameState != GameState::Stopped) {
-                const double gameDelta = m_gameState == GameState::Running ? deltaSeconds : 0.0;
+                // Pause : celle de l'éditeur (F6), ou un menu ouvert qui la demande.
+                const double gameDelta = m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0;
                 const Clock::time_point gameStart = Clock::now();
                 UpdateGameSystems(gameDelta);
                 if (m_gameUpdate) {
@@ -251,6 +254,7 @@ namespace Flux {
             if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
                 return 1;
             }
+            RunInterfaceActions(); // avant le changement de scène : une fonction peut en demander un
             LoadRequestedScene();
         }
         return 0;
@@ -261,7 +265,7 @@ namespace Flux {
     }
 
     void Engine::UpdateGameSystems(double deltaSeconds) {
-        if (m_gameState != GameState::Running) {
+        if (m_gameState != GameState::Running || m_interfacePaused) {
             return; // en pause : ni minuterie ni clic
         }
         // Clic ou touche de confirmation, sauf s'ils visent l'interface (panneaux de l'éditeur, champ en saisie).
@@ -329,6 +333,8 @@ namespace Flux {
         if (state == GameState::Stopped) {
             m_physics.reset();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
+            m_interfaceActions.clear();
+            m_interfacePaused = m_interfacePausedNow = false;
         }
     }
 
@@ -447,6 +453,64 @@ namespace Flux {
         m_physics.reset(); // les corps de l'ancienne scène : recréés d'après la nouvelle à la prochaine image
     }
 
+    void Engine::RunInterfaceActions() {
+        std::vector<std::pair<Interface::ButtonAction, std::string>> actions = std::exchange(m_interfaceActions, {});
+        for (auto& [action, target] : actions) {
+            if (m_gameState == GameState::Stopped) {
+                return; // « Quitter » a arrêté le jeu (éditeur) : la suite visait le jeu
+            }
+            switch (action) {
+                case Interface::ButtonAction::ChangeScene:
+                    if (!target.empty()) {
+                        RequestScene(std::move(target));
+                    }
+                    break;
+                case Interface::ButtonAction::Quit:
+                    if (m_gameQuitHandler) {
+                        m_gameQuitHandler(*this);
+                    } else {
+                        RequestQuit();
+                    }
+                    break;
+                case Interface::ButtonAction::CallFunction:
+                    if (const auto found = m_interfaceFunctions.find(target); found != m_interfaceFunctions.end()) {
+                        // Copie : la fonction peut s'enregistrer à nouveau ou se retirer pendant l'appel.
+                        const InterfaceFunction function = found->second;
+                        function(*this);
+                    } else {
+                        std::fprintf(stderr, "Flux : bouton d'interface : aucune fonction « %s » enregistrée par le jeu\n",
+                                     target.c_str());
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    void Engine::RegisterInterfaceFunction(std::string name, InterfaceFunction function) {
+        m_interfaceFunctions.insert_or_assign(std::move(name), std::move(function));
+    }
+
+    void Engine::UnregisterInterfaceFunction(std::string_view name) {
+        if (const auto found = m_interfaceFunctions.find(name); found != m_interfaceFunctions.end()) {
+            m_interfaceFunctions.erase(found);
+        }
+    }
+
+    void Engine::ClearInterfaceFunctions() {
+        m_interfaceFunctions.clear();
+        m_interfaceActions.clear();
+    }
+
+    bool Engine::SetInterfaceWindowOpen(std::string_view name, bool open) {
+        return m_gameState != GameState::Stopped && m_interfaces->SetWindowOpen(name, open);
+    }
+
+    Interface::Element* Engine::FindInterfaceElement(std::string_view name) {
+        return m_gameState != GameState::Stopped ? m_interfaces->FindInInstances(name) : nullptr;
+    }
+
     void Engine::SetGameUpdate(UpdateFunction update) {
         m_gameUpdate = std::move(update);
     }
@@ -504,9 +568,19 @@ namespace Flux {
                                                  .down = input.IsMouseButtonDown(MouseButton::Left),
                                                  .pressed = input.WasMouseButtonPressed(MouseButton::Left),
                                                  .released = input.WasMouseButtonReleased(MouseButton::Left),
-                                                 .enabled = !m_ui->WantsMouse() && !m_window->IsCursorLocked()};
-                Interface::Update(instance->document, instance->interaction, request.viewMin, request.viewMax, pointer);
-                m_interfaceMouseNow = m_interfaceMouseNow || instance->interaction.wantsMouse;
+                                                 .enabled = !m_ui->WantsMouse() && !m_window->IsCursorLocked(),
+                                                 // Une seule interface par Échap : la première dessinée qui s'en sert.
+                                                 .escape = input.WasKeyPressed(Key::Escape) && !m_ui->WantsKeyboard()
+                                                        && !m_escapeUsed};
+                Interface::Interaction& interaction = instance->interaction;
+                Interface::Update(instance->document, interaction, request.viewMin, request.viewMax, pointer);
+                m_interfaceMouseNow = m_interfaceMouseNow || interaction.wantsMouse;
+                m_interfacePausedNow = m_interfacePausedNow || interaction.pausesGame;
+                m_escapeUsed = m_escapeUsed || interaction.escapeUsed;
+                if (interaction.action != Interface::ButtonAction::None) {
+                    // Pas pendant le dessin : la scène est en cours de parcours.
+                    m_interfaceActions.emplace_back(interaction.action, interaction.target);
+                }
                 options.interaction = &instance->interaction;
                 document = &instance->document;
             }

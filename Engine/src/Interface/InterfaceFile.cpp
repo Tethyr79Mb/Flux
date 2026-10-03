@@ -27,6 +27,8 @@ namespace Flux::Interface {
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorKeys{
             "topLeft", "top", "topRight", "left", "center", "right", "bottomLeft", "bottom", "bottomRight", "stretch"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(TextAlign::Count)> AlignKeys{"left", "center", "right"};
+        constexpr std::array<std::string_view, static_cast<std::size_t>(ButtonAction::Count)> ActionKeys{
+            "none", "openWindow", "closeWindow", "toggleWindow", "closeParent", "changeScene", "quit", "callFunction"};
 
         // Écriture la plus courte qui redonne exactement ce float (« 0.1 » et non 0.10000000149011612).
         double Shortest(float value) {
@@ -90,6 +92,8 @@ namespace Flux::Interface {
                             json[std::string(field.key)] = ToJson(value);
                         } else if constexpr (std::is_same_v<Value, TextAlign>) {
                             json[std::string(field.key)] = AlignKeys[static_cast<std::size_t>(value)];
+                        } else if constexpr (std::is_same_v<Value, ButtonAction>) {
+                            json[std::string(field.key)] = ActionKeys[static_cast<std::size_t>(value)];
                         } else {
                             json[std::string(field.key)] = value;
                         }
@@ -143,6 +147,8 @@ namespace Flux::Interface {
                             value = ReadColor(*found);
                         } else if constexpr (std::is_same_v<Value, TextAlign>) {
                             value = static_cast<TextAlign>(IndexOf(AlignKeys, found->template get<std::string>(), "alignement"));
+                        } else if constexpr (std::is_same_v<Value, ButtonAction>) {
+                            value = static_cast<ButtonAction>(IndexOf(ActionKeys, found->template get<std::string>(), "action"));
                         } else {
                             value = found->template get<Value>();
                         }
