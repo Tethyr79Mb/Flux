@@ -119,7 +119,24 @@ namespace Flux::ScreenUi {
             AddRect(context, entity, topLeft, topLeft + size);
         }
 
+        void DrawInterface(const DrawContext& context, Entity entity, const InterfaceComponent& component) {
+            if (!context.options.interfaces) {
+                return;
+            }
+            const auto rect = context.options.interfaces(
+                {entity, component, context.list, context.viewMin, context.viewMax, context.options.placeholders,
+                 context.options.rects != nullptr});
+            // L'interface a pu changer le rectangle de découpe (fenêtres) : celui de la vue revient pour la suite.
+            context.list.SetClipRect(context.viewMin, context.viewMax);
+            if (rect) {
+                AddRect(context, entity, rect->first, rect->second);
+            }
+        }
+
         void DrawEntity(const DrawContext& context, Entity entity) {
+            if (const auto* component = context.scene.TryGet<InterfaceComponent>(entity)) {
+                DrawInterface(context, entity, *component);
+            }
             if (const auto* image = context.scene.TryGet<ScreenImageComponent>(entity)) {
                 DrawImage(context, entity, *image);
             }
@@ -153,7 +170,8 @@ namespace Flux::ScreenUi {
     }
 
     bool IsScreenElement(const Scene& scene, Entity entity) {
-        return scene.TryGet<ScreenTextComponent>(entity) || scene.TryGet<ScreenImageComponent>(entity);
+        return scene.TryGet<ScreenTextComponent>(entity) || scene.TryGet<ScreenImageComponent>(entity)
+            || scene.TryGet<InterfaceComponent>(entity);
     }
 
     std::optional<Offset> FindOffset(Scene& scene, Entity entity) {

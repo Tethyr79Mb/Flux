@@ -8,6 +8,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/DrawList.hpp"
 
 #include <functional>
@@ -19,12 +20,17 @@
 #include <string_view>
 
 namespace Flux {
+    class InterfaceLibrary;
     class PhysicsWorld;
     class Renderer;
     class Window;
 
     namespace UI {
         class Context;
+    }
+
+    namespace Interface {
+        struct Document;
     }
 
     struct EngineConfig {
@@ -79,6 +85,17 @@ namespace Flux {
         // Image du projet (chemin relatif au dossier des assets, « textures/logo.png ») chargée pour l'overlay :
         // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
         std::optional<UI::TextureInfo> LoadAssetTexture(std::string_view relativePath);
+        // Interface du projet (fichier .fluxui, chemin relatif au dossier des assets), relue quand le fichier change :
+        // l'éditeur d'interface enregistre, le jeu se met à jour. nullptr sans projet, ou si le fichier est absent ou
+        // illisible (l'erreur va dans la console).
+        const Interface::Document* LoadInterface(std::string_view relativePath);
+        // Réglages de ScreenUi::Draw pour la scène : images et interfaces du projet. Pendant le jeu, les interfaces
+        // réagissent à la souris (cases, curseurs, boutons, fenêtres déplacées).
+        ScreenUi::DrawOptions GetScreenUiOptions();
+        // Vrai si la souris était sur une interface du jeu à l'image précédente : ses clics ne vont pas au jeu.
+        bool InterfaceWantsMouse() const { return m_interfaceWantsMouse; }
+        // Éditeur : false fige la caméra en vol libre (la souris et le clavier servent à l'éditeur d'interface).
+        void SetCameraInputEnabled(bool enabled) { m_cameraInputEnabled = enabled; }
 
         // Boîte englobante du maillage d'une entité, dans son repère (avant sa transformation) : le cube unité pour
         // un cube (MeshRendererComponent) ou un modèle sans fichier lisible, celle du modèle sinon (chargé au besoin) ;
@@ -127,6 +144,11 @@ namespace Flux {
         bool m_drawScreenUi = true;
         std::optional<std::string> m_requestedScene;
         std::unique_ptr<PhysicsWorld> m_physics;
+        std::unique_ptr<InterfaceLibrary> m_interfaces;
+        std::uint64_t m_frame = 0;
+        bool m_interfaceWantsMouse = false; // à l'image précédente
+        bool m_interfaceMouseNow = false;   // à l'image en cours, d'après les interfaces déjà dessinées
+        bool m_cameraInputEnabled = true;
         // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette).
         float m_followDistance = 4.0f;
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
@@ -150,5 +172,6 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
+        std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterface(const ScreenUi::InterfaceRequest& request);
     };
 }

@@ -306,6 +306,13 @@ namespace Flux {
         float offsetY = 0.0f;
     };
 
+    // Interface construite dans l'éditeur d'interface (fichier .fluxui : fenêtres, boutons, cases...), affichée à
+    // l'écran par-dessus la 3D comme les textes et les images. Pendant le jeu, elle réagit à la souris.
+    struct InterfaceComponent
+    {
+        std::string file; // chemin relatif au dossier des assets, avec des « / » (interfaces/Menu.fluxui)
+    };
+
     // Passe à une autre scène après un délai ou sur confirmation du joueur (écran de démarrage) : voir SceneChange.
     // Seulement pendant le jeu (Game.exe, ou le mode Jouer de l'éditeur).
     struct SceneChangeComponent

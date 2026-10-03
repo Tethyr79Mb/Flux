@@ -72,6 +72,7 @@ namespace FluxEditor {
             {"interior", "Volumes intérieurs", UI::Icon::Collider},
             {"collider", "Collisions", UI::Icon::Collider},
             {"seat", "Sièges", UI::Icon::Seat},
+            {"interface", "Interfaces", UI::Icon::Window},
             {"screenText", "Textes à l'écran", UI::Icon::Text},
             {"screenImage", "Images à l'écran", UI::Icon::Image},
             {"sceneChange", "Changements de scène", UI::Icon::SceneChange},

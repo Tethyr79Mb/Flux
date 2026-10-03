@@ -18,6 +18,7 @@ namespace Flux {
 }
 
 namespace FluxEditor {
+    class InterfaceEditor;
     class SceneDocument;
 
     // Panneau « Contenu » : les assets du projet (modèles, images...), comme un explorateur de fichiers : l'arbre des
@@ -28,6 +29,9 @@ namespace FluxEditor {
     class ContentBrowser {
         public:
         void Update(Flux::Engine& engine, SceneDocument& document, double deltaSeconds);
+        // Éditeur où s'ouvrent les interfaces (.fluxui) : double-clic, « Nouvelle interface », et qui suit les fichiers
+        // déplacés ou supprimés.
+        void SetInterfaceEditor(InterfaceEditor* editor) { m_interfaces = editor; }
         // Fichiers de scène du dossier assets (sous-dossiers compris), triés par dossier puis par nom.
         const std::vector<std::filesystem::path>& GetScenes() const { return m_scenes; }
         // Menu clic droit d'une scène (à appeler juste après sa ligne) : ouvrir, renommer, scène de démarrage,
@@ -50,7 +54,7 @@ namespace FluxEditor {
         };
 
         // Fenêtre qui demande un nom : nouveau dossier (dans path) ou nouveau nom d'un fichier ou dossier (path).
-        enum class NameRequest { None, NewFolder, Rename };
+        enum class NameRequest { None, NewFolder, NewInterface, Rename };
 
         // Fichier ou dossier glissé vers un dossier.
         struct Drag
@@ -99,6 +103,8 @@ namespace FluxEditor {
         // Icônes du système par extension en minuscules (« / » : dossier) ; nullopt : pas d'icône, ne pas redemander.
         std::unordered_map<std::string, std::optional<Flux::UI::TextureInfo>> m_icons;
         std::vector<std::filesystem::path> m_scenes;
+        std::vector<std::filesystem::path> m_interfaceFiles; // .fluxui du projet : leurs images suivent un déplacement
+        InterfaceEditor* m_interfaces = nullptr;
         double m_sinceScan = 0.0;
         std::filesystem::path m_renaming; // scène en cours de renommage (vide : fenêtre fermée)
         std::string m_newName;            // sans « .scene.json »

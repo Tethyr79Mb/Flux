@@ -1,6 +1,7 @@
 #include "Flux/Core/Engine.hpp"
 
 #include "Flux/Animation/Animator.hpp"
+#include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
@@ -13,6 +14,7 @@
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
+#include "Interface/InterfaceLibrary.hpp"
 
 #include <algorithm>
 #include <array>
@@ -127,7 +129,8 @@ namespace Flux {
     Engine::Engine(const EngineConfig& config)
         : m_window(std::make_unique<Window>()),
           m_showDebugOverlay(config.showDebugOverlay),
-          m_drawScreenUi(config.drawScreenUi) {
+          m_drawScreenUi(config.drawScreenUi),
+          m_interfaces(std::make_unique<InterfaceLibrary>()) {
         RegisterEngineComponents(m_components);
         if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
@@ -195,6 +198,10 @@ namespace Flux {
             stats.Add(GpuSceneCost, render.gpuScene);
             stats.Add(GpuInterfaceCost, render.gpuInterface);
 
+            // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.
+            ++m_frame;
+            m_interfaceWantsMouse = std::exchange(m_interfaceMouseNow, false);
+            m_interfaces->ForgetInstancesBefore(m_frame - 1);
             // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
                              !m_window->IsCursorLocked());
@@ -204,7 +211,9 @@ namespace Flux {
             } else {
                 m_followRotating = false;
                 m_camera.roll = 0.0f; // vol libre : l'horizon reste droit, même après la vue cockpit
-                m_cameraController.Update(m_camera, *m_window, deltaSeconds, !m_ui->WantsMouse(), !m_ui->WantsKeyboard());
+                m_cameraController.Update(m_camera, *m_window, deltaSeconds,
+                                          m_cameraInputEnabled && !m_ui->WantsMouse() && !m_interfaceWantsMouse,
+                                          m_cameraInputEnabled && !m_ui->WantsKeyboard());
             }
             if (m_gameState != GameState::Stopped) {
                 const double gameDelta = m_gameState == GameState::Running ? deltaSeconds : 0.0;
@@ -229,7 +238,7 @@ namespace Flux {
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             if (m_drawScreenUi) {
                 ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
-                               {.textures = [this](std::string_view path) { return LoadAssetTexture(path); }});
+                               GetScreenUiOptions());
             }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
@@ -257,7 +266,7 @@ namespace Flux {
         }
         // Clic ou touche de confirmation, sauf s'ils visent l'interface (panneaux de l'éditeur, champ en saisie).
         const Input& input = m_window->GetInput();
-        const bool confirmed = (input.WasMouseButtonPressed(MouseButton::Left) && !m_ui->WantsMouse())
+        const bool confirmed = (input.WasMouseButtonPressed(MouseButton::Left) && !m_ui->WantsMouse() && !m_interfaceWantsMouse)
                             || ((input.WasKeyPressed(Key::Enter) || input.WasKeyPressed(Key::NumpadEnter)
                                  || input.WasKeyPressed(Key::Space))
                                 && !m_ui->WantsKeyboard());
@@ -319,6 +328,7 @@ namespace Flux {
         m_gameState = state;
         if (state == GameState::Stopped) {
             m_physics.reset();
+            m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
         }
     }
 
@@ -334,7 +344,7 @@ namespace Flux {
         // Comme le vol libre : clic droit maintenu (commencé hors de l'interface) pour tourner autour du personnage.
         const Input& input = m_window->GetInput();
         const bool held = m_window->HasFocus() && input.IsMouseButtonDown(MouseButton::Right);
-        const bool started = input.WasMouseButtonPressed(MouseButton::Right) && !m_ui->WantsMouse();
+        const bool started = input.WasMouseButtonPressed(MouseButton::Right) && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
         m_followRotating = held && (m_followRotating || started);
         m_window->SetCursorLocked(m_followRotating);
         if (m_followRotating) {
@@ -349,7 +359,7 @@ namespace Flux {
                 m_camera.pitch = std::clamp(m_camera.pitch - mouse.y * Sensitivity, -FollowMaxPitch, FollowMaxPitch);
             }
         }
-        if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse()) {
+        if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse() && !m_interfaceWantsMouse) {
             m_followDistance = std::clamp(m_followDistance * std::pow(0.85f, wheel), 1.0f, 30.0f);
         }
     }
@@ -466,6 +476,77 @@ namespace Flux {
             return std::nullopt;
         }
         return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+    }
+
+    const Interface::Document* Engine::LoadInterface(std::string_view relativePath) {
+        if (!m_project || relativePath.empty()) {
+            return nullptr;
+        }
+        return m_interfaces->Get(m_project->assetsDirectory, relativePath);
+    }
+
+    ScreenUi::DrawOptions Engine::GetScreenUiOptions() {
+        return {.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
+                .interfaces = [this](const ScreenUi::InterfaceRequest& request) { return DrawInterface(request); }};
+    }
+
+    std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterface(const ScreenUi::InterfaceRequest& request) {
+        const std::string& file = request.component.file;
+        const Interface::Document* document = nullptr;
+        Interface::DrawOptions options{.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
+                                       .placeholders = request.placeholders};
+        if (m_gameState != GameState::Stopped && m_project && !file.empty()) {
+            // En jeu : la copie de l'entité, que la souris modifie.
+            if (InterfaceLibrary::Instance* instance =
+                    m_interfaces->GetInstance(m_project->assetsDirectory, request.entity, file, m_frame)) {
+                const Input& input = m_window->GetInput();
+                const Interface::Pointer pointer{.position = input.GetMousePosition(),
+                                                 .down = input.IsMouseButtonDown(MouseButton::Left),
+                                                 .pressed = input.WasMouseButtonPressed(MouseButton::Left),
+                                                 .released = input.WasMouseButtonReleased(MouseButton::Left),
+                                                 .enabled = !m_ui->WantsMouse() && !m_window->IsCursorLocked()};
+                Interface::Update(instance->document, instance->interaction, request.viewMin, request.viewMax, pointer);
+                m_interfaceMouseNow = m_interfaceMouseNow || instance->interaction.wantsMouse;
+                options.interaction = &instance->interaction;
+                document = &instance->document;
+            }
+        } else {
+            document = LoadInterface(file);
+        }
+
+        if (!document) {
+            if (!request.placeholders) {
+                return std::nullopt;
+            }
+            // Éditeur : un message à la place de l'interface, pour la voir et la sélectionner.
+            const std::string label = file.empty() ? "Interface : aucun fichier" : "Interface introuvable : " + file;
+            const float pixelSize = std::max(12.0f, 20.0f * Interface::GetScale(request.viewMin, request.viewMax));
+            const Math::Vector2f size = request.list.MeasureText(label, pixelSize);
+            const Math::Vector2f min = (request.viewMin + request.viewMax) * 0.5f - size * 0.5f;
+            request.list.AddRect(min - Math::Vector2f{8.0f, 6.0f}, min + size + Math::Vector2f{8.0f, 6.0f},
+                                 Math::LinearColor::FromSrgb8(90, 90, 100, 0.6f));
+            request.list.AddText(min, label, pixelSize, Math::LinearColor::FromSrgb8(220, 220, 225));
+            return std::pair{min - Math::Vector2f{8.0f, 6.0f}, min + size + Math::Vector2f{8.0f, 6.0f}};
+        }
+        Interface::Draw(*document, request.list, request.viewMin, request.viewMax, options);
+        if (!request.needsRect) {
+            return std::nullopt;
+        }
+
+        // Rectangle qui englobe les éléments du premier niveau : de quoi cliquer l'interface dans la vue.
+        std::optional<std::pair<Math::Vector2f, Math::Vector2f>> bounds;
+        for (const Interface::Placed& placed : Interface::Arrange(*document, request.viewMin, request.viewMax)) {
+            if (placed.depth != 0) {
+                continue;
+            }
+            if (!bounds) {
+                bounds = std::pair{placed.rect.min, placed.rect.max};
+            } else {
+                bounds->first = {std::min(bounds->first.x, placed.rect.min.x), std::min(bounds->first.y, placed.rect.min.y)};
+                bounds->second = {std::max(bounds->second.x, placed.rect.max.x), std::max(bounds->second.y, placed.rect.max.y)};
+            }
+        }
+        return bounds;
     }
 
     std::vector<std::string> Engine::GetAnimationNames(Entity entity) {

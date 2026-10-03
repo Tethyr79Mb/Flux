@@ -164,6 +164,14 @@ namespace Flux::UI {
         if (std::ranges::find(tabs, node.selected, &TabRect::id) == tabs.end()) {
             node.selected = tabs.empty() ? 0 : tabs.front().id;
         }
+        // Onglet demandé par FocusPanel : affiché dès que son panneau est là.
+        std::erase_if(focusRequests, [&](const auto& request) {
+            if (std::ranges::find(tabs, request.first, &TabRect::id) == tabs.end()) {
+                return false;
+            }
+            node.selected = request.first;
+            return true;
+        });
         WidgetId undock = 0;
         for (const TabRect& tab : tabs) {
             const WidgetId tabId = Hash(tab.id, "#onglet");
@@ -428,8 +436,35 @@ namespace Flux::UI {
         ui.RebuildDockIndex();
     }
 
+    bool Context::DockPanelNextTo(std::string_view title, std::string_view neighbour) {
+        Impl& ui = *m_impl;
+        const WidgetId id = PanelId(title);
+        if (ui.dockedPanels.contains(id) || ui.panels.contains(id) || ui.savedFloating.contains(id)) {
+            return false; // déjà placé (ancré, ou flottant là où l'utilisateur l'a mis)
+        }
+        const auto zone = ui.dockedPanels.find(PanelId(neighbour));
+        if (zone == ui.dockedPanels.end()) {
+            return false;
+        }
+        DockPanel(title, zone->second);
+        return true;
+    }
+
+    void Context::FocusPanel(std::string_view title) {
+        Impl& ui = *m_impl;
+        const WidgetId id = PanelId(title);
+        std::erase_if(ui.focusRequests, [id](const auto& request) { return request.first == id; });
+        ui.focusRequests.emplace_back(id, ui.frame);
+        if (const auto panel = ui.panels.find(id); panel != ui.panels.end() && !panel->second->docked) {
+            std::erase(ui.order, id);
+            ui.order.push_back(id); // flottant : au premier plan
+        }
+    }
+
     Rect Context::DockSpace(Math::Vector2f min, Math::Vector2f max) {
         Impl& ui = *m_impl;
+        // Une demande qui n'a pas trouvé son onglet en quelques frames (panneau jamais décrit) est oubliée.
+        std::erase_if(ui.focusRequests, [&](const auto& request) { return request.second + 3 < ui.frame; });
         if (ui.dockNodes.empty()) {
             ClearDockLayout();
         }

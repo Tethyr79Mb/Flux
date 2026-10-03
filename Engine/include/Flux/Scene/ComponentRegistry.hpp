@@ -40,6 +40,7 @@ namespace Flux {
         Image, // PNG, JPEG, TGA, BMP
         Scene, // .scene.json
         Model, // .glb, .gltf
+        Interface, // .fluxui
         // Pas un fichier : le nom d'une animation du modèle 3D de l'entité (ModelComponent), choisi dans une liste.
         Animation,
     };

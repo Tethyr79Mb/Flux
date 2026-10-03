@@ -13,6 +13,7 @@
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "EditorLayout.hpp"
+#include "Interface/InterfaceEditor.hpp"
 #include "Panels/CameraPanel.hpp"
 #include "Panels/ContentBrowser.hpp"
 #include "Panels/PlacePanel.hpp"
@@ -43,10 +44,16 @@ namespace {
         sceneEditor.Select(scene, entity ? scene.FindById(entity) : Flux::NullEntity);
     }
 
-    // Menu « Édition ».
-    void DrawEditMenu(Flux::Engine& engine, FluxEditor::UndoHistory& history, FluxEditor::SceneEditor& sceneEditor) {
+    // Menu « Édition » : celui de l'interface affichée, ou de la scène.
+    void DrawEditMenu(Flux::Engine& engine, FluxEditor::UndoHistory& history, FluxEditor::SceneEditor& sceneEditor,
+                      FluxEditor::InterfaceEditor& interfaceEditor) {
         Flux::UI::Context& ui = engine.GetUi();
         if (!ui.BeginMenu("Édition")) {
+            return;
+        }
+        if (interfaceEditor.IsActive()) {
+            interfaceEditor.DrawEditMenuItems(ui);
+            ui.EndMenu();
             return;
         }
         const bool canUndo = history.IsEnabled() && history.CanUndo();
@@ -95,20 +102,34 @@ int main(int argc, char** argv) {
     FluxEditor::SettingsWindow settings;
     FluxEditor::UndoHistory history;
     FluxEditor::PlacePanel placePanel;
+    FluxEditor::InterfaceEditor interfaceEditor;
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
                           .drawScreenUi = false}); // la vue dessine l'interface de la scène
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     settings.Load(engine); // thème de l'interface choisi la dernière fois
+    contentBrowser.SetInterfaceEditor(&interfaceEditor);
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
         playMode.HandleShortcuts(e);
+        if (playMode.IsPlaying()) {
+            interfaceEditor.ShowScene(); // le jeu se joue dans la vue de la scène
+        }
         document.SetLocked(playMode.IsPlaying());
-        document.HandleShortcuts(e);
-        HandleEditShortcuts(e, history, sceneEditor);
+        // Raccourcis de l'interface affichée, sinon ceux de la scène.
+        if (interfaceEditor.IsActive()) {
+            interfaceEditor.HandleShortcuts(e);
+        } else {
+            document.HandleShortcuts(e);
+            HandleEditShortcuts(e, history, sceneEditor);
+        }
         Flux::UI::Context& ui = e.GetUi();
         if (ui.BeginMainMenuBar()) {
             if (ui.BeginMenu("Fichier")) {
+                if (interfaceEditor.IsActive()) {
+                    interfaceEditor.DrawFileMenuItems(ui, e);
+                    ui.Separator();
+                }
                 document.DrawSceneMenuItems(ui, e);
                 ui.Separator();
                 if (ui.MenuItem("Paramètres...")) {
@@ -118,7 +139,7 @@ int main(int argc, char** argv) {
                 document.DrawQuitMenuItem(ui, e);
                 ui.EndMenu();
             }
-            DrawEditMenu(e, history, sceneEditor);
+            DrawEditMenu(e, history, sceneEditor, interfaceEditor);
             layout.DrawWindowMenu(ui);
             playMode.DrawToolbar(ui, e);
             ui.EndMainMenuBar();
@@ -134,10 +155,17 @@ int main(int argc, char** argv) {
         history.SetEnabled(!playMode.IsPlaying());
         history.BeginFrame(e, sceneEditor.GetSelection());
 
-        const Flux::UI::Rect view = layout.Update(e);
-        placePanel.Update(e, sceneEditor, history, view);
+        // Onglets au-dessus de la vue : la scène, ou une interface ouverte (qui remplace alors la vue 3D).
+        const Flux::UI::Rect view = interfaceEditor.DrawTabs(e, layout.Update(e));
+        const bool editingInterface = interfaceEditor.IsActive();
+        if (!editingInterface) {
+            placePanel.Update(e, sceneEditor, history, view); // « Placer » pose dans la vue 3D
+        }
         sceneEditor.Update(e, history, document, contentBrowser);
-        viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
+        if (!editingInterface) {
+            viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
+        }
+        interfaceEditor.Update(e, view);
         contentBrowser.Update(e, document, deltaSeconds);
         FluxEditor::DrawCameraPanel(e);
         settings.Draw(e);
@@ -156,7 +184,7 @@ int main(int argc, char** argv) {
     });
     engine.SetCloseRequestHandler([&](Flux::Engine& e) {
         playMode.Stop(e); // la question porte sur la scène éditée, pas sur sa copie en jeu
-        return document.ConfirmClose(e);
+        return document.ConfirmClose(e) && interfaceEditor.ConfirmClose(e);
     });
 
     // Sans projet, l'éditeur démarre quand même, sur une scène vide : on peut toujours ouvrir un fichier.

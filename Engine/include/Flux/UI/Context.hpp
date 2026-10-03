@@ -163,6 +163,8 @@ namespace Flux::UI {
                         int decimals = 3);
         bool DragFloat3(std::string_view label, Math::Vector3f& value, float speed = 0.01f, double min = NoMin,
                         double max = NoMax, int decimals = 3);
+        bool DragFloat2(std::string_view label, Math::Vector2f& value, float speed = 0.01f, double min = NoMin,
+                        double max = NoMax, int decimals = 3);
         bool DragDouble3(std::string_view label, Math::Vector3d& value, double speed = 0.01, double min = NoMin,
                          double max = NoMax, int decimals = 3);
 
@@ -245,6 +247,11 @@ namespace Flux::UI {
         DockSplit SplitDock(DockId zone, DockSide side, float fraction);
         // Ajoute un panneau (par son titre, ##suffixe compris) aux onglets d'une zone non centrale.
         void DockPanel(std::string_view title, DockId zone);
+        // Ajoute le panneau aux onglets de la zone de neighbour s'il n'est encore nulle part (ni ancré, ni flottant
+        // connu) : un panneau nouveau trouve sa place dans une disposition enregistrée sans lui. true s'il a été ancré.
+        bool DockPanelNextTo(std::string_view title, std::string_view neighbour);
+        // Affiche l'onglet du panneau dans sa zone (dès qu'il est décrit), ou le met au premier plan s'il flotte.
+        void FocusPanel(std::string_view title);
         // Pose la disposition sur min-max (sous la barre de menus, en général), gère séparateurs et onglets.
         // Retourne le rectangle central.
         Rect DockSpace(Math::Vector2f min, Math::Vector2f max);
@@ -307,6 +314,9 @@ namespace Flux::UI {
         // Curseur voulu par l'interface pour cette frame (double flèche au bord d'un panneau ou sur un séparateur) :
         // Engine le donne à la fenêtre après EndFrame.
         MouseCursor GetMouseCursor() const;
+        // Curseur voulu par le programme pour cette frame (poignée sous la souris dans une vue), si l'interface n'en
+        // demande pas un autre.
+        void SetMouseCursor(MouseCursor cursor);
 
         // Sélecteur de couleur ouvert par l'aperçu de ColorEdit3 (Engine y branche celui du système) :
         // modifie la couleur et retourne true, ou retourne false si l'utilisateur annule.

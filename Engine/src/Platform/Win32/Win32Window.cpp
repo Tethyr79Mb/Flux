@@ -55,6 +55,8 @@ namespace Flux {
                     return LoadCursorW(nullptr, IDC_SIZENWSE);
                 case MouseCursor::ResizeNesw:
                     return LoadCursorW(nullptr, IDC_SIZENESW);
+                case MouseCursor::Move:
+                    return LoadCursorW(nullptr, IDC_SIZEALL);
                 case MouseCursor::Arrow:
                     break;
             }

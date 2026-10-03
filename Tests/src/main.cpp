@@ -14,6 +14,7 @@ int main() {
         {"sélection dans la vue 3D", RunPickingTests},
         {"images et textures", RunImageTests},
         {"textes et images à l'écran", RunScreenUiTests},
+        {"interfaces (.fluxui)", RunInterfaceTests},
         {"changement de scène", RunSceneChangeTests},
         {"modèles 3D (glTF)", RunModelTests},
         {"physique (Jolt)", RunPhysicsTests},

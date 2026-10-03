@@ -192,6 +192,39 @@ namespace Flux::UI {
                 pen.Line(0.2f, 0.8f, 0.2f, 0.2f, color, w);
                 break;
             }
+            case Icon::Window: {
+                pen.Rect(0.04f, 0.12f, 0.96f, 0.9f, LinearColor::FromSrgb8(60, 190, 220));
+                pen.Rect(0.1f, 0.32f, 0.9f, 0.84f, LinearColor::FromSrgb8(28, 38, 54));
+                pen.Rect(0.76f, 0.17f, 0.88f, 0.27f, LinearColor::FromSrgb8(230, 240, 246)); // croix de fermeture
+                break;
+            }
+            case Icon::Frame: {
+                const LinearColor color = LinearColor::FromSrgb8(120, 170, 200);
+                pen.Rect(0.08f, 0.16f, 0.92f, 0.84f, color);
+                pen.Rect(0.16f, 0.24f, 0.84f, 0.76f, Shade(color, 0.45f));
+                break;
+            }
+            case Icon::Button: {
+                const LinearColor color = LinearColor::FromSrgb8(70, 130, 190);
+                pen.Rect(0.04f, 0.28f, 0.96f, 0.72f, color);
+                pen.Rect(0.04f, 0.64f, 0.96f, 0.72f, Shade(color, 0.6f));
+                pen.Rect(0.3f, 0.45f, 0.7f, 0.53f, LinearColor::FromSrgb8(235, 240, 246));
+                break;
+            }
+            case Icon::Checkbox: {
+                pen.Rect(0.12f, 0.12f, 0.88f, 0.88f, LinearColor::FromSrgb8(214, 218, 226));
+                pen.Rect(0.2f, 0.2f, 0.8f, 0.8f, LinearColor::FromSrgb8(40, 52, 70));
+                const LinearColor check = LinearColor::FromSrgb8(60, 200, 230);
+                pen.Line(0.28f, 0.5f, 0.45f, 0.68f, check, 0.12f);
+                pen.Line(0.45f, 0.68f, 0.74f, 0.3f, check, 0.12f);
+                break;
+            }
+            case Icon::Slider: {
+                pen.Rect(0.06f, 0.44f, 0.94f, 0.56f, LinearColor::FromSrgb8(110, 116, 130));
+                pen.Rect(0.06f, 0.44f, 0.58f, 0.56f, LinearColor::FromSrgb8(60, 200, 230));
+                pen.Disc(0.58f, 0.5f, 0.16f, LinearColor::FromSrgb8(232, 238, 244));
+                break;
+            }
         }
     }
 }

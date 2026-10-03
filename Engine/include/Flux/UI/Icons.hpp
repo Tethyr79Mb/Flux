@@ -26,6 +26,11 @@ namespace Flux::UI {
         Sky,         // ciel étoilé : un disque bleu nuit, une lune et des étoiles
         Component,   // composant du jeu, sans pictogramme à lui
         Empty,       // objet sans composant
+        Window,      // fenêtre d'interface (aussi un fichier .fluxui) : barre de titre et fond
+        Frame,       // cadre d'interface
+        Button,
+        Checkbox,
+        Slider,
     };
 
     // Dessine l'icône dans le carré [min, min + size].

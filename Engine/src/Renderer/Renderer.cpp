@@ -43,6 +43,7 @@ namespace Flux {
         bool vsync = true;
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
         Math::Vector2f sceneViewportMax;
+        bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
         RenderTimings timings;
 
         explicit Impl(Window& w) : window(w) {}
@@ -116,23 +117,29 @@ namespace Flux {
             }
             const RHI::Rect scene3d = SceneRect();
             const float aspect = static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height);
-            const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height), assetsDirectory,
-                                                      frameIndex);
-            meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
+            if (sceneVisible) {
+                const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
+                                                          assetsDirectory, frameIndex);
+                meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
+            }
 
             const Clock::time_point recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
             RHI::CommandList& commands = device->GetCommandList();
             commands.WriteTimestamp(FrameStart);
-            meshes->DrawShadows(commands, frameIndex);
+            if (sceneVisible) {
+                meshes->DrawShadows(commands, frameIndex);
+            }
             commands.WriteTimestamp(ShadowsDone);
             commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
             commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
                                   static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
             commands.SetScissor(scene3d);
-            meshes->DrawOpaque(commands, frameIndex);
-            sky->Draw(commands, frameIndex);
-            meshes->DrawTransparent(commands, frameIndex);
+            if (sceneVisible) {
+                meshes->DrawOpaque(commands, frameIndex);
+                sky->Draw(commands, frameIndex);
+                meshes->DrawTransparent(commands, frameIndex);
+            }
             commands.WriteTimestamp(SceneDone);
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
@@ -203,6 +210,10 @@ namespace Flux {
     void Renderer::SetSceneViewport(Math::Vector2f min, Math::Vector2f max) {
         m_impl->sceneViewportMin = min;
         m_impl->sceneViewportMax = max;
+    }
+
+    void Renderer::SetSceneVisible(bool visible) {
+        m_impl->sceneVisible = visible;
     }
 
     void Renderer::SetClearColor(Math::LinearColor color) {

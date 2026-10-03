@@ -136,6 +136,8 @@ namespace Flux {
             .Enum("anchor", "Ancre", &ScreenTextComponent::anchor, Anchors)
             .Field("offsetX", "Décalage X", &ScreenTextComponent::offsetX, {.speed = 1.0, .decimals = 0})
             .Field("offsetY", "Décalage Y", &ScreenTextComponent::offsetY, {.speed = 1.0, .decimals = 0});
+        registry.Register<InterfaceComponent>("interface", "Interface à l'écran")
+            .Asset("file", "Fichier", &InterfaceComponent::file, AssetType::Interface);
         registry.Register<SceneChangeComponent>("sceneChange", "Changement de scène")
             .Asset("scene", "Scène suivante", &SceneChangeComponent::scene, AssetType::Scene)
             .Field("delay", "Délai (s, 0 : aucun)", &SceneChangeComponent::delay, {.speed = 0.05, .min = 0.0, .max = 3600.0, .decimals = 2})

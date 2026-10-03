@@ -522,8 +522,7 @@ namespace FluxEditor {
             m_screenDrag.active = false;
             m_hoveredAxis = -1;
             m_screenRects.clear();
-            ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max,
-                           {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); }});
+            ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max, engine.GetScreenUiOptions());
             return;
         }
 
@@ -684,10 +683,10 @@ namespace FluxEditor {
         // les textes et images de la scène comme dans le jeu, puis la sélection par-dessus.
         UI::DrawList& list = engine.GetRenderer().GetOverlay();
         m_screenRects.clear();
-        ScreenUi::Draw(scene, list, view.min, view.max,
-                       {.textures = [&engine](std::string_view path) { return engine.LoadAssetTexture(path); },
-                        .rects = &m_screenRects,
-                        .placeholders = true});
+        ScreenUi::DrawOptions screenOptions = engine.GetScreenUiOptions();
+        screenOptions.rects = &m_screenRects;
+        screenOptions.placeholders = true;
+        ScreenUi::Draw(scene, list, view.min, view.max, screenOptions);
         list.SetClipRect(view.min, view.max);
         for (const LightIcon& icon : m_lightIcons) {
             const Vector2f half{0.5f * LightIconSize, 0.5f * LightIconSize};

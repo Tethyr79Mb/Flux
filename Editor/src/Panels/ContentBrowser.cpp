@@ -1,8 +1,10 @@
 #include "Panels/ContentBrowser.hpp"
 
 #include "Document/SceneDocument.hpp"
+#include "Interface/InterfaceEditor.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Interface/Interface.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Icons.hpp>
@@ -42,6 +44,28 @@ namespace FluxEditor {
             return name;
         }
 
+        constexpr std::string_view InterfaceExtension = ".fluxui";
+
+        bool IsInterface(const std::filesystem::path& path) {
+            return Platform::ToUtf8(path.filename()).ends_with(InterfaceExtension);
+        }
+
+        // Images désignées par les éléments d'une interface : réécrites comme ReplaceReferences pour les scènes.
+        bool ReplaceImageReferences(std::vector<Interface::Element>& elements, const std::string& from, const std::string& to) {
+            bool changed = false;
+            for (Interface::Element& element : elements) {
+                if (element.image == from) {
+                    element.image = to;
+                    changed = true;
+                } else if (element.image.starts_with(from + "/")) {
+                    element.image = to + element.image.substr(from.size());
+                    changed = true;
+                }
+                changed |= ReplaceImageReferences(element.children, from, to);
+            }
+            return changed;
+        }
+
         constexpr float DragThreshold = 4.0f; // pixels avant qu'une vignette tenue devienne un glisser-déposer
 
         // Caractères refusés par Windows dans un nom de fichier.
@@ -62,6 +86,9 @@ namespace FluxEditor {
             }
             if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga" || extension == ".bmp") {
                 return {"Image", Math::LinearColor::FromSrgb8(52, 128, 80)};
+            }
+            if (extension == InterfaceExtension) {
+                return {"Interface", Math::LinearColor::FromSrgb8(40, 140, 160)};
             }
             if (extension == ".ttf" || extension == ".otf") {
                 return {"Police", Math::LinearColor::FromSrgb8(120, 72, 140)};
@@ -164,6 +191,11 @@ namespace FluxEditor {
                         m_requestPath = m_folder;
                         m_requestName = "Nouveau dossier";
                     }
+                    if (m_interfaces && ui.MenuItem("Nouvelle interface...", {}, !document.IsLocked())) {
+                        m_request = NameRequest::NewInterface;
+                        m_requestPath = m_folder;
+                        m_requestName = "Nouvelle interface";
+                    }
                     if (ui.MenuItem("Afficher dans l'explorateur")) {
                         Platform::ShowInExplorer(m_folder);
                     }
@@ -196,6 +228,7 @@ namespace FluxEditor {
         // Un seul parcours pour deux arbres : les assets sans les scènes (un dossier qui ne contenait que des scènes
         // n'y apparaît pas), et les scènes avec les dossiers qui en contiennent ou qui sont vides (tout juste créés).
         m_scenes.clear();
+        m_interfaceFiles.clear();
         struct Trees
         {
             std::vector<Entry> assets;
@@ -224,6 +257,9 @@ namespace FluxEditor {
                     m_scenes.push_back(entry.path);
                     trees.scenes.push_back(std::move(entry));
                 } else {
+                    if (IsInterface(entry.path)) {
+                        m_interfaceFiles.push_back(entry.path);
+                    }
                     trees.assets.push_back(std::move(entry));
                 }
             }
@@ -328,11 +364,15 @@ namespace FluxEditor {
                                                                                             Math::LinearColor::FromSrgb8(52, 128, 80)}
                                         : entry.directory ? std::pair<std::string, Math::LinearColor>{}
                                                           : Badge(entry);
-            const UI::Icon icon = entry.directory ? UI::Icon::Folder : scene ? UI::Icon::Scene : UI::Icon::File;
+            const bool interfaceFile = !entry.directory && IsInterface(entry.path);
+            const UI::Icon icon = entry.directory ? UI::Icon::Folder
+                                : scene           ? UI::Icon::Scene
+                                : interfaceFile   ? UI::Icon::Window
+                                                  : UI::Icon::File;
             const bool selected = scene ? entry.path.lexically_normal() == openScene : entry.path == m_selected;
             ui.PushId(entry.name);
             const UI::Context::TileResult tile = ui.Tile(scene ? SceneName(entry.path) : entry.name, icon, badge, color, selected,
-                                                         TileWidth, scene ? nullptr : GetIcon(engine, entry));
+                                                         TileWidth, scene || interfaceFile ? nullptr : GetIcon(engine, entry));
             if (tile.clicked && !scene) {
                 m_selected = entry.path;
             }
@@ -342,6 +382,9 @@ namespace FluxEditor {
             if (tile.doubleClicked && entry.directory) {
                 folder = entry.path;
                 m_selected.clear();
+            }
+            if (tile.doubleClicked && interfaceFile && m_interfaces) {
+                m_interfaces->Open(engine, entry.path);
             }
             if (ui.IsItemActive() && m_drag.path.empty() && !document.IsLocked()) {
                 m_drag = {};
@@ -430,6 +473,9 @@ namespace FluxEditor {
             folder = entry.path;
             m_selected.clear();
         }
+        if (!entry.directory && IsInterface(entry.path) && m_interfaces && ui.MenuItem("Ouvrir dans l'éditeur d'interface")) {
+            m_interfaces->Open(engine, entry.path);
+        }
         if (ui.MenuItem("Renommer...", {}, !document.IsLocked())) {
             m_request = NameRequest::Rename;
             m_requestPath = entry.path;
@@ -452,8 +498,11 @@ namespace FluxEditor {
         UI::Context& ui = engine.GetUi();
         const Math::Vector2i screen = engine.GetWindow().GetSize();
         const float width = 400.0f;
-        const bool create = m_request == NameRequest::NewFolder;
-        if (ui.BeginPanel(create ? "Nouveau dossier" : "Renommer", {(static_cast<float>(screen.x) - width) * 0.5f,
+        const bool create = m_request == NameRequest::NewFolder || m_request == NameRequest::NewInterface;
+        const std::string_view title = m_request == NameRequest::NewFolder      ? "Nouveau dossier"
+                                       : m_request == NameRequest::NewInterface ? "Nouvelle interface"
+                                                                                : "Renommer";
+        if (ui.BeginPanel(title, {(static_cast<float>(screen.x) - width) * 0.5f,
                                                                     static_cast<float>(screen.y) * 0.3f},
                           width)) {
             if (!create) {
@@ -465,6 +514,26 @@ namespace FluxEditor {
                 const Window& window = engine.GetWindow();
                 if (!IsValidName(m_requestName)) {
                     Platform::ShowError(window, "Nom", "Nom invalide : il ne doit pas être vide ni contenir \\ / : * ? \" < > |");
+                } else if (m_request == NameRequest::NewInterface) {
+                    // Extension ajoutée d'office ; une interface vide, ouverte aussitôt dans l'éditeur.
+                    std::string name = m_requestName;
+                    if (!name.ends_with(InterfaceExtension)) {
+                        name += InterfaceExtension;
+                    }
+                    const std::filesystem::path file = m_requestPath / Platform::PathFromUtf8(name);
+                    std::error_code error;
+                    if (std::filesystem::exists(file, error)) {
+                        Platform::ShowError(window, "Nouvelle interface", "« " + name + " » existe déjà.");
+                    } else if (auto saved = Interface::SaveFile({}, file); !saved) {
+                        Platform::ShowError(window, "Nouvelle interface", saved.error());
+                    } else {
+                        m_request = NameRequest::None;
+                        m_sinceScan = ScanInterval;
+                        m_selected = file;
+                        if (m_interfaces) {
+                            m_interfaces->Open(engine, file);
+                        }
+                    }
                 } else if (create) {
                     const std::filesystem::path folder = m_requestPath / Platform::PathFromUtf8(m_requestName);
                     std::error_code error;
@@ -548,6 +617,20 @@ namespace FluxEditor {
                 failures.push_back(Platform::ToUtf8(path.filename()));
             }
         }
+        for (const std::filesystem::path& interfacePath : m_interfaceFiles) {
+            const std::filesystem::path path = moved(interfacePath).value_or(interfacePath);
+            auto loaded = Interface::LoadFile(path);
+            if (!loaded) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+                continue;
+            }
+            if (ReplaceImageReferences(loaded->roots, oldReference, newReference) && !Interface::SaveFile(*loaded, path)) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+            }
+        }
+        if (m_interfaces) {
+            m_interfaces->FileMoved(from, to, oldReference, newReference);
+        }
         ReplaceReferences(engine.GetScene(), components, oldReference, newReference);
         if (const std::optional<std::filesystem::path> openScene = moved(document.GetPath())) {
             document.FileRenamed(document.GetPath(), *openScene);
@@ -572,7 +655,7 @@ namespace FluxEditor {
             for (const std::string& failure : failures) {
                 list += "\n  " + failure;
             }
-            Platform::ShowError(window, "Déplacer", "« " + name + " » a été déplacé, mais ces scènes n'ont pas pu être "
+            Platform::ShowError(window, "Déplacer", "« " + name + " » a été déplacé, mais ces fichiers n'ont pas pu être "
                                                     "mises à jour (à corriger à la main) :" + list);
         }
         return true;
@@ -619,6 +702,9 @@ namespace FluxEditor {
             return;
         }
         document.ForgetFile(path);
+        if (m_interfaces) {
+            m_interfaces->FileDeleted(path);
+        }
         m_sinceScan = ScanInterval; // relu à la prochaine frame
     }
 
