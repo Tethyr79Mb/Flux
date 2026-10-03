@@ -1,6 +1,7 @@
 #include "Flux/Core/Engine.hpp"
 
 #include "Flux/Animation/Animator.hpp"
+#include "Flux/Core/Log.hpp"
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Platform/Dialogs.hpp"
@@ -140,7 +141,7 @@ namespace Flux {
 
         auto renderer = Renderer::Create(*m_window);
         if (!renderer) {
-            std::fprintf(stderr, "Flux : %s\n", renderer.error().c_str());
+            Log::Error("{}", renderer.error());
             m_quitRequested = true;
             return;
         }
@@ -442,12 +443,12 @@ namespace Flux {
             return; // demande faite juste avant l'arrêt du jeu (éditeur) : la scène éditée est déjà restaurée
         }
         if (!m_project) {
-            std::fprintf(stderr, "Flux : changement de scène sans projet ouvert (%s)\n", requested->c_str());
+            Log::Warning("changement de scène sans projet ouvert ({})", *requested);
             return;
         }
         const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(*requested);
         if (auto loaded = SceneSerializer::Load(m_scene, m_components, path); !loaded) {
-            std::fprintf(stderr, "Flux : scène %s : %s\n", requested->c_str(), loaded.error().c_str());
+            Log::Error("scène {} : {}", *requested, loaded.error());
             return;
         }
         m_physics.reset(); // les corps de l'ancienne scène : recréés d'après la nouvelle à la prochaine image
@@ -478,8 +479,7 @@ namespace Flux {
                         const InterfaceFunction function = found->second;
                         function(*this);
                     } else {
-                        std::fprintf(stderr, "Flux : bouton d'interface : aucune fonction « %s » enregistrée par le jeu\n",
-                                     target.c_str());
+                        Log::Warning("bouton d'interface : aucune fonction « {} » enregistrée par le jeu", target);
                     }
                     break;
                 default:

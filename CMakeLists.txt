@@ -24,6 +24,28 @@ if(MSVC)
     add_compile_options(/utf-8 /Zc:__cplusplus)
 endif()
 
+if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
+    # Ninja apprend de quels en-têtes dépend chaque .cpp en lisant les lignes « inclusion du fichier » de /showIncludes.
+    # Un MSVC en français les écrit avec des espaces insécables, dans un encodage qui change avec /utf-8 : Ninja ne les
+    # reconnaissait pas et ne recompilait rien quand un .hpp changeait (des .obj périmés faisaient planter l'éditeur).
+    # MSVC parle donc anglais pendant la compilation (VSLANG=1033), avec le préfixe anglais, quelle que soit la langue
+    # de Visual Studio.
+    set(CMAKE_C_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env VSLANG=1033)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env VSLANG=1033)
+    set(CMAKE_CL_SHOWINCLUDES_PREFIX "Note: including file:")
+
+    # Vérifie que MSVC parle bien anglais : sinon, prévenir plutôt que de garder en silence des .obj périmés.
+    set(showdir ${CMAKE_BINARY_DIR}/CMakeFiles/FluxShowIncludes)
+    file(WRITE ${showdir}/a.h "\n")
+    file(WRITE ${showdir}/a.c "#include \"a.h\"\n")
+    execute_process(
+        COMMAND ${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER} /nologo /utf-8 /showIncludes /c a.c
+        WORKING_DIRECTORY ${showdir} OUTPUT_VARIABLE showOutput ERROR_VARIABLE showOutput)
+    if(NOT showOutput MATCHES "Note: including file: *[^\n]*a\\.h")
+        message(WARNING "MSVC n'affiche pas « Note: including file: » : Ninja ne suivra pas les en-têtes.\n${showOutput}")
+    endif()
+endif()
+
 include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
 include(cmake/FluxResources.cmake)

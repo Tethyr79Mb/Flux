@@ -1,6 +1,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 
 #include "Flux/Assets/Model.hpp"
+#include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
@@ -30,7 +31,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -171,7 +171,7 @@ namespace Flux {
             } else {
                 result = CreateBaseShape(collider, scale, simulated, mesh);
                 if (result.HasError()) {
-                    std::fprintf(stderr, "Flux : forme de collision refusée : %s\n", result.GetError().c_str());
+                    Log::Warning("forme de collision refusée : {}", result.GetError().c_str());
                     return nullptr;
                 }
                 shape = result.Get();
@@ -193,12 +193,12 @@ namespace Flux {
             const std::string name = Platform::ToUtf8(path.filename());
             std::expected<ModelData, std::string> model = LoadModelFile(path, false);
             if (!model) {
-                std::fprintf(stderr, "Flux : maillage de collision illisible : %s\n", model.error().c_str());
+                Log::Warning("maillage de collision illisible : {}", model.error());
                 return nullptr;
             }
             if (model->IsAnimated()) {
-                std::fprintf(stderr, "Flux : « %s » est animé : pas de collision sur ses triangles (prendre une capsule "
-                                     "ou un fichier statique)\n", name.c_str());
+                Log::Warning("« {} » est animé : pas de collision sur ses triangles (prendre une capsule ou un fichier "
+                             "statique)", name);
                 return nullptr;
             }
             JPH::VertexList vertices;
@@ -214,7 +214,7 @@ namespace Flux {
             // Les triangles plats (arêtes confondues) sont retirés par Jolt.
             const JPH::ShapeSettings::ShapeResult result = JPH::MeshShapeSettings(std::move(vertices), std::move(triangles)).Create();
             if (result.HasError()) {
-                std::fprintf(stderr, "Flux : maillage de collision « %s » refusé : %s\n", name.c_str(), result.GetError().c_str());
+                Log::Warning("maillage de collision « {} » refusé : {}", name, result.GetError().c_str());
                 return nullptr;
             }
             return result.Get();
@@ -400,9 +400,8 @@ namespace Flux {
             if (simulated && scene.GetParent(entity) != grid.frame) {
                 // La physique réécrirait la position locale comme si elle était celle de son repère.
                 if (!warnedChild) {
-                    std::fprintf(stderr, "Flux : un objet simulé doit être une racine de la hiérarchie ou un enfant direct "
-                                         "d'un vaisseau : « %s » est traité comme immobile\n",
-                                 scene.Get<NameComponent>(entity).name.c_str());
+                    Log::Warning("un objet simulé doit être une racine de la hiérarchie ou un enfant direct d'un vaisseau : "
+                                 "« {} » est traité comme immobile", scene.Get<NameComponent>(entity).name);
                     warnedChild = true;
                 }
                 simulated = false;
@@ -411,8 +410,8 @@ namespace Flux {
             if (collider.shape == ColliderShape::Mesh) {
                 // Jolt ne simule pas un maillage (ni masse ni volume) : décor immobile ou coque.
                 if (simulated && !warnedMeshSimulated) {
-                    std::fprintf(stderr, "Flux : « %s » : une collision en maillage ne peut pas être simulée, elle reste immobile\n",
-                                 scene.Get<NameComponent>(entity).name.c_str());
+                    Log::Warning("« {} » : une collision en maillage ne peut pas être simulée, elle reste immobile",
+                                 scene.Get<NameComponent>(entity).name);
                     warnedMeshSimulated = true;
                 }
                 simulated = false;
@@ -463,8 +462,8 @@ namespace Flux {
                 }
             }
             if (relative.empty() || assetsDirectory.empty()) {
-                std::fprintf(stderr, "Flux : « %s » : collision en maillage sans fichier (ni maillage, ni modèle 3D)\n",
-                             scene.Get<NameComponent>(entity).name.c_str());
+                Log::Warning("« {} » : collision en maillage sans fichier (ni maillage, ni modèle 3D)",
+                             scene.Get<NameComponent>(entity).name);
                 return nullptr;
             }
             auto found = meshes.find(relative);

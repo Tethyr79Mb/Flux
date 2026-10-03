@@ -2,8 +2,9 @@
 
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
-#include "Panels/ContentBrowser.hpp"
 #include "Panels/AssetPicker.hpp"
+#include "Panels/ContentBrowser.hpp"
+#include "Search.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Platform/Filesystem.hpp>
@@ -177,8 +178,13 @@ namespace FluxEditor {
             const std::filesystem::path& path = document.GetPath();
             const std::string name = path.empty() ? std::string("nouvelle scène") : SceneName(path);
             ui.Text("Objets de « " + name + " »");
+            ui.SearchField("recherche", m_search, "Rechercher un objet...");
             ui.BeginChild("objets", 0.0f, 0.0f);
-            DrawObjects(ui, engine, scene);
+            if (m_search.empty()) {
+                DrawObjects(ui, engine, scene);
+            } else {
+                DrawSearchResults(ui, engine, scene);
+            }
             ui.EndChild();
 
             HierarchyDrag& drag = m_hierarchyDrag;
@@ -245,6 +251,44 @@ namespace FluxEditor {
                 ui.TreePop();
             }
             ui.PopId();
+        }
+    }
+
+    // Objets dont le nom contient la recherche, de toute la hiérarchie, dans l'ordre de l'arbre ; chacun suivi du chemin
+    // de ses parents. Clic : sélectionner ; double-clic : le montrer dans l'arbre (la recherche s'efface).
+    void SceneEditor::DrawSearchResults(UI::Context& ui, Engine& engine, Scene& scene) {
+        const SearchQuery query(m_search);
+        const ComponentRegistry& components = engine.GetComponents();
+        Entity reveal = NullEntity;
+        bool any = false;
+        const auto visit = [&](const auto& self, Entity entity, const std::string& path) -> void {
+            const std::string name = DisplayName(scene, entity);
+            if (query.Matches(name)) {
+                any = true;
+                const Uuid id = scene.GetId(entity);
+                ui.PushId(id.value);
+                const std::string label = path.empty() ? name : name + "   (" + path + ")";
+                const UI::Context::TreeNodeResult node =
+                    ui.TreeNode(label, id == m_selection, true, false, KindOf(scene, components, entity).icon);
+                if (node.clicked) {
+                    m_selection = id;
+                }
+                if (node.doubleClicked) {
+                    reveal = entity;
+                }
+                ui.SetItemTooltip("Double-clic : montrer dans la scène");
+                ui.PopId();
+            }
+            const std::string childPath = path.empty() ? name : path + " / " + name;
+            scene.ForEachChild(entity, [&](Entity child) { self(self, child, childPath); });
+        };
+        scene.ForEachRoot([&](Entity root) { visit(visit, root, {}); });
+        if (!any) {
+            ui.TextDisabled("Aucun objet ne s'appelle ainsi.");
+        }
+        if (reveal != NullEntity) {
+            m_search.clear();
+            Select(scene, reveal);
         }
     }
 

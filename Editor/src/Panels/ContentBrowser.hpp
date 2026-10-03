@@ -3,6 +3,7 @@
 #include <Flux/Math/Vector2.hpp>
 #include <Flux/UI/DrawList.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -66,6 +67,8 @@ namespace FluxEditor {
         };
 
         void Scan(const std::filesystem::path& root);
+        // Fichiers et dossiers de tous les assets dont le nom contient m_search, en une liste (vignettes à plat).
+        const Entry& SearchResults();
         const Entry* FindFolder(const Entry& tree, const std::filesystem::path& path) const;
         void DrawFolder(Flux::UI::Context& ui, const Entry& folder);
         void DrawTiles(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document, const Entry& shown,
@@ -106,6 +109,11 @@ namespace FluxEditor {
         std::vector<std::filesystem::path> m_interfaceFiles; // .fluxui du projet : leurs images suivent un déplacement
         InterfaceEditor* m_interfaces = nullptr;
         double m_sinceScan = 0.0;
+        std::uint64_t m_scanCount = 0; // lectures du disque : les résultats de recherche d'avant sont périmés
+        std::string m_search;
+        Entry m_results;
+        std::string m_resultsFor;
+        std::uint64_t m_resultsScan = 0;
         std::filesystem::path m_renaming; // scène en cours de renommage (vide : fenêtre fermée)
         std::string m_newName;            // sans « .scene.json »
     };

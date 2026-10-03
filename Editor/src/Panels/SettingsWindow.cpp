@@ -1,6 +1,7 @@
 #include "Panels/SettingsWindow.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
@@ -8,7 +9,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <cstdio>
 #include <fstream>
 
 namespace FluxEditor {
@@ -40,7 +40,7 @@ namespace FluxEditor {
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
-            std::fprintf(stderr, "Paramètres de l'éditeur non enregistrés\n");
+            Log::Warning("paramètres de l'éditeur non enregistrés");
         }
     }
 

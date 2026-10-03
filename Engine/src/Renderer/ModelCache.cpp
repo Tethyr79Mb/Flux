@@ -1,11 +1,11 @@
 #include "Renderer/ModelCache.hpp"
 
 #include "Flux/Assets/Image.hpp"
+#include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
 
 namespace Flux {
     namespace {
@@ -149,8 +149,7 @@ namespace Flux {
             auto image = m_device.CreateTexture(format, {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
                                                 pixels.rgba, true);
             if (!image) {
-                std::fprintf(stderr, "Flux : modèle %.*s : image %zu : %s\n", static_cast<int>(name.size()), name.data(), i,
-                             image.error().c_str());
+                Log::Warning("modèle {} : image {} : {}", name, i, image.error());
                 return nullptr;
             }
             model.images.push_back(std::move(*image));
@@ -192,7 +191,7 @@ namespace Flux {
                 } else {
                     material.normalScale = 0.0f;
                     material.occlusionStrength = 0.0f;
-                    std::fprintf(stderr, "Flux : plus de %u matériaux chargés, « %s » sans image\n", MaxMaterials, source.name.c_str());
+                    Log::Warning("plus de {} matériaux chargés, « {} » sans image", MaxMaterials, source.name);
                 }
             }
             model.materials.push_back(std::move(material));
@@ -208,18 +207,18 @@ namespace Flux {
         const std::string name = Platform::ToUtf8(path.filename());
         auto data = LoadModelFile(path);
         if (!data) {
-            std::fprintf(stderr, "Flux : modèle %s\n", data.error().c_str());
+            Log::Error("modèle {}", data.error());
             return;
         }
         for (const std::string& warning : data->warnings) {
-            std::fprintf(stderr, "Flux : modèle %s : %s\n", name.c_str(), warning.c_str());
+            Log::Warning("modèle {} : {}", name, warning);
         }
         // Rechargement (fichier retouché) : les images en vol dessinent peut-être encore l'ancienne version.
         // Rare : attendre le GPU suffit, et les envois ci-dessous l'attendent de toute façon.
         m_device.WaitIdle();
         auto uploaded = Upload(*data, name);
         if (!uploaded) {
-            std::fprintf(stderr, "Flux : modèle %s : %s\n", name.c_str(), uploaded.error().c_str());
+            Log::Error("modèle {} : {}", name, uploaded.error());
             return;
         }
         const std::filesystem::file_time_type writeTime = model.writeTime;

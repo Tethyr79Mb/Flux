@@ -1,6 +1,7 @@
 #include "Document/SceneDocument.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
@@ -100,6 +101,7 @@ namespace FluxEditor {
         m_path = path;
         m_modified = false;
         m_replaced = true;
+        Log::Info("scène ouverte : {}", FileName(path));
         return true;
     }
 
@@ -134,6 +136,7 @@ namespace FluxEditor {
         }
         m_path = path;
         m_modified = false;
+        Log::Info("scène enregistrée : {}", FileName(path));
         return true;
     }
 

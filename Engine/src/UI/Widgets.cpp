@@ -99,6 +99,59 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    bool Context::ToggleButton(std::string_view label, Icon icon, bool& value) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const std::string_view visible = VisibleLabel(label);
+        const float iconSize = icon != Icon::None ? std::round(style.fontSize * 0.9f) : 0.0f;
+        const float gap = iconSize > 0.0f && !visible.empty() ? style.framePadding.x * 0.75f : 0.0f;
+        const Vector2f size{iconSize + gap + ui.MeasureText(visible).x + 2.0f * style.framePadding.x, ui.FrameHeight()};
+        const Vector2f min = ui.ItemRect(size);
+        const Vector2f max = min + size;
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+        if (interaction.clicked) {
+            value = !value;
+        }
+        // Enfoncé : couleur des boutons et liseré d'accent ; relâché : fond des champs, texte grisé.
+        const LinearColor color = interaction.held && interaction.hovered ? style.buttonActive
+                                : interaction.hovered                     ? style.buttonHovered
+                                : value                                   ? style.button
+                                                                          : style.frame;
+        ui.FrameRect(min, max, color);
+        if (value) {
+            ui.panel->content.AddRoundedRectOutline(min, max, style.checkMark, style.frameRounding);
+        }
+        if (iconSize > 0.0f) {
+            DrawIcon(ui.panel->content, icon, {min.x + style.framePadding.x, std::round(0.5f * (min.y + max.y - iconSize))},
+                     iconSize);
+        }
+        ui.panel->content.AddText({min.x + style.framePadding.x + iconSize + gap, min.y + style.framePadding.y}, visible,
+                                  style.fontSize, value ? style.text : style.textDisabled);
+        return interaction.clicked;
+    }
+
+    void Context::SetItemTooltip(std::string_view text) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || text.empty() || ui.activeId != 0 || ui.openMenu != 0
+            || !ui.IsMouseOver(ui.lastBehaviorMin, ui.lastBehaviorMax)) {
+            return;
+        }
+        // Widget sans identifiant (texte d'une barre) : reconnu à son texte.
+        const WidgetId id = ui.lastBehaviorId != 0 ? ui.lastBehaviorId : Hash(ui.idStack.back(), text);
+        if (id != ui.tooltipId) {
+            ui.tooltipId = id;
+            ui.tooltipSince = ui.time;
+        }
+        ui.tooltipSeen = true;
+        constexpr double Delay = 0.5; // secondes immobile sur le widget avant l'info-bulle
+        if (ui.time - ui.tooltipSince >= Delay) {
+            ui.tooltipText = text;
+        }
+    }
+
     Context::TileResult Context::Tile(std::string_view label, Icon icon, std::string_view badge, LinearColor badgeColor,
                                       bool selected, float width, const TextureInfo* image) {
         Impl& ui = *m_impl;

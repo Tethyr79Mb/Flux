@@ -18,8 +18,9 @@ namespace FluxEditor {
 
         // Menu « Fenêtre » de la barre de menus.
         void DrawWindowMenu(Flux::UI::Context& ui);
-        // Pose l'ancrage sous la barre de menus et y cale la vue 3D ; avant les panneaux de l'éditeur.
-        // La première fois, charge la disposition enregistrée, ou celle par défaut. Retourne le rectangle de la vue 3D.
+        // Pose l'ancrage entre la barre de menus et la barre d'état et y cale la vue 3D ; avant les panneaux de
+        // l'éditeur. La première fois, charge la disposition enregistrée, ou celle par défaut. Retourne le rectangle de
+        // la vue 3D.
         Flux::UI::Rect Update(Flux::Engine& engine);
 
         private:

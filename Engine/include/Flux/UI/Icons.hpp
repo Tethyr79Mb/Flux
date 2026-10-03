@@ -40,6 +40,12 @@ namespace Flux::UI {
         Inspector, // trois réglettes
         Place,     // un cube et un plus : poser des objets
         Content,   // dossier ouvert : fichiers du projet
+        Search,    // loupe
+        Console,   // terminal : « >_ »
+        // Messages de la console : information, avertissement, erreur.
+        Info,      // disque bleu, « i »
+        Warning,   // triangle jaune, « ! »
+        Error,     // disque rouge, croix
     };
 
     // Dessine l'icône dans le carré [min, min + size].

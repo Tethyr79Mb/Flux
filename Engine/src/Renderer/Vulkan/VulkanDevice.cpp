@@ -1,5 +1,7 @@
 #include "Renderer/Vulkan/VulkanDevice.hpp"
 
+#include "Flux/Core/Log.hpp"
+
 #include <windows.h>
 
 #include <format>
@@ -94,7 +96,7 @@ namespace Flux::Vk {
             return std::unexpected("création du command pool de chargement");
         }
 
-        std::fprintf(stderr, "Vulkan : %s\n", device->m_physicalDevice.name.c_str());
+        Log::Info("Vulkan : {}", device->m_physicalDevice.name);
         return device;
     }
 

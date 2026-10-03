@@ -1,5 +1,6 @@
 #include "Flux/Renderer/Renderer.hpp"
 
+#include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -11,7 +12,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 
 namespace Flux {
     namespace {
@@ -100,7 +100,7 @@ namespace Flux {
                 return false;
             }
             if (auto updated = UpdateDepth(); !updated) {
-                std::fprintf(stderr, "Flux : %s\n", updated.error().c_str());
+                Log::Error("{}", updated.error());
                 return false;
             }
 

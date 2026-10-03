@@ -152,6 +152,11 @@ namespace Flux::UI {
         bool Button(std::string_view label);
         // Bouton avec un pictogramme devant le libellé ; fullWidth : toute la largeur de la ligne, libellé centré.
         bool Button(std::string_view label, Icon icon, bool fullWidth = false);
+        // Bouton à deux états (un filtre) : enfoncé tant que value est vrai, un clic l'inverse. Vrai au clic.
+        bool ToggleButton(std::string_view label, Icon icon, bool& value);
+        // Info-bulle du dernier widget décrit : apparaît quand la souris reste un instant dessus.
+        //     ui.Button("Effacer"); ui.SetItemTooltip("Vide la console");
+        void SetItemTooltip(std::string_view text);
         // Onglet d'une rangée (les suivants avec SameLine) : l'appelant garde l'onglet affiché.
         //     if (ui.Tab("Graphiques", tab == 0)) tab = 0;
         // Vrai au clic.
@@ -193,6 +198,12 @@ namespace Flux::UI {
         // Entiers 64 bits (secteurs).
         bool DragInt3(std::string_view label, Math::Vector3i64& value, float speed = 0.2f);
 
+        // Champ de recherche : une loupe, hint en grisé tant qu'il est vide, une croix pour l'effacer. Contrairement
+        // à InputText, value change à chaque touche (le filtre suit la frappe) ; Échap l'efface. Retourne true quand
+        // value change. width <= 0 : tout le reste de la ligne.
+        bool SearchField(std::string_view id, std::string& value, std::string_view hint = "Rechercher...",
+                         float width = 0.0f);
+
         // Choix parmi quelques valeurs (énumération) : un clic ouvre la liste sous le champ, un clic sur une valeur
         // la choisit. Retourne true quand index change.
         bool Choice(std::string_view label, int& index, std::span<const std::string_view> options);
@@ -232,12 +243,20 @@ namespace Flux::UI {
         // highlighted : dessiné comme enfoncé (mode en cours). Vrai au clic.
         // icon : pictogramme devant le libellé (libellé vide : le pictogramme seul).
         bool MenuBarButton(std::string_view label, bool highlighted = false, Icon icon = Icon::None);
+        // Texte dans la barre (de menus ou d'état), avec un pictogramme devant s'il y en a un ; disabled : grisé.
+        void MenuBarText(std::string_view text, Icon icon = Icon::None, bool disabled = false);
         // Position horizontale du prochain élément de la barre (pour centrer des boutons, par exemple).
         void SetMenuBarCursor(float x);
         // Taille d'un texte dans la police de l'interface.
         Math::Vector2f MeasureText(std::string_view text) const;
         // Hauteur de la barre de menus (0 sans barre) : la place à laisser en haut de l'écran.
         float GetMenuBarHeight() const;
+        // Barre d'état en bas de l'écran, au-dessus des panneaux : même contenu que la barre de menus (MenuBarButton,
+        // MenuBarText, SetMenuBarCursor), sans menus. Hors de tout panneau.
+        bool BeginStatusBar();
+        void EndStatusBar();
+        // Hauteur de la barre d'état (0 sans barre) : la place à laisser en bas de l'écran.
+        float GetStatusBarHeight() const;
 
         // Ancrage : une zone de l'écran découpée en rectangles par des séparateurs à glisser. Chaque rectangle
         // accueille un ou plusieurs panneaux (en onglets s'ils sont plusieurs) ; le rectangle central reste libre
@@ -309,6 +328,8 @@ namespace Flux::UI {
         // (SameLine, BeginContextMenu pour un clic droit dans son fond).
         void BeginChild(std::string_view id, float width, float height);
         void EndChild();
+        // La zone en cours (BeginChild) défilera jusqu'en bas : une console qui suit ses nouvelles lignes.
+        void SetScrollToEnd();
         // Largeur libre de la ligne en cours (panneau ou zone), pour ranger des vignettes en grille.
         float GetAvailableWidth() const;
 

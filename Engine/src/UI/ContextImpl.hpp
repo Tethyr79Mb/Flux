@@ -163,7 +163,7 @@ namespace Flux::UI {
         };
 
         Impl(const Font& uiFont, const Style& uiStyle)
-            : font(uiFont), style(uiStyle), measure(uiFont), dockChrome(uiFont), dockTargets(uiFont) {}
+            : font(uiFont), style(uiStyle), measure(uiFont), dockChrome(uiFont), dockTargets(uiFont), tooltip(uiFont) {}
 
         const Font& font;
         Style style;
@@ -213,6 +213,9 @@ namespace Flux::UI {
         bool openMenuSeen = false;
         bool menuBarDrawn = false;
         float menuBarHeight = 0.0f;             // à la frame précédente
+        bool statusBarDrawn = false;
+        float statusBarHeight = 0.0f;           // à la frame précédente
+        float barTop = 0.0f;                    // haut de la barre en cours (menus : 0 ; état : bas de l'écran)
         float menuBarNextX = 0.0f;              // position du prochain titre dans la barre
         float menuItemWidth = 0.0f;             // plus large élément du menu ouvert
         bool clickSwallowed = false;            // clic qui a refermé un menu : il ne va à personne d'autre
@@ -239,6 +242,7 @@ namespace Flux::UI {
         struct ChildScroll {
             float scrollY = 0.0f;
             float contentHeight = 0.0f; // à la dernière frame
+            bool toEnd = false;         // SetScrollToEnd : défiler jusqu'en bas à la fin de la zone
         };
         std::unordered_map<WidgetId, ChildScroll> childScrolls;
         struct ChildFrame {
@@ -338,6 +342,12 @@ namespace Flux::UI {
         std::unordered_map<WidgetId, bool> treeOpen;
         std::optional<bool> nextTreeOpen;
         Icon nextPanelIcon = Icon::None;
+        // Info-bulle : widget survolé et depuis quand ; texte à dessiner à la fin de la frame (vide : aucune).
+        WidgetId tooltipId = 0;
+        double tooltipSince = 0.0;
+        bool tooltipSeen = false;
+        std::string tooltipText;
+        DrawList tooltip;
         // Valeurs en cours de glissement des champs entiers (DragInt3).
         std::unordered_map<WidgetId, double> intAccumulators;
         WidgetId lastClickId = 0;

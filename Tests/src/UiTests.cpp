@@ -1,6 +1,7 @@
 // Tests de FluxUI sans fenêtre ni GPU : souris et clavier simulés frame par frame.
 #include "Check.hpp"
 
+#include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Font.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Platform/Filesystem.hpp"
@@ -55,6 +56,7 @@ namespace {
 
         Input& GetInput() { return m_input; }
         UI::Context& GetUi() { return m_ui; }
+        const UI::DrawList& GetOutput() const { return m_output; }
 
         private:
         Input m_input;
@@ -327,6 +329,71 @@ namespace {
         CHECK(open);
         harness.Click({390.0f - (row + 2.0f) * 0.5f, headerY}, describe);
         CHECK(open && removed);
+        return true;
+    }
+
+    // Champ de recherche (filtre à chaque touche, Échap et croix l'effacent), info-bulle après un instant, barre
+    // d'état en bas de l'écran, journal.
+    bool RunHelperTests(const UI::Font& font) {
+        Harness harness(font);
+        const float row = font.GetLineHeight() * 15.0f + 10.0f;
+        const float fieldY = row + 10.0f + row * 0.5f;
+        std::string search;
+        int changes = 0;
+        int barClicks = 0;
+        const auto describe = [&](UI::Context& ui) {
+            if (ui.BeginStatusBar()) {
+                if (ui.MenuBarButton("Message")) {
+                    ++barClicks;
+                }
+                ui.EndStatusBar();
+            }
+            if (ui.BeginPanel("Test", {0.0f, 0.0f}, 400.0f)) {
+                if (ui.SearchField("recherche", search)) { // ligne 0, toute la largeur
+                    ++changes;
+                }
+                ui.SetItemTooltip("Rechercher");
+            }
+            ui.EndPanel();
+        };
+        harness.Move({600.0f, 600.0f}, describe);
+        harness.Click({100.0f, fieldY}, describe);
+        harness.Type("ab", describe);
+        CHECK(search == "ab" && changes == 1); // sans attendre Entrée
+        harness.Type("c", describe);
+        CHECK(search == "abc" && changes == 2);
+        harness.Key(Key::Escape, describe);
+        CHECK(search.empty() && changes == 3);
+        // La croix (un carré au bout du champ) efface aussi.
+        search = "cube";
+        harness.Click({390.0f - row * 0.5f, fieldY}, describe);
+        CHECK(search.empty());
+
+        // Info-bulle : rien tout de suite, puis après une demi-seconde immobile sur le champ.
+        harness.Move({600.0f, 600.0f}, describe);
+        const std::size_t without = harness.GetOutput().GetVertices().size();
+        harness.Move({200.0f, fieldY}, describe);
+        CHECK(harness.GetOutput().GetVertices().size() == without);
+        for (int i = 0; i < 40; ++i) {
+            harness.Move({200.0f, fieldY}, describe);
+        }
+        CHECK(harness.GetOutput().GetVertices().size() > without);
+
+        // Barre d'état : sa hauteur est réservée en bas de l'écran, ses boutons y répondent.
+        CHECK(harness.GetUi().GetStatusBarHeight() == row);
+        harness.Click({20.0f, 720.0f - row * 0.5f}, describe);
+        CHECK(barClicks == 1);
+
+        // Journal : relu à partir du dernier message lu.
+        std::vector<LogEntry> entries;
+        std::uint64_t last = Log::Read(0, entries);
+        Log::Info("test {}", 1);
+        Log::Warning("test {}", 2);
+        entries.clear();
+        last = Log::Read(last, entries);
+        CHECK(entries.size() == 2 && entries[0].text == "test 1" && entries[1].level == LogLevel::Warning);
+        entries.clear();
+        CHECK(Log::Read(last, entries) == last && entries.empty());
         return true;
     }
 
@@ -827,5 +894,5 @@ bool RunUiTests() {
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
         && RunChoiceTests(**font) && RunPopupTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
-        && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font);
+        && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font) && RunHelperTests(**font);
 }
