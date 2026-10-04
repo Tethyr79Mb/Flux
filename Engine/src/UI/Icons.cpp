@@ -236,6 +236,15 @@ namespace Flux::UI {
                 pen.Disc(0.58f, 0.5f, 0.16f, LinearColor::FromSrgb8(232, 238, 244));
                 break;
             }
+            case Icon::Tabs: {
+                const LinearColor page = LinearColor::FromSrgb8(40, 70, 100);
+                pen.Rect(0.06f, 0.4f, 0.94f, 0.9f, page);
+                pen.Rect(0.06f, 0.14f, 0.34f, 0.4f, page); // onglet choisi, du même bleu que la page
+                pen.Rect(0.06f, 0.34f, 0.34f, 0.4f, LinearColor::FromSrgb8(60, 200, 230));
+                pen.Rect(0.38f, 0.18f, 0.64f, 0.36f, LinearColor::FromSrgb8(110, 124, 142));
+                pen.Rect(0.68f, 0.18f, 0.94f, 0.36f, LinearColor::FromSrgb8(110, 124, 142));
+                break;
+            }
             case Icon::Play:
                 pen.Triangle({0.22f, 0.1f}, {0.9f, 0.5f}, {0.22f, 0.9f}, LinearColor::FromSrgb8(88, 200, 110));
                 break;

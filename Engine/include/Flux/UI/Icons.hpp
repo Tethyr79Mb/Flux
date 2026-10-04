@@ -32,6 +32,7 @@ namespace Flux::UI {
         Button,
         Checkbox,
         Slider,
+        Tabs,        // onglets d'interface : trois onglets, le premier choisi, sur une page
         // Commandes et panneaux de l'éditeur.
         Play,      // triangle vert
         Pause,     // deux barres

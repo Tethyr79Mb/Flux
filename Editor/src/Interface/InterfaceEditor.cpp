@@ -10,6 +10,7 @@
 #include <Flux/UI/Icons.hpp>
 
 #include <algorithm>
+#include <ranges>
 #include <utility>
 
 namespace FluxEditor {
@@ -415,6 +416,21 @@ namespace FluxEditor {
         }
     }
 
+    namespace {
+        // Page d'onglets : un cadre transparent qui remplit la zone sous les onglets.
+        Interface::Element MakePage(Interface::Document& document, bool shown) {
+            Interface::Element page = Interface::MakeElement(document, Interface::ElementType::Frame);
+            page.name = "Onglet " + std::to_string(page.id);
+            page.anchor = Interface::Anchor::Stretch;
+            page.position = {};
+            page.size = {};
+            page.background = {0.0f, 0.0f, 0.0f, 0.0f}; // transparente : le fond des onglets se voit
+            page.radius = 0.0f;
+            page.visible = shown;
+            return page;
+        }
+    }
+
     void InterfaceEditor::Add(Interface::ElementType type) {
         OpenInterface* open = GetActive();
         if (!open) {
@@ -423,7 +439,39 @@ namespace FluxEditor {
         Interface::Document& document = open->document;
         Interface::Element element = Interface::MakeElement(document, type);
         const std::uint32_t id = element.id;
+        if (type == Interface::ElementType::Tabs) {
+            // Deux pages pour commencer.
+            for (int page = 0; page < 2; ++page) {
+                element.children.push_back(MakePage(document, page == 0));
+            }
+        }
         Interface::Element* selected = GetSelected();
+        if (!selected && type != Interface::ElementType::Window) {
+            // Rien de sélectionné : dans la dernière fenêtre (celle de devant), pas à côté d'elle, où l'élément
+            // resterait affiché la fenêtre fermée.
+            const auto window = std::ranges::find_if(document.roots | std::views::reverse, [](const Interface::Element& root) {
+                return root.type == Interface::ElementType::Window;
+            });
+            if (window != (document.roots | std::views::reverse).end()) {
+                selected = &*window;
+            }
+        }
+        if (selected && selected->type == Interface::ElementType::Tabs) {
+            if (type == Interface::ElementType::Frame) {
+                // Un cadre ajouté aux onglets est une nouvelle page, montrée tant qu'elle est sélectionnée.
+                Interface::Element page = MakePage(document, selected->children.empty());
+                const std::uint32_t pageId = page.id;
+                selected->children.push_back(std::move(page));
+                open->selection = pageId;
+                MarkChanged();
+                return;
+            }
+            // Le reste va dans la page affichée (une page d'abord s'il n'y en a pas).
+            if (selected->children.empty()) {
+                selected->children.push_back(MakePage(document, true));
+            }
+            selected = &selected->children[static_cast<std::size_t>(Interface::GetShownTab(*selected))];
+        }
         if (selected && Interface::IsContainer(selected->type)) {
             // Dans la fenêtre ou le cadre sélectionné, au centre ; jamais plus grand que lui.
             element.size = {std::min(element.size.x, std::max(20.0f, selected->size.x - 40.0f)),
