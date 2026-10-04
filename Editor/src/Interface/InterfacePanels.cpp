@@ -462,7 +462,15 @@ namespace FluxEditor {
                             } else if constexpr (std::is_same_v<Value, float>) {
                                 changed |= ui.DragFloat(field.label, value, field.speed, field.min, field.max, field.decimals);
                             } else if constexpr (std::is_same_v<Value, bool>) {
-                                changed |= ui.Checkbox(field.label, value);
+                                if (ui.Checkbox(field.label, value)) {
+                                    changed = true;
+                                    // Un menu pause s'ouvre avec Échap : fermé au démarrage du jeu.
+                                    if constexpr (std::is_same_v<decltype(member), bool Interface::Element::*>) {
+                                        if (member == &Interface::Element::openOnEscape && value) {
+                                            element->visible = false;
+                                        }
+                                    }
+                                }
                             } else if constexpr (std::is_same_v<Value, Interface::TextAlign>) {
                                 int index = static_cast<int>(value);
                                 if (ui.Choice(field.label, index, Interface::GetAlignNames())) {
