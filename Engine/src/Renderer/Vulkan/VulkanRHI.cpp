@@ -16,6 +16,7 @@ namespace Flux::Vk {
             case RHI::Format::RGB32Float: return VK_FORMAT_R32G32B32_SFLOAT;
             case RHI::Format::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
             case RHI::Format::RGBA16Uint: return VK_FORMAT_R16G16B16A16_UINT;
+            case RHI::Format::RGBA16Float: return VK_FORMAT_R16G16B16A16_SFLOAT;
         }
         return VK_FORMAT_UNDEFINED;
     }
@@ -66,7 +67,7 @@ namespace Flux::Vk {
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
                              VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
-                             VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) {
+                             VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT, std::uint32_t layer = 0) {
             VkImageMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             barrier.srcStageMask = srcStage;
@@ -78,7 +79,7 @@ namespace Flux::Vk {
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image;
-            barrier.subresourceRange = {aspect, 0, 1, 0, 1};
+            barrier.subresourceRange = {aspect, 0, 1, layer, 1};
 
             VkDependencyInfo dependency{};
             dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -113,6 +114,10 @@ namespace Flux::Vk {
     void RhiCommandList::BeginRenderPass(const RHI::RenderPassDesc& desc) {
         if (!desc.color) {
             BeginDepthOnlyPass(desc);
+            return;
+        }
+        if (desc.colorTarget) {
+            BeginTexturePass(desc);
             return;
         }
         // Le contenu précédent est jeté : on efface tout de suite après.
@@ -157,6 +162,32 @@ namespace Flux::Vk {
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
+    // Face d'une texture cube : l'image précédente la lisait peut-être encore (même file : la barrière attend ses
+    // lectures). Son contenu est jeté : la passe l'efface puis la remplit.
+    void RhiCommandList::BeginTexturePass(const RHI::RenderPassDesc& desc) {
+        const auto& target = static_cast<const RhiTexture&>(*desc.colorTarget);
+        m_colorTarget = &target;
+        m_colorLayer = desc.colorLayer;
+        TransitionImage(m_commandBuffer, target.GetImage().GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, desc.colorLayer);
+        VkRenderingAttachmentInfo colorAttachment{};
+        colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        colorAttachment.imageView = target.GetImage().GetFaceView(desc.colorLayer);
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
+        VkRenderingInfo renderingInfo{};
+        renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        renderingInfo.renderArea = {{0, 0}, target.GetImage().GetExtent()};
+        renderingInfo.layerCount = 1;
+        renderingInfo.colorAttachmentCount = 1;
+        renderingInfo.pColorAttachments = &colorAttachment;
+        vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
+    }
+
     // Carte d'ombres : l'image précédente la lisait peut-être encore (même file : la barrière attend ses lectures).
     void RhiCommandList::BeginDepthOnlyPass(const RHI::RenderPassDesc& desc) {
         const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
@@ -192,6 +223,12 @@ namespace Flux::Vk {
                             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
                             depth->GetAspect());
+        }
+        if (const RhiTexture* target = std::exchange(m_colorTarget, nullptr)) {
+            TransitionImage(m_commandBuffer, target->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, m_colorLayer);
         }
     }
 

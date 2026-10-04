@@ -59,6 +59,26 @@ namespace Flux::Vk {
         return Allocate(device, format, extent, usage, aspect);
     }
 
+    std::expected<Image, std::string> Image::CreateCubeAttachment(const Device& device, VkFormat format, std::uint32_t size,
+                                                                  VkImageUsageFlags usage) {
+        auto image = Allocate(device, format, {size, size}, usage, VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+        if (!image) {
+            return image;
+        }
+        for (std::uint32_t face = 0; face < 6; ++face) {
+            VkImageViewCreateInfo viewInfo{};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.image = image->m_image;
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            viewInfo.format = format;
+            viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, face, 1};
+            if (!Check(vkCreateImageView(image->m_device, &viewInfo, nullptr, &image->m_faceViews[face]), "vkCreateImageView")) {
+                return std::unexpected("création de la vue d'une face de texture cube");
+            }
+        }
+        return image;
+    }
+
     std::expected<Image, std::string> Image::CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
                                                            std::span<const std::uint8_t> pixels, bool mipmaps, bool cube) {
         const std::uint32_t layers = cube ? 6u : 1u;
@@ -154,6 +174,7 @@ namespace Flux::Vk {
           m_image(std::exchange(other.m_image, VK_NULL_HANDLE)),
           m_allocation(std::exchange(other.m_allocation, VK_NULL_HANDLE)),
           m_view(std::exchange(other.m_view, VK_NULL_HANDLE)),
+          m_faceViews(std::exchange(other.m_faceViews, {})),
           m_extent(std::exchange(other.m_extent, {})),
           m_mipLevels(std::exchange(other.m_mipLevels, 1)) {}
 
@@ -165,6 +186,7 @@ namespace Flux::Vk {
             m_image = std::exchange(other.m_image, VK_NULL_HANDLE);
             m_allocation = std::exchange(other.m_allocation, VK_NULL_HANDLE);
             m_view = std::exchange(other.m_view, VK_NULL_HANDLE);
+            m_faceViews = std::exchange(other.m_faceViews, {});
             m_extent = std::exchange(other.m_extent, {});
             m_mipLevels = std::exchange(other.m_mipLevels, 1);
         }
@@ -172,6 +194,12 @@ namespace Flux::Vk {
     }
 
     void Image::Reset() {
+        for (VkImageView& face : m_faceViews) {
+            if (face != VK_NULL_HANDLE) {
+                vkDestroyImageView(m_device, face, nullptr);
+                face = VK_NULL_HANDLE;
+            }
+        }
         if (m_view != VK_NULL_HANDLE) {
             vkDestroyImageView(m_device, m_view, nullptr);
         }

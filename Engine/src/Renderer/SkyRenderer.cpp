@@ -31,6 +31,11 @@ namespace Flux {
 
         constexpr std::uint32_t DataSlot = 0;
         constexpr std::uint32_t PanoramaSlot = 1;
+        constexpr std::uint32_t BackgroundSlot = 2;
+
+        // Texture cube du fond généré : environ un texel par pixel en 1080p (champ de 70°). 16 bits flottants par
+        // canal : la nébuleuse peut dépasser 1 avant la luminosité, sans bandes dans les dégradés sombres. 48 Mo.
+        constexpr std::uint32_t BackgroundSize = 1024;
 
         // Texture cube de la lumière ambiante et des reflets : floue de toute façon (les reflets nets viendraient
         // d'autres techniques), petite pour être refaite vite quand un réglage du ciel change.
@@ -79,10 +84,20 @@ namespace Flux {
             return std::unexpected(blackTexture.error());
         }
         sky->m_black = std::move(*blackTexture);
+        constexpr std::array<std::uint8_t, 4 * 6> blackFaces{0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255,
+                                                             0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255};
+        auto blackCube = device.CreateCubeTexture(RHI::Format::RGBA8Unorm, 1, blackFaces);
+        auto background = device.CreateCubeRenderTarget(RHI::Format::RGBA16Float, BackgroundSize);
+        if (!blackCube || !background) {
+            return std::unexpected(!blackCube ? blackCube.error() : background.error());
+        }
+        sky->m_blackCube = std::move(*blackCube);
+        sky->m_background = std::move(*background);
 
         constexpr std::array bindings{
             RHI::Binding{DataSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
             RHI::Binding{PanoramaSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{BackgroundSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -99,6 +114,8 @@ namespace Flux {
             sky->m_groups[f]->SetBuffer(DataSlot, *sky->m_buffers[f]);
             sky->m_groups[f]->SetTexture(PanoramaSlot, *sky->m_black, *sky->m_panoramaSampler);
             sky->m_boundPanorama[f] = sky->m_black.get();
+            sky->m_groups[f]->SetTexture(BackgroundSlot, *sky->m_blackCube, *sky->m_cubeSampler);
+            sky->m_boundBackground[f] = sky->m_blackCube.get();
         }
 
         // Derrière tout : seulement là où la profondeur est restée celle de l'effacement (0, l'infini en reverse-Z).
@@ -116,6 +133,19 @@ namespace Flux {
             return std::unexpected(pipeline.error());
         }
         sky->m_pipeline = std::move(*pipeline);
+
+        // Calcul du fond : le même triangle plein écran, dans chaque face de la texture cube.
+        RHI::PipelineDesc bakeDesc;
+        bakeDesc.shaderPath = desc.shaderPath;
+        bakeDesc.fragmentEntryPoint = "bakeFragment";
+        bakeDesc.bindGroupLayouts = layouts;
+        bakeDesc.pushConstantsSize = sizeof(std::uint32_t);
+        bakeDesc.colorFormat = RHI::Format::RGBA16Float;
+        auto bakePipeline = device.CreatePipeline(bakeDesc);
+        if (!bakePipeline) {
+            return std::unexpected(bakePipeline.error());
+        }
+        sky->m_bakePipeline = std::move(*bakePipeline);
         return sky;
     }
 
@@ -231,6 +261,21 @@ namespace Flux {
             m_buffers[frameIndex]->Write(&data, sizeof(data));
         }
 
+        // Fond généré : recalculé (Bake) pour de nouveaux réglages, lu ensuite tant qu'ils ne changent pas.
+        const RHI::Texture* backgroundTexture = m_blackCube.get();
+        if (component && key.kind == EnvironmentKey::Kind::Generated) {
+            const auto now = std::chrono::steady_clock::now();
+            if (!m_bakedParameters || (*m_bakedParameters != key.parameters && now - m_lastBake >= MinRebuildInterval)) {
+                m_bakedParameters = key.parameters;
+                m_bakePending = true;
+                m_lastBake = now;
+            }
+            backgroundTexture = m_background.get();
+        }
+        if (m_boundBackground[frameIndex] != backgroundTexture) {
+            m_groups[frameIndex]->SetTexture(BackgroundSlot, *backgroundTexture, *m_cubeSampler);
+            m_boundBackground[frameIndex] = backgroundTexture;
+        }
         if (m_boundPanorama[frameIndex] != panoramaTexture) {
             m_groups[frameIndex]->SetTexture(PanoramaSlot, *panoramaTexture, *m_panoramaSampler);
             m_boundPanorama[frameIndex] = panoramaTexture;
@@ -240,6 +285,24 @@ namespace Flux {
         lighting.environmentSampler = m_cubeSampler.get();
         lighting.environmentMips = MipCount(m_environments[frameIndex] ? m_environments[frameIndex]->GetExtent().width : 1);
         return lighting;
+    }
+
+    void SkyRenderer::Bake(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        if (!std::exchange(m_bakePending, false)) {
+            return;
+        }
+        // Les réglages viennent des données de l'image (écrites par Prepare), comme pour le dessin du fond.
+        constexpr float size = static_cast<float>(BackgroundSize);
+        for (std::uint32_t face = 0; face < 6; ++face) {
+            commands.BeginRenderPass({.clearColor = {0.0f, 0.0f, 0.0f, 1.0f}, .colorTarget = m_background.get(), .colorLayer = face});
+            commands.SetViewport({0.0f, 0.0f, size, size});
+            commands.SetScissor({0, 0, BackgroundSize, BackgroundSize});
+            commands.BindPipeline(*m_bakePipeline);
+            commands.SetBindGroup(0, *m_groups[frameIndex]);
+            commands.PushConstants(&face, sizeof(face));
+            commands.Draw(3, 0);
+            commands.EndRenderPass();
+        }
     }
 
     void SkyRenderer::Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const {
