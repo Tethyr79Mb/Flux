@@ -229,8 +229,10 @@ namespace Flux {
         InterfaceFunction m_gameQuitHandler;
         // Actions des boutons cliqués pendant le dessin des interfaces, faites à la fin de la frame.
         std::vector<std::pair<Interface::ButtonAction, std::string>> m_interfaceActions;
-        // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette).
+        // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette). Molette vers l'avant
+        // au plus près : vue à la première personne (depuis ses yeux, personnage non dessiné) ; vers l'arrière : retour.
         float m_followDistance = 4.0f;
+        bool m_firstPerson = false;
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
         Entity m_hiddenPlayer = NullEntity; // caméra dans sa tête (vue cockpit, ou coincée contre un mur) : pas dessiné
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
