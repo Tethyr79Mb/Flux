@@ -357,6 +357,19 @@ namespace FluxEditor {
                     }
                     changed = true;
                 }
+                if (ui.Button("Remplir")) {
+                    // Étiré sur tout l'intérieur du parent : sous la barre de titre d'une fenêtre, avec une marge.
+                    element->anchor = Interface::Anchor::Stretch;
+                    element->position = {};
+                    element->size = {};
+                    if (parent && parent->type == ElementType::Window) {
+                        constexpr float Margin = 10.0f;
+                        element->position = {Margin, std::max(parent->titleHeight, 0.0f) + Margin};
+                        element->size = {Margin, Margin};
+                    }
+                    changed = true;
+                }
+                ui.SetItemTooltip(parent ? "Occupe tout l'intérieur du parent et suit ses bords." : "Occupe tout l'écran.");
                 if (element->anchor == Interface::Anchor::Stretch) {
                     changed |= ui.DragFloat2("Marges gauche, haut", element->position, 1.0f, UI::Context::NoMin, UI::Context::NoMax, 0);
                     changed |= ui.DragFloat2("Marges droite, bas", element->size, 1.0f, UI::Context::NoMin, UI::Context::NoMax, 0);
