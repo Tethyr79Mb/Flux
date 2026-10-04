@@ -1,6 +1,7 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
 #include <Flux/Core/Log.hpp>
+#include <Flux/Input/InputActions.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
@@ -63,12 +64,9 @@ namespace {
                 });
         }
 
-        // Raccourcis muets pendant la saisie dans un champ : taper « 1e7 » ne doit rien déclencher.
-        const Input& input = engine.GetWindow().GetInput();
-        if (!engine.GetUi().WantsKeyboard()) {
-            if (input.WasKeyPressed(Key::T)) {
-                JumpSector(engine);
-            }
+        // Action d'entrée du jeu (touche T par défaut, réassignable) ; muette pendant la saisie dans un champ.
+        if (engine.WasActionPressed("Saut d'une année-lumière")) {
+            JumpSector(engine);
         }
 
         DrawDemoPanel(engine);
@@ -86,6 +84,7 @@ FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
         .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
         .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
     engine.SetGameUpdate(Update);
+    engine.GetInputActions().Add("Saut d'une année-lumière", "Démo", Key::T);
     // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
     engine.RegisterInterfaceFunction("Exemple", [](Engine&) { Log::Info("bouton d'interface : fonction Exemple appelée"); });
     // Exemple de liaison : un curseur lié à « Vitesse de la démo » la change, un texte ou une barre l'affiche.
@@ -100,4 +99,5 @@ FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {
     engine.SetGameUpdate(nullptr);
     engine.UnregisterInterfaceFunction("Exemple");
     engine.UnbindInterfaceValue("Vitesse de la démo");
+    engine.GetInputActions().Remove("Saut d'une année-lumière");
 }

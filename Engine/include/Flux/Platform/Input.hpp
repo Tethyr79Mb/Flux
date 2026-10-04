@@ -54,6 +54,10 @@ namespace Flux {
         Move,             // ✥ : élément qu'on peut glisser
     };
 
+    // Nom d'une touche selon la disposition du clavier, comme Windows l'écrit (Key::W donne « Z » en AZERTY,
+    // Key::Space « ESPACE ») ; vide pour Key::Unknown.
+    FLUX_API std::string GetKeyName(Key key);
+
     // État du clavier et de la souris, mis à jour par Window::HandleEvents.
     class FLUX_API Input {
         public:
@@ -69,6 +73,8 @@ namespace Flux {
         bool WasLetterPressed(char letter) const {
             return letter >= 'A' && letter <= 'Z' && m_letterPressed[static_cast<std::size_t>(letter - 'A')];
         }
+        // Première touche enfoncée à cette frame (réassignation d'une action) ; Key::Unknown si aucune.
+        Key GetFirstPressedKey() const;
         bool IsControlDown() const { return IsKeyDown(Key::LeftControl) || IsKeyDown(Key::RightControl); }
         bool IsShiftDown() const { return IsKeyDown(Key::LeftShift); }
 

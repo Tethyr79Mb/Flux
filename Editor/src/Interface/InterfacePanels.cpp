@@ -4,6 +4,7 @@
 #include "Panels/AssetPicker.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Input/InputActions.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
@@ -288,6 +289,28 @@ namespace FluxEditor {
                     }
                 }
                 return changed;
+            }
+            case Interface::ButtonAction::RebindKey: {
+                // Les actions d'entrée du moteur et du jeu chargé.
+                std::vector<std::string_view> names;
+                for (const InputAction& action : engine.GetInputActions().GetActions()) {
+                    names.push_back(action.name);
+                }
+                const auto found = std::ranges::find(names, std::string_view(target));
+                const bool missing = found == names.end();
+                std::string missingLabel = target.empty() ? "(choisir une action)" : "« " + target + " » introuvable";
+                std::vector<std::string_view> options;
+                if (missing) {
+                    options.push_back(missingLabel);
+                }
+                options.insert(options.end(), names.begin(), names.end());
+                int index = missing ? 0 : static_cast<int>(found - names.begin());
+                if (ui.Choice("Action", index, options) && !(missing && index == 0)) {
+                    target = std::string(names[static_cast<std::size_t>(index - (missing ? 1 : 0))]);
+                    return true;
+                }
+                ui.TextDisabled("Pour afficher sa touche : Liaison « Touche : ... ».");
+                return false;
             }
             case Interface::ButtonAction::CallFunction: {
                 const bool changed = ui.InputText("Fonction", target);

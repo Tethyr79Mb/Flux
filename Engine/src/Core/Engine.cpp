@@ -3,6 +3,7 @@
 #include "Flux/Animation/Animator.hpp"
 #include "Flux/Audio/AudioSystem.hpp"
 #include "Flux/Core/Log.hpp"
+#include "Flux/Input/InputActions.hpp"
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Platform/Dialogs.hpp"
@@ -24,12 +25,20 @@
 #include <cmath>
 #include <cstdio>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <numbers>
 #include <string>
 #include <utility>
 
 namespace Flux {
     namespace {
+        // Liaison d'un texte ou d'un bouton aux touches d'une action d'entrée : « Touche : Avancer ».
+        constexpr std::string_view KeyBindingPrefix = "Touche : ";
+
+        std::filesystem::path InputActionsFile() {
+            return Platform::GetExecutableDirectory() / "Touches.json";
+        }
         using Clock = std::chrono::steady_clock;
 
         // Caméra qui suit le personnage : un peu moins que la verticale, au-dessus comme en dessous.
@@ -133,7 +142,8 @@ namespace Flux {
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
           m_audio(std::make_unique<AudioSystem>()),
-          m_interfaces(std::make_unique<InterfaceLibrary>()) {
+          m_interfaces(std::make_unique<InterfaceLibrary>()),
+          m_inputActions(std::make_unique<InputActions>()) {
         RegisterEngineComponents(m_components);
         if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
@@ -170,9 +180,75 @@ namespace Flux {
                                              }};
         m_engineValues["Images par seconde"] = {.get = [this] { return std::round(m_fps); }};
 
+        // Actions du moteur (personnage, vaisseau), puis les touches choisies par le joueur. ZQSD en AZERTY : les
+        // touches sont des positions sur le clavier (Key::W est la touche Z en AZERTY).
+        InputActions& actions = *m_inputActions;
+        actions.Add("Avancer", "Déplacement", Key::W, Key::Up);
+        actions.Add("Reculer", "Déplacement", Key::S, Key::Down);
+        actions.Add("Aller à gauche", "Déplacement", Key::A, Key::Left);
+        actions.Add("Aller à droite", "Déplacement", Key::D, Key::Right);
+        actions.Add("Courir", "Déplacement", Key::LeftShift);
+        actions.Add("Sauter", "Déplacement", Key::Space);
+        actions.Add("Interagir", "Déplacement", Key::E);
+        actions.Add("Monter", "Vaisseau", Key::Space);
+        actions.Add("Descendre", "Vaisseau", Key::LeftControl);
+        actions.Add("Changer de vue", "Vaisseau", Key::V);
+        if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
+            const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            if (auto loaded = actions.LoadFromString(text); !loaded) {
+                Log::Warning("Touches.json : {}", loaded.error());
+            }
+        }
+
         // Un peu en arrière et au-dessus de la grille de test, légèrement vers le bas.
         m_camera.position.offset = {0.0, 6.0, 30.0};
         m_camera.pitch = -0.2f;
+    }
+
+    bool Engine::IsActionDown(std::string_view name) const {
+        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard()
+            && m_inputActions->IsDown(m_window->GetInput(), name);
+    }
+
+    bool Engine::WasActionPressed(std::string_view name) const {
+        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard()
+            && m_inputActions->WasPressed(m_window->GetInput(), name);
+    }
+
+    void Engine::StartKeyRebinding(std::string action) {
+        if (m_inputActions->Find(action)) {
+            m_rebindingAction = std::move(action);
+        } else {
+            Log::Warning("changer une touche : aucune action « {} »", action);
+        }
+    }
+
+    void Engine::ResetInputActions() {
+        m_rebindingAction.clear();
+        m_inputActions->ResetToDefaults();
+        SaveInputActions();
+    }
+
+    void Engine::CaptureKeyRebinding() {
+        const Key key = m_window->GetInput().GetFirstPressedKey();
+        if (key == Key::Unknown) {
+            return;
+        }
+        if (key != Key::Escape) { // Échap annule
+            m_inputActions->SetKey(m_rebindingAction, 0, key);
+            SaveInputActions();
+        }
+        m_rebindingAction.clear();
+        m_keyCaptured = true;
+        m_escapeUsed = true; // ni le jeu ni les interfaces ne voient cette touche
+    }
+
+    void Engine::SaveInputActions() const {
+        std::ofstream file(InputActionsFile(), std::ios::binary | std::ios::trunc);
+        file << m_inputActions->SaveToString();
+        if (!file) {
+            Log::Error("Touches.json : impossible d'écrire {}", Platform::ToGenericUtf8(InputActionsFile()));
+        }
     }
 
     // Défini ici, où Renderer est complet, pour que unique_ptr<Renderer> puisse le détruire.
@@ -220,6 +296,10 @@ namespace Flux {
             m_interfaceWantsMouse = std::exchange(m_interfaceMouseNow, false);
             m_interfacePaused = std::exchange(m_interfacePausedNow, false);
             m_escapeUsed = false;
+            m_keyCaptured = false;
+            if (!m_rebindingAction.empty()) {
+                CaptureKeyRebinding();
+            }
             m_interfaces->ForgetInstancesBefore(m_frame - 1);
             // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
@@ -306,31 +386,29 @@ namespace Flux {
         const Entity player = m_physics->GetPlayer();
         const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;
         const bool seated = playerCharacter && playerCharacter->seat != NullEntity;
-        const auto axis = [&](Key positive, Key negative) {
-            return (input.IsKeyDown(positive) ? 1.0f : 0.0f) - (input.IsKeyDown(negative) ? 1.0f : 0.0f);
+        const auto axis = [&](std::string_view positive, std::string_view negative) {
+            return (IsActionDown(positive) ? 1.0f : 0.0f) - (IsActionDown(negative) ? 1.0f : 0.0f);
         };
 
-        // Personnage du joueur : ZQSD (WASD en QWERTY) par rapport à la caméra, Maj pour courir, Espace pour sauter.
-        // Assis : les mêmes touches pilotent le vaisseau (poste de pilotage).
+        // Personnage du joueur, par rapport à la caméra ; assis, les mêmes actions pilotent le vaisseau (poste de
+        // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, E par défaut).
         CharacterInput character;
         SeatInput seatInput;
-        if (!m_ui->WantsKeyboard()) {
-            seatInput.interact = input.WasKeyPressed(Key::E);
-            if (seated) {
-                seatInput.thrust = axis(Key::W, Key::S);
-                seatInput.yaw = axis(Key::A, Key::D);
-                seatInput.pitch = axis(Key::Space, Key::LeftControl);
-                if (input.WasKeyPressed(Key::V)) {
-                    m_cockpitView = !m_cockpitView;
-                }
-            } else {
-                // Avant et droite de la caméra, ramenés à l'horizontale.
-                const Math::Vector3f forward{-std::sin(m_camera.yaw), 0.0f, -std::cos(m_camera.yaw)};
-                const Math::Vector3f right{std::cos(m_camera.yaw), 0.0f, -std::sin(m_camera.yaw)};
-                character.move = forward * axis(Key::W, Key::S) + right * axis(Key::D, Key::A);
-                character.run = input.IsKeyDown(Key::LeftShift);
-                character.jump = input.WasKeyPressed(Key::Space);
+        seatInput.interact = WasActionPressed("Interagir");
+        if (seated) {
+            seatInput.thrust = axis("Avancer", "Reculer");
+            seatInput.yaw = axis("Aller à gauche", "Aller à droite");
+            seatInput.pitch = axis("Monter", "Descendre");
+            if (WasActionPressed("Changer de vue")) {
+                m_cockpitView = !m_cockpitView;
             }
+        } else {
+            // Avant et droite de la caméra, ramenés à l'horizontale.
+            const Math::Vector3f forward{-std::sin(m_camera.yaw), 0.0f, -std::cos(m_camera.yaw)};
+            const Math::Vector3f right{std::cos(m_camera.yaw), 0.0f, -std::sin(m_camera.yaw)};
+            character.move = forward * axis("Avancer", "Reculer") + right * axis("Aller à droite", "Aller à gauche");
+            character.run = IsActionDown("Courir");
+            character.jump = WasActionPressed("Sauter");
         }
         Seats::Update(m_scene, player, deltaSeconds, seatInput, [this](Entity entity) {
             // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
@@ -495,6 +573,12 @@ namespace Flux {
                         RequestQuit();
                     }
                     break;
+                case Interface::ButtonAction::RebindKey:
+                    StartKeyRebinding(std::move(target));
+                    break;
+                case Interface::ButtonAction::ResetKeys:
+                    ResetInputActions();
+                    break;
                 case Interface::ButtonAction::CallFunction:
                     if (const auto found = m_interfaceFunctions.find(target); found != m_interfaceFunctions.end()) {
                         // Copie : la fonction peut s'enregistrer à nouveau ou se retirer pendant l'appel.
@@ -550,6 +634,9 @@ namespace Flux {
         for (const auto& [name, value] : m_interfaceValues) {
             names.push_back(name);
         }
+        for (const InputAction& action : m_inputActions->GetActions()) {
+            names.push_back(std::string(KeyBindingPrefix) + action.name);
+        }
         return names;
     }
 
@@ -563,7 +650,12 @@ namespace Flux {
 
     void Engine::SyncInterfaceBindings(std::vector<Interface::Element>& elements, std::uint32_t changed) {
         for (Interface::Element& element : elements) {
-            if (!element.binding.empty()) {
+            if (element.binding.starts_with(KeyBindingPrefix)) {
+                // « Touche : Avancer » : les touches de l'action, sur un texte ou un bouton.
+                const std::string_view action = std::string_view(element.binding).substr(KeyBindingPrefix.size());
+                element.boundText = m_rebindingAction == action ? std::string("Appuyez sur une touche...")
+                                                                : m_inputActions->GetKeysText(action);
+            } else if (!element.binding.empty()) {
                 if (const InterfaceValue* value = FindInterfaceValue(element.binding)) {
                     const bool touched = element.id == changed && value->set;
                     switch (element.type) {
@@ -587,6 +679,7 @@ namespace Flux {
                             }
                             break;
                         case Interface::ElementType::Text:
+                        case Interface::ElementType::Button:
                             if (value->getText) {
                                 element.boundText = value->getText();
                             } else if (value->get) {

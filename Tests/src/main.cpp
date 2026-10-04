@@ -22,6 +22,7 @@ int main() {
         {"cascades d'ombres", RunShadowTests},
         {"ciel", RunSkyTests},
         {"son", RunAudioTests},
+        {"actions d'entrée", RunInputTests},
     };
 
     int failures = 0;

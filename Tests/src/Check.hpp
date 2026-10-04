@@ -26,3 +26,4 @@ bool RunAnimationTests();
 bool RunShadowTests();
 bool RunSkyTests();
 bool RunAudioTests();
+bool RunInputTests();

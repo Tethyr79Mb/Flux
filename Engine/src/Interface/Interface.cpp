@@ -24,7 +24,7 @@ namespace Flux::Interface {
         constexpr std::array<std::string_view, static_cast<std::size_t>(ButtonAction::Count)> ActionNames{
             "Aucune",           "Ouvrir une fenêtre", "Fermer une fenêtre", "Ouvrir ou fermer une fenêtre",
             "Fermer sa fenêtre", "Changer de scène",  "Quitter le jeu",     "Fonction C++",
-            "Afficher un onglet"};
+            "Afficher un onglet", "Changer une touche", "Touches par défaut"};
 
         constexpr std::uint32_t Bit(ElementType type) { return 1u << static_cast<unsigned>(type); }
         constexpr std::uint32_t W = Bit(ElementType::Window);
@@ -72,7 +72,7 @@ namespace Flux::Interface {
             Field{"action", "Action", &Element::action, B},
             Field{"target", "Cible", &Element::target, B, Field::Text::ActionTarget},
             Field{"checked", "Cochée", &Element::checked, C},
-            Field{"binding", "Liaison", &Element::binding, C | S | T | P, Field::Text::Binding},
+            Field{"binding", "Liaison", &Element::binding, C | S | T | B | P, Field::Text::Binding},
             Field{"value", "Valeur", &Element::value, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
             Field{"minimum", "Minimum", &Element::minimum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
             Field{"maximum", "Maximum", &Element::maximum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
@@ -328,6 +328,8 @@ namespace Flux::Interface {
                 case ButtonAction::ChangeScene:
                 case ButtonAction::Quit:
                 case ButtonAction::CallFunction:
+                case ButtonAction::RebindKey:
+                case ButtonAction::ResetKeys:
                     interaction.action = button.action;
                     interaction.target = button.target;
                     break;

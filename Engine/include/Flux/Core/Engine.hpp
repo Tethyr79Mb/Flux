@@ -23,6 +23,7 @@
 
 namespace Flux {
     class AudioSystem;
+    class InputActions;
     class InterfaceLibrary;
     class PhysicsWorld;
     class Renderer;
@@ -154,6 +155,20 @@ namespace Flux {
         // Son : volume général, sons lancés par le jeu. Voir AudioSystem.
         AudioSystem& GetAudio() { return *m_audio; }
 
+        // Actions d'entrée (« Avancer », « Sauter »...) : le moteur déclare les siennes, le jeu ajoute les siennes
+        // (et les retire au déchargement). Les touches choisies par le joueur sont gardées dans Touches.json, à côté
+        // de l'exécutable.
+        InputActions& GetInputActions() { return *m_inputActions; }
+        // Action tenue, ou enfoncée à cette image ; false pendant la saisie dans un champ et pendant qu'une touche
+        // est en cours de réassignation.
+        bool IsActionDown(std::string_view name) const;
+        bool WasActionPressed(std::string_view name) const;
+        // Réassignation de la touche principale d'une action (bouton d'interface « Changer une touche ») : la
+        // prochaine touche enfoncée la remplace, Échap annule.
+        void StartKeyRebinding(std::string action);
+        const std::string& GetKeyRebinding() const { return m_rebindingAction; }
+        void ResetInputActions();
+
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
@@ -202,6 +217,11 @@ namespace Flux {
         std::map<std::string, InterfaceValue, std::less<>> m_engineValues; // fournies par le moteur
         std::map<std::string, InterfaceValue, std::less<>> m_interfaceValues; // fournies par le jeu
         double m_fps = 0.0; // moyenne de la dernière seconde (« Images par seconde »)
+        std::unique_ptr<InputActions> m_inputActions;
+        std::string m_rebindingAction; // action dont on attend la nouvelle touche
+        bool m_keyCaptured = false;    // une touche a servi à la réassignation à cette image : le jeu ne la voit pas
+        void CaptureKeyRebinding();
+        void SaveInputActions() const;
         InterfaceFunction m_gameQuitHandler;
         // Actions des boutons cliqués pendant le dessin des interfaces, faites à la fin de la frame.
         std::vector<std::pair<Interface::ButtonAction, std::string>> m_interfaceActions;

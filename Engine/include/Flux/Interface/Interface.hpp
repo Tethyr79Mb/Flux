@@ -65,6 +65,8 @@ namespace Flux::Interface {
         Quit,         // quitte le jeu (dans l'éditeur : arrête le mode Jouer)
         CallFunction, // target : nom d'une fonction C++ enregistrée par le jeu (Engine::RegisterInterfaceFunction)
         ShowTab,      // target : nom d'une page d'onglets, affichée à la place des autres pages (« Suivant »)
+        RebindKey,    // target : nom d'une action d'entrée ; la prochaine touche enfoncée devient la sienne
+        ResetKeys,    // remet toutes les touches par défaut
         Count,
     };
 

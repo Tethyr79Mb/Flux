@@ -24,6 +24,15 @@ namespace Flux {
         }
     }
 
+    Key Input::GetFirstPressedKey() const {
+        for (std::size_t scancode = 1; scancode < KeyCount; ++scancode) {
+            if (m_pressed[scancode]) {
+                return static_cast<Key>(scancode);
+            }
+        }
+        return Key::Unknown;
+    }
+
     void Input::SetLetterPressed(char letter) {
         if (letter >= 'A' && letter <= 'Z') {
             m_letterPressed[static_cast<std::size_t>(letter - 'A')] = true;
