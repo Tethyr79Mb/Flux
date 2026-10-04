@@ -21,6 +21,7 @@ int main() {
         {"animation squelettique", RunAnimationTests},
         {"cascades d'ombres", RunShadowTests},
         {"ciel", RunSkyTests},
+        {"son", RunAudioTests},
     };
 
     int failures = 0;

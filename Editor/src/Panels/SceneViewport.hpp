@@ -88,11 +88,12 @@ namespace FluxEditor {
         std::vector<Flux::RelativeTransform> m_transforms; // gardé d'une frame à l'autre : pas d'allocation
         // Éléments à l'écran dessinés à la frame précédente (sélection au clic).
         std::vector<Flux::ScreenUi::ItemRect> m_screenRects;
-        // Ampoules des lumières à l'écran, à cette frame (dessin et sélection au clic).
+        // Ampoules des lumières et haut-parleurs des sons à l'écran, à cette frame (dessin et sélection au clic).
         struct LightIcon
         {
             Flux::Entity entity;
             Flux::Math::Vector2f center;
+            Flux::UI::Icon icon;
         };
         std::vector<LightIcon> m_lightIcons;
     };

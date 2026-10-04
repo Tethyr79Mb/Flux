@@ -166,6 +166,17 @@ namespace Flux::UI {
                 pen.Disc(0.4f, 0.3f, 0.08f, LinearColor::FromSrgb8(255, 248, 210));     // reflet
                 break;
             }
+            case Icon::Sound: {
+                const LinearColor body = LinearColor::FromSrgb8(120, 200, 230);
+                pen.Rect(0.1f, 0.38f, 0.3f, 0.62f, body);                         // aimant
+                pen.Quad({0.3f, 0.38f}, {0.56f, 0.14f}, {0.56f, 0.86f}, {0.3f, 0.62f}, body); // pavillon
+                const LinearColor wave = LinearColor::FromSrgb8(200, 236, 250);
+                pen.Line(0.68f, 0.36f, 0.74f, 0.5f, wave, 0.07f);
+                pen.Line(0.74f, 0.5f, 0.68f, 0.64f, wave, 0.07f);
+                pen.Line(0.8f, 0.22f, 0.9f, 0.5f, wave, 0.07f);
+                pen.Line(0.9f, 0.5f, 0.8f, 0.78f, wave, 0.07f);
+                break;
+            }
             case Icon::Sky: {
                 const LinearColor night = LinearColor::FromSrgb8(40, 52, 110);
                 pen.Disc(0.5f, 0.5f, 0.44f, night);

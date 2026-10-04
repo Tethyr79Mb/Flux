@@ -100,6 +100,24 @@ namespace Flux {
         float softness = 0.25f;  // spot : part du bord du cône qui s'estompe (0 : bord net, 1 : fondu depuis l'axe)
     };
 
+    // Son joué pendant le jeu (muet dans l'éditeur à l'arrêt) : bruit, ambiance ou musique. Fichier WAV, OGG, MP3 ou
+    // FLAC. En 3D, il vient de l'entité : plein volume jusqu'à minDistance, puis de plus en plus faible jusqu'au silence
+    // à maxDistance, à gauche ou à droite selon la caméra. Sinon, même volume partout (musique, ambiance d'une scène).
+    // Le code du jeu peut aussi le lancer et l'arrêter : voir AudioSystem.
+    struct SoundComponent
+    {
+        std::string file;          // relatif aux assets
+        float volume = 1.0f;       // 1 : celui du fichier
+        float pitch = 1.0f;        // vitesse de lecture : 2 joue une octave plus haut et deux fois plus vite
+        bool loop = false;
+        bool playOnStart = true;   // dès le lancement du jeu ; sinon, quand le code du jeu le demande
+        bool spatial = true;       // son 3D, placé sur l'entité
+        float minDistance = 2.0f;  // mètres
+        float maxDistance = 60.0f; // mètres : silence au-delà
+        // Sur un vaisseau (ou un de ses enfants) : volume et hauteur montent avec sa vitesse (bruit des moteurs).
+        bool followShipSpeed = false;
+    };
+
     // Ciel de la scène, autour de tout et à l'infini : un fond, la lumière ambiante et ce que reflètent les surfaces
     // lisses, plus le soleil (lumière principale et ses ombres). Généré (nébuleuse, bande galactique, étoiles) ou
     // tiré d'une image panoramique. Un seul ciel compte ; sans ciel, pas de fond (couleur unie), une lumière ambiante

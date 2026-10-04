@@ -4,6 +4,7 @@
 #include "Interface/InterfaceEditor.hpp"
 #include "Search.hpp"
 
+#include <Flux/Audio/AudioSystem.hpp>
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Interface/Interface.hpp>
 #include <Flux/Platform/Dialogs.hpp>
@@ -65,6 +66,12 @@ namespace FluxEditor {
                 changed |= ReplaceImageReferences(element.children, from, to);
             }
             return changed;
+        }
+
+        bool IsSound(const std::filesystem::path& path) {
+            std::string extension = Platform::ToUtf8(path.extension());
+            std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return extension == ".wav" || extension == ".ogg" || extension == ".mp3" || extension == ".flac";
         }
 
         constexpr float DragThreshold = 4.0f; // pixels avant qu'une vignette tenue devienne un glisser-déposer
@@ -428,6 +435,10 @@ namespace FluxEditor {
             }
             if (tile.doubleClicked && interfaceFile && m_interfaces) {
                 m_interfaces->Open(engine, entry.path);
+            }
+            if (tile.doubleClicked && !entry.directory && IsSound(entry.path) && engine.GetProject()) {
+                // Écouter le son, une fois.
+                engine.GetAudio().PlayOnce(Platform::ToGenericUtf8(entry.path.lexically_relative(engine.GetProject()->assetsDirectory)));
             }
             if (ui.IsItemActive() && m_drag.path.empty() && !document.IsLocked()) {
                 m_drag = {};

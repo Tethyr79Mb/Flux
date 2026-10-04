@@ -86,6 +86,15 @@ namespace FluxEditor {
             component.pilot = true;
             component.reach = 10.0f;
             component.exit = {-3.5f, -2.3f, 1.4f};
+            // Bruit des moteurs, à l'arrière (tuyères) : plus fort et plus aigu avec la vitesse.
+            const Entity engines = scene.CreateEntity("Moteurs", ship);
+            scene.Get<TransformComponent>(engines).position = {0.0, 1.2, 15.0};
+            SoundComponent& sound = scene.Add<SoundComponent>(engines);
+            sound.file = "Sons/Reacteur.wav";
+            sound.loop = true;
+            sound.followShipSpeed = true;
+            sound.minDistance = 6.0f;
+            sound.maxDistance = 150.0f;
         }
 
         struct ItemInfo
@@ -106,7 +115,8 @@ namespace FluxEditor {
                                            {"Spot", "Spot"},
                                            {"Ciel", "Ciel"},
                                            {"Volume intérieur", "Intérieur"},
-                                           {"Interface...", "Interface"}};
+                                           {"Interface...", "Interface"},
+                                           {"Son...", "Son"}};
             return Infos[item];
         }
 
@@ -159,6 +169,9 @@ namespace FluxEditor {
             button(Item::ScreenImage);
             ui.SameLine();
             button(Item::Interface);
+            ui.Separator();
+            ui.TextDisabled("Son");
+            button(Item::Sound);
             ui.Separator();
             ui.TextDisabled("Logique");
             button(Item::SceneChange);
@@ -247,6 +260,17 @@ namespace FluxEditor {
                 name = std::move(stem);
             }
         }
+        // Un son : le fichier d'abord, comme un modèle ; l'entité porte son nom.
+        std::optional<std::string> soundFile;
+        if (item == Item::Sound) {
+            soundFile = ChooseAsset(engine, AssetType::Sound, "");
+            if (!soundFile) {
+                return;
+            }
+            if (std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*soundFile).stem()); !stem.empty()) {
+                name = std::move(stem);
+            }
+        }
         const Entity entity = scene.CreateEntity(name);
 
         if (item == Item::Interface) {
@@ -290,6 +314,8 @@ namespace FluxEditor {
             } else if (item == Item::Fighter) {
                 scene.Add<ShipComponent>(entity);
                 AddFighter(scene, entity);
+            } else if (item == Item::Sound) {
+                scene.Add<SoundComponent>(entity).file = std::move(*soundFile);
             } else if (item == Item::Interior) {
                 scene.Add<InteriorComponent>(entity);
             } else if (item == Item::Light || item == Item::Spot) {
