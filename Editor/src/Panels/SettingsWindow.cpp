@@ -1,5 +1,6 @@
 #include "Panels/SettingsWindow.hpp"
 
+#include <Flux/Audio/AudioSystem.hpp>
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Filesystem.hpp>
@@ -9,6 +10,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <fstream>
 
 namespace FluxEditor {
@@ -31,12 +33,17 @@ namespace FluxEditor {
                 engine.GetUi().SetStyle(UI::Style::FromTheme(m_theme));
             }
         }
+        if (const auto volume = json.find("volume"); volume != json.end() && volume->is_number()) {
+            m_volume = std::clamp(volume->get<float>(), 0.0f, 1.0f);
+            engine.GetAudio().SetMasterVolume(m_volume);
+        }
     }
 
     void SettingsWindow::Save() const {
         const Json json{{"format", "flux.editor-settings"},
                         {"version", 1},
-                        {"theme", UI::GetThemeNames()[static_cast<std::size_t>(m_theme)]}};
+                        {"theme", UI::GetThemeNames()[static_cast<std::size_t>(m_theme)]},
+                        {"volume", m_volume}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -62,6 +69,10 @@ namespace FluxEditor {
                 m_tab = Tab::Graphics;
             }
             ui.SameLine();
+            if (ui.Tab("Son", m_tab == Tab::Sound)) {
+                m_tab = Tab::Sound;
+            }
+            ui.SameLine();
             if (ui.Tab("Interface", m_tab == Tab::Interface)) {
                 m_tab = Tab::Interface;
             }
@@ -75,6 +86,23 @@ namespace FluxEditor {
                     renderer.SetVSync(vsync);
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
+            } else if (m_tab == Tab::Sound) {
+                AudioSystem& audio = engine.GetAudio();
+                float percent = m_volume * 100.0f;
+                if (ui.DragFloat("Volume général (%)", percent, 0.5f, 0.0, 100.0, 0)) {
+                    m_volume = percent / 100.0f;
+                    audio.SetMasterVolume(m_volume);
+                    m_volumeChanged = true;
+                }
+                // Enregistré au lâcher, pas à chaque pixel glissé.
+                if (m_volumeChanged && !ui.IsItemActive()) {
+                    m_volumeChanged = false;
+                    Save();
+                }
+                if (!audio.IsAvailable()) {
+                    ui.TextDisabled("Aucune sortie son : le jeu reste muet.");
+                }
+                ui.TextDisabled("Les sons (composant Son) jouent en mode Jouer.");
             } else {
                 int theme = static_cast<int>(m_theme);
                 if (ui.Choice("Thème", theme, UI::GetThemeNames())) {

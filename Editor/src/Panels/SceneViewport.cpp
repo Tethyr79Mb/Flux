@@ -541,12 +541,20 @@ namespace FluxEditor {
         const Vector2f mouse = input.GetMousePosition();
         const Ray ray = projection.GetRay(mouse);
         scene.ComputeRelativeTransforms(camera.position, m_transforms);
-        // Lumières : invisibles en elles-mêmes, une ampoule à l'écran les montre et se clique.
+        // Lumières et sons 3D : invisibles en eux-mêmes, une ampoule ou un haut-parleur à l'écran les montre et se
+        // clique (un son posé sur un objet visible se sélectionne avec lui).
         m_lightIcons.clear();
         for (const RelativeTransform& transform : m_transforms) {
+            UI::Icon icon = UI::Icon::None;
             if (scene.TryGet<LightComponent>(transform.entity)) {
+                icon = UI::Icon::Light;
+            } else if (const auto* sound = scene.TryGet<SoundComponent>(transform.entity);
+                       sound && sound->spatial && !engine.GetMeshBounds(transform.entity)) {
+                icon = UI::Icon::Sound;
+            }
+            if (icon != UI::Icon::None) {
                 if (const std::optional<Vector2f> point = projection.ToScreen(transform.position)) {
-                    m_lightIcons.push_back({transform.entity, *point});
+                    m_lightIcons.push_back({transform.entity, *point, icon});
                 }
             }
         }
@@ -705,7 +713,7 @@ namespace FluxEditor {
                 list.AddRectOutline(icon.center - half - Vector2f{2.0f, 2.0f}, icon.center + half + Vector2f{2.0f, 2.0f},
                                     Math::LinearColor::FromSrgb8(255, 165, 40), 2.0f);
             }
-            UI::DrawIcon(list, UI::Icon::Light, icon.center - half, LightIconSize);
+            UI::DrawIcon(list, icon.icon, icon.center - half, LightIconSize);
         }
         list.ResetClipRect();
         DrawToolbar(engine, view);
@@ -715,6 +723,15 @@ namespace FluxEditor {
         list.SetClipRect(view.min, view.max);
         if (const auto* light = scene.TryGet<LightComponent>(selected)) {
             DrawLightRange(list, projection, *selectedTransform, *light, Math::LinearColor::FromSrgb8(250, 214, 90));
+        }
+        if (const auto* sound = scene.TryGet<SoundComponent>(selected); sound && sound->spatial) {
+            // Portée du son : plein volume dans la petite sphère, silence hors de la grande.
+            const Math::LinearColor color = Math::LinearColor::FromSrgb8(120, 200, 230);
+            for (const double radius : {static_cast<double>(sound->minDistance), static_cast<double>(sound->maxDistance)}) {
+                if (radius > 0.0) {
+                    DrawCircle(list, projection, selectedTransform->position, Axes[0], Axes[2], radius, color);
+                }
+            }
         }
         if (selectedIsScreen) {
             // Le dernier rectangle de l'entité : son texte s'il y en a un (dessiné après l'image).

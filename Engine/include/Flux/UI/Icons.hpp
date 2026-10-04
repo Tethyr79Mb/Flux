@@ -23,6 +23,7 @@ namespace Flux::UI {
         Image,
         SceneChange, // flèche vers une autre scène
         Light,       // ampoule
+        Sound,       // haut-parleur et ondes
         Sky,         // ciel étoilé : un disque bleu nuit, une lune et des étoiles
         Component,   // composant du jeu, sans pictogramme à lui
         Empty,       // objet sans composant

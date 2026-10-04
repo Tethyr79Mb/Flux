@@ -35,6 +35,8 @@ target_link_libraries(FluxEngine PRIVATE stb_image)
 target_link_libraries(FluxEngine PRIVATE cgltf_header)
 # Physique (Jolt), privée : ses types n'apparaissent dans aucun en-tête public.
 target_link_libraries(FluxEngine PRIVATE Jolt)
+# Son.
+target_link_libraries(FluxEngine PRIVATE miniaudio)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).
 target_link_libraries(FluxEngine PRIVATE comdlg32)
 # Corbeille, explorateur et icônes des fichiers (SHFileOperationW, ShellExecuteW, SHGetImageList).

@@ -136,6 +136,16 @@ namespace Flux {
             .Enum("anchor", "Ancre", &ScreenTextComponent::anchor, Anchors)
             .Field("offsetX", "Décalage X", &ScreenTextComponent::offsetX, {.speed = 1.0, .decimals = 0})
             .Field("offsetY", "Décalage Y", &ScreenTextComponent::offsetY, {.speed = 1.0, .decimals = 0});
+        registry.Register<SoundComponent>("sound", "Son")
+            .Asset("file", "Fichier", &SoundComponent::file, AssetType::Sound)
+            .Field("volume", "Volume", &SoundComponent::volume, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
+            .Field("pitch", "Hauteur", &SoundComponent::pitch, {.speed = 0.01, .min = 0.05, .max = 8.0, .decimals = 2})
+            .Field("loop", "En boucle", &SoundComponent::loop)
+            .Field("playOnStart", "Jouer au lancement", &SoundComponent::playOnStart)
+            .Field("spatial", "Son 3D", &SoundComponent::spatial)
+            .Field("minDistance", "Plein volume jusqu'à (m)", &SoundComponent::minDistance, {.speed = 0.05, .min = 0.0, .max = 1.0e6, .decimals = 2})
+            .Field("maxDistance", "Silence au-delà de (m)", &SoundComponent::maxDistance, {.speed = 0.5, .min = 0.01, .max = 1.0e6, .decimals = 1})
+            .Field("followShipSpeed", "Suit la vitesse du vaisseau", &SoundComponent::followShipSpeed);
         registry.Register<InterfaceComponent>("interface", "Interface à l'écran")
             .Asset("file", "Fichier", &InterfaceComponent::file, AssetType::Interface);
         registry.Register<SceneChangeComponent>("sceneChange", "Changement de scène")

@@ -69,6 +69,7 @@ namespace FluxEditor {
             {"model", "Modèles 3D", UI::Icon::Model},
             {"meshRenderer", "Cubes", UI::Icon::Cube},
             {"light", "Lumières", UI::Icon::Light},
+            {"sound", "Sons", UI::Icon::Sound},
             {"sky", "Ciel", UI::Icon::Sky},
             {"interior", "Volumes intérieurs", UI::Icon::Collider},
             {"collider", "Collisions", UI::Icon::Collider},

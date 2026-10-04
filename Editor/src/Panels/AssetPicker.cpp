@@ -34,6 +34,9 @@ namespace FluxEditor {
             if (type == AssetType::Interface) {
                 return {{"Interfaces Flux", ".fluxui"}, "Choisir une interface", "interfaces"};
             }
+            if (type == AssetType::Sound) {
+                return {{"Sons", ".wav;.ogg;.mp3;.flac"}, "Choisir un son", "Sons"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 

@@ -22,6 +22,7 @@
 #include <string_view>
 
 namespace Flux {
+    class AudioSystem;
     class InterfaceLibrary;
     class PhysicsWorld;
     class Renderer;
@@ -137,6 +138,8 @@ namespace Flux {
         // Monde physique du jeu en cours (créé à la première image de jeu, après chaque changement de scène) ;
         // nullptr à l'arrêt. Voir PhysicsWorld.
         PhysicsWorld* GetPhysics() { return m_physics.get(); }
+        // Son : volume général, sons lancés par le jeu. Voir AudioSystem.
+        AudioSystem& GetAudio() { return *m_audio; }
 
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
@@ -167,6 +170,7 @@ namespace Flux {
         bool m_drawScreenUi = true;
         std::optional<std::string> m_requestedScene;
         std::unique_ptr<PhysicsWorld> m_physics;
+        std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
         std::uint64_t m_frame = 0;
         bool m_interfaceWantsMouse = false; // à l'image précédente

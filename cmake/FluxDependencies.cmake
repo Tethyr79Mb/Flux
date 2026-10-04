@@ -118,9 +118,18 @@ set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
 # Ses symboles de debug en Release gonfleraient FluxEngine.dll pour rien.
 set(GENERATE_DEBUG_SYMBOLS OFF CACHE BOOL "" FORCE)
 
+# Son : miniaudio (domaine public ou MIT-0), un seul fichier C. Son CMakeLists (exemples, décodeurs Opus/Vorbis
+# externes) est ignoré : SOURCE_SUBDIR désigne un dossier qui n'existe pas, le dépôt est seulement téléchargé.
+FetchContent_Declare(miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG 0.11.25
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR flux-telechargement-seul
+        SYSTEM)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb cgltf JoltPhysics)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb cgltf JoltPhysics miniaudio)
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
@@ -128,6 +137,21 @@ target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 # Le header seul : l'implémentation (CGLTF_IMPLEMENTATION) est compilée dans Model.cpp.
 add_library(cgltf_header INTERFACE)
 target_include_directories(cgltf_header SYSTEM INTERFACE ${cgltf_SOURCE_DIR})
+
+# miniaudio compilé en C dans sa propre bibliothèque (Engine/src/Audio/Miniaudio.c : implémentation, plus
+# stb_vorbis pour les .ogg), liée dans FluxEngine.dll. Les mêmes options pour l'implémentation et pour AudioSystem.cpp :
+# elles changent la taille de certaines structures. Sorties Windows seulement (WASAPI, DirectSound en secours), plus
+# la sortie « nulle » quand aucune carte son n'est là (machine de CI, Wine) : le jeu tourne quand même, muet.
+add_library(miniaudio STATIC ${CMAKE_SOURCE_DIR}/Engine/src/Audio/Miniaudio.c)
+target_include_directories(miniaudio SYSTEM PUBLIC ${miniaudio_SOURCE_DIR})
+target_compile_definitions(miniaudio PUBLIC
+        MA_ENABLE_ONLY_SPECIFIC_BACKENDS MA_ENABLE_WASAPI MA_ENABLE_DSOUND MA_ENABLE_NULL MA_NO_ENCODING)
+set_target_properties(miniaudio PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_options(miniaudio PRIVATE /W0)
+else()
+    target_compile_options(miniaudio PRIVATE -w)
+endif()
 
 # Jolt en « unity build » : ses ~150 .cpp regroupés par paquets de 16 en une dizaine de gros fichiers ; les en-têtes
 # communs ne sont lus qu'une fois par paquet. Il n'est recompilé que si le dossier de compilation est vidé.

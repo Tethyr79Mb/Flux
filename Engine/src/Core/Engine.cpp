@@ -1,6 +1,7 @@
 #include "Flux/Core/Engine.hpp"
 
 #include "Flux/Animation/Animator.hpp"
+#include "Flux/Audio/AudioSystem.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
@@ -131,6 +132,7 @@ namespace Flux {
         : m_window(std::make_unique<Window>()),
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
+          m_audio(std::make_unique<AudioSystem>()),
           m_interfaces(std::make_unique<InterfaceLibrary>()) {
         RegisterEngineComponents(m_components);
         if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
@@ -236,6 +238,10 @@ namespace Flux {
                 m_followShown = -1.0f;
                 m_followShip = NullEntity;
             }
+            // Sons des entités, à la caméra de cette image (qui suit le joueur ou vole librement).
+            m_audio->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
+            m_audio->Update(m_scene, m_camera, m_gameState != GameState::Stopped,
+                            m_gameState == GameState::Paused || m_interfacePaused, deltaSeconds);
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
             }
@@ -333,6 +339,7 @@ namespace Flux {
         m_gameState = state;
         if (state == GameState::Stopped) {
             m_physics.reset();
+            m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();
             m_interfacePaused = m_interfacePausedNow = false;
@@ -452,6 +459,7 @@ namespace Flux {
             return;
         }
         m_physics.reset(); // les corps de l'ancienne scène : recréés d'après la nouvelle à la prochaine image
+        m_audio->StopAll(); // ses sons aussi ; ceux de la nouvelle partent à la prochaine image
     }
 
     void Engine::RunInterfaceActions() {
