@@ -123,6 +123,7 @@ namespace Flux::Vk {
 
         private:
         void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc);
+        void BeginTexturePass(const RHI::RenderPassDesc& desc);
 
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
         VkImage m_image = VK_NULL_HANDLE;
@@ -130,6 +131,8 @@ namespace Flux::Vk {
         VkExtent2D m_extent{};
         VkPipelineLayout m_layout = VK_NULL_HANDLE; // du pipeline lié
         const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
+        const RhiTexture* m_colorTarget = nullptr;  // passe vers une face de texture cube : lisible à sa fin
+        std::uint32_t m_colorLayer = 0;
         VkQueryPool m_queryPool = VK_NULL_HANDLE;
         std::uint32_t m_writtenTimestamps = 0;
     };
@@ -151,6 +154,8 @@ namespace Flux::Vk {
                                                                                     bool mipmaps) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent,
                                                                                      bool sampled) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeRenderTarget(RHI::Format format,
+                                                                                            std::uint32_t size) override;
         std::expected<std::unique_ptr<RHI::Sampler>, std::string> CreateSampler(const RHI::SamplerDesc& desc) override;
         std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) override;
         std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;

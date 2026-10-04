@@ -64,6 +64,7 @@ namespace Flux::RHI {
         RGB32Float,
         RGBA32Float,
         RGBA16Uint,
+        RGBA16Float, // couleur au-delà de 1 (lumières, ciel) sans perte
     };
 
     enum class BufferUsage : std::uint8_t {
@@ -229,12 +230,16 @@ namespace Flux::RHI {
     // Passe qui dessine dans l'image de la swapchain, effacée, avec un tampon de profondeur effacé (s'il y en a un).
     // Sans couleur (color = false) : profondeur seule dans `depth` (carte d'ombres, CreateRenderTarget sampled),
     // lisible par les shaders après EndRenderPass.
+    // Avec colorTarget : dans la face colorLayer d'une texture cube (CreateCubeRenderTarget), sans profondeur ;
+    // lisible par les shaders après EndRenderPass.
     struct RenderPassDesc
     {
         Math::LinearColor clearColor;
         const Texture* depth = nullptr; // Format::D32Float, de la taille de la swapchain (ou de la carte d'ombres)
         float clearDepth = 0.0f;        // reverse-Z : 0 = infiniment loin
         bool color = true;
+        const Texture* colorTarget = nullptr;
+        std::uint32_t colorLayer = 0;
     };
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
@@ -305,6 +310,9 @@ namespace Flux::RHI {
         // Cible de rendu vierge (tampon de profondeur). sampled : lue ensuite par les shaders (carte d'ombres).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false) = 0;
+        // Texture cube vierge dont chaque face est une cible de rendu (RenderPassDesc::colorTarget), lue ensuite par
+        // direction comme CreateCubeTexture. Un seul niveau de mip.
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeRenderTarget(Format format, std::uint32_t size) = 0;
         virtual std::expected<std::unique_ptr<Sampler>, std::string> CreateSampler(const SamplerDesc& desc) = 0;
         virtual std::expected<std::unique_ptr<BindGroupLayout>, std::string> CreateBindGroupLayout(const BindGroupLayoutDesc& desc) = 0;
         // nullptr si le layout a atteint son maximum de groupes.

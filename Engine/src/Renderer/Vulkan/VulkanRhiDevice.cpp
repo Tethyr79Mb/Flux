@@ -239,6 +239,16 @@ namespace Flux::Vk {
         return std::make_unique<RhiTexture>(std::move(*image), format, aspect);
     }
 
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeRenderTarget(RHI::Format format,
+                                                                                                std::uint32_t size) {
+        auto image = Image::CreateCubeAttachment(*m_device, ToVulkan(format), size,
+                                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+
     std::expected<std::unique_ptr<RHI::Sampler>, std::string> RhiDevice::CreateSampler(const RHI::SamplerDesc& desc) {
         const VkSamplerAddressMode address =
             desc.address == RHI::AddressMode::Repeat ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;

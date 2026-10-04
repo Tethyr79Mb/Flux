@@ -104,19 +104,32 @@ namespace Flux {
 
         std::array<float, 4> ToArray(const Math::Vector3f& v, float w = 0.0f) { return {v.x, v.y, v.z, w}; }
 
-        // La sphère (relative à la caméra) touche le champ de la caméra : devant elle et entre ses quatre bords.
-        bool InView(const Camera& camera, float aspect, const Math::Vector3f& center, float radius) {
-            const float depth = Math::Dot(center, camera.GetForward());
-            if (depth < -radius) {
-                return false;
+        // Champ de la caméra (à l'origine : positions relatives à la caméra), calculé une fois par image.
+        class ViewCone {
+            public:
+            ViewCone(const Camera& camera, float aspect)
+                : m_forward(camera.GetForward()), m_right(camera.GetRight()), m_up(camera.GetUp()),
+                  m_tanY(std::tan(0.5f * camera.verticalFov)), m_tanX(m_tanY * aspect),
+                  m_scaleX(1.0f / std::sqrt(1.0f + m_tanX * m_tanX)), m_scaleY(1.0f / std::sqrt(1.0f + m_tanY * m_tanY)) {}
+
+            // La sphère touche le champ : devant la caméra et entre ses quatre bords. Distance signée au plan d'un
+            // bord (dehors si positive) : (côté - profondeur x tan) / sqrt(1 + tan²).
+            bool Contains(const Math::Vector3f& center, float radius) const {
+                const float depth = Math::Dot(center, m_forward);
+                if (depth < -radius) {
+                    return false;
+                }
+                return (std::abs(Math::Dot(center, m_right)) - depth * m_tanX) * m_scaleX <= radius
+                    && (std::abs(Math::Dot(center, m_up)) - depth * m_tanY) * m_scaleY <= radius;
             }
-            const float tanY = std::tan(0.5f * camera.verticalFov);
-            const float tanX = tanY * aspect;
-            // Distance signée au plan d'un bord (dehors si positive) : (côté - profondeur x tan) / sqrt(1 + tan²).
-            const auto outside = [&](float side, float tangent) {
-                return (std::abs(side) - depth * tangent) / std::sqrt(1.0f + tangent * tangent) > radius;
-            };
-            return !outside(Math::Dot(center, camera.GetRight()), tanX) && !outside(Math::Dot(center, camera.GetUp()), tanY);
+
+            private:
+            Math::Vector3f m_forward, m_right, m_up;
+            float m_tanY, m_tanX, m_scaleX, m_scaleY;
+        };
+
+        bool InView(const Camera& camera, float aspect, const Math::Vector3f& center, float radius) {
+            return ViewCone(camera, aspect).Contains(center, radius);
         }
     }
 
@@ -290,6 +303,7 @@ namespace Flux {
         m_jointMatrices.clear();
         m_lights.clear();
         m_interiors.clear();
+        const ViewCone view(camera, aspect);
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
@@ -320,7 +334,7 @@ namespace Flux {
                 roughness = std::clamp(renderer->roughness, 0.0f, 1.0f);
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
                        component && !component->model.empty() && !assetsDirectory.empty()) {
-                model = m_models->Find(assetsDirectory / Platform::PathFromUtf8(component->model));
+                model = m_models->Find(assetsDirectory, component->model);
                 tint = component->tint;
                 if (component->overrideMaterial) {
                     materialOverride = true;
@@ -369,8 +383,11 @@ namespace Flux {
                                             half.z * std::abs(transform.scale.z)};
             const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
             const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, Math::Length(scaledHalf), Math::Length(relativeCenter),
-                               !IsInside(scene, transform.entity, hidden)});
+            const float radius = Math::Length(scaledHalf);
+            // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
+            const bool inView = view.Contains(relativeCenter, model->IsAnimated() ? 1.5f * radius : radius);
+            m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
+                               Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
         }
         if (!m_boundEnvironment[frameIndex]) {
             m_draws.clear(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
@@ -379,18 +396,31 @@ namespace Flux {
 
         // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
         // centre de sa boîte) : deux transparents qui s'entrecroisent peuvent se superposer dans le mauvais ordre.
+        // Opaques du plus proche au plus loin : ce qu'ils cachent échoue au test de profondeur avant d'être éclairé.
+        // Hors champ : ombre seulement.
         m_transparent.clear();
+        m_opaque.clear();
         for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
             const GpuModel& model = *m_draws[d].model;
-            if (!m_draws[d].visible) {
+            if (!m_draws[d].visible || !m_draws[d].inView) {
                 continue;
             }
+            bool opaque = false;
             for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
                 if (IsTransparent(m_draws[d], model.materials[model.primitives[p].material])) {
                     m_transparent.push_back({d, p});
+                } else {
+                    opaque = true;
                 }
             }
+            if (opaque) {
+                m_opaque.push_back(d);
+            }
         }
+        // Distance au bord de la sphère : la coque d'un vaisseau autour de la caméra passe en premier.
+        std::sort(m_opaque.begin(), m_opaque.end(), [this](std::uint32_t a, std::uint32_t b) {
+            return m_draws[a].distance - m_draws[a].radius < m_draws[b].distance - m_draws[b].radius;
+        });
         // Stable : les primitives d'une même entité gardent l'ordre du fichier.
         std::stable_sort(m_transparent.begin(), m_transparent.end(), [this](const TransparentDraw& a, const TransparentDraw& b) {
             return m_draws[a.draw].distance > m_draws[b.draw].distance;
@@ -594,13 +624,11 @@ namespace Flux {
     }
 
     void MeshRenderer::DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const {
-        // Changements d'état seulement quand il le faut : les entités d'un même modèle se suivent souvent.
+        // Changements d'état seulement quand il le faut. L'ordre de près à loin (Prepare) sépare parfois les entités
+        // d'un même modèle : quelques changements de plus, contre moins de pixels éclairés pour rien.
         BindState state;
-        for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
+        for (const std::uint32_t d : m_opaque) {
             const MeshDraw& draw = m_draws[d];
-            if (!draw.visible) {
-                continue;
-            }
             const Pipelines& pipelines = draw.model->IsAnimated() ? m_skinned : m_static;
             for (const ModelPrimitive& primitive : draw.model->primitives) {
                 const GpuMaterial& material = draw.model->materials[primitive.material];

@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace Flux {
@@ -43,6 +44,9 @@ namespace Flux {
         // Après Device::BeginFrame : les ressources de l'image frameIndex sont libres. `viewportHeight` en pixels.
         SkyLighting Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
                             const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
+        // Hors de toute passe et avant la passe principale : calcule la nébuleuse du ciel généré dans sa texture cube si
+        // Prepare l'a demandé (nouveau ciel, réglage changé). Rien sinon.
+        void Bake(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Dans la passe principale, après les opaques et avant les transparents.
         void Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
@@ -80,6 +84,17 @@ namespace Flux {
         std::array<std::unique_ptr<RHI::BindGroup>, RHI::FramesInFlight> m_groups;
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundPanorama{};
         bool m_visible = false; // un SkyComponent dans la scène : le fond est dessiné
+
+        // Fond du ciel généré (nébuleuse, bande galactique), calculé par le GPU dans m_background pour les réglages
+        // m_bakedParameters ; refait quand ils changent, au plus tous les MinRebuildInterval (réglage qu'on glisse).
+        // Jamais lu avant d'être calculé : m_blackCube à sa place.
+        std::unique_ptr<RHI::Pipeline> m_bakePipeline;
+        std::unique_ptr<RHI::Texture> m_background;
+        std::unique_ptr<RHI::Texture> m_blackCube;
+        std::optional<SkyParameters> m_bakedParameters;
+        bool m_bakePending = false;
+        std::chrono::steady_clock::time_point m_lastBake;
+        std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundBackground{};
 
         // Pixels de la texture cube voulue (refaits quand la clé change, au plus tous les MinRebuildInterval), puis
         // une texture par image en vol, refaite quand elle n'a pas la dernière version : jamais remplacée pendant que

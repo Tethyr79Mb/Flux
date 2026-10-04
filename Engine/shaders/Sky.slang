@@ -1,6 +1,9 @@
 // Ciel : le fond de la scène, à l'infini, dessiné après les opaques là où rien n'a été dessiné (profondeur restée à
-// 0 en reverse-Z). Généré (nébuleuse, bande galactique et étoiles, calculées au pixel) ou tiré d'un panorama ; plus le
-// disque du soleil et son halo. Même exposition et même courbe de tons que shaders/Mesh.slang.
+// 0 en reverse-Z). Généré ou tiré d'un panorama ; plus le disque du soleil et son halo. Même exposition et même courbe
+// de tons que shaders/Mesh.slang.
+// Ciel généré : la nébuleuse et la bande galactique (une trentaine de couches de bruit 3D, chères) sont calculées une
+// fois dans une texture cube (bakeFragment, quand un réglage change), puis lues ; les étoiles et le soleil, fins et
+// peu coûteux, restent calculés au pixel.
 
 // Doit correspondre à SkyData dans SkyRenderer.cpp.
 struct SkyData
@@ -20,6 +23,14 @@ struct SkyData
 
 [[vk::binding(0, 0)]] StructuredBuffer<SkyData> sky;
 [[vk::binding(1, 0)]] Sampler2D panorama; // sRGB, ramené en linéaire à la lecture
+[[vk::binding(2, 0)]] SamplerCube background; // nébuleuse et bande galactique (bakeFragment), en linéaire
+
+// bakeFragment : la face de la texture cube en cours (0 à 5 : +X, -X, +Y, -Y, +Z, -Z).
+struct BakeParams
+{
+    uint face;
+};
+[[vk::push_constant]] ConstantBuffer<BakeParams> bake;
 
 struct VertexOutput
 {
@@ -190,6 +201,29 @@ float3 Stars(float3 d, float pixelAngle, uint seed, float density, float brightn
     return sum;
 }
 
+// Point (u, v de -1 à 1, au centre des texels) d'une face de texture cube -> direction (CubeFaceDirection dans
+// Sky.cpp : l'ordre et l'orientation des faces de Vulkan).
+float3 CubeFaceDirection(uint face, float u, float v)
+{
+    float3 d;
+    switch (face) {
+        case 0: d = float3(1.0, -v, -u); break;
+        case 1: d = float3(-1.0, -v, u); break;
+        case 2: d = float3(u, 1.0, v); break;
+        case 3: d = float3(u, -1.0, -v); break;
+        case 4: d = float3(u, -v, 1.0); break;
+        default: d = float3(-u, -v, -1.0); break;
+    }
+    return normalize(d);
+}
+
+// Une face de la texture cube du fond : le triangle plein écran la couvre, clip donne le point de la face.
+[shader("fragment")]
+float4 bakeFragment(VertexOutput input) : SV_Target
+{
+    return float4(SkyBackground(CubeFaceDirection(bake.face, input.clip.x, input.clip.y), sky[0]), 1.0);
+}
+
 // Point du panorama vu dans `direction` (PanoramaUv dans Sky.cpp).
 float2 PanoramaUv(float3 direction)
 {
@@ -221,7 +255,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         dy.x -= round(dy.x);
         color = panorama.SampleGrad(uv, dx, dy).rgb;
     } else {
-        color = SkyBackground(direction, s)
+        color = background.SampleLevel(direction, 0.0).rgb
               + Stars(direction, pixelAngle, s.options.x, s.galaxyAxis.w, s.galaxyCenter.w);
     }
     color *= s.noiseOffset.w;

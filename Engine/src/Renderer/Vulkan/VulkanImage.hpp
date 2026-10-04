@@ -2,6 +2,7 @@
 
 #include "Renderer/Vulkan/Vulkan.hpp"
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -16,6 +17,10 @@ namespace Flux::Vk {
         // Image vierge (contenu indéfini), par exemple un tampon de profondeur.
         static std::expected<Image, std::string> CreateAttachment(const Device& device, VkFormat format, VkExtent2D extent,
                                                                   VkImageUsageFlags usage, VkImageAspectFlags aspect);
+
+        // Texture cube vierge dont chaque face a sa propre vue 2D (GetFaceView), pour y dessiner.
+        static std::expected<Image, std::string> CreateCubeAttachment(const Device& device, VkFormat format, std::uint32_t size,
+                                                                      VkImageUsageFlags usage);
 
         // Crée l'image et y copie pixels (via un buffer intermédiaire) ; attend la fin de la copie.
         // mipmaps : réductions successives calculées par le GPU (filtre linéaire), pour une texture vue de loin
@@ -35,6 +40,8 @@ namespace Flux::Vk {
 
         VkImage GetHandle() const { return m_image; }
         VkImageView GetView() const { return m_view; }
+        // Face i d'une image de CreateCubeAttachment (VK_NULL_HANDLE sinon).
+        VkImageView GetFaceView(std::uint32_t face) const { return face < m_faceViews.size() ? m_faceViews[face] : VK_NULL_HANDLE; }
         VkExtent2D GetExtent() const { return m_extent; }
         std::uint32_t GetMipLevels() const { return m_mipLevels; }
 
@@ -49,6 +56,7 @@ namespace Flux::Vk {
         VkImage m_image = VK_NULL_HANDLE;
         VmaAllocation m_allocation = VK_NULL_HANDLE;
         VkImageView m_view = VK_NULL_HANDLE;
+        std::array<VkImageView, 6> m_faceViews{}; // CreateCubeAttachment seulement
         VkExtent2D m_extent{};
         std::uint32_t m_mipLevels = 1;
     };
