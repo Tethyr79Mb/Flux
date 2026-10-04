@@ -108,7 +108,7 @@ namespace Flux {
         }
 
         void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
-                             FlyCameraController& controller) {
+                             FlyCameraController* controller) {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
                 ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
                 ui.LabelText("GPU", renderer.GetDeviceName());
@@ -130,8 +130,10 @@ namespace Flux {
                 ui.LabelText("GPU scène", FormatCost(stats.Get(GpuSceneCost)));
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
 
-                ui.Separator();
-                controller.DrawFields(ui, camera);
+                if (controller) {
+                    ui.Separator();
+                    controller->DrawFields(ui, camera);
+                }
             }
             ui.EndPanel();
         }
@@ -141,6 +143,7 @@ namespace Flux {
         : m_window(std::make_unique<Window>()),
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
+          m_freeCamera(config.freeCamera),
           m_audio(std::make_unique<AudioSystem>()),
           m_interfaces(std::make_unique<InterfaceLibrary>()),
           m_inputActions(std::make_unique<InputActions>()) {
@@ -304,15 +307,19 @@ namespace Flux {
             // Souris ignorée par l'UI pendant le vol libre : le curseur est caché et immobile.
             m_ui->BeginFrame(m_window->GetInput(), {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds,
                              !m_window->IsCursorLocked());
-            // Pendant le jeu, la caméra suit le personnage du joueur s'il y en a un ; sinon, vol libre.
+            // Pendant le jeu, la caméra suit le personnage du joueur s'il y en a un ; sinon, vol libre (éditeur seulement).
             if (GetFollowedPlayer() != NullEntity) {
                 RotateFollowCamera();
             } else {
                 m_followRotating = false;
-                m_camera.roll = 0.0f; // vol libre : l'horizon reste droit, même après la vue cockpit
-                m_cameraController.Update(m_camera, *m_window, deltaSeconds,
-                                          m_cameraInputEnabled && !m_ui->WantsMouse() && !m_interfaceWantsMouse,
-                                          m_cameraInputEnabled && !m_ui->WantsKeyboard());
+                if (m_freeCamera) {
+                    m_camera.roll = 0.0f; // vol libre : l'horizon reste droit, même après la vue cockpit
+                    m_cameraController.Update(m_camera, *m_window, deltaSeconds,
+                                              m_cameraInputEnabled && !m_ui->WantsMouse() && !m_interfaceWantsMouse,
+                                              m_cameraInputEnabled && !m_ui->WantsKeyboard());
+                } else {
+                    m_window->SetCursorLocked(false); // personnage retiré pendant un clic droit
+                }
             }
             if (m_gameState != GameState::Stopped) {
                 // Pause : celle de l'éditeur (F6), ou un menu ouvert qui la demande.
@@ -345,7 +352,7 @@ namespace Flux {
                                GetScreenUiOptions());
             }
             if (m_showDebugOverlay) {
-                DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_cameraController);
+                DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_freeCamera ? &m_cameraController : nullptr);
             }
             m_ui->EndFrame(m_renderer->GetOverlay());
             m_window->SetMouseCursor(m_ui->GetMouseCursor()); // double flèche au bord d'un panneau

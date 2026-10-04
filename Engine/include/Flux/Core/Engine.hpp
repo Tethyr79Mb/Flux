@@ -46,6 +46,9 @@ namespace Flux {
         bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra (le jeu ; l'éditeur a les siens)
         // Interface de la scène (textes à l'écran) sur toute la fenêtre. L'éditeur la dessine lui-même, dans sa vue.
         bool drawScreenUi = true;
+        // Caméra vol libre (ZQSD + clic droit) quand aucun personnage n'est dirigé par le joueur : l'éditeur seulement.
+        // Le jeu arrive directement sur le personnage ; sans personnage (écran titre), la caméra ne bouge pas.
+        bool freeCamera = true;
     };
 
     // État du jeu : l'éditeur démarre à l'arrêt (on édite la scène), Game.exe démarre en cours.
@@ -196,6 +199,7 @@ namespace Flux {
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
         bool m_drawScreenUi = true;
+        bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
         std::unique_ptr<PhysicsWorld> m_physics;
         std::unique_ptr<AudioSystem> m_audio;
