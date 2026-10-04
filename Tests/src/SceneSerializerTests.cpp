@@ -71,6 +71,8 @@ namespace {
             const auto* mb = b.TryGet<MeshRendererComponent>(other);
             const auto* la = a.TryGet<LightComponent>(entity);
             const auto* lb = b.TryGet<LightComponent>(other);
+            const auto* ra = a.TryGet<RimLightComponent>(entity);
+            const auto* rb = b.TryGet<RimLightComponent>(other);
             same = same
                 && a.Get<NameComponent>(entity).name == b.Get<NameComponent>(other).name
                 && ta.position == tb.position && ta.rotation == tb.rotation && ta.scale == tb.scale // égalité exacte
@@ -81,6 +83,8 @@ namespace {
                 && (la == nullptr) == (lb == nullptr)
                 && (!la || (la->type == lb->type && la->color == lb->color && la->intensity == lb->intensity
                             && la->range == lb->range && la->angle == lb->angle && la->softness == lb->softness))
+                && (ra == nullptr) == (rb == nullptr)
+                && (!ra || (ra->color == rb->color && ra->intensity == rb->intensity && ra->sharpness == rb->sharpness))
                 && SameTest(a.TryGet<TestComponent>(entity), b.TryGet<TestComponent>(other));
         }
         return same;
@@ -104,6 +108,7 @@ bool RunSceneSerializerTests() {
     scene.CreateEntity("Autre racine");
     scene.Add<LightComponent>(scene.CreateEntity("Lampe", second), LightType::Spot, Math::LinearColor{1.0f, 0.8f, 0.6f},
                               12.5f, 4.0f, 30.0f, 0.5f);
+    scene.Add<RimLightComponent>(second, Math::LinearColor{0.2f, 0.6f, 1.0f}, 1.5f, 6.0f);
     scene.Add<TestComponent>(first, true, -42, 0.1f, 1.0 / 7.0, Math::Vector3f{0.0f, -1.0f, 0.5f},
                              Math::Vector3d{1e12, -2.5, 3.0}, Math::Quaternionf::FromYawPitchRoll(1.0f, 0.5f, 0.0f),
                              Math::LinearColor{0.25f, 0.5f, 0.75f, 1.0f}, "texte « accentué »", Mood::Angry);
