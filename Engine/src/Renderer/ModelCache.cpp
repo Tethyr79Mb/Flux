@@ -229,9 +229,28 @@ namespace Flux {
     }
 
     const GpuModel* ModelCache::Find(const std::filesystem::path& path) {
-        const auto now = std::chrono::steady_clock::now();
+        auto [found, created] = m_models.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
+        return Refresh(path, found->second, created);
+    }
+
+    const GpuModel* ModelCache::Find(const std::filesystem::path& assetsDirectory, std::string_view relativePath) {
+        if (assetsDirectory != m_knownDirectory) {
+            m_knownDirectory = assetsDirectory;
+            m_known.clear();
+        }
+        if (const auto known = m_known.find(relativePath); known != m_known.end()) {
+            return Refresh(known->second.path, *known->second.model, false);
+        }
+        std::filesystem::path path = assetsDirectory / Platform::PathFromUtf8(relativePath);
         auto [found, created] = m_models.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
         GpuModel& model = found->second;
+        const auto known = m_known.emplace(std::string(relativePath), KnownPath{std::move(path), &model}).first;
+        return Refresh(known->second.path, model, created);
+    }
+
+    // Charge le modèle à sa création, puis le relit si le fichier a changé (vérifié au plus une fois par CheckInterval).
+    const GpuModel* ModelCache::Refresh(const std::filesystem::path& path, GpuModel& model, bool created) {
+        const auto now = std::chrono::steady_clock::now();
         if (created || now - model.checked >= CheckInterval) {
             model.checked = now;
             std::error_code error;

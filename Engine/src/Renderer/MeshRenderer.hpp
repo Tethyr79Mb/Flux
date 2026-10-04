@@ -52,9 +52,10 @@ namespace Flux {
             float roughness = 1.0f; // idem
             bool materialOverride = false; // metallic et roughness à la place de ceux du matériau (ModelComponent)
             Math::Vector3f center; // de sa boîte, relatif à la caméra
-            float radius = 0.0f;   // sphère englobant sa boîte : tri des cascades
+            float radius = 0.0f;   // sphère englobant sa boîte : cascades, champ, ordre
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
             bool visible = true;   // false : ombre seulement (personnage vu de l'intérieur)
+            bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
         };
 
         // Doit correspondre à DrawData dans shaders/Mesh.slang : matrices d'une entité, relatives à la caméra.
@@ -151,6 +152,7 @@ namespace Flux {
         std::vector<RelativeTransform> m_relativeTransforms;
         std::vector<MeshDraw> m_draws;
         std::vector<DrawData> m_drawData; // une par entité de m_draws, envoyées au GPU
+        std::vector<std::uint32_t> m_opaque;        // dans m_draws, visibles, du plus proche au plus loin
         std::vector<TransparentDraw> m_transparent; // triés du plus loin au plus proche
         std::vector<Math::Matrix4f> m_jointMatrices;
         std::vector<PreparedLight> m_lights;

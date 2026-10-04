@@ -9,8 +9,10 @@
 #include <chrono>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -63,11 +65,26 @@ namespace Flux {
         // Modèle du fichier, chargé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
         // s'il est illisible (message dans la console).
         const GpuModel* Find(const std::filesystem::path& path);
+        // Même chose par chemin relatif au dossier des assets, sans allocation une fois le modèle connu : appelée pour
+        // chaque objet à chaque image.
+        const GpuModel* Find(const std::filesystem::path& assetsDirectory, std::string_view relativePath);
 
         private:
         explicit ModelCache(RHI::Device& device) : m_device(device) {}
         std::expected<GpuModel, std::string> Upload(const ModelData& data, std::string_view name);
         void Reload(const std::filesystem::path& path, GpuModel& model);
+        const GpuModel* Refresh(const std::filesystem::path& path, GpuModel& model, bool created);
+
+        struct StringHash
+        {
+            using is_transparent = void;
+            std::size_t operator()(std::string_view text) const { return std::hash<std::string_view>{}(text); }
+        };
+        struct KnownPath
+        {
+            std::filesystem::path path; // complet, pour relire le fichier
+            GpuModel* model;            // dans m_models (les éléments d'un unordered_map ne bougent pas)
+        };
 
         RHI::Device& m_device;
         // Dans cet ordre : les groupes (image blanche, matériaux des modèles) sont rendus avant leur layout.
@@ -78,5 +95,8 @@ namespace Flux {
         GpuModel m_cube;
         // Par chemin (UTF-8, normalisé) ; les échecs aussi, pour ne pas relire à chaque image.
         std::unordered_map<std::string, GpuModel> m_models;
+        // Chemins relatifs déjà vus, pour le dossier m_knownDirectory.
+        std::filesystem::path m_knownDirectory;
+        std::unordered_map<std::string, KnownPath, StringHash, std::equal_to<>> m_known;
     };
 }
