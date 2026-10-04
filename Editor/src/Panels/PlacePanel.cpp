@@ -74,6 +74,10 @@ namespace FluxEditor {
             ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
             collider.shape = ColliderShape::Mesh;
             collider.mesh = "Modeles/Chasseur/Chasseur-collision.glb";
+            // Liseré bleu froid sur les bords de la silhouette, qui la détache du fond spatial.
+            RimLightComponent& rim = scene.Add<RimLightComponent>(hull);
+            rim.intensity = 0.8f;
+            rim.sharpness = 4.0f;
             // La verrière n'arrête que la caméra.
             const Entity glass = scene.CreateEntity("Verrière", ship);
             ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);

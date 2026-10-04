@@ -347,9 +347,20 @@ namespace Flux {
                 const std::span<const Math::Matrix4f> joints = m_poseEvaluator.GetJointMatrices();
                 m_jointMatrices.insert(m_jointMatrices.end(), joints.begin(), joints.end());
             }
-            m_drawData.push_back({world, {{{x.x, x.y, x.z, 0.0f},
-                                           {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)},
-                                           {z.x, z.y, z.z, 0.0f}}}});
+            // Lumière de contour : celle de l'entité ou du plus proche parent qui en a une (tout un vaisseau).
+            std::array<float, 4> rim{};
+            for (Entity owner = transform.entity; owner != NullEntity; owner = scene.GetParent(owner)) {
+                if (const auto* component = scene.TryGet<RimLightComponent>(owner)) {
+                    if (component->intensity > 0.0f) {
+                        rim = {component->color.r * component->intensity, component->color.g * component->intensity,
+                               component->color.b * component->intensity, std::max(component->sharpness, 0.5f)};
+                    }
+                    break;
+                }
+            }
+            m_drawData.push_back({world,
+                                  {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
+                                  rim});
 
             // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
             const Math::Vector3f center = model->bounds.GetCenter();
@@ -431,7 +442,7 @@ namespace Flux {
     // et les données de l'image (caméra, cascades). Si un buffer ne peut grandir (mémoire épuisée), rien n'est dessiné
     // plutôt que lu hors du buffer.
     void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex) {
-        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 112 && sizeof(LightData) == 64);
+        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 128 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
         if (!GrowBuffer(m_jointBuffers[frameIndex], frameIndex, JointSlot, jointBytes)

@@ -82,6 +82,17 @@ namespace Flux {
         float roughness = 0.3f;
     };
 
+    // Lumière de contour (« rim light ») : les bords de l'objet vus de profil s'éclairent de cette couleur, comme en
+    // contre-jour, ce qui détache sa silhouette du fond (un vaisseau sur le noir de l'espace). Agit sur l'entité et
+    // sur tous ses enfants (sur la racine d'un vaisseau : tout le vaisseau). Un effet de rendu, pas une lumière :
+    // n'éclaire rien autour, ne fait pas d'ombre et n'est pas arrêtée par elles.
+    struct RimLightComponent
+    {
+        Math::LinearColor color{0.45f, 0.7f, 1.0f};
+        float intensity = 1.0f;
+        float sharpness = 4.0f; // 1 : large dégradé vers le centre ; 8 et plus : fin liseré sur les bords
+    };
+
     enum class LightType : std::uint8_t {
         Point, // dans toutes les directions (ampoule)
         Spot,  // dans un cône, vers le -z de l'entité (projecteur, lampe de plafond)

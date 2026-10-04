@@ -49,6 +49,7 @@ struct DrawData
     // Matrice des normales par colonnes dans xyz. normal[1].w : premier os du modèle dans jointColumns (bits d'un
     // entier), modèles animés seulement.
     float4 normal[3];
+    float4 rim;               // lumière de contour : couleur x intensité (rgb), finesse (w ; 0 : aucune)
 };
 
 // Doit correspondre à DrawParams dans MeshRenderer.cpp : une primitive (un matériau) d'une entité.
@@ -250,12 +251,12 @@ float3 Shade(Surface s, float3 toLight, float3 light)
 // Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
 // du côté vers lequel la surface est tournée) ; le reflet la lit dans la direction réfléchie, d'autant plus floue
 // que la surface est rugueuse. La part du reflet vient de l'approximation de Karis (pré-intégration de la BRDF).
-float3 Ambient(Surface s, float occlusion, float3 worldPosition)
+// Volume intérieur où se trouve ce point : son poids (0 dehors, 1 bien dedans, fondu près des bords) et sa lumière.
+float InteriorAt(float3 worldPosition, out float3 interiorLight)
 {
     const FrameData f = frame[0];
-    // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
     float inside = 0.0;
-    float3 interiorLight = float3(0.0);
+    interiorLight = float3(0.0);
     for (uint i = 0; i < f.lightCount.y; ++i) {
         const InteriorData volume = f.interiors[i];
         const float3 local = float3(dot(volume.axes[0].xyz, worldPosition) + volume.axes[0].w,
@@ -269,6 +270,13 @@ float3 Ambient(Surface s, float occlusion, float3 worldPosition)
             interiorLight = volume.ambient.rgb;
         }
     }
+    return inside;
+}
+
+float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight)
+{
+    const FrameData f = frame[0];
+    // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
     const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * f.environment.x,
                                      interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
@@ -380,10 +388,18 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     // Ombre lue avec la vraie face (le relief de la carte ne déplace pas les ombres).
     const float sunFacing = dot(geometryNormal, toSun);
     const float sun = sunFacing > 0.0 ? SunVisibility(input.worldPosition, geometryNormal, sunFacing) : 0.0;
-    float3 lit = Shade(surface, toSun, f.sunColor.rgb * sun) + Ambient(surface, occlusion, input.worldPosition)
+    float3 interiorLight;
+    const float inside = InteriorAt(input.worldPosition, interiorLight);
+    float3 lit = Shade(surface, toSun, f.sunColor.rgb * sun) + Ambient(surface, occlusion, inside, interiorLight)
                + SceneLights(input.worldPosition, surface);
     if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
         lit += params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;
+    }
+    // Lumière de contour : d'autant plus forte que la surface est vue de profil (terme de Fresnel), avec le relief.
+    // Éteinte dans les volumes intérieurs : les murs du cockpit et de la soute ne s'allument pas.
+    const float4 rim = draws[params.draw].rim;
+    if (rim.w > 0.0 && inside < 1.0) {
+        lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
     return float4(ToneMap(lit), params.transparent != 0 ? base.a : 1.0);
 }

@@ -52,6 +52,10 @@ namespace Flux {
             .Field("overrideMaterial", "Remplacer métal et rugosité", &ModelComponent::overrideMaterial)
             .Field("metallic", "Métal", &ModelComponent::metallic, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("roughness", "Rugosité", &ModelComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
+        registry.Register<RimLightComponent>("rimLight", "Lumière de contour")
+            .Field("color", "Couleur", &RimLightComponent::color, {.alpha = false})
+            .Field("intensity", "Intensité", &RimLightComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("sharpness", "Finesse", &RimLightComponent::sharpness, {.speed = 0.05, .min = 0.5, .max = 32.0, .decimals = 1});
         registry.Register<LightComponent>("light", "Lumière")
             .Enum("type", "Type", &LightComponent::type,
                   {{"point", "Ponctuelle", LightType::Point}, {"spot", "Spot", LightType::Spot}})

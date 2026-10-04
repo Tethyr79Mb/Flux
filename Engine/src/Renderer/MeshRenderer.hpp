@@ -63,6 +63,7 @@ namespace Flux {
             Math::Matrix4f world;
             // Matrice des normales par colonnes ; normal[1][3] : premier os dans le buffer des os (bits d'un entier)
             std::array<std::array<float, 4>, 3> normal;
+            std::array<float, 4> rim; // lumière de contour : couleur x intensité ; finesse (0 : aucune)
         };
 
         // Doit correspondre à LightData dans shaders/Mesh.slang : une lumière de la scène.
