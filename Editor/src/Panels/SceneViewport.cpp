@@ -699,10 +699,12 @@ namespace FluxEditor {
         }
 
         // Dessin, sous les panneaux (l'interface est ajoutée à l'overlay après) et découpé à la vue :
-        // les textes et images de la scène comme dans le jeu, puis la sélection par-dessus.
+        // les textes et images de la scène comme dans le jeu, puis la sélection par-dessus. Les interfaces (.fluxui)
+        // ne sont pas dessinées ici : elles couvriraient la scène ; on les voit dans leur éditeur et en mode Jouer.
         UI::DrawList& list = engine.GetRenderer().GetOverlay();
         m_screenRects.clear();
         ScreenUi::DrawOptions screenOptions = engine.GetScreenUiOptions();
+        screenOptions.interfaces = {};
         screenOptions.rects = &m_screenRects;
         screenOptions.placeholders = true;
         ScreenUi::Draw(scene, list, view.min, view.max, screenOptions);
