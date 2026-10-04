@@ -79,7 +79,7 @@ namespace FluxEditor {
                     Add(static_cast<ElementType>(type));
                 }
             }
-            ui.TextDisabled("Dans la fenêtre, le cadre ou la page sélectionnés ;\nsur des onglets, un cadre ajoute une page.");
+            ui.TextDisabled("Dans la fenêtre, le cadre ou la page sélectionnés\n(sans sélection : dans la dernière fenêtre) ;\nsur des onglets, un cadre ajoute une page.");
             ui.Separator();
             ui.TextDisabled("Éléments (le dernier passe devant)");
 

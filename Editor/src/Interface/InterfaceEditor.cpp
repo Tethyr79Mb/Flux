@@ -10,6 +10,7 @@
 #include <Flux/UI/Icons.hpp>
 
 #include <algorithm>
+#include <ranges>
 #include <utility>
 
 namespace FluxEditor {
@@ -445,6 +446,16 @@ namespace FluxEditor {
             }
         }
         Interface::Element* selected = GetSelected();
+        if (!selected && type != Interface::ElementType::Window) {
+            // Rien de sélectionné : dans la dernière fenêtre (celle de devant), pas à côté d'elle, où l'élément
+            // resterait affiché la fenêtre fermée.
+            const auto window = std::ranges::find_if(document.roots | std::views::reverse, [](const Interface::Element& root) {
+                return root.type == Interface::ElementType::Window;
+            });
+            if (window != (document.roots | std::views::reverse).end()) {
+                selected = &*window;
+            }
+        }
         if (selected && selected->type == Interface::ElementType::Tabs) {
             if (type == Interface::ElementType::Frame) {
                 // Un cadre ajouté aux onglets est une nouvelle page, montrée tant qu'elle est sélectionnée.
