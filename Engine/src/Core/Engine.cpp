@@ -157,6 +157,19 @@ namespace Flux {
             return picked.has_value();
         });
 
+        // Valeurs du moteur que les interfaces peuvent lier (menu Options du jeu, affichage des images/s).
+        m_engineValues["V-Sync"] = {.get = [this] { return m_renderer->IsVSyncEnabled() ? 1.0 : 0.0; },
+                                    .set = [this](double value) {
+                                        if ((value >= 0.5) != m_renderer->IsVSyncEnabled()) {
+                                            m_renderer->SetVSync(value >= 0.5); // recrée la chaîne d'images : pas à chaque image
+                                        }
+                                    }};
+        m_engineValues["Volume général"] = {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
+                                             .set = [this](double value) {
+                                                 m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
+                                             }};
+        m_engineValues["Images par seconde"] = {.get = [this] { return std::round(m_fps); }};
+
         // Un peu en arrière et au-dessus de la grille de test, légèrement vers le bas.
         m_camera.position.offset = {0.0, 6.0, 30.0};
         m_camera.pitch = -0.2f;
@@ -192,6 +205,7 @@ namespace Flux {
             const double deltaSeconds = std::min(std::chrono::duration<double>(now - previousFrame).count(), 0.1);
             previousFrame = now;
             stats.Tick(now);
+            m_fps = stats.GetFps();
             const RenderTimings& render = m_renderer->GetTimings();
             stats.Add(PrepareCost, render.prepare);
             stats.Add(RecordCost, render.record);
@@ -509,6 +523,86 @@ namespace Flux {
     void Engine::ClearInterfaceFunctions() {
         m_interfaceFunctions.clear();
         m_interfaceActions.clear();
+        m_interfaceValues.clear();
+    }
+
+    void Engine::BindInterfaceValue(std::string name, std::function<double()> get, std::function<void(double)> set) {
+        m_interfaceValues.insert_or_assign(std::move(name), InterfaceValue{.get = std::move(get), .set = std::move(set), .getText = {}});
+    }
+
+    void Engine::BindInterfaceText(std::string name, std::function<std::string()> get) {
+        m_interfaceValues.insert_or_assign(std::move(name), InterfaceValue{.get = {}, .set = {}, .getText = std::move(get)});
+    }
+
+    void Engine::UnbindInterfaceValue(std::string_view name) {
+        if (const auto found = m_interfaceValues.find(name); found != m_interfaceValues.end()) {
+            m_interfaceValues.erase(found);
+        }
+    }
+
+    std::vector<std::string> Engine::GetInterfaceValueNames() const {
+        std::vector<std::string> names;
+        for (const auto& [name, value] : m_engineValues) {
+            if (!m_interfaceValues.contains(name)) {
+                names.push_back(name);
+            }
+        }
+        for (const auto& [name, value] : m_interfaceValues) {
+            names.push_back(name);
+        }
+        return names;
+    }
+
+    const Engine::InterfaceValue* Engine::FindInterfaceValue(std::string_view name) const {
+        if (const auto found = m_interfaceValues.find(name); found != m_interfaceValues.end()) {
+            return &found->second; // celles du jeu d'abord : elles peuvent remplacer celles du moteur
+        }
+        const auto found = m_engineValues.find(name);
+        return found != m_engineValues.end() ? &found->second : nullptr;
+    }
+
+    void Engine::SyncInterfaceBindings(std::vector<Interface::Element>& elements, std::uint32_t changed) {
+        for (Interface::Element& element : elements) {
+            if (!element.binding.empty()) {
+                if (const InterfaceValue* value = FindInterfaceValue(element.binding)) {
+                    const bool touched = element.id == changed && value->set;
+                    switch (element.type) {
+                        case Interface::ElementType::Checkbox:
+                            if (touched) {
+                                value->set(element.checked ? 1.0 : 0.0);
+                            } else if (value->get) {
+                                element.checked = value->get() >= 0.5;
+                            }
+                            break;
+                        case Interface::ElementType::Slider:
+                            if (touched) {
+                                value->set(element.value);
+                            } else if (value->get) {
+                                element.value = static_cast<float>(value->get());
+                            }
+                            break;
+                        case Interface::ElementType::ProgressBar:
+                            if (value->get) {
+                                element.value = static_cast<float>(value->get());
+                            }
+                            break;
+                        case Interface::ElementType::Text:
+                            if (value->getText) {
+                                element.boundText = value->getText();
+                            } else if (value->get) {
+                                // Entier sans décimales (images/s, munitions), sinon deux décimales.
+                                const double number = value->get();
+                                element.boundText = number == std::round(number) ? std::format("{:.0f}", number)
+                                                                                 : std::format("{:.2f}", number);
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+            SyncInterfaceBindings(element.children, changed);
+        }
     }
 
     bool Engine::SetInterfaceWindowOpen(std::string_view name, bool open) {
@@ -582,6 +676,7 @@ namespace Flux {
                                                         && !m_escapeUsed};
                 Interface::Interaction& interaction = instance->interaction;
                 Interface::Update(instance->document, interaction, request.viewMin, request.viewMax, pointer);
+                SyncInterfaceBindings(instance->document.roots, interaction.changed);
                 m_interfaceMouseNow = m_interfaceMouseNow || interaction.wantsMouse;
                 m_interfacePausedNow = m_interfacePausedNow || interaction.pausesGame;
                 m_escapeUsed = m_escapeUsed || interaction.escapeUsed;

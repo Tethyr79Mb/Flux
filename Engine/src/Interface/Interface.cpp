@@ -15,7 +15,7 @@ namespace Flux::Interface {
 
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeNames{
-            "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets"};
+            "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets", "Barre de progression"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorNames{
             "En haut à gauche", "En haut",  "En haut à droite", "À gauche", "Au centre",
             "À droite",         "En bas à gauche", "En bas", "En bas à droite", "Étiré (marges)"};
@@ -35,6 +35,7 @@ namespace Flux::Interface {
         constexpr std::uint32_t C = Bit(ElementType::Checkbox);
         constexpr std::uint32_t S = Bit(ElementType::Slider);
         constexpr std::uint32_t O = Bit(ElementType::Tabs);
+        constexpr std::uint32_t P = Bit(ElementType::ProgressBar);
 
         const std::array Fields{
             Field{"text", "Titre", &Element::text, W},
@@ -53,15 +54,15 @@ namespace Flux::Interface {
             Field{"titleColor", "Onglet", &Element::titleColor, O},
             Field{"pressedColor", "Onglet affiché", &Element::pressedColor, O},
             Field{"accent", "Soulignement", &Element::accent, O},
-            Field{"background", "Fond", &Element::background, W | F | T | B | C | O},
+            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P},
             Field{"background", "Piste", &Element::background, S},
             Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O},
             Field{"pressedColor", "Appuyé", &Element::pressedColor, B},
             Field{"accent", "Coche", &Element::accent, C},
-            Field{"accent", "Remplissage", &Element::accent, S},
-            Field{"border", "Bordure", &Element::border, W | F | B | C | O},
-            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
-            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
+            Field{"accent", "Remplissage", &Element::accent, S | P},
+            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P},
+            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
+            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
             Field{"shadow", "Ombre", &Element::shadow, W},
             Field{"movable", "Déplaçable en jeu", &Element::movable, W},
             Field{"closeButton", "Croix de fermeture", &Element::closeButton, W},
@@ -71,9 +72,10 @@ namespace Flux::Interface {
             Field{"action", "Action", &Element::action, B},
             Field{"target", "Cible", &Element::target, B, Field::Text::ActionTarget},
             Field{"checked", "Cochée", &Element::checked, C},
-            Field{"value", "Valeur", &Element::value, S, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
-            Field{"minimum", "Minimum", &Element::minimum, S, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
-            Field{"maximum", "Maximum", &Element::maximum, S, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"binding", "Liaison", &Element::binding, C | S | T | P, Field::Text::Binding},
+            Field{"value", "Valeur", &Element::value, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"minimum", "Minimum", &Element::minimum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"maximum", "Maximum", &Element::maximum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
         };
 
         LinearColor Srgb(int r, int g, int b, float a = 1.0f) { return LinearColor::FromSrgb8(r, g, b, a); }
@@ -143,6 +145,14 @@ namespace Flux::Interface {
                     element.accent = Srgb(60, 200, 230);
                     element.border = Srgb(90, 170, 210, 0.6f);
                     element.radius = 6.0f;
+                    break;
+                case ElementType::ProgressBar:
+                    element.size = {320.0f, 24.0f};
+                    element.background = Srgb(30, 40, 52);
+                    element.accent = Srgb(60, 200, 230);
+                    element.border = Srgb(90, 170, 210, 0.6f);
+                    element.borderWidth = 1.0f;
+                    element.radius = 4.0f;
                     break;
                 case ElementType::Count:
                     break;
@@ -336,18 +346,19 @@ namespace Flux::Interface {
 
         // Texte aligné dans le rectangle (centré verticalement), avec une marge sur les côtés.
         void DrawLabel(const DrawContext& context, const Element& element, const Rect& rect, float padding) {
-            if (element.text.empty() || element.textColor.a <= 0.0f) {
+            const std::string text = GetShownText(element);
+            if (text.empty() || element.textColor.a <= 0.0f) {
                 return;
             }
             const float pixelSize = element.fontSize * context.scale;
-            const Vector2f size = context.list.MeasureText(element.text, pixelSize);
+            const Vector2f size = context.list.MeasureText(text, pixelSize);
             float x = rect.min.x + padding;
             if (element.align == TextAlign::Center) {
                 x = 0.5f * (rect.min.x + rect.max.x - size.x);
             } else if (element.align == TextAlign::Right) {
                 x = rect.max.x - padding - size.x;
             }
-            context.list.AddText({x, 0.5f * (rect.min.y + rect.max.y - size.y)}, element.text, pixelSize, element.textColor);
+            context.list.AddText({x, 0.5f * (rect.min.y + rect.max.y - size.y)}, text, pixelSize, element.textColor);
         }
 
         void DrawBox(const DrawContext& context, const Rect& rect, LinearColor fill, const Element& element) {
@@ -472,6 +483,15 @@ namespace Flux::Interface {
             context.list.AddCircle({knobX, centerY}, height * 0.42f, hovered ? element.hoverColor : element.textColor);
         }
 
+        void DrawProgressBar(const DrawContext& context, const Element& element, const Rect& rect) {
+            DrawBox(context, rect, element.background, element);
+            const float fill = (rect.max.x - rect.min.x) * SliderFraction(element);
+            if (fill > 0.0f && element.accent.a > 0.0f) {
+                context.list.AddRoundedRect(rect.min, {rect.min.x + fill, rect.max.y}, element.accent,
+                                            std::min(element.radius * context.scale, fill * 0.5f));
+            }
+        }
+
         // Fond, puis un onglet par page (son nom), l'onglet affiché souligné ; la page se dessine ensuite par-dessus.
         void DrawTabs(const DrawContext& context, const Placed& placed) {
             const Element& element = *placed.element;
@@ -541,6 +561,9 @@ namespace Flux::Interface {
                 case ElementType::Tabs:
                     DrawTabs(context, placed);
                     break;
+                case ElementType::ProgressBar:
+                    DrawProgressBar(context, element, rect);
+                    break;
                 case ElementType::Count:
                     break;
             }
@@ -577,6 +600,19 @@ namespace Flux::Interface {
 
     bool TargetsTab(ButtonAction action) {
         return action == ButtonAction::ShowTab;
+    }
+
+    std::string GetShownText(const Element& element) {
+        if (!element.boundText) {
+            return element.text;
+        }
+        const std::size_t slot = element.text.find("{}");
+        if (slot == std::string::npos) {
+            return *element.boundText;
+        }
+        std::string shown = element.text;
+        shown.replace(slot, 2, *element.boundText);
+        return shown;
     }
 
     Element MakeDefault(ElementType type) {
@@ -804,6 +840,7 @@ namespace Flux::Interface {
 
     void Update(Document& document, Interaction& interaction, Vector2f viewMin, Vector2f viewMax, const Pointer& pointer) {
         interaction.clicked = 0;
+        interaction.changed = 0;
         interaction.action = ButtonAction::None;
         interaction.target.clear();
         interaction.escapeUsed = false;
@@ -857,7 +894,11 @@ namespace Flux::Interface {
                 if (const Placed* slider = FindPlaced(placed, pressed->id)) {
                     const auto [start, end] = SliderTrack(slider->rect);
                     const float t = end > start ? std::clamp((pointer.position.x - start) / (end - start), 0.0f, 1.0f) : 0.0f;
-                    pressed->value = pressed->minimum + (pressed->maximum - pressed->minimum) * t;
+                    const float value = pressed->minimum + (pressed->maximum - pressed->minimum) * t;
+                    if (value != pressed->value) {
+                        pressed->value = value;
+                        interaction.changed = pressed->id;
+                    }
                 }
             }
             if (pointer.released && hitId == pressed->id) {
@@ -870,6 +911,7 @@ namespace Flux::Interface {
                     RunAction(document, *pressed, interaction, raise);
                 } else if (pressed->type == ElementType::Checkbox) {
                     pressed->checked = !pressed->checked;
+                    interaction.changed = pressed->id;
                 } else if (pressed->type == ElementType::Tabs && interaction.pressedTab >= 0
                            && interaction.pressedTab == interaction.hoveredTab
                            && interaction.pressedTab < static_cast<int>(pressed->children.size())) {

@@ -18,7 +18,7 @@
 
 // Interfaces du jeu (menus, fenêtres, écrans de réglages) : un fichier .fluxui construit dans l'éditeur d'interface,
 // affiché à l'écran par InterfaceComponent. Un document est un arbre d'éléments (fenêtre, cadre, texte, image,
-// bouton, case à cocher, curseur, onglets) placés par une ancre dans leur parent, en pixels d'un écran de 1080 lignes comme
+// bouton, case à cocher, curseur, barre de progression, onglets) placés par une ancre dans leur parent, en pixels d'un écran de 1080 lignes comme
 // les textes à l'écran (ScreenUi) : l'interface garde ses proportions dans toutes les résolutions.
 namespace Flux::Interface {
     inline constexpr float ReferenceHeight = 1080.0f;
@@ -32,6 +32,7 @@ namespace Flux::Interface {
         Checkbox,
         Slider,
         Tabs,     // barre d'onglets : chaque enfant est une page, nommée sur son onglet ; une seule page affichée
+        ProgressBar, // remplie selon sa valeur (vie, chargement) ; le joueur ne la change pas
         Count,
     };
 
@@ -116,6 +117,13 @@ namespace Flux::Interface {
         ButtonAction action = ButtonAction::None; // bouton
         std::string target;                       // fenêtre, scène ou fonction visée par l'action
 
+        // Liaison : nom d'une valeur du moteur ou du jeu (Engine::BindInterfaceValue). En jeu, la case, le curseur,
+        // la barre ou le texte l'affichent ; la case et le curseur la changent quand le joueur les touche.
+        std::string binding;
+        // En jeu seulement (pas enregistré) : la valeur liée d'un texte, mise à la place de « {} » dans son texte
+        // (ou à la place du texte entier s'il n'en a pas).
+        std::optional<std::string> boundText;
+
         std::vector<Element> children; // fenêtres, cadres et onglets seulement ; dessinés par-dessus leur parent
     };
 
@@ -145,7 +153,8 @@ namespace Flux::Interface {
                                     TextAlign Element::*, ButtonAction Element::*>;
         // Texte libre, chemin d'une image (choisi dans l'explorateur), ou cible d'une action (fenêtre, scène,
         // fonction : l'éditeur propose selon l'action).
-        enum class Text : std::uint8_t { Plain, Image, ActionTarget };
+        // Liaison : nom d'une valeur (l'éditeur propose celles du moteur et du jeu).
+        enum class Text : std::uint8_t { Plain, Image, ActionTarget, Binding };
 
         std::string_view key;   // dans le fichier
         std::string_view label; // dans l'éditeur
@@ -161,6 +170,9 @@ namespace Flux::Interface {
     };
     // Dans l'ordre d'affichage ; une clé peut revenir avec un autre libellé pour d'autres types (« Titre », « Libellé »).
     FLUX_API std::span<const Field> GetFields();
+
+    // Texte affiché par l'élément : son texte, ou la valeur liée (boundText) à la place de « {} ».
+    FLUX_API std::string GetShownText(const Element& element);
 
     // Réglages par défaut d'un type (taille, couleurs, texte), sans identifiant ni nom.
     FLUX_API Element MakeDefault(ElementType type);
@@ -259,6 +271,7 @@ namespace Flux::Interface {
         std::uint32_t hovered = 0; // bouton, case ou curseur survolé
         std::uint32_t pressed = 0; // élément tenu depuis le clic
         std::uint32_t clicked = 0; // bouton cliqué à cette frame
+        std::uint32_t changed = 0; // case ou curseur changé par le joueur à cette frame
         bool wantsMouse = false;   // souris au-dessus de l'interface : le jeu doit ignorer ses clics
         std::uint32_t closeHovered = 0; // fenêtre dont la croix est survolée
         bool closePressed = false;      // pressed est une fenêtre tenue par sa croix (pas par sa barre de titre)

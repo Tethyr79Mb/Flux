@@ -236,6 +236,10 @@ namespace Flux::UI {
                 pen.Disc(0.58f, 0.5f, 0.16f, LinearColor::FromSrgb8(232, 238, 244));
                 break;
             }
+            case Icon::ProgressBar:
+                pen.Rect(0.04f, 0.34f, 0.96f, 0.66f, LinearColor::FromSrgb8(60, 74, 92));
+                pen.Rect(0.04f, 0.34f, 0.66f, 0.66f, LinearColor::FromSrgb8(60, 200, 230));
+                break;
             case Icon::Tabs: {
                 const LinearColor page = LinearColor::FromSrgb8(40, 70, 100);
                 pen.Rect(0.06f, 0.4f, 0.94f, 0.9f, page);
