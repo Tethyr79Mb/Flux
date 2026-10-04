@@ -23,12 +23,12 @@ namespace Flux::Interface {
         constexpr int MaxDepth = 64; // un fichier abîmé ou malveillant ne fait pas déborder la pile
 
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeKeys{
-            "window", "frame", "text", "image", "button", "checkbox", "slider"};
+            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorKeys{
             "topLeft", "top", "topRight", "left", "center", "right", "bottomLeft", "bottom", "bottomRight", "stretch"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(TextAlign::Count)> AlignKeys{"left", "center", "right"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(ButtonAction::Count)> ActionKeys{
-            "none", "openWindow", "closeWindow", "toggleWindow", "closeParent", "changeScene", "quit", "callFunction"};
+            "none", "openWindow", "closeWindow", "toggleWindow", "closeParent", "changeScene", "quit", "callFunction", "showTab"};
 
         // Écriture la plus courte qui redonne exactement ce float (« 0.1 » et non 0.10000000149011612).
         double Shortest(float value) {

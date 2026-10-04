@@ -161,7 +161,11 @@ namespace FluxEditor {
                           .parentRect = selected->parent};
             } else {
                 open.selection = Interface::FindAt(placed, mouse);
-                if (const Interface::Placed* hit = FindPlaced(placed, open.selection)) {
+                const Interface::Placed* hit = FindPlaced(placed, open.selection);
+                if (const int tab = hit ? Interface::FindTabAt(*hit->element, hit->rect, scale, mouse) : -1; tab >= 0) {
+                    // Clic sur un onglet : sa page, montrée dans l'écran (sans glisser).
+                    open.selection = hit->element->children[static_cast<std::size_t>(tab)].id;
+                } else if (hit) {
                     m_drag = {.kind = Drag::Kind::Pending, .startMouse = mouse, .startRect = hit->rect, .parentRect = hit->parent};
                 }
             }

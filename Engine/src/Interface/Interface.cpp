@@ -15,7 +15,7 @@ namespace Flux::Interface {
 
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeNames{
-            "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur"};
+            "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorNames{
             "En haut à gauche", "En haut",  "En haut à droite", "À gauche", "Au centre",
             "À droite",         "En bas à gauche", "En bas", "En bas à droite", "Étiré (marges)"};
@@ -23,7 +23,8 @@ namespace Flux::Interface {
                                                                                                       "À droite"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(ButtonAction::Count)> ActionNames{
             "Aucune",           "Ouvrir une fenêtre", "Fermer une fenêtre", "Ouvrir ou fermer une fenêtre",
-            "Fermer sa fenêtre", "Changer de scène",  "Quitter le jeu",     "Fonction C++"};
+            "Fermer sa fenêtre", "Changer de scène",  "Quitter le jeu",     "Fonction C++",
+            "Afficher un onglet"};
 
         constexpr std::uint32_t Bit(ElementType type) { return 1u << static_cast<unsigned>(type); }
         constexpr std::uint32_t W = Bit(ElementType::Window);
@@ -33,13 +34,14 @@ namespace Flux::Interface {
         constexpr std::uint32_t B = Bit(ElementType::Button);
         constexpr std::uint32_t C = Bit(ElementType::Checkbox);
         constexpr std::uint32_t S = Bit(ElementType::Slider);
+        constexpr std::uint32_t O = Bit(ElementType::Tabs);
 
         const std::array Fields{
             Field{"text", "Titre", &Element::text, W},
             Field{"text", "Texte", &Element::text, T},
             Field{"text", "Libellé", &Element::text, B | C},
-            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
-            Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C},
+            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C | O, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
+            Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C | O},
             Field{"textColor", "Poignée", &Element::textColor, S},
             Field{"align", "Alignement", &Element::align, T | B},
             Field{"image", "Image", &Element::image, I, Field::Text::Image},
@@ -47,15 +49,19 @@ namespace Flux::Interface {
             Field{"keepAspect", "Garder les proportions", &Element::keepAspect, I},
             Field{"titleHeight", "Hauteur du titre", &Element::titleHeight, W, Field::Text::Plain, 0.5f, 0.0f, 400.0f, 0},
             Field{"titleColor", "Barre de titre", &Element::titleColor, W},
-            Field{"background", "Fond", &Element::background, W | F | T | B | C},
+            Field{"titleHeight", "Hauteur des onglets", &Element::titleHeight, O, Field::Text::Plain, 0.5f, 8.0f, 400.0f, 0},
+            Field{"titleColor", "Onglet", &Element::titleColor, O},
+            Field{"pressedColor", "Onglet affiché", &Element::pressedColor, O},
+            Field{"accent", "Soulignement", &Element::accent, O},
+            Field{"background", "Fond", &Element::background, W | F | T | B | C | O},
             Field{"background", "Piste", &Element::background, S},
-            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S},
+            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O},
             Field{"pressedColor", "Appuyé", &Element::pressedColor, B},
             Field{"accent", "Coche", &Element::accent, C},
             Field{"accent", "Remplissage", &Element::accent, S},
-            Field{"border", "Bordure", &Element::border, W | F | B | C},
-            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
-            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
+            Field{"border", "Bordure", &Element::border, W | F | B | C | O},
+            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
+            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
             Field{"shadow", "Ombre", &Element::shadow, W},
             Field{"movable", "Déplaçable en jeu", &Element::movable, W},
             Field{"closeButton", "Croix de fermeture", &Element::closeButton, W},
@@ -126,6 +132,18 @@ namespace Flux::Interface {
                     element.hoverColor = Srgb(255, 255, 255);
                     element.accent = Srgb(60, 200, 230);
                     break;
+                case ElementType::Tabs:
+                    element.size = {600.0f, 400.0f};
+                    element.titleHeight = 44.0f;
+                    element.fontSize = 22.0f;
+                    element.background = Srgb(20, 28, 40, 0.9f);
+                    element.titleColor = Srgb(30, 40, 54);
+                    element.hoverColor = Srgb(45, 60, 78);
+                    element.pressedColor = Srgb(40, 70, 100);
+                    element.accent = Srgb(60, 200, 230);
+                    element.border = Srgb(90, 170, 210, 0.6f);
+                    element.radius = 6.0f;
+                    break;
                 case ElementType::Count:
                     break;
             }
@@ -150,6 +168,31 @@ namespace Flux::Interface {
         }
 
         void ArrangeChildren(const std::vector<Element>& elements, const Rect& parent, const Rect& clip, std::uint32_t parentId,
+                             int depth, float scale, std::uint32_t reveal, std::vector<Placed>& out);
+
+        // Onglets : seule la page affichée est placée, sous la barre ; ou celle qui contient l'élément montré par
+        // l'éditeur (reveal), sans changer le document.
+        void ArrangePage(const Element& tabs, const Rect& rect, const Rect& clip, int depth, float scale, std::uint32_t reveal,
+                         std::vector<Placed>& out) {
+            int shown = GetShownTab(tabs);
+            if (reveal != 0) {
+                for (std::size_t index = 0; index < tabs.children.size(); ++index) {
+                    if (tabs.children[index].id == reveal || Contains(tabs.children[index], reveal)) {
+                        shown = static_cast<int>(index);
+                    }
+                }
+            }
+            const Element& page = tabs.children[static_cast<std::size_t>(shown)];
+            const Rect content = GetTabContent(tabs, rect, scale);
+            const Rect pageRect = Arrange(page, content, scale);
+            const Rect pageClip = Intersect(clip, content);
+            out.push_back({&page, pageRect, content, pageClip, tabs.id, depth + 1});
+            if (!page.children.empty()) {
+                ArrangeChildren(page.children, pageRect, Intersect(pageClip, pageRect), page.id, depth + 2, scale, reveal, out);
+            }
+        }
+
+        void ArrangeChildren(const std::vector<Element>& elements, const Rect& parent, const Rect& clip, std::uint32_t parentId,
                              int depth, float scale, std::uint32_t reveal, std::vector<Placed>& out) {
             for (const Element& element : elements) {
                 if (!element.visible && (reveal == 0 || (element.id != reveal && !Contains(element, reveal)))) {
@@ -157,7 +200,12 @@ namespace Flux::Interface {
                 }
                 const Rect rect = Arrange(element, parent, scale);
                 out.push_back({&element, rect, parent, clip, parentId, depth});
-                if (!element.children.empty()) {
+                if (element.children.empty()) {
+                    continue;
+                }
+                if (element.type == ElementType::Tabs) {
+                    ArrangePage(element, rect, clip, depth, scale, reveal, out);
+                } else {
                     ArrangeChildren(element.children, rect, Intersect(clip, rect), element.id, depth + 1, scale, reveal, out);
                 }
             }
@@ -190,7 +238,7 @@ namespace Flux::Interface {
 
         // Fenêtres et cadres arrêtent aussi la souris : un clic sur leur fond ne traverse pas vers le jeu.
         bool BlocksMouse(ElementType type) {
-            return IsInteractive(type) || type == ElementType::Window || type == ElementType::Frame;
+            return IsInteractive(type) || type == ElementType::Window || type == ElementType::Frame || type == ElementType::Tabs;
         }
 
         const Placed* FindPlaced(const std::vector<Placed>& placed, std::uint32_t id) {
@@ -263,6 +311,9 @@ namespace Flux::Interface {
                             break;
                         }
                     }
+                    break;
+                case ButtonAction::ShowTab:
+                    ShowTab(document, button.target);
                     break;
                 case ButtonAction::ChangeScene:
                 case ButtonAction::Quit:
@@ -421,6 +472,40 @@ namespace Flux::Interface {
             context.list.AddCircle({knobX, centerY}, height * 0.42f, hovered ? element.hoverColor : element.textColor);
         }
 
+        // Fond, puis un onglet par page (son nom), l'onglet affiché souligné ; la page se dessine ensuite par-dessus.
+        void DrawTabs(const DrawContext& context, const Placed& placed) {
+            const Element& element = *placed.element;
+            const Rect& rect = placed.rect;
+            DrawBox(context, rect, element.background, element);
+            const int shown = GetShownTab(element);
+            const Interaction* interaction = context.options.interaction;
+            const bool tabsHovered = interaction && interaction->hovered == element.id;
+            const float radius = element.radius * context.scale;
+            for (int index = 0; index < static_cast<int>(element.children.size()); ++index) {
+                const Rect tab = GetTabRect(element, rect, context.scale, index);
+                const bool hovered = tabsHovered && interaction->hoveredTab == index;
+                const LinearColor fill = index == shown ? element.pressedColor : hovered ? element.hoverColor : element.titleColor;
+                if (fill.a > 0.0f) {
+                    context.list.AddRoundedRect(tab.min, tab.max, fill, radius);
+                }
+                if (index == shown && element.accent.a > 0.0f) {
+                    const float line = std::max(2.0f, 3.0f * context.scale);
+                    context.list.AddRect({tab.min.x + radius, tab.max.y - line}, {tab.max.x - radius, tab.max.y}, element.accent);
+                }
+                const Rect clip = Intersect(placed.clip, tab);
+                if (IsEmpty(clip)) {
+                    continue;
+                }
+                const std::string& name = element.children[static_cast<std::size_t>(index)].name;
+                const float pixelSize = element.fontSize * context.scale;
+                const Vector2f size = context.list.MeasureText(name, pixelSize);
+                context.list.SetClipRect(clip.min, clip.max);
+                context.list.AddText({0.5f * (tab.min.x + tab.max.x - size.x), 0.5f * (tab.min.y + tab.max.y - size.y)}, name,
+                                     pixelSize, element.textColor);
+                context.list.SetClipRect(placed.clip.min, placed.clip.max);
+            }
+        }
+
         void DrawElement(const DrawContext& context, const Placed& placed) {
             const Element& element = *placed.element;
             const Rect& rect = placed.rect;
@@ -453,6 +538,9 @@ namespace Flux::Interface {
                 case ElementType::Slider:
                     DrawSlider(context, element, rect, hovered);
                     break;
+                case ElementType::Tabs:
+                    DrawTabs(context, placed);
+                    break;
                 case ElementType::Count:
                     break;
             }
@@ -484,7 +572,11 @@ namespace Flux::Interface {
     }
 
     bool IsContainer(ElementType type) {
-        return type == ElementType::Window || type == ElementType::Frame;
+        return type == ElementType::Window || type == ElementType::Frame || type == ElementType::Tabs;
+    }
+
+    bool TargetsTab(ButtonAction action) {
+        return action == ButtonAction::ShowTab;
     }
 
     Element MakeDefault(ElementType type) {
@@ -569,6 +661,26 @@ namespace Flux::Interface {
         return true;
     }
 
+    bool ShowTab(Document& document, std::string_view pageName) {
+        Element* page = FindByName(document, pageName);
+        Element* tabs = page ? FindParent(document, page->id) : nullptr;
+        if (!tabs || tabs->type != ElementType::Tabs) {
+            return false;
+        }
+        for (Element& other : tabs->children) {
+            other.visible = &other == page;
+        }
+        return true;
+    }
+
+    int GetShownTab(const Element& tabs) {
+        if (tabs.children.empty()) {
+            return -1;
+        }
+        const auto visible = std::ranges::find_if(tabs.children, [](const Element& page) { return page.visible; });
+        return visible == tabs.children.end() ? 0 : static_cast<int>(visible - tabs.children.begin());
+    }
+
     bool IsPausingGame(const Document& document) {
         const auto search = [](auto&& self, const std::vector<Element>& elements) -> bool {
             return std::ranges::any_of(elements, [&self](const Element& element) {
@@ -631,6 +743,35 @@ namespace Flux::Interface {
         element.position = (rect.min - point) * inverse + Vector2f{element.size.x * fraction.x, element.size.y * fraction.y};
     }
 
+    Rect GetTabBar(const Element& tabs, const Rect& rect, float scale) {
+        return {rect.min, {rect.max.x, std::min(rect.max.y, rect.min.y + tabs.titleHeight * scale)}};
+    }
+
+    Rect GetTabRect(const Element& tabs, const Rect& rect, float scale, int index) {
+        const Rect bar = GetTabBar(tabs, rect, scale);
+        const int count = std::max(1, static_cast<int>(tabs.children.size()));
+        const float gap = 4.0f * scale; // entre deux onglets
+        const float width = std::max(0.0f, (bar.max.x - bar.min.x - gap * static_cast<float>(count - 1)) / static_cast<float>(count));
+        const float x = bar.min.x + (width + gap) * static_cast<float>(index);
+        return {{x, bar.min.y}, {x + width, bar.max.y}};
+    }
+
+    Rect GetTabContent(const Element& tabs, const Rect& rect, float scale) {
+        return {{rect.min.x, GetTabBar(tabs, rect, scale).max.y}, rect.max};
+    }
+
+    int FindTabAt(const Element& tabs, const Rect& rect, float scale, Vector2f point) {
+        if (tabs.type != ElementType::Tabs || !GetTabBar(tabs, rect, scale).Contains(point)) {
+            return -1;
+        }
+        for (int index = 0; index < static_cast<int>(tabs.children.size()); ++index) {
+            if (GetTabRect(tabs, rect, scale, index).Contains(point)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
     Vector2f AnchorPoint(Anchor anchor, const Rect& parent) {
         if (anchor == Anchor::Stretch) {
             return parent.min;
@@ -686,6 +827,10 @@ namespace Flux::Interface {
         interaction.hovered = hit && IsInteractive(hit->element->type) ? hitId : 0;
         const std::optional<Rect> closeBox = hit ? CloseButtonRect(*hit->element, hit->rect, scale) : std::nullopt;
         interaction.closeHovered = closeBox && closeBox->Contains(pointer.position) ? hitId : 0;
+        interaction.hoveredTab = hit ? FindTabAt(*hit->element, hit->rect, scale, pointer.position) : -1;
+        if (interaction.hoveredTab >= 0) {
+            interaction.hovered = hitId;
+        }
 
         if (pointer.pressed && hit) {
             const Element& element = *hit->element;
@@ -693,8 +838,9 @@ namespace Flux::Interface {
             const bool titleBar = !onClose && element.type == ElementType::Window && element.movable
                                && element.anchor != Anchor::Stretch
                                && pointer.position.y < hit->rect.min.y + element.titleHeight * scale;
-            interaction.pressed = IsInteractive(element.type) || titleBar || onClose ? hitId : 0;
+            interaction.pressed = IsInteractive(element.type) || titleBar || onClose || interaction.hoveredTab >= 0 ? hitId : 0;
             interaction.closePressed = onClose;
+            interaction.pressedTab = interaction.hoveredTab;
             interaction.dragStart = pointer.position;
             interaction.dragOrigin = element.position;
             raise.push_back(RootOf(document, hitId)); // un clic dans une fenêtre la met devant
@@ -724,12 +870,20 @@ namespace Flux::Interface {
                     RunAction(document, *pressed, interaction, raise);
                 } else if (pressed->type == ElementType::Checkbox) {
                     pressed->checked = !pressed->checked;
+                } else if (pressed->type == ElementType::Tabs && interaction.pressedTab >= 0
+                           && interaction.pressedTab == interaction.hoveredTab
+                           && interaction.pressedTab < static_cast<int>(pressed->children.size())) {
+                    const std::size_t chosen = static_cast<std::size_t>(interaction.pressedTab);
+                    for (std::size_t index = 0; index < pressed->children.size(); ++index) {
+                        pressed->children[index].visible = index == chosen;
+                    }
                 }
             }
         }
         if (!pressed || !pressed->visible || pointer.released || !pointer.down) {
             interaction.pressed = 0;
             interaction.closePressed = false;
+            interaction.pressedTab = -1;
         }
 
         if (pointer.escape) {

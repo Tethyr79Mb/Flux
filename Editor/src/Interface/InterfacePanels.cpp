@@ -10,6 +10,7 @@
 #include <Flux/UI/DrawList.hpp>
 
 #include <algorithm>
+#include <format>
 #include <cmath>
 #include <utility>
 #include <variant>
@@ -35,6 +36,7 @@ namespace FluxEditor {
                 case ElementType::Button: return UI::Icon::Button;
                 case ElementType::Checkbox: return UI::Icon::Checkbox;
                 case ElementType::Slider: return UI::Icon::Slider;
+                case ElementType::Tabs: return UI::Icon::Tabs;
                 case ElementType::Count: break;
             }
             return UI::Icon::None;
@@ -77,7 +79,7 @@ namespace FluxEditor {
                     Add(static_cast<ElementType>(type));
                 }
             }
-            ui.TextDisabled("Dans la fenêtre ou le cadre sélectionné.");
+            ui.TextDisabled("Dans la fenêtre, le cadre ou la page sélectionnés ;\nsur des onglets, un cadre ajoute une page.");
             ui.Separator();
             ui.TextDisabled("Éléments (le dernier passe devant)");
 
@@ -239,34 +241,39 @@ namespace FluxEditor {
         switch (button.action) {
             case Interface::ButtonAction::OpenWindow:
             case Interface::ButtonAction::CloseWindow:
-            case Interface::ButtonAction::ToggleWindow: {
-                // Les fenêtres du document, par leur nom ; une cible qui n'existe plus reste affichée comme telle.
+            case Interface::ButtonAction::ToggleWindow:
+            case Interface::ButtonAction::ShowTab: {
+                // Les fenêtres (ou les pages d'onglets) du document, par leur nom ; une cible qui n'existe plus reste
+                // affichée comme telle.
+                const bool pages = Interface::TargetsTab(button.action);
                 std::vector<std::string> names;
-                const auto collect = [&names](auto&& self, const std::vector<Interface::Element>& elements) -> void {
+                const auto collect = [&names, pages](auto&& self, const std::vector<Interface::Element>& elements,
+                                                     bool inTabs) -> void {
                     for (const Interface::Element& element : elements) {
-                        if (element.type == ElementType::Window && !element.name.empty()
-                            && std::ranges::find(names, element.name) == names.end()) {
+                        const bool wanted = pages ? inTabs : element.type == ElementType::Window;
+                        if (wanted && !element.name.empty() && std::ranges::find(names, element.name) == names.end()) {
                             names.push_back(element.name);
                         }
-                        self(self, element.children);
+                        self(self, element.children, element.type == ElementType::Tabs);
                     }
                 };
-                collect(collect, document.roots);
+                collect(collect, document.roots, false);
+                const std::string_view noun = pages ? "une page d'onglets" : "une fenêtre";
                 const bool missing = std::ranges::find(names, target) == names.end();
                 std::vector<std::string_view> options;
                 std::string missingLabel;
                 if (missing) {
-                    missingLabel = target.empty() ? "(choisir une fenêtre)" : "« " + target + " » introuvable";
+                    missingLabel = target.empty() ? std::format("(choisir {})", noun) : "« " + target + " » introuvable";
                     options.push_back(missingLabel);
                 }
                 options.insert(options.end(), names.begin(), names.end());
                 int index = missing ? 0 : static_cast<int>(std::ranges::find(names, target) - names.begin());
-                if (ui.Choice("Fenêtre", index, options) && !(missing && index == 0)) {
+                if (ui.Choice(pages ? "Page" : "Fenêtre", index, options) && !(missing && index == 0)) {
                     target = names[static_cast<std::size_t>(index - (missing ? 1 : 0))];
                     return true;
                 }
                 if (names.empty()) {
-                    ui.TextDisabled("Ajoutez d'abord une fenêtre et donnez-lui un nom.");
+                    ui.TextDisabled(std::format("Ajoutez d'abord {} et donnez-lui un nom.", noun));
                 }
                 return false;
             }
@@ -318,8 +325,23 @@ namespace FluxEditor {
                 ui.LabelText("Type", TypeName(element->type));
                 changed |= ui.InputText("Nom", element->name);
                 // Une fenêtre fermée au démarrage reste montrée ici tant qu'elle est sélectionnée.
-                changed |= ui.Checkbox(element->type == ElementType::Window ? "Ouverte au démarrage" : "Visible",
-                                       element->visible);
+                Interface::Element* parent = Interface::FindParent(open.document, element->id);
+                if (parent && parent->type == ElementType::Tabs) {
+                    // Page d'onglets : une seule est affichée au démarrage.
+                    bool shown = Interface::GetShownTab(*parent) >= 0
+                              && &parent->children[static_cast<std::size_t>(Interface::GetShownTab(*parent))] == element;
+                    if (ui.Checkbox("Page affichée au démarrage", shown) && shown) {
+                        for (Interface::Element& page : parent->children) {
+                            page.visible = &page == element;
+                        }
+                        changed = true;
+                    }
+                    ui.TextDisabled("Le nom de la page est écrit sur son onglet.");
+                } else {
+                    // Une fenêtre fermée au démarrage reste montrée ici tant qu'elle est sélectionnée.
+                    changed |= ui.Checkbox(element->type == ElementType::Window ? "Ouverte au démarrage" : "Visible",
+                                           element->visible);
+                }
 
                 int anchor = static_cast<int>(element->anchor);
                 if (ui.Choice("Ancre", anchor, Interface::GetAnchorNames())) {

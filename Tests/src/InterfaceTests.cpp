@@ -316,6 +316,91 @@ namespace {
         CHECK(call && call->children[2].action == Interface::ButtonAction::CallFunction && call->children[2].target == "Sauver");
         return true;
     }
+
+    // Onglets : une page affichée sous la barre, changée par un clic sur un onglet ou par un bouton.
+    bool RunTabsTests() {
+        Interface::Document document;
+        Interface::Element tabs = Interface::MakeElement(document, Interface::ElementType::Tabs);
+        tabs.anchor = Interface::Anchor::TopLeft;
+        tabs.size = {600.0f, 400.0f};
+        tabs.titleHeight = 40.0f;
+        const auto page = [&](std::string name, bool shown) {
+            Interface::Element element = Interface::MakeElement(document, Interface::ElementType::Frame);
+            element.name = std::move(name);
+            element.anchor = Interface::Anchor::Stretch;
+            element.position = {};
+            element.size = {};
+            element.visible = shown;
+            return element;
+        };
+        Interface::Element general = page("Général", true);
+        Interface::Element sound = page("Son", false);
+        Interface::Element next = Interface::MakeElement(document, Interface::ElementType::Button);
+        next.anchor = Interface::Anchor::TopLeft;
+        next.position = {20.0f, 20.0f};
+        next.size = {200.0f, 50.0f};
+        next.action = Interface::ButtonAction::ShowTab;
+        next.target = "Son";
+        general.children.push_back(next);
+        const std::uint32_t generalId = general.id;
+        const std::uint32_t soundId = sound.id;
+        tabs.children = {general, sound};
+        document.roots.push_back(tabs);
+        const Vector2f min{0.0f, 0.0f};
+        const Vector2f max{1920.0f, 1080.0f};
+        const auto shown = [&] { return Interface::GetShownTab(*Interface::Find(document, tabs.id)); };
+        const auto placedIds = [&](std::uint32_t reveal = 0) {
+            std::vector<std::uint32_t> ids;
+            for (const Interface::Placed& item : Interface::Arrange(document, min, max, std::nullopt, reveal)) {
+                ids.push_back(item.element->id);
+            }
+            return ids;
+        };
+
+        // Seule la page affichée est placée, sous la barre (y 40 à 400), avec ses enfants.
+        const std::vector<Interface::Placed> placed = Interface::Arrange(document, min, max);
+        CHECK(placed.size() == 3 && placed[1].element->id == generalId && placed[2].element->id == next.id);
+        CHECK(Near(placed[1].rect.min, {0.0f, 40.0f}) && Near(placed[1].rect.max, {600.0f, 400.0f}));
+        // Onglets de largeurs égales (4 entre les deux) ; sous la barre, aucun onglet.
+        CHECK(Interface::FindTabAt(*placed[0].element, placed[0].rect, 1.0f, {100.0f, 20.0f}) == 0);
+        CHECK(Interface::FindTabAt(*placed[0].element, placed[0].rect, 1.0f, {500.0f, 20.0f}) == 1);
+        CHECK(Interface::FindTabAt(*placed[0].element, placed[0].rect, 1.0f, {300.0f, 20.0f}) == -1);
+        CHECK(Interface::FindTabAt(*placed[0].element, placed[0].rect, 1.0f, {500.0f, 60.0f}) == -1);
+        // L'éditeur montre la page cachée qu'on a sélectionnée, sans changer le document.
+        const std::vector<std::uint32_t> revealed = placedIds(soundId);
+        CHECK(std::ranges::find(revealed, soundId) != revealed.end() && std::ranges::find(revealed, generalId) == revealed.end());
+        CHECK(shown() == 0);
+
+        Interface::Interaction interaction;
+        const auto click = [&](Vector2f mouse) {
+            Interface::Update(document, interaction, min, max, {mouse, true, true, false, true});
+            Interface::Update(document, interaction, min, max, {mouse, false, false, true, true});
+        };
+        // Survol puis clic sur le deuxième onglet ; relâché ailleurs : rien ne change.
+        Interface::Update(document, interaction, min, max, {{500.0f, 20.0f}, false, false, false, true});
+        CHECK(interaction.hovered == tabs.id && interaction.hoveredTab == 1 && interaction.wantsMouse);
+        Interface::Update(document, interaction, min, max, {{500.0f, 20.0f}, true, true, false, true});
+        Interface::Update(document, interaction, min, max, {{100.0f, 20.0f}, false, false, true, true});
+        CHECK(shown() == 0);
+        click({500.0f, 20.0f});
+        CHECK(shown() == 1 && !Interface::Find(document, generalId)->visible);
+        click({100.0f, 20.0f});
+        CHECK(shown() == 0);
+        // Le bouton « Afficher un onglet » de la première page montre la seconde.
+        click({100.0f, 80.0f});
+        CHECK(interaction.clicked == next.id && shown() == 1);
+        CHECK(Interface::ShowTab(document, "Général") && shown() == 0);
+        CHECK(!Interface::ShowTab(document, "Inconnue") && !Interface::ShowTab(document, Interface::Find(document, tabs.id)->name));
+
+        // Fichier : type, action et page affichée gardés.
+        Interface::ShowTab(document, "Son");
+        auto loaded = Interface::LoadFromString(Interface::SaveToString(document));
+        CHECK(loaded.has_value());
+        const Interface::Element* copy = Interface::Find(*loaded, tabs.id);
+        CHECK(copy && copy->type == Interface::ElementType::Tabs && copy->titleHeight == 40.0f && Interface::GetShownTab(*copy) == 1);
+        CHECK(Interface::Find(*loaded, next.id)->action == Interface::ButtonAction::ShowTab);
+        return true;
+    }
 }
 
 bool RunInterfaceTests() {
@@ -324,5 +409,5 @@ bool RunInterfaceTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests();
+    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests();
 }
