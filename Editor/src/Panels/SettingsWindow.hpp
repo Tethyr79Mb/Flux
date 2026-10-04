@@ -19,7 +19,7 @@ namespace FluxEditor {
         void Draw(Flux::Engine& engine);
 
         private:
-        enum class Tab { Graphics, Sound, Interface };
+        enum class Tab { Graphics, Sound, Keys, Interface };
 
         void Save() const;
         static std::filesystem::path FilePath();

@@ -3,6 +3,7 @@
 #include <Flux/Audio/AudioSystem.hpp>
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
+#include <Flux/Input/InputActions.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
@@ -73,6 +74,10 @@ namespace FluxEditor {
                 m_tab = Tab::Sound;
             }
             ui.SameLine();
+            if (ui.Tab("Touches", m_tab == Tab::Keys)) {
+                m_tab = Tab::Keys;
+            }
+            ui.SameLine();
             if (ui.Tab("Interface", m_tab == Tab::Interface)) {
                 m_tab = Tab::Interface;
             }
@@ -103,6 +108,31 @@ namespace FluxEditor {
                     ui.TextDisabled("Aucune sortie son : le jeu reste muet.");
                 }
                 ui.TextDisabled("Les sons (composant Son) jouent en mode Jouer.");
+            } else if (m_tab == Tab::Keys) {
+                // Actions d'entrée du moteur et du jeu chargé : clic sur la touche, puis la nouvelle touche (Échap annule).
+                // Gardées dans Touches.json, à côté de l'exécutable : les mêmes pour l'éditeur et le jeu.
+                const InputActions& actions = engine.GetInputActions();
+                std::string_view category;
+                std::uint32_t row = 0;
+                for (const InputAction& action : actions.GetActions()) {
+                    if (action.category != category) {
+                        category = action.category;
+                        ui.TextDisabled(category);
+                    }
+                    ui.PushId(++row);
+                    const bool waiting = engine.GetKeyRebinding() == action.name;
+                    ui.LabelText(action.name, waiting ? std::string("Appuyez sur une touche...") : actions.GetKeysText(action.name));
+                    ui.SameLine();
+                    if (ui.Button("Changer")) {
+                        engine.StartKeyRebinding(action.name);
+                    }
+                    ui.PopId();
+                }
+                ui.Separator();
+                if (ui.Button("Touches par défaut")) {
+                    engine.ResetInputActions();
+                }
+                ui.TextDisabled("La touche choisie remplace la principale ; la seconde reste.");
             } else {
                 int theme = static_cast<int>(m_theme);
                 if (ui.Choice("Thème", theme, UI::GetThemeNames())) {

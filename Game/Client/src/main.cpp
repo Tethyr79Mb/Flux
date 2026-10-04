@@ -18,7 +18,7 @@ int main() {
         return 1;
     }
 
-    Flux::Engine engine({.title = project->name});
+    Flux::Engine engine({.title = project->name, .freeCamera = false});
     engine.SetProject(*project);
 
     auto game = Flux::GameModule::Load(Flux::Platform::GetExecutableDirectory() / FLUX_GAME_MODULE_FILE,
