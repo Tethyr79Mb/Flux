@@ -401,6 +401,68 @@ namespace {
         CHECK(Interface::Find(*loaded, next.id)->action == Interface::ButtonAction::ShowTab);
         return true;
     }
+
+    // Liaisons : ce que l'interface fournit au moteur (élément touché, texte avec la valeur, barre de progression).
+    bool RunBindingTests() {
+        Interface::Document document;
+        Interface::Element box = Interface::MakeElement(document, Interface::ElementType::Checkbox);
+        box.anchor = Interface::Anchor::TopLeft;
+        box.size = {200.0f, 40.0f};
+        box.binding = "V-Sync";
+        Interface::Element slider = Interface::MakeElement(document, Interface::ElementType::Slider);
+        slider.anchor = Interface::Anchor::TopLeft;
+        slider.position = {0.0f, 100.0f};
+        slider.size = {220.0f, 20.0f}; // le centre de la poignée glisse de x 10 à 210
+        slider.value = 0.0f;
+        Interface::Element bar = Interface::MakeElement(document, Interface::ElementType::ProgressBar);
+        bar.binding = "Vie";
+        bar.value = 0.25f;
+        Interface::Element text = Interface::MakeElement(document, Interface::ElementType::Text);
+        text.text = "Images/s : {}";
+        const std::uint32_t boxId = box.id;
+        const std::uint32_t sliderId = slider.id;
+        document.roots = {box, slider, bar, text};
+        const Vector2f min{0.0f, 0.0f};
+        const Vector2f max{1920.0f, 1080.0f};
+        Interface::Interaction interaction;
+        const auto frame = [&](Vector2f mouse, bool down, bool pressed, bool released) {
+            Interface::Update(document, interaction, min, max, {mouse, down, pressed, released, true});
+        };
+
+        // La case cochée par le joueur est signalée une fois ; le survol seul ne signale rien.
+        frame({20.0f, 20.0f}, false, false, false);
+        CHECK(interaction.changed == 0);
+        frame({20.0f, 20.0f}, true, true, false);
+        frame({20.0f, 20.0f}, false, false, true);
+        CHECK(interaction.changed == boxId && Interface::Find(document, boxId)->checked);
+        frame({20.0f, 20.0f}, false, false, false);
+        CHECK(interaction.changed == 0);
+        // Curseur : signalé quand sa valeur bouge, pas quand la souris reste immobile.
+        frame({110.0f, 110.0f}, true, true, false);
+        CHECK(interaction.changed == sliderId);
+        frame({110.0f, 110.0f}, true, false, false);
+        CHECK(interaction.changed == 0);
+        frame({110.0f, 110.0f}, false, false, true);
+
+        // Texte : la valeur liée à la place de « {} », ou à la place du texte entier.
+        Interface::Element shown = text;
+        CHECK(Interface::GetShownText(shown) == "Images/s : {}");
+        shown.boundText = "60";
+        CHECK(Interface::GetShownText(shown) == "Images/s : 60");
+        shown.text = "Texte";
+        CHECK(Interface::GetShownText(shown) == "60");
+
+        // Fichier : liaisons et barre de progression gardées ; la valeur liée d'un texte ne l'est pas.
+        Interface::Find(document, text.id)->boundText = "60";
+        auto loaded = Interface::LoadFromString(Interface::SaveToString(document));
+        CHECK(loaded.has_value());
+        CHECK(Interface::Find(*loaded, boxId)->binding == "V-Sync");
+        const Interface::Element* loadedBar = Interface::Find(*loaded, bar.id);
+        CHECK(loadedBar && loadedBar->type == Interface::ElementType::ProgressBar && loadedBar->binding == "Vie"
+              && loadedBar->value == 0.25f);
+        CHECK(!Interface::Find(*loaded, text.id)->boundText);
+        return true;
+    }
 }
 
 bool RunInterfaceTests() {
@@ -409,5 +471,5 @@ bool RunInterfaceTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests();
+    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests() && RunBindingTests();
 }

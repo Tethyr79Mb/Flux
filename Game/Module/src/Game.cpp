@@ -88,6 +88,10 @@ FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
     engine.SetGameUpdate(Update);
     // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
     engine.RegisterInterfaceFunction("Exemple", [](Engine&) { Log::Info("bouton d'interface : fonction Exemple appelée"); });
+    // Exemple de liaison : un curseur lié à « Vitesse de la démo » la change, un texte ou une barre l'affiche.
+    engine.BindInterfaceValue(
+        "Vitesse de la démo", [] { return static_cast<double>(g_timeScale); },
+        [](double value) { g_timeScale = static_cast<float>(value); });
 }
 
 FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {
@@ -95,4 +99,5 @@ FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {
     // La scène et les composants enregistrés sont vidés ensuite par le moteur (GameModule::Unregister).
     engine.SetGameUpdate(nullptr);
     engine.UnregisterInterfaceFunction("Exemple");
+    engine.UnbindInterfaceValue("Vitesse de la démo");
 }

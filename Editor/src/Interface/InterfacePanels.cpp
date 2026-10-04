@@ -37,6 +37,7 @@ namespace FluxEditor {
                 case ElementType::Checkbox: return UI::Icon::Checkbox;
                 case ElementType::Slider: return UI::Icon::Slider;
                 case ElementType::Tabs: return UI::Icon::Tabs;
+                case ElementType::ProgressBar: return UI::Icon::ProgressBar;
                 case ElementType::Count: break;
             }
             return UI::Icon::None;
@@ -298,6 +299,35 @@ namespace FluxEditor {
         }
     }
 
+    bool InterfaceEditor::DrawBinding(Engine& engine, Interface::Element& element) {
+        UI::Context& ui = engine.GetUi();
+        // Les valeurs du moteur et celles du jeu chargé ; une liaison inconnue (jeu pas encore compilé, valeur
+        // renommée) reste affichée comme telle.
+        const std::vector<std::string> names = engine.GetInterfaceValueNames();
+        const auto found = std::ranges::find(names, element.binding);
+        const bool unknown = !element.binding.empty() && found == names.end();
+        std::vector<std::string_view> options{"(aucune)"};
+        std::string unknownLabel;
+        if (unknown) {
+            unknownLabel = "« " + element.binding + " » inconnue";
+            options.push_back(unknownLabel);
+        }
+        options.insert(options.end(), names.begin(), names.end());
+        const int first = unknown ? 2 : 1;
+        int index = element.binding.empty() ? 0 : unknown ? 1 : first + static_cast<int>(found - names.begin());
+        bool changed = false;
+        if (ui.Choice("Liaison", index, options) && !(unknown && index == 1)) {
+            element.binding = index == 0 ? std::string{} : names[static_cast<std::size_t>(index - first)];
+            changed = true;
+        }
+        ui.SetItemTooltip("Valeur du moteur ou du jeu affichée par l'élément en jeu (le jeu ajoute les siennes avec "
+                          "Engine::BindInterfaceValue).");
+        if (!element.binding.empty() && element.type == ElementType::Text) {
+            ui.TextDisabled("« {} » dans le texte : remplacé par la valeur.");
+        }
+        return changed;
+    }
+
     void InterfaceEditor::DrawPropertiesPanel(Engine& engine) {
         UI::Context& ui = engine.GetUi();
         OpenInterface& open = *GetActive();
@@ -390,6 +420,8 @@ namespace FluxEditor {
                             if constexpr (std::is_same_v<Value, std::string>) {
                                 if (field.text == Interface::Field::Text::ActionTarget) {
                                     changed |= DrawActionTarget(engine, open.document, *element);
+                                } else if (field.text == Interface::Field::Text::Binding) {
+                                    changed |= DrawBinding(engine, *element);
                                 } else if (field.text == Interface::Field::Text::Image) {
                                     bool browse = false;
                                     changed |= ui.InputTextBrowse(field.label, value, browse);

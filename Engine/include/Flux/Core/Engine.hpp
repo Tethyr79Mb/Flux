@@ -115,6 +115,19 @@ namespace Flux {
         // Interfaces en jeu (une copie par entité, créée quand elle est dessinée la première fois) : ouvre ou ferme
         // l'élément de ce nom dans toutes ; false si aucune n'en a.
         bool SetInterfaceWindowOpen(std::string_view name, bool open);
+        // Liaisons des interfaces (champ « Liaison » d'une case, d'un curseur, d'une barre de progression ou d'un
+        // texte) : une valeur nommée, lue à chaque image pour l'afficher, et changée par set quand le joueur touche
+        // la case (0 ou 1) ou le curseur (sans set : en lecture seule). Le moteur fournit les siennes (« V-Sync »,
+        // « Volume général », « Images par seconde ») ; celles du jeu remplacent une valeur du même nom et sont
+        // retirées avec ses fonctions quand le module de jeu est déchargé.
+        //     engine.BindInterfaceValue("Vie", [] { return g_vie; });
+        //     engine.BindInterfaceValue("Sensibilité", [] { return g_sensibilite; }, [](double v) { g_sensibilite = v; });
+        //     engine.BindInterfaceText("Nom du vaisseau", [] { return g_nom; });
+        void BindInterfaceValue(std::string name, std::function<double()> get, std::function<void(double)> set = {});
+        void BindInterfaceText(std::string name, std::function<std::string()> get);
+        void UnbindInterfaceValue(std::string_view name);
+        // Noms des valeurs liables (moteur puis jeu), pour l'éditeur.
+        std::vector<std::string> GetInterfaceValueNames() const;
         // Premier élément de ce nom dans les interfaces en jeu (lire une case, un curseur ; changer un texte) ;
         // nullptr hors du jeu ou si aucune n'en a. Valable jusqu'à la fin de la frame.
         Interface::Element* FindInterfaceElement(std::string_view name);
@@ -180,6 +193,15 @@ namespace Flux {
         bool m_interfacePausedNow = false; // à l'image en cours
         bool m_escapeUsed = false;         // Échap a déjà servi à une interface dans cette image
         std::map<std::string, InterfaceFunction, std::less<>> m_interfaceFunctions;
+        struct InterfaceValue
+        {
+            std::function<double()> get{};
+            std::function<void(double)> set{};
+            std::function<std::string()> getText{}; // texte : prioritaire sur get pour un élément Texte
+        };
+        std::map<std::string, InterfaceValue, std::less<>> m_engineValues; // fournies par le moteur
+        std::map<std::string, InterfaceValue, std::less<>> m_interfaceValues; // fournies par le jeu
+        double m_fps = 0.0; // moyenne de la dernière seconde (« Images par seconde »)
         InterfaceFunction m_gameQuitHandler;
         // Actions des boutons cliqués pendant le dessin des interfaces, faites à la fin de la frame.
         std::vector<std::pair<Interface::ButtonAction, std::string>> m_interfaceActions;
@@ -195,6 +217,10 @@ namespace Flux {
         bool m_cockpitView = true;
         float m_lookYaw = 0.0f;
         float m_lookPitch = 0.0f;
+
+        const InterfaceValue* FindInterfaceValue(std::string_view name) const;
+        // Interfaces en jeu : les éléments liés affichent leur valeur, ou la changent (changed : touché par le joueur).
+        void SyncInterfaceBindings(std::vector<Interface::Element>& elements, std::uint32_t changed);
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
