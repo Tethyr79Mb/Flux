@@ -257,6 +257,7 @@ namespace Flux {
         float maxSpeed = 100.0f;       // m/s, en marche avant (le quart en arrière)
         float acceleration = 10.0f;    // m/s², moteurs à fond
         float turnRate = 30.0f;        // °/s, lacet et tangage commandés par le pilote
+        float verticalSpeed = 10.0f;   // m/s, montée et descente commandées par le pilote (décoller, se poser)
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

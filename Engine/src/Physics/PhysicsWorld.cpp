@@ -14,13 +14,16 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
@@ -30,6 +33,7 @@
 #include <Jolt/RegisterTypes.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -282,6 +286,9 @@ namespace Flux {
         std::filesystem::path assetsDirectory; // pour les maillages de collision
         // Maillages de collision déjà lus, par chemin relatif aux assets (nullptr : illisible, pas de nouvel essai).
         std::unordered_map<std::string, JPH::RefConst<JPH::Shape>> meshes;
+        // Enveloppe convexe de chaque vaisseau (ses collisions immobiles, dans son repère), pour qu'il bute sur le
+        // décor ; nullptr : rien de solide, il passe partout.
+        std::unordered_map<Entity, JPH::RefConst<JPH::Shape>> shipShapes;
 
         Impl() {
             AcquireJolt();
@@ -361,21 +368,214 @@ namespace Flux {
             }
         }
 
-        // Mouvement d'essai des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes.
-        static void MoveShips(Scene& scene, double deltaSeconds) {
-            for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
+        // Points de l'enveloppe d'un vaisseau : ses collisions immobiles (maillages : leurs sommets ; formes simples :
+        // les coins de leur boîte), dans son repère ; ni les objets simulés, ni la verrière « caméra seulement », ni
+        // les personnages, ni les vaisseaux qu'il transporte.
+        void CollectShipPoints(const Scene& scene, Entity entity, const Math::Vector3f& position, const Math::Quaternionf& rotation,
+                               const Math::Vector3f& scale, std::vector<Math::Vector3f>& points) {
+            if (scene.TryGet<CharacterComponent>(entity)) {
+                return;
+            }
+            const auto add = [&](const Math::Vector3f& local) {
+                points.push_back(position + rotation.Rotate(Math::Vector3f{local.x * scale.x, local.y * scale.y, local.z * scale.z}));
+            };
+            if (const auto* collider = scene.TryGet<ColliderComponent>(entity);
+                collider && !collider->simulatePhysics && !collider->cameraOnly) {
+                if (collider->shape == ColliderShape::Mesh) {
+                    if (const JPH::Shape* mesh = FindMesh(scene, entity, *collider)) {
+                        // Sommets des triangles du maillage de Jolt (déjà chargé pour la collision).
+                        JPH::Shape::GetTrianglesContext context;
+                        mesh->GetTrianglesStart(context, JPH::AABox::sBiggest(), JPH::Vec3::sZero(), JPH::Quat::sIdentity(),
+                                                JPH::Vec3::sOne());
+                        std::array<JPH::Float3, 3 * 256> vertices;
+                        for (int count; (count = mesh->GetTrianglesNext(context, 256, vertices.data())) > 0;) {
+                            for (int index = 0; index < 3 * count; ++index) {
+                                add({vertices[index].x, vertices[index].y, vertices[index].z});
+                            }
+                        }
+                    }
+                } else {
+                    Math::Vector3f half = collider->size * 0.5f;
+                    if (collider->shape == ColliderShape::Sphere) {
+                        half = {collider->radius, collider->radius, collider->radius};
+                    } else if (collider->shape == ColliderShape::Capsule) {
+                        half = {collider->radius, collider->height * 0.5f, collider->radius};
+                    }
+                    for (int corner = 0; corner < 8; ++corner) {
+                        add(collider->center + Math::Vector3f{(corner & 1) ? half.x : -half.x, (corner & 2) ? half.y : -half.y,
+                                                              (corner & 4) ? half.z : -half.z});
+                    }
+                }
+            }
+            scene.ForEachChild(entity, [&](Entity child) {
+                if (scene.TryGet<ShipComponent>(child)) {
+                    return; // il bouge de lui-même
+                }
+                const TransformComponent& transform = scene.Get<TransformComponent>(child);
+                const Math::Vector3f offset{static_cast<float>(transform.position.x) * scale.x,
+                                            static_cast<float>(transform.position.y) * scale.y,
+                                            static_cast<float>(transform.position.z) * scale.z};
+                CollectShipPoints(scene, child, position + rotation.Rotate(offset), Math::Normalize(rotation * transform.rotation),
+                                  {scale.x * transform.scale.x, scale.y * transform.scale.y, scale.z * transform.scale.z}, points);
+            });
+        }
+
+        // Enveloppe convexe du vaisseau, calculée une fois : elle passe sous les ailes et entre les dérives (pas de
+        // vol sous un surplomb), mais suffit pour se poser et buter contre le sol ou un mur.
+        const JPH::Shape* GetShipShape(const Scene& scene, Entity ship) {
+            if (const auto found = shipShapes.find(ship); found != shipShapes.end()) {
+                return found->second.GetPtr();
+            }
+            std::vector<Math::Vector3f> points;
+            CollectShipPoints(scene, ship, {}, {}, scene.Get<TransformComponent>(ship).scale, points);
+            JPH::RefConst<JPH::Shape> shape;
+            if (points.size() >= 4) {
+                // Les dizaines de milliers de sommets d'un maillage ramenés au plus loin dans 256 directions : la même
+                // enveloppe (à quelques centimètres près), calculée bien plus vite.
+                constexpr int Directions = 256;
+                JPH::Array<JPH::Vec3> extremes;
+                extremes.reserve(Directions);
+                const float golden = JPH::JPH_PI * (3.0f - std::sqrt(5.0f));
+                for (int index = 0; index < Directions; ++index) {
+                    const float y = 1.0f - 2.0f * (static_cast<float>(index) + 0.5f) / static_cast<float>(Directions);
+                    const float ring = std::sqrt(std::max(0.0f, 1.0f - y * y));
+                    const Math::Vector3f direction{std::cos(golden * static_cast<float>(index)) * ring, y,
+                                                   std::sin(golden * static_cast<float>(index)) * ring};
+                    const auto best = std::ranges::max_element(points, {}, [&](const Math::Vector3f& point) {
+                        return Math::Dot(point, direction);
+                    });
+                    extremes.push_back(ToJolt(*best));
+                }
+                const JPH::ShapeSettings::ShapeResult result = JPH::ConvexHullShapeSettings(extremes, 0.02f).Create();
+                if (result.HasError()) {
+                    Log::Warning("« {} » : enveloppe de collision du vaisseau impossible ({}), il traversera le décor",
+                                 scene.Get<NameComponent>(ship).name, result.GetError().c_str());
+                } else {
+                    shape = result.Get();
+                }
+            }
+            return shipShapes.emplace(ship, shape).first->second.GetPtr();
+        }
+
+        // Le décor immobile du monde (pas la verrière « caméra seulement », ni les caisses, coques et copies qui
+        // bougent) : ce sur quoi un vaisseau bute.
+        class StaticFilter final : public JPH::BodyFilter {
+            public:
+            bool ShouldCollideLocked(const JPH::Body& body) const override {
+                return body.IsStatic() && body.GetObjectLayer() != Layers::CameraOnly;
+            }
+        };
+
+        // Enfoncement le plus profond de l'enveloppe dans le décor, à cette place.
+        float Penetration(const Grid& grid, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position) const {
+            JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
+            const StaticFilter filter;
+            grid.system->GetNarrowPhaseQuery().CollideShape(&shape, JPH::Vec3::sOne(),
+                                                            JPH::RMat44::sRotationTranslation(rotation, JPH::RVec3(position)),
+                                                            JPH::CollideShapeSettings{}, JPH::RVec3::sZero(), collector, {}, {},
+                                                            filter);
+            float deepest = 0.0f;
+            for (const JPH::CollideShapeResult& hit : collector.mHits) {
+                deepest = std::max(deepest, hit.mPenetrationDepth);
+            }
+            return deepest;
+        }
+
+        // Premier obstacle sur le trajet de l'enveloppe : fraction du trajet et normale de la surface (vers le
+        // vaisseau). Les surfaces dont on s'éloigne ou qu'on longe (posé au sol, on roule) ne comptent pas.
+        bool CastShip(const Grid& grid, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position,
+                      JPH::Vec3Arg motion, float& fraction, JPH::Vec3& normal) const {
+            const JPH::RShapeCast cast(&shape, JPH::Vec3::sOne(), JPH::RMat44::sRotationTranslation(rotation, JPH::RVec3(position)),
+                                       motion);
+            JPH::ShapeCastSettings settings;
+            settings.mReturnDeepestPoint = true; // déjà au contact : un vrai point de contact
+            JPH::AllHitCollisionCollector<JPH::CastShapeCollector> collector;
+            const StaticFilter filter;
+            grid.system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
+            bool hit = false;
+            fraction = 1.0f;
+            for (const JPH::ShapeCastResult& result : collector.mHits) {
+                if (result.mFraction >= fraction) {
+                    continue;
+                }
+                // Normale de la face touchée (celle du sol, d'un mur) : plus sûre que l'axe de pénétration, quelconque
+                // quand deux faces planes se touchent tout juste.
+                JPH::BodyLockRead lock(grid.system->GetBodyLockInterfaceNoLock(), result.mBodyID2);
+                if (!lock.Succeeded()) {
+                    continue;
+                }
+                const JPH::Vec3 surface = lock.GetBody().GetWorldSpaceSurfaceNormal(result.mSubShapeID2, result.mContactPointOn2);
+                if (surface.Dot(motion) >= -1.0e-6f) {
+                    continue;
+                }
+                fraction = result.mFraction;
+                normal = surface;
+                hit = true;
+            }
+            return hit;
+        }
+
+        // Mouvement des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes. Un vaisseau à la
+        // racine bute sur le décor immobile du monde : il s'arrête contre le sol ou un mur et glisse le long, et ne
+        // tourne pas s'il devait s'y enfoncer.
+        void MoveShips(Scene& scene, double deltaSeconds) {
+            const Grid* worldGrid = nullptr;
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                if (grid->frame == NullEntity) {
+                    worldGrid = grid.get();
+                }
+            }
+            for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
                 if (ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
-                const Math::Vector3d move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
+                const Math::Quaternionf previousRotation = transform.rotation;
                 constexpr float RadiansPerDegree = JPH::JPH_PI / 180.0f;
                 const float speed = Math::Length(ship.angularVelocity) * RadiansPerDegree;
                 if (speed > 0.0f) {
                     const Math::Quaternionf turn = Math::Quaternionf::FromAxisAngle(ship.angularVelocity, speed * static_cast<float>(deltaSeconds));
                     transform.rotation = Math::Normalize(transform.rotation * turn);
                 }
-                if (scene.GetParent(entity) != NullEntity) {
+                Math::Vector3d move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
+                const bool root = scene.GetParent(entity) == NullEntity;
+                const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
+                if (shape) {
+                    const JPH::Vec3 start = ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity)));
+                    if (speed > 0.0f) {
+                        // Une rotation qui l'enfoncerait dans le décor (nez contre le sol) est refusée.
+                        const float before = Penetration(*worldGrid, *shape, ToJoltRotation(previousRotation), start);
+                        const float after = Penetration(*worldGrid, *shape, ToJoltRotation(transform.rotation), start);
+                        if (after > before + 0.01f) {
+                            transform.rotation = previousRotation;
+                            move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
+                        }
+                    }
+                    const JPH::Quat rotation = ToJoltRotation(transform.rotation);
+                    JPH::Vec3 position = start;
+                    JPH::Vec3 motion = ToJolt(move);
+                    // Deux passes : jusqu'à l'obstacle, puis le reste du trajet le long de sa surface.
+                    for (int pass = 0; pass < 2 && motion.LengthSq() > 1.0e-12f; ++pass) {
+                        float fraction = 1.0f;
+                        JPH::Vec3 normal;
+                        if (!CastShip(*worldGrid, *shape, rotation, position, motion, fraction, normal)) {
+                            position += motion;
+                            break;
+                        }
+                        // Arrêté un peu avant le contact (1 mm), pour ne pas s'y coller.
+                        const float length = motion.Length();
+                        position += motion * std::max(0.0f, fraction - 0.001f / length);
+                        motion *= 1.0f - fraction;
+                        motion -= normal * std::min(0.0f, motion.Dot(normal));
+                        // Sa vitesse aussi perd ce qui allait dans l'obstacle (posé, il ne « pousse » plus le sol).
+                        const JPH::Vec3 velocity = ToJolt(transform.rotation.Rotate(ship.velocity));
+                        const JPH::Vec3 kept = velocity - normal * std::min(0.0f, velocity.Dot(normal));
+                        ship.velocity = transform.rotation.Conjugate().Rotate(FromJolt(kept));
+                    }
+                    const JPH::Vec3 moved = position - start;
+                    move = {moved.GetX(), moved.GetY(), moved.GetZ()};
+                }
+                if (!root) {
                     transform.position += move; // dans l'espace de son parent (vaisseau dans un vaisseau)
                     continue;
                 }

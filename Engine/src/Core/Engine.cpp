@@ -405,7 +405,7 @@ namespace Flux {
         if (seated) {
             seatInput.thrust = axis("Avancer", "Reculer");
             seatInput.yaw = axis("Aller à gauche", "Aller à droite");
-            seatInput.pitch = axis("Monter", "Descendre");
+            seatInput.lift = axis("Monter", "Descendre");
             seatInput.mouseYaw = m_steerYaw;
             seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {

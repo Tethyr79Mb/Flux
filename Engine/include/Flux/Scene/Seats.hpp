@@ -14,9 +14,9 @@ namespace Flux {
         bool interact = false; // E : s'asseoir sur le siège le plus proche, ou se relever
         float thrust = 0.0f;   // Z/S : -1 à 1, vers l'avant
         float yaw = 0.0f;      // Q/D : -1 à 1, vers la gauche
-        float pitch = 0.0f;    // Espace/Ctrl : -1 à 1, nez vers le haut
-        // Souris : rotation demandée pendant cette image (radians, mêmes sens que yaw et pitch), ajoutée aux touches ;
-        // le vaisseau la suit sans dépasser sa vitesse de rotation.
+        float lift = 0.0f;     // Espace/Ctrl : -1 à 1, monter le long du haut du vaisseau (décoller, se poser)
+        // Souris : rotation demandée pendant cette image (radians ; lacet vers la gauche, tangage nez vers le haut),
+        // ajoutée aux touches ; le vaisseau la suit sans dépasser sa vitesse de rotation.
         float mouseYaw = 0.0f;
         float mousePitch = 0.0f;
     };

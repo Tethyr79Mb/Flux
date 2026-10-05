@@ -57,11 +57,13 @@ namespace Flux::Seats {
         }
 
         // Le pilote change la vitesse du vaisseau : poussée le long de son -z (sans commande, il garde sa vitesse,
-        // comme dans l'espace), lacet et tangage tant que les touches sont tenues ou que la souris bouge.
+        // comme dans l'espace), montée et descente tant que les touches sont tenues (lâchées : il reste à sa hauteur),
+        // lacet (touches et souris) et tangage (souris).
         void Pilot(ShipComponent& ship, double deltaSeconds, const SeatInput& input) {
             const float delta = static_cast<float>(deltaSeconds);
             ship.velocity.z -= input.thrust * ship.acceleration * delta;
             ship.velocity.z = std::clamp(ship.velocity.z, -ship.maxSpeed, ship.maxSpeed * 0.25f);
+            ship.velocity.y = input.lift * ship.verticalSpeed;
             if (delta <= 0.0f) {
                 return; // pause : la souris ne tourne rien
             }
@@ -69,7 +71,7 @@ namespace Flux::Seats {
             const float rate = ship.turnRate;
             constexpr float Degrees = 180.0f / std::numbers::pi_v<float>; // vitesses de rotation en °/s, souris en radians
             ship.angularVelocity.y = std::clamp(input.yaw * rate + input.mouseYaw * Degrees / delta, -rate, rate); // vers la gauche
-            ship.angularVelocity.x = std::clamp(input.pitch * rate + input.mousePitch * Degrees / delta, -rate, rate);
+            ship.angularVelocity.x = std::clamp(input.mousePitch * Degrees / delta, -rate, rate);
         }
     }
 

@@ -408,6 +408,11 @@ namespace {
         CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate);
         frames(Frame, {});
         CHECK(shipComponent.angularVelocity == Math::Vector3f{});
+        // Espace : il monte tant qu'elle est tenue, puis reste à sa hauteur.
+        frames(Frame, {.lift = 1.0f});
+        CHECK(shipComponent.velocity.y == shipComponent.verticalSpeed);
+        frames(Frame, {});
+        CHECK(shipComponent.velocity.y == 0.0f);
         // Il a suivi le vaisseau sans bouger de son siège.
         const Math::Vector3d still = scene.Get<TransformComponent>(hero).position;
         CHECK(std::abs(still.x) < 0.01 && std::abs(still.z + 3.0) < 0.01 && std::abs(still.y) < 0.01);
@@ -558,7 +563,54 @@ namespace {
     }
 }
 
+namespace {
+    // Vaisseau et décor : il se pose sur le sol au lieu de le traverser, glisse le long, ne pique pas du nez dedans,
+    // et repart vers le haut. Sans collision à lui, il passe partout.
+    bool RunShipCollisionTests() {
+        Scene scene;
+        AddFloor(scene); // dessus à y = 0
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = {0.0, 5.0, 0.0};
+        ShipComponent& component = scene.Add<ShipComponent>(ship);
+        const Entity hull = scene.CreateEntity("Coque", ship);
+        scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f}; // dessous à 1 m sous l'origine
+        scene.Add<ColliderComponent>(hull);
+        const Entity ghost = scene.CreateEntity("Fantôme");
+        scene.Get<TransformComponent>(ghost).position = {30.0, 5.0, 0.0};
+        scene.Add<ShipComponent>(ghost).velocity = {0.0f, -10.0f, 0.0f};
+
+        PhysicsWorld world;
+        world.Update(scene, Frame, {}); // corps créés
+        component.velocity = {0.0f, -10.0f, 0.0f};
+        Run(world, scene, 1.0);
+        const Math::Vector3d landed = scene.Get<TransformComponent>(ship).position;
+        CHECK(std::abs(landed.y - 1.0) < 0.05 && std::abs(component.velocity.y) < 1.0e-3f);
+        CHECK(scene.Get<TransformComponent>(ghost).position.y < -4.0);
+
+        // En avançant tout en poussant vers le bas : il roule sur le sol.
+        component.velocity = {0.0f, -5.0f, -10.0f};
+        Run(world, scene, 0.5);
+        const Math::Vector3d rolled = scene.Get<TransformComponent>(ship).position;
+        CHECK(std::abs(rolled.y - 1.0) < 0.05 && std::abs(rolled.z + 5.0) < 0.1);
+
+        // Nez vers le sol, posé : la rotation est refusée.
+        component.velocity = {};
+        component.angularVelocity = {-30.0f, 0.0f, 0.0f};
+        Run(world, scene, 0.5);
+        const Math::Vector3f nose = scene.Get<TransformComponent>(ship).rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+        CHECK(nose.y > -0.02f);
+
+        // Vers le haut : il décolle.
+        component.angularVelocity = {};
+        component.velocity = {0.0f, 5.0f, 0.0f};
+        Run(world, scene, 1.0);
+        CHECK(scene.Get<TransformComponent>(ship).position.y > 5.5);
+        return true;
+    }
+}
+
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
-        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests();
+        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
+        && RunShipCollisionTests();
 }
