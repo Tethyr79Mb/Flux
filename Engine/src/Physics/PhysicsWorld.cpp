@@ -526,21 +526,46 @@ namespace Flux {
                 }
             }
             for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
-                if (ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
-                    continue;
-                }
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
                 const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
+                if (!shape && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
+                    continue;
+                }
                 ship.grounded = false;
+                JPH::Vec3 lift = JPH::Vec3::sZero();
                 if (shape) {
-                    // Sol sous lui : obstacle à moins de 5 cm vers son bas, face tournée vers son haut (pente < 45°).
+                    const JPH::Vec3 start = ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity)));
                     const JPH::Vec3 up = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f}));
                     float fraction = 1.0f;
                     JPH::Vec3 normal;
-                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation),
-                                             ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity))), up * -0.05f, fraction, normal)
-                                    && normal.Dot(up) > 0.7f;
+                    // Stabilisateur d'atterrissage : à moins de 4 m d'un sol (pente < 60°) et lent sur le plan (moins
+                    // de 10 m/s), le vaisseau se remet parallèle au sol, à 60 °/s au plus, sans toucher à son cap.
+                    const float flatSpeed = std::hypot(ship.velocity.x, ship.velocity.z);
+                    if (flatSpeed < 10.0f && CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, up * -4.0f, fraction, normal)
+                        && normal.Dot(up) > 0.5f) {
+                        const JPH::Vec3 axis = up.Cross(normal);
+                        const float angle = std::asin(std::min(1.0f, axis.Length()));
+                        if (angle > 1.0e-3f) {
+                            constexpr float LevelRate = JPH::JPH_PI / 3.0f; // 60 °/s
+                            const float step = std::min(angle, LevelRate * static_cast<float>(deltaSeconds));
+                            const Math::Quaternionf level = Math::Quaternionf::FromAxisAngle(FromJolt(axis), step);
+                            const Math::Quaternionf leveled = Math::Normalize(level * transform.rotation);
+                            // Posé sur une aile, il se redresse en s'appuyant dessus : il remonte de ce qu'il
+                            // s'enfoncerait (le train touche le sol au lieu de passer dessous).
+                            const float before = Penetration(*worldGrid, *shape, ToJoltRotation(transform.rotation), start);
+                            const float after = Penetration(*worldGrid, *shape, ToJoltRotation(leveled), start);
+                            if (after > before) {
+                                lift = normal * (after - before + 0.001f);
+                            }
+                            transform.rotation = leveled;
+                        }
+                    }
+                    // Posé : obstacle à moins de 5 cm vers son bas, face tournée vers son haut (pente < 45°). Il ne
+                    // tourne plus de lui-même (le stabilisateur, si : il se met à plat sur ses roues).
+                    const JPH::Vec3 down = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, -1.0f, 0.0f}));
+                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, down * 0.05f, fraction, normal)
+                                    && normal.Dot(-down) > 0.7f;
                     if (ship.grounded) {
                         ship.angularVelocity = {};
                     }
@@ -553,6 +578,7 @@ namespace Flux {
                     transform.rotation = Math::Normalize(transform.rotation * turn);
                 }
                 Math::Vector3d move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
+                move += Math::Vector3d(FromJolt(lift));
                 if (shape) {
                     const JPH::Vec3 start = ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity)));
                     if (speed > 0.0f) {
@@ -561,7 +587,7 @@ namespace Flux {
                         const float after = Penetration(*worldGrid, *shape, ToJoltRotation(transform.rotation), start);
                         if (after > before + 0.01f) {
                             transform.rotation = previousRotation;
-                            move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
+                            move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds + Math::Vector3d(FromJolt(lift));
                         }
                     }
                     const JPH::Quat rotation = ToJoltRotation(transform.rotation);

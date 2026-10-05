@@ -630,6 +630,13 @@ namespace {
         component.velocity = {0.0f, 5.0f, 0.0f};
         Run(world, scene, 1.0);
         CHECK(scene.Get<TransformComponent>(ship).position.y > 5.5 && !component.grounded);
+
+        // Stabilisateur : penché de 20° sur le côté, il se remet à plat en approchant du sol et se pose bien à plat.
+        scene.Get<TransformComponent>(ship).rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, 20.0f * std::numbers::pi_v<float> / 180.0f);
+        component.velocity = {0.0f, -2.0f, 0.0f};
+        Run(world, scene, 4.0);
+        const Math::Vector3f up = scene.Get<TransformComponent>(ship).rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
+        CHECK(up.y > 0.9999f && std::abs(scene.Get<TransformComponent>(ship).position.y - 1.0) < 0.05 && component.grounded);
         return true;
     }
 }

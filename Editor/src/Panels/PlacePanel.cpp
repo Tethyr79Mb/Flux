@@ -85,6 +85,16 @@ namespace FluxEditor {
             ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
             glassCollider.shape = ColliderShape::Mesh;
             glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
+            // Train d'atterrissage : la collision simplifiée s'arrête au ventre (1,97 m sous l'origine), les roues
+            // descendent à 2,3 m. Une boîte par jambe, pour qu'il se pose sur ses roues.
+            struct Gear { const char* name; Math::Vector3f center; Math::Vector3f size; };
+            for (const Gear& gear : {Gear{"Train avant", {0.0f, -2.1f, 1.6f}, {0.3f, 0.4f, 0.6f}},
+                                     Gear{"Train gauche", {-2.4f, -2.1f, 10.0f}, {0.7f, 0.4f, 0.6f}},
+                                     Gear{"Train droit", {2.4f, -2.1f, 10.0f}, {0.7f, 0.4f, 0.6f}}}) {
+                const Entity leg = scene.CreateEntity(gear.name, ship);
+                scene.Get<TransformComponent>(leg).position = {gear.center.x, gear.center.y, gear.center.z};
+                scene.Add<ColliderComponent>(leg).size = gear.size;
+            }
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
             // Le cockpit est tout à l'avant (3,6 m derrière le nez) et l'origine est sous les hanches du pilote.
             SeatComponent& component = scene.Add<SeatComponent>(seat);
