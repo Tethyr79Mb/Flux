@@ -236,6 +236,10 @@ namespace Flux {
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
         Entity m_hiddenPlayer = NullEntity; // caméra dans sa tête (vue cockpit, ou coincée contre un mur) : pas dessiné
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
+        // Aux commandes : la souris dirige le vaisseau (curseur caché ; Alt maintenu ou un menu de pause le libère).
+        // Rotation demandée à cette image, en radians.
+        float m_steerYaw = 0.0f;
+        float m_steerPitch = 0.0f;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;

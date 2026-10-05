@@ -399,6 +399,15 @@ namespace {
         CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
         frames(Frame, {});
         CHECK(shipComponent.angularVelocity == Math::Vector3f{});
+        // Souris : le vaisseau tourne de ce qu'elle a bougé pendant l'image (nez vers le haut), sans dépasser sa vitesse
+        // de rotation ; immobile, elle ne tourne rien.
+        frames(Frame, {.mousePitch = 0.1f * static_cast<float>(Frame)});
+        CHECK(std::abs(shipComponent.angularVelocity.x - 0.1f * 180.0f / std::numbers::pi_v<float>) < 1.0e-3f
+              && shipComponent.angularVelocity.y == 0.0f); // en °/s
+        frames(Frame, {.mouseYaw = 100.0f});
+        CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate);
+        frames(Frame, {});
+        CHECK(shipComponent.angularVelocity == Math::Vector3f{});
         // Il a suivi le vaisseau sans bouger de son siège.
         const Math::Vector3d still = scene.Get<TransformComponent>(hero).position;
         CHECK(std::abs(still.x) < 0.01 && std::abs(still.z + 3.0) < 0.01 && std::abs(still.y) < 0.01);

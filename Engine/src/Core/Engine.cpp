@@ -406,6 +406,8 @@ namespace Flux {
             seatInput.thrust = axis("Avancer", "Reculer");
             seatInput.yaw = axis("Aller à gauche", "Aller à droite");
             seatInput.pitch = axis("Monter", "Descendre");
+            seatInput.mouseYaw = m_steerYaw;
+            seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {
                 m_cockpitView = !m_cockpitView;
             }
@@ -459,10 +461,20 @@ namespace Flux {
         const bool held = m_window->HasFocus() && input.IsMouseButtonDown(MouseButton::Right);
         const bool started = input.WasMouseButtonPressed(MouseButton::Right) && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
         m_followRotating = held && (m_followRotating || started);
-        m_window->SetCursorLocked(m_followRotating);
+        constexpr float Sensitivity = 0.0025f;
+        const Math::Vector2f mouse = input.GetMouseDelta();
+        // Aux commandes, sans clic droit : la souris dirige le vaisseau, curseur caché. Alt maintenu le libère (panneaux
+        // de l'éditeur), comme un menu qui met le jeu en pause.
+        const bool piloting = Seats::GetPilotSeat(m_scene, GetFollowedPlayer()) != NullEntity;
+        const bool steering = piloting && !m_followRotating && m_window->HasFocus() && !m_interfacePaused
+                           && m_gameState == GameState::Running && !input.IsKeyDown(Key::LeftAlt)
+                           && !input.IsKeyDown(Key::RightAlt);
+        // La première image où le curseur se cache, son déplacement vient d'avant : ignoré.
+        const bool wasLocked = m_window->IsCursorLocked();
+        m_window->SetCursorLocked(m_followRotating || steering);
+        m_steerYaw = steering && wasLocked ? -mouse.x * Sensitivity : 0.0f;
+        m_steerPitch = steering && wasLocked ? -mouse.y * Sensitivity : 0.0f;
         if (m_followRotating) {
-            constexpr float Sensitivity = 0.0025f;
-            const Math::Vector2f mouse = input.GetMouseDelta();
             if (Seats::GetPilotSeat(m_scene, GetFollowedPlayer()) != NullEntity) {
                 // Aux commandes (cockpit ou vue extérieure) : on tourne la tête, sans perdre le vaisseau de vue.
                 m_lookYaw = std::clamp(m_lookYaw - mouse.x * Sensitivity, -2.0f, 2.0f);

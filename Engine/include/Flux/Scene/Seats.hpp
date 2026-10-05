@@ -15,6 +15,10 @@ namespace Flux {
         float thrust = 0.0f;   // Z/S : -1 à 1, vers l'avant
         float yaw = 0.0f;      // Q/D : -1 à 1, vers la gauche
         float pitch = 0.0f;    // Espace/Ctrl : -1 à 1, nez vers le haut
+        // Souris : rotation demandée pendant cette image (radians, mêmes sens que yaw et pitch), ajoutée aux touches ;
+        // le vaisseau la suit sans dépasser sa vitesse de rotation.
+        float mouseYaw = 0.0f;
+        float mousePitch = 0.0f;
     };
 
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège
