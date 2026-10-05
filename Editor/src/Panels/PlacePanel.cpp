@@ -65,9 +65,10 @@ namespace FluxEditor {
         }
 
         // Chasseur monoplace (modèle du projet, dans Modeles/Chasseur) : coque affichée et collision en maillage
-        // simplifié, verrière qui retient la caméra, poste de pilotage. Origine du vaisseau : le plancher du cockpit,
-        // l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : E à moins de 10 m du siège met
-        // directement aux commandes ; en se relevant, le pilote se retrouve au sol, devant l'aile gauche.
+        // simplifié, verrière solide (personnages et caméra s'y arrêtent), poste de pilotage. Origine du vaisseau :
+        // le plancher du cockpit, l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : E à moins
+        // de 10 m du siège met directement aux commandes ; en se relevant, le pilote se retrouve au sol, devant l'aile
+        // gauche.
         void AddFighter(Scene& scene, Entity ship) {
             const Entity hull = scene.CreateEntity("Coque", ship);
             scene.Add<ModelComponent>(hull).model = "Modeles/Chasseur/Chasseur.glb";
@@ -78,12 +79,12 @@ namespace FluxEditor {
             RimLightComponent& rim = scene.Add<RimLightComponent>(hull);
             rim.intensity = 0.8f;
             rim.sharpness = 4.0f;
-            // La verrière n'arrête que la caméra.
+            // La verrière arrête aussi les personnages (pas seulement la caméra) : on ne tombe pas dans le cockpit
+            // depuis le nez, et on n'en sort pas en sautant. Le pilote n'y touche pas : assis, il est hors physique.
             const Entity glass = scene.CreateEntity("Verrière", ship);
             ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
             glassCollider.shape = ColliderShape::Mesh;
             glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
-            glassCollider.cameraOnly = true;
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
             // Le cockpit est tout à l'avant (3,6 m derrière le nez) et l'origine est sous les hanches du pilote.
             SeatComponent& component = scene.Add<SeatComponent>(seat);
