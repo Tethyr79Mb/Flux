@@ -517,7 +517,7 @@ namespace Flux {
 
         // Mouvement des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes. Un vaisseau à la
         // racine bute sur le décor immobile du monde : il s'arrête contre le sol ou un mur et glisse le long, et ne
-        // tourne pas s'il devait s'y enfoncer.
+        // tourne pas s'il devait s'y enfoncer. Posé (le décor sous son ventre, à moins de 5 cm), il ne tourne pas du tout.
         void MoveShips(Scene& scene, double deltaSeconds) {
             const Grid* worldGrid = nullptr;
             for (const std::unique_ptr<Grid>& grid : grids) {
@@ -530,6 +530,21 @@ namespace Flux {
                     continue;
                 }
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
+                const bool root = scene.GetParent(entity) == NullEntity;
+                const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
+                ship.grounded = false;
+                if (shape) {
+                    // Sol sous lui : obstacle à moins de 5 cm vers son bas, face tournée vers son haut (pente < 45°).
+                    const JPH::Vec3 up = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f}));
+                    float fraction = 1.0f;
+                    JPH::Vec3 normal;
+                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation),
+                                             ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity))), up * -0.05f, fraction, normal)
+                                    && normal.Dot(up) > 0.7f;
+                    if (ship.grounded) {
+                        ship.angularVelocity = {};
+                    }
+                }
                 const Math::Quaternionf previousRotation = transform.rotation;
                 constexpr float RadiansPerDegree = JPH::JPH_PI / 180.0f;
                 const float speed = Math::Length(ship.angularVelocity) * RadiansPerDegree;
@@ -538,8 +553,6 @@ namespace Flux {
                     transform.rotation = Math::Normalize(transform.rotation * turn);
                 }
                 Math::Vector3d move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds;
-                const bool root = scene.GetParent(entity) == NullEntity;
-                const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
                 if (shape) {
                     const JPH::Vec3 start = ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity)));
                     if (speed > 0.0f) {
