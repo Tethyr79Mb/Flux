@@ -432,6 +432,7 @@ namespace FluxEditor {
                 }
                 ui.Separator();
 
+                const bool openedOnEscape = element->openOnEscape;
                 for (const Interface::Field& field : Interface::GetFields()) {
                     if (!field.AppliesTo(element->type)) {
                         continue;
@@ -478,6 +479,10 @@ namespace FluxEditor {
                             }
                         },
                         field.member);
+                }
+                // « Échap l'ouvre » vient d'être coché : un menu pause est fermé au démarrage du jeu.
+                if (element->openOnEscape && !openedOnEscape) {
+                    element->visible = false;
                 }
                 if (element->type == ElementType::Slider) {
                     const float low = std::min(element->minimum, element->maximum);

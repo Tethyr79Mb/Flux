@@ -473,7 +473,18 @@ namespace Flux {
             }
         }
         if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse() && !m_interfaceWantsMouse) {
-            m_followDistance = std::clamp(m_followDistance * std::pow(0.85f, wheel), 1.0f, 30.0f);
+            constexpr float MinDistance = 1.0f;
+            if (m_firstPerson) {
+                if (wheel < 0.0f) { // en arrière : la caméra ressort doucement derrière le personnage
+                    m_firstPerson = false;
+                    m_followDistance = 1.5f;
+                    m_followShown = 0.0f;
+                }
+            } else if (wheel > 0.0f && m_followDistance <= MinDistance) {
+                m_firstPerson = true; // déjà au plus près : un cran de plus passe dans ses yeux
+            } else {
+                m_followDistance = std::clamp(m_followDistance * std::pow(0.85f, wheel), MinDistance, 30.0f);
+            }
         }
     }
 
@@ -518,6 +529,14 @@ namespace Flux {
         const double eyeHeight = character ? character->height * 0.9 : 1.6;
         Math::WorldPosition target = m_scene.GetWorldPosition(player);
         target += Math::Vector3d{0.0, eyeHeight, 0.0};
+
+        if (m_firstPerson) {
+            // Depuis ses yeux : rien entre la tête et la caméra, pas besoin de chercher les murs. Son ombre reste.
+            m_camera.position = target;
+            m_followShown = 0.0f;
+            m_hiddenPlayer = player;
+            return;
+        }
 
         // Un mur entre le personnage et la caméra : elle s'avance devant lui. Sphère un peu plus grosse que ce que
         // le plan proche découpe (0,1 m devant l'œil, écran 16/9 : 0,12 m au coin), pour ne jamais voir à travers.
