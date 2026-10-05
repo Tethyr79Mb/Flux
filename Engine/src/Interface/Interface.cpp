@@ -15,7 +15,8 @@ namespace Flux::Interface {
 
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeNames{
-            "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets", "Barre de progression"};
+            "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets", "Barre de progression",
+            "Zone de défilement"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorNames{
             "En haut à gauche", "En haut",  "En haut à droite", "À gauche", "Au centre",
             "À droite",         "En bas à gauche", "En bas", "En bas à droite", "Étiré (marges)"};
@@ -36,6 +37,10 @@ namespace Flux::Interface {
         constexpr std::uint32_t S = Bit(ElementType::Slider);
         constexpr std::uint32_t O = Bit(ElementType::Tabs);
         constexpr std::uint32_t P = Bit(ElementType::ProgressBar);
+        constexpr std::uint32_t D = Bit(ElementType::ScrollArea);
+
+        constexpr float WheelStep = 60.0f;  // pixels de référence par cran de molette
+        constexpr float MinThumb = 24.0f;   // hauteur minimale de la poignée de l'ascenseur (pixels de référence)
 
         const std::array Fields{
             Field{"text", "Titre", &Element::text, W},
@@ -54,15 +59,18 @@ namespace Flux::Interface {
             Field{"titleColor", "Onglet", &Element::titleColor, O},
             Field{"pressedColor", "Onglet affiché", &Element::pressedColor, O},
             Field{"accent", "Soulignement", &Element::accent, O},
-            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P},
+            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P | D},
             Field{"background", "Piste", &Element::background, S},
-            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O},
+            Field{"scrollbarWidth", "Largeur de l'ascenseur", &Element::scrollbarWidth, D, Field::Text::Plain, 0.25f, 2.0f, 200.0f, 0},
+            Field{"titleColor", "Piste de l'ascenseur", &Element::titleColor, D},
+            Field{"accent", "Ascenseur", &Element::accent, D},
+            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O | D},
             Field{"pressedColor", "Appuyé", &Element::pressedColor, B},
             Field{"accent", "Coche", &Element::accent, C},
             Field{"accent", "Remplissage", &Element::accent, S | P},
-            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P},
-            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
-            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
+            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P | D},
+            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P | D, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
+            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P | D, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
             Field{"shadow", "Ombre", &Element::shadow, W},
             Field{"movable", "Déplaçable en jeu", &Element::movable, W},
             Field{"closeButton", "Croix de fermeture", &Element::closeButton, W},
@@ -154,6 +162,14 @@ namespace Flux::Interface {
                     element.borderWidth = 1.0f;
                     element.radius = 4.0f;
                     break;
+                case ElementType::ScrollArea:
+                    element.size = {400.0f, 300.0f};
+                    element.background = Srgb(20, 28, 40, 0.6f);
+                    element.titleColor = Srgb(30, 40, 52);
+                    element.accent = Srgb(70, 110, 140);
+                    element.hoverColor = Srgb(60, 200, 230);
+                    element.radius = 4.0f;
+                    break;
                 case ElementType::Count:
                     break;
             }
@@ -202,10 +218,36 @@ namespace Flux::Interface {
             }
         }
 
+        bool IsShown(const Element& element, std::uint32_t reveal) {
+            return element.visible || (reveal != 0 && (element.id == reveal || Contains(element, reveal)));
+        }
+
+        // Zone de défilement : les enfants se placent dans la zone (moins l'ascenseur s'il en faut un), remontés du
+        // défilement, et ne se voient que dedans. Leur hauteur ne dépend pas de la largeur : on mesure d'abord ce
+        // qui dépasse en bas, puis on retire la place de l'ascenseur seulement s'il est utile.
+        void ArrangeScrollArea(const Element& area, const Rect& rect, const Rect& clip, int depth, float scale,
+                               std::uint32_t reveal, std::vector<Placed>& out) {
+            float bottom = rect.max.y;
+            for (const Element& child : area.children) {
+                if (IsShown(child, reveal)) {
+                    bottom = std::max(bottom, Arrange(child, rect, scale).max.y);
+                }
+            }
+            Placed& placed = out.back();
+            placed.scrollRange = bottom - rect.max.y;
+            Rect content = rect;
+            if (const std::optional<Rect> track = GetScrollbarTrack(placed, scale)) {
+                content.max.x = track->min.x;
+            }
+            const float offset = GetScrollOffset(placed, scale);
+            const Rect shifted{content.min - Vector2f{0.0f, offset}, content.max - Vector2f{0.0f, offset}};
+            ArrangeChildren(area.children, shifted, Intersect(clip, content), area.id, depth + 1, scale, reveal, out);
+        }
+
         void ArrangeChildren(const std::vector<Element>& elements, const Rect& parent, const Rect& clip, std::uint32_t parentId,
                              int depth, float scale, std::uint32_t reveal, std::vector<Placed>& out) {
             for (const Element& element : elements) {
-                if (!element.visible && (reveal == 0 || (element.id != reveal && !Contains(element, reveal)))) {
+                if (!IsShown(element, reveal)) {
                     continue;
                 }
                 const Rect rect = Arrange(element, parent, scale);
@@ -215,6 +257,8 @@ namespace Flux::Interface {
                 }
                 if (element.type == ElementType::Tabs) {
                     ArrangePage(element, rect, clip, depth, scale, reveal, out);
+                } else if (element.type == ElementType::ScrollArea) {
+                    ArrangeScrollArea(element, rect, clip, depth, scale, reveal, out);
                 } else {
                     ArrangeChildren(element.children, rect, Intersect(clip, rect), element.id, depth + 1, scale, reveal, out);
                 }
@@ -248,7 +292,8 @@ namespace Flux::Interface {
 
         // Fenêtres et cadres arrêtent aussi la souris : un clic sur leur fond ne traverse pas vers le jeu.
         bool BlocksMouse(ElementType type) {
-            return IsInteractive(type) || type == ElementType::Window || type == ElementType::Frame || type == ElementType::Tabs;
+            return IsInteractive(type) || type == ElementType::Window || type == ElementType::Frame || type == ElementType::Tabs
+                || type == ElementType::ScrollArea;
         }
 
         const Placed* FindPlaced(const std::vector<Placed>& placed, std::uint32_t id) {
@@ -528,6 +573,28 @@ namespace Flux::Interface {
             }
         }
 
+        // Fond, puis l'ascenseur s'il y a du contenu caché (les enfants, découpés à gauche de lui, ne le couvrent pas).
+        void DrawScrollArea(const DrawContext& context, const Placed& placed) {
+            const Element& element = *placed.element;
+            DrawBox(context, placed.rect, element.background, element);
+            const std::optional<Rect> track = GetScrollbarTrack(placed, context.scale);
+            const std::optional<Rect> thumb = GetScrollbarThumb(placed, context.scale);
+            if (!track || !thumb) {
+                return;
+            }
+            const float width = track->max.x - track->min.x;
+            const float inset = width * 0.2f;
+            if (element.titleColor.a > 0.0f) {
+                context.list.AddRoundedRect(track->min, track->max, element.titleColor, width * 0.5f);
+            }
+            const Interaction* interaction = context.options.interaction;
+            const bool active = interaction
+                             && (interaction->thumbHovered == element.id
+                                 || (interaction->thumbPressed && interaction->pressed == element.id));
+            context.list.AddRoundedRect(thumb->min + Vector2f{inset, inset}, thumb->max - Vector2f{inset, inset},
+                                        active ? element.hoverColor : element.accent, (width - 2.0f * inset) * 0.5f);
+        }
+
         void DrawElement(const DrawContext& context, const Placed& placed) {
             const Element& element = *placed.element;
             const Rect& rect = placed.rect;
@@ -566,6 +633,9 @@ namespace Flux::Interface {
                 case ElementType::ProgressBar:
                     DrawProgressBar(context, element, rect);
                     break;
+                case ElementType::ScrollArea:
+                    DrawScrollArea(context, placed);
+                    break;
                 case ElementType::Count:
                     break;
             }
@@ -597,7 +667,8 @@ namespace Flux::Interface {
     }
 
     bool IsContainer(ElementType type) {
-        return type == ElementType::Window || type == ElementType::Frame || type == ElementType::Tabs;
+        return type == ElementType::Window || type == ElementType::Frame || type == ElementType::Tabs
+            || type == ElementType::ScrollArea;
     }
 
     bool TargetsTab(ButtonAction action) {
@@ -840,6 +911,50 @@ namespace Flux::Interface {
         return 0;
     }
 
+    float GetScrollOffset(const Placed& area, float scale) {
+        return std::clamp(area.element->scroll * scale, 0.0f, std::max(area.scrollRange, 0.0f));
+    }
+
+    std::optional<Rect> GetScrollbarTrack(const Placed& area, float scale) {
+        if (area.element->type != ElementType::ScrollArea || area.scrollRange <= 0.5f) {
+            return std::nullopt;
+        }
+        const Rect& rect = area.rect;
+        const float width = std::min(area.element->scrollbarWidth * scale, rect.max.x - rect.min.x);
+        return Rect{{rect.max.x - width, rect.min.y}, rect.max};
+    }
+
+    std::optional<Rect> GetScrollbarThumb(const Placed& area, float scale) {
+        const std::optional<Rect> track = GetScrollbarTrack(area, scale);
+        if (!track) {
+            return std::nullopt;
+        }
+        const float height = track->max.y - track->min.y;
+        const float thumb = std::clamp(height * height / (height + area.scrollRange), std::min(height, MinThumb * scale), height);
+        const float top = track->min.y + (height - thumb) * GetScrollOffset(area, scale) / area.scrollRange;
+        return Rect{{track->min.x, top}, {track->max.x, top + thumb}};
+    }
+
+    std::uint32_t ScrollAt(Document& document, std::span<const Placed> placed, Vector2f point, float notches, float scale) {
+        if (notches == 0.0f || scale <= 0.0f) {
+            return 0;
+        }
+        for (auto item = placed.rbegin(); item != placed.rend(); ++item) {
+            if (item->element->type != ElementType::ScrollArea || item->scrollRange <= 0.5f
+                || !Intersect(item->rect, item->clip).Contains(point)) {
+                continue;
+            }
+            Element* area = Find(document, item->element->id);
+            if (!area) {
+                return 0;
+            }
+            const float range = item->scrollRange / scale;
+            area->scroll = std::clamp(std::clamp(area->scroll, 0.0f, range) - notches * WheelStep, 0.0f, range);
+            return area->id;
+        }
+        return 0;
+    }
+
     void Update(Document& document, Interaction& interaction, Vector2f viewMin, Vector2f viewMax, const Pointer& pointer) {
         interaction.clicked = 0;
         interaction.changed = 0;
@@ -870,6 +985,10 @@ namespace Flux::Interface {
         if (interaction.hoveredTab >= 0) {
             interaction.hovered = hitId;
         }
+        const std::optional<Rect> track = hit ? GetScrollbarTrack(*hit, scale) : std::nullopt;
+        const std::optional<Rect> thumb = hit ? GetScrollbarThumb(*hit, scale) : std::nullopt;
+        const bool onTrack = track && track->Contains(pointer.position);
+        interaction.thumbHovered = thumb && thumb->Contains(pointer.position) ? hitId : 0;
 
         if (pointer.pressed && hit) {
             const Element& element = *hit->element;
@@ -877,11 +996,23 @@ namespace Flux::Interface {
             const bool titleBar = !onClose && element.type == ElementType::Window && element.movable
                                && element.anchor != Anchor::Stretch
                                && pointer.position.y < hit->rect.min.y + element.titleHeight * scale;
-            interaction.pressed = IsInteractive(element.type) || titleBar || onClose || interaction.hoveredTab >= 0 ? hitId : 0;
+            const bool onThumb = interaction.thumbHovered == hitId;
+            interaction.pressed = IsInteractive(element.type) || titleBar || onClose || interaction.hoveredTab >= 0 || onThumb
+                                    ? hitId
+                                    : 0;
             interaction.closePressed = onClose;
+            interaction.thumbPressed = onThumb;
             interaction.pressedTab = interaction.hoveredTab;
             interaction.dragStart = pointer.position;
-            interaction.dragOrigin = element.position;
+            interaction.dragOrigin = onThumb ? Vector2f{0.0f, element.scroll} : element.position;
+            if (onTrack && !onThumb && thumb && scale > 0.0f) {
+                // Clic sur la piste : une page (presque une hauteur de zone) vers le clic.
+                Element& area = *Find(document, hitId);
+                const float page = 0.9f * (hit->rect.max.y - hit->rect.min.y) / scale;
+                const float range = hit->scrollRange / scale;
+                area.scroll = std::clamp(std::clamp(area.scroll, 0.0f, range) + (pointer.position.y < thumb->min.y ? -page : page),
+                                         0.0f, range);
+            }
             raise.push_back(RootOf(document, hitId)); // un clic dans une fenêtre la met devant
         }
 
@@ -892,6 +1023,17 @@ namespace Flux::Interface {
                 const Vector2f mouse{std::clamp(pointer.position.x, viewMin.x, viewMax.x),
                                      std::clamp(pointer.position.y, viewMin.y, viewMax.y)};
                 pressed->position = interaction.dragOrigin + (mouse - interaction.dragStart) * (1.0f / scale);
+            } else if (pressed->type == ElementType::ScrollArea && interaction.thumbPressed) {
+                // Poignée tenue : le contenu suit la souris, à l'échelle de la piste.
+                const Placed* area = FindPlaced(placed, pressed->id);
+                const std::optional<Rect> areaTrack = area ? GetScrollbarTrack(*area, scale) : std::nullopt;
+                const std::optional<Rect> areaThumb = area ? GetScrollbarThumb(*area, scale) : std::nullopt;
+                if (areaTrack && areaThumb && scale > 0.0f) {
+                    const float free = (areaTrack->max.y - areaTrack->min.y) - (areaThumb->max.y - areaThumb->min.y);
+                    const float range = area->scrollRange / scale;
+                    const float moved = free > 0.0f ? (pointer.position.y - interaction.dragStart.y) / free * range : 0.0f;
+                    pressed->scroll = std::clamp(interaction.dragOrigin.y + moved, 0.0f, range);
+                }
             } else if (pressed->type == ElementType::Slider) {
                 if (const Placed* slider = FindPlaced(placed, pressed->id)) {
                     const auto [start, end] = SliderTrack(slider->rect);
@@ -927,7 +1069,11 @@ namespace Flux::Interface {
         if (!pressed || !pressed->visible || pointer.released || !pointer.down) {
             interaction.pressed = 0;
             interaction.closePressed = false;
+            interaction.thumbPressed = false;
             interaction.pressedTab = -1;
+        }
+        if (pointer.enabled && pointer.wheel != 0.0f) {
+            ScrollAt(document, placed, pointer.position, pointer.wheel, scale);
         }
 
         if (pointer.escape) {

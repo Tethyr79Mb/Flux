@@ -18,7 +18,7 @@
 
 // Interfaces du jeu (menus, fenêtres, écrans de réglages) : un fichier .fluxui construit dans l'éditeur d'interface,
 // affiché à l'écran par InterfaceComponent. Un document est un arbre d'éléments (fenêtre, cadre, texte, image,
-// bouton, case à cocher, curseur, barre de progression, onglets) placés par une ancre dans leur parent, en pixels d'un écran de 1080 lignes comme
+// bouton, case à cocher, curseur, barre de progression, onglets, zone de défilement) placés par une ancre dans leur parent, en pixels d'un écran de 1080 lignes comme
 // les textes à l'écran (ScreenUi) : l'interface garde ses proportions dans toutes les résolutions.
 namespace Flux::Interface {
     inline constexpr float ReferenceHeight = 1080.0f;
@@ -33,6 +33,7 @@ namespace Flux::Interface {
         Slider,
         Tabs,     // barre d'onglets : chaque enfant est une page, nommée sur son onglet ; une seule page affichée
         ProgressBar, // remplie selon sa valeur (vie, chargement) ; le joueur ne la change pas
+        ScrollArea,  // zone de défilement : ses enfants défilent à la molette ou par l'ascenseur s'ils dépassent en bas
         Count,
     };
 
@@ -101,6 +102,11 @@ namespace Flux::Interface {
         Math::LinearColor tint{1.0f, 1.0f, 1.0f}; // multiplie l'image
         bool keepAspect = true; // image entière dans le rectangle, proportions gardées (sinon étirée)
 
+        // Zone de défilement : largeur de l'ascenseur (titleColor : sa piste, accent : la poignée, hoverColor : survolée).
+        float scrollbarWidth = 12.0f;
+        // En jeu et dans l'éditeur seulement (pas enregistré) : défilement, en pixels de référence depuis le haut.
+        float scroll = 0.0f;
+
         // Fenêtre (et onglets : hauteur de la barre, fond d'un onglet).
         float titleHeight = 40.0f; // 0 : pas de barre de titre
         Math::LinearColor titleColor{0.0f, 0.0f, 0.0f, 0.0f};
@@ -126,7 +132,7 @@ namespace Flux::Interface {
         // (ou à la place du texte entier s'il n'en a pas).
         std::optional<std::string> boundText;
 
-        std::vector<Element> children; // fenêtres, cadres et onglets seulement ; dessinés par-dessus leur parent
+        std::vector<Element> children; // fenêtres, cadres, onglets et zones de défilement seulement ; dessinés par-dessus leur parent
     };
 
     struct Document
@@ -142,7 +148,7 @@ namespace Flux::Interface {
     FLUX_API std::span<const std::string_view> GetActionNames();
     // L'action vise une fenêtre par son nom (ouvrir, fermer, basculer).
     FLUX_API bool TargetsWindow(ButtonAction action);
-    // Fenêtres, cadres et onglets reçoivent des enfants.
+    // Fenêtres, cadres, onglets et zones de défilement reçoivent des enfants.
     FLUX_API bool IsContainer(ElementType type);
     // L'action vise une page d'onglets par son nom.
     FLUX_API bool TargetsTab(ButtonAction action);
@@ -230,6 +236,8 @@ namespace Flux::Interface {
         Rect clip;   // partie visible : découpée par les parents
         std::uint32_t parentId = 0;
         int depth = 0;
+        // Zone de défilement : hauteur du contenu qui ne tient pas (pixels de la vue) ; 0 si tout tient.
+        float scrollRange = 0.0f;
     };
 
     // Échelle de la vue : pixels de la vue par pixel de référence.
@@ -255,6 +263,15 @@ namespace Flux::Interface {
                                          const std::optional<Rect>& clip = std::nullopt, std::uint32_t reveal = 0);
     // Élément visible sous le point, le plus en avant (0 : aucun).
     FLUX_API std::uint32_t FindAt(std::span<const Placed> placed, Math::Vector2f point);
+    // Zone de défilement : décalage de son contenu (pixels de la vue, entre 0 et scrollRange), la piste de
+    // l'ascenseur (au bord droit) et sa poignée (proportionnelle à la part visible). Sans ascenseur si tout tient.
+    FLUX_API float GetScrollOffset(const Placed& area, float scale);
+    FLUX_API std::optional<Rect> GetScrollbarTrack(const Placed& area, float scale);
+    FLUX_API std::optional<Rect> GetScrollbarThumb(const Placed& area, float scale);
+    // Molette (crans, positifs vers le haut) au-dessus du point : fait défiler la zone la plus en avant sous lui qui
+    // a du contenu caché. Retourne son identifiant (0 : aucune).
+    FLUX_API std::uint32_t ScrollAt(Document& document, std::span<const Placed> placed, Math::Vector2f point, float notches,
+                                    float scale);
 
     // Souris en jeu : ce que l'interface en fait (survol, clic, glisser).
     struct Pointer
@@ -265,6 +282,7 @@ namespace Flux::Interface {
         bool released = false;
         bool enabled = true; // false : la souris est ailleurs (panneau de l'éditeur), rien n'est survolé
         bool escape = false; // touche Échap appuyée à cette frame
+        float wheel = 0.0f;  // crans de molette à cette frame (positifs vers le haut)
     };
 
     // État de l'interface en jeu, d'une frame à l'autre.
@@ -279,6 +297,8 @@ namespace Flux::Interface {
         bool closePressed = false;      // pressed est une fenêtre tenue par sa croix (pas par sa barre de titre)
         int hoveredTab = -1;            // onglet survolé des onglets hovered
         int pressedTab = -1;            // onglet tenu des onglets pressed
+        std::uint32_t thumbHovered = 0; // zone de défilement dont la poignée de l'ascenseur est survolée
+        bool thumbPressed = false;      // pressed est une zone de défilement tenue par sa poignée
         Math::Vector2f dragStart;
         Math::Vector2f dragOrigin;
         // Résultats de la frame : action d'un bouton cliqué que l'interface ne fait pas elle-même (changer de

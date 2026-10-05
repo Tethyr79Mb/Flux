@@ -39,6 +39,7 @@ namespace FluxEditor {
                 case ElementType::Slider: return UI::Icon::Slider;
                 case ElementType::Tabs: return UI::Icon::Tabs;
                 case ElementType::ProgressBar: return UI::Icon::ProgressBar;
+                case ElementType::ScrollArea: return UI::Icon::ScrollArea;
                 case ElementType::Count: break;
             }
             return UI::Icon::None;
@@ -81,7 +82,7 @@ namespace FluxEditor {
                     Add(static_cast<ElementType>(type));
                 }
             }
-            ui.TextDisabled("Dans la fenêtre, le cadre ou la page sélectionnés\n(sans sélection : dans la dernière fenêtre) ;\nsur des onglets, un cadre ajoute une page.");
+            ui.TextDisabled("Dans la fenêtre, le cadre, la zone ou la page sélectionnés\n(sans sélection : dans la dernière fenêtre) ;\nsur des onglets, un cadre ajoute une page.");
             ui.Separator();
             ui.TextDisabled("Éléments (le dernier passe devant)");
 
@@ -367,6 +368,7 @@ namespace FluxEditor {
             }
             ui.SameLine();
             ui.TextDisabled("Molette : zoom, clic droit : déplacer");
+            ui.TextDisabled("Sur une zone de défilement, la molette la fait défiler\n(Ctrl+molette : zoom).");
             ui.Separator();
 
             Interface::Element* element = GetSelected();

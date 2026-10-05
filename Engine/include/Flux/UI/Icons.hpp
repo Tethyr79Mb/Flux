@@ -34,6 +34,7 @@ namespace Flux::UI {
         Slider,
         ProgressBar, // barre de progression d'interface, remplie aux deux tiers
         Tabs,        // onglets d'interface : trois onglets, le premier choisi, sur une page
+        ScrollArea,  // zone de défilement : des lignes et un ascenseur à droite
         // Commandes et panneaux de l'éditeur.
         Play,      // triangle vert
         Pause,     // deux barres

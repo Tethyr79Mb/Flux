@@ -463,6 +463,94 @@ namespace {
         CHECK(!Interface::Find(*loaded, text.id)->boundText);
         return true;
     }
+
+    // Zone de défilement : contenu remonté et découpé, ascenseur seulement s'il faut, molette, piste et poignée.
+    bool RunScrollTests() {
+        Interface::Document document;
+        Interface::Element area = Interface::MakeElement(document, Interface::ElementType::ScrollArea);
+        area.anchor = Interface::Anchor::TopLeft;
+        area.size = {400.0f, 300.0f};
+        area.scrollbarWidth = 12.0f;
+        for (int index = 0; index < 10; ++index) {
+            Interface::Element line = Interface::MakeElement(document, Interface::ElementType::Button);
+            line.anchor = Interface::Anchor::TopLeft;
+            line.position = {0.0f, 60.0f * static_cast<float>(index)};
+            line.size = {200.0f, 50.0f}; // le dernier finit à 590 : 290 cachés sous la zone
+            area.children.push_back(line);
+        }
+        const std::uint32_t areaId = area.id;
+        const std::uint32_t firstId = area.children.front().id;
+        document.roots = {area};
+        const Vector2f min{0.0f, 0.0f};
+        const Vector2f max{1920.0f, 1080.0f};
+        const auto placedOf = [&](std::uint32_t id) {
+            const std::vector<Interface::Placed> placed = Interface::Arrange(document, min, max);
+            const auto found = std::ranges::find_if(placed, [id](const Interface::Placed& item) { return item.element->id == id; });
+            return found == placed.end() ? Interface::Placed{} : *found;
+        };
+
+        Interface::Placed placed = placedOf(areaId);
+        CHECK(std::abs(placed.scrollRange - 290.0f) < 0.01f);
+        const auto track = Interface::GetScrollbarTrack(placed, 1.0f);
+        CHECK(track && Near(track->min, {388.0f, 0.0f}) && Near(track->max, {400.0f, 300.0f}));
+        // Les enfants s'arrêtent avant l'ascenseur et ne se voient que dans la zone.
+        Interface::Placed first = placedOf(firstId);
+        CHECK(Near(first.clip.max, {388.0f, 300.0f}));
+
+        // Molette vers le bas : un cran remonte le contenu de 60 ; trop de crans s'arrêtent au bout.
+        Interface::Interaction interaction;
+        const auto frame = [&](Vector2f mouse, bool down, bool pressed, bool released, float wheel) {
+            Interface::Update(document, interaction, min, max,
+                              {.position = mouse, .down = down, .pressed = pressed, .released = released, .wheel = wheel});
+        };
+        frame({100.0f, 100.0f}, false, false, false, -1.0f);
+        CHECK(Interface::Find(document, areaId)->scroll == 60.0f && interaction.wantsMouse);
+        first = placedOf(firstId);
+        CHECK(Near(first.rect.min, {0.0f, -60.0f}));
+        frame({100.0f, 100.0f}, false, false, false, -10.0f);
+        CHECK(Interface::Find(document, areaId)->scroll == 290.0f);
+        // Hors de la zone, la molette ne fait rien (elle reste au jeu).
+        frame({900.0f, 900.0f}, false, false, false, 3.0f);
+        CHECK(Interface::Find(document, areaId)->scroll == 290.0f && !interaction.wantsMouse);
+
+        // Clic sur la piste au-dessus de la poignée : une page vers le haut (0,9 x 300).
+        placed = placedOf(areaId);
+        auto thumb = Interface::GetScrollbarThumb(placed, 1.0f);
+        CHECK(thumb && std::abs(thumb->max.y - 300.0f) < 0.01f); // tout en bas
+        frame({394.0f, 5.0f}, true, true, false, 0.0f);
+        frame({394.0f, 5.0f}, false, false, true, 0.0f);
+        CHECK(std::abs(Interface::Find(document, areaId)->scroll - 20.0f) < 0.01f);
+
+        // Poignée tenue et glissée de toute la course libre : jusqu'au bout.
+        placed = placedOf(areaId);
+        thumb = Interface::GetScrollbarThumb(placed, 1.0f);
+        CHECK(thumb.has_value());
+        const float free = 300.0f - (thumb->max.y - thumb->min.y);
+        const Vector2f grab{394.0f, 0.5f * (thumb->min.y + thumb->max.y)};
+        frame(grab, true, true, false, 0.0f);
+        CHECK(interaction.pressed == areaId && interaction.thumbPressed);
+        frame(grab + Vector2f{0.0f, free}, true, false, false, 0.0f);
+        CHECK(std::abs(Interface::Find(document, areaId)->scroll - 290.0f) < 0.1f);
+        frame(grab + Vector2f{0.0f, free}, false, false, true, 0.0f);
+        CHECK(interaction.pressed == 0 && !interaction.thumbPressed);
+
+        // Tout tient : pas d'ascenseur, la molette ne bouge rien.
+        Interface::Find(document, areaId)->children.resize(2);
+        Interface::Find(document, areaId)->scroll = 0.0f;
+        placed = placedOf(areaId);
+        CHECK(placed.scrollRange <= 0.0f && !Interface::GetScrollbarTrack(placed, 1.0f));
+        CHECK(Interface::ScrollAt(document, Interface::Arrange(document, min, max), {100.0f, 100.0f}, -1.0f, 1.0f) == 0);
+
+        // Fichier : largeur de l'ascenseur gardée, défilement non.
+        Interface::Find(document, areaId)->scroll = 40.0f;
+        Interface::Find(document, areaId)->scrollbarWidth = 16.0f;
+        auto loaded = Interface::LoadFromString(Interface::SaveToString(document));
+        CHECK(loaded.has_value());
+        const Interface::Element* loadedArea = Interface::Find(*loaded, areaId);
+        CHECK(loadedArea && loadedArea->type == Interface::ElementType::ScrollArea && loadedArea->scrollbarWidth == 16.0f
+              && loadedArea->scroll == 0.0f && loadedArea->children.size() == 2);
+        return true;
+    }
 }
 
 bool RunInterfaceTests() {
@@ -471,5 +559,6 @@ bool RunInterfaceTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests() && RunBindingTests();
+    return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests() && RunBindingTests()
+        && RunScrollTests();
 }
