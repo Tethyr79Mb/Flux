@@ -932,7 +932,7 @@ namespace Flux {
         }
         // Recul libre d'une sphère (la caméra) : fraction de `sweep` parcourue avant de toucher, dans chaque monde.
         float CastSphere(const Scene& scene, Entity followed, const Math::WorldPosition& from, const Math::Vector3f& sweep,
-                         float radius) const {
+                         float radius, Entity ignoredShip) const {
             if (!anchored) {
                 return 1.0f;
             }
@@ -941,10 +941,16 @@ namespace Flux {
             for (Entity ship = scene.GetShip(followed); ship != NullEntity; ship = scene.GetShip(ship)) {
                 aboard.insert(ship);
             }
+            if (ignoredShip != NullEntity) {
+                aboard.insert(ignoredShip); // sa coque, et les copies de son décor dans le monde extérieur
+            }
             const Math::Vector3d start = Math::Delta(anchor, from);
             const JPH::RefConst<JPH::Shape> sphere = new JPH::SphereShape(radius);
             float fraction = 1.0f;
             for (const std::unique_ptr<Grid>& grid : grids) {
+                if (ignoredShip != NullEntity && grid->frame == ignoredShip) {
+                    continue; // son décor de bord, dans son propre monde
+                }
                 // Les objets simulés (caisses) et les personnages ne repoussent pas la caméra : elle sauterait sans
                 // cesse. Seuls les décors immobiles et les coques comptent.
                 class Filter final : public JPH::BodyFilter {
@@ -1015,10 +1021,10 @@ namespace Flux {
     }
 
     float PhysicsWorld::CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from,
-                                   const Math::Vector3f& direction, float distance, float radius) const {
+                                   const Math::Vector3f& direction, float distance, float radius, Entity ignoredShip) const {
         if (distance <= 0.0f) {
             return 0.0f;
         }
-        return distance * m_impl->CastSphere(scene, player, from, direction * distance, radius);
+        return distance * m_impl->CastSphere(scene, player, from, direction * distance, radius, ignoredShip);
     }
 }

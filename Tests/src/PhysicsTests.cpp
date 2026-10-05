@@ -337,6 +337,11 @@ namespace {
         const Math::WorldPosition inside{{}, {0.0, 1.6, -10.0}};
         CHECK(std::abs(world.CastCamera(scene, hero, inside, {1.0f, 0.0f, 0.0f}, 10.0f, Radius) - 1.7f) < 0.05f);
         CHECK(world.CastCamera(scene, hero, inside, {-1.0f, 0.0f, 0.0f}, 2.5f, Radius) == 2.5f);
+
+        // Vue extérieure du vaisseau piloté : ni sa coque, ni son décor de bord (la cloison, ni sa copie dans le monde
+        // extérieur) n'arrêtent la caméra ; le mur, si.
+        CHECK(world.CastCamera(scene, hero, inside, {1.0f, 0.0f, 0.0f}, 10.0f, Radius, ship) == 10.0f);
+        CHECK(std::abs(world.CastCamera(scene, hero, inside, forward, 30.0f, Radius, ship) - 14.7f) < 0.05f);
         return true;
     }
 
