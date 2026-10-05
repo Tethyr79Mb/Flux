@@ -90,6 +90,9 @@ namespace FluxEditor {
             component.pilot = true;
             component.reach = 10.0f;
             component.exit = {-3.5f, -2.3f, 1.4f};
+            // Tête du pilote calée contre l'appui-tête incliné : assez haut et en arrière pour voir le tableau de bord
+            // (1 à 1,5 m devant, sous la ligne des yeux) et le nez par la verrière.
+            component.eye = {0.0f, 1.15f, 0.2f};
             // Bruit des moteurs, à l'arrière (tuyères) : plus fort et plus aigu avec la vitesse.
             const Entity engines = scene.CreateEntity("Moteurs", ship);
             scene.Get<TransformComponent>(engines).position = {0.0, 1.2, 15.0};
@@ -316,7 +319,8 @@ namespace FluxEditor {
                 scene.Add<ShipComponent>(entity);
                 AddShipBlockout(scene, entity);
             } else if (item == Item::Fighter) {
-                scene.Add<ShipComponent>(entity);
+                // Chasseur : vire vite, pour suivre la souris (30 °/s par défaut, celle d'un transport, paraît mou).
+                scene.Add<ShipComponent>(entity).turnRate = 90.0f;
                 AddFighter(scene, entity);
             } else if (item == Item::Sound) {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);

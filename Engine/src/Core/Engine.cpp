@@ -516,7 +516,17 @@ namespace Flux {
     }
 
     Entity Engine::GetCockpitSeat(Entity player) const {
-        return m_cockpitView && player != NullEntity ? Seats::GetPilotSeat(m_scene, player) : NullEntity;
+        // Dès qu'il s'assoit (animation comprise) et jusqu'à ce qu'il soit debout : la vue part du siège, dans l'axe
+        // du vaisseau, au lieu de rester tournée vers où regardait la caméra quand il est monté.
+        if (!m_cockpitView || player == NullEntity) {
+            return NullEntity;
+        }
+        const auto* character = m_scene.TryGet<CharacterComponent>(player);
+        if (!character || character->seatState == SeatState::Standing || !m_scene.IsValid(character->seat)) {
+            return NullEntity;
+        }
+        const auto* seat = m_scene.TryGet<SeatComponent>(character->seat);
+        return seat && seat->pilot ? character->seat : NullEntity;
     }
 
     void Engine::TurnWithShip(Entity player) {
