@@ -23,7 +23,7 @@ namespace Flux::Interface {
         constexpr int MaxDepth = 64; // un fichier abîmé ou malveillant ne fait pas déborder la pile
 
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeKeys{
-            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs", "progressBar"};
+            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs", "progressBar", "scrollArea"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorKeys{
             "topLeft", "top", "topRight", "left", "center", "right", "bottomLeft", "bottom", "bottomRight", "stretch"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(TextAlign::Count)> AlignKeys{"left", "center", "right"};

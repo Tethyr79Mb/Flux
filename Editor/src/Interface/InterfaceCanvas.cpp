@@ -125,8 +125,17 @@ namespace FluxEditor {
         const Vector2f mouse = input.GetMousePosition();
         const bool mouseFree = !ui.WantsMouse() && area.Contains(mouse);
 
-        // Molette : zoom autour de la souris. Clic droit ou du milieu maintenu : déplacer la vue.
-        if (const float wheel = input.GetWheelDelta(); mouseFree && wheel != 0.0f) {
+        // Molette : zoom autour de la souris, ou défilement d'une zone de défilement qui a du contenu caché (pour voir
+        // la suite ; pas enregistré), sauf Ctrl enfoncé. Clic droit ou du milieu maintenu : déplacer la vue.
+        const float wheel = mouseFree ? input.GetWheelDelta() : 0.0f;
+        bool scrolled = false;
+        if (wheel != 0.0f && !input.IsControlDown()) {
+            const Interface::Rect screen = GetScreenRect(open, view);
+            const std::vector<Interface::Placed> placed =
+                Interface::Arrange(open.document, screen.min, screen.max, area, open.selection);
+            scrolled = Interface::ScrollAt(open.document, placed, mouse, wheel, Interface::GetScale(screen.min, screen.max)) != 0;
+        }
+        if (wheel != 0.0f && !scrolled) {
             const float zoom = std::clamp(open.zoom * std::pow(1.15f, wheel), 0.1f, 10.0f);
             const Vector2f viewCenter = (view.min + view.max) * 0.5f;
             const Vector2f center = viewCenter + open.pan;

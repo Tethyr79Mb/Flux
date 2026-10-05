@@ -773,7 +773,8 @@ namespace Flux {
                                                  .enabled = !m_ui->WantsMouse() && !m_window->IsCursorLocked(),
                                                  // Une seule interface par Échap : la première dessinée qui s'en sert.
                                                  .escape = input.WasKeyPressed(Key::Escape) && !m_ui->WantsKeyboard()
-                                                        && !m_escapeUsed};
+                                                        && !m_escapeUsed,
+                                                 .wheel = input.GetWheelDelta()};
                 Interface::Interaction& interaction = instance->interaction;
                 Interface::Update(instance->document, interaction, request.viewMin, request.viewMax, pointer);
                 SyncInterfaceBindings(instance->document.roots, interaction.changed);
