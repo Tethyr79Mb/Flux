@@ -66,7 +66,7 @@ namespace FluxEditor {
 
         // Chasseur monoplace (modèle du projet, dans Modeles/Chasseur) : coque affichée et collision en maillage
         // simplifié, verrière qui retient la caméra, poste de pilotage. Origine du vaisseau : le plancher du cockpit,
-        // l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : E à moins de 10 m du siège met
+        // l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : F à moins de 10 m du siège met
         // directement aux commandes ; en se relevant, le pilote se retrouve au sol, devant l'aile gauche.
         void AddFighter(Scene& scene, Entity ship) {
             const Entity hull = scene.CreateEntity("Coque", ship);

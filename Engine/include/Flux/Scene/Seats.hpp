@@ -11,10 +11,12 @@ namespace Flux {
     // Commandes du joueur pour les sièges (SeatComponent) et le poste de pilotage.
     struct SeatInput
     {
-        bool interact = false; // E : s'asseoir sur le siège le plus proche, ou se relever
+        bool interact = false; // F : s'asseoir sur le siège le plus proche, ou se relever
         float thrust = 0.0f;   // Z/S : -1 à 1, vers l'avant
-        float yaw = 0.0f;      // Q/D : -1 à 1, vers la gauche
-        float lift = 0.0f;     // Espace/Ctrl : -1 à 1, monter le long du haut du vaisseau (décoller, se poser)
+        float strafe = 0.0f;   // Q/D : -1 à 1, glisser vers la droite
+        float lift = 0.0f;     // Maj/Ctrl : -1 à 1, monter le long du haut du vaisseau (décoller, se poser)
+        float roll = 0.0f;     // A/E : -1 à 1, rouler vers la droite
+        bool brake = false;    // Espace : ralentir jusqu'à l'arrêt
         // Souris : rotation demandée pendant cette image (radians ; lacet vers la gauche, tangage nez vers le haut),
         // ajoutée aux touches ; le vaisseau la suit sans dépasser sa vitesse de rotation.
         float mouseYaw = 0.0f;

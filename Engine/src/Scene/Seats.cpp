@@ -56,22 +56,32 @@ namespace Flux::Seats {
             transform.rotation = Math::Normalize(inverse * scene.GetWorldRotation(seat));
         }
 
-        // Le pilote change la vitesse du vaisseau : poussée le long de son -z (sans commande, il garde sa vitesse,
-        // comme dans l'espace), montée et descente tant que les touches sont tenues (lâchées : il reste à sa hauteur),
-        // lacet (touches et souris) et tangage (souris).
+        // Pilotage sur six axes, façon combat spatial. Poussée le long de -z : sans commande, le vaisseau garde sa
+        // vitesse (comme dans l'espace) ; glissement sur les côtés et montée/descente tant que les touches sont tenues
+        // (lâchées, il revient à l'arrêt sur ces axes : il reste à sa hauteur) ; le frein ramène tout à l'arrêt. Les
+        // vitesses changent au plus de ShipComponent::acceleration. Lacet et tangage à la souris, roulis aux touches.
         void Pilot(ShipComponent& ship, double deltaSeconds, const SeatInput& input) {
             const float delta = static_cast<float>(deltaSeconds);
-            ship.velocity.z -= input.thrust * ship.acceleration * delta;
-            ship.velocity.z = std::clamp(ship.velocity.z, -ship.maxSpeed, ship.maxSpeed * 0.25f);
-            ship.velocity.y = input.lift * ship.verticalSpeed;
             if (delta <= 0.0f) {
-                return; // pause : la souris ne tourne rien
+                return; // pause
             }
-            // Vitesse de rotation voulue : touches, plus le mouvement de la souris pendant cette image, bornée.
+            const float step = ship.acceleration * delta;
+            const auto approach = [step](float& value, float target) { value += std::clamp(target - value, -step, step); };
+            if (input.brake) {
+                approach(ship.velocity.x, 0.0f);
+                approach(ship.velocity.y, 0.0f);
+                approach(ship.velocity.z, 0.0f);
+            } else {
+                ship.velocity.z = std::clamp(ship.velocity.z - input.thrust * step, -ship.maxSpeed, ship.maxSpeed * 0.25f);
+                approach(ship.velocity.x, input.strafe * ship.strafeSpeed);
+                approach(ship.velocity.y, input.lift * ship.strafeSpeed);
+            }
+            // Vitesse de rotation voulue : le mouvement de la souris pendant cette image, bornée.
             const float rate = ship.turnRate;
             constexpr float Degrees = 180.0f / std::numbers::pi_v<float>; // vitesses de rotation en °/s, souris en radians
-            ship.angularVelocity.y = std::clamp(input.yaw * rate + input.mouseYaw * Degrees / delta, -rate, rate); // vers la gauche
+            ship.angularVelocity.y = std::clamp(input.mouseYaw * Degrees / delta, -rate, rate); // vers la gauche
             ship.angularVelocity.x = std::clamp(input.mousePitch * Degrees / delta, -rate, rate);
+            ship.angularVelocity.z = -input.roll * rate; // +z : aile droite vers le haut, donc vers la gauche
         }
     }
 

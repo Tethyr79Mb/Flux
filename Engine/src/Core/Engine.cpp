@@ -192,9 +192,12 @@ namespace Flux {
         actions.Add("Aller à droite", "Déplacement", Key::D, Key::Right);
         actions.Add("Courir", "Déplacement", Key::LeftShift);
         actions.Add("Sauter", "Déplacement", Key::Space);
-        actions.Add("Interagir", "Déplacement", Key::E);
-        actions.Add("Monter", "Vaisseau", Key::Space);
+        actions.Add("Interagir", "Déplacement", Key::F);
+        actions.Add("Freiner", "Vaisseau", Key::Space);
+        actions.Add("Monter", "Vaisseau", Key::LeftShift);
         actions.Add("Descendre", "Vaisseau", Key::LeftControl);
+        actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
+        actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
             const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -398,14 +401,16 @@ namespace Flux {
         };
 
         // Personnage du joueur, par rapport à la caméra ; assis, les mêmes actions pilotent le vaisseau (poste de
-        // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, E par défaut).
+        // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, F par défaut).
         CharacterInput character;
         SeatInput seatInput;
         seatInput.interact = WasActionPressed("Interagir");
         if (seated) {
             seatInput.thrust = axis("Avancer", "Reculer");
-            seatInput.yaw = axis("Aller à gauche", "Aller à droite");
+            seatInput.strafe = axis("Aller à droite", "Aller à gauche");
             seatInput.lift = axis("Monter", "Descendre");
+            seatInput.roll = axis("Rouler à droite", "Rouler à gauche");
+            seatInput.brake = IsActionDown("Freiner");
             seatInput.mouseYaw = m_steerYaw;
             seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {

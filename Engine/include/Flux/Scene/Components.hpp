@@ -211,7 +211,7 @@ namespace Flux {
     // Personnage qui marche (Jolt CharacterVirtual) : une capsule debout dont le bas est l'origine de l'entité,
     // comme les pieds d'un modèle glTF. Doit être une racine ou un enfant direct d'un vaisseau (ShipComponent).
     // Le joueur le dirige au clavier pendant le jeu
-    // (ZQSD, Maj pour courir, Espace pour sauter, E pour s'asseoir) et la caméra le suit.
+    // (ZQSD, Maj pour courir, Espace pour sauter, F pour s'asseoir) et la caméra le suit.
     struct CharacterComponent
     {
         float radius = 0.3f;
@@ -228,12 +228,12 @@ namespace Flux {
         float seatTime = 0.0f; // secondes depuis le début de l'étape en cours
     };
 
-    // Siège : le joueur s'y assoit (touche E, à moins de `reach` mètres de lui) et s'en relève (E). Son origine est
+    // Siège : le joueur s'y assoit (touche F, à moins de `reach` mètres de lui) et s'en relève (F). Son origine est
     // au sol, là où se posent les pieds du personnage, et il regarde vers son -z : le personnage assis aussi. Debout,
     // on en sort à un demi-mètre devant. Un siège d'un autre vaisseau que celui du joueur (ou du dehors) le fait
-    // monter à bord : avec une grande portée, E près du vaisseau met directement au poste de pilotage. Le poste de pilotage dirige le vaisseau au-dessus de lui (ShipComponent) :
-    // Z/S pour accélérer et freiner, Q/D pour virer, Espace/Ctrl pour cabrer et piquer ; vue depuis l'œil du pilote
-    // (V : vue extérieure).
+    // monter à bord : avec une grande portée, F près du vaisseau met directement au poste de pilotage. Le poste de pilotage dirige le vaisseau au-dessus de lui (ShipComponent) :
+    // souris pour virer et cabrer, Z/S pour pousser en avant ou en arrière, Q/D pour glisser sur les côtés, Maj/Ctrl
+    // pour monter et descendre, A/E pour rouler, Espace pour s'arrêter ; vue depuis l'œil du pilote (V : vue extérieure).
     struct SeatComponent
     {
         bool pilot = false;
@@ -256,8 +256,8 @@ namespace Flux {
         Math::Vector3f angularVelocity; // °/s autour de ses axes (y : virer, x : tangage, z : roulis)
         float maxSpeed = 100.0f;       // m/s, en marche avant (le quart en arrière)
         float acceleration = 10.0f;    // m/s², moteurs à fond
-        float turnRate = 30.0f;        // °/s, lacet et tangage commandés par le pilote
-        float verticalSpeed = 10.0f;   // m/s, montée et descente commandées par le pilote (décoller, se poser)
+        float turnRate = 30.0f;        // °/s, lacet, tangage et roulis commandés par le pilote
+        float strafeSpeed = 10.0f;     // m/s, glissement sur les côtés, montée et descente (décoller, se poser)
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

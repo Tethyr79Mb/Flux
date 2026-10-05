@@ -118,7 +118,7 @@ namespace Flux {
             .Field("maxSpeed", "Vitesse max (m/s)", &ShipComponent::maxSpeed, {.speed = 0.5, .min = 0.0, .max = 1.0e5, .decimals = 1})
             .Field("acceleration", "Accélération (m/s²)", &ShipComponent::acceleration, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1})
             .Field("turnRate", "Virage (°/s)", &ShipComponent::turnRate, {.speed = 0.5, .min = 0.0, .max = 720.0, .decimals = 1})
-            .Field("verticalSpeed", "Montée et descente (m/s)", &ShipComponent::verticalSpeed, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1});
+            .Field("strafeSpeed", "Glissement (m/s)", &ShipComponent::strafeSpeed, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1});
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})
