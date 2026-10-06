@@ -25,10 +25,9 @@ namespace Flux {
         // Maillages de collision gardés en mémoire, lisibles ou non (tests, panneau Moteur).
         int GetMeshCount() const;
 
-        struct Impl; // Engine/src/Physics/PhysicsContextImpl.hpp
-        Impl& GetImpl() { return *m_impl; }
-
         private:
+        friend class PhysicsWorld; // seul à voir le détail (Engine/src/Physics/PhysicsContextImpl.hpp)
+        struct Impl;
         std::unique_ptr<Impl> m_impl;
     };
 }

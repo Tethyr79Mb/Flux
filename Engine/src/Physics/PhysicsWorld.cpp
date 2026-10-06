@@ -229,8 +229,8 @@ namespace Flux {
         // décor ; nullptr : rien de solide, il passe partout.
         std::unordered_map<Entity, JPH::RefConst<JPH::Shape>> shipShapes;
 
-        explicit Impl(std::shared_ptr<PhysicsContext> given)
-            : context(given ? std::move(given) : std::make_shared<PhysicsContext>()), shared(context->GetImpl()) {
+        Impl(std::shared_ptr<PhysicsContext> owner, PhysicsContext::Impl& details)
+            : context(std::move(owner)), shared(details) {
             grids.push_back(CreateGrid(NullEntity));
         }
 
@@ -1152,7 +1152,13 @@ namespace Flux {
         }
     };
 
-    PhysicsWorld::PhysicsWorld(std::shared_ptr<PhysicsContext> context) : m_impl(std::make_unique<Impl>(std::move(context))) {}
+    PhysicsWorld::PhysicsWorld(std::shared_ptr<PhysicsContext> context) {
+        if (!context) {
+            context = std::make_shared<PhysicsContext>();
+        }
+        PhysicsContext::Impl& details = *context->m_impl;
+        m_impl = std::make_unique<Impl>(std::move(context), details);
+    }
 
     PhysicsWorld::~PhysicsWorld() = default;
 
