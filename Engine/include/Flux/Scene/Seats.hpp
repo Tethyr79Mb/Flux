@@ -21,6 +21,9 @@ namespace Flux {
         // ajoutée aux touches ; le vaisseau la suit sans dépasser sa vitesse de rotation.
         float mouseYaw = 0.0f;
         float mousePitch = 0.0f;
+        // Haut du lieu où est le vaisseau piloté (dans le monde, unitaire ; opposé à la gravité du dehors), pour
+        // ShipComponent::levelAssist ; nul sans gravité (pas d'aide).
+        Math::Vector3f up{};
     };
 
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège

@@ -273,6 +273,10 @@ namespace Flux {
         float turnRate = 30.0f;        // °/s, lacet, tangage et roulis commandés par le pilote
         float turnAcceleration = 360.0f; // °/s², la vitesse de rotation commandée est atteinte progressivement
         float strafeSpeed = 10.0f;     // m/s, glissement sur les côtés, montée et descente (décoller, se poser)
+        // Aide au pilotage là où il y a une gravité (planète, sol) : sans roulis commandé, les ailes reviennent à plat
+        // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Touche H en vol.
+        bool levelAssist = true;
+        float levelRate = 1.5f;        // 1/s : vitesse de retour à plat (1,5 : l'inclinaison fond de 78 % par seconde)
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;

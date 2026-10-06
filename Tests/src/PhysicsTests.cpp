@@ -508,6 +508,32 @@ namespace {
         CHECK(scene.GetParent(hero) == NullEntity);
         const Math::Vector3d outside = Math::Delta({}, scene.GetWorldPosition(hero));
         CHECK(std::abs(outside.x + 3.0) < 0.05 && std::abs(outside.y) < 0.05 && std::abs(outside.z + 1.0) < 0.05);
+
+        // Remonte aux commandes. Stabilisation à plat : décolle, s'incline à droite, lâche le roulis ; les ailes reviennent à plat (sans
+        // l'aide, l'inclinaison reste).
+        frames(Frame, {.interact = true});
+        CHECK(Seats::GetPilotSeat(scene, hero) == seat);
+        const Math::Vector3f up{0.0f, 1.0f, 0.0f};
+        const auto bank = [&] {
+            const Math::Vector3f local = scene.GetWorldRotation(ship).Conjugate().Rotate(up);
+            return std::atan2(local.x, local.y) * 180.0f / std::numbers::pi_v<float>;
+        };
+        frames(1.0, {.lift = 1.0f, .up = up});
+        frames(0.5, {.roll = 1.0f, .up = up});
+        const float banked = bank();
+        CHECK(banked < -8.0f);
+        frames(3.0, {.up = up});
+        CHECK(std::abs(bank()) < 1.0f);
+        ShipComponent& flight = scene.Get<ShipComponent>(ship);
+        flight.levelAssist = false;
+        frames(0.5, {.roll = 1.0f, .up = up});
+        frames(0.2, {.up = up}); // le roulis s'arrête
+        const float kept = bank();
+        frames(1.0, {.up = up});
+        CHECK(kept < -8.0f && std::abs(bank() - kept) < 1.0f);
+        flight.levelAssist = true;
+        frames(3.0, {.up = up});
+        CHECK(std::abs(bank()) < 1.0f);
         return true;
     }
 
