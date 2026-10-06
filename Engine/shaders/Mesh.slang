@@ -505,8 +505,12 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
                      + PlanetNoise(local * (1.0 / 0.29)) * 0.15 * saturate(1.0 - distance / 30.0) - 0.5;
 
     const float rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
-    const float sand = smoothstep(planet.shape.w + 6.0, planet.shape.w - 6.0, altitude + macro * 30.0) * (1.0 - rock);
-    const float snow = smoothstep(planet.shape.z - 30.0, planet.shape.z + 30.0, altitude + macro * 150.0) * smoothstep(0.5, 0.65, flatness);
+    // Limites fondues et déplacées par les taches, en proportion du relief (6 m et 30 m pour un relief de 800 m).
+    const float relief = max(planet.shape.y, 1.0);
+    const float sand = smoothstep(planet.shape.w + 0.0075 * relief, planet.shape.w - 0.0075 * relief, altitude + macro * 0.0375 * relief)
+                     * (1.0 - rock);
+    const float snow = smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief)
+                     * smoothstep(0.5, 0.65, flatness);
     // L'herbe varie entre vert foncé et plus sec (jaune) par taches.
     const float dry = saturate(macro * 1.6 + 0.5);
     float4 ground = float4(planet.grass.rgb * lerp(float3(0.8, 0.85, 0.9), float3(1.35, 1.2, 0.85), dry), planet.grass.w);

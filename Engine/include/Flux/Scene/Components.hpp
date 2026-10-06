@@ -167,7 +167,8 @@ namespace Flux {
         float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
         std::int32_t seed = 1;
         // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), herbe
-        // sur le plat, sable sous sandHeight, neige au-dessus de snowHeight (altitudes au-dessus du niveau zéro).
+        // sur le plat, sable sous sandLevel, neige au-dessus de snowLevel (en % du relief, au-dessus du niveau zéro :
+        // ils suivent quand le relief change).
         // Sans zones : roche partout (une lune).
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;
@@ -175,8 +176,8 @@ namespace Flux {
         Math::LinearColor grassColor{0.07f, 0.11f, 0.035f};
         Math::LinearColor sandColor{0.5f, 0.42f, 0.3f};
         Math::LinearColor snowColor{0.85f, 0.88f, 0.92f};
-        float sandHeight = 10.0f;
-        float snowHeight = 520.0f;
+        float sandLevel = 1.25f; // % du relief
+        float snowLevel = 65.0f;
         float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
         // Atmosphère (Flux/Graphics/Atmosphere.hpp) : ciel coloré vu du sol, brume au loin, halo vu de l'espace.
         float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre

@@ -485,7 +485,8 @@ namespace Flux {
         };
         const std::uint32_t index = static_cast<std::uint32_t>(std::min(m_planetData.size(), MaxPlanets - 1));
         if (m_planetData.size() < MaxPlanets) {
-            m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowHeight, planet.sandHeight},
+            m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowLevel * 0.01f * planet.relief,
+                                     planet.sandLevel * 0.01f * planet.relief},
                                     material(planet.color, roughness), material(planet.grassColor, 0.95f),
                                     material(planet.sandColor, 0.9f), material(planet.snowColor, 0.55f)});
         }
