@@ -42,9 +42,9 @@ namespace Flux::Planet {
         // amplitude (fraction du relief) dépend de l'endroit : presque rien en plaine, plus en collines et en montagne.
         constexpr std::uint32_t DetailFirstOctave = 6;
         constexpr double DetailGain = 0.58;
-        constexpr double DetailPlains = 0.008;
-        constexpr double DetailHills = 0.02;
-        constexpr double DetailMountains = 0.05;
+        constexpr double DetailPlains = 0.012;
+        constexpr double DetailHills = 0.03;
+        constexpr double DetailMountains = 0.065;
 
         double SmoothStep(double edge0, double edge1, double x) {
             const double t = std::clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -201,7 +201,7 @@ namespace Flux::Planet {
         const double detail = Fbm(direction, {-23.1, 5.7, 31.3}, DetailFirstOctave, MaxOctaves, octaves, DetailGain, false);
         // Bassins vers -0,4, plaines vers 0,05 à 0,1, montagnes jusqu'au relief.
         const double height = -0.4 + 0.45 * land + 0.15 * continents + 0.85 * mountainZone * mountains
-                            + 0.1 * hillZone * hills + roughness * detail;
+                            + 0.15 * hillZone * hills + roughness * detail;
         return m_relief * std::clamp(height, -1.0, 1.0);
     }
 
@@ -216,7 +216,7 @@ namespace Flux::Planet {
             const double all = (1.0 - std::pow(gain, last - first)) / (1.0 - gain);
             return std::pow(gain, from - first) * (1.0 - std::pow(gain, last - from)) / (1.0 - gain) / all;
         };
-        const double omitted = 0.6 * tail(0, 5, 0.5) + 0.85 * tail(2, 2 + MaxRidgeOctaves, 0.5) + 0.1 * tail(4, 9, 0.5)
+        const double omitted = 0.6 * tail(0, 5, 0.5) + 0.85 * tail(2, 2 + MaxRidgeOctaves, 0.5) + 0.15 * tail(4, 9, 0.5)
                              + (DetailPlains + DetailHills + DetailMountains) * tail(DetailFirstOctave, MaxOctaves, DetailGain);
         return m_relief * omitted;
     }
