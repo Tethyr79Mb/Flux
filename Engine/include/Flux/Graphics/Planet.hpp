@@ -77,6 +77,8 @@ namespace Flux::Planet {
 
         private:
         double Noise(const Math::Vector3d& p) const;
+        double Fbm(const Math::Vector3d& direction, const Math::Vector3d& offset, std::uint32_t first, std::uint32_t last,
+                   std::uint32_t octaves, double gain, bool ridged) const;
 
         double m_radius;
         double m_relief;

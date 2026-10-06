@@ -4,9 +4,11 @@
 
 #include "Flux/Graphics/Planet.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <numbers>
 #include <thread>
 #include <random>
 
@@ -108,6 +110,64 @@ bool RunPlanetTests() {
             const Math::Vector3d outward = middle - flat.center;
             CHECK(Math::Dot(normal, outward - Math::Normalize(middle) * Math::Dot(outward, Math::Normalize(middle))) > 0.0);
         }
+    }
+
+    // Forme du terrain : des plaines larges où l'on peut se poser (pas de bruit partout), des montagnes rares et
+    // hautes, et les creux sous le niveau zéro.
+    {
+        const Planet::Terrain world(60000.0, 800.0, 1);
+        const std::uint32_t octaves = world.GetOctaves(world.GetMaxLevel());
+        // Pentes au pas d'un sommet (1,5 m) autour d'un point, en degrés.
+        const auto medianSlope = [&](const Math::Vector3d& center) {
+            const Math::Vector3d up = Math::Normalize(center);
+            const Math::Vector3d east = Math::Normalize(Math::Cross(up, Math::Vector3d{0.0, 1.0, 0.0}));
+            const Math::Vector3d north = Math::Cross(east, up);
+            constexpr int N = 24;
+            constexpr double step = 1.5;
+            std::vector<double> heights(N * N);
+            for (int y = 0; y < N; ++y) {
+                for (int x = 0; x < N; ++x) {
+                    const Math::Vector3d d = Math::Normalize(up * world.GetRadius() + east * (x * step) + north * (y * step));
+                    heights[y * N + x] = world.GetHeight(d, octaves);
+                }
+            }
+            std::vector<double> slopes;
+            for (int y = 0; y + 1 < N; ++y) {
+                for (int x = 0; x + 1 < N; ++x) {
+                    const double dx = (heights[y * N + x + 1] - heights[y * N + x]) / step;
+                    const double dy = (heights[(y + 1) * N + x] - heights[y * N + x]) / step;
+                    slopes.push_back(std::atan(std::hypot(dx, dy)) * 180.0 / std::numbers::pi);
+                }
+            }
+            std::ranges::nth_element(slopes, slopes.begin() + static_cast<std::ptrdiff_t>(slopes.size() / 2));
+            return slopes[slopes.size() / 2];
+        };
+        // Répartition des hauteurs sur toute la sphère.
+        int low = 0;
+        int high = 0;
+        int flat = 0;
+        int land = 0;
+        std::uniform_real_distribution<double> any(-1.0, 1.0);
+        for (int i = 0; i < 300; ++i) {
+            const Math::Vector3d d = Math::Normalize(Math::Vector3d{any(random), any(random), any(random)});
+            const double h = world.GetHeight(d, octaves);
+            if (h < -100.0) {
+                ++low;
+            }
+            if (h > 400.0) {
+                ++high;
+            }
+            if (h > 0.0) {
+                ++land;
+                // Une terre sur deux au moins est une plaine (moins de 5 degrés au pas d'un sommet) : on s'y pose.
+                if (medianSlope(d * (world.GetRadius() + h)) < 5.0) {
+                    ++flat;
+                }
+            }
+        }
+        CHECK(low > 30 && high >= 1);    // des creux, et quelques sommets
+        CHECK(high < 60);                // les montagnes restent rares
+        CHECK(land > 60 && flat * 2 > land);
     }
 
     // Glissement vers la parente : chaque sommet arrive sur la forme de sa parente (sur un de ses sommets, ou au

@@ -35,17 +35,21 @@ namespace Flux::Planet {
         constexpr double BaseFrequency = 1.5;
         // Octaves au plus (la plus fine fait quelques mètres sur une planète comme la Terre).
         constexpr std::uint32_t MaxOctaves = 22;
-        // Le relief des montagnes (bruit en crêtes) s'arrête plus tôt : il coûte autant que le reste.
+        // Octaves des crêtes des montagnes (elles s'arrêtent plus tôt : elles coûtent autant que le reste).
         constexpr std::uint32_t MaxRidgeOctaves = 8;
-        // Somme des amplitudes de toutes les octaves (1 + 1/2 + 1/4...) : le relief garde la même échelle quel que
-        // soit le nombre d'octaves d'une tuile.
-        constexpr double AmplitudeSum = 2.0;
-        // Relief de détail (fractions du relief) : à partir de l'octave 6 (environ 4 km de longueur d'onde sur une
-        // planète de 60 km), 5 % du relief, puis x 0,7 par octave (contre 0,5 pour les continents) : pour 800 m de
-        // relief, environ 6 m de bosses à 100 m d'écart et 1,5 m à 15 m.
+        // Relief de détail (bosses, rochers) à partir de l'octave 6 (environ 4 km de longueur d'onde sur une planète
+        // de 60 km), x 0,65 par octave (contre 0,5 pour les grandes formes) : le sol reste accidenté de près. Son
+        // amplitude (fraction du relief) dépend de l'endroit : presque rien en plaine, plus en collines et en montagne.
         constexpr std::uint32_t DetailFirstOctave = 6;
-        constexpr double DetailAmplitude = 0.05;
-        constexpr double DetailGain = 0.7;
+        constexpr double DetailGain = 0.58;
+        constexpr double DetailPlains = 0.008;
+        constexpr double DetailHills = 0.02;
+        constexpr double DetailMountains = 0.05;
+
+        double SmoothStep(double edge0, double edge1, double x) {
+            const double t = std::clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+            return t * t * (3.0 - 2.0 * t);
+        }
 
         double Fade(double t) {
             return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
@@ -157,55 +161,63 @@ namespace Flux::Planet {
                     w);
     }
 
+    // Somme des octaves [first, min(last, octaves)) d'un bruit (octave k : fréquence BaseFrequency x 2^k), chacune
+    // `gain` fois plus basse que la précédente, divisée par la somme des amplitudes de toutes ses octaves [first,
+    // last) : de -1 à 1 environ (le plus souvent entre -0,5 et 0,5), à la même échelle quel que soit le nombre
+    // d'octaves d'une tuile. `offset` sépare les couches (sinon elles suivraient les mêmes formes).
+    double Terrain::Fbm(const Math::Vector3d& direction, const Math::Vector3d& offset, std::uint32_t first, std::uint32_t last,
+                        std::uint32_t octaves, double gain, bool ridged) const {
+        const double total = (1.0 - std::pow(gain, static_cast<double>(last - first))) / (1.0 - gain);
+        last = std::min(last, octaves);
+        double sum = 0.0;
+        double amplitude = 1.0;
+        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(first))) + offset;
+        for (std::uint32_t k = first; k < last; ++k) {
+            const double n = Noise(p);
+            // Crêtes : 1 - |bruit| fait une arête vive là où le bruit passe par 0, au carré pour des vallées larges.
+            sum += amplitude * (ridged ? (1.0 - std::abs(n)) * (1.0 - std::abs(n)) : n);
+            amplitude *= gain;
+            p *= 2.0;
+        }
+        return sum / total;
+    }
+
     double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves) const {
         if (m_relief <= 0.0) {
             return 0.0;
         }
-        // Continents : bruit fractal (fBm) des grandes formes, chaque octave deux fois plus fine et deux fois plus
-        // basse. Seul, il donne un sol lisse de près (à 100 m d'écart, quelques dizaines de centimètres de relief).
-        double base = 0.0;
-        double amplitude = 1.0;
-        Math::Vector3d p = direction * BaseFrequency;
-        for (std::uint32_t k = 0; k < std::min(octaves, DetailFirstOctave); ++k) {
-            base += amplitude * Noise(p);
-            amplitude *= 0.5;
-            p *= 2.0;
-        }
-        base /= 0.5 * AmplitudeSum; // environ -1 à 1
-        // Montagnes : crêtes (1 - |bruit|)², seulement sur les terres hautes. Le décalage sépare les deux bruits
-        // (sinon les crêtes suivraient les côtes).
-        double ridge = 0.0;
-        amplitude = 1.0;
-        p = direction * (4.0 * BaseFrequency) + Math::Vector3d{17.3, -41.7, 8.9};
-        for (std::uint32_t k = 0; k < std::min(octaves, MaxRidgeOctaves); ++k) {
-            const double n = 1.0 - std::abs(Noise(p));
-            ridge += amplitude * n * n;
-            amplitude *= 0.5;
-            p *= 2.0;
-        }
-        ridge /= AmplitudeSum; // 0 à 1
-        const double land = std::clamp(base * 3.0, 0.0, 1.0);
-        // Détail : collines, puis bosses et rochers. Les octaves fines baissent moins vite (DetailGain au lieu de
-        // 0,5) : le sol reste accidenté à toutes les échelles, plus sur les montagnes que dans les plaines.
-        double detail = 0.0;
-        amplitude = DetailAmplitude;
-        p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(DetailFirstOctave))) + Math::Vector3d{-23.1, 5.7, 31.3};
-        for (std::uint32_t k = DetailFirstOctave; k < octaves; ++k) {
-            detail += amplitude * Noise(p);
-            amplitude *= DetailGain;
-            p *= 2.0;
-        }
-        detail *= 0.5 + 1.5 * ridge * land;
-        return m_relief * std::clamp(0.6 * base + 0.6 * ridge * land + detail, -1.0, 1.0);
+        // Couches, des plus grandes aux plus fines (octave 0 : environ un quart du tour de la planète) :
+        // - continents : terres et bassins ;
+        const double continents = Fbm(direction, {0.0, 0.0, 0.0}, 0, 5, octaves, 0.5, false);
+        const double land = SmoothStep(-0.26, 0.06, continents);
+        // - où sont les montagnes (des chaînes sur les terres, pas partout) et les collines ;
+        const double mountainZone = SmoothStep(0.08, 0.36, Fbm(direction, {31.7, -12.3, 7.1}, 1, 4, octaves, 0.5, false)) * land;
+        const double hillZone = SmoothStep(0.05, 0.4, Fbm(direction, {-8.9, 44.2, -19.6}, 2, 5, octaves, 0.5, false));
+        // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les crêtes) ;
+        const double mountains = mountainZone > 0.0 ? Fbm(direction, {17.3, -41.7, 8.9}, 2, 2 + MaxRidgeOctaves, octaves, 0.5, true) : 0.0;
+        const double hills = hillZone > 0.0 ? Fbm(direction, {5.3, 23.9, -33.1}, 4, 9, octaves, 0.5, false) : 0.0;
+        // - le détail fin (bosses, rochers), qui baisse moins vite (DetailGain) : faible dans les plaines.
+        const double roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
+        const double detail = Fbm(direction, {-23.1, 5.7, 31.3}, DetailFirstOctave, MaxOctaves, octaves, DetailGain, false);
+        // Bassins vers -0,4, plaines vers 0,05 à 0,1, montagnes jusqu'au relief.
+        const double height = -0.4 + 0.45 * land + 0.15 * continents + 0.85 * mountainZone * mountains
+                            + 0.1 * hillZone * hills + roughness * detail;
+        return m_relief * std::clamp(height, -1.0, 1.0);
     }
 
     double Terrain::GetOmittedRelief(std::uint32_t octaves) const {
-        // Ce que les octaves de rang >= octaves peuvent encore ajouter : la fin des continents et des crêtes, et
-        // celle du détail (somme géométrique), au plus fort (x 2 sur les montagnes).
-        const auto from = static_cast<int>(std::min(octaves, MaxRidgeOctaves));
-        double omitted = 1.2 * 2.0 * std::ldexp(1.0, -from);
-        const std::uint32_t firstDetail = std::max(octaves, DetailFirstOctave);
-        omitted += 2.0 * DetailAmplitude * std::pow(DetailGain, firstDetail - DetailFirstOctave) / (1.0 - DetailGain);
+        // Ce que les octaves de rang >= octaves peuvent encore ajouter, au plus fort (montagnes) : la fin de chaque
+        // couche, en fraction de la somme de ses amplitudes.
+        const auto tail = [octaves](std::uint32_t first, std::uint32_t last, double gain) {
+            if (octaves >= last) {
+                return 0.0;
+            }
+            const auto from = std::max(octaves, first);
+            const double all = (1.0 - std::pow(gain, last - first)) / (1.0 - gain);
+            return std::pow(gain, from - first) * (1.0 - std::pow(gain, last - from)) / (1.0 - gain) / all;
+        };
+        const double omitted = 0.6 * tail(0, 5, 0.5) + 0.85 * tail(2, 2 + MaxRidgeOctaves, 0.5) + 0.1 * tail(4, 9, 0.5)
+                             + (DetailPlains + DetailHills + DetailMountains) * tail(DetailFirstOctave, MaxOctaves, DetailGain);
         return m_relief * omitted;
     }
 
