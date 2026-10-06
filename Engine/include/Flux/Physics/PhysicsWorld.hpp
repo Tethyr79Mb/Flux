@@ -9,6 +9,7 @@
 #include <memory>
 
 namespace Flux {
+    class PhysicsContext;
     class Scene;
 
     // Commandes du joueur pour les personnages qu'il dirige (CharacterComponent::player).
@@ -20,7 +21,7 @@ namespace Flux {
     };
 
     // Monde physique (Jolt) d'une scène : les entités avec ColliderComponent et CharacterComponent y ont
-    // un corps, créé à leur première mise à jour. Aucun type Jolt ici.
+    // un corps, créé par Prepare (au chargement de la scène) ou à leur première mise à jour. Aucun type Jolt ici.
     //
     // Échelle galaxie : la simulation se fait en float autour d'une ancre (le secteur du premier objet physique
     // rencontré), précise au millimètre à des kilomètres de là. Chaque vaisseau ou station (ShipComponent) a son
@@ -30,11 +31,16 @@ namespace Flux {
     // ce décor au-dessus du sol du dehors ; il devient alors enfant du vaisseau, ou de ce qui l'entoure.
     class FLUX_API PhysicsWorld {
         public:
-        PhysicsWorld();
+        // context : celui du moteur, partagé par tous ses mondes (voir PhysicsContext) ; vide : le monde a le sien.
+        explicit PhysicsWorld(std::shared_ptr<PhysicsContext> context = nullptr);
         ~PhysicsWorld();
 
         PhysicsWorld(const PhysicsWorld&) = delete;
         PhysicsWorld& operator=(const PhysicsWorld&) = delete;
+
+        // Crée les corps de toutes les entités de la scène et l'enveloppe des vaisseaux, sans avancer la simulation :
+        // à appeler au chargement de la scène, pour que la première image de jeu n'ait rien à construire.
+        void Prepare(Scene& scene);
 
         // Crée les corps des nouvelles entités et retire ceux des entités détruites (ou sans collision),
         // avance la simulation par pas fixes de 1/60 s, puis reporte positions et rotations dans la scène
@@ -42,8 +48,7 @@ namespace Flux {
         // sont ignorés jusqu'au prochain monde.
         void Update(Scene& scene, double deltaSeconds, const CharacterInput& input);
 
-        // Dossier des assets du projet, d'où sont lus les maillages de collision (ColliderShape::Mesh), une fois par
-        // fichier. Vide : pas de collision en maillage.
+        // Dossier des assets de son contexte (voir PhysicsContext::SetAssetsDirectory).
         void SetAssetsDirectory(const std::filesystem::path& directory);
 
         // « Bas » de ce monde : (0, -9.81, 0) par défaut. Gravité artificielle d'une station : le sol du pont.

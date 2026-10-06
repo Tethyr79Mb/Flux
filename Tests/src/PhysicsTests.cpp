@@ -1,6 +1,7 @@
 // Physique (Jolt) : chute sur un sol, personnage qui marche et bute contre un mur, entités ajoutées et retirées.
 #include "Check.hpp"
 
+#include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
@@ -577,6 +578,24 @@ namespace {
         const Math::WorldPosition below{{}, {8.0, 0.5, 8.0}};
         CHECK(std::abs(world.CastCamera(scene, hero, above, {0.0f, -1.0f, 0.0f}, 5.0f, Radius) - 1.6f) < 0.05f);
         CHECK(std::abs(world.CastCamera(scene, hero, below, {0.0f, 1.0f, 0.0f}, 5.0f, Radius) - 0.5f) < 0.05f);
+
+        // Contexte partagé (celui du moteur) : Prepare crée les corps sans avancer la simulation ; un second monde
+        // (changement de scène, nouveau lancement) reprend les maillages déjà lus au lieu de les relire.
+        const auto context = std::make_shared<PhysicsContext>();
+        context->SetAssetsDirectory(directory);
+        scene.Get<TransformComponent>(hero).position = {8.0, 2.0, 8.0};
+        {
+            PhysicsWorld first(context);
+            first.Prepare(scene);
+            CHECK(first.GetBodyCount() == 2 && first.GetPlayer() == hero);
+            CHECK(scene.Get<TransformComponent>(hero).position.y == 2.0); // rien n'a bougé
+        }
+        CHECK(context->GetMeshCount() == 2); // sol.gltf et absent.glb (illisible, gardé pour ne pas le relire)
+        PhysicsWorld second(context);
+        second.Prepare(scene);
+        CHECK(second.GetBodyCount() == 2 && context->GetMeshCount() == 2);
+        Run(second, scene, 1.5);
+        CHECK(std::abs(scene.Get<TransformComponent>(hero).position.y) < 0.05);
         std::filesystem::remove_all(directory, error);
         return true;
     }
