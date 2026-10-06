@@ -1,6 +1,7 @@
 // Physique (Jolt) : chute sur un sol, personnage qui marche et bute contre un mur, entités ajoutées et retirées.
 #include "Check.hpp"
 
+#include "Flux/Graphics/Planet.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -660,8 +661,90 @@ namespace {
     }
 }
 
+namespace {
+    // Sur une planète : on se tient debout sur son sol, vers son centre, on y marche ; une caisse tombe vers son
+    // centre et s'y pose ; un vaisseau s'y pose. Tout ça à 60 km de l'origine (le monde se recentre sur le joueur).
+    bool RunPlanetSurfaceTests() {
+        Scene scene;
+        const Entity planet = scene.CreateEntity("Planète");
+        const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
+        const Planet::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
+        const auto ground = [&](const Math::Vector3d& direction) {
+            return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
+        };
+        // Un endroit presque plat (moins de 5 cm de dénivelé sur 3 m), pour que rien n'y glisse.
+        Math::Vector3d up{1.0, 0.0, 0.0};
+        for (int i = 0; i < 200; ++i) {
+            const double angle = i * 0.01;
+            const Math::Vector3d candidate = Math::Normalize(Math::Vector3d{std::cos(angle), 0.3 * std::sin(3.0 * angle), std::sin(angle)});
+            const Math::Vector3d side = Math::Normalize(Math::Cross(candidate, Math::Vector3d{0.0, 1.0, 0.0}));
+            const Math::Vector3d along = Math::Cross(side, candidate);
+            const double h = ground(candidate);
+            bool flat = true;
+            for (const Math::Vector3d& offset : {side * 1.5, side * -1.5, along * 1.5, along * -1.5}) {
+                flat = flat && std::abs(ground(Math::Normalize(candidate * h + offset)) - h) < 0.05;
+            }
+            if (flat && h > 0.0) {
+                up = candidate;
+                break;
+            }
+        }
+        const Math::Vector3d east = Math::Normalize(Math::Cross(up, Math::Vector3d{0.0, 1.0, 0.0}));
+        const Math::Vector3d north = Math::Cross(east, up);
+        const auto altitude = [&](Entity entity) {
+            const Math::Vector3d position = scene.Get<TransformComponent>(entity).position;
+            return Math::Length(position) - ground(Math::Normalize(position));
+        };
+
+        const Entity hero = scene.CreateEntity("Joueur");
+        scene.Get<TransformComponent>(hero).position = up * (ground(up) + 1.0);
+        scene.Add<CharacterComponent>(hero);
+        const Entity box = scene.CreateEntity("Caisse");
+        const Math::Vector3d boxDirection = Math::Normalize(up * ground(up) + north * 3.0);
+        scene.Get<TransformComponent>(box).position = boxDirection * (ground(boxDirection) + 3.0);
+        scene.Add<ColliderComponent>(box).simulatePhysics = true;
+
+        PhysicsWorld world;
+        world.Prepare(scene); // sol fait autour du joueur et de la caisse
+        Run(world, scene, 2.0);
+        // Debout sur le sol, tourné selon la verticale de l'endroit.
+        CHECK(std::abs(altitude(hero)) < 0.1);
+        const Math::Vector3f heroUp = scene.Get<TransformComponent>(hero).rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
+        CHECK(Math::Dot(heroUp, Math::Vector3f(up)) > 0.999f);
+        CHECK(Math::Dot(world.GetUp(scene, hero), Math::Vector3f(up)) > 0.999f);
+        // La caisse est tombée vers le centre et s'est posée (son centre à une demi-hauteur du sol).
+        CHECK(std::abs(altitude(box) - 0.5) < 0.15);
+
+        // Il marche vers l'est (2 m/s pendant 2 s) en restant sur le sol.
+        const Math::Vector3d start = scene.Get<TransformComponent>(hero).position;
+        Run(world, scene, 2.0, CharacterInput{Math::Vector3f(east), false, false});
+        const Math::Vector3d walked = scene.Get<TransformComponent>(hero).position - start;
+        CHECK(Math::Dot(walked, east) > 3.5 && Math::Dot(walked, east) < 4.2);
+        CHECK(std::abs(altitude(hero)) < 0.1);
+
+        // Un vaisseau 200 m plus loin, à plat sur la planète, descend et se pose (dessous de sa coque à 1 m sous lui).
+        const Math::Vector3d shipDirection = Math::Normalize(up * ground(up) + east * 200.0);
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        TransformComponent& shipTransform = scene.Get<TransformComponent>(ship);
+        shipTransform.position = shipDirection * (ground(shipDirection) + 6.0);
+        shipTransform.rotation = Math::Quaternionf::FromTo({0.0f, 1.0f, 0.0f}, Math::Vector3f(shipDirection));
+        ShipComponent& shipComponent = scene.Add<ShipComponent>(ship);
+        const Entity hull = scene.CreateEntity("Coque", ship);
+        scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f};
+        scene.Add<ColliderComponent>(hull);
+        world.Update(scene, Frame, {});
+        shipComponent.velocity = {0.0f, -5.0f, 0.0f};
+        Run(world, scene, 2.0);
+        CHECK(shipComponent.grounded);
+        const double shipAltitude = altitude(ship);
+        CHECK(shipAltitude > 0.9 && shipAltitude < 1.5);
+        return true;
+    }
+}
+
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
-        && RunShipCollisionTests();
+        && RunShipCollisionTests() && RunPlanetSurfaceTests();
 }

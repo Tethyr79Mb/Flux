@@ -85,7 +85,8 @@ namespace Flux {
             .Field("relief", "Relief (m)", &PlanetComponent::relief, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
             .Field("seed", "Graine", &PlanetComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
             .Field("color", "Couleur du sol", &PlanetComponent::color, {.alpha = false})
-            .Field("roughness", "Rugosité", &PlanetComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
+            .Field("roughness", "Rugosité", &PlanetComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("gravity", "Gravité (m/s²)", &PlanetComponent::gravity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2});
         registry.Register<InteriorComponent>("interior", "Intérieur")
             .Field("size", "Taille (m)", &InteriorComponent::size, {.speed = 0.01, .min = 0.0, .max = 1.0e4})
             .Field("ambient", "Lumière ambiante", &InteriorComponent::ambient, {.alpha = false})

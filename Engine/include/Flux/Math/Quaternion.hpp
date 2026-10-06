@@ -27,6 +27,20 @@ namespace Flux::Math {
             return FromAxisAngle({0, 1, 0}, yaw) * FromAxisAngle({1, 0, 0}, pitch) * FromAxisAngle({0, 0, 1}, roll);
         }
 
+        // Plus petite rotation qui amène la direction `from` sur `to` (toutes deux unitaires). Opposées : un demi-tour
+        // autour d'un axe perpendiculaire quelconque.
+        static Quaternionf FromTo(const Vector3f& from, const Vector3f& to) {
+            const float d = Dot(from, to);
+            if (d < -0.999999f) {
+                const Vector3f axis = std::abs(from.x) < 0.9f ? Cross(from, Vector3f{1, 0, 0}) : Cross(from, Vector3f{0, 1, 0});
+                return FromAxisAngle(axis, 3.14159265f);
+            }
+            const Vector3f c = Cross(from, to);
+            const Quaternionf q{c.x, c.y, c.z, 1.0f + d};
+            const float length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            return {q.x / length, q.y / length, q.z / length, q.w / length};
+        }
+
         constexpr bool operator==(const Quaternionf&) const = default;
 
         // Rotation inverse (pour un quaternion unitaire).

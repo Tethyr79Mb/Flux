@@ -250,6 +250,13 @@ namespace Flux {
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
+        // Repère où la caméra qui suit le joueur tourne (lacet, tangage) : son y est le haut de l'endroit (le monde, le
+        // pont du vaisseau, ou la verticale de la planète), son horizontale celle du joueur. Il tourne avec le
+        // vaisseau et se redresse au plus court quand le haut change (on fait le tour d'une planète).
+        Math::Quaternionf m_followFrame;
+        bool m_followFrameSet = false;
+        float m_followYaw = 0.0f;
+        float m_followPitch = 0.0f;
         // Aux commandes d'un vaisseau : vue depuis l'œil du pilote, ou de l'extérieur, derrière le vaisseau et tournée
         // avec lui (V ou molette pour changer), et où il regarde (clic droit).
         bool m_cockpitView = true;
@@ -280,6 +287,8 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
+        // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
+        void AimFollowCamera();
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
         void PlaceChaseCamera(Entity seat, double deltaSeconds);
         void MeasureShip(Entity ship);

@@ -343,6 +343,7 @@ namespace Flux {
             } else {
                 m_followShown = -1.0f;
                 m_followShip = NullEntity;
+                m_followFrameSet = false;
             }
             // Sons des entités, à la caméra de cette image (qui suit le joueur ou vole librement).
             m_audio->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
@@ -418,9 +419,9 @@ namespace Flux {
                 m_cockpitView = !m_cockpitView;
             }
         } else {
-            // Avant et droite de la caméra, ramenés à l'horizontale.
-            const Math::Vector3f forward{-std::sin(m_camera.yaw), 0.0f, -std::cos(m_camera.yaw)};
-            const Math::Vector3f right{std::cos(m_camera.yaw), 0.0f, -std::sin(m_camera.yaw)};
+            // Avant et droite de la caméra, ramenés à l'horizontale de l'endroit (sur une planète : tangente au sol).
+            const Math::Vector3f forward = m_followFrame.Rotate(Math::Vector3f{-std::sin(m_followYaw), 0.0f, -std::cos(m_followYaw)});
+            const Math::Vector3f right = m_followFrame.Rotate(Math::Vector3f{std::cos(m_followYaw), 0.0f, -std::sin(m_followYaw)});
             character.move = forward * axis("Avancer", "Reculer") + right * axis("Aller à droite", "Aller à gauche");
             character.run = IsActionDown("Courir");
             character.jump = WasActionPressed("Sauter");
@@ -507,8 +508,8 @@ namespace Flux {
                 m_lookYaw = std::clamp(m_lookYaw - mouse.x * Sensitivity, -2.0f, 2.0f);
                 m_lookPitch = std::clamp(m_lookPitch - mouse.y * Sensitivity, -1.2f, 1.2f);
             } else {
-                m_camera.yaw = std::remainder(m_camera.yaw - mouse.x * Sensitivity, 2.0f * std::numbers::pi_v<float>);
-                m_camera.pitch = std::clamp(m_camera.pitch - mouse.y * Sensitivity, -FollowMaxPitch, FollowMaxPitch);
+                m_followYaw = std::remainder(m_followYaw - mouse.x * Sensitivity, 2.0f * std::numbers::pi_v<float>);
+                m_followPitch = std::clamp(m_followPitch - mouse.y * Sensitivity, -FollowMaxPitch, FollowMaxPitch);
             }
         }
         if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse() && !m_interfaceWantsMouse) {
@@ -557,17 +558,30 @@ namespace Flux {
     }
 
     void Engine::TurnWithShip(Entity player) {
+        const Math::Vector3f up = m_physics->GetUp(m_scene, player);
+        const Math::Vector3f y{0.0f, 1.0f, 0.0f};
+        if (!m_followFrameSet) {
+            // Début du suivi : la caméra garde sa direction (celle de l'éditeur), dans l'horizontale de l'endroit.
+            m_followFrame = Math::Quaternionf::FromTo(y, up);
+            m_followFrameSet = true;
+            AimFollowCamera();
+        }
         // Le vaisseau a tourné depuis la dernière image : la caméra aussi, comme la tête de quelqu'un à bord.
         const Entity ship = m_scene.GetShip(player);
         const Math::Quaternionf rotation = ship != NullEntity ? m_scene.GetWorldRotation(ship) : Math::Quaternionf{};
         if (ship != NullEntity && ship == m_followShip) {
-            const Math::Quaternionf turn = Math::Normalize(rotation * m_followShipRotation.Conjugate());
-            const Math::Vector3f forward = turn.Rotate(m_camera.GetForward());
-            m_camera.yaw = std::atan2(-forward.x, -forward.z);
-            m_camera.pitch = std::clamp(std::asin(std::clamp(forward.y, -1.0f, 1.0f)), -FollowMaxPitch, FollowMaxPitch);
+            m_followFrame = Math::Normalize(rotation * m_followShipRotation.Conjugate() * m_followFrame);
         }
         m_followShip = ship;
         m_followShipRotation = rotation;
+        // Redressée au plus court sur le haut de l'endroit : en marchant autour d'une planète, l'horizon reste droit.
+        m_followFrame = Math::Normalize(Math::Quaternionf::FromTo(m_followFrame.Rotate(y), up) * m_followFrame);
+    }
+
+    void Engine::AimFollowCamera() {
+        const Math::Vector3f forward = m_followFrame.Conjugate().Rotate(m_camera.GetForward());
+        m_followYaw = std::atan2(-forward.x, -forward.z);
+        m_followPitch = std::clamp(std::asin(std::clamp(forward.y, -1.0f, 1.0f)), -FollowMaxPitch, FollowMaxPitch);
     }
 
     void Engine::MeasureShip(Entity ship) {
@@ -649,6 +663,7 @@ namespace Flux {
         TurnWithShip(player);
         if (const Entity pilotSeat = Seats::GetPilotSeat(m_scene, player); pilotSeat != NullEntity && !m_cockpitView) {
             PlaceChaseCamera(pilotSeat, deltaSeconds);
+            AimFollowCamera(); // en se relevant, elle regarde où regardait la vue extérieure
             m_followShown = -1.0f; // en se relevant, la caméra se replace d'un coup derrière le personnage
             return;
         }
@@ -660,20 +675,21 @@ namespace Flux {
             m_camera.position += Math::Vector3d(seatRotation.Rotate(m_scene.Get<SeatComponent>(seat).eye));
             m_camera.SetRotation(seatRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
                                  * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch));
+            AimFollowCamera(); // en se relevant, elle regarde où regardait le pilote
             m_followShown = -1.0f; // en ressortant, la caméra se replace d'un coup derrière le personnage
             m_hiddenPlayer = player;
             return;
         }
         m_lookYaw = 0.0f;
         m_lookPitch = 0.0f;
-        m_camera.roll = 0.0f;
-        m_camera.pitch = std::clamp(m_camera.pitch, -FollowMaxPitch, FollowMaxPitch);
+        m_followPitch = std::clamp(m_followPitch, -FollowMaxPitch, FollowMaxPitch);
+        m_camera.SetRotation(m_followFrame * Math::Quaternionf::FromYawPitchRoll(m_followYaw, m_followPitch, 0.0f));
 
         // Derrière le personnage, visant un peu sous le haut de sa tête.
         const auto* character = m_scene.TryGet<CharacterComponent>(player);
-        const double eyeHeight = character ? character->height * 0.9 : 1.6;
+        const float eyeHeight = character ? character->height * 0.9f : 1.6f;
         Math::WorldPosition target = m_scene.GetWorldPosition(player);
-        target += Math::Vector3d{0.0, eyeHeight, 0.0};
+        target += Math::Vector3d(m_followFrame.Rotate(Math::Vector3f{0.0f, eyeHeight, 0.0f}));
 
         if (m_firstPerson) {
             // Depuis ses yeux : rien entre la tête et la caméra, pas besoin de chercher les murs. Son ombre reste.

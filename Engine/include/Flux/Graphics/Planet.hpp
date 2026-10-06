@@ -119,6 +119,11 @@ namespace Flux::Planet {
         std::vector<MorphVertex> morph;     // TileVertexCount ; niveau 0 : aucun glissement
     };
     FLUX_API void BuildTile(const Terrain& terrain, TileKey key, TileMesh& mesh);
+    // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni
+    // glissement), relatifs à `center`, identiques à ceux de BuildTile (le sol touché est celui qu'on voit de près).
+    FLUX_API void BuildTileSurface(const Terrain& terrain, TileKey key, Math::Vector3d& center, std::vector<Math::Vector3f>& positions);
+    // Tuile de ce niveau où tombe une direction (unitaire).
+    FLUX_API TileKey FindTile(const Math::Vector3d& direction, std::uint32_t level);
     // Indices communs à toutes les tuiles (la grille, puis les jupes), dans le sens trigonométrique vu de dehors.
     FLUX_API std::vector<std::uint32_t> BuildTileIndices();
 
