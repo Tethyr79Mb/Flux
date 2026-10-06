@@ -162,7 +162,7 @@ namespace Flux {
     struct PlanetComponent
     {
         float radius = 60000.0f; // m, au niveau zéro du relief
-        float relief = 2500.0f;  // m, hauteur des plus hautes montagnes (et profondeur des creux)
+        float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
         std::int32_t seed = 1;
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;
