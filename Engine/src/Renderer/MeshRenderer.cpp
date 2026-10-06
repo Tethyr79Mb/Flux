@@ -39,6 +39,7 @@ namespace Flux {
     namespace {
         static_assert(sizeof(ModelVertex) == 32, "ModelVertex doit correspondre à VertexInput dans shaders/Mesh.slang");
         static_assert(sizeof(ModelSkinVertex) == 24, "ModelSkinVertex doit correspondre à SkinnedVertexInput dans shaders/Mesh.slang");
+        static_assert(sizeof(Planet::MorphVertex) == 24, "MorphVertex doit correspondre à PlanetVertexInput dans shaders/Mesh.slang");
 
         // Volumes intérieurs envoyés au GPU au plus (les plus proches de la caméra) : chaque pixel les parcourt.
         constexpr std::size_t MaxInteriors = 8;
@@ -190,23 +191,37 @@ namespace Flux {
     }
 
     std::expected<void, std::string> MeshRenderer::CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat) {
-        const std::array vertexBuffers{
-            RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
-            RHI::VertexBufferLayout{1, sizeof(ModelSkinVertex)},
-        };
-        const std::array attributes{
-            RHI::VertexAttribute{0, 0, RHI::Format::RGB32Float, offsetof(ModelVertex, position)},
-            RHI::VertexAttribute{1, 0, RHI::Format::RGB32Float, offsetof(ModelVertex, normal)},
-            RHI::VertexAttribute{2, 0, RHI::Format::RG32Float, offsetof(ModelVertex, uv)},
-            // Modèles animés seulement : os et poids, second flux.
-            RHI::VertexAttribute{3, 1, RHI::Format::RGBA16Uint, offsetof(ModelSkinVertex, joints)},
-            RHI::VertexAttribute{4, 1, RHI::Format::RGBA32Float, offsetof(ModelSkinVertex, weights)},
-        };
-        // Ombres : la normale n'est pas lue (profondeur seule) ; la déclarer quand même fait avertir la validation
-        // Vulkan (attribut non consommé, lu pour rien par le GPU).
-        const std::array shadowAttributes{attributes[0], attributes[2], attributes[3], attributes[4]};
+        // Flux 0 : ModelVertex pour tous. Flux 1 : os et poids (modèles animés) ou forme parente (tuiles de planète).
+        const std::array staticBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)}};
+        const std::array skinnedBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
+                                        RHI::VertexBufferLayout{1, sizeof(ModelSkinVertex)}};
+        const std::array planetBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
+                                       RHI::VertexBufferLayout{1, sizeof(Planet::MorphVertex)}};
+        const RHI::VertexAttribute position{0, 0, RHI::Format::RGB32Float, offsetof(ModelVertex, position)};
+        const RHI::VertexAttribute normal{1, 0, RHI::Format::RGB32Float, offsetof(ModelVertex, normal)};
+        const RHI::VertexAttribute uv{2, 0, RHI::Format::RG32Float, offsetof(ModelVertex, uv)};
+        const RHI::VertexAttribute joints{3, 1, RHI::Format::RGBA16Uint, offsetof(ModelSkinVertex, joints)};
+        const RHI::VertexAttribute weights{4, 1, RHI::Format::RGBA32Float, offsetof(ModelSkinVertex, weights)};
+        const RHI::VertexAttribute morphOffset{5, 1, RHI::Format::RGB32Float, offsetof(Planet::MorphVertex, offset)};
+        const RHI::VertexAttribute morphNormal{6, 1, RHI::Format::RGB32Float, offsetof(Planet::MorphVertex, normal)};
+        // Ombres : les normales ne sont pas lues (profondeur seule) ; les déclarer quand même fait avertir la
+        // validation Vulkan (attribut non consommé, lu pour rien par le GPU).
+        const std::array staticAttributes{position, normal, uv};
+        const std::array staticShadow{position, uv};
+        const std::array skinnedAttributes{position, normal, uv, joints, weights};
+        const std::array skinnedShadow{position, uv, joints, weights};
+        const std::array planetAttributes{position, normal, uv, morphOffset, morphNormal};
+        const std::array planetShadow{position, uv, morphOffset};
         const std::array<const RHI::BindGroupLayout*, 2> layouts{&m_models->GetMaterialLayout(), m_frameLayout.get()};
 
+        struct Kind
+        {
+            std::span<const RHI::VertexBufferLayout> buffers;
+            std::span<const RHI::VertexAttribute> attributes;
+            std::span<const RHI::VertexAttribute> shadowAttributes;
+            const char* vertex;
+            const char* shadowVertex;
+        };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
             if (created) {
@@ -214,12 +229,10 @@ namespace Flux {
             }
             return created.has_value() ? std::expected<void, std::string>{} : std::unexpected(created.error());
         };
-        const auto createAll = [&](Pipelines& pipelines, bool skinned) -> std::expected<void, std::string> {
+        const auto createAll = [&](Pipelines& pipelines, const Kind& kind) -> std::expected<void, std::string> {
             RHI::PipelineDesc desc;
             desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
-            // Modèles animés : os et poids en plus (flux 1).
-            desc.vertexBuffers = std::span(vertexBuffers).first(skinned ? 2 : 1);
-            desc.vertexAttributes = std::span(attributes).first(skinned ? 5 : 3);
+            desc.vertexBuffers = kind.buffers;
             desc.bindGroupLayouts = layouts;
             desc.pushConstantsSize = sizeof(DrawParams);
             desc.depthTest = true;
@@ -229,8 +242,8 @@ namespace Flux {
             // coque ouverte ou un matériau double face fait aussi de l'ombre. Le décalage de profondeur (selon la
             // pente) évite qu'une surface s'ombre elle-même par endroits (« acné »), avec le décalage le long de la
             // normale fait à la lecture.
-            desc.vertexEntryPoint = skinned ? "vertexShadowSkinned" : "vertexShadow";
-            desc.vertexAttributes = std::span(shadowAttributes).first(skinned ? 4 : 2);
+            desc.vertexEntryPoint = kind.shadowVertex;
+            desc.vertexAttributes = kind.shadowAttributes;
             desc.fragmentEntryPoint = "fragmentShadow";
             desc.colorFormat = RHI::Format::Undefined;
             desc.depthFormat = RHI::Format::D32Float;
@@ -242,8 +255,8 @@ namespace Flux {
                 return result;
             }
 
-            desc.vertexEntryPoint = skinned ? "vertexSkinned" : "vertexMain";
-            desc.vertexAttributes = std::span(attributes).first(skinned ? 5 : 3);
+            desc.vertexEntryPoint = kind.vertex;
+            desc.vertexAttributes = kind.attributes;
             desc.fragmentEntryPoint = "fragmentMain";
             desc.colorFormat = colorFormat;
             desc.depthFormat = depthFormat;
@@ -269,10 +282,18 @@ namespace Flux {
             }
             return createMain(pipelines.transparentBack, RHI::CullMode::Front, true);
         };
-        if (auto result = createAll(m_static, false); !result) {
+        if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow"}); !result) {
             return result;
         }
-        return createAll(m_skinned, true);
+        if (auto result = createAll(m_skinned, {skinnedBuffers, skinnedAttributes, skinnedShadow, "vertexSkinned", "vertexShadowSkinned"});
+            !result) {
+            return result;
+        }
+        return createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet"});
+    }
+
+    const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const GpuModel& model) const {
+        return model.IsAnimated() ? m_skinned : model.IsPlanetTile() ? m_planet : m_static;
     }
 
     // Buffer de l'image f (emplacement `slot` du groupe 1) agrandi à size octets au moins, et son groupe mis à jour.
@@ -450,7 +471,7 @@ namespace Flux {
         for (const PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
             m_drawData.push_back({Math::Matrix4f::Translation(center) * rotation,
-                                  {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, 0.0f}}},
+                                  {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {}});
             m_draws.push_back({tile.model, color, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
                                Math::Length(center), true, true});
@@ -593,8 +614,9 @@ namespace Flux {
         const GpuModel& model = *draw.model;
         if (&model != state.model) {
             state.model = &model;
-            const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
-            commands.BindVertexBuffers(0, std::span(vertexBuffers).first(model.IsAnimated() ? 2 : 1));
+            const RHI::Buffer* second = model.IsAnimated() ? model.skin.get() : model.morph.get();
+            const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), second};
+            commands.BindVertexBuffers(0, std::span(vertexBuffers).first(second ? 2 : 1));
             commands.BindIndexBuffer(*model.indices);
         }
         if (&pipeline != state.pipeline) {
@@ -641,7 +663,7 @@ namespace Flux {
                 if (!InCascade(draw, c)) {
                     continue;
                 }
-                const RHI::Pipeline& pipeline = *(draw.model->IsAnimated() ? m_skinned : m_static).shadow;
+                const RHI::Pipeline& pipeline = *GetPipelines(*draw.model).shadow;
                 for (const ModelPrimitive& primitive : draw.model->primitives) {
                     // Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle pour l'instant).
                     if (!IsTransparent(draw, draw.model->materials[primitive.material])) {
@@ -659,7 +681,7 @@ namespace Flux {
         BindState state;
         for (const std::uint32_t d : m_opaque) {
             const MeshDraw& draw = m_draws[d];
-            const Pipelines& pipelines = draw.model->IsAnimated() ? m_skinned : m_static;
+            const Pipelines& pipelines = GetPipelines(*draw.model);
             for (const ModelPrimitive& primitive : draw.model->primitives) {
                 const GpuMaterial& material = draw.model->materials[primitive.material];
                 if (!IsTransparent(draw, material)) {
@@ -674,7 +696,7 @@ namespace Flux {
         BindState state;
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
-            const Pipelines& pipelines = draw.model->IsAnimated() ? m_skinned : m_static;
+            const Pipelines& pipelines = GetPipelines(*draw.model);
             const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
             // Double face : les faces arrière (le fond de l'objet) d'abord, puis les faces avant par-dessus.
             // Exact pour une forme convexe (bulle de verrière, cube).

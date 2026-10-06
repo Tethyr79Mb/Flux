@@ -4,9 +4,11 @@
 
 #include "Flux/Graphics/Planet.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <numbers>
 #include <thread>
 #include <random>
 
@@ -108,6 +110,106 @@ bool RunPlanetTests() {
             const Math::Vector3d outward = middle - flat.center;
             CHECK(Math::Dot(normal, outward - Math::Normalize(middle) * Math::Dot(outward, Math::Normalize(middle))) > 0.0);
         }
+    }
+
+    // Forme du terrain : des plaines larges où l'on peut se poser (pas de bruit partout), des montagnes rares et
+    // hautes, et les creux sous le niveau zéro.
+    {
+        const Planet::Terrain world(60000.0, 800.0, 1);
+        const std::uint32_t octaves = world.GetOctaves(world.GetMaxLevel());
+        // Pentes au pas d'un sommet (1,5 m) autour d'un point, en degrés.
+        const auto medianSlope = [&](const Math::Vector3d& center) {
+            const Math::Vector3d up = Math::Normalize(center);
+            const Math::Vector3d east = Math::Normalize(Math::Cross(up, Math::Vector3d{0.0, 1.0, 0.0}));
+            const Math::Vector3d north = Math::Cross(east, up);
+            constexpr int N = 24;
+            constexpr double step = 1.5;
+            std::vector<double> heights(N * N);
+            for (int y = 0; y < N; ++y) {
+                for (int x = 0; x < N; ++x) {
+                    const Math::Vector3d d = Math::Normalize(up * world.GetRadius() + east * (x * step) + north * (y * step));
+                    heights[y * N + x] = world.GetHeight(d, octaves);
+                }
+            }
+            std::vector<double> slopes;
+            for (int y = 0; y + 1 < N; ++y) {
+                for (int x = 0; x + 1 < N; ++x) {
+                    const double dx = (heights[y * N + x + 1] - heights[y * N + x]) / step;
+                    const double dy = (heights[(y + 1) * N + x] - heights[y * N + x]) / step;
+                    slopes.push_back(std::atan(std::hypot(dx, dy)) * 180.0 / std::numbers::pi);
+                }
+            }
+            std::ranges::nth_element(slopes, slopes.begin() + static_cast<std::ptrdiff_t>(slopes.size() / 2));
+            return slopes[slopes.size() / 2];
+        };
+        // Répartition des hauteurs sur toute la sphère.
+        int low = 0;
+        int high = 0;
+        int flat = 0;
+        int land = 0;
+        std::uniform_real_distribution<double> any(-1.0, 1.0);
+        for (int i = 0; i < 300; ++i) {
+            const Math::Vector3d d = Math::Normalize(Math::Vector3d{any(random), any(random), any(random)});
+            const double h = world.GetHeight(d, octaves);
+            if (h < -100.0) {
+                ++low;
+            }
+            if (h > 400.0) {
+                ++high;
+            }
+            if (h > 0.0) {
+                ++land;
+                // Une terre sur deux au moins est une plaine (moins de 5 degrés au pas d'un sommet) : on s'y pose.
+                if (medianSlope(d * (world.GetRadius() + h)) < 5.0) {
+                    ++flat;
+                }
+            }
+        }
+        CHECK(low > 30 && high >= 1);    // des creux, et quelques sommets
+        CHECK(high < 60);                // les montagnes restent rares
+        CHECK(land > 60 && flat * 2 > land);
+    }
+
+    // Glissement vers la parente : chaque sommet arrive sur la forme de sa parente (sur un de ses sommets, ou au
+    // milieu d'un bord de ses triangles), avec ses normales ; rien au niveau 0 ; deux voisines arrivent au même endroit.
+    {
+        Planet::TileMesh root;
+        Planet::BuildTile(terrain, {3, 0, 0, 0}, root);
+        CHECK(root.morph.size() == Planet::TileVertexCount);
+        CHECK(Math::Length(root.morph[100].offset) == 0.0f);
+        const Planet::TileKey parentKey{2, 4, 9, 3};
+        Planet::TileMesh parentMesh;
+        Planet::BuildTile(terrain, parentKey, parentMesh);
+        const auto parentAt = [&](std::uint32_t i, std::uint32_t j) { return Position(parentMesh, j * Planet::TileSide + i); };
+        for (std::uint32_t c = 0; c < 4; ++c) {
+            Planet::TileMesh child;
+            Planet::BuildTile(terrain, parentKey.Child(c), child);
+            const std::uint32_t pi0 = (c & 1u) * Planet::TileQuads / 2;
+            const std::uint32_t pj0 = (c >> 1) * Planet::TileQuads / 2;
+            for (std::uint32_t j = 0; j < Planet::TileSide; ++j) {
+                for (std::uint32_t i = 0; i < Planet::TileSide; ++i) {
+                    const std::uint32_t v = j * Planet::TileSide + i;
+                    const Math::Vector3d target = Position(child, v) + Math::Vector3d(child.morph[v].offset);
+                    // Les deux sommets de la parente dont il est le milieu (le même s'il est à elle).
+                    const std::uint32_t i0 = pi0 + i / 2;
+                    const std::uint32_t j0 = pj0 + j / 2;
+                    const Math::Vector3d expected = (parentAt(i0, j0) + parentAt(i0 + (i & 1u), j0 + (j & 1u))) * 0.5;
+                    CHECK(Math::Length(target - expected) < 0.01);
+                    if ((i & 1u) == 0 && (j & 1u) == 0) {
+                        CHECK(Math::Dot(child.morph[v].normal, parentMesh.vertices[j0 * Planet::TileSide + i0].normal) > 0.9999f);
+                    }
+                }
+            }
+        }
+        for (std::uint32_t j = 0; j < Planet::TileSide; ++j) {
+            const std::uint32_t a = j * Planet::TileSide + Planet::TileQuads;
+            const std::uint32_t b = j * Planet::TileSide;
+            const Math::Vector3d fromLeft = Position(left, a) + Math::Vector3d(left.morph[a].offset);
+            const Math::Vector3d fromRight = Position(right, b) + Math::Vector3d(right.morph[b].offset);
+            CHECK(Math::Length(fromLeft - fromRight) < 0.01);
+        }
+        // Distances de coupe : la moitié à chaque niveau.
+        CHECK(std::abs(Planet::GetSplitDistance(terrain, 3) - 2.0 * Planet::GetSplitDistance(terrain, 4)) < 1.0e-6);
     }
 
     // Génération en tâches de fond : mêmes tuiles qu'en direct, toutes rendues, chacune avec sa demande.

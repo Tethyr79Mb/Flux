@@ -23,6 +23,11 @@ namespace Flux::Planet {
     constexpr std::uint32_t TileVertexCount = TileSide * TileSide + 4 * TileSide;
     // Niveau le plus fin possible (au-delà, les coordonnées de la grille ne tiennent plus sur 32 bits).
     constexpr std::uint32_t MaxLevel = 24;
+    // Une tuile est coupée en 4 quand la caméra est à moins de LodSplitFactor fois la longueur de son bord (voir
+    // GetSplitDistance) : ses sommets restent espacés de quelques pixels à l'écran.
+    constexpr double LodSplitFactor = 3.0;
+    // Fraction de la distance de coupe de la parente où une tuile commence à glisser vers la forme de sa parente.
+    constexpr double MorphStart = 0.7;
 
     // Une tuile : sa face (0 à 5 : +X, -X, +Y, -Y, +Z, -Z), son niveau, sa place dans la face (0 à 2^niveau - 1).
     struct TileKey
@@ -72,12 +77,20 @@ namespace Flux::Planet {
 
         private:
         double Noise(const Math::Vector3d& p) const;
+        double Fbm(const Math::Vector3d& direction, const Math::Vector3d& offset, std::uint32_t first, std::uint32_t last,
+                   std::uint32_t octaves, double gain, bool ridged) const;
 
         double m_radius;
         double m_relief;
         std::uint32_t m_maxLevel;
         std::array<std::uint8_t, 512> m_permutation{};
     };
+
+    // Distance (de la caméra à la sphère englobante d'une tuile) en deçà de laquelle une tuile de ce niveau est coupée
+    // en 4. La même pour toutes les tuiles d'un niveau (la projection tangente donne le même angle à toutes les
+    // tuiles le long des axes d'une face) : deux voisines changent de niveau à la même distance, ce qui permet le
+    // glissement d'une forme à l'autre sans fente.
+    FLUX_API double GetSplitDistance(const Terrain& terrain, std::uint32_t level);
 
     // Sphère englobante (dans le repère de la planète) et longueur d'un bord d'une tuile, sans la générer.
     struct TileBounds
@@ -90,11 +103,20 @@ namespace Flux::Planet {
 
     // Sommets d'une tuile, relatifs à `center` (son centre sur la sphère, repère de la planète), et le rayon de la
     // sphère qui les englobe, jupes comprises.
+    // Où va un sommet quand sa tuile prend la forme de sa parente (moins détaillée) : au même endroit que le sommet de
+    // la parente s'il en a un, sinon sur le bord du triangle de la parente. Envoyé au GPU à côté de ModelVertex.
+    struct MorphVertex
+    {
+        Math::Vector3f offset; // de la position du sommet à celle de la parente
+        Math::Vector3f normal; // normale de la parente à cet endroit
+    };
+
     struct TileMesh
     {
         Math::Vector3d center;
-        double radius = 0.0;
-        std::vector<ModelVertex> vertices; // TileVertexCount
+        double radius = 0.0;                // englobe aussi la forme de la parente
+        std::vector<ModelVertex> vertices;  // TileVertexCount
+        std::vector<MorphVertex> morph;     // TileVertexCount ; niveau 0 : aucun glissement
     };
     FLUX_API void BuildTile(const Terrain& terrain, TileKey key, TileMesh& mesh);
     // Indices communs à toutes les tuiles (la grille, puis les jupes), dans le sens trigonométrique vu de dehors.

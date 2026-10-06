@@ -7,9 +7,6 @@
 
 namespace Flux {
     namespace {
-        // Une tuile est coupée en 4 quand la caméra est à moins de SplitFactor fois son bord : ses sommets restent
-        // espacés de quelques pixels à l'écran.
-        constexpr double SplitFactor = 3.0;
         // Tuiles en attente de génération au plus : les plus urgentes (la file est refaite à chaque image).
         constexpr std::size_t MaxQueuedJobs = 256;
         // Tuiles finies envoyées au GPU par image au plus (une copie de 40 Ko chacune).
@@ -108,7 +105,8 @@ namespace Flux {
             return;
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
-        if (key.level < visit.state.terrain->GetMaxLevel() && distance < SplitFactor * node.bounds.edge) {
+        const Planet::Terrain& terrain = *visit.state.terrain;
+        if (key.level < terrain.GetMaxLevel() && distance < Planet::GetSplitDistance(terrain, key.level)) {
             // Les enfants visibles doivent tous être prêts ; sinon cette tuile reste affichée et ils sont demandés.
             std::array<Node*, 4> children{};
             std::array<bool, 4> culled{};
@@ -134,7 +132,16 @@ namespace Flux {
             }
         }
         if (node.model.vertices) {
-            visit.tiles.push_back({&node.model, visit.position + visit.rotation.Rotate(node.center), node.radius});
+            // Glisse vers la forme parente jusqu'à la distance où la parente reprend la place (une voisine plus
+            // grossière n'est jamais plus proche) : là, son bord est celui de la parente, sans fente.
+            float morphStart = 1.0e30f;
+            float morphScale = 0.0f;
+            if (key.level > 0) {
+                const double end = Planet::GetSplitDistance(terrain, key.level - 1u);
+                morphStart = static_cast<float>(Planet::MorphStart * end);
+                morphScale = static_cast<float>(1.0 / ((1.0 - Planet::MorphStart) * end));
+            }
+            visit.tiles.push_back({&node.model, visit.position + visit.rotation.Rotate(node.center), node.radius, morphStart, morphScale});
         }
     }
 
@@ -149,23 +156,26 @@ namespace Flux {
 
     // Sommets de la tuile envoyés au GPU.
     bool PlanetRenderer::Upload(Node& node, const Planet::TileMesh& mesh) {
-        constexpr std::uint64_t size = Planet::TileVertexCount * sizeof(ModelVertex);
-        std::unique_ptr<RHI::Buffer> buffer;
-        // Un buffer libéré que le GPU ne lit plus, sinon un nouveau.
+        constexpr std::uint64_t vertexSize = Planet::TileVertexCount * sizeof(ModelVertex);
+        constexpr std::uint64_t morphSize = Planet::TileVertexCount * sizeof(Planet::MorphVertex);
+        // Des buffers libérés que le GPU ne lit plus, sinon des nouveaux.
         const auto free = std::ranges::find_if(m_freeBuffers, [this](const FreeBuffer& f) { return f.frame + RHI::FramesInFlight < m_frame; });
         if (free != m_freeBuffers.end()) {
-            buffer = std::move(free->buffer);
+            node.model.vertices = std::move(free->vertices);
+            node.model.morph = std::move(free->morph);
             m_freeBuffers.erase(free);
         } else {
-            auto created = m_device.CreateBuffer({size, RHI::BufferUsage::Vertex, RHI::MemoryType::Upload});
-            if (!created) {
-                Log::Error("Planète : {}", created.error());
+            auto vertices = m_device.CreateBuffer({vertexSize, RHI::BufferUsage::Vertex, RHI::MemoryType::Upload});
+            auto morph = m_device.CreateBuffer({morphSize, RHI::BufferUsage::Vertex, RHI::MemoryType::Upload});
+            if (!vertices || !morph) {
+                Log::Error("Planète : {}", !vertices ? vertices.error() : morph.error());
                 return false;
             }
-            buffer = std::move(*created);
+            node.model.vertices = std::move(*vertices);
+            node.model.morph = std::move(*morph);
         }
-        buffer->Write(mesh.vertices.data(), size);
-        node.model.vertices = std::move(buffer);
+        node.model.vertices->Write(mesh.vertices.data(), vertexSize);
+        node.model.morph->Write(mesh.morph.data(), morphSize);
         node.model.indices = m_indices;
         node.model.primitives = {{0, m_indexCount, 0}};
         node.model.materials.resize(1); // blanc : la couleur de la planète vient de la teinte du dessin
@@ -177,7 +187,7 @@ namespace Flux {
 
     void PlanetRenderer::Retire(Node& node) {
         if (node.model.vertices) {
-            m_freeBuffers.push_back({std::move(node.model.vertices), node.lastUsed});
+            m_freeBuffers.push_back({std::move(node.model.vertices), std::move(node.model.morph), node.lastUsed});
         }
     }
 

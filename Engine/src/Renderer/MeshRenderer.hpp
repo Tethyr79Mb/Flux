@@ -121,6 +121,7 @@ namespace Flux {
 
         explicit MeshRenderer(RHI::Device& device) : m_device(device) {}
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
+        const Pipelines& GetPipelines(const GpuModel& model) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
@@ -137,6 +138,8 @@ namespace Flux {
         Pipelines m_static;
         // Modèles animés : un second flux de sommets (os et poids), lus avec les matrices des os.
         Pipelines m_skinned;
+        // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
+        Pipelines m_planet;
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.
         std::unique_ptr<RHI::BindGroupLayout> m_frameLayout;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_jointBuffers;
