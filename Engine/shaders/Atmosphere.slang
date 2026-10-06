@@ -162,9 +162,3 @@ float3 AtmosphereAmbient(AtmosphereData a, float3 position, float3 normal, float
     const float altitude = exp(-max(distance - a.center.w, 0.0) * a.rayleigh.w);
     return sky * altitude * (0.6 + 0.4 * dot(normal, up));
 }
-
-// Bruit par pixel pour décaler les pas (« interleaved gradient noise » de Jimenez) : sans motif visible.
-float AtmosphereJitter(float2 pixel)
-{
-    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
-}
