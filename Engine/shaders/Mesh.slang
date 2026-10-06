@@ -7,6 +7,10 @@
 // Tuiles de planète (vertexPlanet) : chaque sommet glisse vers la forme de la tuile parente en s'éloignant de la
 // caméra, pour qu'un changement de niveau de détail ne fasse pas de saut (« morphing » façon CDLOD).
 // Cartes d'ombres (vertexShadow, vertexShadowSkinned, vertexShadowPlanet, fragmentShadow) : profondeur vue du soleil, rien d'autre.
+// Près d'une planète à atmosphère : le soleil rougi ou caché (nuit), la lumière du ciel, et la brume entre la caméra et
+// la surface (shaders/Atmosphere.slang).
+
+#include "Atmosphere.slang"
 
 // Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
 struct InteriorData
@@ -33,6 +37,7 @@ struct FrameData
     float4 environment;
     uint4 lightCount;         // x : nombre de lumières dans lights ; y : nombre de volumes intérieurs
     InteriorData interiors[MaxInteriors];
+    AtmosphereData atmosphere;
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -420,8 +425,17 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     const float sun = sunFacing > 0.0 ? SunVisibility(input.worldPosition, geometryNormal, sunFacing) : 0.0;
     float3 interiorLight;
     const float inside = InteriorAt(input.worldPosition, interiorLight);
-    float3 lit = Shade(surface, toSun, f.sunColor.rgb * sun) + Ambient(surface, occlusion, inside, interiorLight)
-               + SceneLights(input.worldPosition, surface);
+    float3 sunColor = f.sunColor.rgb;
+    float3 ambient = Ambient(surface, occlusion, inside, interiorLight);
+    const bool atmosphere = HasAtmosphere(f.atmosphere);
+    if (atmosphere) {
+        // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
+        const float3 local = input.worldPosition - f.atmosphere.center.xyz;
+        sunColor *= AtmosphereSunTransmittance(f.atmosphere, local, toSun);
+        const float3 skyLight = AtmosphereAmbient(f.atmosphere, local, normal, toSun) * ((1.0 - inside) * occlusion);
+        ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight;
+    }
+    float3 lit = Shade(surface, toSun, sunColor * sun) + ambient + SceneLights(input.worldPosition, surface);
     if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
         lit += params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;
     }
@@ -430,6 +444,14 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     const float4 rim = draws[params.draw].rim;
     if (rim.w > 0.0 && inside < 1.0) {
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
+    }
+    if (atmosphere) {
+        // L'air entre la caméra et la surface : il voile ce qui est loin et ajoute sa propre lumière.
+        const float distance = length(input.worldPosition);
+        float3 transmittance;
+        const float3 scattered = AtmosphereScatter(f.atmosphere, input.worldPosition / max(distance, 1.0e-4), distance, toSun,
+                                                   f.sunColor.rgb, 8, AtmosphereJitter(input.position.xy), transmittance);
+        lit = lit * transmittance + scattered;
     }
     return float4(ToneMap(lit), params.transparent != 0 ? base.a : 1.0);
 }

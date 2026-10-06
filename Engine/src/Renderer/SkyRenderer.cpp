@@ -26,8 +26,9 @@ namespace Flux {
             std::array<float, 4> galaxyCenter; // w : éclat des étoiles
             std::array<float, 4> noiseOffset;  // w : luminosité
             std::array<std::uint32_t, 4> options; // x : graine ; y : panorama
+            AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(SkyData) == 176);
+        static_assert(sizeof(SkyData) == 176 + sizeof(AtmosphereGpu));
 
         constexpr std::uint32_t DataSlot = 0;
         constexpr std::uint32_t PanoramaSlot = 1;
@@ -216,16 +217,22 @@ namespace Flux {
             component = &sky;
             break;
         }
-        m_visible = component != nullptr;
 
         SkyLighting lighting;
         lighting.exposure = Exposure;
         EnvironmentKey key;
         const RHI::Texture* panoramaTexture = m_black.get();
         SkyData data{};
+        const float tanY = std::tan(0.5f * camera.verticalFov);
+        data.right = ToArray(camera.GetRight() * (tanY * aspect));
+        data.up = ToArray(camera.GetUp() * tanY);
+        data.forward = ToArray(camera.GetForward(), 2.0f * tanY / std::max(viewportHeight, 1.0f));
         if (!component) {
+            // Pas de fond (luminosité nulle), pas de disque du soleil : seulement l'air d'une planète s'il y en a.
             lighting.toSun = SunDirection(DefaultSunElevation, DefaultSunAzimuth);
             lighting.sunColor = DefaultSunColor;
+            data.toSun = ToArray(lighting.toSun, 0.0f);
+            data.sunColor = ToArray(lighting.sunColor, Exposure);
         } else {
             const SkyComponent& sky = *component;
             lighting.toSun = SunDirection(sky.sunElevation, sky.sunAzimuth);
@@ -246,10 +253,6 @@ namespace Flux {
             }
 
             const SkyParameters parameters = key.kind == EnvironmentKey::Kind::Generated ? key.parameters : MakeSkyParameters(sky);
-            const float tanY = std::tan(0.5f * camera.verticalFov);
-            data.right = ToArray(camera.GetRight() * (tanY * aspect));
-            data.up = ToArray(camera.GetUp() * tanY);
-            data.forward = ToArray(camera.GetForward(), 2.0f * tanY / std::max(viewportHeight, 1.0f));
             data.toSun = ToArray(lighting.toSun, 0.5f * std::clamp(sky.sunSize, 0.0f, 45.0f) * RadiansPerDegree);
             data.sunColor = ToArray(lighting.sunColor, Exposure);
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
@@ -258,6 +261,11 @@ namespace Flux {
             data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f));
             data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
             data.options = {parameters.seed, key.kind == EnvironmentKey::Kind::Panorama && panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
+        }
+        lighting.atmosphere = PrepareAtmosphere(scene, camera, lighting.sunColor);
+        data.atmosphere = lighting.atmosphere;
+        m_visible = component != nullptr || lighting.atmosphere.mie[3] > 0.0f;
+        if (m_visible) {
             m_buffers[frameIndex]->Write(&data, sizeof(data));
         }
 
@@ -285,6 +293,50 @@ namespace Flux {
         lighting.environmentSampler = m_cubeSampler.get();
         lighting.environmentMips = MipCount(m_environments[frameIndex] ? m_environments[frameIndex]->GetExtent().width : 1);
         return lighting;
+    }
+
+    AtmosphereGpu SkyRenderer::PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor) {
+        // La planète dont l'air est le plus proche (on est dedans, ou c'est celui qu'on approche). Au-delà de 100 000 km,
+        // elle ne fait que quelques pixels : ignorée (et les floats du shader n'y suffiraient plus).
+        constexpr double MaxDistance = 1.0e8;
+        AtmosphereGpu gpu;
+        std::optional<AtmosphereParameters> chosen;
+        Math::Vector3d chosenCenter;
+        double best = MaxDistance;
+        for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
+            if (scene.GetShip(entity) != NullEntity) {
+                continue; // une planète dans un vaisseau : un décor
+            }
+            const AtmosphereParameters parameters = MakeAtmosphereParameters(planet);
+            if (parameters.top <= 0.0f) {
+                continue;
+            }
+            const Math::Vector3d center = Math::Delta(camera.position, scene.GetWorldPosition(entity));
+            const double gap = Math::Length(center) - parameters.top;
+            if (gap < best) {
+                best = gap;
+                chosen = parameters;
+                chosenCenter = center;
+            }
+        }
+        if (!chosen) {
+            return gpu;
+        }
+        const AtmosphereParameters& a = *chosen;
+        // Lumière ambiante du ciel : quelques millisecondes, refaite seulement quand l'air ou le soleil changent.
+        if (m_ambientParameters != a || m_ambientSunColor != sunColor) {
+            m_ambientTable = ComputeAtmosphereAmbient(a, sunColor);
+            m_ambientParameters = a;
+            m_ambientSunColor = sunColor;
+        }
+        gpu.center = {static_cast<float>(chosenCenter.x), static_cast<float>(chosenCenter.y), static_cast<float>(chosenCenter.z), a.radius};
+        gpu.rayleigh = ToArray(a.rayleigh, a.rayleighFalloff);
+        gpu.mie = {a.mie, a.mieFalloff, a.mieAnisotropy, a.top};
+        gpu.scale = {a.intensity, 0.0f, 0.0f, 0.0f};
+        for (std::size_t i = 0; i < m_ambientTable.size(); ++i) {
+            gpu.ambient[i] = ToArray(m_ambientTable[i]);
+        }
+        return gpu;
     }
 
     void SkyRenderer::Bake(RHI::CommandList& commands, std::uint32_t frameIndex) {

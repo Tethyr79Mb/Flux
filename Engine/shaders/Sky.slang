@@ -5,6 +5,10 @@
 // fois dans une texture cube (bakeFragment, quand un réglage change), puis lues ; les étoiles et le soleil, fins et
 // peu coûteux, restent calculés au pixel.
 
+// Près d'une planète à atmosphère : ce fond est vu à travers son air (ciel bleu le jour, halo vu de l'espace).
+
+#include "Atmosphere.slang"
+
 // Doit correspondre à SkyData dans SkyRenderer.cpp.
 struct SkyData
 {
@@ -19,6 +23,7 @@ struct SkyData
     float4 galaxyCenter; // xyz ; w : éclat des étoiles
     float4 noiseOffset;  // xyz ; w : luminosité du fond
     uint4 options;       // x : graine mélangée ; y : 1 panorama, 0 ciel généré
+    AtmosphereData atmosphere;
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<SkyData> sky;
@@ -268,6 +273,15 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float disc = saturate((radius - angle) / pixelAngle + 0.5);
         const float halo = exp(-(angle * angle) / (radius * radius * 9.0)) * 0.5 + exp(-angle * 8.0) * 0.06;
         color += s.sunColor.rgb * (disc * 40.0 + halo);
+    }
+    if (HasAtmosphere(s.atmosphere)) {
+        // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
+        const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, s.atmosphere.center.w);
+        const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
+        float3 transmittance;
+        const float3 scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 16,
+                                                   AtmosphereJitter(input.position.xy), transmittance);
+        color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
     }
     return float4(ToneMap(color, s.sunColor.w), 1.0);
 }

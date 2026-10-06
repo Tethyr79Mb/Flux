@@ -4,6 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Renderer/AtmosphereGpu.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -31,11 +32,15 @@ namespace Flux {
         const RHI::Texture* environment = nullptr;
         const RHI::Sampler* environmentSampler = nullptr;
         std::uint32_t environmentMips = 1;
+        // Atmosphère de la planète la plus proche (aucune : mie[3] à 0).
+        AtmosphereGpu atmosphere;
     };
 
     // Ciel de la scène (SkyComponent) : le fond, dessiné après les opaques là où rien ne l'a été, et la texture cube
     // qui éclaire les maillages (lumière ambiante, reflets). Sans SkyComponent : pas de fond (la couleur d'effacement),
     // un dégradé gris pour la lumière ambiante et le soleil par défaut, l'éclairage d'avant le ciel.
+    // Près d'une planète à atmosphère (PlanetComponent), le fond montre aussi son air : ciel bleu vu du sol, halo vu de
+    // l'espace (même sans SkyComponent, sur un fond noir).
     class SkyRenderer {
         public:
         static std::expected<std::unique_ptr<SkyRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
@@ -73,7 +78,13 @@ namespace Flux {
         const Panorama& LoadPanorama(const std::filesystem::path& path);
         void UpdateEnvironment(const EnvironmentKey& key, std::uint32_t frameIndex);
 
+        // Atmosphère de la planète la plus proche de la caméra, et sa lumière ambiante (refaite quand elle change).
+        AtmosphereGpu PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor);
+
         RHI::Device& m_device;
+        std::optional<AtmosphereParameters> m_ambientParameters;
+        Math::Vector3f m_ambientSunColor;
+        std::array<Math::Vector3f, AtmosphereAmbientSize> m_ambientTable{};
         std::unique_ptr<RHI::Pipeline> m_pipeline;
         std::unique_ptr<RHI::BindGroupLayout> m_layout;
         std::unique_ptr<RHI::Sampler> m_panoramaSampler;

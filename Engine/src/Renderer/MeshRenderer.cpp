@@ -70,8 +70,9 @@ namespace Flux {
             std::array<float, 4> environment;
             std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs
             std::array<InteriorData, MaxInteriors> interiors;
+            AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) + sizeof(AtmosphereGpu) && ShadowCascadeCount == 4);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
@@ -590,6 +591,7 @@ namespace Flux {
             data.ambient = {interior.ambient.r * intensity, interior.ambient.g * intensity, interior.ambient.b * intensity, 0.0f};
         }
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()), 0, 0};
+        frame.atmosphere = sky.atmosphere;
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
 

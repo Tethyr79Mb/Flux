@@ -159,7 +159,8 @@ namespace Flux {
     // Planète en cube-sphère centrée sur l'entité (qui la fait tourner ; son échelle est ignorée) : une sphère de
     // `radius` mètres déformée par un relief généré (le même pour une même graine), plus détaillée près de la caméra
     // (Flux/Graphics/Planet.hpp). Son sol est solide (personnages, objets simulés, vaisseaux qui se posent) et elle
-    // attire vers son centre jusqu'à deux rayons de distance ; au-delà, c'est la gravité du monde (PhysicsWorld).
+    // attire vers son centre jusqu'à deux rayons de distance ; au-delà, c'est la gravité du monde (PhysicsWorld). Son
+    // atmosphère colore le ciel et voile le lointain.
     struct PlanetComponent
     {
         float radius = 60000.0f; // m, au niveau zéro du relief
@@ -168,6 +169,10 @@ namespace Flux {
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;
         float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
+        // Atmosphère (Flux/Graphics/Atmosphere.hpp) : ciel coloré vu du sol, brume au loin, halo vu de l'espace.
+        float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre
+        float atmosphereHeight = 12000.0f; // m au-dessus du sol, là où elle s'arrête (presque tout est dans le bas)
+        Math::LinearColor skyColor{0.175f, 0.41f, 1.0f}; // ce que l'air diffuse le plus : bleu sur Terre, orangé sur Mars
     };
 
     // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec
