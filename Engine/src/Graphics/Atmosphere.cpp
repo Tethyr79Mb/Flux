@@ -63,23 +63,34 @@ namespace Flux {
             return depth / falloff;
         }
 
+        // Soleil couché au sol sur cet angle (radians, environ 3°) : voir SunDepth.
+        constexpr float SunsetAngle = 0.05f;
+
         // Épaisseurs (Rayleigh, Mie) de `position` vers le soleil, et la part de soleil non cachée par le sol (sphère du
-        // rayon du sol, ou plus bas que le point : fond d'une vallée) : passe de 1 à 0 quand le rayon descend de 0 à
-        // 2 x `soft` mètres sous le sol. Pas avant : le test ne se fait que côté nuit, un fondu commencé au-dessus du sol
-        // ferait une marche nette sur la ligne jour/nuit, fixe sur la planète. Dans l'air, une hauteur d'échelle, sinon
-        // les pas de la marche le long du regard dessinent des arcs sur l'ombre de la planète ; au sol, net (le soleil se
-        // couche à l'horizon).
+        // rayon du sol, ou plus bas que le point : fond d'une vallée). Le soleil se couche quand son cosinus passe sous
+        // celui de l'horizon de cette sphère, puis s'éteint en douceur (le test ne se fait que côté nuit : un fondu
+        // commencé avant ferait une marche sur la ligne jour/nuit) : sur 2 x `soft` mètres sous le sol (dans l'air, une
+        // hauteur d'échelle, sinon les pas de la marche le long du regard dessinent des arcs sur l'ombre de la planète),
+        // ou si `angle` > 0, sur `angle` radians de soleil sous l'horizon (au sol : un coucher net dessinait une ligne
+        // droite, la même pour tous les creux, là où les pentes tournées vers le soleil étaient encore éclairées).
         float SunDepth(const AtmosphereParameters& a, const Math::Vector3f& position, const Math::Vector3f& toSun, float soft,
-                       float& rayleigh, float& mie) {
+                       float angle, float& rayleigh, float& mie) {
             rayleigh = mie = 0.0f;
             const float distance = std::max(Math::Length(position), 1.0f);
             const float cosine = Math::Dot(position, toSun) / distance;
             float visible = 1.0f;
             if (cosine < 0.0f) {
-                // Plus courte distance au centre le long du rayon vers le soleil.
-                const float closest = distance * std::sqrt(std::max(0.0f, 1.0f - cosine * cosine));
-                const float ground = std::min(a.radius, distance) - 2.0f * soft;
-                const float t = std::clamp((closest - ground) / (2.0f * soft), 0.0f, 1.0f);
+                const float ground = std::min(a.radius, distance);
+                float t = 0.0f;
+                if (angle > 0.0f) {
+                    const float ratio = ground / distance;
+                    const float horizon = -std::sqrt(std::max(0.0f, 1.0f - ratio * ratio)); // cosinus du soleil à l'horizon
+                    t = std::clamp((cosine - (horizon - angle)) / angle, 0.0f, 1.0f);
+                } else {
+                    // Plus courte distance au centre le long du rayon vers le soleil.
+                    const float closest = distance * std::sqrt(std::max(0.0f, 1.0f - cosine * cosine));
+                    t = std::clamp((closest - (ground - 2.0f * soft)) / (2.0f * soft), 0.0f, 1.0f);
+                }
                 visible = t * t * (3.0f - 2.0f * t);
                 if (visible <= 0.0f) {
                     return 0.0f;
@@ -115,7 +126,7 @@ namespace Flux {
     Math::Vector3f SunTransmittance(const AtmosphereParameters& a, const Math::Vector3f& position, const Math::Vector3f& toSun) {
         float rayleigh = 0.0f;
         float mie = 0.0f;
-        const float visible = SunDepth(a, position, toSun, 1.0f, rayleigh, mie);
+        const float visible = SunDepth(a, position, toSun, 0.0f, SunsetAngle, rayleigh, mie);
         if (visible <= 0.0f) {
             return {};
         }
@@ -150,7 +161,7 @@ namespace Flux {
             viewMie += 0.5f * mie;
             float sunRayleigh = 0.0f;
             float sunMie = 0.0f;
-            const float visible = SunDepth(a, point, toSun, 1.0f / a.rayleighFalloff, sunRayleigh, sunMie);
+            const float visible = SunDepth(a, point, toSun, 1.0f / a.rayleighFalloff, 0.0f, sunRayleigh, sunMie);
             if (visible > 0.0f) {
                 const Math::Vector3f light = Extinction(a, viewRayleigh + sunRayleigh, viewMie + sunMie) * visible;
                 sumRayleigh += light * rayleigh;

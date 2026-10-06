@@ -58,17 +58,26 @@ float AtmosphereColumn(float radius, float height, float falloff, float cosine)
 }
 
 // Épaisseurs (Rayleigh, Mie) de `position` (relatif au centre) vers le soleil, et en z la part de soleil non cachée
-// par le sol : fondue quand le rayon passe de 0 à 2 x `soft` mètres sous le sol, sans marche sur la ligne jour/nuit
-// (comme Atmosphere.cpp : une hauteur d'échelle dans l'air, sinon des arcs côté nuit ; net au sol).
-float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float soft)
+// par le sol (sphère du rayon du sol, ou plus bas que le point : fond d'une vallée). Le soleil se couche quand son
+// cosinus passe sous celui de l'horizon de cette sphère, puis s'éteint en douceur, sans marche sur la ligne
+// jour/nuit : sur `soft` mètres sous le sol (dans l'air : une hauteur d'échelle, sinon des arcs côté nuit), ou si
+// `angle` > 0, sur `angle` radians de soleil sous l'horizon (au sol : un coucher net dessinait une ligne droite, la
+// même pour tous les creux, là où les pentes tournées vers le soleil étaient encore éclairées). Comme Atmosphere.cpp.
+float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float soft, float angle)
 {
     const float distance = max(length(position), 1.0);
     const float cosine = dot(position, toSun) / distance;
     float visible = 1.0;
     if (cosine < 0.0) {
-        const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
         const float ground = min(a.center.w, distance);
-        visible = smoothstep(ground - 2.0 * soft, ground, closest);
+        if (angle > 0.0) {
+            const float ratio = ground / distance;
+            const float horizon = -sqrt(max(0.0, 1.0 - ratio * ratio)); // cosinus du soleil à l'horizon
+            visible = smoothstep(horizon - angle, horizon, cosine);
+        } else {
+            const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
+            visible = smoothstep(ground - 2.0 * soft, ground, closest);
+        }
         if (visible <= 0.0) {
             return float3(0.0);
         }
@@ -78,10 +87,13 @@ float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float
                   AtmosphereColumn(a.center.w, height, a.mie.y, cosine), visible);
 }
 
+// Soleil couché au sol sur cet angle (radians, environ 3°) : voir AtmosphereSunDepth.
+static const float AtmosphereSunsetAngle = 0.05;
+
 // Part de la lumière du soleil qui arrive en `position` (relatif au centre) : rougie au couchant, nulle la nuit.
 float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSun)
 {
-    const float3 depth = AtmosphereSunDepth(a, position, toSun, 1.0);
+    const float3 depth = AtmosphereSunDepth(a, position, toSun, 0.0, AtmosphereSunsetAngle);
     return depth.z <= 0.0 ? float3(0.0) : AtmosphereExtinction(a, depth.x, depth.y) * depth.z;
 }
 
@@ -113,7 +125,7 @@ float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, flo
         const float mie = exp(-h * a.mie.y) * step;
         viewRayleigh += 0.5 * rayleigh;
         viewMie += 0.5 * mie;
-        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun, 1.0 / a.rayleigh.w);
+        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun, 1.0 / a.rayleigh.w, 0.0);
         if (sunDepth.z > 0.0) {
             const float3 light = AtmosphereExtinction(a, viewRayleigh + sunDepth.x, viewMie + sunDepth.y) * sunDepth.z;
             sumRayleigh += light * rayleigh;
