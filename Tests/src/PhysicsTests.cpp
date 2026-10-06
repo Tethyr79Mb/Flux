@@ -765,6 +765,27 @@ namespace {
         CHECK(shipComponent.grounded);
         const double shipAltitude = altitude(ship);
         CHECK(shipAltitude > 0.9 && shipAltitude < 1.5);
+
+        // Sol plat de la scène à 1,98 rayon d'une planète : la gravité du monde l'emporte encore presque entière (le
+        // joueur reste debout dessus) ; elle se fond dans celle de la planète en s'en approchant.
+        {
+            Scene flat;
+            AddFloor(flat);
+            const Entity far = flat.CreateEntity("Planète");
+            const double radius = flat.Add<PlanetComponent>(far).radius;
+            flat.Get<TransformComponent>(far).position = {radius * 1.98, 0.0, 0.0};
+            const Entity walker = flat.CreateEntity("Joueur");
+            flat.Get<TransformComponent>(walker).position = {0.0, 1.0, 0.0};
+            flat.Add<CharacterComponent>(walker);
+            PhysicsWorld flatWorld;
+            Run(flatWorld, flat, 1.0);
+            CHECK(Math::Dot(flatWorld.GetUp(flat, walker), Math::Vector3f{0.0f, 1.0f, 0.0f}) > 0.999f);
+            CHECK(std::abs(flat.Get<TransformComponent>(walker).position.y) < 0.1);
+            const Entity marker = flat.CreateEntity("Repère");
+            flat.Get<TransformComponent>(marker).position = {radius * 0.25, 1.0, 0.0}; // à 1,73 rayon : à moitié
+            const Math::Vector3f halfway = flatWorld.GetUp(flat, marker);
+            CHECK(halfway.x < -0.3f && halfway.y > 0.3f);
+        }
         return true;
     }
 }
