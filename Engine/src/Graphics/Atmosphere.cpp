@@ -64,9 +64,11 @@ namespace Flux {
         }
 
         // Épaisseurs (Rayleigh, Mie) de `position` vers le soleil, et la part de soleil non cachée par le sol (sphère du
-        // rayon du sol, ou plus bas que le point : fond d'une vallée) : passe de 1 à 0 sur `soft` mètres de part et
-        // d'autre quand le rayon frôle le sol. Dans l'air, une hauteur d'échelle, sinon les pas de la marche le long du
-        // regard dessinent des arcs sur l'ombre de la planète ; au sol, net (le soleil se couche à l'horizon).
+        // rayon du sol, ou plus bas que le point : fond d'une vallée) : passe de 1 à 0 quand le rayon descend de 0 à
+        // 2 x `soft` mètres sous le sol. Pas avant : le test ne se fait que côté nuit, un fondu commencé au-dessus du sol
+        // ferait une marche nette sur la ligne jour/nuit, fixe sur la planète. Dans l'air, une hauteur d'échelle, sinon
+        // les pas de la marche le long du regard dessinent des arcs sur l'ombre de la planète ; au sol, net (le soleil se
+        // couche à l'horizon).
         float SunDepth(const AtmosphereParameters& a, const Math::Vector3f& position, const Math::Vector3f& toSun, float soft,
                        float& rayleigh, float& mie) {
             rayleigh = mie = 0.0f;
@@ -76,7 +78,7 @@ namespace Flux {
             if (cosine < 0.0f) {
                 // Plus courte distance au centre le long du rayon vers le soleil.
                 const float closest = distance * std::sqrt(std::max(0.0f, 1.0f - cosine * cosine));
-                const float ground = std::min(a.radius, distance) - soft;
+                const float ground = std::min(a.radius, distance) - 2.0f * soft;
                 const float t = std::clamp((closest - ground) / (2.0f * soft), 0.0f, 1.0f);
                 visible = t * t * (3.0f - 2.0f * t);
                 if (visible <= 0.0f) {

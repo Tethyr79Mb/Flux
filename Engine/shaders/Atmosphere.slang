@@ -58,8 +58,8 @@ float AtmosphereColumn(float radius, float height, float falloff, float cosine)
 }
 
 // Épaisseurs (Rayleigh, Mie) de `position` (relatif au centre) vers le soleil, et en z la part de soleil non cachée
-// par le sol : fondue sur `soft` mètres quand le rayon le frôle (comme Atmosphere.cpp : une hauteur d'échelle dans
-// l'air, sinon des arcs côté nuit ; net au sol).
+// par le sol : fondue quand le rayon passe de 0 à 2 x `soft` mètres sous le sol, sans marche sur la ligne jour/nuit
+// (comme Atmosphere.cpp : une hauteur d'échelle dans l'air, sinon des arcs côté nuit ; net au sol).
 float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float soft)
 {
     const float distance = max(length(position), 1.0);
@@ -68,7 +68,7 @@ float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float
     if (cosine < 0.0) {
         const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
         const float ground = min(a.center.w, distance);
-        visible = smoothstep(ground - soft, ground + soft, closest);
+        visible = smoothstep(ground - 2.0 * soft, ground, closest);
         if (visible <= 0.0) {
             return float3(0.0);
         }
