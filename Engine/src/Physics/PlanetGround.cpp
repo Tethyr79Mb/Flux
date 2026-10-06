@@ -21,8 +21,11 @@ namespace Flux {
     namespace {
         // Tuile plus demandée depuis tant de mises à jour (deux secondes à 60 images/s) : retirée.
         constexpr std::uint64_t KeepUpdates = 120;
-        // La gravité d'une planète s'arrête à tant de fois son rayon (de son centre).
+        // La gravité d'une planète s'arrête à tant de fois son rayon (de son centre). Entre GravityBlend et
+        // GravityReach rayons, elle se fond dans celle du monde : pas de bascule d'un coup (un sol plat de la scène
+        // posé à la limite garderait sinon un bas penché vers la planète).
         constexpr double GravityReach = 2.0;
+        constexpr double GravityBlend = 1.5;
 
         JPH::RVec3 ToJolt(const Math::Vector3d& v) {
             return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
@@ -310,8 +313,11 @@ namespace Flux {
     }
 
     Math::Vector3f PlanetGround::GetGravity(const Math::Vector3d& position, const Math::Vector3f& fallback) const {
-        double strongest = -1.0;
-        Math::Vector3f gravity = fallback;
+        // La planète qui attire le plus ; sa part (1 jusqu'à GravityBlend rayons, 0 à GravityReach) remplace
+        // d'autant la gravité du monde.
+        double strongest = 0.0;
+        double weight = 0.0;
+        Math::Vector3d pull;
         for (const auto& [entity, state] : m_planets) {
             const Math::Vector3d offset = position - state.position;
             const double distance = Math::Length(offset);
@@ -319,14 +325,20 @@ namespace Flux {
             if (distance >= GravityReach * radius || distance < 1.0e-3) {
                 continue;
             }
+            const double t = std::clamp((GravityReach - distance / radius) / (GravityReach - GravityBlend), 0.0, 1.0);
+            const double part = t * t * (3.0 - 2.0 * t);
             const double ratio = std::min(1.0, radius / distance);
             const double strength = state.gravity * ratio * ratio;
-            if (strength > strongest) {
-                strongest = strength;
-                gravity = Math::Vector3f(offset * (-strength / distance));
+            if (part * strength > strongest || (strongest == 0.0 && part > weight)) {
+                strongest = part * strength;
+                weight = part;
+                pull = offset * (-strength / distance);
             }
         }
-        return gravity;
+        if (weight <= 0.0) {
+            return fallback;
+        }
+        return Math::Vector3f(pull * weight) + fallback * static_cast<float>(1.0 - weight);
     }
 
     int PlanetGround::GetTileCount() const {

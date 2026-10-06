@@ -55,8 +55,8 @@ namespace Flux {
         // Retire tous les corps (fin du monde).
         void Clear(JPH::PhysicsSystem& system);
 
-        // Gravité en ce point (relatif à l'ancre) : vers le centre de la planète la plus attirante à moins de deux
-        // rayons ; `fallback` (celle du monde) loin de toute planète.
+        // Gravité en ce point (relatif à l'ancre) : vers le centre de la planète la plus attirante, fondue dans
+        // `fallback` (celle du monde) entre 1,5 et 2 rayons ; `fallback` loin de toute planète.
         Math::Vector3f GetGravity(const Math::Vector3d& position, const Math::Vector3f& fallback) const;
         bool HasPlanets() const { return !m_planets.empty(); }
         // Tuiles de sol dans le monde (pour les tests).
