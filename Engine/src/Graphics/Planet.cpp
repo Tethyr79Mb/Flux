@@ -35,6 +35,12 @@ namespace Flux::Planet {
         // Somme des amplitudes de toutes les octaves (1 + 1/2 + 1/4...) : le relief garde la même échelle quel que
         // soit le nombre d'octaves d'une tuile.
         constexpr double AmplitudeSum = 2.0;
+        // Relief de détail (fractions du relief) : à partir de l'octave 6 (environ 4 km de longueur d'onde sur une
+        // planète de 60 km), 5 % du relief, puis x 0,7 par octave (contre 0,5 pour les continents) : pour 800 m de
+        // relief, environ 6 m de bosses à 100 m d'écart et 1,5 m à 15 m.
+        constexpr std::uint32_t DetailFirstOctave = 6;
+        constexpr double DetailAmplitude = 0.05;
+        constexpr double DetailGain = 0.7;
 
         double Fade(double t) {
             return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
@@ -150,17 +156,19 @@ namespace Flux::Planet {
         if (m_relief <= 0.0) {
             return 0.0;
         }
-        // Continents : bruit fractal (fBm). Le décalage sépare les deux bruits (sinon les crêtes suivraient les côtes).
+        // Continents : bruit fractal (fBm) des grandes formes, chaque octave deux fois plus fine et deux fois plus
+        // basse. Seul, il donne un sol lisse de près (à 100 m d'écart, quelques dizaines de centimètres de relief).
         double base = 0.0;
         double amplitude = 1.0;
         Math::Vector3d p = direction * BaseFrequency;
-        for (std::uint32_t k = 0; k < octaves; ++k) {
+        for (std::uint32_t k = 0; k < std::min(octaves, DetailFirstOctave); ++k) {
             base += amplitude * Noise(p);
             amplitude *= 0.5;
             p *= 2.0;
         }
         base /= 0.5 * AmplitudeSum; // environ -1 à 1
-        // Montagnes : crêtes (1 - |bruit|)², seulement sur les terres hautes.
+        // Montagnes : crêtes (1 - |bruit|)², seulement sur les terres hautes. Le décalage sépare les deux bruits
+        // (sinon les crêtes suivraient les côtes).
         double ridge = 0.0;
         amplitude = 1.0;
         p = direction * (4.0 * BaseFrequency) + Math::Vector3d{17.3, -41.7, 8.9};
@@ -172,12 +180,28 @@ namespace Flux::Planet {
         }
         ridge /= AmplitudeSum; // 0 à 1
         const double land = std::clamp(base * 3.0, 0.0, 1.0);
-        return m_relief * std::clamp(0.6 * base + 0.6 * ridge * land, -1.0, 1.0);
+        // Détail : collines, puis bosses et rochers. Les octaves fines baissent moins vite (DetailGain au lieu de
+        // 0,5) : le sol reste accidenté à toutes les échelles, plus sur les montagnes que dans les plaines.
+        double detail = 0.0;
+        amplitude = DetailAmplitude;
+        p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(DetailFirstOctave))) + Math::Vector3d{-23.1, 5.7, 31.3};
+        for (std::uint32_t k = DetailFirstOctave; k < octaves; ++k) {
+            detail += amplitude * Noise(p);
+            amplitude *= DetailGain;
+            p *= 2.0;
+        }
+        detail *= 0.5 + 1.5 * ridge * land;
+        return m_relief * std::clamp(0.6 * base + 0.6 * ridge * land + detail, -1.0, 1.0);
     }
 
     double Terrain::GetOmittedRelief(std::uint32_t octaves) const {
-        // Les octaves de rang >= octaves pèsent ensemble 2 x 0,5^octaves de la somme (base) ; les crêtes aussi.
-        return m_relief * 1.2 * 2.0 * std::ldexp(1.0, -static_cast<int>(std::min(octaves, MaxRidgeOctaves)));
+        // Ce que les octaves de rang >= octaves peuvent encore ajouter : la fin des continents et des crêtes, et
+        // celle du détail (somme géométrique), au plus fort (x 2 sur les montagnes).
+        const auto from = static_cast<int>(std::min(octaves, MaxRidgeOctaves));
+        double omitted = 1.2 * 2.0 * std::ldexp(1.0, -from);
+        const std::uint32_t firstDetail = std::max(octaves, DetailFirstOctave);
+        omitted += 2.0 * DetailAmplitude * std::pow(DetailGain, firstDetail - DetailFirstOctave) / (1.0 - DetailGain);
+        return m_relief * omitted;
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {
