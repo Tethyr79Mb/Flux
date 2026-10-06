@@ -444,8 +444,9 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
-// propre lumière.
-float3 ThroughAir(float3 lit, float3 worldPosition, float2 pixel)
+// propre lumière. 16 pas fixes, sans bruit par pixel : ce bruit dessinait un damier fin sur le sol, et 8 pas fixes
+// des bandes (le ciel, lui, garde son bruit).
+float3 ThroughAir(float3 lit, float3 worldPosition)
 {
     const FrameData f = frame[0];
     if (!HasAtmosphere(f.atmosphere)) {
@@ -454,7 +455,7 @@ float3 ThroughAir(float3 lit, float3 worldPosition, float2 pixel)
     const float distance = length(worldPosition);
     float3 transmittance;
     const float3 scattered = AtmosphereScatter(f.atmosphere, worldPosition / max(distance, 1.0e-4), distance, f.toSun.xyz,
-                                               f.sunColor.rgb, 8, AtmosphereJitter(pixel), transmittance);
+                                               f.sunColor.rgb, 16, 0.5, transmittance);
     return lit * transmittance + scattered;
 }
 
@@ -539,7 +540,7 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     surface.roughness = saturate(ground.w);
     float inside;
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, 1.0, inside);
-    return float4(ToneMap(ThroughAir(lit, v.worldPosition, v.position.xy)), 1.0);
+    return float4(ToneMap(ThroughAir(lit, v.worldPosition)), 1.0);
 }
 
 [shader("fragment")]
@@ -577,7 +578,7 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     if (rim.w > 0.0 && inside < 1.0) {
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
-    lit = ThroughAir(lit, input.worldPosition, input.position.xy);
+    lit = ThroughAir(lit, input.worldPosition);
     return float4(ToneMap(lit), params.transparent != 0 ? base.a : 1.0);
 }
 
