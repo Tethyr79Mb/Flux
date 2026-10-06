@@ -201,6 +201,7 @@ namespace Flux {
         actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
+        actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
         if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
             const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             if (auto loaded = actions.LoadFromString(text); !loaded) {
@@ -417,6 +418,19 @@ namespace Flux {
             seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {
                 m_cockpitView = !m_cockpitView;
+            }
+            // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
+            if (const Entity seat = Seats::GetPilotSeat(m_scene, player); seat != NullEntity) {
+                if (const Entity ship = m_scene.GetShip(seat); ship != NullEntity) {
+                    ShipComponent& component = m_scene.Get<ShipComponent>(ship);
+                    if (WasActionPressed("Stabiliser à plat")) {
+                        component.levelAssist = !component.levelAssist;
+                        Log::Info("Stabilisation à plat : {}", component.levelAssist ? "oui" : "non");
+                    }
+                    if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
+                        seatInput.up = Math::Normalize(gravity) * -1.0f;
+                    }
+                }
             }
         } else {
             // Avant et droite de la caméra, ramenés à l'horizontale de l'endroit (sur une planète : tangente au sol).

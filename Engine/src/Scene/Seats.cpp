@@ -3,6 +3,7 @@
 #include "Flux/Scene/Scene.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 #include <limits>
 
@@ -62,8 +63,10 @@ namespace Flux::Seats {
         // côtés et en hauteur le glissement tant que les touches sont tenues, sinon zéro (il reste à sa hauteur). En
         // virage, il dérive donc avant de repartir vers son nez. Le frein vise l'arrêt complet. Lacet et tangage à la
         // souris, roulis aux touches, atteints au plus vite de ShipComponent::turnAcceleration. Posé au sol, il ne
-        // fait que décoller : ni rotation ni déplacement à plat.
-        void Pilot(ShipComponent& ship, double deltaSeconds, const SeatInput& input) {
+        // fait que décoller : ni rotation ni déplacement à plat. Avec ShipComponent::levelAssist et une gravité
+        // (SeatInput::up), le lacet tourne autour de la verticale du lieu (virer garde l'horizon à plat) et, sans
+        // roulis commandé, les ailes reviennent à plat ; le tangage reste où le pilote le laisse (piquer pour se poser).
+        void Pilot(ShipComponent& ship, const Math::Quaternionf& rotation, double deltaSeconds, const SeatInput& input) {
             const float delta = static_cast<float>(deltaSeconds);
             if (delta <= 0.0f) {
                 return; // pause
@@ -77,6 +80,22 @@ namespace Flux::Seats {
             Math::Vector3f turn{std::clamp(input.mousePitch * Degrees / delta, -rate, rate),
                                 std::clamp(input.mouseYaw * Degrees / delta, -rate, rate), // vers la gauche
                                 -input.roll * rate};                                       // +z : vers la gauche
+            if (ship.levelAssist && Math::Length(input.up) > 0.5f) {
+                // Haut du lieu dans les axes du vaisseau.
+                const Math::Vector3f up = rotation.Conjugate().Rotate(input.up);
+                turn = Math::Vector3f{turn.x, 0.0f, turn.z} + up * turn.y;
+                if (input.roll == 0.0f) {
+                    // Inclinaison : angle de l'aile droite au-dessus de l'horizon (sur le dos : au-delà de 90°).
+                    // Indéfinie nez à la verticale : l'aide s'efface.
+                    const float horizontal = std::sqrt(up.x * up.x + up.y * up.y);
+                    const float weight = std::clamp((horizontal - 0.1f) / 0.3f, 0.0f, 1.0f);
+                    const float bank = std::atan2(up.x, up.y);
+                    turn.z -= bank * Degrees * ship.levelRate * weight * weight * (3.0f - 2.0f * weight);
+                }
+                turn.x = std::clamp(turn.x, -rate, rate);
+                turn.y = std::clamp(turn.y, -rate, rate);
+                turn.z = std::clamp(turn.z, -rate, rate);
+            }
             if (ship.grounded) {
                 turn = {};
                 ship.angularVelocity = {};
@@ -161,7 +180,7 @@ namespace Flux::Seats {
                     }
                 } else if (scene.Get<SeatComponent>(character->seat).pilot) {
                     if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
-                        Pilot(scene.Get<ShipComponent>(ship), deltaSeconds, input);
+                        Pilot(scene.Get<ShipComponent>(ship), scene.GetWorldRotation(ship), deltaSeconds, input);
                     }
                 }
                 break;

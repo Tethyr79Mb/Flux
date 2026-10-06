@@ -1327,6 +1327,15 @@ namespace Flux {
         return FromJolt(UpFrom(ToJolt(gravity)));
     }
 
+    Math::Vector3f PhysicsWorld::GetOutsideGravity(const Scene& scene, Entity entity) const {
+        const Impl& impl = *m_impl;
+        const Math::Vector3f base = FromJolt(impl.grids.front()->system->GetGravity());
+        if (!scene.IsValid(entity) || !impl.anchored) {
+            return base;
+        }
+        return impl.planetGround.GetGravity(Math::Delta(impl.anchor, scene.GetWorldPosition(entity)), base);
+    }
+
     Entity PhysicsWorld::GetPlayer() const {
         return m_impl->player;
     }
