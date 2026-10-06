@@ -58,16 +58,17 @@ float AtmosphereColumn(float radius, float height, float falloff, float cosine)
 }
 
 // Épaisseurs (Rayleigh, Mie) de `position` (relatif au centre) vers le soleil, et en z la part de soleil non cachée
-// par la planète : fondue sur une hauteur d'échelle quand le rayon frôle le sol (sinon des arcs côté nuit).
-float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun)
+// par le sol : fondue sur `soft` mètres quand le rayon le frôle (comme Atmosphere.cpp : une hauteur d'échelle dans
+// l'air, sinon des arcs côté nuit ; net au sol).
+float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float soft)
 {
     const float distance = max(length(position), 1.0);
     const float cosine = dot(position, toSun) / distance;
     float visible = 1.0;
     if (cosine < 0.0) {
         const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
-        const float soft = 1.0 / a.rayleigh.w;
-        visible = smoothstep(a.center.w - soft, a.center.w + soft, closest);
+        const float ground = min(a.center.w, distance);
+        visible = smoothstep(ground - soft, ground + soft, closest);
         if (visible <= 0.0) {
             return float3(0.0);
         }
@@ -80,7 +81,7 @@ float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun)
 // Part de la lumière du soleil qui arrive en `position` (relatif au centre) : rougie au couchant, nulle la nuit.
 float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSun)
 {
-    const float3 depth = AtmosphereSunDepth(a, position, toSun);
+    const float3 depth = AtmosphereSunDepth(a, position, toSun, 1.0);
     return depth.z <= 0.0 ? float3(0.0) : AtmosphereExtinction(a, depth.x, depth.y) * depth.z;
 }
 
@@ -112,7 +113,7 @@ float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, flo
         const float mie = exp(-h * a.mie.y) * step;
         viewRayleigh += 0.5 * rayleigh;
         viewMie += 0.5 * mie;
-        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun);
+        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun, 1.0 / a.rayleigh.w);
         if (sunDepth.z > 0.0) {
             const float3 light = AtmosphereExtinction(a, viewRayleigh + sunDepth.x, viewMie + sunDepth.y) * sunDepth.z;
             sumRayleigh += light * rayleigh;

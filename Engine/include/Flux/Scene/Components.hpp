@@ -171,7 +171,7 @@ namespace Flux {
         float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
         // Atmosphère (Flux/Graphics/Atmosphere.hpp) : ciel coloré vu du sol, brume au loin, halo vu de l'espace.
         float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre
-        float atmosphereHeight = 12000.0f; // m au-dessus du sol, là où elle s'arrête (presque tout est dans le bas)
+        float atmosphereHeight = 30000.0f; // m au-dessus du sol, là où elle s'arrête (presque tout est dans le bas)
         Math::LinearColor skyColor{0.175f, 0.41f, 1.0f}; // ce que l'air diffuse le plus : bleu sur Terre, orangé sur Mars
     };
 

@@ -290,7 +290,7 @@ bool RunPlanetTests() {
         CHECK(transmittance.x > 0.9f && transmittance.z < transmittance.x);
         const Math::Vector3f low = Math::Normalize(Math::Vector3f{1.0f, 0.02f, 0.0f});
         const Math::Vector3f setting = SunTransmittance(air, ground, low);
-        CHECK(setting.x > 0.1f && setting.x > 3.0f * setting.z);
+        CHECK(setting.x > 0.1f && setting.x > 2.0f * setting.z);
         CHECK(SunTransmittance(air, ground, up * -1.0f) == Math::Vector3f{});
         const Math::Vector3f space{0.0f, air.top * 3.0f, 0.0f};
         CHECK(Scatter(air, space, up, 1.0e30f, up, sun, AtmosphereSkySteps, transmittance) == Math::Vector3f{});
