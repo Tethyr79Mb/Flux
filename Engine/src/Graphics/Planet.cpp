@@ -361,6 +361,36 @@ namespace Flux::Planet {
         }
     }
 
+    void BuildTileSurface(const Terrain& terrain, TileKey key, Math::Vector3d& center, std::vector<Math::Vector3f>& positions) {
+        // Mêmes calculs que BuildTile, dans le même ordre : mêmes doubles, donc mêmes floats.
+        const double R = terrain.GetRadius();
+        const std::uint32_t octaves = terrain.GetOctaves(key.level);
+        const auto x0 = static_cast<std::int64_t>(key.x) * TileQuads;
+        const auto y0 = static_cast<std::int64_t>(key.y) * TileQuads;
+        constexpr auto half = static_cast<std::int64_t>(TileQuads / 2);
+        center = DirectionFromFace(key.face, GridToFace(x0 + half, key.level), GridToFace(y0 + half, key.level)) * R;
+        positions.resize(TileSide * TileSide);
+        for (std::uint32_t j = 0; j < TileSide; ++j) {
+            const double t = GridToFace(y0 + j, key.level);
+            for (std::uint32_t i = 0; i < TileSide; ++i) {
+                const Math::Vector3d d = DirectionFromFace(key.face, GridToFace(x0 + i, key.level), t);
+                positions[j * TileSide + i] = Math::Vector3f(d * (R + terrain.GetHeight(d, octaves)) - center);
+            }
+        }
+    }
+
+    TileKey FindTile(const Math::Vector3d& direction, std::uint32_t level) {
+        std::uint32_t face = 0;
+        double s = 0.0;
+        double t = 0.0;
+        FaceFromDirection(direction, face, s, t);
+        const double tiles = static_cast<double>(std::uint64_t{1} << level);
+        const auto cell = [&](double value) {
+            return static_cast<std::uint32_t>(std::clamp(std::floor((value + 1.0) * 0.5 * tiles), 0.0, tiles - 1.0));
+        };
+        return {static_cast<std::uint8_t>(face), static_cast<std::uint8_t>(level), cell(s), cell(t)};
+    }
+
     std::vector<std::uint32_t> BuildTileIndices() {
         std::vector<std::uint32_t> indices;
         indices.reserve(6 * TileQuads * TileQuads + 4 * 6 * TileQuads);

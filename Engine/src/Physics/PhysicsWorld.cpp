@@ -1,6 +1,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 
 #include "PhysicsContextImpl.hpp"
+#include "PlanetGround.hpp"
 
 #include "Flux/Core/Log.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -106,6 +107,23 @@ namespace Flux {
         Math::Vector3f FromJolt(JPH::Vec3Arg v) { return {v.GetX(), v.GetY(), v.GetZ()}; }
         Math::Quaternionf FromJolt(JPH::QuatArg q) { return {q.GetX(), q.GetY(), q.GetZ(), q.GetW()}; }
 
+        // Haut d'après la gravité ; sans gravité, le y du repère.
+        JPH::Vec3 UpFrom(JPH::Vec3Arg gravity) {
+            return -gravity.NormalizedOr(JPH::Vec3(0.0f, -1.0f, 0.0f));
+        }
+        // La même rotation, redressée au plus court pour que son y soit `up` (debout sur une planète).
+        JPH::Quat Upright(JPH::QuatArg rotation, JPH::Vec3Arg up) {
+            return (JPH::Quat::sFromTo(rotation.RotateAxisY(), up) * rotation).Normalized();
+        }
+        // Debout selon `up`, le z (l'avant du modèle glTF) vers `forward` ramené dans le plan du sol.
+        JPH::Quat Facing(JPH::Vec3Arg forward, JPH::Vec3Arg up) {
+            const JPH::Vec3 z = (forward - up * forward.Dot(up)).NormalizedOr(up.GetNormalizedPerpendicular());
+            const JPH::Vec3 x = up.Cross(z);
+            return JPH::Mat44(JPH::Vec4(x, 0.0f), JPH::Vec4(up, 0.0f), JPH::Vec4(z, 0.0f), JPH::Vec4(0.0f, 0.0f, 0.0f, 1.0f))
+                .GetQuaternion()
+                .Normalized();
+        }
+
         float MaxComponent(const Math::Vector3f& v) {
             return std::max({std::abs(v.x), std::abs(v.y), std::abs(v.z)});
         }
@@ -167,8 +185,7 @@ namespace Flux {
         // Triangles d'un fichier glTF pour une collision (ColliderShape::Mesh). nullptr (et un message) s'il est
         // illisible ou animé : ses sommets ne sont pas dans la pose affichée.
         struct Character {
-            JPH::Ref<JPH::CharacterVirtual> character;
-            float yaw = 0.0f; // direction du regard (le modèle regarde vers +z en glTF)
+            JPH::Ref<JPH::CharacterVirtual> character; // son z : la direction du regard (le modèle regarde vers +z en glTF)
             float groundSpeed = 0.0f; // vitesse horizontale au dernier pas, pour les animations
             float airTime = 0.0f;     // secondes sans toucher un sol où tenir debout (saut, chute, pente trop raide)
             Entity seat = NullEntity; // siège où il était posé au dernier pas
@@ -228,6 +245,9 @@ namespace Flux {
         // Enveloppe convexe de chaque vaisseau (ses collisions immobiles, dans son repère), pour qu'il bute sur le
         // décor ; nullptr : rien de solide, il passe partout.
         std::unordered_map<Entity, JPH::RefConst<JPH::Shape>> shipShapes;
+        // Sol et gravité des planètes, dans le monde de la scène.
+        PlanetGround planetGround{Layers::NonMoving};
+        std::vector<PlanetGround::Probe> probes;
 
         Impl(std::shared_ptr<PhysicsContext> owner, PhysicsContext::Impl& details)
             : context(std::move(owner)), shared(details) {
@@ -235,6 +255,7 @@ namespace Flux {
         }
 
         ~Impl() {
+            planetGround.Clear(*grids.front()->system);
             for (const std::unique_ptr<Grid>& grid : grids) {
                 DestroyGrid(*grid);
             }
@@ -279,6 +300,101 @@ namespace Flux {
         const RelativeTransform* FindTransform(Entity entity) const {
             const auto found = std::ranges::find(transforms, entity, &RelativeTransform::entity);
             return found == transforms.end() ? nullptr : &*found;
+        }
+
+        // Gravité en ce point d'un monde (dans son repère) : celle du vaisseau à bord, celle des planètes ou du monde dehors.
+        JPH::Vec3 GravityAt(const Grid& grid, JPH::RVec3Arg position) const {
+            const JPH::Vec3 gravity = grid.system->GetGravity();
+            if (grid.frame != NullEntity || !planetGround.HasPlanets()) {
+                return gravity;
+            }
+            const Math::Vector3d at{position.GetX(), position.GetY(), position.GetZ()};
+            return ToJolt(planetGround.GetGravity(at, FromJolt(gravity)));
+        }
+
+        // Ancre trop loin du joueur : les floats perdraient le millimètre (un personnage à 100 km de l'ancre
+        // tremblerait sur le sol d'une planète). Le monde de la scène est décalé pour que l'ancre soit sur lui.
+        void Recenter(const Scene& scene) {
+            constexpr double RecenterDistance = 1000.0; // m : précision d'un dixième de millimètre
+            if (player == NullEntity || !scene.IsValid(player)) {
+                return;
+            }
+            const Math::WorldPosition focus = scene.GetWorldPosition(player);
+            const Math::Vector3d offset = Math::Delta(anchor, focus);
+            if (Math::Length(offset) < RecenterDistance) {
+                return;
+            }
+            Grid& world = *grids.front();
+            JPH::BodyInterface& bodyInterface = world.system->GetBodyInterface();
+            const JPH::Vec3 shift = -ToJolt(offset);
+            for (auto* map : {&world.bodies, &world.mirrors}) {
+                for (const auto& [entity, id] : *map) {
+                    if (!id.IsInvalid()) {
+                        bodyInterface.SetPosition(id, bodyInterface.GetPosition(id) + shift, JPH::EActivation::DontActivate);
+                    }
+                }
+            }
+            for (const auto& [entity, character] : world.characters) {
+                character.character->SetPosition(character.character->GetPosition() + shift);
+            }
+            planetGround.Shift(*world.system, offset * -1.0);
+            anchor = focus;
+        }
+
+        // Ce qui peut toucher le sol d'une planète : personnages, vaisseaux à la racine, objets simulés du monde.
+        void CollectProbes(const Scene& scene) {
+            probes.clear();
+            const auto speedOf = [&](Entity entity) {
+                if (const Grid* grid = FindGrid(scene.GetShip(entity))) {
+                    if (const auto found = grid->characters.find(entity); found != grid->characters.end()) {
+                        return static_cast<double>(found->second.character->GetLinearVelocity().Length());
+                    }
+                }
+                return 0.0;
+            };
+            for (const Entity entity : scene.GetRegistry().view<const CharacterComponent>()) {
+                const double speed = speedOf(entity);
+                probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), 20.0 + speed, speed});
+            }
+            for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
+                if (scene.GetParent(entity) != NullEntity) {
+                    continue;
+                }
+                const JPH::Shape* shape = GetShipShape(scene, entity);
+                const double size = shape ? shape->GetLocalBounds().GetExtent().Length() : 10.0;
+                const double speed = Math::Length(ship.velocity);
+                probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), size + 20.0 + speed, speed});
+            }
+            const Grid& world = *grids.front();
+            const JPH::BodyInterface& bodyInterface = world.system->GetBodyInterface();
+            for (const auto& [entity, id] : world.bodies) {
+                if (id.IsInvalid() || bodyInterface.GetMotionType(id) != JPH::EMotionType::Dynamic) {
+                    continue;
+                }
+                // Endormi aussi : son sol doit rester là pour quand on le réveillera.
+                const JPH::RVec3 position = bodyInterface.GetCenterOfMassPosition(id);
+                const double speed = bodyInterface.IsActive(id) ? bodyInterface.GetLinearVelocity(id).Length() : 0.0;
+                const double size = bodyInterface.GetShape(id)->GetLocalBounds().GetExtent().Length();
+                probes.push_back({{position.GetX(), position.GetY(), position.GetZ()}, size + 5.0 + speed, speed});
+            }
+        }
+
+        // Objets simulés du monde près d'une planète : Jolt les tire vers le bas du monde, on corrige vers son centre.
+        void ApplyPlanetGravity(const Grid& grid) {
+            if (grid.frame != NullEntity || !planetGround.HasPlanets()) {
+                return;
+            }
+            JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
+            const JPH::Vec3 base = grid.system->GetGravity();
+            for (const auto& [entity, id] : grid.bodies) {
+                if (id.IsInvalid() || bodyInterface.GetMotionType(id) != JPH::EMotionType::Dynamic || !bodyInterface.IsActive(id)) {
+                    continue;
+                }
+                const JPH::Vec3 difference = GravityAt(grid, bodyInterface.GetCenterOfMassPosition(id)) - base;
+                if (difference.LengthSq() > 1.0e-8f) {
+                    bodyInterface.AddLinearVelocity(id, difference * (bodyInterface.GetGravityFactor(id) * StepSeconds));
+                }
+            }
         }
 
         void ChooseAnchor(const Scene& scene) {
@@ -645,11 +761,10 @@ namespace Flux {
             settings->mInnerBodyLayer = Layers::Moving;
 
             Character character;
-            // Seul le cap (autour de y) compte : un personnage reste debout.
-            const Math::Vector3f forward = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-            character.yaw = std::atan2(forward.x, forward.z);
-            character.character = new JPH::CharacterVirtual(settings, JPH::RVec3(ToJolt(transform.position)),
-                                                            JPH::Quat::sRotation(JPH::Vec3::sAxisY(), character.yaw),
+            // Seul le cap compte : un personnage reste debout (sur une planète, vers le haut de l'endroit).
+            const JPH::RVec3 position(ToJolt(transform.position));
+            const JPH::Vec3 forward = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f}));
+            character.character = new JPH::CharacterVirtual(settings, position, Facing(forward, UpFrom(GravityAt(grid, position))),
                                                             static_cast<JPH::uint64>(entt::to_integral(entity)), grid.system.get());
             grid.characters.emplace(entity, std::move(character));
         }
@@ -840,7 +955,7 @@ namespace Flux {
             };
             const Filter filter(to, ignored);
             // Du genou (30 cm au-dessus des pieds) à 30 cm sous eux, vers le bas de ce monde.
-            const JPH::Vec3 down = to.system->GetGravity().NormalizedOr(JPH::Vec3(0.0f, -1.0f, 0.0f));
+            const JPH::Vec3 down = -UpFrom(GravityAt(to, JPH::RVec3(ToJolt(feet))));
             constexpr float Reach = 0.3f;
             const JPH::RRayCast ray(JPH::RVec3(ToJolt(feet)) - down * Reach, down * (2.0f * Reach));
             JPH::RayCastResult hit;
@@ -893,17 +1008,16 @@ namespace Flux {
                 const Math::Vector3d position = Convert(*from, *target, body.GetPosition());
                 // Debout dans le nouveau repère, même cap dans le monde (les repères du monde sont l'identité).
                 const Math::Quaternionf rotation = target->frameRotation.Conjugate() * from->frameRotation * FromJolt(body.GetRotation());
-                const Math::Vector3f forward = rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-                const float yaw = std::atan2(forward.x, forward.z);
+                const JPH::RVec3 feet(ToJolt(position));
                 scene.SetParent(entity, target->frame);
-                Write(scene, *target, entity, JPH::RVec3(ToJolt(position)), JPH::Quat::sRotation(JPH::Vec3::sAxisY(), yaw));
+                Write(scene, *target, entity, feet, Upright(ToJoltRotation(rotation), UpFrom(GravityAt(*target, feet))));
                 transfers[entity] = time;
             }
         }
 
         // Personnage sur un siège : posé dessus, face à son -z, sans physique (true). En se relevant, il est remis
         // debout devant le siège.
-        bool Sit(const Scene& scene, const Grid& grid, Character& character, Entity seat) {
+        bool Sit(const Scene& scene, const Grid& grid, Character& character, Entity seat, JPH::Vec3Arg up) {
             if (seat == NullEntity && character.seat == NullEntity) {
                 return false; // debout, comme d'habitude
             }
@@ -926,9 +1040,8 @@ namespace Flux {
                 return false;
             }
             // Le modèle regarde vers son +z : dans le sens du siège.
-            character.yaw = std::atan2(forward.x, forward.z);
             body.SetPosition(JPH::RVec3(position));
-            body.SetRotation(JPH::Quat::sRotation(JPH::Vec3::sAxisY(), character.yaw));
+            body.SetRotation(Facing(ToJolt(forward), up));
             body.SetLinearVelocity(JPH::Vec3::sZero());
             character.groundSpeed = 0.0f;
             character.airTime = 0.0f;
@@ -938,17 +1051,19 @@ namespace Flux {
 
         void UpdateCharacters(Grid& grid, const Scene& scene, const CharacterInput& input) {
             JPH::PhysicsSystem& system = *grid.system;
-            const JPH::Vec3 gravity = system.GetGravity();
-            const JPH::Vec3 up = -gravity.NormalizedOr(JPH::Vec3(0.0f, -1.0f, 0.0f));
             // Commandes dans le repère du monde, ramenées dans celui du vaisseau.
             const Math::Vector3f move = grid.frameRotation.Conjugate().Rotate(input.move);
             for (auto& [entity, character] : grid.characters) {
                 const CharacterComponent& component = scene.Get<CharacterComponent>(entity);
                 JPH::CharacterVirtual& body = *character.character;
+                // Le bas de l'endroit : celui du monde, du vaisseau, ou le centre de la planète.
+                const JPH::Vec3 gravity = GravityAt(grid, body.GetPosition());
+                const JPH::Vec3 up = UpFrom(gravity);
                 body.SetUp(up);
-                if (Sit(scene, grid, character, component.seat)) {
+                if (Sit(scene, grid, character, component.seat, up)) {
                     continue;
                 }
+                JPH::Quat rotation = Upright(body.GetRotation(), up);
                 body.UpdateGroundVelocity();
 
                 JPH::Vec3 wanted = JPH::Vec3::sZero();
@@ -980,14 +1095,16 @@ namespace Flux {
                 velocity += gravity * StepSeconds + wanted; // la direction reste pilotable en l'air
                 body.SetLinearVelocity(velocity);
 
-                // Le personnage se tourne peu à peu vers où il marche.
+                // Le personnage se tourne peu à peu vers où il marche, autour du haut de l'endroit.
                 if (wanted.LengthSq() > 1.0e-4f) {
-                    const float target = std::atan2(wanted.GetX(), wanted.GetZ());
-                    const float difference = std::remainder(target - character.yaw, 2.0f * JPH::JPH_PI);
+                    const JPH::Vec3 forward = rotation.RotateAxisZ();
+                    const JPH::Vec3 target = wanted.Normalized();
+                    const float difference = std::atan2(forward.Cross(target).Dot(up), forward.Dot(target));
                     constexpr float TurnSpeed = 12.0f; // rad/s
-                    character.yaw += std::clamp(difference, -TurnSpeed * StepSeconds, TurnSpeed * StepSeconds);
-                    body.SetRotation(JPH::Quat::sRotation(JPH::Vec3::sAxisY(), character.yaw));
+                    const float turn = std::clamp(difference, -TurnSpeed * StepSeconds, TurnSpeed * StepSeconds);
+                    rotation = (JPH::Quat::sRotation(up, turn) * rotation).Normalized();
                 }
+                body.SetRotation(rotation);
 
                 JPH::CharacterVirtual::ExtendedUpdateSettings update;
                 update.mStickToFloorStepDown = -up * 0.5f;
@@ -1065,6 +1182,9 @@ namespace Flux {
                     GetShipShape(scene, entity); // vaisseau à la racine : il bute sur le décor (MoveShips)
                 }
             }
+            // Le sol des planètes autour de tout ce qui peut le toucher, sans attendre : rien ne tombe au travers.
+            CollectProbes(scene);
+            planetGround.Update(scene, anchor, probes, *grids.front()->system, true);
         }
 
         void Update(Scene& scene, double deltaSeconds, const CharacterInput& input) {
@@ -1074,9 +1194,12 @@ namespace Flux {
                     return; // rien de physique dans la scène
                 }
             }
+            Recenter(scene);
             MoveShips(scene, deltaSeconds);
             scene.ComputeRelativeTransforms(anchor, transforms);
             Synchronize(scene);
+            CollectProbes(scene);
+            planetGround.Update(scene, anchor, probes, *grids.front()->system, false);
 
             accumulator = std::min(accumulator + deltaSeconds, static_cast<double>(StepSeconds * MaxStepsPerUpdate));
             const int steps = static_cast<int>(accumulator / StepSeconds);
@@ -1088,6 +1211,7 @@ namespace Flux {
             for (int step = 0; step < steps; ++step) {
                 for (const std::unique_ptr<Grid>& grid : grids) {
                     UpdateCharacters(*grid, scene, input);
+                    ApplyPlanetGravity(*grid);
                     grid->system->Update(StepSeconds, 1, shared.tempAllocator.get(), shared.jobSystem.get());
                 }
             }
@@ -1180,6 +1304,27 @@ namespace Flux {
 
     Math::Vector3f PhysicsWorld::GetGravity() const {
         return FromJolt(m_impl->grids.front()->system->GetGravity());
+    }
+
+    Math::Vector3f PhysicsWorld::GetUp(const Scene& scene, Entity entity) const {
+        const Math::Vector3f y{0.0f, 1.0f, 0.0f};
+        if (!scene.IsValid(entity)) {
+            return y;
+        }
+        const Impl& impl = *m_impl;
+        const Entity ship = scene.GetShip(entity);
+        if (ship != NullEntity) {
+            // À bord : le haut du pont (sans gravité, celui du vaisseau quand même).
+            const auto grid = std::ranges::find(impl.grids, ship, [](const std::unique_ptr<Grid>& candidate) { return candidate->frame; });
+            const JPH::Vec3 gravity = grid != impl.grids.end() ? (*grid)->system->GetGravity() : JPH::Vec3::sZero();
+            return scene.GetWorldRotation(ship).Rotate(FromJolt(UpFrom(gravity)));
+        }
+        const JPH::Vec3 base = impl.grids.front()->system->GetGravity();
+        if (!impl.anchored) {
+            return FromJolt(UpFrom(base));
+        }
+        const Math::Vector3f gravity = impl.planetGround.GetGravity(Math::Delta(impl.anchor, scene.GetWorldPosition(entity)), FromJolt(base));
+        return FromJolt(UpFrom(ToJolt(gravity)));
     }
 
     Entity PhysicsWorld::GetPlayer() const {

@@ -158,7 +158,8 @@ namespace Flux {
 
     // Planète en cube-sphère centrée sur l'entité (qui la fait tourner ; son échelle est ignorée) : une sphère de
     // `radius` mètres déformée par un relief généré (le même pour une même graine), plus détaillée près de la caméra
-    // (Flux/Graphics/Planet.hpp). Pas encore de collision.
+    // (Flux/Graphics/Planet.hpp). Son sol est solide (personnages, objets simulés, vaisseaux qui se posent) et elle
+    // attire vers son centre jusqu'à deux rayons de distance ; au-delà, c'est la gravité du monde (PhysicsWorld).
     struct PlanetComponent
     {
         float radius = 60000.0f; // m, au niveau zéro du relief
@@ -166,6 +167,7 @@ namespace Flux {
         std::int32_t seed = 1;
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;
+        float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
     };
 
     // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec

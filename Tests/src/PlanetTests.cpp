@@ -145,7 +145,7 @@ bool RunPlanetTests() {
         // Répartition des hauteurs sur toute la sphère.
         int low = 0;
         int high = 0;
-        int flat = 0;
+        int plains = 0;
         int land = 0;
         std::uniform_real_distribution<double> any(-1.0, 1.0);
         for (int i = 0; i < 300; ++i) {
@@ -161,13 +161,13 @@ bool RunPlanetTests() {
                 ++land;
                 // Une terre sur deux au moins est une plaine (moins de 5 degrés au pas d'un sommet) : on s'y pose.
                 if (medianSlope(d * (world.GetRadius() + h)) < 5.0) {
-                    ++flat;
+                    ++plains;
                 }
             }
         }
         CHECK(low > 30 && high >= 1);    // des creux, et quelques sommets
         CHECK(high < 60);                // les montagnes restent rares
-        CHECK(land > 60 && flat * 2 > land);
+        CHECK(land > 60 && plains * 2 > land);
     }
 
     // Glissement vers la parente : chaque sommet arrive sur la forme de sa parente (sur un de ses sommets, ou au
@@ -246,6 +246,31 @@ bool RunPlanetTests() {
         generator.TakeWaiting(waiting);
         CHECK(waiting.size() <= 64);
         generator.Submit(waiting);
+    }
+
+    // Surface pour la collision : les mêmes sommets que la tuile affichée, au bit près ; la tuile d'une direction est
+    // celle qui la contient.
+    {
+        const Planet::Terrain surfaceTerrain(60000.0, 800.0, 2);
+        const std::uint32_t level = surfaceTerrain.GetMaxLevel();
+        const Planet::TileKey key{4, static_cast<std::uint8_t>(level), (1u << level) / 3u, (1u << level) / 5u};
+        Planet::TileMesh mesh;
+        Planet::BuildTile(surfaceTerrain, key, mesh);
+        Math::Vector3d center;
+        std::vector<Math::Vector3f> surface;
+        Planet::BuildTileSurface(surfaceTerrain, key, center, surface);
+        CHECK(center.x == mesh.center.x && center.y == mesh.center.y && center.z == mesh.center.z);
+        CHECK(surface.size() == Planet::TileSide * Planet::TileSide);
+        bool identical = true;
+        for (std::uint32_t v = 0; v < surface.size(); ++v) {
+            identical = identical && surface[v] == mesh.vertices[v].position;
+        }
+        CHECK(identical);
+        // Le milieu de chaque quart de la tuile, et un point près d'un coin.
+        for (const std::uint32_t v : {8u * Planet::TileSide + 8u, 24u * Planet::TileSide + 24u, Planet::TileSide + 1u}) {
+            CHECK(Planet::FindTile(Math::Normalize(center + Math::Vector3d(surface[v])), key.level) == key);
+        }
+        CHECK(Planet::FindTile({0.0, 0.0, 1.0}, 0) == (Planet::TileKey{4, 0, 0, 0}));
     }
     return true;
 }

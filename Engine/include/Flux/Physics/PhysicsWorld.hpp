@@ -29,6 +29,9 @@ namespace Flux {
     // change de monde quand elle change de parent (sortir d'un vaisseau : la détacher de lui). Un personnage le fait
     // de lui-même : il passe à bord en montant sur le décor d'un vaisseau (rampe, pont), et en sort quand il quitte
     // ce décor au-dessus du sol du dehors ; il devient alors enfant du vaisseau, ou de ce qui l'entoure.
+    //
+    // Planètes (PlanetComponent) : leur sol est fait autour de ce qui peut le toucher, et elles attirent vers leur
+    // centre (les personnages se tiennent debout selon elles). Loin de l'ancre, le monde est recentré sur le joueur.
     class FLUX_API PhysicsWorld {
         public:
         // context : celui du moteur, partagé par tous ses mondes (voir PhysicsContext) ; vide : le monde a le sien.
@@ -55,6 +58,9 @@ namespace Flux {
         void SetGravity(const Math::Vector3f& gravity);
         Math::Vector3f GetGravity() const;
 
+        // « Haut » là où se trouve une entité (unitaire, repère du monde) : contre la gravité de son vaisseau, de la
+        // planète qui l'attire, ou du monde. La caméra qui suit le joueur garde l'horizon droit selon lui.
+        Math::Vector3f GetUp(const Scene& scene, Entity entity) const;
         // Personnage dirigé par le joueur (le premier trouvé), NullEntity s'il n'y en a pas : la caméra le suit.
         Entity GetPlayer() const;
         // Distance libre (0 à `distance`) pour une sphère de rayon `radius` partant de `from` dans `direction`
