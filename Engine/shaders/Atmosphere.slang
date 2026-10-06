@@ -57,25 +57,31 @@ float AtmosphereColumn(float radius, float height, float falloff, float cosine)
     return depth / falloff;
 }
 
-// Épaisseurs (Rayleigh, Mie) de `position` (relatif au centre) vers le soleil ; x < 0 si la planète le cache.
-float2 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun)
+// Épaisseurs (Rayleigh, Mie) de `position` (relatif au centre) vers le soleil, et en z la part de soleil non cachée
+// par la planète : fondue sur une hauteur d'échelle quand le rayon frôle le sol (sinon des arcs côté nuit).
+float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun)
 {
-    const float distance = length(position);
-    const float2 ground = AtmosphereRaySphere(position, toSun, min(a.center.w, distance) - 1.0);
-    if (ground.x <= ground.y && ground.x > 0.0) {
-        return float2(-1.0, 0.0);
+    const float distance = max(length(position), 1.0);
+    const float cosine = dot(position, toSun) / distance;
+    float visible = 1.0;
+    if (cosine < 0.0) {
+        const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
+        const float soft = 1.0 / a.rayleigh.w;
+        visible = smoothstep(a.center.w - soft, a.center.w + soft, closest);
+        if (visible <= 0.0) {
+            return float3(0.0);
+        }
     }
-    const float cosine = dot(position, toSun) / max(distance, 1.0);
     const float height = distance - a.center.w;
-    return float2(AtmosphereColumn(a.center.w, height, a.rayleigh.w, cosine),
-                  AtmosphereColumn(a.center.w, height, a.mie.y, cosine));
+    return float3(AtmosphereColumn(a.center.w, height, a.rayleigh.w, cosine),
+                  AtmosphereColumn(a.center.w, height, a.mie.y, cosine), visible);
 }
 
 // Part de la lumière du soleil qui arrive en `position` (relatif au centre) : rougie au couchant, nulle la nuit.
 float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSun)
 {
-    const float2 depth = AtmosphereSunDepth(a, position, toSun);
-    return depth.x < 0.0 ? float3(0.0) : AtmosphereExtinction(a, depth.x, depth.y);
+    const float3 depth = AtmosphereSunDepth(a, position, toSun);
+    return depth.z <= 0.0 ? float3(0.0) : AtmosphereExtinction(a, depth.x, depth.y) * depth.z;
 }
 
 // Lumière diffusée vers la caméra (à l'origine) dans `direction`, sur `distance` mètres au plus. transmittance : ce
@@ -106,9 +112,9 @@ float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, flo
         const float mie = exp(-h * a.mie.y) * step;
         viewRayleigh += 0.5 * rayleigh;
         viewMie += 0.5 * mie;
-        const float2 sunDepth = AtmosphereSunDepth(a, p, toSun);
-        if (sunDepth.x >= 0.0) {
-            const float3 light = AtmosphereExtinction(a, viewRayleigh + sunDepth.x, viewMie + sunDepth.y);
+        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun);
+        if (sunDepth.z > 0.0) {
+            const float3 light = AtmosphereExtinction(a, viewRayleigh + sunDepth.x, viewMie + sunDepth.y) * sunDepth.z;
             sumRayleigh += light * rayleigh;
             sumMie += light * mie;
         }

@@ -63,22 +63,29 @@ namespace Flux {
             return depth / falloff;
         }
 
-        // Épaisseurs (Rayleigh, Mie) de `position` vers le soleil ; false si la planète le cache.
-        bool SunDepth(const AtmosphereParameters& a, const Math::Vector3f& position, const Math::Vector3f& toSun, float& rayleigh,
-                      float& mie) {
-            // Le sol qui cache le soleil : la sphère du rayon du sol, ou plus bas que le point (fond d'une vallée).
-            const float distance = Math::Length(position);
-            float t0 = 0.0f;
-            float t1 = 0.0f;
-            if (RaySphere(position, toSun, std::min(a.radius, distance) - 1.0f, t0, t1) && t0 > 0.0f) {
-                rayleigh = mie = 0.0f;
-                return false;
+        // Épaisseurs (Rayleigh, Mie) de `position` vers le soleil, et la part de soleil non cachée par la planète :
+        // passe de 1 à 0 en douceur quand le rayon frôle le sol (sur une hauteur d'échelle), sinon les pas de la marche
+        // le long du regard dessinent des arcs sur l'ombre de la planète (côté nuit).
+        float SunDepth(const AtmosphereParameters& a, const Math::Vector3f& position, const Math::Vector3f& toSun, float& rayleigh,
+                       float& mie) {
+            rayleigh = mie = 0.0f;
+            const float distance = std::max(Math::Length(position), 1.0f);
+            const float cosine = Math::Dot(position, toSun) / distance;
+            float visible = 1.0f;
+            if (cosine < 0.0f) {
+                // Plus courte distance au centre le long du rayon vers le soleil.
+                const float closest = distance * std::sqrt(std::max(0.0f, 1.0f - cosine * cosine));
+                const float soft = 1.0f / a.rayleighFalloff;
+                const float t = std::clamp((closest - (a.radius - soft)) / (2.0f * soft), 0.0f, 1.0f);
+                visible = t * t * (3.0f - 2.0f * t);
+                if (visible <= 0.0f) {
+                    return 0.0f;
+                }
             }
-            const float cosine = Math::Dot(position, toSun) / std::max(distance, 1.0f);
             const float height = distance - a.radius;
             rayleigh = Column(a.radius, height, a.rayleighFalloff, cosine);
             mie = Column(a.radius, height, a.mieFalloff, cosine);
-            return true;
+            return visible;
         }
     }
 
@@ -105,10 +112,11 @@ namespace Flux {
     Math::Vector3f SunTransmittance(const AtmosphereParameters& a, const Math::Vector3f& position, const Math::Vector3f& toSun) {
         float rayleigh = 0.0f;
         float mie = 0.0f;
-        if (!SunDepth(a, position, toSun, rayleigh, mie)) {
+        const float visible = SunDepth(a, position, toSun, rayleigh, mie);
+        if (visible <= 0.0f) {
             return {};
         }
-        return Extinction(a, rayleigh, mie);
+        return Extinction(a, rayleigh, mie) * visible;
     }
 
     Math::Vector3f Scatter(const AtmosphereParameters& a, const Math::Vector3f& origin, const Math::Vector3f& direction, float distance,
@@ -139,8 +147,9 @@ namespace Flux {
             viewMie += 0.5f * mie;
             float sunRayleigh = 0.0f;
             float sunMie = 0.0f;
-            if (SunDepth(a, point, toSun, sunRayleigh, sunMie)) {
-                const Math::Vector3f light = Extinction(a, viewRayleigh + sunRayleigh, viewMie + sunMie);
+            const float visible = SunDepth(a, point, toSun, sunRayleigh, sunMie);
+            if (visible > 0.0f) {
+                const Math::Vector3f light = Extinction(a, viewRayleigh + sunRayleigh, viewMie + sunMie) * visible;
                 sumRayleigh += light * rayleigh;
                 sumMie += light * mie;
             }
