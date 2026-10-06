@@ -29,6 +29,10 @@ namespace Flux {
             const GpuModel* model;
             Math::Vector3d center;
             float radius;
+            // Glissement vers la forme parente (voir vertexPlanet dans shaders/Mesh.slang) : distance où il commence,
+            // et 1 / sa longueur (0 : aucun).
+            float morphStart;
+            float morphScale;
         };
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
@@ -97,7 +101,8 @@ namespace Flux {
         // Buffers de sommets libérés, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
         struct FreeBuffer
         {
-            std::unique_ptr<RHI::Buffer> buffer;
+            std::unique_ptr<RHI::Buffer> vertices;
+            std::unique_ptr<RHI::Buffer> morph;
             std::uint64_t frame;
         };
         std::vector<FreeBuffer> m_freeBuffers;

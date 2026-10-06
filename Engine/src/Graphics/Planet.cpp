@@ -209,6 +209,11 @@ namespace Flux::Planet {
         return m_relief * omitted;
     }
 
+    double GetSplitDistance(const Terrain& terrain, std::uint32_t level) {
+        // Angle d'une tuile le long des axes de sa face : (π/2) / 2^niveau.
+        return LodSplitFactor * 0.5 * std::numbers::pi * terrain.GetRadius() * std::ldexp(1.0, -static_cast<int>(level));
+    }
+
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {
         const double R = terrain.GetRadius();
         const double relief = terrain.GetRelief();
@@ -272,6 +277,51 @@ namespace Flux::Planet {
             }
         }
 
+        // Forme de la parente : ses sommets (un sur deux de la tuile dans chaque sens) avec son nombre d'octaves, et ses
+        // normales, calculées comme elle le fait (voisins à deux pas, une rangée de plus autour). Un sommet entre deux
+        // des siens va au milieu du bord de son triangle (la diagonale pour le centre d'un carré : sommets a et c dans
+        // BuildTileIndices).
+        mesh.morph.resize(TileVertexCount);
+        if (key.level == 0) {
+            for (std::uint32_t v = 0; v < TileSide * TileSide; ++v) {
+                mesh.morph[v] = {{0.0f, 0.0f, 0.0f}, mesh.vertices[v].normal};
+            }
+        } else {
+            constexpr std::uint32_t Coarse = TileQuads / 2 + 3; // de -2 à TileQuads + 2, de deux en deux
+            thread_local std::vector<Math::Vector3d> coarse;
+            coarse.resize(Coarse * Coarse);
+            const std::uint32_t parentOctaves = terrain.GetOctaves(key.level - 1u);
+            for (std::uint32_t cj = 0; cj < Coarse; ++cj) {
+                const double t = GridToFace(y0 + 1 + 2 * static_cast<std::int64_t>(cj) - 2, key.level);
+                for (std::uint32_t ci = 0; ci < Coarse; ++ci) {
+                    const Math::Vector3d d = DirectionFromFace(key.face, GridToFace(x0 + 1 + 2 * static_cast<std::int64_t>(ci) - 2, key.level), t);
+                    coarse[cj * Coarse + ci] = d * (R + terrain.GetHeight(d, parentOctaves));
+                }
+            }
+            // Sommet de la parente au point (i, j) de la tuile (i et j pairs, de 0 à TileQuads) et sa normale.
+            const auto parent = [&](std::uint32_t i, std::uint32_t j) -> const Math::Vector3d& {
+                return coarse[(j / 2 + 1) * Coarse + (i / 2 + 1)];
+            };
+            const auto parentNormal = [&](std::uint32_t i, std::uint32_t j) {
+                const std::uint32_t c = (j / 2 + 1) * Coarse + (i / 2 + 1);
+                return Math::Normalize(Math::Cross(coarse[c + 1] - coarse[c - 1], coarse[c + Coarse] - coarse[c - Coarse]));
+            };
+            for (std::uint32_t j = 0; j < TileSide; ++j) {
+                for (std::uint32_t i = 0; i < TileSide; ++i) {
+                    // Les deux sommets de la parente dont celui-ci est le milieu (le même deux fois s'il est à elle).
+                    const std::uint32_t i0 = i & ~1u;
+                    const std::uint32_t j0 = j & ~1u;
+                    const std::uint32_t i1 = i0 + (i & 1u) * 2;
+                    const std::uint32_t j1 = j0 + (j & 1u) * 2;
+                    const Math::Vector3d target = (parent(i0, j0) + parent(i1, j1)) * 0.5;
+                    const Math::Vector3d normal = Math::Normalize(parentNormal(i0, j0) + parentNormal(i1, j1));
+                    const Math::Vector3d position = positions[(j + 1) * Wide + (i + 1)];
+                    mesh.morph[j * TileSide + i] = {Math::Vector3f(target - position), Math::Vector3f(normal)};
+                    mesh.radius = std::max(mesh.radius, Math::Length(target - mesh.center));
+                }
+            }
+        }
+
         // Jupes : le bord parcouru dans le sens trigonométrique (bas, droite, haut, gauche), chaque sommet descendu
         // vers le centre de la planète. Assez profondes pour couvrir l'écart avec une voisine plus grossière (le
         // relief qu'elle n'a pas) ; la normale reste celle du bord, la jupe se confond avec le terrain.
@@ -281,8 +331,9 @@ namespace Flux::Planet {
         const auto skirt = [&](std::uint32_t i, std::uint32_t j) {
             const std::uint32_t w = (j + 1) * Wide + (i + 1);
             const Math::Vector3d local = positions[w] - directions[w] * depth - mesh.center;
+            mesh.morph[next] = mesh.morph[j * TileSide + i]; // glisse avec son bord
             mesh.vertices[next++] = {Math::Vector3f(local), vertex(i, j).normal, {0.0f, 0.0f}};
-            mesh.radius = std::max(mesh.radius, Math::Length(local));
+            mesh.radius = std::max(mesh.radius, Math::Length(local + Math::Vector3d(mesh.morph[j * TileSide + i].offset)));
         };
         for (std::uint32_t k = 0; k < TileSide; ++k) {
             skirt(k, 0);

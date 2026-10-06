@@ -4,7 +4,9 @@
 // spots, sans ombre) ; plus la lumière propre du matériau (émissif). Puis exposition et courbe de tons (ACES) : la sortie est
 // déjà la couleur affichée (en linéaire, la swapchain sRGB fait le reste).
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
-// Cartes d'ombres (vertexShadow, vertexShadowSkinned, fragmentShadow) : profondeur vue du soleil, rien d'autre.
+// Tuiles de planète (vertexPlanet) : chaque sommet glisse vers la forme de la tuile parente en s'éloignant de la
+// caméra, pour qu'un changement de niveau de détail ne fasse pas de saut (« morphing » façon CDLOD).
+// Cartes d'ombres (vertexShadow, vertexShadowSkinned, vertexShadowPlanet, fragmentShadow) : profondeur vue du soleil, rien d'autre.
 
 // Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
 struct InteriorData
@@ -47,7 +49,8 @@ struct DrawData
 {
     float4 world[4];          // relatif à la caméra, par colonnes
     // Matrice des normales par colonnes dans xyz. normal[1].w : premier os du modèle dans jointColumns (bits d'un
-    // entier), modèles animés seulement.
+    // entier), modèles animés seulement. Tuiles de planète : normal[0].w, distance où commence le glissement vers la
+    // forme parente ; normal[2].w, 1 / sa longueur (0 : pas de glissement).
     float4 normal[3];
     float4 rim;               // lumière de contour : couleur x intensité (rgb), finesse (w ; 0 : aucune)
 };
@@ -104,6 +107,17 @@ struct SkinnedVertexInput
     [[vk::location(2)]] float2 uv;
     [[vk::location(3)]] uint4 joints;    // indices des os dans le modèle
     [[vk::location(4)]] float4 weights;  // somme 1
+};
+
+// Doit correspondre à MorphVertex dans Flux/Graphics/Planet.hpp : où le sommet d'une tuile de planète arrive
+// quand la tuile prend la forme de sa parente.
+struct PlanetVertexInput
+{
+    [[vk::location(0)]] float3 position;
+    [[vk::location(1)]] float3 normal;
+    [[vk::location(2)]] float2 uv;
+    [[vk::location(5)]] float3 morphOffset;  // ajouté à la position
+    [[vk::location(6)]] float3 morphNormal;  // normale de la parente à cet endroit
 };
 
 struct VertexOutput
@@ -164,6 +178,22 @@ VertexOutput vertexSkinned(SkinnedVertexInput input)
     float3 normal;
     Skin(input, asuint(draws[params.draw].normal[1].w), position, normal);
     return Output(position, normal, input.uv);
+}
+
+// Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
+// le relais (calculé sur le sommet de la tuile, pour que deux tuiles voisines glissent pareil au même endroit).
+float PlanetMorph(float3 position)
+{
+    const DrawData draw = draws[params.draw];
+    const float distance = length(Transform(draw.world, position).xyz);
+    return saturate((distance - draw.normal[0].w) * draw.normal[2].w);
+}
+
+[shader("vertex")]
+VertexOutput vertexPlanet(PlanetVertexInput input)
+{
+    const float morph = PlanetMorph(input.position);
+    return Output(input.position + input.morphOffset * morph, lerp(input.normal, input.morphNormal, morph), input.uv);
 }
 
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé).
@@ -435,6 +465,12 @@ ShadowOutput vertexShadowSkinned(SkinnedVertexInput input)
     float3 normal;
     Skin(input, asuint(draws[params.draw].normal[1].w), position, normal);
     return ShadowVertex(position, input.uv);
+}
+
+[shader("vertex")]
+ShadowOutput vertexShadowPlanet(PlanetVertexInput input)
+{
+    return ShadowVertex(input.position + input.morphOffset * PlanetMorph(input.position), input.uv);
 }
 
 [shader("fragment")]

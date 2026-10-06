@@ -39,6 +39,7 @@ namespace Flux {
         std::unique_ptr<RHI::Buffer> vertices;
         std::shared_ptr<RHI::Buffer> indices; // 32 bits ; partagé par les tuiles des planètes
         std::unique_ptr<RHI::Buffer> skin;    // ModelSkinVertex, modèle animé seulement
+        std::unique_ptr<RHI::Buffer> morph;   // Planet::MorphVertex, tuile de planète seulement
         ModelSkeleton skeleton;               // gardé sur le CPU : les poses y sont calculées à chaque image
         std::vector<std::unique_ptr<RHI::Texture>> images;
         std::vector<GpuMaterial> materials;
@@ -49,6 +50,7 @@ namespace Flux {
         std::chrono::steady_clock::time_point checked{};
 
         bool IsAnimated() const { return skin != nullptr; }
+        bool IsPlanetTile() const { return morph != nullptr; }
     };
 
     // Modèles des fichiers glTF (et le cube du moteur) sur le GPU : chargés au premier appel, relus si le fichier

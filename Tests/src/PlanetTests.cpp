@@ -110,6 +110,48 @@ bool RunPlanetTests() {
         }
     }
 
+    // Glissement vers la parente : chaque sommet arrive sur la forme de sa parente (sur un de ses sommets, ou au
+    // milieu d'un bord de ses triangles), avec ses normales ; rien au niveau 0 ; deux voisines arrivent au même endroit.
+    {
+        Planet::TileMesh root;
+        Planet::BuildTile(terrain, {3, 0, 0, 0}, root);
+        CHECK(root.morph.size() == Planet::TileVertexCount);
+        CHECK(Math::Length(root.morph[100].offset) == 0.0f);
+        const Planet::TileKey parentKey{2, 4, 9, 3};
+        Planet::TileMesh parentMesh;
+        Planet::BuildTile(terrain, parentKey, parentMesh);
+        const auto parentAt = [&](std::uint32_t i, std::uint32_t j) { return Position(parentMesh, j * Planet::TileSide + i); };
+        for (std::uint32_t c = 0; c < 4; ++c) {
+            Planet::TileMesh child;
+            Planet::BuildTile(terrain, parentKey.Child(c), child);
+            const std::uint32_t pi0 = (c & 1u) * Planet::TileQuads / 2;
+            const std::uint32_t pj0 = (c >> 1) * Planet::TileQuads / 2;
+            for (std::uint32_t j = 0; j < Planet::TileSide; ++j) {
+                for (std::uint32_t i = 0; i < Planet::TileSide; ++i) {
+                    const std::uint32_t v = j * Planet::TileSide + i;
+                    const Math::Vector3d target = Position(child, v) + Math::Vector3d(child.morph[v].offset);
+                    // Les deux sommets de la parente dont il est le milieu (le même s'il est à elle).
+                    const std::uint32_t i0 = pi0 + i / 2;
+                    const std::uint32_t j0 = pj0 + j / 2;
+                    const Math::Vector3d expected = (parentAt(i0, j0) + parentAt(i0 + (i & 1u), j0 + (j & 1u))) * 0.5;
+                    CHECK(Math::Length(target - expected) < 0.01);
+                    if ((i & 1u) == 0 && (j & 1u) == 0) {
+                        CHECK(Math::Dot(child.morph[v].normal, parentMesh.vertices[j0 * Planet::TileSide + i0].normal) > 0.9999f);
+                    }
+                }
+            }
+        }
+        for (std::uint32_t j = 0; j < Planet::TileSide; ++j) {
+            const std::uint32_t a = j * Planet::TileSide + Planet::TileQuads;
+            const std::uint32_t b = j * Planet::TileSide;
+            const Math::Vector3d fromLeft = Position(left, a) + Math::Vector3d(left.morph[a].offset);
+            const Math::Vector3d fromRight = Position(right, b) + Math::Vector3d(right.morph[b].offset);
+            CHECK(Math::Length(fromLeft - fromRight) < 0.01);
+        }
+        // Distances de coupe : la moitié à chaque niveau.
+        CHECK(std::abs(Planet::GetSplitDistance(terrain, 3) - 2.0 * Planet::GetSplitDistance(terrain, 4)) < 1.0e-6);
+    }
+
     // Génération en tâches de fond : mêmes tuiles qu'en direct, toutes rendues, chacune avec sa demande.
     {
         const auto shared = std::make_shared<const Planet::Terrain>(60000.0, 800.0, 5);
