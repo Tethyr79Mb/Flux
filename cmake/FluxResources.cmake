@@ -9,6 +9,15 @@ find_program(FLUX_SLANGC
 function(flux_add_shaders target)
     set(outputDirectory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders)
     set(outputs)
+    # Fichiers inclus par les shaders (#include) : tout .slang du dossier ; un changement recompile les shaders.
+    set(includes)
+    foreach(source IN LISTS ARGN)
+        get_filename_component(sourceDirectory ${source} ABSOLUTE)
+        get_filename_component(sourceDirectory ${sourceDirectory} DIRECTORY)
+        file(GLOB found CONFIGURE_DEPENDS ${sourceDirectory}/*.slang)
+        list(APPEND includes ${found})
+    endforeach()
+    list(REMOVE_DUPLICATES includes)
     foreach(source IN LISTS ARGN)
         get_filename_component(name ${source} NAME_WE)
         get_filename_component(sourcePath ${source} ABSOLUTE)
@@ -21,7 +30,7 @@ function(flux_add_shaders target)
                         -fvk-use-entrypoint-name
                         "$<$<CONFIG:Debug>:-g>"
                         -o ${output}
-                DEPENDS ${sourcePath}
+                DEPENDS ${sourcePath} ${includes}
                 COMMENT "Slang : ${name}.slang"
                 VERBATIM
                 COMMAND_EXPAND_LISTS) # retire l'argument vide hors Debug

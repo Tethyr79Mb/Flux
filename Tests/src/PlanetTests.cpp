@@ -2,7 +2,9 @@
 // coin du cube), relief reproductible, sens des triangles et sphères englobantes.
 #include "Check.hpp"
 
+#include "Flux/Graphics/Atmosphere.hpp"
 #include "Flux/Graphics/Planet.hpp"
+#include "Flux/Scene/Components.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -271,6 +273,37 @@ bool RunPlanetTests() {
             CHECK(Planet::FindTile(Math::Normalize(center + Math::Vector3d(surface[v])), key.level) == key);
         }
         CHECK(Planet::FindTile({0.0, 0.0, 1.0}, 0) == (Planet::TileKey{4, 0, 0, 0}));
+    }
+
+    // Atmosphère : ciel bleu à midi, soleil rouge au couchant, nuit de l'autre côté, rien vu de l'espace en regardant
+    // ailleurs, et pas d'air du tout avec une densité nulle.
+    {
+        PlanetComponent planet;
+        const AtmosphereParameters air = MakeAtmosphereParameters(planet);
+        CHECK(air.top > air.radius && air.rayleigh.z > air.rayleigh.x);
+        const Math::Vector3f sun{1.0f, 1.0f, 1.0f};
+        const Math::Vector3f ground{0.0f, air.radius + 2.0f, 0.0f};
+        const Math::Vector3f up{0.0f, 1.0f, 0.0f};
+        Math::Vector3f transmittance;
+        const Math::Vector3f zenith = Scatter(air, ground, up, 1.0e30f, up, sun, AtmosphereSkySteps, transmittance);
+        CHECK(zenith.z > zenith.y && zenith.y > zenith.x && zenith.x > 0.0f);
+        CHECK(transmittance.x > 0.9f && transmittance.z < transmittance.x);
+        const Math::Vector3f low = Math::Normalize(Math::Vector3f{1.0f, 0.02f, 0.0f});
+        const Math::Vector3f setting = SunTransmittance(air, ground, low);
+        CHECK(setting.x > 0.1f && setting.x > 2.0f * setting.z);
+        CHECK(SunTransmittance(air, ground, up * -1.0f) == Math::Vector3f{});
+        const Math::Vector3f space{0.0f, air.top * 3.0f, 0.0f};
+        CHECK(Scatter(air, space, up, 1.0e30f, up, sun, AtmosphereSkySteps, transmittance) == Math::Vector3f{});
+        CHECK(transmittance == (Math::Vector3f{1.0f, 1.0f, 1.0f}));
+        // Vue de l'espace vers le bord éclairé de la planète : le halo.
+        const Math::Vector3f limb = Math::Normalize(Math::Vector3f{0.0f, -air.top * 3.0f, air.radius + 1000.0f});
+        CHECK(Scatter(air, space, limb, 1.0e30f, Math::Vector3f{0.0f, 0.0f, 1.0f}, sun, AtmosphereSkySteps, transmittance).z > 0.01f);
+        // Lumière du ciel : nulle en pleine nuit, plus forte le jour qu'au couchant.
+        const auto ambient = ComputeAtmosphereAmbient(air, sun);
+        CHECK(Math::Length(ambient.front()) < 1.0e-4f);
+        CHECK(ambient.back().z > ambient[AtmosphereAmbientSize / 2].z && ambient.back().z > 0.05f);
+        planet.atmosphere = 0.0f;
+        CHECK(MakeAtmosphereParameters(planet).top == 0.0f);
     }
     return true;
 }
