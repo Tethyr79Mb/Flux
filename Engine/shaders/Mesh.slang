@@ -491,6 +491,16 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     const float3 local = input.planetPosition;
     const float3 up = normalize(local);
     const float altitude = length(local) - planet.shape.x;
+    // Fond sous plus de 30 m d'eau : l'eau le cache (opaque à 0,1 % près), inutile de l'éclairer. Seulement si la
+    // caméra est au-dessus de la mer : de dessous, l'eau n'est pas dessinée.
+    const float sea = planet.water.w;
+    if (length(local) < sea - 30.0) {
+        const float3 toCamera = float3(dot(v.worldPosition, draw.normal[0].xyz), dot(v.worldPosition, draw.normal[1].xyz),
+                                       dot(v.worldPosition, draw.normal[2].xyz));
+        if (length(local - toCamera) > sea) {
+            return float4(0.0, 0.0, 0.0, 1.0);
+        }
+    }
     float3 normal = normalize(v.normal);
     // Pente : la normale ramenée dans le repère de la planète (colonnes de sa rotation), contre la verticale.
     const float3 localNormal = float3(dot(normal, draw.normal[0].xyz), dot(normal, draw.normal[1].xyz), dot(normal, draw.normal[2].xyz));

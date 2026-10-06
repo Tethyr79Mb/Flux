@@ -218,6 +218,7 @@ namespace Flux {
         const std::array skinnedShadow{position, uv, joints, weights};
         const std::array planetAttributes{position, normal, uv, morphOffset, morphNormal};
         const std::array planetShadow{position, uv, morphOffset};
+        const std::array oceanAttributes{position, morphOffset}; // l'eau fait sa normale et sa profondeur elle-même
         const std::array<const RHI::BindGroupLayout*, 2> layouts{&m_models->GetMaterialLayout(), m_frameLayout.get()};
 
         struct Kind
@@ -301,7 +302,7 @@ namespace Flux {
             !result) {
             return result;
         }
-        return createAll(m_ocean, {planetBuffers, planetAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet", "fragmentOcean"});
+        return createAll(m_ocean, {planetBuffers, oceanAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet", "fragmentOcean"});
     }
 
     const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const MeshDraw& draw) const {
