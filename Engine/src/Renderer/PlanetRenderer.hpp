@@ -6,6 +6,7 @@
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -13,6 +14,17 @@
 #include <vector>
 
 namespace Flux {
+    // Sol d'une planète tel que le lit fragmentPlanet (PlanetData dans shaders/Mesh.slang).
+    struct PlanetGpu
+    {
+        std::array<float, 4> shape{}; // rayon, relief, altitude de la neige, du sable (m)
+        std::array<float, 4> rock{};  // couleur linéaire ; w : rugosité
+        std::array<float, 4> grass{};
+        std::array<float, 4> sand{};
+        std::array<float, 4> snow{};
+    };
+    static_assert(sizeof(PlanetGpu) == 80);
+
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont générées
     // en tâches de fond (Planet::TileGenerator) et envoyées au GPU dès qu'elles sont prêtes ; en attendant, leur
