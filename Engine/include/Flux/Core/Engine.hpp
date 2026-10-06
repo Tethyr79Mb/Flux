@@ -12,6 +12,8 @@
 #include "Flux/UI/DrawList.hpp"
 
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -25,6 +27,7 @@ namespace Flux {
     class AudioSystem;
     class InputActions;
     class InterfaceLibrary;
+    class PhysicsContext;
     class PhysicsWorld;
     class Renderer;
     class Window;
@@ -151,9 +154,12 @@ namespace Flux {
         // Utilisé par SceneChangeComponent, et par le code du jeu. Sans effet si le jeu est arrêté (éditeur hors du
         // mode Jouer) ; en cas d'échec (fichier absent...), la scène actuelle reste et l'erreur va dans la console.
         void RequestScene(std::string relativePath);
+        // Charge tout de suite la scène du fichier (scène de démarrage du jeu) ; pendant le jeu, son monde physique
+        // est préparé aussitôt (voir PhysicsWorld::Prepare). En cas d'échec, la scène actuelle reste.
+        std::expected<void, std::string> LoadScene(const std::filesystem::path& path);
 
-        // Monde physique du jeu en cours (créé à la première image de jeu, après chaque changement de scène) ;
-        // nullptr à l'arrêt. Voir PhysicsWorld.
+        // Monde physique du jeu en cours, préparé au lancement du jeu et à chaque changement de scène ; nullptr à
+        // l'arrêt. Tous partagent le contexte physique du moteur, créé avec lui. Voir PhysicsWorld, PhysicsContext.
         PhysicsWorld* GetPhysics() { return m_physics.get(); }
         // Son : volume général, sons lancés par le jeu. Voir AudioSystem.
         AudioSystem& GetAudio() { return *m_audio; }
@@ -201,6 +207,7 @@ namespace Flux {
         bool m_drawScreenUi = true;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
+        std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
         std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
@@ -263,6 +270,8 @@ namespace Flux {
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
+        // Nouveau monde physique pour la scène actuelle, corps déjà créés.
+        void StartPhysics();
         void RunInterfaceActions();
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
         Entity GetFollowedPlayer() const;

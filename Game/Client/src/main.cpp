@@ -4,7 +4,6 @@
 #include <Flux/Platform/Console.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
-#include <Flux/Scene/SceneSerializer.hpp>
 
 #include <cstdio>
 
@@ -29,8 +28,7 @@ int main() {
     }
     game->Register(engine); // enregistre les composants du jeu : la scène de démarrage peut les utiliser
 
-    if (auto loaded = Flux::SceneSerializer::Load(engine.GetScene(), engine.GetComponents(), project->GetStartupScenePath());
-        !loaded) {
+    if (auto loaded = engine.LoadScene(project->GetStartupScenePath()); !loaded) {
         std::fprintf(stderr, "Scène de démarrage : %s\n", loaded.error().c_str());
         return 1;
     }

@@ -5,6 +5,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Input/InputActions.hpp"
 #include "Flux/Interface/Interface.hpp"
+#include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
@@ -144,6 +145,7 @@ namespace Flux {
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
           m_freeCamera(config.freeCamera),
+          m_physicsContext(std::make_shared<PhysicsContext>()),
           m_audio(std::make_unique<AudioSystem>()),
           m_interfaces(std::make_unique<InterfaceLibrary>()),
           m_inputActions(std::make_unique<InputActions>()) {
@@ -390,8 +392,7 @@ namespace Flux {
         }
 
         if (!m_physics) {
-            m_physics = std::make_unique<PhysicsWorld>();
-            m_physics->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
+            StartPhysics(); // scène changée sans LoadScene (par le code du jeu) : préparée maintenant
         }
         const Entity player = m_physics->GetPlayer();
         const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;
@@ -441,8 +442,29 @@ namespace Flux {
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 
+    void Engine::StartPhysics() {
+        m_physicsContext->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
+        m_physics = std::make_unique<PhysicsWorld>(m_physicsContext);
+        m_physics->Prepare(m_scene);
+    }
+
+    std::expected<void, std::string> Engine::LoadScene(const std::filesystem::path& path) {
+        if (auto loaded = SceneSerializer::Load(m_scene, m_components, path); !loaded) {
+            return loaded;
+        }
+        m_physics.reset(); // les corps de l'ancienne scène
+        if (m_gameState != GameState::Stopped) {
+            StartPhysics();
+        }
+        return {};
+    }
+
     void Engine::SetGameState(GameState state) {
+        const bool starting = m_gameState == GameState::Stopped && state != GameState::Stopped;
         m_gameState = state;
+        if (starting) {
+            StartPhysics(); // lancement du jeu (éditeur) : la scène est prête
+        }
         if (state == GameState::Stopped) {
             m_physics.reset();
             m_audio->StopAll();
@@ -695,11 +717,10 @@ namespace Flux {
             return;
         }
         const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(*requested);
-        if (auto loaded = SceneSerializer::Load(m_scene, m_components, path); !loaded) {
+        if (auto loaded = LoadScene(path); !loaded) {
             Log::Error("scène {} : {}", *requested, loaded.error());
             return;
         }
-        m_physics.reset(); // les corps de l'ancienne scène : recréés d'après la nouvelle à la prochaine image
         m_audio->StopAll(); // ses sons aussi ; ceux de la nouvelle partent à la prochaine image
     }
 

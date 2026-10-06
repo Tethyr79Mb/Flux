@@ -1,15 +1,14 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 
-#include "Flux/Assets/Model.hpp"
+#include "PhysicsContextImpl.hpp"
+
 #include "Flux/Core/Log.hpp"
-#include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
 
 // Jolt : ses en-têtes seulement ici (et jamais dans un en-tête public).
 #include <Jolt/Jolt.h>
 
-#include <Jolt/Core/Factory.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -30,15 +29,11 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/RegisterTypes.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -97,28 +92,6 @@ namespace Flux {
                 return a == Layers::Moving || b == Layers::Moving;
             }
         };
-
-        // Initialisation globale de Jolt (allocateur, fabrique de types) : une fois pour tous les mondes.
-        std::mutex g_joltMutex;
-        int g_joltUsers = 0;
-
-        void AcquireJolt() {
-            const std::scoped_lock lock(g_joltMutex);
-            if (g_joltUsers++ == 0) {
-                JPH::RegisterDefaultAllocator();
-                JPH::Factory::sInstance = new JPH::Factory();
-                JPH::RegisterTypes();
-            }
-        }
-
-        void ReleaseJolt() {
-            const std::scoped_lock lock(g_joltMutex);
-            if (--g_joltUsers == 0) {
-                JPH::UnregisterTypes();
-                delete JPH::Factory::sInstance;
-                JPH::Factory::sInstance = nullptr;
-            }
-        }
 
         JPH::Vec3 ToJolt(const Math::Vector3f& v) { return {v.x, v.y, v.z}; }
         JPH::Vec3 ToJolt(const Math::Vector3d& v) {
@@ -193,37 +166,6 @@ namespace Flux {
 
         // Triangles d'un fichier glTF pour une collision (ColliderShape::Mesh). nullptr (et un message) s'il est
         // illisible ou animé : ses sommets ne sont pas dans la pose affichée.
-        JPH::RefConst<JPH::Shape> LoadMeshShape(const std::filesystem::path& path) {
-            const std::string name = Platform::ToUtf8(path.filename());
-            std::expected<ModelData, std::string> model = LoadModelFile(path, false);
-            if (!model) {
-                Log::Warning("maillage de collision illisible : {}", model.error());
-                return nullptr;
-            }
-            if (model->IsAnimated()) {
-                Log::Warning("« {} » est animé : pas de collision sur ses triangles (prendre une capsule ou un fichier "
-                             "statique)", name);
-                return nullptr;
-            }
-            JPH::VertexList vertices;
-            vertices.reserve(model->vertices.size());
-            for (const ModelVertex& vertex : model->vertices) {
-                vertices.push_back(JPH::Float3(vertex.position.x, vertex.position.y, vertex.position.z));
-            }
-            JPH::IndexedTriangleList triangles;
-            triangles.reserve(model->indices.size() / 3);
-            for (std::size_t i = 0; i + 2 < model->indices.size(); i += 3) {
-                triangles.push_back(JPH::IndexedTriangle(model->indices[i], model->indices[i + 1], model->indices[i + 2]));
-            }
-            // Les triangles plats (arêtes confondues) sont retirés par Jolt.
-            const JPH::ShapeSettings::ShapeResult result = JPH::MeshShapeSettings(std::move(vertices), std::move(triangles)).Create();
-            if (result.HasError()) {
-                Log::Warning("maillage de collision « {} » refusé : {}", name, result.GetError().c_str());
-                return nullptr;
-            }
-            return result.Get();
-        }
-
         struct Character {
             JPH::Ref<JPH::CharacterVirtual> character;
             float yaw = 0.0f; // direction du regard (le modèle regarde vers +z en glTF)
@@ -268,8 +210,8 @@ namespace Flux {
         BroadPhaseLayers broadPhaseLayers;
         ObjectVsBroadPhase objectVsBroadPhase;
         ObjectPairs objectPairs;
-        std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
-        std::unique_ptr<JPH::JobSystemThreadPool> jobSystem;
+        std::shared_ptr<PhysicsContext> context; // partagé avec les autres mondes ; le sien si on n'en donne pas
+        PhysicsContext::Impl& shared;
         std::vector<std::unique_ptr<Grid>> grids; // [0] : le monde ; puis un par vaisseau
 
         bool anchored = false;
@@ -283,19 +225,12 @@ namespace Flux {
         Entity player = NullEntity;
         bool warnedChild = false;
         bool warnedMeshSimulated = false;
-        std::filesystem::path assetsDirectory; // pour les maillages de collision
-        // Maillages de collision déjà lus, par chemin relatif aux assets (nullptr : illisible, pas de nouvel essai).
-        std::unordered_map<std::string, JPH::RefConst<JPH::Shape>> meshes;
         // Enveloppe convexe de chaque vaisseau (ses collisions immobiles, dans son repère), pour qu'il bute sur le
         // décor ; nullptr : rien de solide, il passe partout.
         std::unordered_map<Entity, JPH::RefConst<JPH::Shape>> shipShapes;
 
-        Impl() {
-            AcquireJolt();
-            tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(16 * 1024 * 1024);
-            // Tous les cœurs sauf un (le thread principal, qui dessine), au moins un.
-            const int threads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
-            jobSystem = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
+        Impl(std::shared_ptr<PhysicsContext> owner, PhysicsContext::Impl& details)
+            : context(std::move(owner)), shared(details) {
             grids.push_back(CreateGrid(NullEntity));
         }
 
@@ -304,9 +239,6 @@ namespace Flux {
                 DestroyGrid(*grid);
             }
             grids.clear();
-            jobSystem.reset();
-            tempAllocator.reset();
-            ReleaseJolt();
         }
 
         std::unique_ptr<Grid> CreateGrid(Entity frame) {
@@ -353,10 +285,9 @@ namespace Flux {
             // Le secteur du premier objet physique : la simulation se passe autour de lui.
             const entt::registry& registry = scene.GetRegistry();
             const auto first = [&](auto view) {
-                for (const Entity entity : view) {
-                    anchor = {scene.GetWorldPosition(entity).sector, {}};
+                if (view.begin() != view.end()) {
+                    anchor = {scene.GetWorldPosition(*view.begin()).sector, {}};
                     anchored = true;
-                    return;
                 }
             };
             first(registry.view<const ColliderComponent>());
@@ -382,16 +313,10 @@ namespace Flux {
             if (const auto* collider = scene.TryGet<ColliderComponent>(entity);
                 collider && !collider->simulatePhysics && !collider->cameraOnly) {
                 if (collider->shape == ColliderShape::Mesh) {
-                    if (const JPH::Shape* mesh = FindMesh(scene, entity, *collider)) {
-                        // Sommets des triangles du maillage de Jolt (déjà chargé pour la collision).
-                        JPH::Shape::GetTrianglesContext context;
-                        mesh->GetTrianglesStart(context, JPH::AABox::sBiggest(), JPH::Vec3::sZero(), JPH::Quat::sIdentity(),
-                                                JPH::Vec3::sOne());
-                        std::array<JPH::Float3, 3 * 256> vertices;
-                        for (int count; (count = mesh->GetTrianglesNext(context, 256, vertices.data())) > 0;) {
-                            for (int index = 0; index < 3 * count; ++index) {
-                                add({vertices[index].x, vertices[index].y, vertices[index].z});
-                            }
+                    if (const CollisionMesh* mesh = FindMesh(scene, entity, *collider); mesh && mesh->shape) {
+                        // Enveloppe du maillage, calculée une fois à sa lecture (quelques centaines de points).
+                        for (const Math::Vector3f& point : mesh->hull) {
+                            add(point);
                         }
                     }
                 } else {
@@ -430,23 +355,12 @@ namespace Flux {
             CollectShipPoints(scene, ship, {}, {}, scene.Get<TransformComponent>(ship).scale, points);
             JPH::RefConst<JPH::Shape> shape;
             if (points.size() >= 4) {
-                // Les dizaines de milliers de sommets d'un maillage ramenés au plus loin dans 256 directions : la même
-                // enveloppe (à quelques centimètres près), calculée bien plus vite.
-                constexpr int Directions = 256;
-                JPH::Array<JPH::Vec3> extremes;
-                extremes.reserve(Directions);
-                const float golden = JPH::JPH_PI * (3.0f - std::sqrt(5.0f));
-                for (int index = 0; index < Directions; ++index) {
-                    const float y = 1.0f - 2.0f * (static_cast<float>(index) + 0.5f) / static_cast<float>(Directions);
-                    const float ring = std::sqrt(std::max(0.0f, 1.0f - y * y));
-                    const Math::Vector3f direction{std::cos(golden * static_cast<float>(index)) * ring, y,
-                                                   std::sin(golden * static_cast<float>(index)) * ring};
-                    const auto best = std::ranges::max_element(points, {}, [&](const Math::Vector3f& point) {
-                        return Math::Dot(point, direction);
-                    });
-                    extremes.push_back(ToJolt(*best));
+                JPH::Array<JPH::Vec3> hull;
+                hull.reserve(points.size());
+                for (const Math::Vector3f& point : points) {
+                    hull.push_back(ToJolt(point));
                 }
-                const JPH::ShapeSettings::ShapeResult result = JPH::ConvexHullShapeSettings(extremes, 0.02f).Create();
+                const JPH::ShapeSettings::ShapeResult result = JPH::ConvexHullShapeSettings(hull, 0.02f).Create();
                 if (result.HasError()) {
                     Log::Warning("« {} » : enveloppe de collision du vaisseau impossible ({}), il traversera le décor",
                                  scene.Get<NameComponent>(ship).name, result.GetError().c_str());
@@ -654,7 +568,8 @@ namespace Flux {
                     warnedMeshSimulated = true;
                 }
                 simulated = false;
-                mesh = FindMesh(scene, entity, collider);
+                const CollisionMesh* found = FindMesh(scene, entity, collider);
+                mesh = found ? found->shape.GetPtr() : nullptr;
                 if (!mesh) {
                     grid.bodies.emplace(entity, JPH::BodyID{}); // pas de nouvel essai à chaque image
                     return;
@@ -693,23 +608,19 @@ namespace Flux {
         }
 
         // Maillage de collision d'une entité : son fichier, ou à défaut celui de son modèle. Lu une fois par fichier.
-        const JPH::Shape* FindMesh(const Scene& scene, Entity entity, const ColliderComponent& collider) {
-            std::string relative = collider.mesh;
+        const CollisionMesh* FindMesh(const Scene& scene, Entity entity, const ColliderComponent& collider) {
+            std::string_view relative = collider.mesh;
             if (relative.empty()) {
                 if (const auto* model = scene.TryGet<ModelComponent>(entity)) {
                     relative = model->model;
                 }
             }
-            if (relative.empty() || assetsDirectory.empty()) {
+            const CollisionMesh* mesh = relative.empty() ? nullptr : shared.FindMesh(relative);
+            if (!mesh) {
                 Log::Warning("« {} » : collision en maillage sans fichier (ni maillage, ni modèle 3D)",
                              scene.Get<NameComponent>(entity).name);
-                return nullptr;
             }
-            auto found = meshes.find(relative);
-            if (found == meshes.end()) {
-                found = meshes.emplace(relative, LoadMeshShape(assetsDirectory / Platform::PathFromUtf8(relative))).first;
-            }
-            return found->second.GetPtr();
+            return mesh;
         }
 
         void CreateCharacter(Grid& grid, Entity entity, const CharacterComponent& component, const RelativeTransform& transform) {
@@ -1083,7 +994,7 @@ namespace Flux {
                 update.mWalkStairsStepUp = up * 0.4f;
                 const JPH::RVec3 before = body.GetPosition();
                 body.ExtendedUpdate(StepSeconds, gravity, update, system.GetDefaultBroadPhaseLayerFilter(Layers::Moving),
-                                    system.GetDefaultLayerFilter(Layers::Moving), {}, {}, *tempAllocator);
+                                    system.GetDefaultLayerFilter(Layers::Moving), {}, {}, *shared.tempAllocator);
 
                 // Vitesse des pas : le chemin vraiment parcouru (nulle contre un mur), par rapport au sol qui peut
                 // bouger, dans le plan du sol ; nulle en l'air.
@@ -1139,6 +1050,23 @@ namespace Flux {
             }
         }
 
+        // Tous les corps de la scène et l'enveloppe des vaisseaux, sans avancer la simulation.
+        void Prepare(Scene& scene) {
+            if (!anchored) {
+                ChooseAnchor(scene);
+                if (!anchored) {
+                    return;
+                }
+            }
+            scene.ComputeRelativeTransforms(anchor, transforms);
+            Synchronize(scene);
+            for (const Entity entity : scene.GetRegistry().view<const ShipComponent>()) {
+                if (scene.GetParent(entity) == NullEntity) {
+                    GetShipShape(scene, entity); // vaisseau à la racine : il bute sur le décor (MoveShips)
+                }
+            }
+        }
+
         void Update(Scene& scene, double deltaSeconds, const CharacterInput& input) {
             if (!anchored) {
                 ChooseAnchor(scene);
@@ -1160,7 +1088,7 @@ namespace Flux {
             for (int step = 0; step < steps; ++step) {
                 for (const std::unique_ptr<Grid>& grid : grids) {
                     UpdateCharacters(*grid, scene, input);
-                    grid->system->Update(StepSeconds, 1, tempAllocator.get(), jobSystem.get());
+                    grid->system->Update(StepSeconds, 1, shared.tempAllocator.get(), shared.jobSystem.get());
                 }
             }
             time += steps * static_cast<double>(StepSeconds);
@@ -1224,9 +1152,19 @@ namespace Flux {
         }
     };
 
-    PhysicsWorld::PhysicsWorld() : m_impl(std::make_unique<Impl>()) {}
+    PhysicsWorld::PhysicsWorld(std::shared_ptr<PhysicsContext> context) {
+        if (!context) {
+            context = std::make_shared<PhysicsContext>();
+        }
+        PhysicsContext::Impl& details = *context->m_impl;
+        m_impl = std::make_unique<Impl>(std::move(context), details);
+    }
 
     PhysicsWorld::~PhysicsWorld() = default;
+
+    void PhysicsWorld::Prepare(Scene& scene) {
+        m_impl->Prepare(scene);
+    }
 
     void PhysicsWorld::Update(Scene& scene, double deltaSeconds, const CharacterInput& input) {
         m_impl->Update(scene, deltaSeconds, input);
@@ -1237,10 +1175,7 @@ namespace Flux {
     }
 
     void PhysicsWorld::SetAssetsDirectory(const std::filesystem::path& directory) {
-        if (directory != m_impl->assetsDirectory) {
-            m_impl->assetsDirectory = directory;
-            m_impl->meshes.clear();
-        }
+        m_impl->context->SetAssetsDirectory(directory);
     }
 
     Math::Vector3f PhysicsWorld::GetGravity() const {
