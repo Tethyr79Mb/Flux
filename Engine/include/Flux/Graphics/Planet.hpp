@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 // Planète en cube-sphère : un cube dont chaque face est une grille, poussée sur la sphère. Chaque face est un arbre
@@ -98,4 +99,41 @@ namespace Flux::Planet {
     FLUX_API void BuildTile(const Terrain& terrain, TileKey key, TileMesh& mesh);
     // Indices communs à toutes les tuiles (la grille, puis les jupes), dans le sens trigonométrique vu de dehors.
     FLUX_API std::vector<std::uint32_t> BuildTileIndices();
+
+    // Génération de tuiles en tâches de fond, sur quelques fils à elle (pas ceux de la physique, pour ne pas la
+    // ralentir) : le jeu ne s'arrête jamais pour attendre le terrain. File d'attente remplacée à chaque image par
+    // les tuiles les plus urgentes ; les tuiles finies sont reprises sur le fil principal (envoi au GPU).
+    class FLUX_API TileGenerator {
+        public:
+        struct Job
+        {
+            std::shared_ptr<const Terrain> terrain; // partagé : il ne change pas pendant la génération
+            std::uint64_t owner = 0;                // de qui vient la demande (planète et forme), rendu tel quel
+            TileKey key;
+        };
+        struct Result
+        {
+            std::uint64_t owner = 0;
+            TileKey key;
+            TileMesh mesh;
+        };
+
+        // threads : 0 pour un choix selon le processeur (de 1 à 4).
+        explicit TileGenerator(std::uint32_t threads = 0);
+        ~TileGenerator();
+        TileGenerator(const TileGenerator&) = delete;
+        TileGenerator& operator=(const TileGenerator&) = delete;
+
+        std::uint32_t GetThreadCount() const;
+        // Retire de la file les tâches pas encore commencées et les ajoute à `waiting` (celles en cours finissent).
+        void TakeWaiting(std::vector<Job>& waiting);
+        // Ajoute ces tâches à la file, la plus urgente d'abord.
+        void Submit(std::vector<Job>& jobs);
+        // Ajoute à `results` au plus `max` tuiles finies.
+        void Collect(std::vector<Result>& results, std::size_t max);
+
+        private:
+        struct Impl;
+        std::unique_ptr<Impl> m_impl;
+    };
 }
