@@ -166,6 +166,7 @@ namespace Flux {
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         std::vector<PreparedInterior> m_interiors;
         std::vector<PlanetRenderer::Tile> m_planetTiles;
+        std::vector<PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
         PoseEvaluator m_poseEvaluator;
     };
 }

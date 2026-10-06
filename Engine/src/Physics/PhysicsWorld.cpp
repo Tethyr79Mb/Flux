@@ -591,10 +591,11 @@ namespace Flux {
                             transform.rotation = leveled;
                         }
                     }
-                    // Posé : obstacle à moins de 5 cm vers son bas, face tournée vers son haut (pente < 45°). Il ne
+                    // Posé : obstacle à moins de 15 cm vers son bas (sur un sol bosselé, le stabilisateur le soulève de
+                    // quelques centimètres en le remettant à plat), face tournée vers son haut (pente < 45°). Il ne
                     // tourne plus de lui-même (le stabilisateur, si : il se met à plat sur ses roues).
                     const JPH::Vec3 down = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, -1.0f, 0.0f}));
-                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, down * 0.05f, fraction, normal)
+                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, down * 0.15f, fraction, normal)
                                     && normal.Dot(-down) > 0.7f;
                     if (ship.grounded) {
                         ship.angularVelocity = {};

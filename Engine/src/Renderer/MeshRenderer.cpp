@@ -55,6 +55,9 @@ namespace Flux {
         };
         static_assert(sizeof(InteriorData) == 80);
 
+        // Planètes dessinées au plus dans une image (leur sol) : au-delà, les suivantes prennent la première.
+        constexpr std::size_t MaxPlanets = 4;
+
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
         {
@@ -70,9 +73,11 @@ namespace Flux {
             std::array<float, 4> environment;
             std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs
             std::array<InteriorData, MaxInteriors> interiors;
+            std::array<PlanetGpu, MaxPlanets> planets;
             AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) + sizeof(AtmosphereGpu) && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
+                      && ShadowCascadeCount == 4);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
@@ -222,6 +227,7 @@ namespace Flux {
             std::span<const RHI::VertexAttribute> shadowAttributes;
             const char* vertex;
             const char* shadowVertex;
+            const char* fragment = "fragmentMain";
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -258,7 +264,7 @@ namespace Flux {
 
             desc.vertexEntryPoint = kind.vertex;
             desc.vertexAttributes = kind.attributes;
-            desc.fragmentEntryPoint = "fragmentMain";
+            desc.fragmentEntryPoint = kind.fragment;
             desc.colorFormat = colorFormat;
             desc.depthFormat = depthFormat;
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
@@ -290,7 +296,7 @@ namespace Flux {
             !result) {
             return result;
         }
-        return createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet"});
+        return createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet", "fragmentPlanet"});
     }
 
     const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const GpuModel& model) const {
@@ -326,6 +332,7 @@ namespace Flux {
         m_jointMatrices.clear();
         m_lights.clear();
         m_interiors.clear();
+        m_planetData.clear();
         const ViewCone view(camera, aspect);
         m_planets->BeginFrame();
         for (const RelativeTransform& transform : m_relativeTransforms) {
@@ -467,14 +474,31 @@ namespace Flux {
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
         const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
         const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-        const Math::LinearColor color{planet.color.r, planet.color.g, planet.color.b, 1.0f};
+        if (m_planetTiles.empty()) {
+            return;
+        }
+        // Son sol, lu par fragmentPlanet ; sans zones, roche partout.
         const float roughness = std::clamp(planet.roughness, 0.0f, 1.0f);
+        const auto material = [&](const Math::LinearColor& color, float materialRoughness) {
+            return planet.zones ? std::array{color.r, color.g, color.b, materialRoughness}
+                                : std::array{planet.color.r, planet.color.g, planet.color.b, roughness};
+        };
+        const std::uint32_t index = static_cast<std::uint32_t>(std::min(m_planetData.size(), MaxPlanets - 1));
+        if (m_planetData.size() < MaxPlanets) {
+            m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowHeight, planet.sandHeight},
+                                    material(planet.color, roughness), material(planet.grassColor, 0.95f),
+                                    material(planet.sandColor, 0.9f), material(planet.snowColor, 0.55f)});
+        }
+        const Math::LinearColor white{1.0f, 1.0f, 1.0f, 1.0f};
+        const Math::Quaternionf inverse = transform.rotation.Conjugate();
         for (const PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
+            // Centre de la tuile dans le repère de la planète : où fragmentPlanet lit l'altitude et le bruit.
+            const Math::Vector3f local = inverse.Rotate(Math::Vector3f(tile.center - transform.position));
             m_drawData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
-                                  {}});
-            m_draws.push_back({tile.model, color, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
+                                  {local.x, local.y, local.z, std::bit_cast<float>(index)}});
+            m_draws.push_back({tile.model, white, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
                                Math::Length(center), true, true});
         }
     }
@@ -590,7 +614,9 @@ namespace Flux {
             const float intensity = std::max(interior.intensity, 0.0f);
             data.ambient = {interior.ambient.r * intensity, interior.ambient.g * intensity, interior.ambient.b * intensity, 0.0f};
         }
-        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()), 0, 0};
+        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
+                            static_cast<std::uint32_t>(m_planetData.size()), 0};
+        std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
