@@ -285,10 +285,9 @@ namespace Flux {
             // Le secteur du premier objet physique : la simulation se passe autour de lui.
             const entt::registry& registry = scene.GetRegistry();
             const auto first = [&](auto view) {
-                for (const Entity entity : view) {
-                    anchor = {scene.GetWorldPosition(entity).sector, {}};
+                if (view.begin() != view.end()) {
+                    anchor = {scene.GetWorldPosition(*view.begin()).sector, {}};
                     anchored = true;
-                    return;
                 }
             };
             first(registry.view<const ColliderComponent>());
