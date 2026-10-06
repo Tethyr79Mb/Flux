@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <deque>
+#include <limits>
 #include <mutex>
 #include <stop_token>
 #include <thread>
@@ -276,6 +277,7 @@ namespace Flux::Planet {
         mesh.center = DirectionFromFace(key.face, GridToFace(x0 + 1 + half, key.level), GridToFace(y0 + 1 + half, key.level)) * R;
         mesh.vertices.resize(TileVertexCount);
         mesh.radius = 0.0;
+        mesh.lowest = std::numeric_limits<double>::max();
         const auto vertex = [&](std::uint32_t i, std::uint32_t j) -> ModelVertex& { return mesh.vertices[j * TileSide + i]; };
         for (std::uint32_t j = 0; j < TileSide; ++j) {
             for (std::uint32_t i = 0; i < TileSide; ++i) {
@@ -286,6 +288,7 @@ namespace Flux::Planet {
                 const Math::Vector3d local = positions[w] - mesh.center;
                 vertex(i, j) = {Math::Vector3f(local), Math::Vector3f(normal), {0.0f, 0.0f}};
                 mesh.radius = std::max(mesh.radius, Math::Length(local));
+                mesh.lowest = std::min(mesh.lowest, Math::Length(positions[w]));
             }
         }
 
@@ -329,6 +332,7 @@ namespace Flux::Planet {
                     const Math::Vector3d normal = Math::Normalize(parentNormal(i0, j0) + parentNormal(i1, j1));
                     const Math::Vector3d position = positions[(j + 1) * Wide + (i + 1)];
                     mesh.morph[j * TileSide + i] = {Math::Vector3f(target - position), Math::Vector3f(normal)};
+                    mesh.lowest = std::min(mesh.lowest, Math::Length(target));
                     mesh.radius = std::max(mesh.radius, Math::Length(target - mesh.center));
                 }
             }
