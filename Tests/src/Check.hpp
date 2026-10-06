@@ -27,3 +27,4 @@ bool RunShadowTests();
 bool RunSkyTests();
 bool RunAudioTests();
 bool RunInputTests();
+bool RunPlanetTests();

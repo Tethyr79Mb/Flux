@@ -156,6 +156,18 @@ namespace Flux {
         float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
     };
 
+    // Planète en cube-sphère centrée sur l'entité (qui la fait tourner ; son échelle est ignorée) : une sphère de
+    // `radius` mètres déformée par un relief généré (le même pour une même graine), plus détaillée près de la caméra
+    // (Flux/Graphics/Planet.hpp). Pas encore de collision.
+    struct PlanetComponent
+    {
+        float radius = 60000.0f; // m, au niveau zéro du relief
+        float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
+        std::int32_t seed = 1;
+        Math::LinearColor color{0.42f, 0.38f, 0.33f};
+        float roughness = 0.9f;
+    };
+
     // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec
     // elle. Dedans, la lumière ambiante et les reflets ne viennent plus du ciel (qui n'y entre pas) mais de `ambient`,
     // avec un fondu de `fade` mètres depuis les bords. Le soleil, lui, est arrêté par les ombres.

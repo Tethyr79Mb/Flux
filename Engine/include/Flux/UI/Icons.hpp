@@ -25,6 +25,7 @@ namespace Flux::UI {
         Light,       // ampoule
         Sound,       // haut-parleur et ondes
         Sky,         // ciel étoilé : un disque bleu nuit, une lune et des étoiles
+        Planet,      // planète ocre avec un anneau
         Component,   // composant du jeu, sans pictogramme à lui
         Empty,       // objet sans composant
         Window,      // fenêtre d'interface (aussi un fichier .fluxui) : barre de titre et fond

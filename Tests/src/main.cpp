@@ -23,6 +23,7 @@ int main() {
         {"ciel", RunSkyTests},
         {"son", RunAudioTests},
         {"actions d'entrée", RunInputTests},
+        {"planètes (cube-sphère)", RunPlanetTests},
     };
 
     int failures = 0;

@@ -37,7 +37,7 @@ namespace Flux {
     struct GpuModel
     {
         std::unique_ptr<RHI::Buffer> vertices;
-        std::unique_ptr<RHI::Buffer> indices; // 32 bits
+        std::shared_ptr<RHI::Buffer> indices; // 32 bits ; partagé par les tuiles des planètes
         std::unique_ptr<RHI::Buffer> skin;    // ModelSkinVertex, modèle animé seulement
         ModelSkeleton skeleton;               // gardé sur le CPU : les poses y sont calculées à chaque image
         std::vector<std::unique_ptr<RHI::Texture>> images;
