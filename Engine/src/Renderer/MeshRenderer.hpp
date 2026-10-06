@@ -4,6 +4,7 @@
 #include "Flux/Graphics/ShadowCascades.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/ModelCache.hpp"
+#include "Renderer/PlanetRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 
@@ -16,6 +17,7 @@
 
 namespace Flux {
     struct Camera;
+    class ViewCone;
 
     // Maillages de la scène (cubes et modèles glTF, animés ou non) : préparés sur le CPU pour chaque image
     // (matrices relatives à la caméra, poses des squelettes, cascades d'ombres), dessinés d'abord vus du soleil dans
@@ -120,6 +122,7 @@ namespace Flux {
         explicit MeshRenderer(RHI::Device& device) : m_device(device) {}
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
+        void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
         void Pose(const GpuModel& model, const AnimatorComponent* animator);
         void Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex);
@@ -130,6 +133,7 @@ namespace Flux {
 
         RHI::Device& m_device;
         std::unique_ptr<ModelCache> m_models;
+        std::unique_ptr<PlanetRenderer> m_planets;
         Pipelines m_static;
         // Modèles animés : un second flux de sommets (os et poids), lus avec les matrices des os.
         Pipelines m_skinned;
@@ -158,6 +162,7 @@ namespace Flux {
         std::vector<PreparedLight> m_lights;
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         std::vector<PreparedInterior> m_interiors;
+        std::vector<PlanetRenderer::Tile> m_planetTiles;
         PoseEvaluator m_poseEvaluator;
     };
 }

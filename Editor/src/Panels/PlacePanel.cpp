@@ -27,6 +27,7 @@ namespace FluxEditor {
         constexpr double PlaceDistance = 5.0; // mètres devant la caméra (ou le long du rayon de la souris)
         constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
         constexpr double FighterDistance = 32.0; // le chasseur fait 20 m de long et 15 m d'envergure
+        constexpr double PlanetDistance = 3.0;   // rayons de la planète, de la caméra à son centre
 
         // Maquette de vaisseau en cubes, dans son repère (-z : l'avant, le pont à y = 0) : une cabine de 6 x 3 x 16 m
         // ouverte à l'arrière, avec une console à l'avant. De quoi essayer la marche à bord avant le vrai modèle.
@@ -134,7 +135,8 @@ namespace FluxEditor {
                                            {"Ciel", "Ciel"},
                                            {"Volume intérieur", "Intérieur"},
                                            {"Interface...", "Interface"},
-                                           {"Son...", "Son"}};
+                                           {"Son...", "Son"},
+                                           {"Planète", "Planète"}};
             return Infos[item];
         }
 
@@ -180,6 +182,9 @@ namespace FluxEditor {
             ui.SameLine();
             button(Item::Sky);
             button(Item::Interior);
+            ui.Separator();
+            ui.TextDisabled("Espace");
+            button(Item::Planet);
             ui.Separator();
             ui.TextDisabled("Interface");
             button(Item::ScreenText);
@@ -337,6 +342,8 @@ namespace FluxEditor {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);
             } else if (item == Item::Interior) {
                 scene.Add<InteriorComponent>(entity);
+            } else if (item == Item::Planet) {
+                scene.Add<PlanetComponent>(entity);
             } else if (item == Item::Light || item == Item::Spot) {
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 if (item == Item::Spot) {
@@ -351,7 +358,12 @@ namespace FluxEditor {
             const Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
                                                   : Math::Vector3d(camera.GetForward());
             Math::WorldPosition position = camera.position;
-            position += direction * (item == Item::Ship ? ShipDistance : item == Item::Fighter ? FighterDistance : PlaceDistance);
+            double distance = item == Item::Ship ? ShipDistance : item == Item::Fighter ? FighterDistance : PlaceDistance;
+            if (item == Item::Planet) {
+                // Assez loin pour la voir en entier.
+                distance = PlanetDistance * static_cast<double>(scene.Get<PlanetComponent>(entity).radius);
+            }
+            position += direction * distance;
             scene.Get<TransformComponent>(entity).position = position.offset;
             if (position.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, position.sector);

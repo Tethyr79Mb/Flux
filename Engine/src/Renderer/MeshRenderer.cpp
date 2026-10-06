@@ -12,6 +12,30 @@
 #include <span>
 
 namespace Flux {
+    // Champ de la caméra (à l'origine : positions relatives à la caméra), calculé une fois par image.
+    class ViewCone {
+        public:
+        ViewCone(const Camera& camera, float aspect)
+            : m_forward(camera.GetForward()), m_right(camera.GetRight()), m_up(camera.GetUp()),
+              m_tanY(std::tan(0.5f * camera.verticalFov)), m_tanX(m_tanY * aspect),
+              m_scaleX(1.0f / std::sqrt(1.0f + m_tanX * m_tanX)), m_scaleY(1.0f / std::sqrt(1.0f + m_tanY * m_tanY)) {}
+
+        // La sphère touche le champ : devant la caméra et entre ses quatre bords. Distance signée au plan d'un
+        // bord (dehors si positive) : (côté - profondeur x tan) / sqrt(1 + tan²).
+        bool Contains(const Math::Vector3f& center, float radius) const {
+            const float depth = Math::Dot(center, m_forward);
+            if (depth < -radius) {
+                return false;
+            }
+            return (std::abs(Math::Dot(center, m_right)) - depth * m_tanX) * m_scaleX <= radius
+                && (std::abs(Math::Dot(center, m_up)) - depth * m_tanY) * m_scaleY <= radius;
+        }
+
+        private:
+        Math::Vector3f m_forward, m_right, m_up;
+        float m_tanY, m_tanX, m_scaleX, m_scaleY;
+    };
+
     namespace {
         static_assert(sizeof(ModelVertex) == 32, "ModelVertex doit correspondre à VertexInput dans shaders/Mesh.slang");
         static_assert(sizeof(ModelSkinVertex) == 24, "ModelSkinVertex doit correspondre à SkinnedVertexInput dans shaders/Mesh.slang");
@@ -104,30 +128,6 @@ namespace Flux {
 
         std::array<float, 4> ToArray(const Math::Vector3f& v, float w = 0.0f) { return {v.x, v.y, v.z, w}; }
 
-        // Champ de la caméra (à l'origine : positions relatives à la caméra), calculé une fois par image.
-        class ViewCone {
-            public:
-            ViewCone(const Camera& camera, float aspect)
-                : m_forward(camera.GetForward()), m_right(camera.GetRight()), m_up(camera.GetUp()),
-                  m_tanY(std::tan(0.5f * camera.verticalFov)), m_tanX(m_tanY * aspect),
-                  m_scaleX(1.0f / std::sqrt(1.0f + m_tanX * m_tanX)), m_scaleY(1.0f / std::sqrt(1.0f + m_tanY * m_tanY)) {}
-
-            // La sphère touche le champ : devant la caméra et entre ses quatre bords. Distance signée au plan d'un
-            // bord (dehors si positive) : (côté - profondeur x tan) / sqrt(1 + tan²).
-            bool Contains(const Math::Vector3f& center, float radius) const {
-                const float depth = Math::Dot(center, m_forward);
-                if (depth < -radius) {
-                    return false;
-                }
-                return (std::abs(Math::Dot(center, m_right)) - depth * m_tanX) * m_scaleX <= radius
-                    && (std::abs(Math::Dot(center, m_up)) - depth * m_tanY) * m_scaleY <= radius;
-            }
-
-            private:
-            Math::Vector3f m_forward, m_right, m_up;
-            float m_tanY, m_tanX, m_scaleX, m_scaleY;
-        };
-
         bool InView(const Camera& camera, float aspect, const Math::Vector3f& center, float radius) {
             return ViewCone(camera, aspect).Contains(center, radius);
         }
@@ -141,6 +141,7 @@ namespace Flux {
             return std::unexpected(models.error());
         }
         renderer->m_models = std::move(*models);
+        renderer->m_planets = std::make_unique<PlanetRenderer>(device);
 
         auto shadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {ShadowMapResolution, ShadowMapResolution}, true);
         if (!shadowMap) {
@@ -304,7 +305,11 @@ namespace Flux {
         m_lights.clear();
         m_interiors.clear();
         const ViewCone view(camera, aspect);
+        m_planets->BeginFrame();
         for (const RelativeTransform& transform : m_relativeTransforms) {
+            if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
+                AddPlanet(transform, *planet, view);
+            }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
             }
@@ -389,6 +394,8 @@ namespace Flux {
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
                                Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
         }
+        // Tuiles manquantes des planètes (dessinées à partir de l'image suivante).
+        m_planets->EndFrame();
         if (!m_boundEnvironment[frameIndex]) {
             m_draws.clear(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
@@ -425,6 +432,29 @@ namespace Flux {
         std::stable_sort(m_transparent.begin(), m_transparent.end(), [this](const TransparentDraw& a, const TransparentDraw& b) {
             return m_draws[a.draw].distance > m_draws[b.draw].distance;
         });
+    }
+
+    // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
+    // GPU ne voit que des sommets proches de ce centre.
+    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view) {
+        m_planetTiles.clear();
+        m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
+                           [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
+                           m_planetTiles);
+        const Math::Matrix4f rotation = transform.rotation.ToMatrix();
+        const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
+        const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
+        const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
+        const Math::LinearColor color{planet.color.r, planet.color.g, planet.color.b, 1.0f};
+        const float roughness = std::clamp(planet.roughness, 0.0f, 1.0f);
+        for (const PlanetRenderer::Tile& tile : m_planetTiles) {
+            const Math::Vector3f center(tile.center);
+            m_drawData.push_back({Math::Matrix4f::Translation(center) * rotation,
+                                  {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, 0.0f}}},
+                                  {}});
+            m_draws.push_back({tile.model, color, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
+                               Math::Length(center), true, true});
+        }
     }
 
     // Lumière de l'entité, si sa portée touche le champ de la caméra. Un spot éclaire vers le -z de l'entité.

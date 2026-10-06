@@ -188,6 +188,16 @@ namespace Flux::UI {
                 pen.Disc(0.36f, 0.74f, 0.035f, star);
                 break;
             }
+            case Icon::Planet: {
+                const LinearColor ring = LinearColor::FromSrgb8(210, 200, 170);
+                pen.Line(0.04f, 0.68f, 0.96f, 0.32f, ring, 0.07f); // anneau, derrière
+                const LinearColor ground = LinearColor::FromSrgb8(196, 130, 70);
+                pen.Disc(0.5f, 0.5f, 0.32f, ground);
+                pen.Disc(0.42f, 0.42f, 0.1f, Shade(ground, 0.7f)); // continents
+                pen.Disc(0.6f, 0.6f, 0.08f, Shade(ground, 0.7f));
+                pen.Line(0.3f, 0.6f, 0.7f, 0.44f, ring, 0.07f); // anneau, devant
+                break;
+            }
             case Icon::Component: {
                 const LinearColor color = LinearColor::FromSrgb8(200, 200, 120);
                 pen.Quad({0.5f, 0.06f}, {0.94f, 0.5f}, {0.5f, 0.94f}, {0.06f, 0.5f}, color);
