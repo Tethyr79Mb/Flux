@@ -4,7 +4,10 @@
 
 #include "Flux/Graphics/Planet.hpp"
 
+#include <chrono>
 #include <cmath>
+#include <memory>
+#include <thread>
 #include <random>
 
 using namespace Flux;
@@ -105,6 +108,42 @@ bool RunPlanetTests() {
             const Math::Vector3d outward = middle - flat.center;
             CHECK(Math::Dot(normal, outward - Math::Normalize(middle) * Math::Dot(outward, Math::Normalize(middle))) > 0.0);
         }
+    }
+
+    // Génération en tâches de fond : mêmes tuiles qu'en direct, toutes rendues, chacune avec sa demande.
+    {
+        const auto shared = std::make_shared<const Planet::Terrain>(60000.0, 800.0, 5);
+        Planet::TileGenerator generator(2);
+        CHECK(generator.GetThreadCount() == 2);
+        std::vector<Planet::TileGenerator::Job> jobs;
+        for (std::uint32_t i = 0; i < 8; ++i) {
+            jobs.push_back({shared, 100 + i, Planet::TileKey{static_cast<std::uint8_t>(i % 6), 3, i, 7 - i}});
+        }
+        generator.Submit(jobs);
+        CHECK(jobs.empty());
+        std::vector<Planet::TileGenerator::Result> results;
+        for (int wait = 0; wait < 1000 && results.size() < 8; ++wait) {
+            generator.Collect(results, 3);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(results.size() == 8);
+        for (const Planet::TileGenerator::Result& result : results) {
+            const std::uint32_t i = static_cast<std::uint32_t>(result.owner - 100);
+            CHECK(i < 8 && result.key == (Planet::TileKey{static_cast<std::uint8_t>(i % 6), 3, i, 7 - i}));
+            Planet::TileMesh direct;
+            Planet::BuildTile(*shared, result.key, direct);
+            CHECK(result.mesh.center.x == direct.center.x && result.mesh.vertices.size() == direct.vertices.size());
+            CHECK(result.mesh.vertices[500].position.y == direct.vertices[500].position.y);
+        }
+        // Les tâches pas commencées se reprennent ; le générateur s'arrête proprement avec du travail en file.
+        for (std::uint32_t i = 0; i < 64; ++i) {
+            jobs.push_back({shared, i, Planet::TileKey{0, 6, i, i}});
+        }
+        generator.Submit(jobs);
+        std::vector<Planet::TileGenerator::Job> waiting;
+        generator.TakeWaiting(waiting);
+        CHECK(waiting.size() <= 64);
+        generator.Submit(waiting);
     }
     return true;
 }

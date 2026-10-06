@@ -15,11 +15,13 @@
 namespace Flux {
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont générées
-    // ensuite, dans un budget de temps par image ; en attendant, leur parente reste affichée (jamais de trou).
+    // en tâches de fond (Planet::TileGenerator) et envoyées au GPU dès qu'elles sont prêtes ; en attendant, leur
+    // parente reste affichée (jamais de trou).
     // Chaque tuile est un GpuModel (ses sommets ; les indices communs à toutes), dessiné par MeshRenderer.
     class PlanetRenderer {
         public:
-        explicit PlanetRenderer(RHI::Device& device) : m_device(device) {}
+        explicit PlanetRenderer(RHI::Device& device)
+            : m_device(device), m_generator(std::make_unique<Planet::TileGenerator>()) {}
 
         // Une tuile à dessiner : son centre relatif à la caméra (calculé en double) et sa sphère englobante.
         struct Tile
@@ -49,6 +51,7 @@ namespace Flux {
             Math::Vector3d center; // de ses sommets, repère de la planète
             float radius = 0.0f;
             std::uint64_t lastUsed = 0;
+            bool queued = false; // demandée au générateur (en attente ou en cours)
         };
         struct Request
         {
@@ -57,7 +60,8 @@ namespace Flux {
         };
         struct PlanetState
         {
-            Planet::Terrain terrain;
+            std::shared_ptr<const Planet::Terrain> terrain;
+            std::uint64_t owner = 0; // identifie cette planète et cette forme auprès du générateur
             float radius = 0.0f;
             float relief = -1.0f;
             std::int32_t seed = 0;
@@ -81,7 +85,8 @@ namespace Flux {
         Node& GetNode(PlanetState& state, Planet::TileKey key);
         bool IsCulled(const Visit& visit, const Node& node) const;
         void VisitNode(Visit& visit, Planet::TileKey key, Node& node);
-        bool Generate(PlanetState& state, Planet::TileKey key, Node& node);
+        PlanetState* FindOwner(std::uint64_t owner);
+        bool Upload(Node& node, const Planet::TileMesh& mesh);
         void Retire(Node& node);
 
         RHI::Device& m_device;
@@ -96,6 +101,11 @@ namespace Flux {
             std::uint64_t frame;
         };
         std::vector<FreeBuffer> m_freeBuffers;
-        Planet::TileMesh m_mesh; // réutilisé à chaque génération
+        Planet::TileMesh m_mesh; // racines, générées sur le fil principal
+        std::unique_ptr<Planet::TileGenerator> m_generator;
+        std::uint64_t m_nextOwner = 1;
+        // Réutilisés d'une image à l'autre.
+        std::vector<Planet::TileGenerator::Job> m_jobs;
+        std::vector<Planet::TileGenerator::Result> m_results;
     };
 }

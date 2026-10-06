@@ -3,7 +3,6 @@
 #include "Flux/Core/Log.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 
 namespace Flux {
@@ -11,8 +10,10 @@ namespace Flux {
         // Une tuile est coupée en 4 quand la caméra est à moins de SplitFactor fois son bord : ses sommets restent
         // espacés de quelques pixels à l'écran.
         constexpr double SplitFactor = 3.0;
-        // Temps de génération des tuiles par image (la première tuile demandée est toujours générée).
-        constexpr auto GenerationBudget = std::chrono::microseconds(3000);
+        // Tuiles en attente de génération au plus : les plus urgentes (la file est refaite à chaque image).
+        constexpr std::size_t MaxQueuedJobs = 256;
+        // Tuiles finies envoyées au GPU par image au plus (une copie de 40 Ko chacune).
+        constexpr std::size_t MaxUploadsPerFrame = 32;
         // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 40 Ko de
         // sommets par tuile, soit une quarantaine de Mo).
         constexpr std::size_t MaxNodes = 1024;
@@ -37,7 +38,7 @@ namespace Flux {
     PlanetRenderer::Node& PlanetRenderer::GetNode(PlanetState& state, Planet::TileKey key) {
         auto [it, created] = state.nodes.try_emplace(key.Pack());
         if (created) {
-            it->second.bounds = Planet::GetTileBounds(state.terrain, key);
+            it->second.bounds = Planet::GetTileBounds(*state.terrain, key);
         }
         return it->second;
     }
@@ -54,7 +55,8 @@ namespace Flux {
                 Retire(node);
             }
             state.nodes.clear();
-            state.terrain = Planet::Terrain(planet.radius, planet.relief, planet.seed);
+            state.terrain = std::make_shared<const Planet::Terrain>(planet.radius, planet.relief, planet.seed);
+            state.owner = m_nextOwner++; // les tuiles de l'ancienne forme encore en cours seront ignorées
             state.radius = planet.radius;
             state.relief = planet.relief;
             state.seed = planet.seed;
@@ -62,7 +64,7 @@ namespace Flux {
         state.lastUsed = m_frame;
         state.requests.clear();
 
-        const Planet::Terrain& terrain = state.terrain;
+        const Planet::Terrain& terrain = *state.terrain;
         const Math::Vector3d camera = rotation.Conjugate().Rotate(-position);
         const double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief(), 1.0);
         const double maxRadius = terrain.GetRadius() + terrain.GetRelief();
@@ -75,8 +77,11 @@ namespace Flux {
             const Planet::TileKey key{face, 0, 0, 0};
             Node& node = GetNode(state, key);
             // Les racines sont générées tout de suite : la planète n'apparaît jamais à moitié.
-            if (!node.model.vertices && !Generate(state, key, node)) {
-                continue;
+            if (!node.model.vertices) {
+                Planet::BuildTile(terrain, key, m_mesh);
+                if (!Upload(node, m_mesh)) {
+                    continue;
+                }
             }
             VisitNode(visit, key, node);
         }
@@ -103,7 +108,7 @@ namespace Flux {
             return;
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
-        if (key.level < visit.state.terrain.GetMaxLevel() && distance < SplitFactor * node.bounds.edge) {
+        if (key.level < visit.state.terrain->GetMaxLevel() && distance < SplitFactor * node.bounds.edge) {
             // Les enfants visibles doivent tous être prêts ; sinon cette tuile reste affichée et ils sont demandés.
             std::array<Node*, 4> children{};
             std::array<bool, 4> culled{};
@@ -133,8 +138,17 @@ namespace Flux {
         }
     }
 
-    bool PlanetRenderer::Generate(PlanetState& state, Planet::TileKey key, Node& node) {
-        Planet::BuildTile(state.terrain, key, m_mesh);
+    PlanetRenderer::PlanetState* PlanetRenderer::FindOwner(std::uint64_t owner) {
+        for (auto& [entity, state] : m_planets) {
+            if (state.owner == owner) {
+                return &state;
+            }
+        }
+        return nullptr;
+    }
+
+    // Sommets de la tuile envoyés au GPU.
+    bool PlanetRenderer::Upload(Node& node, const Planet::TileMesh& mesh) {
         constexpr std::uint64_t size = Planet::TileVertexCount * sizeof(ModelVertex);
         std::unique_ptr<RHI::Buffer> buffer;
         // Un buffer libéré que le GPU ne lit plus, sinon un nouveau.
@@ -150,14 +164,14 @@ namespace Flux {
             }
             buffer = std::move(*created);
         }
-        buffer->Write(m_mesh.vertices.data(), size);
+        buffer->Write(mesh.vertices.data(), size);
         node.model.vertices = std::move(buffer);
         node.model.indices = m_indices;
         node.model.primitives = {{0, m_indexCount, 0}};
         node.model.materials.resize(1); // blanc : la couleur de la planète vient de la teinte du dessin
         node.model.loaded = true;
-        node.center = m_mesh.center;
-        node.radius = static_cast<float>(m_mesh.radius);
+        node.center = mesh.center;
+        node.radius = static_cast<float>(mesh.radius);
         return true;
     }
 
@@ -168,7 +182,35 @@ namespace Flux {
     }
 
     void PlanetRenderer::EndFrame() {
-        // Tuiles demandées : les plus grossières d'abord (elles débloquent les suivantes), puis les plus proches.
+        // Tuiles finies : envoyées au GPU, sauf celles qui ne servent plus (nœud oublié, planète changée).
+        m_results.clear();
+        m_generator->Collect(m_results, MaxUploadsPerFrame);
+        for (const Planet::TileGenerator::Result& result : m_results) {
+            PlanetState* state = FindOwner(result.owner);
+            if (!state) {
+                continue;
+            }
+            const auto node = state->nodes.find(result.key.Pack());
+            if (node != state->nodes.end() && node->second.queued) {
+                node->second.queued = false;
+                if (!node->second.model.vertices) {
+                    Upload(node->second, result.mesh);
+                }
+            }
+        }
+
+        // Tâches pas encore commencées : reprises, puis la file refaite avec les demandes de cette image.
+        m_jobs.clear();
+        m_generator->TakeWaiting(m_jobs);
+        for (const Planet::TileGenerator::Job& job : m_jobs) {
+            if (PlanetState* state = FindOwner(job.owner)) {
+                if (const auto node = state->nodes.find(job.key.Pack()); node != state->nodes.end()) {
+                    node->second.queued = false;
+                }
+            }
+        }
+        m_jobs.clear();
+        // Les plus grossières d'abord (elles débloquent les suivantes), puis les plus proches.
         struct Pending
         {
             PlanetState* state;
@@ -184,16 +226,17 @@ namespace Flux {
             return a.request.key.level != b.request.key.level ? a.request.key.level < b.request.key.level
                                                               : a.request.distance < b.request.distance;
         });
-        const auto start = std::chrono::steady_clock::now();
-        for (std::size_t i = 0; i < pending.size(); ++i) {
-            if (i > 0 && std::chrono::steady_clock::now() - start > GenerationBudget) {
+        for (const Pending& item : pending) {
+            if (m_jobs.size() >= MaxQueuedJobs) {
                 break;
             }
-            Node& node = GetNode(*pending[i].state, pending[i].request.key);
-            if (!node.model.vertices) {
-                Generate(*pending[i].state, pending[i].request.key, node);
+            Node& node = GetNode(*item.state, item.request.key);
+            if (!node.model.vertices && !node.queued) {
+                node.queued = true;
+                m_jobs.push_back({item.state->terrain, item.state->owner, item.request.key});
             }
         }
+        m_generator->Submit(m_jobs);
 
         // Planètes disparues de la scène (ou plus dessinées) : leurs tuiles sont libérées.
         for (auto it = m_planets.begin(); it != m_planets.end();) {

@@ -1,6 +1,11 @@
 #include "Flux/Graphics/Planet.hpp"
 
 #include <algorithm>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <stop_token>
+#include <thread>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -326,5 +331,83 @@ namespace Flux::Planet {
             }
         }
         return indices;
+    }
+
+    struct TileGenerator::Impl
+    {
+        std::mutex mutex;
+        std::condition_variable_any wake;
+        std::deque<Job> queue;
+        std::vector<Result> done;
+        std::vector<std::jthread> threads; // en dernier : arrêtés et attendus avant le reste
+
+        void Run(std::stop_token stop) {
+            for (;;) {
+                Job job;
+                {
+                    std::unique_lock lock(mutex);
+                    if (!wake.wait(lock, stop, [this] { return !queue.empty(); })) {
+                        return; // arrêt demandé
+                    }
+                    job = std::move(queue.front());
+                    queue.pop_front();
+                }
+                Result result{job.owner, job.key, {}};
+                BuildTile(*job.terrain, job.key, result.mesh);
+                std::lock_guard lock(mutex);
+                done.push_back(std::move(result));
+            }
+        }
+    };
+
+    TileGenerator::TileGenerator(std::uint32_t threads) : m_impl(std::make_unique<Impl>()) {
+        if (threads == 0) {
+            // Laisser de quoi faire au fil principal, au GPU (pilote) et à la physique.
+            const auto available = static_cast<std::int32_t>(std::thread::hardware_concurrency());
+            threads = static_cast<std::uint32_t>(std::clamp(available - 2, 1, 4));
+        }
+        for (std::uint32_t i = 0; i < threads; ++i) {
+            m_impl->threads.emplace_back([impl = m_impl.get()](std::stop_token stop) { impl->Run(stop); });
+        }
+    }
+
+    TileGenerator::~TileGenerator() {
+        // Les jthread demandent l'arrêt (réveillant l'attente) puis attendent leur fil : une tuile en cours finit.
+        m_impl->threads.clear();
+    }
+
+    std::uint32_t TileGenerator::GetThreadCount() const {
+        return static_cast<std::uint32_t>(m_impl->threads.size());
+    }
+
+    void TileGenerator::TakeWaiting(std::vector<Job>& waiting) {
+        std::lock_guard lock(m_impl->mutex);
+        for (Job& job : m_impl->queue) {
+            waiting.push_back(std::move(job));
+        }
+        m_impl->queue.clear();
+    }
+
+    void TileGenerator::Submit(std::vector<Job>& jobs) {
+        if (jobs.empty()) {
+            return;
+        }
+        {
+            std::lock_guard lock(m_impl->mutex);
+            for (Job& job : jobs) {
+                m_impl->queue.push_back(std::move(job));
+            }
+        }
+        jobs.clear();
+        m_impl->wake.notify_all();
+    }
+
+    void TileGenerator::Collect(std::vector<Result>& results, std::size_t max) {
+        std::lock_guard lock(m_impl->mutex);
+        const std::size_t count = std::min(max, m_impl->done.size());
+        for (std::size_t i = 0; i < count; ++i) {
+            results.push_back(std::move(m_impl->done[i]));
+        }
+        m_impl->done.erase(m_impl->done.begin(), m_impl->done.begin() + static_cast<std::ptrdiff_t>(count));
     }
 }
