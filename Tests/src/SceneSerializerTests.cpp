@@ -198,6 +198,11 @@ bool RunSceneSerializerTests() {
     CHECK(SceneSerializer::LoadFromString(loaded, components, resaved).has_value());
     CHECK(loaded.TryGet<TestComponent>(loaded.FindById(Uuid{0xcd}))->count == 3);
 
+    // Champ retiré (ancienne version) : ignoré, le composant garde sa valeur par défaut.
+    CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 1, "entities": [
+        {"id": "00000000000000ce", "planet": {"relief": 5500, "sandHeight": 10, "snowHeight": 520}}]})").has_value());
+    CHECK(loaded.TryGet<PlanetComponent>(loaded.FindById(Uuid{0xce}))->snowLevel == PlanetComponent{}.snowLevel);
+
     // Déchargement d'un module : ses types disparaissent du registre, ceux du moteur restent.
     const std::size_t engineCount = engineOnly.GetCount();
     RegisterTestComponent(engineOnly);

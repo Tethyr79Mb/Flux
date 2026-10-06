@@ -92,6 +92,9 @@ namespace Flux {
             .Field("snowColor", "Couleur de la neige", &PlanetComponent::snowColor, {.alpha = false})
             .Field("sandLevel", "Sable jusqu'à (% du relief)", &PlanetComponent::sandLevel, {.speed = 0.1, .min = -100.0, .max = 100.0, .decimals = 2})
             .Field("snowLevel", "Neige à partir de (% du relief)", &PlanetComponent::snowLevel, {.speed = 0.5, .min = -100.0, .max = 200.0, .decimals = 1})
+            // Hauteurs en mètres des premières versions de la PR #83, remplacées par les pourcentages.
+            .RemovedField("sandHeight")
+            .RemovedField("snowHeight")
             .Field("gravity", "Gravité (m/s²)", &PlanetComponent::gravity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("atmosphere", "Atmosphère", &PlanetComponent::atmosphere, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
             .Field("atmosphereHeight", "Hauteur de l'atmosphère (m)", &PlanetComponent::atmosphereHeight,
