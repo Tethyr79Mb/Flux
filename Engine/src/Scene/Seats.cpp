@@ -3,6 +3,7 @@
 #include "Flux/Scene/Scene.hpp"
 
 #include <algorithm>
+#include <numbers>
 #include <limits>
 
 namespace Flux::Seats {
@@ -55,13 +56,57 @@ namespace Flux::Seats {
             transform.rotation = Math::Normalize(inverse * scene.GetWorldRotation(seat));
         }
 
-        // Le pilote change la vitesse du vaisseau : poussée le long de son -z (sans commande, il garde sa vitesse,
-        // comme dans l'espace), lacet et tangage tant que les touches sont tenues.
+        // Pilotage sur six axes, façon combat spatial avec assistance de vol. Le vaisseau garde sa vitesse dans le
+        // monde (inertie) ; ses propulseurs, limités à ShipComponent::acceleration sur chaque axe, la ramènent vers
+        // celle commandée : vers l'avant la vitesse de croisière (Z/S la changent, elle reste sans commande), sur les
+        // côtés et en hauteur le glissement tant que les touches sont tenues, sinon zéro (il reste à sa hauteur). En
+        // virage, il dérive donc avant de repartir vers son nez. Le frein vise l'arrêt complet. Lacet et tangage à la
+        // souris, roulis aux touches, atteints au plus vite de ShipComponent::turnAcceleration. Posé au sol, il ne
+        // fait que décoller : ni rotation ni déplacement à plat.
         void Pilot(ShipComponent& ship, double deltaSeconds, const SeatInput& input) {
-            ship.velocity.z -= input.thrust * ship.acceleration * static_cast<float>(deltaSeconds);
-            ship.velocity.z = std::clamp(ship.velocity.z, -ship.maxSpeed, ship.maxSpeed * 0.25f);
-            ship.angularVelocity.y = input.yaw * ship.turnRate; // y positif : vers la gauche
-            ship.angularVelocity.x = input.pitch * ship.turnRate;
+            const float delta = static_cast<float>(deltaSeconds);
+            if (delta <= 0.0f) {
+                return; // pause
+            }
+            const auto approach = [](float& value, float target, float step) { value += std::clamp(target - value, -step, step); };
+
+            // Rotation voulue : le mouvement de la souris pendant cette image et le roulis, bornés à la vitesse de
+            // rotation ; la vitesse de rotation y va progressivement.
+            const float rate = ship.turnRate;
+            constexpr float Degrees = 180.0f / std::numbers::pi_v<float>; // vitesses de rotation en °/s, souris en radians
+            Math::Vector3f turn{std::clamp(input.mousePitch * Degrees / delta, -rate, rate),
+                                std::clamp(input.mouseYaw * Degrees / delta, -rate, rate), // vers la gauche
+                                -input.roll * rate};                                       // +z : vers la gauche
+            if (ship.grounded) {
+                turn = {};
+                ship.angularVelocity = {};
+            }
+            const float turnStep = ship.turnAcceleration * delta;
+            approach(ship.angularVelocity.x, turn.x, turnStep);
+            approach(ship.angularVelocity.y, turn.y, turnStep);
+            approach(ship.angularVelocity.z, turn.z, turnStep);
+            // Inertie : la physique tourne le vaisseau de cette rotation pendant l'image ; sa vitesse, dans ses axes,
+            // tourne d'autant dans l'autre sens pour rester la même dans le monde.
+            if (const float angle = Math::Length(ship.angularVelocity) * delta / Degrees; angle > 0.0f) {
+                ship.velocity = Math::Quaternionf::FromAxisAngle(ship.angularVelocity, angle).Conjugate().Rotate(ship.velocity);
+            }
+
+            // Vitesse voulue, dans les axes du vaisseau.
+            if (input.brake || ship.grounded) {
+                ship.cruiseSpeed = 0.0f;
+            } else {
+                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * ship.acceleration * delta, -ship.maxSpeed * 0.25f, ship.maxSpeed);
+            }
+            Math::Vector3f wanted{input.strafe * ship.strafeSpeed, input.lift * ship.strafeSpeed, -ship.cruiseSpeed};
+            if (input.brake) {
+                wanted = {};
+            } else if (ship.grounded) {
+                wanted = {0.0f, wanted.y, 0.0f}; // seulement décoller (ou appuyer sur le sol)
+            }
+            const float step = ship.acceleration * delta;
+            approach(ship.velocity.x, wanted.x, step);
+            approach(ship.velocity.y, wanted.y, step);
+            approach(ship.velocity.z, wanted.z, step);
         }
     }
 
@@ -82,6 +127,13 @@ namespace Flux::Seats {
         const auto enter = [&](SeatState state) {
             character->seatState = state;
             character->seatTime = 0.0f;
+            // Aux commandes : le vaisseau garde la vitesse qu'il avait vers l'avant.
+            if (state == SeatState::Seated && scene.Get<SeatComponent>(character->seat).pilot) {
+                if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
+                    ShipComponent& component = scene.Get<ShipComponent>(ship);
+                    component.cruiseSpeed = -component.velocity.z;
+                }
+            }
         };
 
         switch (character->seatState) {

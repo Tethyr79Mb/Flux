@@ -66,7 +66,7 @@ namespace FluxEditor {
 
         // Chasseur monoplace (modèle du projet, dans Modeles/Chasseur) : coque affichée et collision en maillage
         // simplifié, verrière solide (personnages et caméra s'y arrêtent), poste de pilotage. Origine du vaisseau :
-        // le plancher du cockpit, l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : E à moins
+        // le plancher du cockpit, l'avant vers -z ; les roues touchent le sol 2,3 m plus bas. Pas de soute : F à moins
         // de 10 m du siège met directement aux commandes ; en se relevant, le pilote se retrouve au sol, devant l'aile
         // gauche.
         void AddFighter(Scene& scene, Entity ship) {
@@ -85,12 +85,25 @@ namespace FluxEditor {
             ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glass);
             glassCollider.shape = ColliderShape::Mesh;
             glassCollider.mesh = "Modeles/Chasseur/Chasseur-verriere.glb";
+            // Train d'atterrissage : la collision simplifiée s'arrête au ventre (1,97 m sous l'origine), les roues
+            // descendent à 2,3 m. Une boîte par jambe, pour qu'il se pose sur ses roues.
+            struct Gear { const char* name; Math::Vector3f center; Math::Vector3f size; };
+            for (const Gear& gear : {Gear{"Train avant", {0.0f, -2.1f, 1.6f}, {0.3f, 0.4f, 0.6f}},
+                                     Gear{"Train gauche", {-2.4f, -2.1f, 10.0f}, {0.7f, 0.4f, 0.6f}},
+                                     Gear{"Train droit", {2.4f, -2.1f, 10.0f}, {0.7f, 0.4f, 0.6f}}}) {
+                const Entity leg = scene.CreateEntity(gear.name, ship);
+                scene.Get<TransformComponent>(leg).position = {gear.center.x, gear.center.y, gear.center.z};
+                scene.Add<ColliderComponent>(leg).size = gear.size;
+            }
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
             // Le cockpit est tout à l'avant (3,6 m derrière le nez) et l'origine est sous les hanches du pilote.
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
             component.reach = 10.0f;
             component.exit = {-3.5f, -2.3f, 1.4f};
+            // Tête du pilote calée contre l'appui-tête incliné : assez haut et en arrière pour voir le tableau de bord
+            // (1 à 1,5 m devant, sous la ligne des yeux) et le nez par la verrière.
+            component.eye = {0.0f, 1.15f, 0.2f};
             // Bruit des moteurs, à l'arrière (tuyères) : plus fort et plus aigu avec la vitesse.
             const Entity engines = scene.CreateEntity("Moteurs", ship);
             scene.Get<TransformComponent>(engines).position = {0.0, 1.2, 15.0};
@@ -317,7 +330,8 @@ namespace FluxEditor {
                 scene.Add<ShipComponent>(entity);
                 AddShipBlockout(scene, entity);
             } else if (item == Item::Fighter) {
-                scene.Add<ShipComponent>(entity);
+                // Chasseur : vire vite, pour suivre la souris (30 °/s par défaut, celle d'un transport, paraît mou).
+                scene.Add<ShipComponent>(entity).turnRate = 90.0f;
                 AddFighter(scene, entity);
             } else if (item == Item::Sound) {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);

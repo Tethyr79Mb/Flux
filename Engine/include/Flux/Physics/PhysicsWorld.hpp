@@ -55,9 +55,10 @@ namespace Flux {
         // Distance libre (0 à `distance`) pour une sphère de rayon `radius` partant de `from` dans `direction`
         // (unitaire) : où poser la caméra qui suit `player` sans qu'elle entre dans un mur. Seuls les décors
         // immobiles et les coques l'arrêtent : ni les objets simulés, ni les personnages, ni la coque du vaisseau
-        // où se trouve le joueur.
+        // où se trouve le joueur. ignoredShip : vaisseau entier ignoré (coque, décor de bord), pour la caméra qui le
+        // suit de l'extérieur quand le joueur le pilote.
         float CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from, const Math::Vector3f& direction,
-                         float distance, float radius) const;
+                         float distance, float radius, Entity ignoredShip = NullEntity) const;
         // Nombre de corps (hors personnages), pour les tests et le panneau Moteur.
         int GetBodyCount() const;
 

@@ -236,13 +236,25 @@ namespace Flux {
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
         Entity m_hiddenPlayer = NullEntity; // caméra dans sa tête (vue cockpit, ou coincée contre un mur) : pas dessiné
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
+        // Aux commandes : la souris dirige le vaisseau (curseur caché ; Alt maintenu ou un menu de pause le libère).
+        // Rotation demandée à cette image, en radians.
+        float m_steerYaw = 0.0f;
+        float m_steerPitch = 0.0f;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
-        // Aux commandes d'un vaisseau : vue depuis l'œil du pilote (V : vue extérieure), et où il regarde (clic droit).
+        // Aux commandes d'un vaisseau : vue depuis l'œil du pilote, ou de l'extérieur, derrière le vaisseau et tournée
+        // avec lui (V ou molette pour changer), et où il regarde (clic droit).
         bool m_cockpitView = true;
         float m_lookYaw = 0.0f;
         float m_lookPitch = 0.0f;
+        // Vue extérieure : distance en tailles du vaisseau (molette), et sa boîte (centre dans son repère, rayon),
+        // calculée une fois par vaisseau piloté.
+        float m_chaseZoom = 1.4f;
+        float m_chaseShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
+        Entity m_chaseShip = NullEntity;
+        Math::Vector3f m_chaseCenter;
+        float m_chaseRadius = 10.0f;
 
         const InterfaceValue* FindInterfaceValue(std::string_view name) const;
         // Interfaces en jeu : les éléments liés affichent leur valeur, ou la changent (changed : touché par le joueur).
@@ -259,6 +271,9 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
+        // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
+        void PlaceChaseCamera(Entity seat, double deltaSeconds);
+        void MeasureShip(Entity ship);
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterface(const ScreenUi::InterfaceRequest& request);
     };
 }

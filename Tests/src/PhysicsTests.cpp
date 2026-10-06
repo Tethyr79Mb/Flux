@@ -337,6 +337,11 @@ namespace {
         const Math::WorldPosition inside{{}, {0.0, 1.6, -10.0}};
         CHECK(std::abs(world.CastCamera(scene, hero, inside, {1.0f, 0.0f, 0.0f}, 10.0f, Radius) - 1.7f) < 0.05f);
         CHECK(world.CastCamera(scene, hero, inside, {-1.0f, 0.0f, 0.0f}, 2.5f, Radius) == 2.5f);
+
+        // Vue extérieure du vaisseau piloté : ni sa coque, ni son décor de bord (la cloison, ni sa copie dans le monde
+        // extérieur) n'arrêtent la caméra ; le mur, si.
+        CHECK(world.CastCamera(scene, hero, inside, {1.0f, 0.0f, 0.0f}, 10.0f, Radius, ship) == 10.0f);
+        CHECK(std::abs(world.CastCamera(scene, hero, inside, forward, 30.0f, Radius, ship) - 14.7f) < 0.05f);
         return true;
     }
 
@@ -386,14 +391,47 @@ namespace {
         frames(0.6, {});
         CHECK(character.seatState == SeatState::Seated && Seats::GetPilotSeat(scene, hero) == seat);
 
-        // Aux commandes : 2 s de poussée à 10 m/s², puis le vaisseau vire à gauche tant que Q est tenue.
+        // Aux commandes : 2 s de poussée à 10 m/s² (vitesse de croisière 20 m/s, suivie à 10 m/s² près), puis le
+        // vaisseau roule à droite tant que E est tenue, sa vitesse de rotation atteinte à 360 °/s².
         frames(2.0, {.thrust = 1.0f});
         const ShipComponent& shipComponent = scene.Get<ShipComponent>(ship);
-        CHECK(std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
-        frames(1.0, {.yaw = 1.0f});
-        CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
-        frames(Frame, {});
+        CHECK(std::abs(shipComponent.velocity.z + 20.0f) < 0.5f && std::abs(shipComponent.cruiseSpeed - 20.0f) < 0.5f);
+        frames(Frame, {.roll = 1.0f});
+        CHECK(std::abs(shipComponent.angularVelocity.z + 6.0f) < 1.0e-3f); // 360 °/s² pendant 1/60 s
+        frames(0.25, {.roll = 1.0f});
+        CHECK(shipComponent.angularVelocity.z == -shipComponent.turnRate && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
+        frames(0.25, {});
         CHECK(shipComponent.angularVelocity == Math::Vector3f{});
+        // Souris : le vaisseau vise la rotation de ce qu'elle a bougé pendant l'image (nez vers le haut), sans
+        // dépasser sa vitesse de rotation ; immobile, il cesse de tourner.
+        frames(Frame, {.mousePitch = 0.1f * static_cast<float>(Frame)});
+        CHECK(std::abs(shipComponent.angularVelocity.x - 0.1f * 180.0f / std::numbers::pi_v<float>) < 1.0e-3f
+              && shipComponent.angularVelocity.y == 0.0f); // en °/s
+        // Virage serré (90 °/s pendant 0,5 s, bien plus vite que ses propulseurs ne corrigent).
+        scene.Get<ShipComponent>(ship).turnRate = 90.0f;
+        frames(0.5, {.mouseYaw = 100.0f});
+        CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate);
+        // Inertie : il a tourné à gauche, sa vitesse va encore vers l'ancienne direction (sa droite), puis les
+        // propulseurs le remettent dans l'axe à la vitesse de croisière.
+        CHECK(shipComponent.velocity.x > 5.0f);
+        scene.Get<ShipComponent>(ship).turnRate = 30.0f;
+        frames(3.0, {});
+        CHECK(shipComponent.angularVelocity == Math::Vector3f{} && std::abs(shipComponent.velocity.x) < 1.0e-3f
+              && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
+        // Glissement et montée : il prend sa vitesse de glissement (10 m/s, 1 s à 10 m/s²) tant que les touches sont
+        // tenues, puis revient à l'arrêt sur ces axes ; la vitesse de croisière reste.
+        frames(1.0, {.strafe = 1.0f, .lift = 1.0f});
+        CHECK(std::abs(shipComponent.velocity.x - shipComponent.strafeSpeed) < 1.0e-3f
+              && std::abs(shipComponent.velocity.y - shipComponent.strafeSpeed) < 1.0e-3f);
+        frames(1.0, {});
+        CHECK(std::abs(shipComponent.velocity.x) < 1.0e-3f && std::abs(shipComponent.velocity.y) < 1.0e-3f
+              && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
+        // Espace : il freine jusqu'à l'arrêt (20 m/s à 10 m/s² : 2 s), et ne repart pas.
+        frames(1.0, {.brake = true});
+        CHECK(std::abs(shipComponent.velocity.z + 10.0f) < 0.5f);
+        frames(1.5, {.brake = true});
+        frames(0.5, {});
+        CHECK(shipComponent.velocity == Math::Vector3f{} && shipComponent.cruiseSpeed == 0.0f);
         // Il a suivi le vaisseau sans bouger de son siège.
         const Math::Vector3d still = scene.Get<TransformComponent>(hero).position;
         CHECK(std::abs(still.x) < 0.01 && std::abs(still.z + 3.0) < 0.01 && std::abs(still.y) < 0.01);
@@ -544,7 +582,67 @@ namespace {
     }
 }
 
+namespace {
+    // Vaisseau et décor : il se pose sur le sol au lieu de le traverser, glisse le long, ne pique pas du nez dedans,
+    // et repart vers le haut. Sans collision à lui, il passe partout.
+    bool RunShipCollisionTests() {
+        Scene scene;
+        AddFloor(scene); // dessus à y = 0
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = {0.0, 5.0, 0.0};
+        ShipComponent& component = scene.Add<ShipComponent>(ship);
+        const Entity hull = scene.CreateEntity("Coque", ship);
+        scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f}; // dessous à 1 m sous l'origine
+        scene.Add<ColliderComponent>(hull);
+        const Entity ghost = scene.CreateEntity("Fantôme");
+        scene.Get<TransformComponent>(ghost).position = {30.0, 5.0, 0.0};
+        scene.Add<ShipComponent>(ghost).velocity = {0.0f, -10.0f, 0.0f};
+
+        PhysicsWorld world;
+        world.Update(scene, Frame, {}); // corps créés
+        component.velocity = {0.0f, -10.0f, 0.0f};
+        Run(world, scene, 1.0);
+        const Math::Vector3d landed = scene.Get<TransformComponent>(ship).position;
+        CHECK(std::abs(landed.y - 1.0) < 0.05 && std::abs(component.velocity.y) < 1.0e-3f);
+        CHECK(scene.Get<TransformComponent>(ghost).position.y < -4.0);
+
+        // En avançant tout en poussant vers le bas : il roule sur le sol.
+        component.velocity = {0.0f, -5.0f, -10.0f};
+        Run(world, scene, 0.5);
+        const Math::Vector3d rolled = scene.Get<TransformComponent>(ship).position;
+        CHECK(std::abs(rolled.y - 1.0) < 0.05 && std::abs(rolled.z + 5.0) < 0.1);
+
+        // Nez vers le sol, posé : la rotation est refusée.
+        component.velocity = {};
+        component.angularVelocity = {-30.0f, 0.0f, 0.0f};
+        Run(world, scene, 0.5);
+        const Math::Vector3f nose = scene.Get<TransformComponent>(ship).rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+        CHECK(nose.y > -0.02f);
+
+        // Posé, il ne vire pas non plus.
+        const Math::Quaternionf parked = scene.Get<TransformComponent>(ship).rotation;
+        component.angularVelocity = {0.0f, 30.0f, 0.0f};
+        Run(world, scene, 0.5);
+        CHECK(component.grounded && scene.Get<TransformComponent>(ship).rotation == parked);
+
+        // Vers le haut : il décolle.
+        component.angularVelocity = {};
+        component.velocity = {0.0f, 5.0f, 0.0f};
+        Run(world, scene, 1.0);
+        CHECK(scene.Get<TransformComponent>(ship).position.y > 5.5 && !component.grounded);
+
+        // Stabilisateur : penché de 20° sur le côté, il se remet à plat en approchant du sol et se pose bien à plat.
+        scene.Get<TransformComponent>(ship).rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, 20.0f * std::numbers::pi_v<float> / 180.0f);
+        component.velocity = {0.0f, -2.0f, 0.0f};
+        Run(world, scene, 4.0);
+        const Math::Vector3f up = scene.Get<TransformComponent>(ship).rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
+        CHECK(up.y > 0.9999f && std::abs(scene.Get<TransformComponent>(ship).position.y - 1.0) < 0.05 && component.grounded);
+        return true;
+    }
+}
+
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
-        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests();
+        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
+        && RunShipCollisionTests();
 }
