@@ -196,8 +196,9 @@ namespace Flux {
         actions.Add("Courir", "Déplacement", Key::LeftShift);
         actions.Add("Sauter", "Déplacement", Key::Space);
         actions.Add("Interagir", "Déplacement", Key::F);
-        actions.Add("Freiner", "Vaisseau", Key::Space);
-        actions.Add("Monter", "Vaisseau", Key::LeftShift);
+        // Comme Star Citizen : Espace monte, Ctrl descend, X freine (Maj reste libre).
+        actions.Add("Freiner", "Vaisseau", Key::X);
+        actions.Add("Monter", "Vaisseau", Key::Space);
         actions.Add("Descendre", "Vaisseau", Key::LeftControl);
         actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
