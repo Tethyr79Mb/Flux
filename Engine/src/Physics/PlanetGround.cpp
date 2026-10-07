@@ -26,6 +26,8 @@ namespace Flux {
         // posé à la limite garderait sinon un bas penché vers la planète).
         constexpr double GravityReach = 2.0;
         constexpr double GravityBlend = 1.5;
+        // Rayon au plus du disque de tuiles autour d'une sonde, en mètres.
+        constexpr double MaxProbeDisc = 200.0;
 
         JPH::RVec3 ToJolt(const Math::Vector3d& v) {
             return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
@@ -170,7 +172,10 @@ namespace Flux {
         // bord fait de 0,8 à 1,2 fois sa valeur au centre d'une face), ramenés sur la sphère.
         const double edge = 0.5 * std::numbers::pi * radius / static_cast<double>(std::uint64_t{1} << level);
         const double spacing = 0.4 * edge;
-        const double reach = std::max(probe.reach, edge * 0.5) + spacing;
+        // Le disque est borné : sa hauteur suit la vitesse (une seconde de chute), pas sa largeur. À 15 km/s, un disque
+        // de 15 km ferait des centaines de milliers de tuiles par image ; ce qui est devant un objet rapide vient de
+        // sondes posées sur son chemin (PhysicsWorld::CollectProbes).
+        const double reach = std::max(std::min(probe.reach, MaxProbeDisc), edge * 0.5) + spacing;
         const Math::Vector3d side = std::abs(direction.y) < 0.9 ? Math::Vector3d{0.0, 1.0, 0.0} : Math::Vector3d{1.0, 0.0, 0.0};
         const Math::Vector3d e1 = Math::Normalize(Math::Cross(direction, side));
         const Math::Vector3d e2 = Math::Cross(direction, e1);
