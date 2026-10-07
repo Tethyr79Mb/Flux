@@ -848,8 +848,56 @@ namespace {
     }
 }
 
+namespace {
+    // Posé à cheval sur deux pentes (6° d'un côté, 3° de l'autre), sur trois roues : il se met dans la pente
+    // moyenne et ne bouge plus (il basculait de 1° à chaque image d'une pente à l'autre).
+    bool RunShipRestingTests() {
+        Scene scene;
+        constexpr float Degree = std::numbers::pi_v<float> / 180.0f;
+        const auto slope = [&](double x, float degrees) {
+            const Entity slab = scene.CreateEntity("Pente");
+            TransformComponent& transform = scene.Get<TransformComponent>(slab);
+            transform.position = {x, -0.1, 0.0};
+            transform.scale = {10.0f, 0.2f, 20.0f};
+            transform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, degrees * Degree);
+            scene.Add<ColliderComponent>(slab);
+        };
+        slope(5.0, 6.0f);
+        slope(-5.0, -3.0f);
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = {0.3, 3.0, 0.0};
+        ShipComponent& component = scene.Add<ShipComponent>(ship);
+        const auto part = [&](Math::Vector3d position, Math::Vector3f scale) {
+            const Entity entity = scene.CreateEntity("Pièce", ship);
+            scene.Get<TransformComponent>(entity).position = position;
+            scene.Get<TransformComponent>(entity).scale = scale;
+            scene.Add<ColliderComponent>(entity);
+        };
+        part({0.0, 0.5, 0.0}, {6.0f, 1.0f, 10.0f}); // fuselage
+        part({0.0, -0.2, -4.0}, {0.4f, 0.4f, 0.4f}); // roues
+        part({-2.5, -0.2, 3.0}, {0.4f, 0.4f, 0.4f});
+        part({2.5, -0.2, 3.0}, {0.4f, 0.4f, 0.4f});
+
+        PhysicsWorld world;
+        world.Update(scene, Frame, {});
+        component.velocity = {0.0f, -2.0f, 0.0f};
+        Run(world, scene, 3.0);
+        component.velocity = {};
+        const TransformComponent& transform = scene.Get<TransformComponent>(ship);
+        const Math::Quaternionf rested = transform.rotation;
+        const Math::Vector3d position = transform.position;
+        for (int frame = 0; frame < 120; ++frame) {
+            world.Update(scene, Frame, {});
+            CHECK(transform.rotation == rested && transform.position == position && component.grounded);
+        }
+        const Math::Vector3f up = rested.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
+        CHECK(std::abs(up.x) < std::sin(6.0f * Degree)); // entre les deux pentes
+        return true;
+    }
+}
+
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
-        && RunShipCollisionTests() && RunPlanetSurfaceTests();
+        && RunShipCollisionTests() && RunShipRestingTests() && RunPlanetSurfaceTests();
 }

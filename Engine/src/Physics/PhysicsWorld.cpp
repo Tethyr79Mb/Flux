@@ -32,6 +32,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -554,6 +555,39 @@ namespace Flux {
             return hit;
         }
 
+        // Pente du sol sous le vaisseau : plan passant par le sol sous les quatre coins de son enveloppe (rayons vers
+        // son bas, sur `reach` mètres sous elle). Pas la face que l'enveloppe toucherait la première : sur un sol
+        // bosselé, elle change dès qu'il tourne un peu, et se remettre parallèle à elle le ferait basculer sans fin
+        // d'une face à l'autre. Faux si un coin est au-dessus du vide.
+        bool FindGroundSlope(const Grid& grid, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position,
+                             float reach, JPH::Vec3& normal) const {
+            const JPH::AABox bounds = shape.GetLocalBounds();
+            const JPH::Vec3 center = bounds.GetCenter();
+            const JPH::Vec3 extent = bounds.GetExtent();
+            const JPH::Vec3 down = rotation * JPH::Vec3(0.0f, -1.0f, 0.0f);
+            const float length = 2.0f * extent.GetY() + reach;
+            const StaticFilter filter;
+            std::array<JPH::Vec3, 4> ground;
+            for (int corner = 0; corner < 4; ++corner) {
+                // Un peu en retrait des coins : sous un bout d'aile, le sol ne compte pas plus qu'ailleurs.
+                const JPH::Vec3 local(center.GetX() + extent.GetX() * (corner & 1 ? 0.8f : -0.8f), center.GetY() + extent.GetY(),
+                                      center.GetZ() + extent.GetZ() * (corner & 2 ? 0.8f : -0.8f));
+                const JPH::RRayCast ray(JPH::RVec3(position + rotation * local), down * length);
+                JPH::RayCastResult hit;
+                if (!grid.system->GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) {
+                    return false;
+                }
+                ground[corner] = JPH::Vec3(ray.GetPointOnRay(hit.mFraction));
+            }
+            // Normale du quadrilatère : produit de ses diagonales, tournée vers le haut du vaisseau.
+            const JPH::Vec3 cross = (ground[3] - ground[0]).Cross(ground[2] - ground[1]);
+            if (cross.LengthSq() < 1.0e-12f) {
+                return false;
+            }
+            normal = cross.Dot(down) > 0.0f ? -cross.Normalized() : cross.Normalized();
+            return true;
+        }
+
         // Mouvement des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes. Un vaisseau à la
         // racine bute sur le décor immobile du monde : il s'arrête contre le sol ou un mur et glisse le long, et ne
         // tourne pas s'il devait s'y enfoncer. Posé (le décor sous son ventre, à moins de 5 cm), il ne tourne pas du tout.
@@ -581,7 +615,7 @@ namespace Flux {
                     // Stabilisateur d'atterrissage : à moins de 4 m d'un sol (pente < 60°) et lent sur le plan (moins
                     // de 10 m/s), le vaisseau se remet parallèle au sol, à 60 °/s au plus, sans toucher à son cap.
                     const float flatSpeed = std::hypot(ship.velocity.x, ship.velocity.z);
-                    if (flatSpeed < 10.0f && CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, up * -4.0f, fraction, normal)
+                    if (flatSpeed < 10.0f && FindGroundSlope(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, 4.0f, normal)
                         && normal.Dot(up) > 0.5f) {
                         const JPH::Vec3 axis = up.Cross(normal);
                         const float angle = std::asin(std::min(1.0f, axis.Length()));
