@@ -110,11 +110,21 @@ namespace Flux::Seats {
                 ship.velocity = Math::Quaternionf::FromAxisAngle(ship.angularVelocity, angle).Conjugate().Rotate(ship.velocity);
             }
 
+            // Dans l'air, la traînée borne la vitesse (comme v² × densité : la vitesse max varie comme 1 / racine de la
+            // densité) et la portance range la vitesse derrière le nez : virer ou cabrer change vraiment de direction.
+            const float air = std::max(input.air, 0.0f);
+            float maxSpeed = ship.maxSpeed;
+            float grip = 0.0f;
+            if (air > 0.0f) {
+                maxSpeed = std::min(maxSpeed, ship.airMaxSpeed / std::sqrt(air));
+                grip = std::min(1.0f, ship.airGrip * std::sqrt(air) * delta);
+            }
+
             // Vitesse voulue, dans les axes du vaisseau.
             if (input.brake || ship.grounded) {
                 ship.cruiseSpeed = 0.0f;
             } else {
-                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * ship.acceleration * delta, -ship.maxSpeed * 0.25f, ship.maxSpeed);
+                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * ship.acceleration * delta, -maxSpeed * 0.25f, maxSpeed);
             }
             Math::Vector3f wanted{input.strafe * ship.strafeSpeed, input.lift * ship.strafeSpeed, -ship.cruiseSpeed};
             if (input.brake) {
@@ -122,10 +132,11 @@ namespace Flux::Seats {
             } else if (ship.grounded) {
                 wanted = {0.0f, wanted.y, 0.0f}; // seulement décoller (ou appuyer sur le sol)
             }
+            // Propulseurs, plus l'air qui rattrape une part de l'écart à chaque image.
             const float step = ship.acceleration * delta;
-            approach(ship.velocity.x, wanted.x, step);
-            approach(ship.velocity.y, wanted.y, step);
-            approach(ship.velocity.z, wanted.z, step);
+            approach(ship.velocity.x, wanted.x, step + std::abs(wanted.x - ship.velocity.x) * grip);
+            approach(ship.velocity.y, wanted.y, step + std::abs(wanted.y - ship.velocity.y) * grip);
+            approach(ship.velocity.z, wanted.z, step + std::abs(wanted.z - ship.velocity.z) * grip);
         }
     }
 

@@ -293,6 +293,16 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
+        // Où vole un vaisseau par rapport à la planète la plus proche : altitude au-dessus du sol (ou de la mer qui
+        // le recouvre), verticale du lieu (unitaire, monde) et densité de l'air (0 dans l'espace, voir SeatInput::air).
+        struct FlightState
+        {
+            bool nearPlanet = false;
+            double altitude = 0.0;
+            Math::Vector3d up;
+            float air = 0.0f;
+        };
+        FlightState GetFlightState(Entity ship);
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
         void DrawFlightInfo(Entity player, Math::Vector2f screen);
         // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).

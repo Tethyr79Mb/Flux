@@ -434,6 +434,7 @@ namespace Flux {
                     if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
                         seatInput.up = Math::Normalize(gravity) * -1.0f;
                     }
+                    seatInput.air = GetFlightState(ship).air;
                 }
             }
         } else {
@@ -493,26 +494,9 @@ namespace Flux {
         }
     }
 
-    void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen) {
-        const Entity seat = Seats::GetPilotSeat(m_scene, player);
-        const Entity ship = seat != NullEntity ? m_scene.GetShip(seat) : NullEntity;
-        if (ship == NullEntity) {
-            return;
-        }
-        const ShipComponent& component = m_scene.Get<ShipComponent>(ship);
+    Engine::FlightState Engine::GetFlightState(Entity ship) {
+        FlightState flight;
         const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
-        const Math::Vector3f velocity = m_scene.GetWorldRotation(ship).Rotate(component.velocity);
-        // Nombre à la française, en m ou km selon sa taille.
-        const auto distance = [](double meters, std::string_view unit) {
-            std::string text = std::abs(meters) >= 10000.0 ? std::format("{:.1f} k{}", meters / 1000.0, unit)
-                                                            : std::format("{:.0f} {}", meters, unit);
-            std::ranges::replace(text, '.', ',');
-            return text;
-        };
-        std::string text = "Vitesse  " + distance(Math::Length(velocity), "m/s");
-
-        // Planète la plus proche (de sa surface) : altitude au-dessus du sol, ou de la mer quand elle le recouvre ;
-        // vitesse verticale le long de la verticale du lieu.
         const PlanetComponent* nearest = nullptr;
         Math::Vector3d offset{};
         Math::Quaternionf rotation;
@@ -527,21 +511,54 @@ namespace Flux {
                 rotation = m_scene.GetWorldRotation(entity);
             }
         }
-        if (nearest && Math::Length(offset) > 1.0) {
-            if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
-                || m_flightTerrainSeed != nearest->seed) {
-                m_flightTerrain = std::make_shared<const Planet::Terrain>(nearest->radius, nearest->relief, nearest->seed);
-                m_flightTerrainSeed = nearest->seed;
+        if (!nearest || Math::Length(offset) < 1.0) {
+            return flight;
+        }
+        if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
+            || m_flightTerrainSeed != nearest->seed) {
+            m_flightTerrain = std::make_shared<const Planet::Terrain>(nearest->radius, nearest->relief, nearest->seed);
+            m_flightTerrainSeed = nearest->seed;
+        }
+        flight.nearPlanet = true;
+        flight.up = Math::Normalize(offset);
+        const Math::Vector3d direction = rotation.Conjugate().Rotate(flight.up);
+        double ground = m_flightTerrain->GetHeight(direction, m_flightTerrain->GetOctaves(m_flightTerrain->GetMaxLevel()));
+        if (nearest->ocean) {
+            ground = std::max(ground, nearest->seaLevel * 0.01 * nearest->relief);
+        }
+        flight.altitude = Math::Length(offset) - nearest->radius - ground;
+        // Comme le ciel (Atmosphere.cpp) : densité divisée par e tous les huitièmes de sa hauteur, nulle au-dessus.
+        const double height = std::max(nearest->atmosphereHeight, 100.0f);
+        const double above = std::max(Math::Length(offset) - nearest->radius, 0.0);
+        if (nearest->atmosphere > 0.0f && above < height) {
+            flight.air = static_cast<float>(std::min(1.0, nearest->atmosphere * std::exp(-8.0 * above / height)));
+        }
+        return flight;
+    }
+
+    void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen) {
+        const Entity seat = Seats::GetPilotSeat(m_scene, player);
+        const Entity ship = seat != NullEntity ? m_scene.GetShip(seat) : NullEntity;
+        if (ship == NullEntity) {
+            return;
+        }
+        const ShipComponent& component = m_scene.Get<ShipComponent>(ship);
+        const Math::Vector3f velocity = m_scene.GetWorldRotation(ship).Rotate(component.velocity);
+        // Nombre à la française, en m ou km selon sa taille.
+        const auto distance = [](double meters, std::string_view unit) {
+            std::string text = std::abs(meters) >= 10000.0 ? std::format("{:.1f} k{}", meters / 1000.0, unit)
+                                                            : std::format("{:.0f} {}", meters, unit);
+            std::ranges::replace(text, '.', ',');
+            return text;
+        };
+        std::string text = "Vitesse  " + distance(Math::Length(velocity), "m/s");
+
+        if (const FlightState flight = GetFlightState(ship); flight.nearPlanet) {
+            text += "\nVerticale  " + distance(Math::Dot(Math::Vector3d(velocity), flight.up), "m/s");
+            text += "\nAltitude  " + distance(flight.altitude, "m");
+            if (flight.air > 0.001f) {
+                text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
             }
-            const Math::Vector3d up = Math::Normalize(offset);
-            const Math::Vector3d direction = rotation.Conjugate().Rotate(up);
-            double ground = m_flightTerrain->GetHeight(direction, m_flightTerrain->GetOctaves(m_flightTerrain->GetMaxLevel()));
-            if (nearest->ocean) {
-                ground = std::max(ground, nearest->seaLevel * 0.01 * nearest->relief);
-            }
-            const double altitude = Math::Length(offset) - nearest->radius - ground;
-            text += "\nVerticale  " + distance(Math::Dot(Math::Vector3d(velocity), up), "m/s");
-            text += "\nAltitude  " + distance(altitude, "m");
         }
         const float size = 20.0f;
         UI::DrawList& list = m_renderer->GetOverlay();

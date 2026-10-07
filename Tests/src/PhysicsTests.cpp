@@ -534,6 +534,25 @@ namespace {
         flight.levelAssist = true;
         frames(3.0, {.up = up});
         CHECK(std::abs(bank()) < 1.0f);
+
+        // Dans l'air, la vitesse se range derrière le nez : un glissement de côté de 150 m/s fond en une seconde
+        // (dans l'espace, les propulseurs n'en retirent que 10 m/s). La vitesse max y est bornée (200 m/s au sol,
+        // 400 dans un air quatre fois moins dense).
+        flight.maxSpeed = 1000.0f;
+        flight.airMaxSpeed = 200.0f;
+        flight.velocity = {150.0f, 0.0f, -100.0f};
+        flight.cruiseSpeed = 100.0f;
+        frames(1.0, {.up = up});
+        CHECK(flight.velocity.x > 135.0f);
+        flight.velocity = {150.0f, 0.0f, -100.0f};
+        frames(1.0, {.up = up, .air = 1.0f});
+        CHECK(flight.velocity.x < 25.0f && std::abs(flight.velocity.z + 100.0f) < 1.0f);
+        flight.cruiseSpeed = 900.0f;
+        frames(Frame, {.thrust = 1.0f, .up = up, .air = 1.0f});
+        CHECK(std::abs(flight.cruiseSpeed - 200.0f) < 0.01f);
+        flight.cruiseSpeed = 900.0f;
+        frames(Frame, {.thrust = 1.0f, .up = up, .air = 0.25f});
+        CHECK(std::abs(flight.cruiseSpeed - 400.0f) < 0.01f);
         return true;
     }
 

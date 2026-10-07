@@ -297,6 +297,11 @@ namespace Flux {
         // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Touche H en vol.
         bool levelAssist = true;
         float levelRate = 1.5f;        // 1/s : vitesse de retour à plat (1,5 : l'inclinaison fond de 78 % par seconde)
+        // Dans l'atmosphère d'une planète : vitesse max au niveau du sol (plus haut, l'air moins dense la laisse
+        // monter : divisée par la racine de la densité), et vitesse à laquelle l'air range sa vitesse derrière son nez
+        // (1/s, au sol ; comme un avion porté par ses ailes). Dans l'espace, rien : il garde son inertie.
+        float airMaxSpeed = 1200.0f;
+        float airGrip = 2.0f;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;

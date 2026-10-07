@@ -24,6 +24,9 @@ namespace Flux {
         // Haut du lieu où est le vaisseau piloté (dans le monde, unitaire ; opposé à la gravité du dehors), pour
         // ShipComponent::levelAssist ; nul sans gravité (pas d'aide).
         Math::Vector3f up{};
+        // Densité de l'air là où il est (0 dans l'espace, 1 au sol d'une atmosphère comme celle de la Terre) :
+        // ShipComponent::airMaxSpeed et airGrip.
+        float air = 0.0f;
     };
 
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège
