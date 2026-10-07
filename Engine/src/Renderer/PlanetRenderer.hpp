@@ -4,6 +4,7 @@
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Renderer/ModelCache.hpp"
+#include "Renderer/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -27,14 +28,14 @@ namespace Flux {
     static_assert(sizeof(PlanetGpu) == 96);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
-    // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont générées
-    // en tâches de fond (Planet::TileGenerator) et envoyées au GPU dès qu'elles sont prêtes ; en attendant, leur
-    // parente reste affichée (jamais de trou).
+    // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont calculées
+    // par le GPU (PlanetTileCompute), les plus urgentes d'abord, au début de l'image suivante ; en attendant, leur
+    // parente reste affichée (jamais de trou). Le CPU ne fait que choisir les tuiles et préparer quelques valeurs
+    // par tuile.
     // Chaque tuile est un GpuModel (ses sommets ; les indices communs à toutes), dessiné par MeshRenderer.
     class PlanetRenderer {
         public:
-        explicit PlanetRenderer(RHI::Device& device)
-            : m_device(device), m_generator(std::make_unique<Planet::TileGenerator>()) {}
+        static std::expected<std::unique_ptr<PlanetRenderer>, std::string> Create(RHI::Device& device);
 
         // Une tuile à dessiner : son centre relatif à la caméra (calculé en double) et sa sphère englobante.
         struct Tile
@@ -51,26 +52,32 @@ namespace Flux {
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
 
-        // Début d'une image : avant les appels à Collect.
-        void BeginFrame();
+        // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice.
+        void BeginFrame(std::uint32_t frameIndex);
         // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra.
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles);
-        // Fin de la préparation : génère des tuiles demandées dans le budget de temps, oublie les planètes disparues
-        // et les tuiles inutilisées en trop.
-        void EndFrame();
+        // Fin de la préparation : choisit les tuiles demandées à calculer, oublie les planètes disparues et les
+        // tuiles inutilisées en trop.
+        void EndFrame(std::uint32_t frameIndex);
+        // Calcule les tuiles choisies par EndFrame, hors d'une passe et avant les dessins.
+        void Compute(RHI::CommandList& commands, std::uint32_t frameIndex) { m_compute->Record(commands, frameIndex); }
 
         private:
-        // Un nœud de l'arbre déjà visité : sa sphère englobante, et sa tuile si elle est générée.
+        PlanetRenderer(RHI::Device& device, std::unique_ptr<PlanetTileCompute> compute)
+            : m_device(device), m_compute(std::move(compute)) {}
+
+        // Un nœud de l'arbre déjà visité : sa sphère englobante, et sa tuile si elle est calculée (ou le sera au début
+        // de l'image suivante, avant tout dessin).
         struct Node
         {
             Planet::TileBounds bounds;
-            GpuModel model; // vertices nul : pas encore générée
+            GpuModel model; // vertices nul : pas encore calculée
+            std::unique_ptr<RHI::BindGroup> group; // ses buffers, écrits par le GPU
             Math::Vector3d center; // de ses sommets, repère de la planète
-            float radius = 0.0f;
-            double lowest = 0.0;
+            float radius = 0.0f;   // celui de `bounds` tant que le GPU n'a pas rendu le sien
+            double lowest = 0.0;   // au plus bas possible tant que le GPU n'a pas rendu le sien
             std::uint64_t lastUsed = 0;
-            bool queued = false; // demandée au générateur (en attente ou en cours)
         };
         struct Request
         {
@@ -105,10 +112,11 @@ namespace Flux {
         bool IsCulled(const Visit& visit, const Node& node) const;
         void VisitNode(Visit& visit, Planet::TileKey key, Node& node);
         PlanetState* FindOwner(std::uint64_t owner);
-        bool Upload(Node& node, const Planet::TileMesh& mesh);
+        bool Schedule(PlanetState& state, Planet::TileKey key, Node& node, std::uint32_t frameIndex);
         void Retire(Node& node);
 
         RHI::Device& m_device;
+        std::unique_ptr<PlanetTileCompute> m_compute; // avant les nœuds : leurs groupes sont rendus à son layout
         std::shared_ptr<RHI::Buffer> m_indices; // communs à toutes les tuiles
         std::uint32_t m_indexCount = 0;
         std::unordered_map<Entity, PlanetState> m_planets;
@@ -116,16 +124,17 @@ namespace Flux {
         // Buffers de sommets libérés, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
         struct FreeBuffer
         {
-            std::unique_ptr<RHI::Buffer> vertices;
-            std::unique_ptr<RHI::Buffer> morph;
+            PlanetTileCompute::TileBuffers buffers;
             std::uint64_t frame;
         };
         std::vector<FreeBuffer> m_freeBuffers;
-        Planet::TileMesh m_mesh; // racines, générées sur le fil principal
-        std::unique_ptr<Planet::TileGenerator> m_generator;
+        // Tuiles calculées avec chaque image en vol, dans l'ordre : leurs mesures reviennent quand le GPU a fini.
+        struct Computed
+        {
+            std::uint64_t owner;
+            std::uint64_t key;
+        };
+        std::array<std::vector<Computed>, RHI::FramesInFlight> m_computed;
         std::uint64_t m_nextOwner = 1;
-        // Réutilisés d'une image à l'autre.
-        std::vector<Planet::TileGenerator::Job> m_jobs;
-        std::vector<Planet::TileGenerator::Result> m_results;
     };
 }

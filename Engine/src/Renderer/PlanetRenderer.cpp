@@ -7,19 +7,36 @@
 
 namespace Flux {
     namespace {
-        // Tuiles en attente de génération au plus : les plus urgentes (la file est refaite à chaque image).
-        constexpr std::size_t MaxQueuedJobs = 256;
-        // Tuiles finies envoyées au GPU par image au plus (une copie de 40 Ko chacune).
-        constexpr std::size_t MaxUploadsPerFrame = 32;
-        // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 40 Ko de
-        // sommets par tuile, soit une quarantaine de Mo).
+        // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 70 Ko de
+        // sommets par tuile, soit environ 70 Mo de mémoire vidéo).
         constexpr std::size_t MaxNodes = 1024;
         // Buffers de sommets libres gardés pour être réutilisés.
         constexpr std::size_t MaxFreeBuffers = 128;
     }
 
-    void PlanetRenderer::BeginFrame() {
+    std::expected<std::unique_ptr<PlanetRenderer>, std::string> PlanetRenderer::Create(RHI::Device& device) {
+        auto compute = PlanetTileCompute::Create(device);
+        if (!compute) {
+            return std::unexpected(compute.error());
+        }
+        return std::unique_ptr<PlanetRenderer>(new PlanetRenderer(device, std::move(*compute)));
+    }
+
+    void PlanetRenderer::BeginFrame(std::uint32_t frameIndex) {
         ++m_frame;
+        // Mesures des tuiles calculées avec cette image (le GPU l'a finie) : leur vraie sphère englobante et leur
+        // point le plus bas remplacent les estimations prudentes.
+        const auto stats = m_compute->GetStats(frameIndex);
+        const std::vector<Computed>& computed = m_computed[frameIndex];
+        for (std::size_t i = 0; i < std::min(stats.size(), computed.size()); ++i) {
+            if (PlanetState* state = FindOwner(computed[i].owner)) {
+                if (const auto node = state->nodes.find(computed[i].key); node != state->nodes.end() && node->second.model.vertices) {
+                    node->second.radius = stats[i].radius;
+                    node->second.lowest = stats[i].lowest;
+                }
+            }
+        }
+        m_computed[frameIndex].clear();
         if (!m_indices) {
             const std::vector<std::uint32_t> indices = Planet::BuildTileIndices();
             auto buffer = m_device.CreateBuffer({indices.size() * sizeof(std::uint32_t), RHI::BufferUsage::Index}, indices.data());
@@ -70,17 +87,22 @@ namespace Flux {
         // elle, et un sommet (au plus haut) dépasse de acos(rmin / rmax) au-delà.
         const double horizon = distance > minRadius ? std::acos(minRadius / distance) + std::acos(minRadius / maxRadius) : -1.0;
         Visit visit{state, camera, position, rotation, horizon, minRadius, inView, tiles};
+        // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
+        bool rootsReady = true;
+        for (std::uint8_t face = 0; face < 6; ++face) {
+            Node& node = GetNode(state, {face, 0, 0, 0});
+            node.lastUsed = m_frame;
+            if (!node.model.vertices) {
+                rootsReady = false;
+                state.requests.push_back({{face, 0, 0, 0}, 0.0});
+            }
+        }
+        if (!rootsReady) {
+            return;
+        }
         for (std::uint8_t face = 0; face < 6; ++face) {
             const Planet::TileKey key{face, 0, 0, 0};
-            Node& node = GetNode(state, key);
-            // Les racines sont générées tout de suite : la planète n'apparaît jamais à moitié.
-            if (!node.model.vertices) {
-                Planet::BuildTile(terrain, key, m_mesh);
-                if (!Upload(node, m_mesh)) {
-                    continue;
-                }
-            }
-            VisitNode(visit, key, node);
+            VisitNode(visit, key, GetNode(state, key));
         }
     }
 
@@ -155,74 +177,53 @@ namespace Flux {
         return nullptr;
     }
 
-    // Sommets de la tuile envoyés au GPU.
-    bool PlanetRenderer::Upload(Node& node, const Planet::TileMesh& mesh) {
-        constexpr std::uint64_t vertexSize = Planet::TileVertexCount * sizeof(ModelVertex);
-        constexpr std::uint64_t morphSize = Planet::TileVertexCount * sizeof(Planet::MorphVertex);
-        // Des buffers libérés que le GPU ne lit plus, sinon des nouveaux.
+    // Tuile confiée au GPU, calculée au début de l'image suivante (PlanetRenderer::Compute) : ses buffers sont prêts
+    // pour tout dessin qui suit. false si l'image est pleine.
+    bool PlanetRenderer::Schedule(PlanetState& state, Planet::TileKey key, Node& node, std::uint32_t frameIndex) {
+        // Des buffers libérés que le GPU n'utilise plus, sinon des nouveaux.
+        PlanetTileCompute::TileBuffers buffers;
         const auto free = std::ranges::find_if(m_freeBuffers, [this](const FreeBuffer& f) { return f.frame + RHI::FramesInFlight < m_frame; });
         if (free != m_freeBuffers.end()) {
-            node.model.vertices = std::move(free->vertices);
-            node.model.morph = std::move(free->morph);
+            buffers = std::move(free->buffers);
             m_freeBuffers.erase(free);
         } else {
-            auto vertices = m_device.CreateBuffer({vertexSize, RHI::BufferUsage::Vertex, RHI::MemoryType::Upload});
-            auto morph = m_device.CreateBuffer({morphSize, RHI::BufferUsage::Vertex, RHI::MemoryType::Upload});
-            if (!vertices || !morph) {
-                Log::Error("Planète : {}", !vertices ? vertices.error() : morph.error());
+            auto created = m_compute->CreateTileBuffers();
+            if (!created) {
+                Log::Error("Planète : {}", created.error());
                 return false;
             }
-            node.model.vertices = std::move(*vertices);
-            node.model.morph = std::move(*morph);
+            buffers = std::move(*created);
         }
-        node.model.vertices->Write(mesh.vertices.data(), vertexSize);
-        node.model.morph->Write(mesh.morph.data(), morphSize);
+        if (!m_compute->Add(frameIndex, *state.terrain, key, buffers)) {
+            m_freeBuffers.push_back({std::move(buffers), 0});
+            return false;
+        }
+        m_computed[frameIndex].push_back({state.owner, key.Pack()});
+        node.model.vertices = std::move(buffers.vertices);
+        node.model.morph = std::move(buffers.morph);
+        node.group = std::move(buffers.group);
         node.model.indices = m_indices;
         node.model.primitives = {{0, m_indexCount, 0}};
         node.model.materials.resize(1); // blanc : la couleur de la planète vient de la teinte du dessin
         node.model.loaded = true;
-        node.center = mesh.center;
-        node.radius = static_cast<float>(mesh.radius);
-        node.lowest = mesh.lowest;
+        // Le centre de la tuile est celui de sa sphère (Planet::GetTileBounds le calcule pareil) ; rayon et point le
+        // plus bas prudents jusqu'au retour des mesures du GPU.
+        node.center = node.bounds.center;
+        node.radius = static_cast<float>(node.bounds.radius);
+        node.lowest = state.terrain->GetRadius() - 1.5 * state.terrain->GetRelief() - node.bounds.edge;
+        node.lastUsed = m_frame;
         return true;
     }
 
     void PlanetRenderer::Retire(Node& node) {
         if (node.model.vertices) {
-            m_freeBuffers.push_back({std::move(node.model.vertices), std::move(node.model.morph), node.lastUsed});
+            m_freeBuffers.push_back({{std::move(node.model.vertices), std::move(node.model.morph), std::move(node.group)}, node.lastUsed});
         }
     }
 
-    void PlanetRenderer::EndFrame() {
-        // Tuiles finies : envoyées au GPU, sauf celles qui ne servent plus (nœud oublié, planète changée).
-        m_results.clear();
-        m_generator->Collect(m_results, MaxUploadsPerFrame);
-        for (const Planet::TileGenerator::Result& result : m_results) {
-            PlanetState* state = FindOwner(result.owner);
-            if (!state) {
-                continue;
-            }
-            const auto node = state->nodes.find(result.key.Pack());
-            if (node != state->nodes.end() && node->second.queued) {
-                node->second.queued = false;
-                if (!node->second.model.vertices) {
-                    Upload(node->second, result.mesh);
-                }
-            }
-        }
-
-        // Tâches pas encore commencées : reprises, puis la file refaite avec les demandes de cette image.
-        m_jobs.clear();
-        m_generator->TakeWaiting(m_jobs);
-        for (const Planet::TileGenerator::Job& job : m_jobs) {
-            if (PlanetState* state = FindOwner(job.owner)) {
-                if (const auto node = state->nodes.find(job.key.Pack()); node != state->nodes.end()) {
-                    node->second.queued = false;
-                }
-            }
-        }
-        m_jobs.clear();
-        // Les plus grossières d'abord (elles débloquent les suivantes), puis les plus proches.
+    void PlanetRenderer::EndFrame(std::uint32_t frameIndex) {
+        // Tuiles demandées : les plus grossières d'abord (elles débloquent les suivantes), puis les plus proches, autant
+        // que le GPU en calcule par image.
         struct Pending
         {
             PlanetState* state;
@@ -239,16 +240,11 @@ namespace Flux {
                                                               : a.request.distance < b.request.distance;
         });
         for (const Pending& item : pending) {
-            if (m_jobs.size() >= MaxQueuedJobs) {
+            Node& node = GetNode(*item.state, item.request.key);
+            if (!node.model.vertices && !Schedule(*item.state, item.request.key, node, frameIndex)) {
                 break;
             }
-            Node& node = GetNode(*item.state, item.request.key);
-            if (!node.model.vertices && !node.queued) {
-                node.queued = true;
-                m_jobs.push_back({item.state->terrain, item.state->owner, item.request.key});
-            }
         }
-        m_generator->Submit(m_jobs);
 
         // Planètes disparues de la scène (ou plus dessinées) : leurs tuiles sont libérées.
         for (auto it = m_planets.begin(); it != m_planets.end();) {
