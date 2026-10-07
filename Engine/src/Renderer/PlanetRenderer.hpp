@@ -24,8 +24,10 @@ namespace Flux {
         std::array<float, 4> sand{};
         std::array<float, 4> snow{};
         std::array<float, 4> water{}; // couleur linéaire ; w : rayon de la surface de l'océan (0 : aucun)
+        std::array<float, 4> soil{};
+        std::array<float, 4> climate{}; // température à l'équateur, aux pôles (°C), humidité, inutilisé
     };
-    static_assert(sizeof(PlanetGpu) == 96);
+    static_assert(sizeof(PlanetGpu) == 128);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont calculées

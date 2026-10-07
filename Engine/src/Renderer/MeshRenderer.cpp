@@ -503,7 +503,9 @@ namespace Flux {
                                      planet.sandLevel * 0.01f * planet.relief},
                                     material(planet.color, roughness), material(planet.grassColor, 0.95f),
                                     material(planet.sandColor, 0.9f), material(planet.snowColor, 0.55f),
-                                    {planet.waterColor.r, planet.waterColor.g, planet.waterColor.b, 0.0f}});
+                                    {planet.waterColor.r, planet.waterColor.g, planet.waterColor.b, 0.0f},
+                                    material(planet.soilColor, 0.95f),
+                                    {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f), 0.0f}});
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
         const double seaRadius = std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;

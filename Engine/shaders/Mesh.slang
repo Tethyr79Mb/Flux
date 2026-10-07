@@ -6,7 +6,8 @@
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Tuiles de planète (vertexPlanet) : chaque sommet glisse vers la forme de la tuile parente en s'éloignant de la
 // caméra, pour qu'un changement de niveau de détail ne fasse pas de saut (« morphing » façon CDLOD). Leur sol
-// (fragmentPlanet) est choisi au pixel : herbe, sable en bas, roche dans les pentes, neige en haut, avec du bruit.
+// (fragmentPlanet) est choisi au pixel : roche dans les pentes, plage en bas, neige en haut, et ailleurs selon le climat
+// (température et humidité) : herbe, terre nue, désert de sable, toundra, avec du bruit.
 // Cartes d'ombres (vertexShadow, vertexShadowSkinned, vertexShadowPlanet, fragmentShadow) : profondeur vue du soleil, rien d'autre.
 // Près d'une planète à atmosphère : le soleil rougi ou caché (nuit), la lumière du ciel, et la brume entre la caméra et
 // la surface (shaders/Atmosphere.slang).
@@ -32,6 +33,8 @@ struct PlanetData
     float4 sand;
     float4 snow;
     float4 water;             // rgb : couleur de l'eau (linéaire) ; w : rayon de la surface de l'océan (0 : aucun)
+    float4 soil;
+    float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
 };
 
 static const uint MaxPlanets = 4;
@@ -479,7 +482,7 @@ float PlanetNoise(float3 x)
 }
 
 // Sol des planètes : la couleur et la rugosité viennent de l'endroit (altitude, pente) et du bruit, pas d'une image.
-// Herbe sur le plat, sable en bas, roche dans les pentes, neige en haut (là où la pente la retient) ; des taches à
+// Roche dans les pentes, plage en bas, neige en haut ou quand il gèle, ailleurs herbe, terre ou désert selon le climat ; des taches à
 // grande échelle (les zones ne suivent pas des lignes droites) et du grain de près (couleur et petit relief, effacés
 // au loin où ils scintilleraient).
 [shader("fragment")]
@@ -519,15 +522,39 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     const float rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
     // Limites fondues et déplacées par les taches, en proportion du relief (6 m et 30 m pour un relief de 800 m).
     const float relief = max(planet.shape.y, 1.0);
-    const float sand = smoothstep(planet.shape.w + 0.0075 * relief, planet.shape.w - 0.0075 * relief, altitude + macro * 0.0375 * relief)
-                     * (1.0 - rock);
-    const float snow = smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief)
-                     * smoothstep(0.5, 0.65, flatness);
-    // L'herbe varie entre vert foncé et plus sec (jaune) par taches.
+    const float beach = smoothstep(planet.shape.w + 0.0075 * relief, planet.shape.w - 0.0075 * relief, altitude + macro * 0.0375 * relief)
+                      * (1.0 - rock);
+
+    // Climat. Température : de l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
+    // des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte
+    // dans les 2 % du relief au-dessus de la mer. Les grandes échelles ne s'effacent pas au loin : vues de l'espace,
+    // les zones restent.
+    const float radius = planet.shape.x;
+    const float latitude = abs(up.y);
+    const float temperature = lerp(planet.climate.x, planet.climate.y, (latitude * latitude) * (latitude * latitude)) - 0.0065 * max(altitude, 0.0)
+                            + (PlanetNoise(local * (100.0 / radius)) - 0.5) * 8.0 + macro * 4.0;
+    const float coast = planet.water.w > 0.0 ? smoothstep(0.02 * relief, 0.0, length(local) - planet.water.w) : 0.0;
+    const float humidity = planet.climate.z + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.9
+                         + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.4 + macro * 0.3 + coast * 0.3;
+
+    // Biomes : terre nue entre désert et prairie ; sable là où il fait chaud et sec ; herbe là où c'est humide, avec
+    // des taches de terre ; l'herbe jaunit dans le froid (toundra) ; neige quand il gèle, comme au-dessus de snowLevel.
+    const float grassy = smoothstep(0.38, 0.55, humidity);
+    const float desert = smoothstep(0.3, 0.15, humidity) * smoothstep(8.0, 18.0, temperature);
+    const float patches = smoothstep(0.6, 0.72, PlanetNoise(local * (1.0 / 31.0) + 3.0) + macro * 0.3) * 0.85
+                        * saturate(2.0 - distance / 4000.0);
     const float dry = saturate(macro * 1.6 + 0.5);
-    float4 ground = float4(planet.grass.rgb * lerp(float3(0.8, 0.85, 0.9), float3(1.35, 1.2, 0.85), dry), planet.grass.w);
-    ground = lerp(ground, planet.sand, sand);
+    float3 grassColor = planet.grass.rgb * lerp(float3(0.8, 0.85, 0.9), float3(1.35, 1.2, 0.85), dry);
+    grassColor = lerp(grassColor, planet.soil.rgb * float3(1.6, 1.45, 1.1), smoothstep(6.0, -4.0, temperature) * 0.7);
+    float4 ground = planet.soil * float4(float3(0.9 + macro * 0.4), 1.0);
+    ground = lerp(ground, float4(grassColor, planet.grass.w), grassy * (1.0 - patches));
+    ground = lerp(ground, planet.sand, max(desert, beach));
+    // Terre nue aux pieds des pentes, avant la roche.
+    ground = lerp(ground, planet.soil, smoothstep(0.93, 0.86, flatness + macro * 0.05) * (1.0 - beach) * 0.8);
     ground = lerp(ground, planet.rock * float4(float3(0.85 + macro * 0.5), 1.0), rock);
+    const float frozen = smoothstep(-2.0, -8.0, temperature);
+    const float snow = max(smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief), frozen)
+                     * smoothstep(0.5, 0.65, flatness);
     ground = lerp(ground, planet.snow, snow);
     const float3 color = ground.rgb * (1.0 + fine * lerp(0.3, 0.5, rock) * saturate(1.0 - distance / 400.0));
 
