@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
-project(Flux LANGUAGES C CXX) # C : requis par volk
+# Numéro de version du moteur et du jeu, à changer à chaque sortie (le commit Git s'y ajoute : cmake/FluxVersion.cmake).
+project(Flux VERSION 0.1.0 LANGUAGES C CXX) # C : requis par volk
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,6 +52,7 @@ include(cmake/FluxDependencies.cmake)
 include(cmake/FluxResources.cmake)
 include(cmake/FluxSources.cmake)
 include(cmake/FluxPrecompiled.cmake)
+include(cmake/FluxVersion.cmake)
 
 add_subdirectory(Engine)
 add_subdirectory(Game)

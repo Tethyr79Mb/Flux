@@ -2,6 +2,7 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
+#include <Flux/Core/Version.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
@@ -10,6 +11,7 @@
 #include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/UI/Context.hpp>
 
+#include <format>
 #include <system_error>
 
 namespace FluxEditor {
@@ -168,7 +170,7 @@ namespace FluxEditor {
         if (const Project* project = engine.GetProject()) {
             title += " - " + project->name;
         }
-        title += " - Flux Editor";
+        title += std::format(" - Flux Editor {}", GetFullVersion());
         if (title != m_title) {
             engine.GetWindow().SetTitle(title);
             m_title = std::move(title);
