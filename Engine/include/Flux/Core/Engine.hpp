@@ -32,6 +32,10 @@ namespace Flux {
     class Renderer;
     class Window;
 
+    namespace Planet {
+        class Terrain;
+    }
+
     namespace UI {
         class Context;
     }
@@ -209,6 +213,8 @@ namespace Flux {
         std::optional<std::string> m_requestedScene;
         std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
+        std::shared_ptr<const Planet::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
+        std::int32_t m_flightTerrainSeed = 0;
         std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
         std::uint64_t m_frame = 0;
@@ -287,6 +293,8 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
+        // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
+        void DrawFlightInfo(Entity player, Math::Vector2f screen);
         // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
         void AimFollowCamera();
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
