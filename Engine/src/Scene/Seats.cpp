@@ -73,9 +73,21 @@ namespace Flux::Seats {
             }
             const auto approach = [](float& value, float target, float step) { value += std::clamp(target - value, -step, step); };
 
+            // Mode voyage : allumé ou éteint par Tab, coupé par le frein ou au sol ; son régime y va en
+            // ShipComponent::travelSpoolTime secondes.
+            if (input.travel) {
+                ship.travel = !ship.travel;
+            }
+            if (input.brake || ship.grounded) {
+                ship.travel = false;
+            }
+            const float spool = ship.travelSpoolTime > 0.0f ? delta / ship.travelSpoolTime : 1.0f;
+            approach(ship.travelLevel, ship.travel ? 1.0f : 0.0f, spool);
+            const float travel = 1.0f + (std::max(ship.travelFactor, 1.0f) - 1.0f) * ship.travelLevel;
+
             // Rotation voulue : le mouvement de la souris pendant cette image et le roulis, bornés à la vitesse de
-            // rotation ; la vitesse de rotation y va progressivement.
-            const float rate = ship.turnRate;
+            // rotation (le tiers en mode voyage) ; la vitesse de rotation y va progressivement.
+            const float rate = ship.turnRate * (1.0f - 0.67f * ship.travelLevel);
             constexpr float Degrees = 180.0f / std::numbers::pi_v<float>; // vitesses de rotation en °/s, souris en radians
             Math::Vector3f turn{std::clamp(input.mousePitch * Degrees / delta, -rate, rate),
                                 std::clamp(input.mouseYaw * Degrees / delta, -rate, rate), // vers la gauche
@@ -113,23 +125,25 @@ namespace Flux::Seats {
             // Dans l'air, la traînée borne la vitesse (comme v² × densité : la vitesse max varie comme 1 / racine de la
             // densité) et la portance range la vitesse derrière le nez : virer ou cabrer change vraiment de direction.
             const float air = std::max(input.air, 0.0f);
-            float maxSpeed = ship.maxSpeed;
-            float grip = 0.0f;
+            // Boost : plus vite, plus fort, droit devant (sans effet en mode voyage, déjà plus rapide).
+            const bool boosting = input.boost && !input.brake && !ship.grounded && ship.travelLevel == 0.0f;
+            const float boost = boosting ? std::max(ship.boost, 1.0f) : 1.0f;
+            const float acceleration = ship.acceleration * boost * travel;
+            float maxSpeed = ship.maxSpeed * travel;
+            // En mode voyage, la vitesse suit le nez (comme dans l'air) : virer change vraiment de direction.
+            float grip = std::min(1.0f, 2.0f * ship.travelLevel * delta);
             if (air > 0.0f) {
                 maxSpeed = std::min(maxSpeed, ship.airMaxSpeed / std::sqrt(air));
-                grip = std::min(1.0f, ship.airGrip * std::sqrt(air) * delta);
+                grip = std::max(grip, std::min(1.0f, ship.airGrip * std::sqrt(air) * delta));
             }
 
-            // Boost : plus vite, plus fort, droit devant.
-            const bool boosting = input.boost && !input.brake && !ship.grounded;
-            const float boost = boosting ? std::max(ship.boost, 1.0f) : 1.0f;
-            const float acceleration = ship.acceleration * boost;
-
-            // Vitesse voulue, dans les axes du vaisseau.
+            // Vitesse voulue, dans les axes du vaisseau. Boost et mode voyage foncent droit devant.
             if (input.brake || ship.grounded) {
                 ship.cruiseSpeed = 0.0f;
             } else if (boosting) {
                 ship.cruiseSpeed = std::min(std::max(ship.cruiseSpeed, 0.0f) + acceleration * delta, maxSpeed * boost);
+            } else if (ship.travel) {
+                ship.cruiseSpeed = std::min(std::max(ship.cruiseSpeed, 0.0f) + acceleration * delta, maxSpeed);
             } else {
                 ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * acceleration * delta, -maxSpeed * 0.25f, maxSpeed);
             }

@@ -558,6 +558,22 @@ namespace {
         CHECK(std::abs(flight.cruiseSpeed - 400.0f) < 0.01f);
         frames(Frame, {.up = up, .air = 1.0f});
         CHECK(std::abs(flight.cruiseSpeed - 200.0f) < 0.01f);
+
+        // Mode voyage (x10 en 3 s) dans l'espace : à mi-régime, à peine plus que la vitesse max ; en régime, dix
+        // fois ; le frein le coupe.
+        flight.acceleration = 500.0f;
+        flight.velocity = {0.0f, 0.0f, -1000.0f};
+        flight.cruiseSpeed = 1000.0f;
+        frames(Frame, {.travel = true, .up = up});
+        CHECK(flight.travel);
+        frames(1.5, {.up = up});
+        CHECK(std::abs(flight.travelLevel - 0.5f) < 0.02f && flight.cruiseSpeed > 1000.0f && flight.cruiseSpeed < 5500.0f);
+        frames(20.0, {.up = up});
+        CHECK(flight.travelLevel == 1.0f && std::abs(flight.cruiseSpeed - 10000.0f) < 1.0f);
+        frames(Frame, {.brake = true, .up = up});
+        CHECK(!flight.travel && flight.cruiseSpeed == 0.0f);
+        frames(3.0, {.up = up});
+        CHECK(flight.travelLevel == 0.0f);
         return true;
     }
 

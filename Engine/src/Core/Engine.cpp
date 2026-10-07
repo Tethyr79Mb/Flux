@@ -196,9 +196,10 @@ namespace Flux {
         actions.Add("Courir", "Déplacement", Key::LeftShift);
         actions.Add("Sauter", "Déplacement", Key::Space);
         actions.Add("Interagir", "Déplacement", Key::F);
-        // Comme Star Citizen : Espace monte, Ctrl descend, X freine, Maj boost.
+        // Comme Star Citizen : Espace monte, Ctrl descend, X freine ; Maj boost et Tab mode voyage, comme X4.
         actions.Add("Freiner", "Vaisseau", Key::X);
         actions.Add("Boost", "Vaisseau", Key::LeftShift);
+        actions.Add("Mode voyage", "Vaisseau", Key::Tab);
         actions.Add("Monter", "Vaisseau", Key::Space);
         actions.Add("Descendre", "Vaisseau", Key::LeftControl);
         actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
@@ -421,6 +422,7 @@ namespace Flux {
             seatInput.roll = axis("Rouler à droite", "Rouler à gauche");
             seatInput.brake = IsActionDown("Freiner");
             seatInput.boost = IsActionDown("Boost");
+            seatInput.travel = WasActionPressed("Mode voyage");
             seatInput.mouseYaw = m_steerYaw;
             seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {
@@ -555,6 +557,9 @@ namespace Flux {
             return text;
         };
         std::string text = "Vitesse  " + distance(Math::Length(velocity), "m/s");
+        if (component.travelLevel > 0.0f) {
+            text += component.travelLevel < 1.0f ? std::format("\nMode voyage  {:.0f} %", component.travelLevel * 100.0f) : "\nMode voyage";
+        }
 
         if (const FlightState flight = GetFlightState(ship); flight.nearPlanet) {
             text += "\nVerticale  " + distance(Math::Dot(Math::Vector3d(velocity), flight.up), "m/s");

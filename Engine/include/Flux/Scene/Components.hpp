@@ -305,10 +305,17 @@ namespace Flux {
         // Boost (Maj tenue) : vitesse max et accélération multipliées d'autant, le vaisseau fonce vers l'avant ;
         // relâché, il revient à sa vitesse max.
         float boost = 2.0f;
+        // Mode voyage (Tab : allumer, éteindre) : monte en régime en travelSpoolTime secondes jusqu'à travelFactor fois
+        // sa vitesse max et son accélération ; il vire alors plus lentement (le tiers) et sa vitesse suit son nez.
+        // Le frein ou un atterrissage le coupe.
+        float travelFactor = 10.0f;
+        float travelSpoolTime = 3.0f;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;
         float cruiseSpeed = 0.0f;
+        bool travel = false;     // mode voyage demandé
+        float travelLevel = 0.0f; // régime du mode voyage, de 0 (éteint) à 1
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
