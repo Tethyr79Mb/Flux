@@ -196,8 +196,9 @@ namespace Flux {
         actions.Add("Courir", "Déplacement", Key::LeftShift);
         actions.Add("Sauter", "Déplacement", Key::Space);
         actions.Add("Interagir", "Déplacement", Key::F);
-        // Comme Star Citizen : Espace monte, Ctrl descend, X freine (Maj reste libre).
+        // Comme Star Citizen : Espace monte, Ctrl descend, X freine, Maj boost.
         actions.Add("Freiner", "Vaisseau", Key::X);
+        actions.Add("Boost", "Vaisseau", Key::LeftShift);
         actions.Add("Monter", "Vaisseau", Key::Space);
         actions.Add("Descendre", "Vaisseau", Key::LeftControl);
         actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
@@ -419,6 +420,7 @@ namespace Flux {
             seatInput.lift = axis("Monter", "Descendre");
             seatInput.roll = axis("Rouler à droite", "Rouler à gauche");
             seatInput.brake = IsActionDown("Freiner");
+            seatInput.boost = IsActionDown("Boost");
             seatInput.mouseYaw = m_steerYaw;
             seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {

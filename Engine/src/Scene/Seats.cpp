@@ -120,11 +120,18 @@ namespace Flux::Seats {
                 grip = std::min(1.0f, ship.airGrip * std::sqrt(air) * delta);
             }
 
+            // Boost : plus vite, plus fort, droit devant.
+            const bool boosting = input.boost && !input.brake && !ship.grounded;
+            const float boost = boosting ? std::max(ship.boost, 1.0f) : 1.0f;
+            const float acceleration = ship.acceleration * boost;
+
             // Vitesse voulue, dans les axes du vaisseau.
             if (input.brake || ship.grounded) {
                 ship.cruiseSpeed = 0.0f;
+            } else if (boosting) {
+                ship.cruiseSpeed = std::min(std::max(ship.cruiseSpeed, 0.0f) + acceleration * delta, maxSpeed * boost);
             } else {
-                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * ship.acceleration * delta, -maxSpeed * 0.25f, maxSpeed);
+                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * acceleration * delta, -maxSpeed * 0.25f, maxSpeed);
             }
             Math::Vector3f wanted{input.strafe * ship.strafeSpeed, input.lift * ship.strafeSpeed, -ship.cruiseSpeed};
             if (input.brake) {
@@ -133,7 +140,7 @@ namespace Flux::Seats {
                 wanted = {0.0f, wanted.y, 0.0f}; // seulement décoller (ou appuyer sur le sol)
             }
             // Propulseurs, plus l'air qui rattrape une part de l'écart à chaque image.
-            const float step = ship.acceleration * delta;
+            const float step = acceleration * delta;
             approach(ship.velocity.x, wanted.x, step + std::abs(wanted.x - ship.velocity.x) * grip);
             approach(ship.velocity.y, wanted.y, step + std::abs(wanted.y - ship.velocity.y) * grip);
             approach(ship.velocity.z, wanted.z, step + std::abs(wanted.z - ship.velocity.z) * grip);

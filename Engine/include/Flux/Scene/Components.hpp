@@ -302,6 +302,9 @@ namespace Flux {
         // (1/s, au sol ; comme un avion porté par ses ailes). Dans l'espace, rien : il garde son inertie.
         float airMaxSpeed = 1200.0f;
         float airGrip = 2.0f;
+        // Boost (Maj tenue) : vitesse max et accélération multipliées d'autant, le vaisseau fonce vers l'avant ;
+        // relâché, il revient à sa vitesse max.
+        float boost = 2.0f;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;

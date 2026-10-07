@@ -553,6 +553,11 @@ namespace {
         flight.cruiseSpeed = 900.0f;
         frames(Frame, {.thrust = 1.0f, .up = up, .air = 0.25f});
         CHECK(std::abs(flight.cruiseSpeed - 400.0f) < 0.01f);
+        // Boost (x2) : la vitesse max double tant qu'il est tenu, puis revient.
+        frames(1.0, {.boost = true, .up = up, .air = 1.0f});
+        CHECK(std::abs(flight.cruiseSpeed - 400.0f) < 0.01f);
+        frames(Frame, {.up = up, .air = 1.0f});
+        CHECK(std::abs(flight.cruiseSpeed - 200.0f) < 0.01f);
         return true;
     }
 
