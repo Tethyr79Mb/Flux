@@ -102,8 +102,14 @@ float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSu
 float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, float3 toSun, float3 sunColor, int steps,
                          float jitter, out float3 transmittance)
 {
+    return AtmosphereScatterFrom(a, -a.center.xyz, direction, distance, toSun, sunColor, steps, jitter, transmittance);
+}
+
+// La même depuis `origin` (relatif au centre de la planète) au lieu de la caméra : le ciel que reflète l'eau.
+float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, float3 sunColor,
+                             int steps, float jitter, out float3 transmittance)
+{
     transmittance = float3(1.0);
-    const float3 origin = -a.center.xyz;
     const float2 hit = AtmosphereRaySphere(origin, direction, a.mie.w);
     if (hit.x > hit.y || hit.y <= 0.0) {
         return float3(0.0);
@@ -155,10 +161,4 @@ float3 AtmosphereAmbient(AtmosphereData a, float3 position, float3 normal, float
     const float3 sky = lerp(a.ambient[i0].rgb, a.ambient[i0 + 1].rgb, saturate(index - float(i0)));
     const float altitude = exp(-max(distance - a.center.w, 0.0) * a.rayleigh.w);
     return sky * altitude * (0.6 + 0.4 * dot(normal, up));
-}
-
-// Bruit par pixel pour décaler les pas (« interleaved gradient noise » de Jimenez) : sans motif visible.
-float AtmosphereJitter(float2 pixel)
-{
-    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
 }

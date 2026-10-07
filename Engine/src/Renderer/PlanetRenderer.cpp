@@ -141,7 +141,8 @@ namespace Flux {
                 morphStart = static_cast<float>(Planet::MorphStart * end);
                 morphScale = static_cast<float>(1.0 / ((1.0 - Planet::MorphStart) * end));
             }
-            visit.tiles.push_back({&node.model, visit.position + visit.rotation.Rotate(node.center), node.radius, morphStart, morphScale});
+            visit.tiles.push_back({&node.model, visit.position + visit.rotation.Rotate(node.center), node.radius, morphStart, morphScale,
+                                   node.lowest});
         }
     }
 
@@ -182,6 +183,7 @@ namespace Flux {
         node.model.loaded = true;
         node.center = mesh.center;
         node.radius = static_cast<float>(mesh.radius);
+        node.lowest = mesh.lowest;
         return true;
     }
 

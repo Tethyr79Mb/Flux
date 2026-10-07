@@ -22,8 +22,9 @@ namespace Flux {
         std::array<float, 4> grass{};
         std::array<float, 4> sand{};
         std::array<float, 4> snow{};
+        std::array<float, 4> water{}; // couleur linéaire ; w : rayon de la surface de l'océan (0 : aucun)
     };
-    static_assert(sizeof(PlanetGpu) == 80);
+    static_assert(sizeof(PlanetGpu) == 96);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont générées
@@ -45,6 +46,7 @@ namespace Flux {
             // et 1 / sa longueur (0 : aucun).
             float morphStart;
             float morphScale;
+            double lowest; // plus petite distance de ses sommets au centre de la planète (océan au-dessus ?)
         };
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
@@ -66,6 +68,7 @@ namespace Flux {
             GpuModel model; // vertices nul : pas encore générée
             Math::Vector3d center; // de ses sommets, repère de la planète
             float radius = 0.0f;
+            double lowest = 0.0;
             std::uint64_t lastUsed = 0;
             bool queued = false; // demandée au générateur (en attente ou en cours)
         };

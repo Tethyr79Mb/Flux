@@ -115,6 +115,7 @@ namespace Flux::Planet {
     {
         Math::Vector3d center;
         double radius = 0.0;                // englobe aussi la forme de la parente
+        double lowest = 0.0;                // plus petite distance au centre de la planète (sa forme et celle de la parente) : l'océan la couvre-t-il ?
         std::vector<ModelVertex> vertices;  // TileVertexCount
         std::vector<MorphVertex> morph;     // TileVertexCount ; niveau 0 : aucun glissement
     };

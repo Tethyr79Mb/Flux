@@ -95,6 +95,9 @@ namespace Flux {
             // Hauteurs en mètres des premières versions de la PR #83, remplacées par les pourcentages.
             .RemovedField("sandHeight")
             .RemovedField("snowHeight")
+            .Field("ocean", "Océan", &PlanetComponent::ocean)
+            .Field("seaLevel", "Niveau de la mer (% du relief)", &PlanetComponent::seaLevel, {.speed = 0.1, .min = -100.0, .max = 100.0, .decimals = 2})
+            .Field("waterColor", "Couleur de l'eau", &PlanetComponent::waterColor, {.alpha = false})
             .Field("gravity", "Gravité (m/s²)", &PlanetComponent::gravity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("atmosphere", "Atmosphère", &PlanetComponent::atmosphere, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
             .Field("atmosphereHeight", "Hauteur de l'atmosphère (m)", &PlanetComponent::atmosphereHeight,
