@@ -41,6 +41,8 @@ namespace Flux {
         {
             float lowest; // plus petite distance d'un sommet au centre de la planète (forme de la parente comprise)
             float radius; // sphère englobante autour de Planet::TileMesh::center, jupes et glissement compris
+            float highest; // plus grande distance d'un sommet au centre de la planète (sans les jupes)
+            float unused;
         };
         // Tuiles calculées la dernière fois que l'image `frameIndex` a servi, dans l'ordre des Add ; à lire une fois
         // le GPU passé (après Device::BeginFrame revenu sur cette image, ou Device::Submit).

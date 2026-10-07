@@ -77,7 +77,12 @@ namespace Flux {
             Math::Vector3d center; // de ses sommets, repère de la planète
             float radius = 0.0f;   // celui de `bounds` tant que le GPU n'a pas rendu le sien
             double lowest = 0.0;   // au plus bas possible tant que le GPU n'a pas rendu le sien
+            double highest = 0.0;  // plus grande distance d'un sommet au centre de la planète, une fois mesurée
             std::uint64_t lastUsed = 0;
+            bool measured = false; // lowest, highest et radius viennent du GPU
+            // bounds tirée des hauteurs mesurées de la parente ; sinon de tout le relief de la planète (une petite
+            // tuile se croirait alors haute de tout le relief : proche de la caméra, découpée pour rien).
+            bool tight = false;
         };
         struct Request
         {
@@ -108,7 +113,7 @@ namespace Flux {
             std::vector<Tile>& tiles;
         };
 
-        Node& GetNode(PlanetState& state, Planet::TileKey key);
+        Node& GetNode(PlanetState& state, Planet::TileKey key, const Node* parent = nullptr);
         bool IsCulled(const Visit& visit, const Node& node) const;
         void VisitNode(Visit& visit, Planet::TileKey key, Node& node);
         PlanetState* FindOwner(std::uint64_t owner);
@@ -121,6 +126,7 @@ namespace Flux {
         std::uint32_t m_indexCount = 0;
         std::unordered_map<Entity, PlanetState> m_planets;
         std::uint64_t m_frame = 0;
+        bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
         // Buffers de sommets libérés, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
         struct FreeBuffer
         {

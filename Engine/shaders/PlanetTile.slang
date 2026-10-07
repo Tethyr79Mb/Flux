@@ -32,8 +32,9 @@ struct Constants
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<TileInputs> inputs;
-// Par tuile : x plus petite distance au centre de la planète (océan), y rayon de la sphère englobante (autour du centre).
-[[vk::binding(1, 0)]] RWStructuredBuffer<float2> stats;
+// Par tuile, distances au centre de la planète de ses sommets (forme de la parente comprise, sans les jupes) : x la
+// plus petite (océan), z la plus grande ; y rayon de la sphère englobante (autour du centre de la tuile).
+[[vk::binding(1, 0)]] RWStructuredBuffer<float4> stats;
 [[vk::binding(0, 1)]] RWStructuredBuffer<float> vertices; // ModelVertex : position, normale, uv (8 floats)
 [[vk::binding(1, 1)]] RWStructuredBuffer<float> morph;    // MorphVertex : décalage, normale (6 floats)
 [[vk::push_constant]] ConstantBuffer<Constants> constants;
@@ -45,6 +46,7 @@ groupshared float wideHeights[Wide * Wide];
 groupshared float coarseHeights[Coarse * Coarse];
 groupshared float lowestShared[GroupSize];
 groupshared float radiusShared[GroupSize];
+groupshared float highestShared[GroupSize];
 
 // Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, crêtes.
 struct Layer
@@ -267,12 +269,16 @@ void computeMain(uint thread : SV_GroupIndex)
     GroupMemoryBarrierWithGroupSync();
 
     float lowest = 1.0e30;
+    float highest = 0.0;
     float radius = 0.0;
     for (uint v = thread; v < TileSide * TileSide; v += GroupSize) {
         const TileVertex vertex = BuildVertex(v % TileSide, v / TileSide);
         Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal);
         const float3 target = vertex.position + vertex.morphOffset;
-        lowest = min(lowest, min(FromPlanetCenter(vertex.position), FromPlanetCenter(target)));
+        const float fromCenter = FromPlanetCenter(vertex.position);
+        const float targetFromCenter = FromPlanetCenter(target);
+        lowest = min(lowest, min(fromCenter, targetFromCenter));
+        highest = max(highest, max(fromCenter, targetFromCenter));
         radius = max(radius, max(length(vertex.position), length(target)));
     }
     // Jupes : le bord parcouru dans le sens trigonométrique (bas, droite, haut, gauche), descendu vers le centre de
@@ -291,15 +297,17 @@ void computeMain(uint thread : SV_GroupIndex)
 
     lowestShared[thread] = lowest;
     radiusShared[thread] = radius;
+    highestShared[thread] = highest;
     GroupMemoryBarrierWithGroupSync();
     for (uint stride = GroupSize / 2; stride > 0; stride /= 2) {
         if (thread < stride) {
             lowestShared[thread] = min(lowestShared[thread], lowestShared[thread + stride]);
             radiusShared[thread] = max(radiusShared[thread], radiusShared[thread + stride]);
+            highestShared[thread] = max(highestShared[thread], highestShared[thread + stride]);
         }
         GroupMemoryBarrierWithGroupSync();
     }
     if (thread == 0) {
-        stats[constants.job] = float2(lowestShared[0], radiusShared[0]);
+        stats[constants.job] = float4(lowestShared[0], radiusShared[0], highestShared[0], 0.0);
     }
 }

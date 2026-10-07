@@ -254,8 +254,11 @@ namespace Flux::Planet {
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {
+        return GetTileBounds(terrain, key, terrain.GetRadius() - 1.5 * terrain.GetRelief() - 1.0, terrain.GetRadius() + terrain.GetRelief());
+    }
+
+    TileBounds GetTileBounds(const Terrain& terrain, TileKey key, double lowest, double highest) {
         const double R = terrain.GetRadius();
-        const double relief = terrain.GetRelief();
         const auto x0 = static_cast<std::int64_t>(key.x) * TileQuads;
         const auto y0 = static_cast<std::int64_t>(key.y) * TileQuads;
         const auto at = [&](std::int64_t i, std::int64_t j) {
@@ -265,11 +268,11 @@ namespace Flux::Planet {
         constexpr auto full = static_cast<std::int64_t>(TileQuads);
         TileBounds bounds;
         bounds.center = at(half, half) * R;
-        // Les coins et les milieux des bords, au plus bas et au plus haut du relief (et sous la jupe).
+        // Les coins et les milieux des bords, au plus bas et au plus haut.
         for (const std::int64_t j : {std::int64_t{0}, half, full}) {
             for (const std::int64_t i : {std::int64_t{0}, half, full}) {
                 const Math::Vector3d d = at(i, j);
-                for (const double r : {R - 1.5 * relief - 1.0, R + relief}) {
+                for (const double r : {lowest, highest}) {
                     bounds.radius = std::max(bounds.radius, Math::Length(d * r - bounds.center));
                 }
             }

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace Flux {
     namespace {
@@ -33,6 +34,8 @@ namespace Flux {
                 if (const auto node = state->nodes.find(computed[i].key); node != state->nodes.end() && node->second.model.vertices) {
                     node->second.radius = stats[i].radius;
                     node->second.lowest = stats[i].lowest;
+                    node->second.highest = stats[i].highest;
+                    node->second.measured = true;
                 }
             }
         }
@@ -49,12 +52,23 @@ namespace Flux {
         }
     }
 
-    PlanetRenderer::Node& PlanetRenderer::GetNode(PlanetState& state, Planet::TileKey key) {
+    PlanetRenderer::Node& PlanetRenderer::GetNode(PlanetState& state, Planet::TileKey key, const Node* parent) {
         auto [it, created] = state.nodes.try_emplace(key.Pack());
-        if (created) {
-            it->second.bounds = Planet::GetTileBounds(*state.terrain, key);
+        Node& node = it->second;
+        if (!created && (node.tight || !parent || !parent->measured)) {
+            return node;
         }
-        return it->second;
+        if (parent && parent->measured) {
+            // Entre les hauteurs de la parente, plus ce que les octaves de l'enfant peuvent ajouter, plus une marge
+            // pour le relief qui passe entre les sommets mesurés de la parente.
+            const Planet::Terrain& terrain = *state.terrain;
+            const double margin = terrain.GetOmittedRelief(terrain.GetOctaves(key.level - 1u)) + 0.1 * (parent->highest - parent->lowest) + 1.0;
+            node.bounds = Planet::GetTileBounds(terrain, key, parent->lowest - margin, parent->highest + margin);
+            node.tight = true;
+        } else {
+            node.bounds = Planet::GetTileBounds(*state.terrain, key);
+        }
+        return node;
     }
 
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
@@ -135,7 +149,7 @@ namespace Flux {
             bool ready = true;
             for (std::uint32_t c = 0; c < 4; ++c) {
                 const Planet::TileKey childKey = key.Child(c);
-                children[c] = &GetNode(visit.state, childKey);
+                children[c] = &GetNode(visit.state, childKey, &node);
                 children[c]->lastUsed = m_frame;
                 culled[c] = IsCulled(visit, *children[c]);
                 if (!culled[c] && !children[c]->model.vertices) {
@@ -189,7 +203,8 @@ namespace Flux {
         } else {
             auto created = m_compute->CreateTileBuffers();
             if (!created) {
-                Log::Error("Planète : {}", created.error());
+                if (!std::exchange(m_poolFullLogged, true))
+                    Log::Error("Planète : {}", created.error());
                 return false;
             }
             buffers = std::move(*created);
@@ -211,6 +226,7 @@ namespace Flux {
         node.center = node.bounds.center;
         node.radius = static_cast<float>(node.bounds.radius);
         node.lowest = state.terrain->GetRadius() - 1.5 * state.terrain->GetRelief() - node.bounds.edge;
+        node.measured = false;
         node.lastUsed = m_frame;
         return true;
     }

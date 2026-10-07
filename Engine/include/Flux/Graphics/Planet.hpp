@@ -99,7 +99,10 @@ namespace Flux::Planet {
         double radius = 0.0;
         double edge = 0.0;
     };
+    // Sans hauteurs connues : du plus bas au plus haut de tout le relief de la planète (très prudent pour une petite
+    // tuile). lowest, highest : distances au centre de la planète entre lesquelles la tuile se trouve.
     FLUX_API TileBounds GetTileBounds(const Terrain& terrain, TileKey key);
+    FLUX_API TileBounds GetTileBounds(const Terrain& terrain, TileKey key, double lowest, double highest);
 
     // Sommets d'une tuile, relatifs à `center` (son centre sur la sphère, repère de la planète), et le rayon de la
     // sphère qui les englobe, jupes comprises.
