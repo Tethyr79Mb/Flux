@@ -307,7 +307,7 @@ namespace Flux {
         float boost = 2.0f;
         // Mode voyage (Tab : allumer, éteindre) : monte en régime en travelSpoolTime secondes jusqu'à travelFactor fois
         // sa vitesse max et son accélération ; il vire alors plus lentement (le tiers) et sa vitesse suit son nez.
-        // Le frein ou un atterrissage le coupe.
+        // Seulement dans l'espace : l'atmosphère d'une planète, le frein ou un atterrissage le coupent.
         float travelFactor = 10.0f;
         float travelSpoolTime = 3.0f;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de

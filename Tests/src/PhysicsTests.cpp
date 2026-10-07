@@ -574,11 +574,9 @@ namespace {
         CHECK(!flight.travel && flight.cruiseSpeed == 0.0f);
         frames(3.0, {.up = up});
         CHECK(flight.travelLevel == 0.0f);
-        // Au ras du sol (air dense), le mode voyage multiplie la vitesse de l'air : dix fois 200 m/s.
-        frames(Frame, {.travel = true, .up = up, .air = 1.0f});
-        frames(10.0, {.up = up, .air = 1.0f});
-        CHECK(flight.travelLevel == 1.0f && std::abs(flight.cruiseSpeed - 2000.0f) < 1.0f);
-        frames(Frame, {.brake = true, .up = up});
+        // Seulement dans l'espace : dans l'air, Tab ne l'allume pas.
+        frames(Frame, {.travel = true, .up = up, .air = 0.5f});
+        CHECK(!flight.travel);
         return true;
     }
 

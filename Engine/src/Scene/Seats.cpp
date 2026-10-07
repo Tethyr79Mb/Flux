@@ -78,7 +78,8 @@ namespace Flux::Seats {
             if (input.travel) {
                 ship.travel = !ship.travel;
             }
-            if (input.brake || ship.grounded) {
+            // Seulement dans l'espace : il ne s'allume pas dans une atmosphère et s'y coupe en y entrant.
+            if (input.brake || ship.grounded || input.air > 0.0f) {
                 ship.travel = false;
             }
             const float spool = ship.travelSpoolTime > 0.0f ? delta / ship.travelSpoolTime : 1.0f;
@@ -129,16 +130,13 @@ namespace Flux::Seats {
             const bool boosting = input.boost && !input.brake && !ship.grounded && ship.travelLevel == 0.0f;
             const float boost = boosting ? std::max(ship.boost, 1.0f) : 1.0f;
             const float acceleration = ship.acceleration * boost * travel;
-            // Vitesse max : celle du vaisseau, bornée par l'air, puis multipliée par le mode voyage (et le boost plus
-            // bas) : on peut foncer au ras du sol, l'air ne fait que fixer la vitesse de base.
-            float maxSpeed = ship.maxSpeed;
+            float maxSpeed = ship.maxSpeed * travel;
             // En mode voyage, la vitesse suit le nez (comme dans l'air) : virer change vraiment de direction.
             float grip = std::min(1.0f, 2.0f * ship.travelLevel * delta);
             if (air > 0.0f) {
                 maxSpeed = std::min(maxSpeed, ship.airMaxSpeed / std::sqrt(air));
                 grip = std::max(grip, std::min(1.0f, ship.airGrip * std::sqrt(air) * delta));
             }
-            maxSpeed *= travel;
 
             // Vitesse voulue, dans les axes du vaisseau. Boost et mode voyage foncent droit devant.
             if (input.brake || ship.grounded) {
