@@ -31,6 +31,7 @@ struct PlanetData
     float4 grass;
     float4 sand;
     float4 snow;
+    float4 water;             // rgb : couleur de l'eau (linéaire) ; w : rayon de la surface de l'océan (0 : aucun)
 };
 
 static const uint MaxPlanets = 4;
@@ -42,7 +43,7 @@ struct FrameData
     float4 cascades[4 * 4];   // cascade c : colonnes [4c, 4c + 3] ; relatif caméra -> carte (xy dans [-1, 1], z dans [0, 1])
     float4 cascadeEnds;       // fin de chaque tranche, en mètres devant la caméra
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
-    float4 cameraForward;     // xyz
+    float4 cameraForward;     // xyz ; w : secondes écoulées (vagues), repartent de 0 toutes les heures
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
     // x : multiplie la texture du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des reflets les
@@ -490,6 +491,16 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     const float3 local = input.planetPosition;
     const float3 up = normalize(local);
     const float altitude = length(local) - planet.shape.x;
+    // Fond sous plus de 30 m d'eau : l'eau le cache (opaque à 0,1 % près), inutile de l'éclairer. Seulement si la
+    // caméra est au-dessus de la mer : de dessous, l'eau n'est pas dessinée.
+    const float sea = planet.water.w;
+    if (length(local) < sea - 30.0) {
+        const float3 toCamera = float3(dot(v.worldPosition, draw.normal[0].xyz), dot(v.worldPosition, draw.normal[1].xyz),
+                                       dot(v.worldPosition, draw.normal[2].xyz));
+        if (length(local - toCamera) > sea) {
+            return float4(0.0, 0.0, 0.0, 1.0);
+        }
+    }
     float3 normal = normalize(v.normal);
     // Pente : la normale ramenée dans le repère de la planète (colonnes de sa rotation), contre la verticale.
     const float3 localNormal = float3(dot(normal, draw.normal[0].xyz), dot(normal, draw.normal[1].xyz), dot(normal, draw.normal[2].xyz));
@@ -541,6 +552,97 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     float inside;
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, 1.0, inside);
     return float4(ToneMap(ThroughAir(lit, v.worldPosition)), 1.0);
+}
+
+// Océan : les tuiles de la planète posées sur la sphère du niveau de la mer, le long de la verticale de chaque
+// sommet. uv.x : profondeur de l'eau au sommet (négative sur la terre ferme, que le sol cache de toute façon).
+[shader("vertex")]
+PlanetVertexOutput vertexOcean(PlanetVertexInput input)
+{
+    const DrawData draw = draws[params.draw];
+    const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
+    const float morph = PlanetMorph(input.position);
+    const float3 ground = input.position + input.morphOffset * morph;
+    const float3 local = draw.rim.xyz + ground;
+    const float3 up = normalize(local);
+    const float depth = planet.water.w - length(local);
+    PlanetVertexOutput output;
+    output.base = Output(ground + up * depth, up, float2(depth, 0.0));
+    output.planetPosition = up * planet.water.w;
+    return output;
+}
+
+// Pente du bruit (gradient), pour les vaguelettes.
+float3 WaveSlope(float3 x)
+{
+    const float e = 0.15;
+    return float3(PlanetNoise(x + float3(e, 0, 0)) - PlanetNoise(x - float3(e, 0, 0)),
+                  PlanetNoise(x + float3(0, e, 0)) - PlanetNoise(x - float3(0, e, 0)),
+                  PlanetNoise(x + float3(0, 0, e)) - PlanetNoise(x - float3(0, 0, e))) / (2.0 * e);
+}
+
+// Surface de l'océan : reflet du ciel et du soleil (de plus en plus fort en regardant de biais), couleur de l'eau au
+// large ; là où elle est peu profonde, transparente (on voit le fond). Vaguelettes de près (pente d'un bruit qui
+// glisse avec le temps), effacées au loin où elles scintilleraient.
+[shader("fragment")]
+float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
+{
+    const VertexOutput v = input.base;
+    const DrawData draw = draws[params.draw];
+    const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
+    const float depth = v.uv.x;
+    if (depth <= 0.0) {
+        discard;
+    }
+    const float3 local = input.planetPosition;
+    const float3 up = normalize(local);
+    const float distance = length(v.worldPosition);
+    const float time = frame[0].cameraForward.w;
+    float3 n = up;
+    const float waves = saturate(1.0 - distance / 2000.0);
+    if (waves > 0.0) {
+        float3 slope = WaveSlope(local * (1.0 / 9.0) + float3(time * 0.21, 0.0, time * 0.13)) * 0.6
+                     + WaveSlope(local * (1.0 / 2.3) + float3(-time * 0.37, time * 0.29, 0.0)) * 0.4;
+        slope -= up * dot(slope, up);
+        n = normalize(up - slope * (0.25 * waves));
+    }
+    const float3 normal = normalize(draw.normal[0].xyz * n.x + draw.normal[1].xyz * n.y + draw.normal[2].xyz * n.z);
+    const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
+    const FrameData f = frame[0];
+    Surface surface;
+    surface.normal = normal;
+    surface.toEye = normalize(-v.worldPosition);
+    surface.diffuse = float3(0.0); // la couleur de l'eau vient de dessous (plus bas), pas de sa surface
+    surface.f0 = float3(0.02);
+    // De loin, les vagues qu'on ne dessine plus élargissent le reflet du soleil.
+    surface.roughness = lerp(0.06, 0.22, saturate(distance / 20000.0));
+    const float nv = saturate(dot(normal, surface.toEye));
+    const float fresnel = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
+
+    // Soleil : reflet (ombres des objets, rougi par l'air) et lumière qui entre dans l'eau.
+    const float sunFacing = dot(worldUp, f.toSun.xyz);
+    float3 sunLight = f.sunColor.rgb * (sunFacing > 0.0 ? SunVisibility(v.worldPosition, worldUp, sunFacing) : 0.0);
+    // Ce qu'on voit en reflet : le ciel de l'atmosphère (depuis l'eau) devant le ciel de l'espace, sinon l'espace seul.
+    float3 reflected = reflect(-surface.toEye, normal);
+    reflected = normalize(reflected + worldUp * max(0.02 - dot(reflected, worldUp), 0.0)); // pas sous l'horizon
+    float3 sky = environmentMap.SampleLevel(reflected, surface.roughness * f.environment.z).rgb * f.environment.x;
+    float3 skyLight = float3(0.0);
+    if (HasAtmosphere(f.atmosphere)) {
+        const float3 center = v.worldPosition - f.atmosphere.center.xyz;
+        sunLight *= AtmosphereSunTransmittance(f.atmosphere, center, f.toSun.xyz);
+        float3 through;
+        const float3 air = AtmosphereScatterFrom(f.atmosphere, center, reflected, 1.0e9, f.toSun.xyz, f.sunColor.rgb, 6, 0.5, through);
+        sky = air + sky * through;
+        skyLight = AtmosphereAmbient(f.atmosphere, center, worldUp, f.toSun.xyz);
+    }
+    // Sous la surface : la couleur de l'eau, éclairée par le soleil et le ciel.
+    const float3 body = planet.water.rgb * (sunLight * saturate(sunFacing) + skyLight + f.environment.x * 0.05);
+    const float3 lit = Shade(surface, f.toSun.xyz, sunLight) + sky * fresnel + body * (1.0 - fresnel)
+                     + SceneLights(v.worldPosition, surface);
+
+    // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
+    const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
+    return float4(ToneMap(ThroughAir(lit, v.worldPosition)), alpha);
 }
 
 [shader("fragment")]

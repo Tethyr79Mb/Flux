@@ -178,6 +178,11 @@ namespace Flux {
         Math::LinearColor snowColor{0.85f, 0.88f, 0.92f};
         float sandLevel = 1.25f; // % du relief
         float snowLevel = 65.0f;
+        // Océan : une surface lisse au niveau de la mer (seaLevel, en % du relief comme le sable), au-dessus du fond qui
+        // garde son relief. Claire là où il est peu profond (on voit le fond), de la couleur de l'eau au large.
+        bool ocean = true;
+        float seaLevel = 0.0f;
+        Math::LinearColor waterColor{0.01f, 0.045f, 0.07f};
         float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
         // Atmosphère (Flux/Graphics/Atmosphere.hpp) : ciel coloré vu du sol, brume au loin, halo vu de l'espace.
         float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre

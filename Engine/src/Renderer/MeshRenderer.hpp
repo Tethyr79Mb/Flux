@@ -9,6 +9,7 @@
 #include "Renderer/SkyRenderer.hpp"
 
 #include <array>
+#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -58,6 +59,7 @@ namespace Flux {
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
             bool visible = true;   // false : ombre seulement (personnage vu de l'intérieur)
             bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
+            bool ocean = false;    // surface de l'océan d'une tuile de planète (transparente, sans ombre)
         };
 
         // Doit correspondre à DrawData dans shaders/Mesh.slang : matrices d'une entité, relatives à la caméra.
@@ -121,7 +123,7 @@ namespace Flux {
 
         explicit MeshRenderer(RHI::Device& device) : m_device(device) {}
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
-        const Pipelines& GetPipelines(const GpuModel& model) const;
+        const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
@@ -140,6 +142,9 @@ namespace Flux {
         Pipelines m_skinned;
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
+        // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).
+        Pipelines m_ocean;
+        std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now(); // vagues
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.
         std::unique_ptr<RHI::BindGroupLayout> m_frameLayout;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_jointBuffers;
