@@ -24,8 +24,10 @@ namespace Flux {
         std::array<float, 4> sand{};
         std::array<float, 4> snow{};
         std::array<float, 4> water{}; // couleur linéaire ; w : rayon de la surface de l'océan (0 : aucun)
+        std::array<float, 4> soil{};
+        std::array<float, 4> climate{}; // température à l'équateur, aux pôles (°C), humidité, 1 si textures du sol (GroundTextures)
     };
-    static_assert(sizeof(PlanetGpu) == 96);
+    static_assert(sizeof(PlanetGpu) == 128);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont calculées
@@ -42,6 +44,7 @@ namespace Flux {
         {
             const GpuModel* model;
             Math::Vector3d center;
+            Math::Vector3d local; // son centre dans le repère de la planète
             float radius;
             // Glissement vers la forme parente (voir vertexPlanet dans shaders/Mesh.slang) : distance où il commence,
             // et 1 / sa longueur (0 : aucun).

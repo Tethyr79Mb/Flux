@@ -74,7 +74,8 @@ namespace Flux {
             return RHI::Binding{slot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
         };
         constexpr std::array bindings{binding(BaseColorSlot), binding(EmissiveSlot), binding(MetallicRoughnessSlot),
-                                      binding(NormalSlot), binding(OcclusionSlot)};
+                                      binding(NormalSlot), binding(OcclusionSlot), binding(GroundColorSlot),
+                                      binding(GroundRoughnessSlot), binding(GroundNormalSlot)};
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 1 + MaxMaterials});
         if (!layout) {
             return std::unexpected(layout.error());

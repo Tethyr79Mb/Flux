@@ -32,6 +32,8 @@ namespace Flux::Vk {
         VkQueue GetPresentQueue() const { return m_presentQueue; }
         // Nanosecondes par tic des heures du GPU ; 0 si la file graphique ne note pas l'heure.
         float GetTimestampPeriod() const;
+        // samplerAnisotropy activé : SamplerDesc::anisotropy permis.
+        bool HasAnisotropy() const { return m_anisotropy; }
 
         void WaitIdle() const;
 
@@ -53,5 +55,6 @@ namespace Flux::Vk {
         VkQueue m_presentQueue = VK_NULL_HANDLE;
 
         VkCommandPool m_immediatePool = VK_NULL_HANDLE;
+        bool m_anisotropy = false;
     };
 }

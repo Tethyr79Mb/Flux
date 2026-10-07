@@ -1,5 +1,6 @@
 #include "Renderer/Vulkan/VulkanRHI.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <unordered_map>
 #include <vector>
@@ -233,7 +234,19 @@ namespace Flux::Vk {
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeTexture(RHI::Format format, std::uint32_t size,
                                                                                           std::span<const std::uint8_t> pixels,
                                                                                           bool mipmaps) {
-        auto image = Image::CreateTexture(*m_device, ToVulkan(format), {size, size}, pixels, mipmaps, true);
+        auto image = Image::CreateTexture(*m_device, ToVulkan(format), {size, size}, pixels, mipmaps, ImageLayers::Cube);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTextureArray(RHI::Format format, RHI::Extent extent,
+                                                                                           std::uint32_t layers,
+                                                                                           std::span<const std::uint8_t> pixels,
+                                                                                           bool mipmaps) {
+        auto image = Image::CreateTexture(*m_device, ToVulkan(format), {extent.width, extent.height}, pixels, mipmaps,
+                                          ImageLayers::Array, layers);
         if (!image) {
             return std::unexpected(image.error());
         }
@@ -277,6 +290,12 @@ namespace Flux::Vk {
         samplerInfo.addressModeV = address;
         samplerInfo.addressModeW = address;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE; // tous les niveaux de mip de la texture
+        if (desc.anisotropy > 1.0f && m_device->HasAnisotropy()) {
+            VkPhysicalDeviceProperties properties{};
+            vkGetPhysicalDeviceProperties(m_device->GetBootstrapDevice().physical_device.physical_device, &properties);
+            samplerInfo.anisotropyEnable = VK_TRUE;
+            samplerInfo.maxAnisotropy = std::min(desc.anisotropy, properties.limits.maxSamplerAnisotropy);
+        }
         if (desc.compare) {
             samplerInfo.compareEnable = VK_TRUE;
             samplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL; // éclairé si le point est devant l'obstacle le plus proche

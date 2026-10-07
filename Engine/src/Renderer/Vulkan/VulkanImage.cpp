@@ -11,8 +11,9 @@
 namespace Flux::Vk {
     std::expected<Image, std::string> Image::Allocate(const Device& device, VkFormat format, VkExtent2D extent,
                                                       VkImageUsageFlags usage, VkImageAspectFlags aspect,
-                                                      std::uint32_t mipLevels, bool cube) {
-        const std::uint32_t layers = cube ? 6u : 1u;
+                                                      std::uint32_t mipLevels, ImageLayers kind, std::uint32_t layerCount) {
+        const bool cube = kind == ImageLayers::Cube;
+        const std::uint32_t layers = cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
         Image image;
         image.m_device = device.GetHandle();
         image.m_allocator = device.GetAllocator();
@@ -45,7 +46,7 @@ namespace Flux::Vk {
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = image.m_image;
-        viewInfo.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : kind == ImageLayers::Array ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = format;
         viewInfo.subresourceRange = {aspect, 0, mipLevels, 0, layers};
         if (!Check(vkCreateImageView(image.m_device, &viewInfo, nullptr, &image.m_view), "vkCreateImageView")) {
@@ -61,7 +62,7 @@ namespace Flux::Vk {
 
     std::expected<Image, std::string> Image::CreateCubeAttachment(const Device& device, VkFormat format, std::uint32_t size,
                                                                   VkImageUsageFlags usage) {
-        auto image = Allocate(device, format, {size, size}, usage, VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+        auto image = Allocate(device, format, {size, size}, usage, VK_IMAGE_ASPECT_COLOR_BIT, 1, ImageLayers::Cube);
         if (!image) {
             return image;
         }
@@ -80,8 +81,9 @@ namespace Flux::Vk {
     }
 
     std::expected<Image, std::string> Image::CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
-                                                           std::span<const std::uint8_t> pixels, bool mipmaps, bool cube) {
-        const std::uint32_t layers = cube ? 6u : 1u;
+                                                           std::span<const std::uint8_t> pixels, bool mipmaps, ImageLayers kind,
+                                                           std::uint32_t layerCount) {
+        const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
         auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Upload);
         if (!staging) {
             return std::unexpected(staging.error());
@@ -94,7 +96,7 @@ namespace Flux::Vk {
         if (levels > 1) {
             usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT; // chaque niveau est lu pour produire le suivant
         }
-        auto image = Allocate(device, format, extent, usage, VK_IMAGE_ASPECT_COLOR_BIT, levels, cube);
+        auto image = Allocate(device, format, extent, usage, VK_IMAGE_ASPECT_COLOR_BIT, levels, kind, layerCount);
         if (!image) {
             return image;
         }

@@ -3,6 +3,7 @@
 #include "Flux/Animation/Animation.hpp"
 #include "Flux/Graphics/ShadowCascades.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Renderer/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/PlanetRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
@@ -71,7 +72,10 @@ namespace Flux {
             // Matrice des normales par colonnes ; normal[1][3] : premier os dans le buffer des os (bits d'un entier)
             std::array<std::array<float, 4>, 3> normal;
             std::array<float, 4> rim; // lumière de contour : couleur x intensité ; finesse (0 : aucune)
+            std::array<float, 4> ground; // tuile de planète : xyz, son centre modulo GroundPeriod (textures du sol)
         };
+        // Période (m) des coordonnées des textures du sol : multiple de leurs tailles (GroundScale dans Mesh.slang).
+        static constexpr double GroundPeriod = 1024.0;
 
         // Doit correspondre à LightData dans shaders/Mesh.slang : une lumière de la scène.
         struct LightData
@@ -175,5 +179,7 @@ namespace Flux {
         std::vector<PlanetRenderer::Tile> m_planetTiles;
         std::vector<PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
         PoseEvaluator m_poseEvaluator;
+        GroundTextures m_ground;
+        const RHI::BindGroup* m_groundGroup = nullptr; // celui de m_ground pour l'image en préparation
     };
 }
