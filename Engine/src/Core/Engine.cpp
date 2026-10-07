@@ -516,7 +516,8 @@ namespace Flux {
                 rotation = m_scene.GetWorldRotation(entity);
             }
         }
-        if (!nearest || Math::Length(offset) < 1.0) {
+        // Dans l'espace (au-delà de deux rayons, là où s'arrête sa gravité, voir PlanetGround) : pas d'altitude.
+        if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
             return flight;
         }
         if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
