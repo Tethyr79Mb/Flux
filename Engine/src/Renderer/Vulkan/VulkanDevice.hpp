@@ -13,6 +13,7 @@ namespace Flux::Vk {
     // Instance, surface, device, files et allocateur : tout ce qui vit aussi longtemps que le renderer.
     class Device {
         public:
+        // nativeWindowHandle nul : sans surface ni file de présentation (calculs, tests).
         static std::expected<std::unique_ptr<Device>, std::string> Create(void* nativeWindowHandle);
 
         ~Device();

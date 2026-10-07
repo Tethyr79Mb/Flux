@@ -24,6 +24,7 @@ int main() {
         {"son", RunAudioTests},
         {"actions d'entrée", RunInputTests},
         {"planètes (cube-sphère)", RunPlanetTests},
+        {"calculs sur le GPU (compute)", RunComputeTests},
     };
 
     int failures = 0;
