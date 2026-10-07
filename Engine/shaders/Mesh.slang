@@ -28,7 +28,7 @@ static const uint MaxInteriors = 8;
 struct PlanetData
 {
     float4 shape;             // x : rayon (m) ; y : relief (m) ; z : altitude de la neige (m) ; w : du sable (m)
-    float4 rock;              // rgb : couleur (linéaire) ; w : rugosité
+    float4 rock;              // rgb : couleur (linéaire ; avec les textures du sol : teinte) ; w : rugosité
     float4 grass;
     float4 sand;
     float4 snow;
@@ -555,6 +555,21 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
     return result;
 }
 
+// Teinte de la texture d'une matière (PlanetComponent::rockTint et suivantes, à la place des couleurs unies),
+// ramenée à une luminance de 1 : elle change la couleur sans assombrir (un jaune clair dore un sable gris).
+float3 GroundTint(PlanetData planet, uint layer)
+{
+    float3 tint;
+    switch (layer) {
+        case GroundRock: tint = planet.rock.rgb; break;
+        case GroundGrass: tint = planet.grass.rgb; break;
+        case GroundSoil: tint = planet.soil.rgb; break;
+        case GroundSand: tint = planet.sand.rgb; break;
+        default: tint = planet.snow.rgb; break;
+    }
+    return tint / max(dot(tint, float3(0.2126, 0.7152, 0.0722)), 0.01);
+}
+
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
 void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 {
@@ -658,6 +673,7 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
             const float weight = weights[layer];
             if (weight > 0.02) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
+                sample.color *= GroundTint(planet, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     const float cold = smoothstep(6.0, -4.0, temperature) * 0.7;
