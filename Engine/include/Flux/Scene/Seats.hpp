@@ -27,7 +27,7 @@ namespace Flux {
         // ShipComponent::levelAssist ; nul sans gravité (pas d'aide).
         Math::Vector3f up{};
         // Densité de l'air là où il est (0 dans l'espace, 1 au sol d'une atmosphère comme celle de la Terre) :
-        // ShipComponent::airMaxSpeed et airGrip.
+        // ShipComponent::airGrip.
         float air = 0.0f;
     };
 

@@ -363,7 +363,7 @@ namespace Flux {
                                GetScreenUiOptions());
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
-                DrawFlightInfo(player, {static_cast<float>(size.x), static_cast<float>(size.y)});
+                DrawFlightInfo(player, {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds);
             }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_freeCamera ? &m_cameraController : nullptr);
@@ -516,7 +516,8 @@ namespace Flux {
                 rotation = m_scene.GetWorldRotation(entity);
             }
         }
-        if (!nearest || Math::Length(offset) < 1.0) {
+        // Dans l'espace (au-delà de deux rayons, là où s'arrête sa gravité, voir PlanetGround) : pas d'altitude.
+        if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
             return flight;
         }
         if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
@@ -541,14 +542,26 @@ namespace Flux {
         return flight;
     }
 
-    void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen) {
+    void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds) {
         const Entity seat = Seats::GetPilotSeat(m_scene, player);
         const Entity ship = seat != NullEntity ? m_scene.GetShip(seat) : NullEntity;
         if (ship == NullEntity) {
+            m_flightShip = NullEntity; // remesurée en reprenant les commandes
             return;
         }
         const ShipComponent& component = m_scene.Get<ShipComponent>(ship);
-        const Math::Vector3f velocity = m_scene.GetWorldRotation(ship).Rotate(component.velocity);
+        // Vitesse mesurée sur son déplacement, pas celle que visent ses propulseurs : contre le sol ou un mur, il
+        // pousse sans avancer. Lissée sur un quart de seconde ; figée en pause.
+        const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
+        if (m_flightShip != ship) {
+            m_flightShip = ship;
+            m_flightVelocity = Math::Vector3d(m_scene.GetWorldRotation(ship).Rotate(component.velocity));
+        } else if (deltaSeconds > 0.0) {
+            const Math::Vector3d measured = Math::Delta(m_flightPosition, position) / deltaSeconds;
+            m_flightVelocity = m_flightVelocity + (measured - m_flightVelocity) * std::min(1.0, deltaSeconds / 0.25);
+        }
+        m_flightPosition = position;
+        const Math::Vector3d velocity = m_flightVelocity;
         // Nombre à la française, en m ou km selon sa taille.
         const auto distance = [](double meters, std::string_view unit) {
             std::string text = std::abs(meters) >= 10000.0 ? std::format("{:.1f} k{}", meters / 1000.0, unit)
@@ -562,7 +575,7 @@ namespace Flux {
         }
 
         if (const FlightState flight = GetFlightState(ship); flight.nearPlanet) {
-            text += "\nVerticale  " + distance(Math::Dot(Math::Vector3d(velocity), flight.up), "m/s");
+            text += "\nVerticale  " + distance(Math::Dot(velocity, flight.up), "m/s");
             text += "\nAltitude  " + distance(flight.altitude, "m");
             if (flight.air > 0.001f) {
                 text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);

@@ -650,6 +650,8 @@ namespace Flux {
                         const JPH::Vec3 velocity = ToJolt(transform.rotation.Rotate(ship.velocity));
                         const JPH::Vec3 kept = velocity - normal * std::min(0.0f, velocity.Dot(normal));
                         ship.velocity = transform.rotation.Conjugate().Rotate(FromJolt(kept));
+                        // Et sa vitesse de croisière ce qui reste vers l'avant : contre le sol, il ne pousse plus.
+                        ship.cruiseSpeed = std::min(ship.cruiseSpeed, std::max(-ship.velocity.z, 0.0f));
                     }
                     const JPH::Vec3 moved = position - start;
                     move = {moved.GetX(), moved.GetY(), moved.GetZ()};
