@@ -297,10 +297,25 @@ namespace Flux {
         // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Touche H en vol.
         bool levelAssist = true;
         float levelRate = 1.5f;        // 1/s : vitesse de retour à plat (1,5 : l'inclinaison fond de 78 % par seconde)
+        // Dans l'atmosphère d'une planète : vitesse max au niveau du sol (plus haut, l'air moins dense la laisse
+        // monter : divisée par la racine de la densité), et vitesse à laquelle l'air range sa vitesse derrière son nez
+        // (1/s, au sol ; comme un avion porté par ses ailes). Dans l'espace, rien : il garde son inertie.
+        float airMaxSpeed = 1200.0f;
+        float airGrip = 2.0f;
+        // Boost (Maj tenue) : vitesse max et accélération multipliées d'autant, le vaisseau fonce vers l'avant ;
+        // relâché, il revient à sa vitesse max.
+        float boost = 2.0f;
+        // Mode voyage (Tab : allumer, éteindre) : monte en régime en travelSpoolTime secondes jusqu'à travelFactor fois
+        // sa vitesse max et son accélération ; il vire alors plus lentement (le tiers) et sa vitesse suit son nez.
+        // Le frein ou un atterrissage le coupe.
+        float travelFactor = 10.0f;
+        float travelSpoolTime = 3.0f;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;
         float cruiseSpeed = 0.0f;
+        bool travel = false;     // mode voyage demandé
+        float travelLevel = 0.0f; // régime du mode voyage, de 0 (éteint) à 1
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

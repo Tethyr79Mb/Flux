@@ -148,7 +148,11 @@ namespace Flux {
             return std::unexpected(models.error());
         }
         renderer->m_models = std::move(*models);
-        renderer->m_planets = std::make_unique<PlanetRenderer>(device);
+        auto planets = PlanetRenderer::Create(device);
+        if (!planets) {
+            return std::unexpected(planets.error());
+        }
+        renderer->m_planets = std::move(*planets);
 
         auto shadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {ShadowMapResolution, ShadowMapResolution}, true);
         if (!shadowMap) {
@@ -343,7 +347,7 @@ namespace Flux {
         m_interiors.clear();
         m_planetData.clear();
         const ViewCone view(camera, aspect);
-        m_planets->BeginFrame();
+        m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
                 AddPlanet(transform, *planet, view);
@@ -432,8 +436,8 @@ namespace Flux {
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
                                Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
         }
-        // Tuiles manquantes des planètes (dessinées à partir de l'image suivante).
-        m_planets->EndFrame();
+        // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
+        m_planets->EndFrame(frameIndex);
         if (!m_boundEnvironment[frameIndex]) {
             m_draws.clear(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
@@ -702,6 +706,10 @@ namespace Flux {
                                 material.normalScale, material.occlusionStrength, draw.materialOverride ? 1u : 0u, {}};
         commands.PushConstants(&params, sizeof(params));
         commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
+    }
+
+    void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        m_planets->Compute(commands, frameIndex);
     }
 
     void MeshRenderer::DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {

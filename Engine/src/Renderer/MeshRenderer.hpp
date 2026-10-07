@@ -37,6 +37,8 @@ namespace Flux {
         // Device::BeginFrame : les ressources de l'image frameIndex sont libres.
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
+        // Calculs sur le GPU préparés par Prepare (tuiles des planètes), avant toute passe.
+        void Compute(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image (la carte est
         // effacée puis rendue lisible par Draw).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;

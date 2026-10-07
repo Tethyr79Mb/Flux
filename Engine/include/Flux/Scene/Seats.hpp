@@ -14,9 +14,11 @@ namespace Flux {
         bool interact = false; // F : s'asseoir sur le siège le plus proche, ou se relever
         float thrust = 0.0f;   // Z/S : -1 à 1, vers l'avant
         float strafe = 0.0f;   // Q/D : -1 à 1, glisser vers la droite
-        float lift = 0.0f;     // Maj/Ctrl : -1 à 1, monter le long du haut du vaisseau (décoller, se poser)
+        float lift = 0.0f;     // Espace/Ctrl : -1 à 1, monter le long du haut du vaisseau (décoller, se poser)
         float roll = 0.0f;     // A/E : -1 à 1, rouler vers la droite
-        bool brake = false;    // Espace : ralentir jusqu'à l'arrêt
+        bool boost = false;    // Maj : ShipComponent::boost, vers l'avant
+        bool travel = false;   // Tab (pressée cette image) : allumer ou éteindre le mode voyage
+        bool brake = false;    // X : ralentir jusqu'à l'arrêt
         // Souris : rotation demandée pendant cette image (radians ; lacet vers la gauche, tangage nez vers le haut),
         // ajoutée aux touches ; le vaisseau la suit sans dépasser sa vitesse de rotation.
         float mouseYaw = 0.0f;
@@ -24,6 +26,9 @@ namespace Flux {
         // Haut du lieu où est le vaisseau piloté (dans le monde, unitaire ; opposé à la gravité du dehors), pour
         // ShipComponent::levelAssist ; nul sans gravité (pas d'aide).
         Math::Vector3f up{};
+        // Densité de l'air là où il est (0 dans l'espace, 1 au sol d'une atmosphère comme celle de la Terre) :
+        // ShipComponent::airMaxSpeed et airGrip.
+        float air = 0.0f;
     };
 
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège
