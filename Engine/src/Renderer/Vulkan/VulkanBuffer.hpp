@@ -12,6 +12,7 @@ namespace Flux::Vk {
         enum class Memory {
             GpuOnly, // mémoire vidéo, remplie par copie depuis un buffer Upload
             Upload,  // visible et mappée en permanence pour le CPU, écrite séquentiellement
+            Readback, // visible et mappée en permanence pour le CPU, écrite par le GPU et relue par le CPU
         };
 
         static std::expected<Buffer, std::string> Create(VmaAllocator allocator, VkDeviceSize size,
@@ -33,6 +34,8 @@ namespace Flux::Vk {
 
         // Copie dans un buffer Upload puis flush (sans effet si la mémoire est cohérente, cas courant sur PC).
         void Write(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+        // Relit un buffer Readback (invalide d'abord le cache du CPU si la mémoire n'est pas cohérente).
+        void Read(void* data, VkDeviceSize size, VkDeviceSize offset = 0) const;
 
         private:
         void Reset();

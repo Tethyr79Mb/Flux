@@ -1,7 +1,7 @@
 #pragma once
 
 // Backend Vulkan du RHI : chaque interface de Renderer/RHI/RHI.hpp y est implémentée sur les enveloppes Vk::
-// (Device, Swapchain, Buffer, Image, GraphicsPipeline).
+// (Device, Swapchain, Buffer, Image, Pipeline).
 
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/Vulkan/VulkanBuffer.hpp"
@@ -22,6 +22,7 @@ namespace Flux::Vk {
         explicit RhiBuffer(Vk::Buffer buffer) : m_buffer(std::move(buffer)) {}
         std::uint64_t GetSize() const override { return m_buffer.GetSize(); }
         void Write(const void* data, std::uint64_t size, std::uint64_t offset) override { m_buffer.Write(data, size, offset); }
+        void Read(void* data, std::uint64_t size, std::uint64_t offset) const override { m_buffer.Read(data, size, offset); }
         VkBuffer GetHandle() const { return m_buffer.GetHandle(); }
 
         private:
@@ -91,17 +92,18 @@ namespace Flux::Vk {
 
     class RhiPipeline final : public RHI::Pipeline {
         public:
-        explicit RhiPipeline(GraphicsPipeline pipeline) : m_pipeline(std::move(pipeline)) {}
-        const GraphicsPipeline& Get() const { return m_pipeline; }
+        explicit RhiPipeline(Vk::Pipeline pipeline) : m_pipeline(std::move(pipeline)) {}
+        const Vk::Pipeline& Get() const { return m_pipeline; }
 
         private:
-        GraphicsPipeline m_pipeline;
+        Vk::Pipeline m_pipeline;
     };
 
     // Liste de commandes de l'image en cours, et l'image de la swapchain où dessine sa passe.
     class RhiCommandList final : public RHI::CommandList {
         public:
         // queryPool : heures notées par WriteTimestamp (VK_NULL_HANDLE : pas d'heures), remise à zéro ici.
+        // image VK_NULL_HANDLE : commandes hors des images (Device::Submit), sans passe vers la swapchain.
         void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent, VkQueryPool queryPool);
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
         void TransitionToPresent();
@@ -117,6 +119,8 @@ namespace Flux::Vk {
         void PushConstants(const void* data, std::uint32_t size) override;
         void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) override;
         void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) override;
+        void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
+        void ComputeBarrier() override;
         void WriteTimestamp(std::uint32_t slot) override;
         // Cases écrites pendant l'image (bit i : case i).
         std::uint32_t GetWrittenTimestamps() const { return m_writtenTimestamps; }
@@ -130,6 +134,8 @@ namespace Flux::Vk {
         VkImageView m_view = VK_NULL_HANDLE;
         VkExtent2D m_extent{};
         VkPipelineLayout m_layout = VK_NULL_HANDLE; // du pipeline lié
+        VkPipelineBindPoint m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        VkShaderStageFlags m_pushStages = 0;
         const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
         const RhiTexture* m_colorTarget = nullptr;  // passe vers une face de texture cube : lisible à sa fin
         std::uint32_t m_colorLayer = 0;
@@ -139,6 +145,7 @@ namespace Flux::Vk {
 
     class RhiDevice final : public RHI::Device {
         public:
+        // nativeWindowHandle nul : sans fenêtre ni swapchain (Submit seulement).
         static std::expected<std::unique_ptr<RhiDevice>, std::string> Create(void* nativeWindowHandle, RHI::Extent extent, bool vsync);
         ~RhiDevice() override;
 
@@ -160,6 +167,8 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) override;
         std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;
         std::expected<std::unique_ptr<RHI::Pipeline>, std::string> CreatePipeline(const RHI::PipelineDesc& desc) override;
+        std::expected<std::unique_ptr<RHI::Pipeline>, std::string> CreateComputePipeline(const RHI::ComputePipelineDesc& desc) override;
+        bool Submit(const std::function<void(RHI::CommandList&)>& record) override;
 
         bool ResizeSwapchain(RHI::Extent extent, bool vsync) override;
         RHI::Extent GetSwapchainExtent() const override;

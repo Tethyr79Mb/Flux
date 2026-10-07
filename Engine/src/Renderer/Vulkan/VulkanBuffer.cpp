@@ -17,6 +17,8 @@ namespace Flux::Vk {
         if (memory == Memory::Upload) {
             allocationInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
                                  | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        } else if (memory == Memory::Readback) {
+            allocationInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
         } else {
             allocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         }
@@ -36,6 +38,11 @@ namespace Flux::Vk {
     void Buffer::Write(const void* data, VkDeviceSize size, VkDeviceSize offset) {
         std::memcpy(static_cast<std::byte*>(m_mapped) + offset, data, size);
         vmaFlushAllocation(m_allocator, m_allocation, offset, size);
+    }
+
+    void Buffer::Read(void* data, VkDeviceSize size, VkDeviceSize offset) const {
+        vmaInvalidateAllocation(m_allocator, m_allocation, offset, size);
+        std::memcpy(data, static_cast<const std::byte*>(m_mapped) + offset, size);
     }
 
     Buffer::~Buffer() {

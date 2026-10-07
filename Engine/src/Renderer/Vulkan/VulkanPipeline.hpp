@@ -3,6 +3,7 @@
 #include "Renderer/Vulkan/Vulkan.hpp"
 
 #include <expected>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -36,21 +37,32 @@ namespace Flux::Vk {
         float depthBiasSlope = 0.0f;
     };
 
-    // Pipeline graphique pour le dynamic rendering ; viewport et scissor sont dynamiques.
-    class GraphicsPipeline {
+    struct ComputePipelineDesc {
+        std::filesystem::path shaderPath;
+        const char* entryPoint = "computeMain";
+        std::span<const VkDescriptorSetLayout> setLayouts;
+        std::uint32_t pushConstantsSize = 0;
+    };
+
+    // Pipeline graphique (dynamic rendering ; viewport et scissor dynamiques) ou de calcul.
+    class Pipeline {
         public:
-        static std::expected<GraphicsPipeline, std::string> Create(VkDevice device, const GraphicsPipelineDesc& desc);
+        static std::expected<Pipeline, std::string> CreateGraphics(VkDevice device, const GraphicsPipelineDesc& desc);
+        static std::expected<Pipeline, std::string> CreateCompute(VkDevice device, const ComputePipelineDesc& desc);
 
-        GraphicsPipeline() = default;
-        ~GraphicsPipeline();
+        Pipeline() = default;
+        ~Pipeline();
 
-        GraphicsPipeline(const GraphicsPipeline&) = delete;
-        GraphicsPipeline& operator=(const GraphicsPipeline&) = delete;
-        GraphicsPipeline(GraphicsPipeline&& other) noexcept;
-        GraphicsPipeline& operator=(GraphicsPipeline&& other) noexcept;
+        Pipeline(const Pipeline&) = delete;
+        Pipeline& operator=(const Pipeline&) = delete;
+        Pipeline(Pipeline&& other) noexcept;
+        Pipeline& operator=(Pipeline&& other) noexcept;
 
         VkPipeline GetHandle() const { return m_pipeline; }
         VkPipelineLayout GetLayout() const { return m_layout; }
+        VkPipelineBindPoint GetBindPoint() const { return m_bindPoint; }
+        // Étapes qui voient les push constants.
+        VkShaderStageFlags GetPushStages() const { return m_pushStages; }
 
         private:
         void Reset();
@@ -58,5 +70,7 @@ namespace Flux::Vk {
         VkDevice m_device = VK_NULL_HANDLE;
         VkPipelineLayout m_layout = VK_NULL_HANDLE;
         VkPipeline m_pipeline = VK_NULL_HANDLE;
+        VkPipelineBindPoint m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        VkShaderStageFlags m_pushStages = 0;
     };
 }

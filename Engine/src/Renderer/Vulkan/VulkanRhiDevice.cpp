@@ -12,6 +12,10 @@ namespace Flux::RHI {
         }
         return std::unique_ptr<Device>(std::move(*device));
     }
+
+    std::expected<std::unique_ptr<Device>, std::string> Device::CreateHeadless() {
+        return Create(nullptr, {}, false);
+    }
 }
 
 namespace Flux::Vk {
@@ -37,6 +41,9 @@ namespace Flux::Vk {
             }
             if (RHI::HasFlag(stages, RHI::ShaderStage::Fragment)) {
                 flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+            }
+            if (RHI::HasFlag(stages, RHI::ShaderStage::Compute)) {
+                flags |= VK_SHADER_STAGE_COMPUTE_BIT;
             }
             return flags;
         }
@@ -71,9 +78,11 @@ namespace Flux::Vk {
         rhi->m_device = std::move(*device);
         rhi->m_extent = extent;
         rhi->m_vsync = vsync;
-        rhi->m_swapchain = std::make_unique<Swapchain>(*rhi->m_device);
-        if (!rhi->m_swapchain->Recreate({extent.width, extent.height}, vsync)) {
-            return std::unexpected("création de la swapchain");
+        if (nativeWindowHandle) {
+            rhi->m_swapchain = std::make_unique<Swapchain>(*rhi->m_device);
+            if (!rhi->m_swapchain->Recreate({extent.width, extent.height}, vsync)) {
+                return std::unexpected("création de la swapchain");
+            }
         }
         rhi->m_timestampPeriod = rhi->m_device->GetTimestampPeriod();
         if (!rhi->CreateFrames()) {
@@ -170,6 +179,13 @@ namespace Flux::Vk {
 
     std::expected<std::unique_ptr<RHI::Buffer>, std::string> RhiDevice::CreateBuffer(const RHI::BufferDesc& desc, const void* data) {
         const VkBufferUsageFlags usage = ToVulkan(desc.usage);
+        if (desc.memory == RHI::MemoryType::Readback) {
+            auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, usage, Vk::Buffer::Memory::Readback);
+            if (!buffer) {
+                return std::unexpected(buffer.error());
+            }
+            return std::make_unique<RhiBuffer>(std::move(*buffer));
+        }
         if (desc.memory == RHI::MemoryType::Upload) {
             auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, usage, Vk::Buffer::Memory::Upload);
             if (!buffer) {
@@ -363,14 +379,42 @@ namespace Flux::Vk {
         vkDesc.alphaBlend = desc.blend == RHI::BlendMode::Alpha;
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
-        auto pipeline = GraphicsPipeline::Create(m_device->GetHandle(), vkDesc);
+        auto pipeline = Pipeline::CreateGraphics(m_device->GetHandle(), vkDesc);
         if (!pipeline) {
             return std::unexpected(pipeline.error());
         }
         return std::make_unique<RhiPipeline>(std::move(*pipeline));
     }
 
+    std::expected<std::unique_ptr<RHI::Pipeline>, std::string> RhiDevice::CreateComputePipeline(const RHI::ComputePipelineDesc& desc) {
+        std::vector<VkDescriptorSetLayout> setLayouts;
+        for (const RHI::BindGroupLayout* layout : desc.bindGroupLayouts) {
+            setLayouts.push_back(static_cast<const RhiBindGroupLayout*>(layout)->GetHandle());
+        }
+        ComputePipelineDesc vkDesc;
+        vkDesc.shaderPath = desc.shaderPath;
+        vkDesc.entryPoint = desc.entryPoint;
+        vkDesc.setLayouts = setLayouts;
+        vkDesc.pushConstantsSize = desc.pushConstantsSize;
+        auto pipeline = Pipeline::CreateCompute(m_device->GetHandle(), vkDesc);
+        if (!pipeline) {
+            return std::unexpected(pipeline.error());
+        }
+        return std::make_unique<RhiPipeline>(std::move(*pipeline));
+    }
+
+    bool RhiDevice::Submit(const std::function<void(RHI::CommandList&)>& record) {
+        return m_device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
+            RhiCommandList commandList;
+            commandList.Begin(commandBuffer, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, VK_NULL_HANDLE);
+            record(commandList);
+        });
+    }
+
     bool RhiDevice::ResizeSwapchain(RHI::Extent extent, bool vsync) {
+        if (!m_swapchain) {
+            return false;
+        }
         const VkExtent2D current = m_swapchain->GetExtent();
         if (extent.width == current.width && extent.height == current.height && vsync == m_vsync) {
             return true;
@@ -386,15 +430,21 @@ namespace Flux::Vk {
     }
 
     RHI::Extent RhiDevice::GetSwapchainExtent() const {
+        if (!m_swapchain) {
+            return {};
+        }
         const VkExtent2D extent = m_swapchain->GetExtent();
         return {extent.width, extent.height};
     }
 
     RHI::Format RhiDevice::GetSwapchainFormat() const {
-        return FromVulkan(m_swapchain->GetFormat());
+        return m_swapchain ? FromVulkan(m_swapchain->GetFormat()) : RHI::Format::Undefined;
     }
 
     RHI::PresentMode RhiDevice::GetPresentMode() const {
+        if (!m_swapchain) {
+            return RHI::PresentMode::Other;
+        }
         switch (m_swapchain->GetPresentMode()) {
             case VK_PRESENT_MODE_FIFO_KHR: return RHI::PresentMode::Fifo;
             case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return RHI::PresentMode::FifoRelaxed;
@@ -405,6 +455,9 @@ namespace Flux::Vk {
     }
 
     RHI::FrameStatus RhiDevice::BeginFrame() {
+        if (!m_swapchain) {
+            return RHI::FrameStatus::Error; // sans fenêtre : Submit seulement
+        }
         using Clock = std::chrono::steady_clock;
         const auto milliseconds = [](Clock::duration duration) { return std::chrono::duration<double, std::milli>(duration).count(); };
         Frame& frame = m_frames[m_frameIndex];
