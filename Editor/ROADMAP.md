@@ -13,7 +13,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Barre de menus (Fichier, Édition…), dialogues Windows natifs, étoile dans le titre si la scène est modifiée.
 - ✅ Paramètres : graphiques (GPU, V-Sync), interface, son, touches.
 - ✅ Console.
-- 🔨 Version de l'éditeur dans le titre (PR #93).
+- ✅ Version de l'éditeur dans le titre.
 
 ### Scène
 - ✅ Onglet « Scènes » : scènes en vignettes rangées en dossiers, objets regroupés par type avec icônes, glisser-déposer pour l'ordre et la hiérarchie.
