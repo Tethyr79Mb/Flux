@@ -43,7 +43,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un.
-5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, panneau Moteur.
+5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, version, panneau Moteur.
 6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces et changement de scène en fin d'image.
 
 ## Rendu
@@ -142,5 +142,5 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 - CMake + Ninja, préréglages MSVC (`CMakePresets.json`). Dépendances par FetchContent dans `out/deps/<préréglage>`.
 - `cmake/FluxSources.cmake` trouve les sources tout seul ; `FluxPrecompiled.cmake` les en-têtes précompilés ;
-  `FluxResources.cmake` les shaders.
+  `FluxResources.cmake` les shaders ; `FluxVersion.cmake` la version affichée (numéro de `project()` + commit Git).
 - CI : `.github/workflows/msvc.yml`, Debug + Release, FluxTests.
