@@ -363,7 +363,16 @@ namespace Flux {
                 const JPH::Shape* shape = GetShipShape(scene, entity);
                 const double size = shape ? shape->GetLocalBounds().GetExtent().Length() : 10.0;
                 const double speed = Math::Length(ship.velocity);
-                probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), size + 20.0 + speed, speed});
+                const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
+                probes.push_back({position, size + 20.0 + speed, speed});
+                // Rapide : le sol de là où il sera dans un quart, une demie et une seconde (le disque autour de lui est
+                // borné, voir PlanetGround::Request).
+                const Math::Vector3d velocity(scene.GetWorldRotation(entity).Rotate(ship.velocity));
+                for (const double ahead : {0.25, 0.5, 1.0}) {
+                    if (speed * ahead > 100.0) {
+                        probes.push_back({position + velocity * ahead, size + 20.0 + speed, speed});
+                    }
+                }
             }
             const Grid& world = *grids.front();
             const JPH::BodyInterface& bodyInterface = world.system->GetBodyInterface();
@@ -1347,6 +1356,10 @@ namespace Flux {
             count += static_cast<int>(std::ranges::count_if(grid->bodies, [](const auto& entry) { return !entry.second.IsInvalid(); }));
         }
         return count;
+    }
+
+    int PhysicsWorld::GetGroundTileCount() const {
+        return m_impl->planetGround.GetTileCount();
     }
 
     float PhysicsWorld::CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from,
