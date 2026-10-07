@@ -149,7 +149,6 @@ namespace Flux {
             .Field("strafeSpeed", "Glissement (m/s)", &ShipComponent::strafeSpeed, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1})
             .Field("levelAssist", "Stabiliser à plat", &ShipComponent::levelAssist)
             .Field("levelRate", "Retour à plat (1/s)", &ShipComponent::levelRate, {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 2})
-            .Field("airMaxSpeed", "Vitesse max dans l'air (m/s)", &ShipComponent::airMaxSpeed, {.speed = 1.0, .min = 1.0, .max = 1.0e5, .decimals = 0})
             .Field("airGrip", "Tenue dans l'air (1/s)", &ShipComponent::airGrip, {.speed = 0.05, .min = 0.0, .max = 50.0, .decimals = 2})
             .Field("boost", "Boost (x)", &ShipComponent::boost, {.speed = 0.05, .min = 1.0, .max = 20.0, .decimals = 2})
             .Field("travelFactor", "Mode voyage (x)", &ShipComponent::travelFactor, {.speed = 0.1, .min = 1.0, .max = 1000.0, .decimals = 1})
