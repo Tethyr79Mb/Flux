@@ -123,18 +123,17 @@ namespace Flux::Seats {
                 ship.velocity = Math::Quaternionf::FromAxisAngle(ship.angularVelocity, angle).Conjugate().Rotate(ship.velocity);
             }
 
-            // Dans l'air, la traînée borne la vitesse (comme v² × densité : la vitesse max varie comme 1 / racine de la
-            // densité) et la portance range la vitesse derrière le nez : virer ou cabrer change vraiment de direction.
+            // Dans l'air, la portance range la vitesse derrière le nez : virer ou cabrer change vraiment de direction.
+            // Pas de traînée qui borne la vitesse : on fonce au ras du sol aussi vite que dans l'espace.
             const float air = std::max(input.air, 0.0f);
             // Boost : plus vite, plus fort, droit devant (sans effet en mode voyage, déjà plus rapide).
             const bool boosting = input.boost && !input.brake && !ship.grounded && ship.travelLevel == 0.0f;
             const float boost = boosting ? std::max(ship.boost, 1.0f) : 1.0f;
             const float acceleration = ship.acceleration * boost * travel;
-            float maxSpeed = ship.maxSpeed * travel;
+            const float maxSpeed = ship.maxSpeed * travel;
             // En mode voyage, la vitesse suit le nez (comme dans l'air) : virer change vraiment de direction.
             float grip = std::min(1.0f, 2.0f * ship.travelLevel * delta);
             if (air > 0.0f) {
-                maxSpeed = std::min(maxSpeed, ship.airMaxSpeed / std::sqrt(air));
                 grip = std::max(grip, std::min(1.0f, ship.airGrip * std::sqrt(air) * delta));
             }
 
