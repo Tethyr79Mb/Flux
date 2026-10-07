@@ -58,17 +58,26 @@ float AtmosphereColumn(float radius, float height, float falloff, float cosine)
 }
 
 // Épaisseurs (Rayleigh, Mie) de `position` (relatif au centre) vers le soleil, et en z la part de soleil non cachée
-// par le sol : fondue sur `soft` mètres quand le rayon le frôle (comme Atmosphere.cpp : une hauteur d'échelle dans
-// l'air, sinon des arcs côté nuit ; net au sol).
-float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float soft)
+// par le sol (sphère du rayon du sol, ou plus bas que le point : fond d'une vallée). Le soleil se couche quand son
+// cosinus passe sous celui de l'horizon de cette sphère, puis s'éteint en douceur, sans marche sur la ligne
+// jour/nuit : sur `soft` mètres sous le sol (dans l'air : une hauteur d'échelle, sinon des arcs côté nuit), ou si
+// `angle` > 0, sur `angle` radians de soleil sous l'horizon (au sol : un coucher net dessinait une ligne droite, la
+// même pour tous les creux, là où les pentes tournées vers le soleil étaient encore éclairées). Comme Atmosphere.cpp.
+float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float soft, float angle)
 {
     const float distance = max(length(position), 1.0);
     const float cosine = dot(position, toSun) / distance;
     float visible = 1.0;
     if (cosine < 0.0) {
-        const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
         const float ground = min(a.center.w, distance);
-        visible = smoothstep(ground - soft, ground + soft, closest);
+        if (angle > 0.0) {
+            const float ratio = ground / distance;
+            const float horizon = -sqrt(max(0.0, 1.0 - ratio * ratio)); // cosinus du soleil à l'horizon
+            visible = smoothstep(horizon - angle, horizon, cosine);
+        } else {
+            const float closest = distance * sqrt(max(0.0, 1.0 - cosine * cosine));
+            visible = smoothstep(ground - 2.0 * soft, ground, closest);
+        }
         if (visible <= 0.0) {
             return float3(0.0);
         }
@@ -78,10 +87,13 @@ float3 AtmosphereSunDepth(AtmosphereData a, float3 position, float3 toSun, float
                   AtmosphereColumn(a.center.w, height, a.mie.y, cosine), visible);
 }
 
+// Soleil couché au sol sur cet angle (radians, environ 3°) : voir AtmosphereSunDepth.
+static const float AtmosphereSunsetAngle = 0.05;
+
 // Part de la lumière du soleil qui arrive en `position` (relatif au centre) : rougie au couchant, nulle la nuit.
 float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSun)
 {
-    const float3 depth = AtmosphereSunDepth(a, position, toSun, 1.0);
+    const float3 depth = AtmosphereSunDepth(a, position, toSun, 0.0, AtmosphereSunsetAngle);
     return depth.z <= 0.0 ? float3(0.0) : AtmosphereExtinction(a, depth.x, depth.y) * depth.z;
 }
 
@@ -90,8 +102,14 @@ float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSu
 float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, float3 toSun, float3 sunColor, int steps,
                          float jitter, out float3 transmittance)
 {
+    return AtmosphereScatterFrom(a, -a.center.xyz, direction, distance, toSun, sunColor, steps, jitter, transmittance);
+}
+
+// La même depuis `origin` (relatif au centre de la planète) au lieu de la caméra : le ciel que reflète l'eau.
+float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, float3 sunColor,
+                             int steps, float jitter, out float3 transmittance)
+{
     transmittance = float3(1.0);
-    const float3 origin = -a.center.xyz;
     const float2 hit = AtmosphereRaySphere(origin, direction, a.mie.w);
     if (hit.x > hit.y || hit.y <= 0.0) {
         return float3(0.0);
@@ -113,7 +131,7 @@ float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, flo
         const float mie = exp(-h * a.mie.y) * step;
         viewRayleigh += 0.5 * rayleigh;
         viewMie += 0.5 * mie;
-        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun, 1.0 / a.rayleigh.w);
+        const float3 sunDepth = AtmosphereSunDepth(a, p, toSun, 1.0 / a.rayleigh.w, 0.0);
         if (sunDepth.z > 0.0) {
             const float3 light = AtmosphereExtinction(a, viewRayleigh + sunDepth.x, viewMie + sunDepth.y) * sunDepth.z;
             sumRayleigh += light * rayleigh;
@@ -143,10 +161,4 @@ float3 AtmosphereAmbient(AtmosphereData a, float3 position, float3 normal, float
     const float3 sky = lerp(a.ambient[i0].rgb, a.ambient[i0 + 1].rgb, saturate(index - float(i0)));
     const float altitude = exp(-max(distance - a.center.w, 0.0) * a.rayleigh.w);
     return sky * altitude * (0.6 + 0.4 * dot(normal, up));
-}
-
-// Bruit par pixel pour décaler les pas (« interleaved gradient noise » de Jimenez) : sans motif visible.
-float AtmosphereJitter(float2 pixel)
-{
-    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
 }

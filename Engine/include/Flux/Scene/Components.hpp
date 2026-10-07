@@ -166,8 +166,32 @@ namespace Flux {
         float radius = 60000.0f; // m, au niveau zéro du relief
         float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
         std::int32_t seed = 1;
+        // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), plage
+        // de sable sous sandLevel, neige au-dessus de snowLevel (en % du relief, au-dessus du niveau zéro : ils suivent
+        // quand le relief change). Ailleurs, le climat choisit (biomes) : la température baisse vers les pôles (axe y
+        // de la planète) et en altitude (6,5 °C par km) ; l'humidité (bruit à grande échelle, plus forte près de la
+        // mer) va de déserts (sable) à prairies (herbe) en passant par la terre nue ; le froid jaunit l'herbe
+        // (toundra) puis la couvre de neige.
+        // Avec les images du dossier Textures/Sol des assets (roche, herbe, terre, sable, neige), chaque matière est une
+        // texture plaquée sur le relief et les couleurs ci-dessous ne servent plus ; sans elles, couleurs unies.
+        // Sans zones : roche partout (une lune).
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;
+        bool zones = true;
+        Math::LinearColor grassColor{0.07f, 0.11f, 0.035f};
+        Math::LinearColor sandColor{0.5f, 0.42f, 0.3f};
+        Math::LinearColor snowColor{0.85f, 0.88f, 0.92f};
+        Math::LinearColor soilColor{0.14f, 0.09f, 0.055f};
+        float temperature = 20.0f;      // °C à l'équateur, au niveau zéro
+        float poleTemperature = -30.0f; // °C aux pôles
+        float humidity = 0.5f;          // 0 : planète désertique, 1 : très humide
+        float sandLevel = 0.3f; // % du relief : une plage étroite au-dessus de la mer
+        float snowLevel = 65.0f;
+        // Océan : une surface lisse au niveau de la mer (seaLevel, en % du relief comme le sable), au-dessus du fond qui
+        // garde son relief. Claire là où il est peu profond (on voit le fond), de la couleur de l'eau au large.
+        bool ocean = true;
+        float seaLevel = 0.0f;
+        Math::LinearColor waterColor{0.01f, 0.045f, 0.07f};
         float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
         // Atmosphère (Flux/Graphics/Atmosphere.hpp) : ciel coloré vu du sol, brume au loin, halo vu de l'espace.
         float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre
@@ -282,10 +306,24 @@ namespace Flux {
         // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Touche H en vol.
         bool levelAssist = true;
         float levelRate = 1.5f;        // 1/s : vitesse de retour à plat (1,5 : l'inclinaison fond de 78 % par seconde)
+        // Dans l'atmosphère d'une planète : vitesse à laquelle l'air range sa vitesse derrière son nez (1/s, au sol,
+        // moins haut où l'air est moins dense ; comme un avion porté par ses ailes). Dans l'espace, rien : il garde
+        // son inertie.
+        float airGrip = 2.0f;
+        // Boost (Maj tenue) : vitesse max et accélération multipliées d'autant, le vaisseau fonce vers l'avant ;
+        // relâché, il revient à sa vitesse max.
+        float boost = 2.0f;
+        // Mode voyage (Tab : allumer, éteindre) : monte en régime en travelSpoolTime secondes jusqu'à travelFactor fois
+        // sa vitesse max et son accélération ; il vire alors plus lentement (le tiers) et sa vitesse suit son nez.
+        // Seulement dans l'espace : l'atmosphère d'une planète, le frein ou un atterrissage le coupent.
+        float travelFactor = 10.0f;
+        float travelSpoolTime = 3.0f;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;
         float cruiseSpeed = 0.0f;
+        bool travel = false;     // mode voyage demandé
+        float travelLevel = 0.0f; // régime du mode voyage, de 0 (éteint) à 1
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

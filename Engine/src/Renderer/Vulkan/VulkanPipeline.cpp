@@ -22,33 +22,77 @@ namespace Flux::Vk {
             file.read(reinterpret_cast<char*>(code.data()), static_cast<std::streamsize>(size));
             return code;
         }
+
+        std::expected<VkShaderModule, std::string> CreateModule(VkDevice device, const std::filesystem::path& path) {
+            auto code = ReadSpirv(path);
+            if (!code) {
+                return std::unexpected(code.error());
+            }
+            VkShaderModuleCreateInfo moduleInfo{};
+            moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+            moduleInfo.codeSize = code->size() * sizeof(uint32_t);
+            moduleInfo.pCode = code->data();
+            VkShaderModule shaderModule = VK_NULL_HANDLE;
+            if (!Check(vkCreateShaderModule(device, &moduleInfo, nullptr, &shaderModule), "vkCreateShaderModule")) {
+                return std::unexpected("création du module de " + path.string());
+            }
+            return shaderModule;
+        }
+
+        VkResult CreateLayout(VkDevice device, std::span<const VkDescriptorSetLayout> setLayouts,
+                              std::span<const VkPushConstantRange> pushConstants, VkPipelineLayout& layout) {
+            VkPipelineLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            layoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+            layoutInfo.pSetLayouts = setLayouts.data();
+            layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size());
+            layoutInfo.pPushConstantRanges = pushConstants.data();
+            return vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
+        }
     }
 
-    std::expected<GraphicsPipeline, std::string> GraphicsPipeline::Create(VkDevice device, const GraphicsPipelineDesc& desc) {
-        auto code = ReadSpirv(desc.shaderPath);
-        if (!code) {
-            return std::unexpected(code.error());
+    std::expected<Pipeline, std::string> Pipeline::CreateCompute(VkDevice device, const ComputePipelineDesc& desc) {
+        auto shaderModule = CreateModule(device, desc.shaderPath);
+        if (!shaderModule) {
+            return std::unexpected(shaderModule.error());
         }
-
-        VkShaderModuleCreateInfo moduleInfo{};
-        moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        moduleInfo.codeSize = code->size() * sizeof(uint32_t);
-        moduleInfo.pCode = code->data();
-        VkShaderModule shaderModule = VK_NULL_HANDLE;
-        if (!Check(vkCreateShaderModule(device, &moduleInfo, nullptr, &shaderModule), "vkCreateShaderModule")) {
-            return std::unexpected("création du module de " + desc.shaderPath.string());
-        }
-
-        GraphicsPipeline pipeline;
+        Pipeline pipeline;
         pipeline.m_device = device;
+        pipeline.m_bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+        pipeline.m_pushStages = VK_SHADER_STAGE_COMPUTE_BIT;
+        const VkPushConstantRange pushConstants{VK_SHADER_STAGE_COMPUTE_BIT, 0, desc.pushConstantsSize};
+        const std::span<const VkPushConstantRange> ranges(&pushConstants, desc.pushConstantsSize > 0 ? 1 : 0);
+        if (!Check(CreateLayout(device, desc.setLayouts, ranges, pipeline.m_layout), "vkCreatePipelineLayout")) {
+            vkDestroyShaderModule(device, *shaderModule, nullptr);
+            return std::unexpected("création du pipeline layout");
+        }
 
-        VkPipelineLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layoutInfo.setLayoutCount = static_cast<uint32_t>(desc.setLayouts.size());
-        layoutInfo.pSetLayouts = desc.setLayouts.data();
-        layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(desc.pushConstants.size());
-        layoutInfo.pPushConstantRanges = desc.pushConstants.data();
-        if (!Check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipeline.m_layout), "vkCreatePipelineLayout")) {
+        VkComputePipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        pipelineInfo.stage.module = *shaderModule;
+        pipelineInfo.stage.pName = desc.entryPoint;
+        pipelineInfo.layout = pipeline.m_layout;
+        const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline.m_pipeline);
+        vkDestroyShaderModule(device, *shaderModule, nullptr);
+        if (!Check(result, "vkCreateComputePipelines")) {
+            return std::unexpected("création du pipeline de calcul pour " + desc.shaderPath.string());
+        }
+        return pipeline;
+    }
+
+    std::expected<Pipeline, std::string> Pipeline::CreateGraphics(VkDevice device, const GraphicsPipelineDesc& desc) {
+        auto module = CreateModule(device, desc.shaderPath);
+        if (!module) {
+            return std::unexpected(module.error());
+        }
+        const VkShaderModule shaderModule = *module;
+
+        Pipeline pipeline;
+        pipeline.m_device = device;
+        pipeline.m_pushStages = desc.pushConstants.empty() ? 0 : desc.pushConstants.front().stageFlags;
+        if (!Check(CreateLayout(device, desc.setLayouts, desc.pushConstants, pipeline.m_layout), "vkCreatePipelineLayout")) {
             vkDestroyShaderModule(device, shaderModule, nullptr);
             return std::unexpected("création du pipeline layout");
         }
@@ -158,26 +202,30 @@ namespace Flux::Vk {
         return pipeline;
     }
 
-    GraphicsPipeline::~GraphicsPipeline() {
+    Pipeline::~Pipeline() {
         Reset();
     }
 
-    GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept
+    Pipeline::Pipeline(Pipeline&& other) noexcept
         : m_device(std::exchange(other.m_device, VK_NULL_HANDLE)),
           m_layout(std::exchange(other.m_layout, VK_NULL_HANDLE)),
-          m_pipeline(std::exchange(other.m_pipeline, VK_NULL_HANDLE)) {}
+          m_pipeline(std::exchange(other.m_pipeline, VK_NULL_HANDLE)),
+          m_bindPoint(other.m_bindPoint),
+          m_pushStages(other.m_pushStages) {}
 
-    GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept {
+    Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
         if (this != &other) {
             Reset();
             m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
             m_layout = std::exchange(other.m_layout, VK_NULL_HANDLE);
             m_pipeline = std::exchange(other.m_pipeline, VK_NULL_HANDLE);
+            m_bindPoint = other.m_bindPoint;
+            m_pushStages = other.m_pushStages;
         }
         return *this;
     }
 
-    void GraphicsPipeline::Reset() {
+    void Pipeline::Reset() {
         if (m_device != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, m_pipeline, nullptr);
             vkDestroyPipelineLayout(m_device, m_layout, nullptr);

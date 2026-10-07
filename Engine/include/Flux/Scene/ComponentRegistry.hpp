@@ -88,6 +88,9 @@ namespace Flux {
         // ajouter ensemble. Il suffit de le déclarer d'un côté.
         std::vector<std::string> excludes;
         std::vector<FieldInfo> fields;
+        // Champs retirés ou renommés (clés) : ignorés à la lecture, pour que les scènes déjà enregistrées s'ouvrent
+        // encore ; un autre champ inconnu reste une erreur (faute de frappe dans un fichier écrit à la main).
+        std::vector<std::string> removedFields;
 
         // L'un des deux déclare l'autre incompatible.
         bool Excludes(const ComponentInfo& other) const {
@@ -192,6 +195,11 @@ namespace Flux {
 
         ComponentBuilder& Excludes(std::string key) {
             m_info->excludes.push_back(std::move(key));
+            return *this;
+        }
+
+        ComponentBuilder& RemovedField(std::string key) {
+            m_info->removedFields.push_back(std::move(key));
             return *this;
         }
 

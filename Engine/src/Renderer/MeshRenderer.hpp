@@ -3,12 +3,14 @@
 #include "Flux/Animation/Animation.hpp"
 #include "Flux/Graphics/ShadowCascades.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Renderer/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/PlanetRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 
 #include <array>
+#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -36,6 +38,8 @@ namespace Flux {
         // Device::BeginFrame : les ressources de l'image frameIndex sont libres.
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
+        // Calculs sur le GPU préparés par Prepare (tuiles des planètes), avant toute passe.
+        void Compute(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image (la carte est
         // effacée puis rendue lisible par Draw).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
@@ -58,6 +62,7 @@ namespace Flux {
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
             bool visible = true;   // false : ombre seulement (personnage vu de l'intérieur)
             bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
+            bool ocean = false;    // surface de l'océan d'une tuile de planète (transparente, sans ombre)
         };
 
         // Doit correspondre à DrawData dans shaders/Mesh.slang : matrices d'une entité, relatives à la caméra.
@@ -67,7 +72,10 @@ namespace Flux {
             // Matrice des normales par colonnes ; normal[1][3] : premier os dans le buffer des os (bits d'un entier)
             std::array<std::array<float, 4>, 3> normal;
             std::array<float, 4> rim; // lumière de contour : couleur x intensité ; finesse (0 : aucune)
+            std::array<float, 4> ground; // tuile de planète : xyz, son centre modulo GroundPeriod (textures du sol)
         };
+        // Période (m) des coordonnées des textures du sol : multiple de leurs tailles (GroundScale dans Mesh.slang).
+        static constexpr double GroundPeriod = 1024.0;
 
         // Doit correspondre à LightData dans shaders/Mesh.slang : une lumière de la scène.
         struct LightData
@@ -121,7 +129,7 @@ namespace Flux {
 
         explicit MeshRenderer(RHI::Device& device) : m_device(device) {}
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
-        const Pipelines& GetPipelines(const GpuModel& model) const;
+        const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
@@ -140,6 +148,9 @@ namespace Flux {
         Pipelines m_skinned;
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
+        // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).
+        Pipelines m_ocean;
+        std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now(); // vagues
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.
         std::unique_ptr<RHI::BindGroupLayout> m_frameLayout;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_jointBuffers;
@@ -166,6 +177,9 @@ namespace Flux {
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         std::vector<PreparedInterior> m_interiors;
         std::vector<PlanetRenderer::Tile> m_planetTiles;
+        std::vector<PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
         PoseEvaluator m_poseEvaluator;
+        GroundTextures m_ground;
+        const RHI::BindGroup* m_groundGroup = nullptr; // celui de m_ground pour l'image en préparation
     };
 }

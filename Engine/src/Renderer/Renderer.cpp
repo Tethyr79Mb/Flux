@@ -128,6 +128,7 @@ namespace Flux {
             RHI::CommandList& commands = device->GetCommandList();
             commands.WriteTimestamp(FrameStart);
             if (sceneVisible) {
+                meshes->Compute(commands, frameIndex); // compté avec les ombres
                 sky->Bake(commands, frameIndex); // compté avec les ombres, l'image où il a lieu
                 meshes->DrawShadows(commands, frameIndex);
             }

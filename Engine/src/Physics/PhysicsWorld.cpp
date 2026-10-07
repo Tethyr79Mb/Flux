@@ -364,7 +364,16 @@ namespace Flux {
                 const JPH::Shape* shape = GetShipShape(scene, entity);
                 const double size = shape ? shape->GetLocalBounds().GetExtent().Length() : 10.0;
                 const double speed = Math::Length(ship.velocity);
-                probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), size + 20.0 + speed, speed});
+                const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
+                probes.push_back({position, size + 20.0 + speed, speed});
+                // Rapide : le sol de là où il sera dans un quart, une demie et une seconde (le disque autour de lui est
+                // borné, voir PlanetGround::Request).
+                const Math::Vector3d velocity(scene.GetWorldRotation(entity).Rotate(ship.velocity));
+                for (const double ahead : {0.25, 0.5, 1.0}) {
+                    if (speed * ahead > 100.0) {
+                        probes.push_back({position + velocity * ahead, size + 20.0 + speed, speed});
+                    }
+                }
             }
             const Grid& world = *grids.front();
             const JPH::BodyInterface& bodyInterface = world.system->GetBodyInterface();
@@ -625,10 +634,11 @@ namespace Flux {
                             transform.rotation = leveled;
                         }
                     }
-                    // Posé : obstacle à moins de 5 cm vers son bas, face tournée vers son haut (pente < 45°). Il ne
+                    // Posé : obstacle à moins de 15 cm vers son bas (sur un sol bosselé, le stabilisateur le soulève de
+                    // quelques centimètres en le remettant à plat), face tournée vers son haut (pente < 45°). Il ne
                     // tourne plus de lui-même (le stabilisateur, si : il se met à plat sur ses roues).
                     const JPH::Vec3 down = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, -1.0f, 0.0f}));
-                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, down * 0.05f, fraction, normal)
+                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, down * 0.15f, fraction, normal)
                                     && normal.Dot(-down) > 0.7f;
                     if (ship.grounded) {
                         ship.angularVelocity = {};
@@ -674,6 +684,8 @@ namespace Flux {
                         const JPH::Vec3 velocity = ToJolt(transform.rotation.Rotate(ship.velocity));
                         const JPH::Vec3 kept = velocity - normal * std::min(0.0f, velocity.Dot(normal));
                         ship.velocity = transform.rotation.Conjugate().Rotate(FromJolt(kept));
+                        // Et sa vitesse de croisière ce qui reste vers l'avant : contre le sol, il ne pousse plus.
+                        ship.cruiseSpeed = std::min(ship.cruiseSpeed, std::max(-ship.velocity.z, 0.0f));
                     }
                     const JPH::Vec3 moved = position - start;
                     move = {moved.GetX(), moved.GetY(), moved.GetZ()};
@@ -1380,6 +1392,10 @@ namespace Flux {
             count += static_cast<int>(std::ranges::count_if(grid->bodies, [](const auto& entry) { return !entry.second.IsInvalid(); }));
         }
         return count;
+    }
+
+    int PhysicsWorld::GetGroundTileCount() const {
+        return m_impl->planetGround.GetTileCount();
     }
 
     float PhysicsWorld::CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from,

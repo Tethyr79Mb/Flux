@@ -31,13 +31,17 @@ namespace Flux::Vk {
         device->m_instance = instance.value();
         volkLoadInstance(device->m_instance.instance);
 
-        VkWin32SurfaceCreateInfoKHR surfaceInfo{};
-        surfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-        surfaceInfo.hinstance = GetModuleHandleW(nullptr);
-        surfaceInfo.hwnd = static_cast<HWND>(nativeWindowHandle);
-        if (!Check(vkCreateWin32SurfaceKHR(device->m_instance.instance, &surfaceInfo, nullptr, &device->m_surface),
-                   "vkCreateWin32SurfaceKHR")) {
-            return std::unexpected("création de la surface Vulkan");
+        // Sans fenêtre (calculs, tests) : pas de surface ni de file de présentation.
+        const bool headless = nativeWindowHandle == nullptr;
+        if (!headless) {
+            VkWin32SurfaceCreateInfoKHR surfaceInfo{};
+            surfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+            surfaceInfo.hinstance = GetModuleHandleW(nullptr);
+            surfaceInfo.hwnd = static_cast<HWND>(nativeWindowHandle);
+            if (!Check(vkCreateWin32SurfaceKHR(device->m_instance.instance, &surfaceInfo, nullptr, &device->m_surface),
+                       "vkCreateWin32SurfaceKHR")) {
+                return std::unexpected("création de la surface Vulkan");
+            }
         }
 
         VkPhysicalDeviceVulkan13Features features13{};
@@ -46,15 +50,23 @@ namespace Flux::Vk {
         features13.synchronization2 = VK_TRUE;
 
         vkb::PhysicalDeviceSelector selector(device->m_instance);
-        auto physicalDevice = selector.set_minimum_version(1, 3)
-                                      .set_required_features_13(features13)
-                                      .set_surface(device->m_surface)
-                                      .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete)
-                                      .select();
+        selector.set_minimum_version(1, 3)
+                .set_required_features_13(features13)
+                .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
+        if (headless) {
+            selector.defer_surface_initialization();
+        } else {
+            selector.set_surface(device->m_surface);
+        }
+        auto physicalDevice = selector.select();
         if (!physicalDevice) {
             return std::unexpected(std::format("aucun GPU compatible Vulkan 1.3 : {}", physicalDevice.error().message()));
         }
         device->m_physicalDevice = physicalDevice.value();
+        // Filtrage anisotrope (sol vu de biais net au loin) : présent sur tous les GPU de bureau, facultatif quand même.
+        VkPhysicalDeviceFeatures anisotropy{};
+        anisotropy.samplerAnisotropy = VK_TRUE;
+        device->m_anisotropy = device->m_physicalDevice.enable_features_if_present(anisotropy);
 
         vkb::DeviceBuilder deviceBuilder(device->m_physicalDevice);
         auto logicalDevice = deviceBuilder.build();
@@ -66,13 +78,18 @@ namespace Flux::Vk {
 
         auto graphicsQueue = device->m_device.get_queue(vkb::QueueType::graphics);
         auto graphicsFamily = device->m_device.get_queue_index(vkb::QueueType::graphics);
-        auto presentQueue = device->m_device.get_queue(vkb::QueueType::present);
-        if (!graphicsQueue || !graphicsFamily || !presentQueue) {
-            return std::unexpected("le GPU n'expose pas de file graphique et de présentation");
+        if (!graphicsQueue || !graphicsFamily) {
+            return std::unexpected("le GPU n'expose pas de file graphique");
         }
         device->m_graphicsQueue = graphicsQueue.value();
         device->m_graphicsQueueFamily = graphicsFamily.value();
-        device->m_presentQueue = presentQueue.value();
+        if (!headless) {
+            auto presentQueue = device->m_device.get_queue(vkb::QueueType::present);
+            if (!presentQueue) {
+                return std::unexpected("le GPU n'expose pas de file de présentation");
+            }
+            device->m_presentQueue = presentQueue.value();
+        }
 
         VmaVulkanFunctions vmaFunctions{};
         vmaFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;

@@ -534,6 +534,45 @@ namespace {
         flight.levelAssist = true;
         frames(3.0, {.up = up});
         CHECK(std::abs(bank()) < 1.0f);
+
+        // Dans l'air, la vitesse se range derrière le nez : un glissement de côté de 150 m/s fond en une seconde
+        // (dans l'espace, les propulseurs n'en retirent que 10 m/s). La vitesse max y est la même que dans l'espace.
+        flight.maxSpeed = 1000.0f;
+        flight.velocity = {150.0f, 0.0f, -100.0f};
+        flight.cruiseSpeed = 100.0f;
+        frames(1.0, {.up = up});
+        CHECK(flight.velocity.x > 135.0f);
+        flight.velocity = {150.0f, 0.0f, -100.0f};
+        frames(1.0, {.up = up, .air = 1.0f});
+        CHECK(flight.velocity.x < 25.0f && std::abs(flight.velocity.z + 100.0f) < 1.0f);
+        flight.cruiseSpeed = 1000.0f;
+        frames(Frame, {.thrust = 1.0f, .up = up, .air = 1.0f});
+        CHECK(std::abs(flight.cruiseSpeed - 1000.0f) < 0.01f);
+        // Boost (x2) : la vitesse max double tant qu'il est tenu, puis revient.
+        flight.acceleration = 2000.0f;
+        frames(1.0, {.boost = true, .up = up, .air = 1.0f});
+        CHECK(std::abs(flight.cruiseSpeed - 2000.0f) < 0.01f);
+        frames(Frame, {.up = up, .air = 1.0f});
+        CHECK(std::abs(flight.cruiseSpeed - 1000.0f) < 0.01f);
+
+        // Mode voyage (x10 en 3 s) dans l'espace : à mi-régime, à peine plus que la vitesse max ; en régime, dix
+        // fois ; le frein le coupe.
+        flight.acceleration = 500.0f;
+        flight.velocity = {0.0f, 0.0f, -1000.0f};
+        flight.cruiseSpeed = 1000.0f;
+        frames(Frame, {.travel = true, .up = up});
+        CHECK(flight.travel);
+        frames(1.5, {.up = up});
+        CHECK(std::abs(flight.travelLevel - 0.5f) < 0.02f && flight.cruiseSpeed > 1000.0f && flight.cruiseSpeed < 5500.0f);
+        frames(20.0, {.up = up});
+        CHECK(flight.travelLevel == 1.0f && std::abs(flight.cruiseSpeed - 10000.0f) < 1.0f);
+        frames(Frame, {.brake = true, .up = up});
+        CHECK(!flight.travel && flight.cruiseSpeed == 0.0f);
+        frames(3.0, {.up = up});
+        CHECK(flight.travelLevel == 0.0f);
+        // Seulement dans l'espace : dans l'air, Tab ne l'allume pas.
+        frames(Frame, {.travel = true, .up = up, .air = 0.5f});
+        CHECK(!flight.travel);
         return true;
     }
 
@@ -765,6 +804,25 @@ namespace {
         CHECK(shipComponent.grounded);
         const double shipAltitude = altitude(ship);
         CHECK(shipAltitude > 0.9 && shipAltitude < 1.5);
+
+        // Très vite au ras du sol (2 km/s à 100 m) : le sol n'est préparé que près de lui et sur son chemin, pas sur
+        // un disque de 2 km (5 000 tuiles ; à 15 km/s, des centaines de milliers : l'éditeur se figeait).
+        {
+            Scene fast;
+            const Entity fastPlanet = fast.CreateEntity("Planète");
+            fast.Add<PlanetComponent>(fastPlanet);
+            const Entity racer = fast.CreateEntity("Bolide");
+            TransformComponent& racerTransform = fast.Get<TransformComponent>(racer);
+            racerTransform.position = up * (ground(up) + 100.0);
+            racerTransform.rotation = Math::Quaternionf::FromTo({0.0f, 1.0f, 0.0f}, Math::Vector3f(up));
+            fast.Add<ShipComponent>(racer).velocity = {0.0f, 0.0f, -2000.0f};
+            const Entity racerHull = fast.CreateEntity("Coque", racer);
+            fast.Get<TransformComponent>(racerHull).scale = {4.0f, 2.0f, 6.0f};
+            fast.Add<ColliderComponent>(racerHull);
+            PhysicsWorld fastWorld;
+            fastWorld.Prepare(fast); // toutes les tuiles voulues, faites tout de suite
+            CHECK(fastWorld.GetGroundTileCount() > 10 && fastWorld.GetGroundTileCount() < 2000);
+        }
 
         // Sol plat de la scène à 1,98 rayon d'une planète : la gravité du monde l'emporte encore presque entière (le
         // joueur reste debout dessus) ; elle se fond dans celle de la planète en s'en approchant.

@@ -55,6 +55,9 @@ namespace Flux {
         };
         static_assert(sizeof(InteriorData) == 80);
 
+        // Planètes dessinées au plus dans une image (leur sol) : au-delà, les suivantes prennent la première.
+        constexpr std::size_t MaxPlanets = 4;
+
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
         {
@@ -70,9 +73,11 @@ namespace Flux {
             std::array<float, 4> environment;
             std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs
             std::array<InteriorData, MaxInteriors> interiors;
+            std::array<PlanetGpu, MaxPlanets> planets;
             AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) + sizeof(AtmosphereGpu) && ShadowCascadeCount == 4);
+        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
+                      && ShadowCascadeCount == 4);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
@@ -143,7 +148,11 @@ namespace Flux {
             return std::unexpected(models.error());
         }
         renderer->m_models = std::move(*models);
-        renderer->m_planets = std::make_unique<PlanetRenderer>(device);
+        auto planets = PlanetRenderer::Create(device);
+        if (!planets) {
+            return std::unexpected(planets.error());
+        }
+        renderer->m_planets = std::move(*planets);
 
         auto shadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {ShadowMapResolution, ShadowMapResolution}, true);
         if (!shadowMap) {
@@ -213,6 +222,7 @@ namespace Flux {
         const std::array skinnedShadow{position, uv, joints, weights};
         const std::array planetAttributes{position, normal, uv, morphOffset, morphNormal};
         const std::array planetShadow{position, uv, morphOffset};
+        const std::array oceanAttributes{position, morphOffset}; // l'eau fait sa normale et sa profondeur elle-même
         const std::array<const RHI::BindGroupLayout*, 2> layouts{&m_models->GetMaterialLayout(), m_frameLayout.get()};
 
         struct Kind
@@ -222,6 +232,7 @@ namespace Flux {
             std::span<const RHI::VertexAttribute> shadowAttributes;
             const char* vertex;
             const char* shadowVertex;
+            const char* fragment = "fragmentMain";
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -258,7 +269,7 @@ namespace Flux {
 
             desc.vertexEntryPoint = kind.vertex;
             desc.vertexAttributes = kind.attributes;
-            desc.fragmentEntryPoint = "fragmentMain";
+            desc.fragmentEntryPoint = kind.fragment;
             desc.colorFormat = colorFormat;
             desc.depthFormat = depthFormat;
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
@@ -290,11 +301,19 @@ namespace Flux {
             !result) {
             return result;
         }
-        return createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet"});
+        if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
+                                               "fragmentPlanet"});
+            !result) {
+            return result;
+        }
+        return createAll(m_ocean, {planetBuffers, oceanAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet", "fragmentOcean"});
     }
 
-    const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const GpuModel& model) const {
-        return model.IsAnimated() ? m_skinned : model.IsPlanetTile() ? m_planet : m_static;
+    const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const MeshDraw& draw) const {
+        if (draw.ocean) {
+            return m_ocean;
+        }
+        return draw.model->IsAnimated() ? m_skinned : draw.model->IsPlanetTile() ? m_planet : m_static;
     }
 
     // Buffer de l'image f (emplacement `slot` du groupe 1) agrandi à size octets au moins, et son groupe mis à jour.
@@ -326,8 +345,10 @@ namespace Flux {
         m_jointMatrices.clear();
         m_lights.clear();
         m_interiors.clear();
+        m_planetData.clear();
+        m_groundGroup = m_ground.Get(m_device, *m_models, assetsDirectory);
         const ViewCone view(camera, aspect);
-        m_planets->BeginFrame();
+        m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
                 AddPlanet(transform, *planet, view);
@@ -401,7 +422,7 @@ namespace Flux {
             }
             m_drawData.push_back({world,
                                   {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
-                                  rim});
+                                  rim, {}});
 
             // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
             const Math::Vector3f center = model->bounds.GetCenter();
@@ -416,8 +437,8 @@ namespace Flux {
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
                                Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
         }
-        // Tuiles manquantes des planètes (dessinées à partir de l'image suivante).
-        m_planets->EndFrame();
+        // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
+        m_planets->EndFrame(frameIndex);
         if (!m_boundEnvironment[frameIndex]) {
             m_draws.clear(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
@@ -467,15 +488,55 @@ namespace Flux {
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
         const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
         const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-        const Math::LinearColor color{planet.color.r, planet.color.g, planet.color.b, 1.0f};
+        if (m_planetTiles.empty()) {
+            return;
+        }
+        // Son sol, lu par fragmentPlanet ; sans zones, roche partout.
         const float roughness = std::clamp(planet.roughness, 0.0f, 1.0f);
+        const auto material = [&](const Math::LinearColor& color, float materialRoughness) {
+            return planet.zones ? std::array{color.r, color.g, color.b, materialRoughness}
+                                : std::array{planet.color.r, planet.color.g, planet.color.b, roughness};
+        };
+        const std::uint32_t index = static_cast<std::uint32_t>(std::min(m_planetData.size(), MaxPlanets - 1));
+        const bool added = m_planetData.size() < MaxPlanets;
+        if (added) {
+            m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowLevel * 0.01f * planet.relief,
+                                     planet.sandLevel * 0.01f * planet.relief},
+                                    material(planet.color, roughness), material(planet.grassColor, 0.95f),
+                                    material(planet.sandColor, 0.9f), material(planet.snowColor, 0.55f),
+                                    {planet.waterColor.r, planet.waterColor.g, planet.waterColor.b, 0.0f},
+                                    material(planet.soilColor, 0.95f),
+                                    {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
+                                     m_groundGroup ? 1.0f : 0.0f}});
+        }
+        // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
+        const double seaRadius = std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;
+        const bool ocean = added && planet.ocean;
+        if (ocean) {
+            m_planetData[index].water[3] = static_cast<float>(seaRadius);
+        }
+        const Math::LinearColor white{1.0f, 1.0f, 1.0f, 1.0f};
         for (const PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
+            // Centre de la tuile dans le repère de la planète : où fragmentPlanet lit l'altitude et le bruit.
+            const Math::Vector3f local(tile.local);
+            // Le même modulo GroundPeriod, calculé en double : les textures du sol restent nettes et sans couture
+            // d'une tuile à l'autre, même à des centaines de kilomètres du centre.
+            const auto wrap = [](double value) { return static_cast<float>(value - GroundPeriod * std::floor(value / GroundPeriod)); };
             m_drawData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
-                                  {}});
-            m_draws.push_back({tile.model, color, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
+                                  {local.x, local.y, local.z, std::bit_cast<float>(index)},
+                                  {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f}});
+            m_draws.push_back({tile.model, white, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
                                Math::Length(center), true, true});
+            if (ocean && tile.lowest < seaRadius) {
+                // Mêmes données (vertexOcean les pose sur la sphère de la mer) ; la sphère englobante grandit de ce que
+                // l'eau dépasse du fond.
+                m_drawData.push_back(m_drawData.back());
+                const float radius = tile.radius + static_cast<float>(seaRadius - tile.lowest);
+                m_draws.push_back({tile.model, white, {0.0f, 0.0f, 0.0f}, 0.0f, 0.05f, true, center, radius, Math::Length(center),
+                                   true, view.Contains(center, radius), true});
+            }
         }
     }
 
@@ -499,7 +560,7 @@ namespace Flux {
     }
 
     bool MeshRenderer::IsTransparent(const MeshDraw& draw, const GpuMaterial& material) {
-        return material.blend || draw.tint.a < 1.0f;
+        return material.blend || draw.tint.a < 1.0f || draw.ocean;
     }
 
     // Pose d'un modèle animé, d'après la lecture de son AnimatorComponent ; sans lui, la pose de repos.
@@ -524,7 +585,7 @@ namespace Flux {
     // et les données de l'image (caméra, cascades). Si un buffer ne peut grandir (mémoire épuisée), rien n'est dessiné
     // plutôt que lu hors du buffer.
     void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex) {
-        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 128 && sizeof(LightData) == 64);
+        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 144 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
         if (!GrowBuffer(m_jointBuffers[frameIndex], frameIndex, JointSlot, jointBytes)
@@ -562,7 +623,9 @@ namespace Flux {
             frame.cascadeEnds[c] = ShadowCascadeEnds[c];
             frame.cascadeTexels[c] = m_cascades[c].texelSize;
         }
-        frame.cameraForward = ToArray(camera.GetForward());
+        // w : secondes écoulées (vagues des océans), repartent de 0 toutes les heures pour garder leur précision.
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
+        frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
         frame.toSun = ToArray(sky.toSun);
         frame.sunColor = ToArray(sky.sunColor);
         // Lumière diffuse : la texture réduite à 4 x 4 par face, une moyenne de tout un côté du ciel. Reflets : de
@@ -590,7 +653,9 @@ namespace Flux {
             const float intensity = std::max(interior.intensity, 0.0f);
             data.ambient = {interior.ambient.r * intensity, interior.ambient.g * intensity, interior.ambient.b * intensity, 0.0f};
         }
-        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()), 0, 0};
+        frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
+                            static_cast<std::uint32_t>(m_planetData.size()), 0};
+        std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
@@ -633,7 +698,9 @@ namespace Flux {
             commands.SetBindGroup(1, *m_frameGroups[frameIndex]);
         }
         const GpuMaterial& material = model.materials[primitive.material];
-        const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
+        const RHI::BindGroup* group = model.IsPlanetTile() && m_groundGroup ? m_groundGroup
+                                    : material.group                         ? material.group.get()
+                                                                             : &m_models->GetWhiteGroup();
         if (group != state.group) {
             state.group = group;
             commands.SetBindGroup(0, *group);
@@ -648,6 +715,10 @@ namespace Flux {
                                 material.normalScale, material.occlusionStrength, draw.materialOverride ? 1u : 0u, {}};
         commands.PushConstants(&params, sizeof(params));
         commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
+    }
+
+    void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        m_planets->Compute(commands, frameIndex);
     }
 
     void MeshRenderer::DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
@@ -665,7 +736,7 @@ namespace Flux {
                 if (!InCascade(draw, c)) {
                     continue;
                 }
-                const RHI::Pipeline& pipeline = *GetPipelines(*draw.model).shadow;
+                const RHI::Pipeline& pipeline = *GetPipelines(draw).shadow;
                 for (const ModelPrimitive& primitive : draw.model->primitives) {
                     // Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle pour l'instant).
                     if (!IsTransparent(draw, draw.model->materials[primitive.material])) {
@@ -683,7 +754,7 @@ namespace Flux {
         BindState state;
         for (const std::uint32_t d : m_opaque) {
             const MeshDraw& draw = m_draws[d];
-            const Pipelines& pipelines = GetPipelines(*draw.model);
+            const Pipelines& pipelines = GetPipelines(draw);
             for (const ModelPrimitive& primitive : draw.model->primitives) {
                 const GpuMaterial& material = draw.model->materials[primitive.material];
                 if (!IsTransparent(draw, material)) {
@@ -698,7 +769,7 @@ namespace Flux {
         BindState state;
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
-            const Pipelines& pipelines = GetPipelines(*draw.model);
+            const Pipelines& pipelines = GetPipelines(draw);
             const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
             // Double face : les faces arrière (le fond de l'objet) d'abord, puis les faces avant par-dessus.
             // Exact pour une forme convexe (bulle de verrière, cube).

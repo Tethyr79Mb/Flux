@@ -75,6 +75,8 @@ namespace Flux {
                          float distance, float radius, Entity ignoredShip = NullEntity) const;
         // Nombre de corps (hors personnages), pour les tests et le panneau Moteur.
         int GetBodyCount() const;
+        // Tuiles du sol des planètes déjà faites, pour les tests.
+        int GetGroundTileCount() const;
 
         private:
         struct Impl;

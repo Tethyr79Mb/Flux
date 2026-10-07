@@ -13,6 +13,7 @@ namespace Flux::Vk {
     // Instance, surface, device, files et allocateur : tout ce qui vit aussi longtemps que le renderer.
     class Device {
         public:
+        // nativeWindowHandle nul : sans surface ni file de présentation (calculs, tests).
         static std::expected<std::unique_ptr<Device>, std::string> Create(void* nativeWindowHandle);
 
         ~Device();
@@ -31,6 +32,8 @@ namespace Flux::Vk {
         VkQueue GetPresentQueue() const { return m_presentQueue; }
         // Nanosecondes par tic des heures du GPU ; 0 si la file graphique ne note pas l'heure.
         float GetTimestampPeriod() const;
+        // samplerAnisotropy activé : SamplerDesc::anisotropy permis.
+        bool HasAnisotropy() const { return m_anisotropy; }
 
         void WaitIdle() const;
 
@@ -52,5 +55,6 @@ namespace Flux::Vk {
         VkQueue m_presentQueue = VK_NULL_HANDLE;
 
         VkCommandPool m_immediatePool = VK_NULL_HANDLE;
+        bool m_anisotropy = false;
     };
 }

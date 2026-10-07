@@ -59,7 +59,15 @@ namespace Flux {
         public:
         static std::expected<std::unique_ptr<ModelCache>, std::string> Create(RHI::Device& device);
 
+        // Emplacements du groupe 0 où les tuiles de planète lisent les textures du sol (GroundTextures), après les
+        // cinq images d'un matériau glTF.
+        static constexpr std::uint32_t GroundColorSlot = 5;
+        static constexpr std::uint32_t GroundRoughnessSlot = 6;
+        static constexpr std::uint32_t GroundNormalSlot = 7;
+
         const RHI::BindGroupLayout& GetMaterialLayout() const { return *m_materialLayout; }
+        const RHI::Texture& GetWhiteImage() const { return *m_whiteImage; }
+        const RHI::Sampler& GetSampler() const { return *m_sampler; }
         // Matériau sans image (tous les emplacements sur l'image blanche).
         const RHI::BindGroup& GetWhiteGroup() const { return *m_whiteGroup; }
         const GpuModel& GetCube() const { return m_cube; }

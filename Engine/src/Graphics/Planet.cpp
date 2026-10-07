@@ -1,11 +1,7 @@
 #include "Flux/Graphics/Planet.hpp"
 
 #include <algorithm>
-#include <condition_variable>
-#include <deque>
-#include <mutex>
-#include <stop_token>
-#include <thread>
+#include <limits>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -45,6 +41,32 @@ namespace Flux::Planet {
         constexpr double DetailPlains = 0.012;
         constexpr double DetailHills = 0.03;
         constexpr double DetailMountains = 0.065;
+
+        // Couches du relief (voir GetHeight), dans l'ordre de TileGpuInputs::cells et de shaders/PlanetTile.slang.
+        struct Layer
+        {
+            std::uint32_t first; // octaves [first, last)
+            std::uint32_t last;
+            double gain;
+            Math::Vector3d offset; // sépare les couches (sinon elles suivraient les mêmes formes)
+            bool ridged;
+        };
+        enum LayerIndex { Continents, MountainZone, HillZone, Mountains, Hills, Detail };
+        constexpr std::array<Layer, 6> Layers{{
+            {0, 5, 0.5, {0.0, 0.0, 0.0}, false},
+            {1, 4, 0.5, {31.7, -12.3, 7.1}, false},
+            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false},
+            {2, 2 + MaxRidgeOctaves, 0.5, {17.3, -41.7, 8.9}, true},
+            {4, 9, 0.5, {5.3, 23.9, -33.1}, false},
+            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false},
+        }};
+        static_assert([] {
+            std::uint32_t count = 0;
+            for (const Layer& layer : Layers) {
+                count += layer.last - layer.first;
+            }
+            return count;
+        }() == TileGpuInputs::Octaves);
 
         double SmoothStep(double edge0, double edge1, double x) {
             const double t = std::clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -161,18 +183,20 @@ namespace Flux::Planet {
                     w);
     }
 
-    // Somme des octaves [first, min(last, octaves)) d'un bruit (octave k : fréquence BaseFrequency x 2^k), chacune
+    // Somme des octaves [first, min(last, octaves)) d'une couche (octave k : fréquence BaseFrequency x 2^k), chacune
     // `gain` fois plus basse que la précédente, divisée par la somme des amplitudes de toutes ses octaves [first,
     // last) : de -1 à 1 environ (le plus souvent entre -0,5 et 0,5), à la même échelle quel que soit le nombre
-    // d'octaves d'une tuile. `offset` sépare les couches (sinon elles suivraient les mêmes formes).
-    double Terrain::Fbm(const Math::Vector3d& direction, const Math::Vector3d& offset, std::uint32_t first, std::uint32_t last,
-                        std::uint32_t octaves, double gain, bool ridged) const {
-        const double total = (1.0 - std::pow(gain, static_cast<double>(last - first))) / (1.0 - gain);
-        last = std::min(last, octaves);
+    // d'octaves d'une tuile.
+    double Terrain::Fbm(const Math::Vector3d& direction, std::uint32_t layerIndex, std::uint32_t octaves) const {
+        const Layer& layer = Layers[layerIndex];
+        const double gain = layer.gain;
+        const bool ridged = layer.ridged;
+        const double total = (1.0 - std::pow(gain, static_cast<double>(layer.last - layer.first))) / (1.0 - gain);
+        const std::uint32_t last = std::min(layer.last, octaves);
         double sum = 0.0;
         double amplitude = 1.0;
-        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(first))) + offset;
-        for (std::uint32_t k = first; k < last; ++k) {
+        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first))) + layer.offset;
+        for (std::uint32_t k = layer.first; k < last; ++k) {
             const double n = Noise(p);
             // Crêtes : 1 - |bruit| fait une arête vive là où le bruit passe par 0, au carré pour des vallées larges.
             sum += amplitude * (ridged ? (1.0 - std::abs(n)) * (1.0 - std::abs(n)) : n);
@@ -188,17 +212,17 @@ namespace Flux::Planet {
         }
         // Couches, des plus grandes aux plus fines (octave 0 : environ un quart du tour de la planète) :
         // - continents : terres et bassins ;
-        const double continents = Fbm(direction, {0.0, 0.0, 0.0}, 0, 5, octaves, 0.5, false);
+        const double continents = Fbm(direction, Continents, octaves);
         const double land = SmoothStep(-0.26, 0.06, continents);
         // - où sont les montagnes (des chaînes sur les terres, pas partout) et les collines ;
-        const double mountainZone = SmoothStep(0.08, 0.36, Fbm(direction, {31.7, -12.3, 7.1}, 1, 4, octaves, 0.5, false)) * land;
-        const double hillZone = SmoothStep(0.05, 0.4, Fbm(direction, {-8.9, 44.2, -19.6}, 2, 5, octaves, 0.5, false));
+        const double mountainZone = SmoothStep(0.08, 0.36, Fbm(direction, MountainZone, octaves)) * land;
+        const double hillZone = SmoothStep(0.05, 0.4, Fbm(direction, HillZone, octaves));
         // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les crêtes) ;
-        const double mountains = mountainZone > 0.0 ? Fbm(direction, {17.3, -41.7, 8.9}, 2, 2 + MaxRidgeOctaves, octaves, 0.5, true) : 0.0;
-        const double hills = hillZone > 0.0 ? Fbm(direction, {5.3, 23.9, -33.1}, 4, 9, octaves, 0.5, false) : 0.0;
+        const double mountains = mountainZone > 0.0 ? Fbm(direction, Mountains, octaves) : 0.0;
+        const double hills = hillZone > 0.0 ? Fbm(direction, Hills, octaves) : 0.0;
         // - le détail fin (bosses, rochers), qui baisse moins vite (DetailGain) : faible dans les plaines.
         const double roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
-        const double detail = Fbm(direction, {-23.1, 5.7, 31.3}, DetailFirstOctave, MaxOctaves, octaves, DetailGain, false);
+        const double detail = Fbm(direction, Detail, octaves);
         // Bassins vers -0,4, plaines vers 0,05 à 0,1, montagnes jusqu'au relief.
         const double height = -0.4 + 0.45 * land + 0.15 * continents + 0.85 * mountainZone * mountains
                             + 0.15 * hillZone * hills + roughness * detail;
@@ -216,8 +240,11 @@ namespace Flux::Planet {
             const double all = (1.0 - std::pow(gain, last - first)) / (1.0 - gain);
             return std::pow(gain, from - first) * (1.0 - std::pow(gain, last - from)) / (1.0 - gain) / all;
         };
-        const double omitted = 0.6 * tail(0, 5, 0.5) + 0.85 * tail(2, 2 + MaxRidgeOctaves, 0.5) + 0.15 * tail(4, 9, 0.5)
-                             + (DetailPlains + DetailHills + DetailMountains) * tail(DetailFirstOctave, MaxOctaves, DetailGain);
+        const auto layerTail = [&](LayerIndex index) {
+            return tail(Layers[index].first, Layers[index].last, Layers[index].gain);
+        };
+        const double omitted = 0.6 * layerTail(Continents) + 0.85 * layerTail(Mountains) + 0.15 * layerTail(Hills)
+                             + (DetailPlains + DetailHills + DetailMountains) * layerTail(Detail);
         return m_relief * omitted;
     }
 
@@ -227,8 +254,11 @@ namespace Flux::Planet {
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {
+        return GetTileBounds(terrain, key, terrain.GetRadius() - 1.5 * terrain.GetRelief() - 1.0, terrain.GetRadius() + terrain.GetRelief());
+    }
+
+    TileBounds GetTileBounds(const Terrain& terrain, TileKey key, double lowest, double highest) {
         const double R = terrain.GetRadius();
-        const double relief = terrain.GetRelief();
         const auto x0 = static_cast<std::int64_t>(key.x) * TileQuads;
         const auto y0 = static_cast<std::int64_t>(key.y) * TileQuads;
         const auto at = [&](std::int64_t i, std::int64_t j) {
@@ -238,11 +268,11 @@ namespace Flux::Planet {
         constexpr auto full = static_cast<std::int64_t>(TileQuads);
         TileBounds bounds;
         bounds.center = at(half, half) * R;
-        // Les coins et les milieux des bords, au plus bas et au plus haut du relief (et sous la jupe).
+        // Les coins et les milieux des bords, au plus bas et au plus haut.
         for (const std::int64_t j : {std::int64_t{0}, half, full}) {
             for (const std::int64_t i : {std::int64_t{0}, half, full}) {
                 const Math::Vector3d d = at(i, j);
-                for (const double r : {R - 1.5 * relief - 1.0, R + relief}) {
+                for (const double r : {lowest, highest}) {
                     bounds.radius = std::max(bounds.radius, Math::Length(d * r - bounds.center));
                 }
             }
@@ -276,6 +306,7 @@ namespace Flux::Planet {
         mesh.center = DirectionFromFace(key.face, GridToFace(x0 + 1 + half, key.level), GridToFace(y0 + 1 + half, key.level)) * R;
         mesh.vertices.resize(TileVertexCount);
         mesh.radius = 0.0;
+        mesh.lowest = std::numeric_limits<double>::max();
         const auto vertex = [&](std::uint32_t i, std::uint32_t j) -> ModelVertex& { return mesh.vertices[j * TileSide + i]; };
         for (std::uint32_t j = 0; j < TileSide; ++j) {
             for (std::uint32_t i = 0; i < TileSide; ++i) {
@@ -286,6 +317,7 @@ namespace Flux::Planet {
                 const Math::Vector3d local = positions[w] - mesh.center;
                 vertex(i, j) = {Math::Vector3f(local), Math::Vector3f(normal), {0.0f, 0.0f}};
                 mesh.radius = std::max(mesh.radius, Math::Length(local));
+                mesh.lowest = std::min(mesh.lowest, Math::Length(positions[w]));
             }
         }
 
@@ -329,6 +361,7 @@ namespace Flux::Planet {
                     const Math::Vector3d normal = Math::Normalize(parentNormal(i0, j0) + parentNormal(i1, j1));
                     const Math::Vector3d position = positions[(j + 1) * Wide + (i + 1)];
                     mesh.morph[j * TileSide + i] = {Math::Vector3f(target - position), Math::Vector3f(normal)};
+                    mesh.lowest = std::min(mesh.lowest, Math::Length(target));
                     mesh.radius = std::max(mesh.radius, Math::Length(target - mesh.center));
                 }
             }
@@ -358,6 +391,57 @@ namespace Flux::Planet {
         }
         for (std::uint32_t k = 0; k < TileSide; ++k) {
             skirt(0, TileQuads - k);
+        }
+    }
+
+    void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs) {
+        const Face& f = Faces[key.face % 6];
+        const double R = terrain.GetRadius();
+        const std::uint32_t octaves = terrain.GetOctaves(key.level);
+        const auto x0 = static_cast<std::int64_t>(key.x) * TileQuads;
+        const auto y0 = static_cast<std::int64_t>(key.y) * TileQuads;
+        constexpr auto half = static_cast<std::int64_t>(TileQuads / 2);
+        const auto tangent = [&](std::int64_t index) { return std::tan(GridToFace(index, key.level) * QuarterPi); };
+        const double ac = tangent(x0 + half);
+        const double bc = tangent(y0 + half);
+        const Math::Vector3d vc = f.normal + f.s * ac + f.t * bc;
+        const double lc = Math::Length(vc);
+        const Math::Vector3d dc = vc / lc; // = DirectionFromFace au centre : le même que mesh.center / R
+        const auto float4 = [](const Math::Vector3d& v, double w) {
+            return std::array{static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z), static_cast<float>(w)};
+        };
+        // Profondeur des jupes : comme BuildTile.
+        const double edge = Math::Length(DirectionFromFace(key.face, GridToFace(x0 + TileQuads, key.level), GridToFace(y0, key.level))
+                                         - DirectionFromFace(key.face, GridToFace(x0, key.level), GridToFace(y0, key.level))) * R;
+        const double depth = 0.05 * edge + 2.0 * terrain.GetOmittedRelief(octaves) + 1.0;
+        inputs.center = float4(dc, lc);
+        inputs.axisN = float4(f.normal, R);
+        inputs.axisS = float4(f.s, terrain.GetRelief());
+        inputs.axisT = float4(f.t, depth);
+        inputs.options = {octaves, key.level > 0 ? terrain.GetOctaves(key.level - 1u) : octaves, key.level, 0};
+        for (std::uint32_t i = 0; i < TileGpuInputs::Columns; ++i) {
+            const double a = tangent(x0 + static_cast<std::int64_t>(i) - 2);
+            const double b = tangent(y0 + static_cast<std::int64_t>(i) - 2);
+            inputs.columns[i] = {static_cast<float>(a - ac), static_cast<float>(a + ac), static_cast<float>(b - bc), static_cast<float>(b + bc)};
+        }
+        // Point de chaque octave au centre de la tuile, calculé comme Fbm (doublé d'une octave à l'autre).
+        std::uint32_t octave = 0;
+        for (const Layer& layer : Layers) {
+            Math::Vector3d p = dc * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first))) + layer.offset;
+            for (std::uint32_t k = layer.first; k < layer.last; ++k, ++octave) {
+                const Math::Vector3d cell{std::floor(p.x), std::floor(p.y), std::floor(p.z)};
+                inputs.cells[octave] = {static_cast<std::int32_t>(static_cast<std::int64_t>(cell.x) & 255),
+                                        static_cast<std::int32_t>(static_cast<std::int64_t>(cell.y) & 255),
+                                        static_cast<std::int32_t>(static_cast<std::int64_t>(cell.z) & 255), 0};
+                inputs.fractions[octave] = float4(p - cell, BaseFrequency * std::ldexp(1.0, static_cast<int>(k)));
+                p *= 2.0;
+            }
+        }
+        const auto& permutation = terrain.GetPermutation();
+        for (std::uint32_t i = 0; i < inputs.permutation.size(); ++i) {
+            inputs.permutation[i] = static_cast<std::uint32_t>(permutation[4 * i]) | (static_cast<std::uint32_t>(permutation[4 * i + 1]) << 8)
+                                  | (static_cast<std::uint32_t>(permutation[4 * i + 2]) << 16)
+                                  | (static_cast<std::uint32_t>(permutation[4 * i + 3]) << 24);
         }
     }
 
@@ -424,83 +508,5 @@ namespace Flux::Planet {
             }
         }
         return indices;
-    }
-
-    struct TileGenerator::Impl
-    {
-        std::mutex mutex;
-        std::condition_variable_any wake;
-        std::deque<Job> queue;
-        std::vector<Result> done;
-        std::vector<std::jthread> threads; // en dernier : arrêtés et attendus avant le reste
-
-        void Run(std::stop_token stop) {
-            for (;;) {
-                Job job;
-                {
-                    std::unique_lock lock(mutex);
-                    if (!wake.wait(lock, stop, [this] { return !queue.empty(); })) {
-                        return; // arrêt demandé
-                    }
-                    job = std::move(queue.front());
-                    queue.pop_front();
-                }
-                Result result{job.owner, job.key, {}};
-                BuildTile(*job.terrain, job.key, result.mesh);
-                std::lock_guard lock(mutex);
-                done.push_back(std::move(result));
-            }
-        }
-    };
-
-    TileGenerator::TileGenerator(std::uint32_t threads) : m_impl(std::make_unique<Impl>()) {
-        if (threads == 0) {
-            // Laisser de quoi faire au fil principal, au GPU (pilote) et à la physique.
-            const auto available = static_cast<std::int32_t>(std::thread::hardware_concurrency());
-            threads = static_cast<std::uint32_t>(std::clamp(available - 2, 1, 4));
-        }
-        for (std::uint32_t i = 0; i < threads; ++i) {
-            m_impl->threads.emplace_back([impl = m_impl.get()](std::stop_token stop) { impl->Run(stop); });
-        }
-    }
-
-    TileGenerator::~TileGenerator() {
-        // Les jthread demandent l'arrêt (réveillant l'attente) puis attendent leur fil : une tuile en cours finit.
-        m_impl->threads.clear();
-    }
-
-    std::uint32_t TileGenerator::GetThreadCount() const {
-        return static_cast<std::uint32_t>(m_impl->threads.size());
-    }
-
-    void TileGenerator::TakeWaiting(std::vector<Job>& waiting) {
-        std::lock_guard lock(m_impl->mutex);
-        for (Job& job : m_impl->queue) {
-            waiting.push_back(std::move(job));
-        }
-        m_impl->queue.clear();
-    }
-
-    void TileGenerator::Submit(std::vector<Job>& jobs) {
-        if (jobs.empty()) {
-            return;
-        }
-        {
-            std::lock_guard lock(m_impl->mutex);
-            for (Job& job : jobs) {
-                m_impl->queue.push_back(std::move(job));
-            }
-        }
-        jobs.clear();
-        m_impl->wake.notify_all();
-    }
-
-    void TileGenerator::Collect(std::vector<Result>& results, std::size_t max) {
-        std::lock_guard lock(m_impl->mutex);
-        const std::size_t count = std::min(max, m_impl->done.size());
-        for (std::size_t i = 0; i < count; ++i) {
-            results.push_back(std::move(m_impl->done[i]));
-        }
-        m_impl->done.erase(m_impl->done.begin(), m_impl->done.begin() + static_cast<std::ptrdiff_t>(count));
     }
 }

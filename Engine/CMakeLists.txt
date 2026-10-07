@@ -54,6 +54,7 @@ flux_precompile_headers(FluxEngine)
 flux_add_shaders(FluxShaders
         shaders/Mesh.slang
         shaders/Overlay.slang
+        shaders/PlanetTile.slang
         shaders/Sky.slang
 )
 add_dependencies(FluxEngine FluxShaders)

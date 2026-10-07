@@ -279,8 +279,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, s.atmosphere.center.w);
         const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
         float3 transmittance;
-        const float3 scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 16,
-                                                   AtmosphereJitter(input.position.xy), transmittance);
+        // Pas fixes (milieu de chaque pas) : décalés par pixel, ils donnaient un damier fin bien visible sans
+        // anticrénelage temporel pour le lisser ; 24 pas pour ne pas voir de bandes à travers le bord de l'air.
+        const float3 scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
+                                                   transmittance);
         color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
     }
     return float4(ToneMap(color, s.sunColor.w), 1.0);

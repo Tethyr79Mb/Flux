@@ -32,6 +32,10 @@ namespace Flux {
     class Renderer;
     class Window;
 
+    namespace Planet {
+        class Terrain;
+    }
+
     namespace UI {
         class Context;
     }
@@ -209,6 +213,13 @@ namespace Flux {
         std::optional<std::string> m_requestedScene;
         std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
+        std::shared_ptr<const Planet::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
+        std::int32_t m_flightTerrainSeed = 0;
+        // Vitesse réellement parcourue par le vaisseau piloté (DrawFlightInfo) : sa position à l'image d'avant et la
+        // vitesse mesurée, lissée.
+        Entity m_flightShip = NullEntity;
+        Math::WorldPosition m_flightPosition;
+        Math::Vector3d m_flightVelocity;
         std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
         std::uint64_t m_frame = 0;
@@ -287,6 +298,18 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
+        // Où vole un vaisseau par rapport à la planète la plus proche : altitude au-dessus du sol (ou de la mer qui
+        // le recouvre), verticale du lieu (unitaire, monde) et densité de l'air (0 dans l'espace, voir SeatInput::air).
+        struct FlightState
+        {
+            bool nearPlanet = false;
+            double altitude = 0.0;
+            Math::Vector3d up;
+            float air = 0.0f;
+        };
+        FlightState GetFlightState(Entity ship);
+        // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
+        void DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
         // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
         void AimFollowCamera();
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).

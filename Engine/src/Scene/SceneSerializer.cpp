@@ -286,6 +286,9 @@ namespace Flux::SceneSerializer {
                 ComponentData component{info, info->create()};
                 for (const auto& [fieldKey, fieldValue] : value.items()) {
                     const FieldInfo* field = info->FindField(fieldKey);
+                    if (!field && std::ranges::contains(info->removedFields, fieldKey)) {
+                        continue; // ancienne version : sa valeur est perdue, le champ reprend sa valeur par défaut
+                    }
                     if (!field) {
                         throw fail(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
                     }

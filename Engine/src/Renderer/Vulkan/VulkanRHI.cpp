@@ -96,6 +96,8 @@ namespace Flux::Vk {
         m_view = view;
         m_extent = extent;
         m_layout = VK_NULL_HANDLE;
+        m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        m_pushStages = 0;
         m_queryPool = queryPool;
         m_writtenTimestamps = 0;
         if (m_queryPool != VK_NULL_HANDLE) {
@@ -249,14 +251,16 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::BindPipeline(const RHI::Pipeline& pipeline) {
-        const GraphicsPipeline& vkPipeline = static_cast<const RhiPipeline&>(pipeline).Get();
+        const Vk::Pipeline& vkPipeline = static_cast<const RhiPipeline&>(pipeline).Get();
         m_layout = vkPipeline.GetLayout();
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline.GetHandle());
+        m_bindPoint = vkPipeline.GetBindPoint();
+        m_pushStages = vkPipeline.GetPushStages();
+        vkCmdBindPipeline(m_commandBuffer, m_bindPoint, vkPipeline.GetHandle());
     }
 
     void RhiCommandList::SetBindGroup(std::uint32_t index, const RHI::BindGroup& group) {
         const VkDescriptorSet set = static_cast<const RhiBindGroup&>(group).GetHandle();
-        vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, index, 1, &set, 0, nullptr);
+        vkCmdBindDescriptorSets(m_commandBuffer, m_bindPoint, m_layout, index, 1, &set, 0, nullptr);
     }
 
     void RhiCommandList::BindVertexBuffers(std::uint32_t first, std::span<const RHI::Buffer* const> buffers) {
@@ -274,7 +278,7 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::PushConstants(const void* data, std::uint32_t size) {
-        vkCmdPushConstants(m_commandBuffer, m_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, size, data);
+        vkCmdPushConstants(m_commandBuffer, m_layout, m_pushStages, 0, size, data);
     }
 
     void RhiCommandList::Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) {
@@ -283,5 +287,29 @@ namespace Flux::Vk {
 
     void RhiCommandList::DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) {
         vkCmdDrawIndexed(m_commandBuffer, indexCount, 1, firstIndex, 0, 0);
+    }
+
+    void RhiCommandList::Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) {
+        vkCmdDispatch(m_commandBuffer, groupsX, groupsY, groupsZ);
+    }
+
+    // Une barrière mémoire globale : plus simple qu'une par buffer, et les pilotes ne font guère mieux avec le détail.
+    // Elle attend aussi les lectures des Dispatch précédents avant les écritures suivantes (buffer réutilisé).
+    void RhiCommandList::ComputeBarrier() {
+        VkMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                             | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+                             | VK_PIPELINE_STAGE_2_HOST_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_INDEX_READ_BIT
+                              | VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
+                              | VK_ACCESS_2_HOST_READ_BIT;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
     }
 }

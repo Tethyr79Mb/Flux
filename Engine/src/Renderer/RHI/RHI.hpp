@@ -4,18 +4,20 @@
 // l'implémente (Renderer/Vulkan) ; un autre backend (DX12) n'aurait qu'à implémenter ces interfaces.
 //
 // Portée actuelle, celle dont le renderer a besoin : une fenêtre (sa swapchain est tenue par le Device), des
-// buffers, des textures 2D et cube, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
-// graphiques et une liste de commandes par image. Une passe dessine dans l'image de la swapchain.
+// buffers, des textures 2D, cube et tableaux, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
+// graphiques et de calcul (compute), et une liste de commandes par image. Une passe dessine dans l'image de la swapchain.
 //
 // Durées de vie : un objet créé par le Device doit être détruit avant lui ; un BindGroup avant son BindGroupLayout.
 // Un objet ne se détruit ni ne se modifie pendant que le GPU l'utilise : après Device::WaitIdle, ou (ressources d'une
 // image en vol) une fois BeginFrame revenu sur cette image.
 
 #include "Flux/Math/Color.hpp"
+#include "Flux/Export.hpp"
 
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -70,12 +72,13 @@ namespace Flux::RHI {
     enum class BufferUsage : std::uint8_t {
         Vertex = 1 << 0,
         Index = 1 << 1,   // indices 32 bits
-        Storage = 1 << 2, // lu par les shaders (matrices des os)
+        Storage = 1 << 2, // lu par les shaders (matrices des os), écrit par les compute shaders
     };
 
     enum class ShaderStage : std::uint8_t {
         Vertex = 1 << 0,
         Fragment = 1 << 1,
+        Compute = 1 << 2,
     };
 
     // Opérateurs de bits pour les énumérations de drapeaux.
@@ -101,6 +104,7 @@ namespace Flux::RHI {
     enum class MemoryType : std::uint8_t {
         GpuOnly, // mémoire vidéo, remplie une fois à la création
         Upload,  // visible du CPU, écrite à chaque image (Buffer::Write)
+        Readback, // écrite par le GPU, relue par le CPU (Buffer::Read) une fois le GPU passé
     };
 
     struct BufferDesc
@@ -121,9 +125,12 @@ namespace Flux::RHI {
         // Carte d'ombres : la lecture compare une profondeur donnée à celle de la texture (1 si elle est plus proche
         // ou égale, 0 sinon) ; filtrée, la comparaison adoucit le bord des ombres.
         bool compare = false;
+        // Filtrage anisotrope (1 : aucun) : une texture vue de biais (le sol au loin) reste nette ; borné par le GPU.
+        float anisotropy = 1.0f;
     };
 
-    // Une ressource d'un groupe : texture échantillonnée (avec son sampler) ou buffer de stockage en lecture.
+    // Une ressource d'un groupe : texture échantillonnée (avec son sampler) ou buffer de stockage (lu par les shaders de
+    // dessin, lu et écrit par les compute shaders).
     enum class BindingType : std::uint8_t { Texture, StorageBuffer };
 
     struct Binding
@@ -189,12 +196,24 @@ namespace Flux::RHI {
         float depthBiasSlope = 0.0f;
     };
 
+    // Pipeline de calcul : un point d'entrée [shader("compute")] lancé par CommandList::Dispatch.
+    struct ComputePipelineDesc
+    {
+        std::filesystem::path shaderPath;
+        const char* entryPoint = "computeMain";
+        std::span<const BindGroupLayout* const> bindGroupLayouts;
+        std::uint32_t pushConstantsSize = 0; // 128 octets au plus
+    };
+
     class Buffer {
         public:
         virtual ~Buffer() = default;
         virtual std::uint64_t GetSize() const = 0;
         // Buffer Upload seulement.
         virtual void Write(const void* data, std::uint64_t size, std::uint64_t offset = 0) = 0;
+        // Buffer Readback seulement, quand le GPU a fini de l'écrire (après Device::Submit, ou BeginFrame revenu sur
+        // l'image qui l'a écrit).
+        virtual void Read(void* data, std::uint64_t size, std::uint64_t offset = 0) const = 0;
     };
 
     class Texture {
@@ -259,6 +278,11 @@ namespace Flux::RHI {
         virtual void PushConstants(const void* data, std::uint32_t size) = 0;
         virtual void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) = 0;
         virtual void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) = 0;
+        // Compute shader du pipeline lié (CreateComputePipeline), en groupes de threads ; hors d'une passe.
+        virtual void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1) = 0;
+        // Les buffers écrits par les Dispatch précédents deviennent lisibles par la suite : sommets, index, shaders,
+        // et CPU (Readback). Hors d'une passe.
+        virtual void ComputeBarrier() = 0;
         // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
         // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
         virtual void WriteTimestamp(std::uint32_t slot) = 0;
@@ -287,7 +311,9 @@ namespace Flux::RHI {
     class Device {
         public:
         // Backend Vulkan, sur la fenêtre native donnée (HWND).
-        static std::expected<std::unique_ptr<Device>, std::string> Create(void* nativeWindowHandle, Extent extent, bool vsync);
+        FLUX_API static std::expected<std::unique_ptr<Device>, std::string> Create(void* nativeWindowHandle, Extent extent, bool vsync);
+        // Sans fenêtre ni swapchain (tests, calculs) : seul Submit envoie des commandes ; BeginFrame échoue.
+        FLUX_API static std::expected<std::unique_ptr<Device>, std::string> CreateHeadless();
 
         virtual ~Device() = default;
 
@@ -307,6 +333,12 @@ namespace Flux::RHI {
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeTexture(Format format, std::uint32_t size,
                                                                                        std::span<const std::uint8_t> pixels,
                                                                                        bool mipmaps = false) = 0;
+        // Tableau de `layers` textures de même taille (sol des planètes : une couche par matière), à la suite dans
+        // pixels ; lu par coordonnées et indice de couche (Sampler2DArray dans les shaders).
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTextureArray(Format format, Extent extent,
+                                                                                        std::uint32_t layers,
+                                                                                        std::span<const std::uint8_t> pixels,
+                                                                                        bool mipmaps = false) = 0;
         // Cible de rendu vierge (tampon de profondeur). sampled : lue ensuite par les shaders (carte d'ombres).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false) = 0;
@@ -318,6 +350,10 @@ namespace Flux::RHI {
         // nullptr si le layout a atteint son maximum de groupes.
         virtual std::unique_ptr<BindGroup> CreateBindGroup(const BindGroupLayout& layout) = 0;
         virtual std::expected<std::unique_ptr<Pipeline>, std::string> CreatePipeline(const PipelineDesc& desc) = 0;
+        virtual std::expected<std::unique_ptr<Pipeline>, std::string> CreateComputePipeline(const ComputePipelineDesc& desc) = 0;
+        // Enregistre des commandes hors des images (calculs, sans passe vers la swapchain), les envoie et attend que le
+        // GPU les ait finies : bloque le CPU, réservé au chargement et aux tests.
+        virtual bool Submit(const std::function<void(CommandList&)>& record) = 0;
 
         // Taille de la fenêtre et V-Sync : la swapchain est recréée si l'une change (le GPU attendu avant).
         virtual bool ResizeSwapchain(Extent extent, bool vsync) = 0;

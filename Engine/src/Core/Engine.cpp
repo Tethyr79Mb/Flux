@@ -3,6 +3,7 @@
 #include "Flux/Animation/Animator.hpp"
 #include "Flux/Audio/AudioSystem.hpp"
 #include "Flux/Core/Log.hpp"
+#include "Flux/Graphics/Planet.hpp"
 #include "Flux/Input/InputActions.hpp"
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
@@ -195,8 +196,11 @@ namespace Flux {
         actions.Add("Courir", "Déplacement", Key::LeftShift);
         actions.Add("Sauter", "Déplacement", Key::Space);
         actions.Add("Interagir", "Déplacement", Key::F);
-        actions.Add("Freiner", "Vaisseau", Key::Space);
-        actions.Add("Monter", "Vaisseau", Key::LeftShift);
+        // Comme Star Citizen : Espace monte, Ctrl descend, X freine ; Maj boost et Tab mode voyage, comme X4.
+        actions.Add("Freiner", "Vaisseau", Key::X);
+        actions.Add("Boost", "Vaisseau", Key::LeftShift);
+        actions.Add("Mode voyage", "Vaisseau", Key::Tab);
+        actions.Add("Monter", "Vaisseau", Key::Space);
         actions.Add("Descendre", "Vaisseau", Key::LeftControl);
         actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
@@ -358,6 +362,9 @@ namespace Flux {
                 ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
                                GetScreenUiOptions());
             }
+            if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
+                DrawFlightInfo(player, {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds);
+            }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_freeCamera ? &m_cameraController : nullptr);
             }
@@ -414,6 +421,8 @@ namespace Flux {
             seatInput.lift = axis("Monter", "Descendre");
             seatInput.roll = axis("Rouler à droite", "Rouler à gauche");
             seatInput.brake = IsActionDown("Freiner");
+            seatInput.boost = IsActionDown("Boost");
+            seatInput.travel = WasActionPressed("Mode voyage");
             seatInput.mouseYaw = m_steerYaw;
             seatInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {
@@ -430,6 +439,7 @@ namespace Flux {
                     if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
                         seatInput.up = Math::Normalize(gravity) * -1.0f;
                     }
+                    seatInput.air = GetFlightState(ship).air;
                 }
             }
         } else {
@@ -487,6 +497,96 @@ namespace Flux {
             m_interfaceActions.clear();
             m_interfacePaused = m_interfacePausedNow = false;
         }
+    }
+
+    Engine::FlightState Engine::GetFlightState(Entity ship) {
+        FlightState flight;
+        const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
+        const PlanetComponent* nearest = nullptr;
+        Math::Vector3d offset{};
+        Math::Quaternionf rotation;
+        for (const auto [entity, planet] : m_scene.GetRegistry().view<const PlanetComponent>().each()) {
+            if (m_scene.GetShip(entity) != NullEntity) {
+                continue; // décor d'un vaisseau
+            }
+            const Math::Vector3d candidate = Math::Delta(m_scene.GetWorldPosition(entity), position);
+            if (!nearest || Math::Length(candidate) - planet.radius < Math::Length(offset) - nearest->radius) {
+                nearest = &planet;
+                offset = candidate;
+                rotation = m_scene.GetWorldRotation(entity);
+            }
+        }
+        // Dans l'espace (au-delà de deux rayons, là où s'arrête sa gravité, voir PlanetGround) : pas d'altitude.
+        if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
+            return flight;
+        }
+        if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
+            || m_flightTerrainSeed != nearest->seed) {
+            m_flightTerrain = std::make_shared<const Planet::Terrain>(nearest->radius, nearest->relief, nearest->seed);
+            m_flightTerrainSeed = nearest->seed;
+        }
+        flight.nearPlanet = true;
+        flight.up = Math::Normalize(offset);
+        const Math::Vector3d direction = rotation.Conjugate().Rotate(flight.up);
+        double ground = m_flightTerrain->GetHeight(direction, m_flightTerrain->GetOctaves(m_flightTerrain->GetMaxLevel()));
+        if (nearest->ocean) {
+            ground = std::max(ground, nearest->seaLevel * 0.01 * nearest->relief);
+        }
+        flight.altitude = Math::Length(offset) - nearest->radius - ground;
+        // Comme le ciel (Atmosphere.cpp) : densité divisée par e tous les huitièmes de sa hauteur, nulle au-dessus.
+        const double height = std::max(nearest->atmosphereHeight, 100.0f);
+        const double above = std::max(Math::Length(offset) - nearest->radius, 0.0);
+        if (nearest->atmosphere > 0.0f && above < height) {
+            flight.air = static_cast<float>(std::min(1.0, nearest->atmosphere * std::exp(-8.0 * above / height)));
+        }
+        return flight;
+    }
+
+    void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds) {
+        const Entity seat = Seats::GetPilotSeat(m_scene, player);
+        const Entity ship = seat != NullEntity ? m_scene.GetShip(seat) : NullEntity;
+        if (ship == NullEntity) {
+            m_flightShip = NullEntity; // remesurée en reprenant les commandes
+            return;
+        }
+        const ShipComponent& component = m_scene.Get<ShipComponent>(ship);
+        // Vitesse mesurée sur son déplacement, pas celle que visent ses propulseurs : contre le sol ou un mur, il
+        // pousse sans avancer. Lissée sur un quart de seconde ; figée en pause.
+        const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
+        if (m_flightShip != ship) {
+            m_flightShip = ship;
+            m_flightVelocity = Math::Vector3d(m_scene.GetWorldRotation(ship).Rotate(component.velocity));
+        } else if (deltaSeconds > 0.0) {
+            const Math::Vector3d measured = Math::Delta(m_flightPosition, position) / deltaSeconds;
+            m_flightVelocity = m_flightVelocity + (measured - m_flightVelocity) * std::min(1.0, deltaSeconds / 0.25);
+        }
+        m_flightPosition = position;
+        const Math::Vector3d velocity = m_flightVelocity;
+        // Nombre à la française, en m ou km selon sa taille.
+        const auto distance = [](double meters, std::string_view unit) {
+            std::string text = std::abs(meters) >= 10000.0 ? std::format("{:.1f} k{}", meters / 1000.0, unit)
+                                                            : std::format("{:.0f} {}", meters, unit);
+            std::ranges::replace(text, '.', ',');
+            return text;
+        };
+        std::string text = "Vitesse  " + distance(Math::Length(velocity), "m/s");
+        if (component.travelLevel > 0.0f) {
+            text += component.travelLevel < 1.0f ? std::format("\nMode voyage  {:.0f} %", component.travelLevel * 100.0f) : "\nMode voyage";
+        }
+
+        if (const FlightState flight = GetFlightState(ship); flight.nearPlanet) {
+            text += "\nVerticale  " + distance(Math::Dot(velocity, flight.up), "m/s");
+            text += "\nAltitude  " + distance(flight.altitude, "m");
+            if (flight.air > 0.001f) {
+                text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
+            }
+        }
+        const float size = 20.0f;
+        UI::DrawList& list = m_renderer->GetOverlay();
+        const Math::Vector2f extent = list.MeasureText(text, size);
+        const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, screen.y - extent.y - 40.0f};
+        list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 10.0f}, topLeft + extent + Math::Vector2f{14.0f, 10.0f}, {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
+        list.AddText(topLeft, text, size, {0.85f, 0.95f, 1.0f, 1.0f});
     }
 
     Entity Engine::GetFollowedPlayer() const {
