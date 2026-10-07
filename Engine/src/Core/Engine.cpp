@@ -3,6 +3,7 @@
 #include "Flux/Animation/Animator.hpp"
 #include "Flux/Audio/AudioSystem.hpp"
 #include "Flux/Core/Log.hpp"
+#include "Flux/Core/Version.hpp"
 #include "Flux/Graphics/Planet.hpp"
 #include "Flux/Input/InputActions.hpp"
 #include "Flux/Interface/Interface.hpp"
@@ -151,6 +152,7 @@ namespace Flux {
           m_interfaces(std::make_unique<InterfaceLibrary>()),
           m_inputActions(std::make_unique<InputActions>()) {
         RegisterEngineComponents(m_components);
+        Log::Info("Flux {}", GetFullVersion());
         if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
             m_quitRequested = true;
@@ -364,6 +366,15 @@ namespace Flux {
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
                 DrawFlightInfo(player, {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds);
+            }
+            if (m_drawScreenUi) {
+                // Version dans le coin bas droit : dit quelle compilation tourne sur une capture d'écran.
+                UI::DrawList& list = m_renderer->GetOverlay();
+                const std::string version(GetFullVersion());
+                constexpr float VersionSize = 13.0f;
+                const Math::Vector2f extent = list.MeasureText(version, VersionSize);
+                list.AddText({static_cast<float>(size.x) - extent.x - 8.0f, static_cast<float>(size.y) - extent.y - 6.0f}, version,
+                             VersionSize, {1.0f, 1.0f, 1.0f, 0.45f});
             }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_freeCamera ? &m_cameraController : nullptr);
