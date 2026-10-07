@@ -156,6 +156,10 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
                                                                                 std::span<const std::uint8_t> pixels,
                                                                                 bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTextureArray(RHI::Format format, RHI::Extent extent,
+                                                                                    std::uint32_t layers,
+                                                                                    std::span<const std::uint8_t> pixels,
+                                                                                    bool mipmaps) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeTexture(RHI::Format format, std::uint32_t size,
                                                                                     std::span<const std::uint8_t> pixels,
                                                                                     bool mipmaps) override;

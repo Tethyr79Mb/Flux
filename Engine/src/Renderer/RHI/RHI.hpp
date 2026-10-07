@@ -4,7 +4,7 @@
 // l'implémente (Renderer/Vulkan) ; un autre backend (DX12) n'aurait qu'à implémenter ces interfaces.
 //
 // Portée actuelle, celle dont le renderer a besoin : une fenêtre (sa swapchain est tenue par le Device), des
-// buffers, des textures 2D et cube, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
+// buffers, des textures 2D, cube et tableaux, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
 // graphiques et de calcul (compute), et une liste de commandes par image. Une passe dessine dans l'image de la swapchain.
 //
 // Durées de vie : un objet créé par le Device doit être détruit avant lui ; un BindGroup avant son BindGroupLayout.
@@ -125,6 +125,8 @@ namespace Flux::RHI {
         // Carte d'ombres : la lecture compare une profondeur donnée à celle de la texture (1 si elle est plus proche
         // ou égale, 0 sinon) ; filtrée, la comparaison adoucit le bord des ombres.
         bool compare = false;
+        // Filtrage anisotrope (1 : aucun) : une texture vue de biais (le sol au loin) reste nette ; borné par le GPU.
+        float anisotropy = 1.0f;
     };
 
     // Une ressource d'un groupe : texture échantillonnée (avec son sampler) ou buffer de stockage (lu par les shaders de
@@ -331,6 +333,12 @@ namespace Flux::RHI {
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeTexture(Format format, std::uint32_t size,
                                                                                        std::span<const std::uint8_t> pixels,
                                                                                        bool mipmaps = false) = 0;
+        // Tableau de `layers` textures de même taille (sol des planètes : une couche par matière), à la suite dans
+        // pixels ; lu par coordonnées et indice de couche (Sampler2DArray dans les shaders).
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTextureArray(Format format, Extent extent,
+                                                                                        std::uint32_t layers,
+                                                                                        std::span<const std::uint8_t> pixels,
+                                                                                        bool mipmaps = false) = 0;
         // Cible de rendu vierge (tampon de profondeur). sampled : lue ensuite par les shaders (carte d'ombres).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false) = 0;

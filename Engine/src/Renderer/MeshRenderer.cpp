@@ -346,6 +346,7 @@ namespace Flux {
         m_lights.clear();
         m_interiors.clear();
         m_planetData.clear();
+        m_groundGroup = m_ground.Get(m_device, *m_models, assetsDirectory);
         const ViewCone view(camera, aspect);
         m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {
@@ -421,7 +422,7 @@ namespace Flux {
             }
             m_drawData.push_back({world,
                                   {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
-                                  rim});
+                                  rim, {}});
 
             // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
             const Math::Vector3f center = model->bounds.GetCenter();
@@ -505,7 +506,8 @@ namespace Flux {
                                     material(planet.sandColor, 0.9f), material(planet.snowColor, 0.55f),
                                     {planet.waterColor.r, planet.waterColor.g, planet.waterColor.b, 0.0f},
                                     material(planet.soilColor, 0.95f),
-                                    {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f), 0.0f}});
+                                    {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
+                                     m_groundGroup ? 1.0f : 0.0f}});
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
         const double seaRadius = std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;
@@ -514,14 +516,17 @@ namespace Flux {
             m_planetData[index].water[3] = static_cast<float>(seaRadius);
         }
         const Math::LinearColor white{1.0f, 1.0f, 1.0f, 1.0f};
-        const Math::Quaternionf inverse = transform.rotation.Conjugate();
         for (const PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
             // Centre de la tuile dans le repère de la planète : où fragmentPlanet lit l'altitude et le bruit.
-            const Math::Vector3f local = inverse.Rotate(Math::Vector3f(tile.center - transform.position));
+            const Math::Vector3f local(tile.local);
+            // Le même modulo GroundPeriod, calculé en double : les textures du sol restent nettes et sans couture
+            // d'une tuile à l'autre, même à des centaines de kilomètres du centre.
+            const auto wrap = [](double value) { return static_cast<float>(value - GroundPeriod * std::floor(value / GroundPeriod)); };
             m_drawData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
-                                  {local.x, local.y, local.z, std::bit_cast<float>(index)}});
+                                  {local.x, local.y, local.z, std::bit_cast<float>(index)},
+                                  {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f}});
             m_draws.push_back({tile.model, white, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
                                Math::Length(center), true, true});
             if (ocean && tile.lowest < seaRadius) {
@@ -580,7 +585,7 @@ namespace Flux {
     // et les données de l'image (caméra, cascades). Si un buffer ne peut grandir (mémoire épuisée), rien n'est dessiné
     // plutôt que lu hors du buffer.
     void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex) {
-        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 128 && sizeof(LightData) == 64);
+        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 144 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
         if (!GrowBuffer(m_jointBuffers[frameIndex], frameIndex, JointSlot, jointBytes)
@@ -693,7 +698,9 @@ namespace Flux {
             commands.SetBindGroup(1, *m_frameGroups[frameIndex]);
         }
         const GpuMaterial& material = model.materials[primitive.material];
-        const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
+        const RHI::BindGroup* group = model.IsPlanetTile() && m_groundGroup ? m_groundGroup
+                                    : material.group                         ? material.group.get()
+                                                                             : &m_models->GetWhiteGroup();
         if (group != state.group) {
             state.group = group;
             commands.SetBindGroup(0, *group);

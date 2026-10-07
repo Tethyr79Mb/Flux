@@ -63,6 +63,10 @@ namespace Flux::Vk {
             return std::unexpected(std::format("aucun GPU compatible Vulkan 1.3 : {}", physicalDevice.error().message()));
         }
         device->m_physicalDevice = physicalDevice.value();
+        // Filtrage anisotrope (sol vu de biais net au loin) : présent sur tous les GPU de bureau, facultatif quand même.
+        VkPhysicalDeviceFeatures anisotropy{};
+        anisotropy.samplerAnisotropy = VK_TRUE;
+        device->m_anisotropy = device->m_physicalDevice.enable_features_if_present(anisotropy);
 
         vkb::DeviceBuilder deviceBuilder(device->m_physicalDevice);
         auto logicalDevice = deviceBuilder.build();
