@@ -111,7 +111,7 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   versions doivent rester égales (`PlanetGpuTests`). Pas de terrain stocké ni creusable.
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
   tableaux (`GroundTextures`) plaquées en triplanaire ; couleurs unies si les textures manquent.
-- Atmosphère (diffusion calculée au pixel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
 
 ## Interface (FluxUI)
 

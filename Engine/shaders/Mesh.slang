@@ -226,7 +226,40 @@ struct PlanetVertexOutput
     float3 planetPosition : PLANET; // dans le repère de la planète (son centre à l'origine)
     // Le même modulo GroundPeriod : coordonnées des textures du sol, précises même loin du centre de la planète.
     float3 groundPosition : GROUND;
+    // Sol : température (°C) et humidité (0 à 1) sans les taches de moins de 400 m (voir PlanetClimate).
+    float2 climate : CLIMATE;
+    // L'air entre la caméra et le sommet (voir AirTo) : calculé par sommet, pas par pixel. Il varie doucement avec la
+    // distance, et les tuiles gardent à peu près la même taille à l'écran : la différence ne se voit pas, et le pixel
+    // n'a plus ses 16 pas de marche dans l'air.
+    float3 airTransmittance : AIR_TRANSMITTANCE;
+    float3 airScattered : AIR_SCATTERED;
+    // Océan : le ciel de l'atmosphère que reflète une mer plate (sans les vaguelettes), et la part du ciel de l'espace
+    // qui le traverse. Par sommet, comme l'air.
+    float3 seaSky : SEA_SKY;
+    float3 seaSkyThrough : SEA_SKY_THROUGH;
 };
+
+float3 AirTo(float3 worldPosition, out float3 transmittance);
+
+// Climat d'un point de la planète (local : repère de la planète), aux grandes échelles seulement : calculé par sommet,
+// pas par pixel, car il varie sur des kilomètres (les taches de 20 à 400 m s'ajoutent au pixel). Température : de
+// l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
+// des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte dans
+// les 2 % du relief au-dessus de la mer. Ces échelles ne s'effacent pas au loin : vues de l'espace, les zones restent.
+float2 PlanetClimate(PlanetData planet, float3 local)
+{
+    const float radius = planet.shape.x;
+    const float relief = max(planet.shape.y, 1.0);
+    const float distance = length(local);
+    const float altitude = distance - radius;
+    const float latitude = abs(local.y) / max(distance, 1.0);
+    const float temperature = lerp(planet.climate.x, planet.climate.y, (latitude * latitude) * (latitude * latitude))
+                            - 0.0065 * max(altitude, 0.0) + (PlanetNoise(local * (100.0 / radius)) - 0.5) * 8.0;
+    const float coast = planet.water.w > 0.0 ? smoothstep(0.02 * relief, 0.0, distance - planet.water.w) : 0.0;
+    const float humidity = planet.climate.z + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.9
+                         + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.4 + coast * 0.3;
+    return float2(temperature, humidity);
+}
 
 [shader("vertex")]
 PlanetVertexOutput vertexPlanet(PlanetVertexInput input)
@@ -237,6 +270,10 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input)
     output.base = Output(position, lerp(input.normal, input.morphNormal, morph), input.uv);
     output.planetPosition = draws[params.draw].rim.xyz + position;
     output.groundPosition = draws[params.draw].ground.xyz + position;
+    output.climate = PlanetClimate(frame[0].planets[asuint(draws[params.draw].rim.w)], output.planetPosition);
+    output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
+    output.seaSky = float3(0.0);
+    output.seaSkyThrough = float3(1.0);
     return output;
 }
 
@@ -458,17 +495,24 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
 // propre lumière. 16 pas fixes, sans bruit par pixel : ce bruit dessinait un damier fin sur le sol, et 8 pas fixes
-// des bandes (le ciel, lui, garde son bruit).
-float3 ThroughAir(float3 lit, float3 worldPosition)
+// des bandes (le ciel, lui, garde son bruit). Renvoie la lumière ajoutée ; transmittance : la part de celle de la
+// surface qui passe.
+float3 AirTo(float3 worldPosition, out float3 transmittance)
 {
     const FrameData f = frame[0];
+    transmittance = float3(1.0);
     if (!HasAtmosphere(f.atmosphere)) {
-        return lit;
+        return float3(0.0);
     }
     const float distance = length(worldPosition);
+    return AtmosphereScatter(f.atmosphere, worldPosition / max(distance, 1.0e-4), distance, f.toSun.xyz, f.sunColor.rgb,
+                             16, 0.5, transmittance);
+}
+
+float3 ThroughAir(float3 lit, float3 worldPosition)
+{
     float3 transmittance;
-    const float3 scattered = AtmosphereScatter(f.atmosphere, worldPosition / max(distance, 1.0e-4), distance, f.toSun.xyz,
-                                               f.sunColor.rgb, 16, 0.5, transmittance);
+    const float3 scattered = AirTo(worldPosition, transmittance);
     return lit * transmittance + scattered;
 }
 
@@ -607,17 +651,9 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     const float beach = smoothstep(planet.shape.w + 0.0015 * relief, planet.shape.w - 0.0015 * relief, altitude + macro * 0.008 * relief)
                       * (1.0 - rock);
 
-    // Climat. Température : de l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
-    // des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte
-    // dans les 2 % du relief au-dessus de la mer. Les grandes échelles ne s'effacent pas au loin : vues de l'espace,
-    // les zones restent.
-    const float radius = planet.shape.x;
-    const float latitude = abs(up.y);
-    const float temperature = lerp(planet.climate.x, planet.climate.y, (latitude * latitude) * (latitude * latitude)) - 0.0065 * max(altitude, 0.0)
-                            + (PlanetNoise(local * (100.0 / radius)) - 0.5) * 8.0 + macro * 4.0;
-    const float coast = planet.water.w > 0.0 ? smoothstep(0.02 * relief, 0.0, length(local) - planet.water.w) : 0.0;
-    const float humidity = planet.climate.z + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.9
-                         + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.4 + macro * 0.3 + coast * 0.3;
+    // Climat des grandes échelles (par sommet), déplacé par les taches.
+    const float temperature = input.climate.x + macro * 4.0;
+    const float humidity = input.climate.y + macro * 0.3;
 
     // Biomes : terre nue entre désert et prairie ; sable là où il fait chaud et sec ; herbe là où c'est humide, avec
     // des taches de terre ; l'herbe jaunit dans le froid (toundra) ; neige quand il gèle, comme au-dessus de snowLevel.
@@ -686,7 +722,7 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     surface.normal = normal;
     float inside;
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
-    return float4(ToneMap(ThroughAir(lit, v.worldPosition)), 1.0);
+    return float4(ToneMap(lit * input.airTransmittance + input.airScattered), 1.0);
 }
 
 // Sol sans images : couleurs unies de la planète, avec un grain de bruit (couleur et petit relief) de près. Renvoie la
@@ -739,6 +775,19 @@ PlanetVertexOutput vertexOcean(PlanetVertexInput input)
     PlanetVertexOutput output;
     output.base = Output(ground + up * depth, up, float2(depth, 0.0));
     output.planetPosition = up * planet.water.w;
+    output.climate = float2(0.0); // l'eau n'en a pas besoin
+    output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
+    output.seaSky = float3(0.0);
+    output.seaSkyThrough = float3(1.0);
+    const FrameData f = frame[0];
+    if (HasAtmosphere(f.atmosphere)) {
+        // Vu depuis l'eau : l'air devant le ciel de l'espace.
+        const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
+        float3 reflected = reflect(normalize(output.base.worldPosition), worldUp);
+        reflected = normalize(reflected + worldUp * max(0.02 - dot(reflected, worldUp), 0.0)); // pas sous l'horizon
+        output.seaSky = AtmosphereScatterFrom(f.atmosphere, output.base.worldPosition - f.atmosphere.center.xyz, reflected,
+                                              1.0e9, f.toSun.xyz, f.sunColor.rgb, 6, 0.5, output.seaSkyThrough);
+    }
     return output;
 }
 
@@ -800,9 +849,7 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
     if (HasAtmosphere(f.atmosphere)) {
         const float3 center = v.worldPosition - f.atmosphere.center.xyz;
         sunLight *= AtmosphereSunTransmittance(f.atmosphere, center, f.toSun.xyz);
-        float3 through;
-        const float3 air = AtmosphereScatterFrom(f.atmosphere, center, reflected, 1.0e9, f.toSun.xyz, f.sunColor.rgb, 6, 0.5, through);
-        sky = air + sky * through;
+        sky = input.seaSky + sky * input.seaSkyThrough;
         skyLight = AtmosphereAmbient(f.atmosphere, center, worldUp, f.toSun.xyz);
     }
     // Sous la surface : la couleur de l'eau, éclairée par le soleil et le ciel.
@@ -812,7 +859,7 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
 
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
-    return float4(ToneMap(ThroughAir(lit, v.worldPosition)), alpha);
+    return float4(ToneMap(lit * input.airTransmittance + input.airScattered), alpha);
 }
 
 [shader("fragment")]

@@ -45,9 +45,11 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ## Prochaines étapes
 
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
-- ⬜ Perspective aérienne précalculée (texture 3D) au lieu de l'air calculé à chaque pixel.
+- 🔨 Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
+- ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - ⬜ Océan : tuiles plus grossières et moins nombreuses (253 tuiles redessinées aujourd'hui).
 - ⬜ Réglage du niveau de détail des tuiles (`LodSplitFactor`).
+- ⬜ Tuiles dessinées en un appel (dessin indirect) : un appel par tuile et par cascade d'ombre aujourd'hui.
 
 ### Rendu
 - ⬜ HDR + bloom (lueurs, soleil, réacteurs).
