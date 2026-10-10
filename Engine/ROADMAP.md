@@ -23,7 +23,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
 - 🔨 Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
-- 🔨 Teinte de chaque texture du sol (PR #92).
+- ✅ Teinte de chaque texture du sol.
 
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
