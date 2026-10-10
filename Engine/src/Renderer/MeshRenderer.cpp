@@ -493,7 +493,11 @@ namespace Flux {
         }
         // Son sol, lu par fragmentPlanet ; sans zones, roche partout.
         const float roughness = std::clamp(planet.roughness, 0.0f, 1.0f);
-        const auto material = [&](const Math::LinearColor& color, float materialRoughness) {
+        // Avec les textures du sol, la teinte de chaque matière à la place de sa couleur.
+        const auto material = [&](const Math::LinearColor& color, const Math::LinearColor& tint, float materialRoughness) {
+            if (m_groundGroup) {
+                return std::array{tint.r, tint.g, tint.b, materialRoughness};
+            }
             return planet.zones ? std::array{color.r, color.g, color.b, materialRoughness}
                                 : std::array{planet.color.r, planet.color.g, planet.color.b, roughness};
         };
@@ -502,10 +506,12 @@ namespace Flux {
         if (added) {
             m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowLevel * 0.01f * planet.relief,
                                      planet.sandLevel * 0.01f * planet.relief},
-                                    material(planet.color, roughness), material(planet.grassColor, 0.95f),
-                                    material(planet.sandColor, 0.9f), material(planet.snowColor, 0.55f),
+                                    material(planet.color, planet.rockTint, roughness),
+                                    material(planet.grassColor, planet.grassTint, 0.95f),
+                                    material(planet.sandColor, planet.sandTint, 0.9f),
+                                    material(planet.snowColor, planet.snowTint, 0.55f),
                                     {planet.waterColor.r, planet.waterColor.g, planet.waterColor.b, 0.0f},
-                                    material(planet.soilColor, 0.95f),
+                                    material(planet.soilColor, planet.soilTint, 0.95f),
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                                      m_groundGroup ? 1.0f : 0.0f}});
         }

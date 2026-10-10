@@ -19,7 +19,7 @@ namespace Flux {
     struct PlanetGpu
     {
         std::array<float, 4> shape{}; // rayon, relief, altitude de la neige, du sable (m)
-        std::array<float, 4> rock{};  // couleur linéaire ; w : rugosité
+        std::array<float, 4> rock{};  // couleur linéaire (avec les textures du sol : teinte) ; w : rugosité
         std::array<float, 4> grass{};
         std::array<float, 4> sand{};
         std::array<float, 4> snow{};

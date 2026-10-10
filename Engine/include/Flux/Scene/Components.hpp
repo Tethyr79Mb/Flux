@@ -173,7 +173,8 @@ namespace Flux {
         // mer) va de déserts (sable) à prairies (herbe) en passant par la terre nue ; le froid jaunit l'herbe
         // (toundra) puis la couvre de neige.
         // Avec les images du dossier Textures/Sol des assets (roche, herbe, terre, sable, neige), chaque matière est une
-        // texture plaquée sur le relief et les couleurs ci-dessous ne servent plus ; sans elles, couleurs unies.
+        // texture plaquée sur le relief et les couleurs ci-dessous ne servent plus (les teintes, si) ; sans elles,
+        // couleurs unies.
         // Sans zones : roche partout (une lune).
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;
@@ -182,6 +183,13 @@ namespace Flux {
         Math::LinearColor sandColor{0.5f, 0.42f, 0.3f};
         Math::LinearColor snowColor{0.85f, 0.88f, 0.92f};
         Math::LinearColor soilColor{0.14f, 0.09f, 0.055f};
+        // Teintes des textures du sol, multipliées à leur couleur sans changer leur luminosité : blanc (ou un gris) garde
+        // l'image telle quelle, un jaune clair la dore.
+        Math::LinearColor rockTint{1.0f, 1.0f, 1.0f};
+        Math::LinearColor grassTint{1.0f, 1.0f, 1.0f};
+        Math::LinearColor soilTint{1.0f, 1.0f, 1.0f};
+        Math::LinearColor sandTint{1.0f, 1.0f, 1.0f};
+        Math::LinearColor snowTint{1.0f, 1.0f, 1.0f};
         float temperature = 20.0f;      // °C à l'équateur, au niveau zéro
         float poleTemperature = -30.0f; // °C aux pôles
         float humidity = 0.5f;          // 0 : planète désertique, 1 : très humide
