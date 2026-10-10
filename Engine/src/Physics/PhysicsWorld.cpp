@@ -47,6 +47,10 @@ namespace Flux {
         constexpr float StepSeconds = 1.0f / 60.0f;
         // Au plus tant de pas par image : après un blocage, la simulation ralentit au lieu de s'emballer.
         constexpr int MaxStepsPerUpdate = 4;
+        // En dessous de ce nombre de corps actifs, un monde est calculé sur le fil principal : réveiller les fils de
+        // travail et les attendre coûtait 0,5 à 1 ms par monde et par pas, quand le calcul lui-même en prend 0,02 (un
+        // vaisseau et son décor). Au-delà, les îlots de corps se répartissent sur les fils.
+        constexpr JPH::uint ParallelBodyCount = 128;
 
         // Calques : les objets immobiles ne se testent pas entre eux ; ceux qui n'arrêtent que la caméra (verrière)
         // ne touchent rien, seul le lancer de la caméra les voit.
@@ -1258,7 +1262,10 @@ namespace Flux {
                 for (const std::unique_ptr<Grid>& grid : grids) {
                     UpdateCharacters(*grid, scene, input);
                     ApplyPlanetGravity(*grid);
-                    grid->system->Update(StepSeconds, 1, shared.tempAllocator.get(), shared.jobSystem.get());
+                    JPH::JobSystem* jobs = grid->system->GetNumActiveBodies(JPH::EBodyType::RigidBody) < ParallelBodyCount
+                                               ? static_cast<JPH::JobSystem*>(shared.serialJobs.get())
+                                               : shared.jobSystem.get();
+                    grid->system->Update(StepSeconds, 1, shared.tempAllocator.get(), jobs);
                 }
             }
             time += steps * static_cast<double>(StepSeconds);

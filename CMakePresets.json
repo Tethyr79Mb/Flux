@@ -28,10 +28,17 @@
       "displayName": "Visual Studio (MSVC) Release",
       "inherits": "msvc-base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "msvc-relwithdebinfo",
+      "displayName": "Visual Studio (MSVC) Release + débogage",
+      "inherits": "msvc-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
     }
   ],
   "buildPresets": [
     { "name": "msvc-debug", "configurePreset": "msvc-debug" },
-    { "name": "msvc-release", "configurePreset": "msvc-release" }
+    { "name": "msvc-release", "configurePreset": "msvc-release" },
+    { "name": "msvc-relwithdebinfo", "configurePreset": "msvc-relwithdebinfo" }
   ]
 }

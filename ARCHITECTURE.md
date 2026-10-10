@@ -94,7 +94,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 ## Physique (Jolt)
 
-- `PhysicsContext` (créé avec le moteur) : système Jolt, fils de travail, maillages de collision en cache.
+- `PhysicsContext` (créé avec le moteur) : système Jolt, fils de travail, maillages de collision en cache. Un monde
+  de moins de 128 corps actifs est calculé sur le fil principal (réveiller les fils coûtait plus que le calcul).
 - `PhysicsWorld` (par scène lancée) : un monde Jolt pour la scène, plus un par vaisseau dans son propre repère. On
   marche dans un vaisseau qui vole parce que son intérieur est immobile dans son monde. Des copies cinématiques de
   son décor dans le monde extérieur permettent d'y monter.
@@ -140,7 +141,9 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 ## Compilation
 
-- CMake + Ninja, préréglages MSVC (`CMakePresets.json`). Dépendances par FetchContent dans `out/deps/<préréglage>`.
+- CMake + Ninja, préréglages MSVC (`CMakePresets.json`) : Debug, Release, et « Release + débogage » (RelWithDebInfo)
+  pour tester vite en gardant les points d'arrêt. Dépendances par FetchContent dans `out/deps/<préréglage>`. Jolt est
+  compilé optimisé même en Debug.
 - `cmake/FluxSources.cmake` trouve les sources tout seul ; `FluxPrecompiled.cmake` les en-têtes précompilés ;
   `FluxResources.cmake` les shaders ; `FluxVersion.cmake` la version affichée (numéro de `project()` + commit Git).
 - CI : `.github/workflows/msvc.yml`, Debug + Release, FluxTests.
