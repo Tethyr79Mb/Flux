@@ -746,21 +746,16 @@ namespace Flux {
         // d'où l'ordre des membres (détruits à l'envers).
         struct Parsed
         {
-            std::vector<char> bytes;
+            std::vector<std::uint8_t> bytes;
             std::unique_ptr<cgltf_data, decltype(&cgltf_free)> gltf{nullptr, &cgltf_free};
         };
 
         // Lit et analyse le fichier (sans charger les .bin).
         std::expected<Parsed, std::string> Parse(const std::filesystem::path& path, const cgltf_options& options) {
             const std::string fileName = Platform::ToUtf8(path.filename());
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return std::unexpected("impossible d'ouvrir « " + fileName + " »");
-            }
             Parsed parsed;
-            parsed.bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-            if (file.bad()) {
-                return std::unexpected("lecture de « " + fileName + " » impossible");
+            if (!Platform::ReadFileBytes(path, parsed.bytes)) {
+                return std::unexpected("impossible de lire « " + fileName + " »");
             }
             cgltf_data* data = nullptr;
             const cgltf_result result = cgltf_parse(&options, parsed.bytes.data(), parsed.bytes.size(), &data);

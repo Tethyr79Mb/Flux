@@ -346,7 +346,11 @@ namespace Flux {
         m_lights.clear();
         m_interiors.clear();
         m_planetData.clear();
-        m_groundGroup = m_ground.Get(m_device, *m_models, assetsDirectory);
+        // Textures du sol : lues (sur un autre fil) seulement quand la scène a une planète.
+        const bool planets = std::ranges::any_of(m_relativeTransforms, [&scene](const RelativeTransform& transform) {
+            return scene.TryGet<PlanetComponent>(transform.entity) != nullptr;
+        });
+        m_groundGroup = planets ? m_ground.Get(m_device, *m_models, assetsDirectory) : nullptr;
         const ViewCone view(camera, aspect);
         m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {

@@ -3,19 +3,11 @@
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <cstring>
-#include <fstream>
-#include <iterator>
 #include <limits>
 #include <memory>
 
-// Implémentation de stb_image compilée ici seulement, réduite aux formats utiles.
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_TGA
-#define STBI_ONLY_BMP
-#define STBI_NO_STDIO // fichiers lus par nous : chemins Unicode sous Windows
-#define STBI_FAILURE_USERMSG
+// Déclarations seules : l'implémentation est dans StbImage.c.
+#define STBI_NO_STDIO
 #include <stb_image.h>
 
 namespace Flux {
@@ -51,12 +43,8 @@ namespace Flux {
     }
 
     std::expected<ImageData, std::string> LoadImageFile(const std::filesystem::path& path) {
-        std::ifstream file(path, std::ios::binary);
-        if (!file) {
-            return std::unexpected("impossible d'ouvrir « " + Platform::ToUtf8(path.filename()) + " »");
-        }
-        const std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        if (file.bad()) {
+        std::vector<std::uint8_t> bytes;
+        if (!Platform::ReadFileBytes(path, bytes)) {
             return std::unexpected("lecture de « " + Platform::ToUtf8(path.filename()) + " » impossible");
         }
         auto image = LoadImageMemory(bytes);

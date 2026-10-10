@@ -4,7 +4,11 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
+#include <algorithm>
 #include <format>
+#include <mutex>
+#include <thread>
+#include <tuple>
 #include <string_view>
 #include <vector>
 
@@ -62,10 +66,134 @@ namespace Flux {
             }
             return image;
         }
+
+        // Une image à lire : sa matière (couche des tableaux) et ce qu'elle remplit.
+        enum class Channel : std::uint8_t { Color, Normal, Roughness, Occlusion };
+        struct Job
+        {
+            std::filesystem::path path;
+            std::uint32_t layer;
+            Channel channel;
+        };
+
+        // Copie l'image décodée à sa place : sa couche du tableau de la couleur ou des normales, ou un canal du
+        // tableau occlusion-rugosité. Chaque image écrit des octets différents : plusieurs fils à la fois sans verrou.
+        void Place(const ImageData& image, const Job& job, GroundTextures::Decoded& decoded) {
+            const std::size_t count = static_cast<std::size_t>(decoded.size) * decoded.size;
+            const std::size_t first = job.layer * count * 4;
+            switch (job.channel) {
+                case Channel::Color:
+                case Channel::Normal: {
+                    std::vector<std::uint8_t>& pixels = decoded.pixels[job.channel == Channel::Color ? 0 : 1];
+                    std::copy(image.rgba.begin(), image.rgba.end(), pixels.begin() + static_cast<std::ptrdiff_t>(first));
+                    break;
+                }
+                case Channel::Roughness:
+                case Channel::Occlusion: {
+                    std::uint8_t* out = decoded.pixels[2].data() + first + (job.channel == Channel::Occlusion ? 0 : 1);
+                    const std::uint8_t* in = image.rgba.data();
+                    for (std::size_t i = 0; i < count; ++i) {
+                        out[i * 4] = in[i * 4];
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Lit et range toutes les images du dossier. La première (roche-couleur) donne la taille, les autres sont
+        // décodées en parallèle, directement à leur place.
+        GroundTextures::Decoded Decode(const std::filesystem::path& directory, const std::atomic<bool>& cancel) {
+            GroundTextures::Decoded decoded;
+            std::vector<Job> jobs;
+            for (std::uint32_t layer = 0; layer < LayerNames.size(); ++layer) {
+                for (const auto& [suffix, channel, required] : {std::tuple{"couleur", Channel::Color, true},
+                                                               std::tuple{"normales", Channel::Normal, true},
+                                                               std::tuple{"rugosite", Channel::Roughness, true},
+                                                               std::tuple{"occlusion", Channel::Occlusion, false}}) {
+                    std::filesystem::path path = FindImage(directory, LayerNames[layer], suffix);
+                    if (!path.empty()) {
+                        jobs.push_back({std::move(path), layer, channel});
+                    } else if (required) {
+                        decoded.error = std::format("image {}-{} absente de {}", LayerNames[layer], suffix, Platform::ToUtf8(directory));
+                        return decoded;
+                    }
+                }
+            }
+
+            auto first = ReadImage(jobs.front().path);
+            if (!first) {
+                decoded.error = first.error();
+                return decoded;
+            }
+            decoded.size = first->size.x;
+            const std::size_t bytes = static_cast<std::size_t>(decoded.size) * decoded.size * 4 * LayerNames.size();
+            decoded.pixels[0].resize(bytes);
+            decoded.pixels[1].resize(bytes);
+            // Sans image d'occlusion : 255 (aucune).
+            decoded.pixels[2].resize(bytes);
+            for (std::size_t i = 0; i < bytes; i += 4) {
+                decoded.pixels[2][i] = 255;
+                decoded.pixels[2][i + 3] = 255;
+            }
+            Place(*first, jobs.front(), decoded);
+            first->rgba = {};
+
+            std::atomic<std::size_t> next = 1;
+            std::mutex errorMutex;
+            const auto work = [&] {
+                for (std::size_t j = next++; j < jobs.size() && !cancel; j = next++) {
+                    auto image = ReadImage(jobs[j].path);
+                    if (image && image->size.x != decoded.size) {
+                        image = std::unexpected(std::format("{} : toutes les images doivent avoir la même taille",
+                                                            Platform::ToUtf8(jobs[j].path.filename())));
+                    }
+                    if (!image) {
+                        const std::scoped_lock lock(errorMutex);
+                        decoded.error = image.error();
+                        continue;
+                    }
+                    Place(*image, jobs[j], decoded);
+                }
+            };
+            // Un fil par cœur (pas plus que d'images) ; chaque image décodée prend 16 Mo le temps d'être rangée.
+            const std::size_t threads = std::clamp<std::size_t>(std::thread::hardware_concurrency(), 1, jobs.size() - 1);
+            {
+                std::vector<std::jthread> workers;
+                for (std::size_t t = 1; t < threads; ++t) {
+                    workers.emplace_back(work);
+                }
+                work();
+            }
+            if (cancel) {
+                decoded.error = "annulé";
+            }
+            return decoded;
+        }
+    }
+
+    GroundTextures::~GroundTextures() {
+        if (m_cancel) {
+            *m_cancel = true; // fermeture : les images restantes ne sont pas décodées (le futur attend la fin)
+        }
     }
 
     const RHI::BindGroup* GroundTextures::Get(RHI::Device& device, const ModelCache& models,
                                               const std::filesystem::path& assetsDirectory) {
+        // Décodage fini : envoyé au GPU (le seul moment où le fil principal attend, le temps de la copie).
+        if (m_decoding.valid() && m_decoding.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            Decoded decoded = m_decoding.get();
+            m_cancel.reset();
+            if (!decoded.error.empty()) {
+                Log::Error("Sol des planètes : {}", decoded.error);
+            } else {
+                device.WaitIdle(); // l'ancien groupe peut servir à une image en vol
+                m_group.reset();
+                if (!Upload(device, models, decoded)) {
+                    m_group.reset();
+                }
+            }
+        }
+
         const std::filesystem::path directory = assetsDirectory / "Textures" / "Sol";
         const auto now = std::chrono::steady_clock::now();
         if (directory != m_directory) {
@@ -73,18 +201,21 @@ namespace Flux {
             m_writeTime = std::filesystem::file_time_type::min();
             m_checked = {};
         }
-        if (now - m_checked >= CheckInterval) {
+        // Un décodage à la fois : les changements arrivés pendant celui-ci sont vus à la vérification suivante.
+        if (now - m_checked >= CheckInterval && !m_decoding.valid()) {
             m_checked = now;
             const std::filesystem::file_time_type writeTime = NewestWriteTime();
             if (writeTime != m_writeTime) {
                 m_writeTime = writeTime;
-                device.WaitIdle(); // l'ancien groupe peut servir à une image en vol
-                m_group.reset();
-                for (auto& texture : m_textures) {
-                    texture.reset();
-                }
-                if (writeTime != std::filesystem::file_time_type::min() && !Load(device, models)) {
+                if (writeTime == std::filesystem::file_time_type::min()) {
+                    device.WaitIdle(); // plus d'images : couleurs unies
                     m_group.reset();
+                    for (auto& texture : m_textures) {
+                        texture.reset();
+                    }
+                } else {
+                    m_cancel = std::make_shared<std::atomic<bool>>(false);
+                    m_decoding = std::async(std::launch::async, [directory, cancel = m_cancel] { return Decode(directory, *cancel); });
                 }
             }
         }
@@ -109,51 +240,13 @@ namespace Flux {
         return newest;
     }
 
-    bool GroundTextures::Load(RHI::Device& device, const ModelCache& models) {
-        // Tableaux : couleur (sRGB) ; normales ; occlusion (rouge) et rugosité (vert).
-        std::array<std::vector<std::uint8_t>, 3> pixels;
-        int size = 0;
+    bool GroundTextures::Upload(RHI::Device& device, const ModelCache& models, Decoded& decoded) {
         const auto fail = [](std::string_view message) {
             Log::Error("Sol des planètes : {}", message);
             return false;
         };
-        for (const std::string_view name : LayerNames) {
-            const auto read = [&](std::string_view suffix, bool required) -> std::expected<ImageData, std::string> {
-                const std::filesystem::path path = FindImage(m_directory, name, suffix);
-                if (path.empty()) {
-                    if (required) {
-                        return std::unexpected(std::format("image {}-{} absente de {}", name, suffix, Platform::ToUtf8(m_directory)));
-                    }
-                    return ImageData{};
-                }
-                auto image = ReadImage(path);
-                if (image && size != 0 && image->size.x != size) {
-                    return std::unexpected(std::format("{}-{} : toutes les images doivent avoir la même taille", name, suffix));
-                }
-                return image;
-            };
-            auto color = read("couleur", true);
-            if (!color) {
-                return fail(color.error());
-            }
-            size = color->size.x;
-            auto normal = read("normales", true);
-            auto roughness = read("rugosite", true);
-            auto occlusion = read("occlusion", false);
-            for (const auto* image : {&normal, &roughness, &occlusion}) {
-                if (!*image) {
-                    return fail(image->error());
-                }
-            }
-            pixels[0].insert(pixels[0].end(), color->rgba.begin(), color->rgba.end());
-            pixels[1].insert(pixels[1].end(), normal->rgba.begin(), normal->rgba.end());
-            const std::size_t count = static_cast<std::size_t>(size) * size;
-            for (std::size_t i = 0; i < count; ++i) {
-                const std::uint8_t ambient = occlusion->rgba.empty() ? 255 : occlusion->rgba[i * 4];
-                pixels[2].insert(pixels[2].end(), {ambient, roughness->rgba[i * 4], 0, 255});
-            }
-        }
-
+        const int size = decoded.size;
+        std::array<std::vector<std::uint8_t>, 3>& pixels = decoded.pixels;
         const RHI::Extent extent{static_cast<std::uint32_t>(size), static_cast<std::uint32_t>(size)};
         constexpr std::array formats{RHI::Format::RGBA8Srgb, RHI::Format::RGBA8Unorm, RHI::Format::RGBA8Unorm};
         for (std::size_t i = 0; i < m_textures.size(); ++i) {

@@ -129,10 +129,27 @@ FetchContent_Declare(miniaudio
 
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator freetype msdfgen EnTT nlohmann_json stb cgltf JoltPhysics miniaudio)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf JoltPhysics miniaudio)
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+# Ce qui tourne au démarrage (atlas de la police : FreeType et msdfgen ; décodage des images : stb_image) est compilé
+# optimisé même en Debug : sinon une vingtaine de secondes de plus à chaque lancement. On ne les suit pas pas à pas.
+# Les options d'un dossier valent pour ses cibles : changées le temps d'ajouter ces dossiers, puis remises.
+set(FLUX_SAVED_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+set(FLUX_SAVED_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+if(MSVC)
+    set(CMAKE_C_FLAGS_DEBUG "/O2 /Ob2")
+    set(CMAKE_CXX_FLAGS_DEBUG "/O2 /Ob2")
+else()
+    set(CMAKE_C_FLAGS_DEBUG "-O2")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O2")
+endif()
+FetchContent_MakeAvailable(freetype msdfgen)
+add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/stb ${CMAKE_BINARY_DIR}/stb_image_impl)
+set(CMAKE_C_FLAGS_DEBUG "${FLUX_SAVED_C_FLAGS_DEBUG}")
+set(CMAKE_CXX_FLAGS_DEBUG "${FLUX_SAVED_CXX_FLAGS_DEBUG}")
 
 # Le header seul : l'implémentation (CGLTF_IMPLEMENTATION) est compilée dans Model.cpp.
 add_library(cgltf_header INTERFACE)
