@@ -61,6 +61,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Végétation et rochers posés sur le sol (instancing).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - ⬜ Nuages.
+- ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 
 ### Gameplay
 - ⬜ Prefabs (vaisseau, station réutilisables).
