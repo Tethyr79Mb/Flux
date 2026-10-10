@@ -158,6 +158,26 @@ namespace Flux::Seats {
             approach(ship.velocity.x, wanted.x, step + std::abs(wanted.x - ship.velocity.x) * grip);
             approach(ship.velocity.y, wanted.y, step + std::abs(wanted.y - ship.velocity.y) * grip);
             approach(ship.velocity.z, wanted.z, step + std::abs(wanted.z - ship.velocity.z) * grip);
+
+            // Le mode voyage porte la vitesse au-delà de ce que tiennent les propulseurs : quand son régime retombe
+            // (Tab, frein, entrée dans une atmosphère), elle redescend avec lui. Sinon les 1 000 m/s du voyage ne
+            // fondaient qu'à ShipComponent::acceleration (une minute et demie) : entré trop vite dans l'atmosphère, le
+            // vaisseau filait vers le sol sans répondre.
+            const float normalSpeed = Math::Length(Math::Vector3f{ship.strafeSpeed, ship.strafeSpeed, ship.maxSpeed}) * std::max(ship.boost, 1.0f);
+            if (const float speed = Math::Length(ship.velocity); speed > normalSpeed * travel) {
+                ship.velocity = ship.velocity * (normalSpeed * travel / speed);
+            }
+            // Vers une planète, il ne s'approche de sa limite pas plus vite que sa distance en ApproachTime secondes :
+            // il ralentit à mesure qu'il arrive et y entre à vitesse normale. Le long de la planète, rien ne change.
+            if (Math::Length(input.planetUp) > 0.5f) {
+                constexpr float ApproachTime = 3.0f;
+                const Math::Vector3f up = rotation.Conjugate().Rotate(input.planetUp);
+                const float closing = -Math::Dot(ship.velocity, up);
+                const float allowed = std::max(normalSpeed, std::max(input.planetDistance, 0.0f) / ApproachTime);
+                if (closing > allowed) {
+                    ship.velocity = ship.velocity + up * (closing - allowed);
+                }
+            }
         }
     }
 

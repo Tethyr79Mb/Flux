@@ -573,6 +573,30 @@ namespace {
         // Seulement dans l'espace : dans l'air, Tab ne l'allume pas.
         frames(Frame, {.travel = true, .up = up, .air = 0.5f});
         CHECK(!flight.travel);
+
+        // Entrée dans l'atmosphère en plein voyage : la vitesse retombe avec le régime, en 3 s, au lieu de fondre à
+        // 10 m/s² (la vitesse max sans voyage : 1 000 m/s, 2 000 en boost).
+        frames(Frame, {.travel = true, .up = up});
+        frames(25.0, {.up = up});
+        CHECK(flight.travelLevel == 1.0f && Math::Length(flight.velocity) > 9000.0f);
+        flight.acceleration = 10.0f;
+        frames(3.0, {.up = up, .air = 0.01f});
+        CHECK(!flight.travel && flight.travelLevel == 0.0f && Math::Length(flight.velocity) < 2001.0f);
+
+        // Vers une planète, en voyage, la vitesse d'approche est bornée par la distance qui reste divisée par 3 s : à
+        // 60 km, 20 km/s au plus ; à 1 km, la vitesse normale. Le nez droit sur elle.
+        flight.acceleration = 5000.0f;
+        flight.travelFactor = 50.0f;
+        frames(Frame, {.travel = true, .up = up});
+        frames(10.0, {.up = up});
+        CHECK(flight.travelLevel == 1.0f && Math::Length(flight.velocity) > 49000.0f);
+        const Math::Vector3f nose = scene.GetWorldRotation(ship).Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+        const Math::Vector3f planetUp = nose * -1.0f; // la planète droit devant
+        frames(Frame, {.planetUp = planetUp, .planetDistance = 60000.0f});
+        const auto closing = [&] { return -Math::Dot(scene.GetWorldRotation(ship).Rotate(flight.velocity), planetUp); };
+        CHECK(closing() < 20001.0f && closing() > 19000.0f);
+        frames(Frame, {.planetUp = planetUp, .planetDistance = 1000.0f});
+        CHECK(closing() < 2001.0f);
         return true;
     }
 
