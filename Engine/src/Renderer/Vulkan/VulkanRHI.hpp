@@ -118,7 +118,8 @@ namespace Flux::Vk {
         void BindIndexBuffer(const RHI::Buffer& buffer) override;
         void PushConstants(const void* data, std::uint32_t size) override;
         void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) override;
-        void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) override;
+        void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex, std::uint32_t instance) override;
+        void DrawIndexedIndirect(const RHI::Buffer& buffer, std::uint64_t offset, std::uint32_t count) override;
         void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
         void ComputeBarrier() override;
         void WriteTimestamp(std::uint32_t slot) override;
