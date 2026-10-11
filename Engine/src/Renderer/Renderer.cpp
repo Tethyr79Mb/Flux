@@ -6,6 +6,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
+#include "Renderer/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 
@@ -125,6 +126,11 @@ namespace Flux {
                 const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
                                                           assetsDirectory, frameIndex);
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
+                const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
+                timings.planetTiles = tiles.drawn;
+                timings.planetOceanTiles = tiles.ocean;
+                timings.planetStoredTiles = tiles.stored;
+                timings.planetTileCapacity = PlanetTileCompute::MaxPages * PlanetTileCompute::TilesPerPage;
             }
 
             const Clock::time_point recordStart = Clock::now();

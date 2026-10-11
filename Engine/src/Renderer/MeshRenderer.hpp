@@ -39,6 +39,15 @@ namespace Flux {
         // Une matrice par maillage, calculée relativement à la caméra, les os des modèles animés et les cascades
         // d'ombres envoyés au GPU. `hidden` et ses descendants ne sont pas dessinés mais gardent leur ombre. Après
         // Device::BeginFrame : les ressources de l'image frameIndex sont libres.
+        // Tuiles de planète de l'image préparée : dessinées, dont recouvertes d'eau, et gardées en mémoire.
+        struct PlanetTileStats
+        {
+            std::uint32_t drawn = 0;
+            std::uint32_t ocean = 0;
+            std::uint32_t stored = 0;
+        };
+        PlanetTileStats GetPlanetTileStats() const;
+
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
         // Calculs sur le GPU préparés par Prepare (tuiles des planètes), avant toute passe.

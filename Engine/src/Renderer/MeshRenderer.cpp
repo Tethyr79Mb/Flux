@@ -688,6 +688,14 @@ namespace Flux {
         return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
     }
 
+    MeshRenderer::PlanetTileStats MeshRenderer::GetPlanetTileStats() const {
+        PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()), .stored = m_planets->GetStoredTileCount()};
+        for (const TileDraw& draw : m_tileDraws) {
+            stats.ocean += draw.ocean ? 1u : 0u;
+        }
+        return stats;
+    }
+
     void MeshRenderer::ClearDraws() {
         m_draws.clear();
         m_tileDraws.clear();

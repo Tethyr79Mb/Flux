@@ -38,6 +38,8 @@ namespace Flux {
 
         // Une case libre de plus (ajoute une page si besoin) ; les cases ne sont jamais rendues, l'appelant les réutilise.
         std::expected<std::uint32_t, std::string> CreateTile();
+        // Cases créées jusqu'ici (au plus MaxPages * TilesPerPage).
+        std::uint32_t GetTileCount() const { return m_tileCount; }
         static std::uint32_t GetPage(std::uint32_t tile) { return tile / TilesPerPage; }
         // Premier sommet de la case dans sa page (vertexOffset d'un dessin).
         static std::uint32_t GetFirstVertex(std::uint32_t tile) { return (tile % TilesPerPage) * Planet::TileVertexCount; }

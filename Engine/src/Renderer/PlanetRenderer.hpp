@@ -69,6 +69,10 @@ namespace Flux {
         // Pages de sommets des tuiles, et leurs indices (communs à toutes) ; nullptr avant la première image.
         const PlanetTileCompute& GetTiles() const { return *m_compute; }
         const RHI::Buffer* GetIndices() const { return m_indices.get(); }
+        // Cases occupées par une tuile (gardée pour plus tard ou dessinée), pour le panneau Moteur.
+        std::uint32_t GetStoredTileCount() const {
+            return m_compute->GetTileCount() - static_cast<std::uint32_t>(m_freeTiles.size());
+        }
         std::uint32_t GetIndexCount() const { return m_indexCount; }
 
         private:
