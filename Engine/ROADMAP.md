@@ -28,7 +28,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
 - ✅ Composants enregistrés une fois : inspecteur et sauvegarde générés.
 - ✅ Physique Jolt : objets simulés, personnage (capsule), un monde physique par vaisseau (on marche à bord pendant qu'il vole).
-- ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, mode voyage, sièges, atterrissage stabilisé.
+- ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, mode voyage (ralenti à l'approche d'une planète, vitesse rendue à sa sortie), sièges, atterrissage stabilisé.
 - ✅ Animation squelettique (fondus, repos/marche/course/chute/s'asseoir).
 - ✅ Son 3D (miniaudio), actions d'entrée réassignables (Touches.json).
 
