@@ -15,6 +15,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre).
 - ✅ Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour.
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur).
+- ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
 
 ### Planètes

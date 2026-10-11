@@ -286,9 +286,15 @@ namespace Flux::RHI {
         // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
         // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
         virtual void WriteTimestamp(std::uint32_t slot) = 0;
+        // Diagnostic de plantage : les commandes qui suivent forment l'étape `name` (texte constant, vivant jusqu'à la
+        // fin du programme), jusqu'à l'étape suivante ou la fin de l'image ; MaxSteps par image au plus. Si le GPU se
+        // bloque, le journal et le fichier plantage-gpu.txt disent quelles étapes avaient commencé ou fini. Sans effet
+        // sans l'extension qui le permet (AMD) ni hors d'une image.
+        virtual void BeginStep(const char* name) = 0;
     };
 
     inline constexpr std::uint32_t MaxTimestamps = 8;
+    inline constexpr std::uint32_t MaxSteps = 16;
 
     // Temps passés par le CPU à attendre, pendant l'image précédente (millisecondes) : longs, ils disent que le GPU ou
     // la présentation (V-Sync, plafond du pilote) mène la cadence.
