@@ -27,7 +27,7 @@ bool RunPlanetGpuTests() {
         std::printf("       GPU ignoré : %s\n", device.error().c_str());
         return true;
     }
-    auto compute = PlanetTileCompute::Create(**device);
+    auto compute = PlanetTileCompute::Create(**device, RHI::MemoryType::Readback);
     if (!compute) {
         std::printf("ÉCHEC %s\n", compute.error().c_str());
         return false;
@@ -47,12 +47,13 @@ bool RunPlanetGpuTests() {
         cases.push_back({terrain, {5, static_cast<std::uint8_t>(max), (1u << max) - 1u, 7u}});
     }
 
-    std::vector<PlanetTileCompute::TileBuffers> buffers;
+    // Toutes dans la même page : chacune doit écrire dans sa case.
+    std::vector<std::uint32_t> tiles;
     for (const Case& c : cases) {
-        auto tile = (*compute)->CreateTileBuffers(RHI::MemoryType::Readback);
+        auto tile = (*compute)->CreateTile();
         CHECK(tile.has_value());
         CHECK((*compute)->Add(0, *c.terrain, c.key, *tile));
-        buffers.push_back(std::move(*tile));
+        tiles.push_back(*tile);
     }
     CHECK((*device)->Submit([&](RHI::CommandList& commands) { (*compute)->Record(commands, 0); }));
     const auto stats = (*compute)->GetStats(0);
@@ -64,8 +65,7 @@ bool RunPlanetGpuTests() {
         const Case& c = cases[n];
         Planet::TileMesh mesh;
         Planet::BuildTile(*c.terrain, c.key, mesh);
-        buffers[n].vertices->Read(vertices.data(), vertices.size() * sizeof(ModelVertex));
-        buffers[n].morph->Read(morph.data(), morph.size() * sizeof(Planet::MorphVertex));
+        (*compute)->ReadTile(tiles[n], vertices.data(), morph.data());
         // Erreur permise : le float de la position (sa taille), celui du relief, et le millimètre.
         const double tolerance = 0.005 + 1.0e-6 * mesh.radius + 4.0e-6 * c.terrain->GetRelief();
         double worst = 0.0;

@@ -50,8 +50,15 @@ namespace Flux::Vk {
         features13.dynamicRendering = VK_TRUE;
         features13.synchronization2 = VK_TRUE;
 
+        // Dessin indirect (toutes les tuiles d'une planète en un appel) : plusieurs commandes par appel, chacune avec
+        // son indice d'instance. Présents sur tous les GPU de bureau.
+        VkPhysicalDeviceFeatures features{};
+        features.multiDrawIndirect = VK_TRUE;
+        features.drawIndirectFirstInstance = VK_TRUE;
+
         vkb::PhysicalDeviceSelector selector(device->m_instance);
         selector.set_minimum_version(1, 3)
+                .set_required_features(features)
                 .set_required_features_13(features13)
                 .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
         if (headless) {

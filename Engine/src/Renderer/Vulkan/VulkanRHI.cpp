@@ -316,8 +316,14 @@ namespace Flux::Vk {
         vkCmdDraw(m_commandBuffer, vertexCount, 1, firstVertex, 0);
     }
 
-    void RhiCommandList::DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) {
-        vkCmdDrawIndexed(m_commandBuffer, indexCount, 1, firstIndex, 0, 0);
+    void RhiCommandList::DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex, std::uint32_t instance) {
+        vkCmdDrawIndexed(m_commandBuffer, indexCount, 1, firstIndex, 0, instance);
+    }
+
+    void RhiCommandList::DrawIndexedIndirect(const RHI::Buffer& buffer, std::uint64_t offset, std::uint32_t count) {
+        static_assert(sizeof(RHI::DrawIndexedCommand) == sizeof(VkDrawIndexedIndirectCommand));
+        vkCmdDrawIndexedIndirect(m_commandBuffer, static_cast<const RhiBuffer&>(buffer).GetHandle(), offset, count,
+                                 sizeof(RHI::DrawIndexedCommand));
     }
 
     void RhiCommandList::Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) {

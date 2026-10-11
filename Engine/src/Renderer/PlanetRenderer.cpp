@@ -11,8 +11,6 @@ namespace Flux {
         // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 70 Ko de
         // sommets par tuile, soit environ 70 Mo de mémoire vidéo).
         constexpr std::size_t MaxNodes = 1024;
-        // Buffers de sommets libres gardés pour être réutilisés.
-        constexpr std::size_t MaxFreeBuffers = 128;
     }
 
     std::expected<std::unique_ptr<PlanetRenderer>, std::string> PlanetRenderer::Create(RHI::Device& device) {
@@ -31,7 +29,7 @@ namespace Flux {
         const std::vector<Computed>& computed = m_computed[frameIndex];
         for (std::size_t i = 0; i < std::min(stats.size(), computed.size()); ++i) {
             if (PlanetState* state = FindOwner(computed[i].owner)) {
-                if (const auto node = state->nodes.find(computed[i].key); node != state->nodes.end() && node->second.model.vertices) {
+                if (const auto node = state->nodes.find(computed[i].key); node != state->nodes.end() && node->second.tile != NoTile) {
                     node->second.radius = stats[i].radius;
                     node->second.lowest = stats[i].lowest;
                     node->second.highest = stats[i].highest;
@@ -106,7 +104,7 @@ namespace Flux {
         for (std::uint8_t face = 0; face < 6; ++face) {
             Node& node = GetNode(state, {face, 0, 0, 0});
             node.lastUsed = m_frame;
-            if (!node.model.vertices) {
+            if (node.tile == NoTile) {
                 rootsReady = false;
                 state.requests.push_back({{face, 0, 0, 0}, 0.0});
             }
@@ -152,7 +150,7 @@ namespace Flux {
                 children[c] = &GetNode(visit.state, childKey, &node);
                 children[c]->lastUsed = m_frame;
                 culled[c] = IsCulled(visit, *children[c]);
-                if (!culled[c] && !children[c]->model.vertices) {
+                if (!culled[c] && children[c]->tile == NoTile) {
                     ready = false;
                     const double childDistance = Math::Length(visit.camera - children[c]->bounds.center) - children[c]->bounds.radius;
                     visit.state.requests.push_back({childKey, std::max(childDistance, 0.0)});
@@ -167,7 +165,7 @@ namespace Flux {
                 return;
             }
         }
-        if (node.model.vertices) {
+        if (node.tile != NoTile) {
             // Glisse vers la forme parente jusqu'à la distance où la parente reprend la place (une voisine plus
             // grossière n'est jamais plus proche) : là, son bord est celui de la parente, sans fente.
             float morphStart = 1.0e30f;
@@ -177,7 +175,7 @@ namespace Flux {
                 morphStart = static_cast<float>(Planet::MorphStart * end);
                 morphScale = static_cast<float>(1.0 / ((1.0 - Planet::MorphStart) * end));
             }
-            visit.tiles.push_back({&node.model, visit.position + visit.rotation.Rotate(node.center), node.center, node.radius,
+            visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.center), node.center, node.radius,
                                    morphStart, morphScale, node.lowest});
         }
     }
@@ -191,36 +189,30 @@ namespace Flux {
         return nullptr;
     }
 
-    // Tuile confiée au GPU, calculée au début de l'image suivante (PlanetRenderer::Compute) : ses buffers sont prêts
-    // pour tout dessin qui suit. false si l'image est pleine.
+    // Tuile confiée au GPU, calculée au début de l'image suivante (PlanetRenderer::Compute) : sa case est prête pour
+    // tout dessin qui suit. false si l'image est pleine.
     bool PlanetRenderer::Schedule(PlanetState& state, Planet::TileKey key, Node& node, std::uint32_t frameIndex) {
-        // Des buffers libérés que le GPU n'utilise plus, sinon des nouveaux.
-        PlanetTileCompute::TileBuffers buffers;
-        const auto free = std::ranges::find_if(m_freeBuffers, [this](const FreeBuffer& f) { return f.frame + RHI::FramesInFlight < m_frame; });
-        if (free != m_freeBuffers.end()) {
-            buffers = std::move(free->buffers);
-            m_freeBuffers.erase(free);
+        // Une case libérée que le GPU ne lit plus, sinon une nouvelle.
+        std::uint32_t tile = NoTile;
+        const auto free = std::ranges::find_if(m_freeTiles, [this](const FreeTile& f) { return f.frame + RHI::FramesInFlight < m_frame; });
+        if (free != m_freeTiles.end()) {
+            tile = free->tile;
+            m_freeTiles.erase(free);
         } else {
-            auto created = m_compute->CreateTileBuffers();
+            auto created = m_compute->CreateTile();
             if (!created) {
                 if (!std::exchange(m_poolFullLogged, true))
                     Log::Error("Planète : {}", created.error());
                 return false;
             }
-            buffers = std::move(*created);
+            tile = *created;
         }
-        if (!m_compute->Add(frameIndex, *state.terrain, key, buffers)) {
-            m_freeBuffers.push_back({std::move(buffers), 0});
+        if (!m_compute->Add(frameIndex, *state.terrain, key, tile)) {
+            m_freeTiles.push_back({tile, 0});
             return false;
         }
         m_computed[frameIndex].push_back({state.owner, key.Pack()});
-        node.model.vertices = std::move(buffers.vertices);
-        node.model.morph = std::move(buffers.morph);
-        node.group = std::move(buffers.group);
-        node.model.indices = m_indices;
-        node.model.primitives = {{0, m_indexCount, 0}};
-        node.model.materials.resize(1); // blanc : la couleur de la planète vient de la teinte du dessin
-        node.model.loaded = true;
+        node.tile = tile;
         // Le centre de la tuile est celui de sa sphère (Planet::GetTileBounds le calcule pareil) ; rayon et point le
         // plus bas prudents jusqu'au retour des mesures du GPU.
         node.center = node.bounds.center;
@@ -232,8 +224,9 @@ namespace Flux {
     }
 
     void PlanetRenderer::Retire(Node& node) {
-        if (node.model.vertices) {
-            m_freeBuffers.push_back({{std::move(node.model.vertices), std::move(node.model.morph), std::move(node.group)}, node.lastUsed});
+        if (node.tile != NoTile) {
+            m_freeTiles.push_back({node.tile, node.lastUsed});
+            node.tile = NoTile;
         }
     }
 
@@ -257,7 +250,7 @@ namespace Flux {
         });
         for (const Pending& item : pending) {
             Node& node = GetNode(*item.state, item.request.key);
-            if (!node.model.vertices && !Schedule(*item.state, item.request.key, node, frameIndex)) {
+            if (node.tile == NoTile && !Schedule(*item.state, item.request.key, node, frameIndex)) {
                 break;
             }
         }
@@ -292,14 +285,5 @@ namespace Flux {
                 state.nodes.erase(node);
             }
         }
-        // Trop de buffers libres : ceux que le GPU ne lit plus sont rendus.
-        std::size_t count = m_freeBuffers.size();
-        std::erase_if(m_freeBuffers, [&](const FreeBuffer& f) {
-            if (count <= MaxFreeBuffers || f.frame + RHI::FramesInFlight >= m_frame) {
-                return false;
-            }
-            --count;
-            return true;
-        });
     }
 }

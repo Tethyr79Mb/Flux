@@ -14,6 +14,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,8 @@ namespace Flux {
     // la carte d'ombres (opaques seulement), puis dans la passe principale : les opaques d'abord, puis (après le fond
     // du ciel) les transparents (matériaux BLEND, ou teinte d'opacité < 1) de l'arrière vers l'avant. Éclairés par le
     // soleil et la texture cube du ciel (SkyRenderer).
+    // Les tuiles des planètes (sol, eau, ombres) sont dessinées à part, par appels indirects : un par page de tuiles
+    // (PlanetTileCompute) et par passe, plutôt qu'un appel par tuile.
     class MeshRenderer {
         public:
         static std::expected<std::unique_ptr<MeshRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
@@ -62,8 +65,29 @@ namespace Flux {
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
             bool visible = true;   // false : ombre seulement (personnage vu de l'intérieur)
             bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
-            bool ocean = false;    // surface de l'océan d'une tuile de planète (transparente, sans ombre)
         };
+
+        // Une tuile de planète à dessiner (toutes sont dans le champ de la caméra : PlanetRenderer::Collect).
+        struct TileDraw
+        {
+            std::uint32_t tile;    // case dans les pages de sommets
+            std::uint32_t data;    // dans m_tileData
+            Math::Vector3f center; // relatif à la caméra
+            float radius;
+            float distance;        // au bord de sa sphère : ordre de près à loin
+            bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra
+        };
+        // Appel indirect : `count` commandes de m_tileCommands à partir de `first`, toutes de la même page.
+        struct TileBatch
+        {
+            std::uint32_t page;
+            std::uint32_t first;
+            std::uint32_t count;
+        };
+        // Passes des tuiles : le sol, l'eau, puis une par cascade d'ombres.
+        static constexpr std::size_t GroundPass = 0;
+        static constexpr std::size_t OceanPass = 1;
+        static constexpr std::size_t TilePassCount = 2 + ShadowCascadeCount;
 
         // Doit correspondre à DrawData dans shaders/Mesh.slang : matrices d'une entité, relatives à la caméra.
         struct DrawData
@@ -133,12 +157,17 @@ namespace Flux {
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
+        void ClearDraws();
+        bool BuildTileCommands(std::uint32_t frameIndex);
         void Pose(const GpuModel& model, const AnimatorComponent* animator);
         void Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex);
         static bool IsTransparent(const MeshDraw& draw, const GpuMaterial& material);
-        bool InCascade(const MeshDraw& draw, std::size_t cascade) const;
+        bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
+        void BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, const RHI::Pipeline& pipeline) const;
         void DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::uint32_t drawIndex,
                            const ModelPrimitive& primitive, const RHI::Pipeline& pipeline, std::uint32_t cascade = 0) const;
+        void DrawTiles(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
+                       const RHI::Pipeline& pipeline) const;
 
         RHI::Device& m_device;
         std::unique_ptr<ModelCache> m_models;
@@ -157,6 +186,7 @@ namespace Flux {
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_drawBuffers;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_frameBuffers;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_lightBuffers;
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_indirectBuffers; // m_tileCommands
         std::array<std::unique_ptr<RHI::BindGroup>, RHI::FramesInFlight> m_frameGroups;
         // Texture cube du ciel liée au groupe de chaque image (celle de SkyLighting, refaite quand le ciel change).
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundEnvironment{};
@@ -177,6 +207,11 @@ namespace Flux {
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         std::vector<PreparedInterior> m_interiors;
         std::vector<PlanetRenderer::Tile> m_planetTiles;
+        std::vector<TileDraw> m_tileDraws;
+        std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData
+        std::vector<RHI::DrawIndexedCommand> m_tileCommands;
+        std::vector<TileBatch> m_tileBatches;
+        std::array<std::span<const TileBatch>, TilePassCount> m_tilePasses; // dans m_tileBatches
         std::vector<PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
         PoseEvaluator m_poseEvaluator;
         GroundTextures m_ground;

@@ -38,6 +38,9 @@ namespace Flux::Vk {
             if (RHI::HasFlag(usage, RHI::BufferUsage::Storage)) {
                 flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
             }
+            if (RHI::HasFlag(usage, RHI::BufferUsage::Indirect)) {
+                flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+            }
             return flags;
         }
 

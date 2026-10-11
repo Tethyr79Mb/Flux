@@ -76,7 +76,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques
-(`static_assert` sur les tailles).
+(`static_assert` sur les tailles). Un dessin donne l'indice de son `DrawData` comme indice d'instance.
 
 ## Coordonnées et grands mondes
 
@@ -115,6 +115,9 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
   tableaux (`GroundTextures`) plaquées en triplanaire ; couleurs unies si les textures manquent.
 - Atmosphère (diffusion calculée au pixel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
+  d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
+  l'instance (`SV_VulkanInstanceID`), comme pour tous les maillages de `Mesh.slang`.
 
 ## Interface (FluxUI)
 
