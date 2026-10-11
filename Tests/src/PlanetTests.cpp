@@ -82,6 +82,8 @@ bool RunPlanetTests() {
         Planet::BuildTile(terrain, key, mesh);
         const Planet::TileBounds bounds = Planet::GetTileBounds(terrain, key);
         CHECK(bounds.edge > 0.0);
+        CHECK(Math::Length(bounds.origin - mesh.center) < 1.0e-6 * terrain.GetRadius());
+        CHECK(Planet::TileKey::Unpack(key.Pack()) == key);
         for (std::uint32_t v = 0; v < Planet::TileVertexCount; ++v) {
             CHECK(Math::Length(Math::Vector3d(mesh.vertices[v].position)) <= mesh.radius + 1.0e-3);
             CHECK(Math::Length(Position(mesh, v) - bounds.center) <= bounds.radius * 1.05);

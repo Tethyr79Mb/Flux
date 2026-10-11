@@ -39,12 +39,14 @@ namespace Flux {
         public:
         static std::expected<std::unique_ptr<PlanetRenderer>, std::string> Create(RHI::Device& device);
 
-        // Une tuile à dessiner : son centre relatif à la caméra (calculé en double) et sa sphère englobante.
+        // Une tuile à dessiner : le point de référence de ses sommets relatif à la caméra (calculé en double) et sa
+        // sphère englobante.
         struct Tile
         {
             std::uint32_t tile; // case dans les pages de sommets (PlanetTileCompute)
             Math::Vector3d center;
             Math::Vector3d local; // son centre dans le repère de la planète
+            Math::Vector3d sphere; // centre de la sphère englobante, relatif à la caméra
             float radius;
             // Glissement vers la forme parente (voir vertexPlanet dans shaders/Mesh.slang) : distance où il commence,
             // et 1 / sa longueur (0 : aucun).
@@ -86,14 +88,12 @@ namespace Flux {
         {
             Planet::TileBounds bounds;
             std::uint32_t tile = NoTile; // sa case dans les pages ; NoTile : pas encore calculée
-            Math::Vector3d center; // de ses sommets, repère de la planète
-            float radius = 0.0f;   // celui de `bounds` tant que le GPU n'a pas rendu le sien
             double lowest = 0.0;   // au plus bas possible tant que le GPU n'a pas rendu le sien
             double highest = 0.0;  // plus grande distance d'un sommet au centre de la planète, une fois mesurée
             std::uint64_t lastUsed = 0;
-            bool measured = false; // lowest, highest et radius viennent du GPU
-            // bounds tirée des hauteurs mesurées de la parente ; sinon de tout le relief de la planète (une petite
-            // tuile se croirait alors haute de tout le relief : proche de la caméra, découpée pour rien).
+            bool measured = false; // lowest, highest et bounds viennent des hauteurs mesurées par le GPU
+            // bounds tirée de ses hauteurs mesurées ou de celles de sa parente ; sinon de tout le relief de la planète
+            // (une petite tuile se croirait alors haute de tout le relief : proche de la caméra, découpée pour rien).
             bool tight = false;
         };
         struct Request

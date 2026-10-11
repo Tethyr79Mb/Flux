@@ -86,7 +86,7 @@ namespace Flux {
         {
             std::uint32_t tile;    // case dans les pages de sommets
             std::uint32_t data;    // dans m_tileData
-            Math::Vector3f center; // relatif à la caméra
+            Math::Vector3f center; // de sa sphère englobante, relatif à la caméra
             float radius;
             float distance;        // au bord de sa sphère : ordre de près à loin
             bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra

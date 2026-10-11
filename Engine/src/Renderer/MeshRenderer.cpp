@@ -538,10 +538,12 @@ namespace Flux {
             const auto wrap = [](double value) { return static_cast<float>(value - GroundPeriod * std::floor(value / GroundPeriod)); };
             // Eau : mêmes données (vertexOcean pose la tuile sur la sphère de la mer) ; sa sphère englobante grandit de ce
             // que l'eau dépasse du fond.
+            // Champ, cascades et ordre de près à loin : par la sphère englobante, pas par le point de référence.
+            const Math::Vector3f sphere(tile.sphere);
             const bool water = ocean && tile.lowest < seaRadius
-                            && view.Contains(center, tile.radius + static_cast<float>(seaRadius - tile.lowest));
-            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), center, tile.radius,
-                                   Math::Length(center) - tile.radius, water});
+                            && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
+            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius,
+                                   Math::Length(sphere) - tile.radius, water});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
