@@ -29,6 +29,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface et sa mise à jour. L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
+- **Game.exe** n'a qu'un `main` d'une ligne : `Flux::RunGame` (`Core/GameClient.hpp`) lit le projet, charge
+  GameModule.dll, ouvre la scène de démarrage et lance `Engine::Run`. Comme dans Unreal, le moteur possède la boucle et
+  appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage. Les assets sont copiés à côté
   des exécutables (`bin/assets/`).
 
