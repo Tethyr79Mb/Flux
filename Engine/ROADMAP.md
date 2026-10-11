@@ -42,6 +42,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Outillage
 - ✅ Module du jeu en DLL rechargeable à chaud, API versionnée (`GameModuleApiVersion`).
 - ✅ Tests (FluxTests), CI MSVC Debug + Release.
+- 🔨 Debug utilisable : Jolt optimisé en Debug, préréglage « Release + débogage », petits mondes physiques sans fils.
 - ✅ Version affichée dans le jeu : numéro + commit Git.
 
 ## Prochaines étapes

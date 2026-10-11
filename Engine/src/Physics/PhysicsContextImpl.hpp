@@ -9,6 +9,7 @@
 #include <Jolt/Jolt.h>
 
 #include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 
@@ -38,6 +39,7 @@ namespace Flux {
 
         std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
         std::unique_ptr<JPH::JobSystemThreadPool> jobSystem;
+        std::unique_ptr<JPH::JobSystemSingleThreaded> serialJobs; // petits mondes (voir ParallelBodyCount)
         std::filesystem::path assetsDirectory;
         std::unordered_map<std::string, CollisionMesh> meshes;
     };
