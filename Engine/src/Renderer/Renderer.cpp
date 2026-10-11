@@ -19,7 +19,11 @@ namespace Flux {
         constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
 
         // Heures notées par le GPU pendant l'image (RHI::CommandList::WriteTimestamp).
-        enum Timestamp : std::uint32_t { FrameStart, ShadowsDone, SceneDone, InterfaceDone, TimestampCount };
+        // Pendant la passe principale, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux
+        // étapes, d'où un léger surcoût et des temps d'étape un peu plus longs qu'en vrai.
+        enum Timestamp : std::uint32_t {
+            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, SceneDone, InterfaceDone, TimestampCount
+        };
         static_assert(TimestampCount <= RHI::MaxTimestamps);
 
         using Clock = std::chrono::steady_clock;
@@ -142,11 +146,19 @@ namespace Flux {
                                   static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
             commands.SetScissor(scene3d);
             if (sceneVisible) {
-                commands.BeginStep("objets opaques et sol");
+                commands.BeginStep("objets opaques");
                 meshes->DrawOpaque(commands, frameIndex);
+                commands.WriteTimestamp(ObjectsDone);
+                commands.BeginStep("sol des planètes");
+                meshes->DrawGround(commands, frameIndex);
+                commands.WriteTimestamp(GroundDone);
                 commands.BeginStep("fond du ciel");
                 sky->Draw(commands, frameIndex);
-                commands.BeginStep("transparents et océan");
+                commands.WriteTimestamp(SkyDone);
+                commands.BeginStep("océan");
+                meshes->DrawOcean(commands, frameIndex);
+                commands.WriteTimestamp(OceanDone);
+                commands.BeginStep("transparents");
                 meshes->DrawTransparent(commands, frameIndex);
             }
             commands.WriteTimestamp(SceneDone);
@@ -172,6 +184,11 @@ namespace Flux {
             };
             timings.gpuShadows = between(FrameStart, ShadowsDone);
             timings.gpuScene = between(ShadowsDone, SceneDone);
+            timings.gpuObjects = between(ShadowsDone, ObjectsDone);
+            timings.gpuGround = between(ObjectsDone, GroundDone);
+            timings.gpuSky = between(GroundDone, SkyDone);
+            timings.gpuOcean = between(SkyDone, OceanDone);
+            timings.gpuTransparent = between(OceanDone, SceneDone);
             timings.gpuInterface = between(SceneDone, InterfaceDone);
         }
     };

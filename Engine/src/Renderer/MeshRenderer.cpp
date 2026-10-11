@@ -869,14 +869,20 @@ namespace Flux {
                 }
             }
         }
-        // Le sol des planètes après les entités : ce qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé.
+    }
+
+    void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        BindState state;
         DrawTiles(commands, state, frameIndex, GroundPass, *m_planet.opaque);
+    }
+
+    void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        BindState state;
+        DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
     }
 
     void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
-        // L'eau d'abord : vue d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière).
-        DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = GetPipelines(draw);
