@@ -22,8 +22,9 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU.
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
+- 🔨 Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
-- 🔨 Teinte de chaque texture du sol (PR #92).
+- ✅ Teinte de chaque texture du sol.
 
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
@@ -63,6 +64,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Végétation et rochers posés sur le sol (instancing).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - ⬜ Nuages.
+- ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 
 ### Gameplay
 - ⬜ Prefabs (vaisseau, station réutilisables).
