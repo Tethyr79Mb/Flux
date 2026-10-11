@@ -1,7 +1,13 @@
 #include "Renderer/Vulkan/VulkanRHI.hpp"
 
+#include "Flux/Core/Version.hpp"
+#include "Flux/Platform/Filesystem.hpp"
+
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <format>
+#include <fstream>
 #include <unordered_map>
 #include <vector>
 
@@ -86,6 +92,15 @@ namespace Flux::Vk {
             }
         }
         rhi->m_timestampPeriod = rhi->m_device->GetTimestampPeriod();
+        // Repères du diagnostic de plantage : facultatifs, l'image se dessine sans.
+        if (nativeWindowHandle && rhi->m_device->HasBufferMarkers()) {
+            auto markers = Vk::Buffer::Create(rhi->m_device->GetAllocator(),
+                                              RHI::FramesInFlight * RHI::MaxSteps * 2 * sizeof(std::uint32_t),
+                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT, Vk::Buffer::Memory::Readback);
+            if (markers) {
+                rhi->m_stepMarkers = std::move(*markers);
+            }
+        }
         if (!rhi->CreateFrames()) {
             return std::unexpected("création des ressources de frame");
         }
@@ -482,7 +497,7 @@ namespace Flux::Vk {
         Frame& frame = m_frames[m_frameIndex];
         const VkDevice device = m_device->GetHandle();
         const Clock::time_point waitStart = Clock::now();
-        if (!Check(vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE, UINT64_MAX), "vkWaitForFences")) {
+        if (!CheckFrame(vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE, UINT64_MAX), "vkWaitForFences")) {
             return RHI::FrameStatus::Error;
         }
         const Clock::time_point acquireStart = Clock::now();
@@ -495,7 +510,7 @@ namespace Flux::Vk {
         if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
             return RecreateSwapchain() ? RHI::FrameStatus::Skip : RHI::FrameStatus::Error; // on retentera à l'image suivante
         }
-        if (!Check(acquire, "vkAcquireNextImageKHR")) {
+        if (!CheckFrame(acquire, "vkAcquireNextImageKHR")) {
             return RHI::FrameStatus::Error;
         }
 
@@ -509,11 +524,20 @@ namespace Flux::Vk {
         vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
         m_commandList.Begin(frame.commandBuffer, m_swapchain->GetImage(m_imageIndex), m_swapchain->GetImageView(m_imageIndex),
                             m_swapchain->GetExtent(), frame.queries);
+        frame.submitted = false;
+        if (m_stepMarkers.GetHandle() != VK_NULL_HANDLE) {
+            // Numéro jamais nul : le buffer commence à zéro, une étape jamais atteinte ne lui ressemble pas.
+            m_frameSerial = m_frameSerial == UINT32_MAX ? 1 : m_frameSerial + 1;
+            frame.serial = m_frameSerial;
+            m_commandList.SetStepMarkers({m_stepMarkers.GetHandle(), m_frameIndex * RHI::MaxSteps * 2 * sizeof(std::uint32_t),
+                                          frame.serial, &frame.steps, &frame.stepCount});
+        }
         return RHI::FrameStatus::Ready;
     }
 
     bool RhiDevice::EndFrame() {
         Frame& frame = m_frames[m_frameIndex];
+        m_commandList.EndStep();
         m_commandList.TransitionToPresent();
         frame.writtenTimestamps = m_commandList.GetWrittenTimestamps();
         if (!Check(vkEndCommandBuffer(frame.commandBuffer), "vkEndCommandBuffer")) {
@@ -544,9 +568,10 @@ namespace Flux::Vk {
         submitInfo.pCommandBufferInfos = &commandInfo;
         submitInfo.signalSemaphoreInfoCount = 1;
         submitInfo.pSignalSemaphoreInfos = &signalInfo;
-        if (!Check(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, frame.inFlight), "vkQueueSubmit2")) {
+        if (!CheckFrame(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, frame.inFlight), "vkQueueSubmit2")) {
             return false;
         }
+        frame.submitted = true;
 
         const VkSwapchainKHR swapchain = m_swapchain->GetHandle();
         VkPresentInfoKHR presentInfo{};
@@ -565,6 +590,57 @@ namespace Flux::Vk {
         if (present == VK_ERROR_OUT_OF_DATE_KHR || present == VK_SUBOPTIMAL_KHR) {
             return RecreateSwapchain();
         }
-        return Check(present, "vkQueuePresentKHR");
+        return CheckFrame(present, "vkQueuePresentKHR");
+    }
+
+    bool RhiDevice::CheckFrame(VkResult result, const char* call) {
+        if (result == VK_ERROR_DEVICE_LOST) {
+            ReportDeviceLost();
+        }
+        return Check(result, call);
+    }
+
+    void RhiDevice::ReportDeviceLost() {
+        if (m_lostReported) {
+            return;
+        }
+        m_lostReported = true;
+        std::string report = std::format("Le GPU s'est bloqué ou a été relancé par le pilote ({}), Flux {}.", m_device->GetName(),
+                                         GetFullVersion());
+        if (m_stepMarkers.GetHandle() == VK_NULL_HANDLE) {
+            report += "\nÉtapes inconnues : ce GPU ne note pas où il en est (pas de VK_AMD_buffer_marker).";
+        } else {
+            // Images envoyées, de la plus ancienne à la plus récente : la première étape commencée mais pas finie est
+            // celle où le GPU s'est arrêté.
+            std::array<const Frame*, RHI::FramesInFlight> frames{};
+            for (std::uint32_t i = 0; i < RHI::FramesInFlight; ++i) {
+                frames[i] = &m_frames[i];
+            }
+            std::ranges::sort(frames, {}, [](const Frame* frame) { return frame->serial; });
+            std::array<std::uint32_t, RHI::FramesInFlight * RHI::MaxSteps * 2> marks{};
+            m_stepMarkers.Read(marks.data(), sizeof(marks));
+            for (const Frame* frame : frames) {
+                if (!frame->submitted || frame->stepCount == 0) {
+                    continue;
+                }
+                const std::size_t first = static_cast<std::size_t>(frame - m_frames.data()) * RHI::MaxSteps * 2;
+                report += std::format("\nImage {} :", frame->serial);
+                for (std::uint32_t step = 0; step < frame->stepCount; ++step) {
+                    const bool started = marks[first + step * 2] == frame->serial;
+                    const bool finished = marks[first + step * 2 + 1] == frame->serial;
+                    report += std::format("\n  {:<28} {}", frame->steps[step],
+                                          finished ? "finie" : started ? "COMMENCÉE, PAS FINIE" : "pas commencée");
+                }
+            }
+        }
+        if (const std::string fault = m_device->DescribeFault(); !fault.empty()) {
+            report += "\nPanne décrite par le pilote : " + fault;
+        }
+        Log::Error("{}", report);
+        // Le programme s'arrête juste après : le rapport reste dans un fichier à côté de l'exe.
+        const std::filesystem::path file = Platform::GetExecutableDirectory() / "plantage-gpu.txt";
+        if (std::ofstream out(file, std::ios::binary); out << report << '\n') {
+            Log::Error("Rapport écrit dans {}", file.string());
+        }
     }
 }

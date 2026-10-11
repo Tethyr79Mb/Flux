@@ -126,10 +126,14 @@ namespace Flux {
             const Clock::time_point recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
             RHI::CommandList& commands = device->GetCommandList();
+            // Étapes nommées (BeginStep) : si le GPU se bloque, le rapport dit laquelle n'a pas fini.
             commands.WriteTimestamp(FrameStart);
             if (sceneVisible) {
+                commands.BeginStep("tuiles de planète (compute)");
                 meshes->Compute(commands, frameIndex); // compté avec les ombres
+                commands.BeginStep("ciel (textures cube)");
                 sky->Bake(commands, frameIndex); // compté avec les ombres, l'image où il a lieu
+                commands.BeginStep("ombres");
                 meshes->DrawShadows(commands, frameIndex);
             }
             commands.WriteTimestamp(ShadowsDone);
@@ -138,11 +142,15 @@ namespace Flux {
                                   static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
             commands.SetScissor(scene3d);
             if (sceneVisible) {
+                commands.BeginStep("objets opaques et sol");
                 meshes->DrawOpaque(commands, frameIndex);
+                commands.BeginStep("fond du ciel");
                 sky->Draw(commands, frameIndex);
+                commands.BeginStep("transparents et océan");
                 meshes->DrawTransparent(commands, frameIndex);
             }
             commands.WriteTimestamp(SceneDone);
+            commands.BeginStep("interface");
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
             commands.WriteTimestamp(InterfaceDone);

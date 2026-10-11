@@ -100,6 +100,8 @@ namespace Flux::Vk {
         m_pushStages = 0;
         m_queryPool = queryPool;
         m_writtenTimestamps = 0;
+        m_markers = {};
+        m_openStep = RHI::MaxSteps;
         if (m_queryPool != VK_NULL_HANDLE) {
             vkCmdResetQueryPool(m_commandBuffer, m_queryPool, 0, RHI::MaxTimestamps);
         }
@@ -111,6 +113,35 @@ namespace Flux::Vk {
         }
         vkCmdWriteTimestamp2(m_commandBuffer, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, m_queryPool, slot);
         m_writtenTimestamps |= 1u << slot;
+    }
+
+    void RhiCommandList::SetStepMarkers(const StepMarkers& markers) {
+        m_markers = markers;
+        *m_markers.count = 0;
+    }
+
+    void RhiCommandList::BeginStep(const char* name) {
+        if (m_markers.buffer == VK_NULL_HANDLE) {
+            return;
+        }
+        EndStep();
+        if (*m_markers.count >= RHI::MaxSteps) {
+            return;
+        }
+        m_openStep = (*m_markers.count)++;
+        (*m_markers.names)[m_openStep] = name;
+        // Début : quand le GPU arrive à cette commande ; fin (EndStep) : quand tout ce qui précède est fini.
+        vkCmdWriteBufferMarkerAMD(m_commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_markers.buffer,
+                                  m_markers.offset + m_openStep * 2 * sizeof(std::uint32_t), m_markers.serial);
+    }
+
+    void RhiCommandList::EndStep() {
+        if (m_openStep >= RHI::MaxSteps) {
+            return;
+        }
+        vkCmdWriteBufferMarkerAMD(m_commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_markers.buffer,
+                                  m_markers.offset + (m_openStep * 2 + 1) * sizeof(std::uint32_t), m_markers.serial);
+        m_openStep = RHI::MaxSteps;
     }
 
     void RhiCommandList::BeginRenderPass(const RHI::RenderPassDesc& desc) {

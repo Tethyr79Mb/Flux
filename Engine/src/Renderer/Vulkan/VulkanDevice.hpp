@@ -34,6 +34,10 @@ namespace Flux::Vk {
         float GetTimestampPeriod() const;
         // samplerAnisotropy activé : SamplerDesc::anisotropy permis.
         bool HasAnisotropy() const { return m_anisotropy; }
+        // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
+        bool HasBufferMarkers() const { return m_bufferMarkers; }
+        // Après la perte du device : la description de la panne par le pilote (VK_EXT_device_fault), vide sans elle.
+        std::string DescribeFault() const;
 
         void WaitIdle() const;
 
@@ -56,5 +60,7 @@ namespace Flux::Vk {
 
         VkCommandPool m_immediatePool = VK_NULL_HANDLE;
         bool m_anisotropy = false;
+        bool m_bufferMarkers = false;
+        bool m_deviceFault = false;
     };
 }
