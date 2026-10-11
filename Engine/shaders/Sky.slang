@@ -242,6 +242,9 @@ float3 ToneMap(float3 color, float exposure)
     return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
 }
 
+// Force de l'effacement des étoiles par la lumière de l'air (voir fragmentMain).
+static const float SkyDaylightFade = 20.0;
+
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
@@ -267,12 +270,13 @@ float4 fragmentMain(VertexOutput input) : SV_Target
 
     // Soleil : un disque net (bord adouci sur un pixel), un halo serré et une lueur large.
     const float radius = s.toSun.w;
+    float3 sun = float3(0.0);
     if (radius > 0.0) {
         const float3 toSun = s.toSun.xyz;
         const float angle = 2.0 * asin(min(length(direction - toSun) * 0.5, 1.0));
         const float disc = saturate((radius - angle) / pixelAngle + 0.5);
         const float halo = exp(-(angle * angle) / (radius * radius * 9.0)) * 0.5 + exp(-angle * 8.0) * 0.06;
-        color += s.sunColor.rgb * (disc * 40.0 + halo);
+        sun = s.sunColor.rgb * (disc * 40.0 + halo);
     }
     if (HasAtmosphere(s.atmosphere)) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
@@ -283,7 +287,14 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         // anticrénelage temporel pour le lisser ; 24 pas pour ne pas voir de bandes à travers le bord de l'air.
         const float3 scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
                                                    transmittance);
-        color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
+        // Le jour, l'air éclairé est bien plus lumineux que les étoiles et la nébuleuse : l'œil ne les voit plus. Elles
+        // s'effacent d'après la lumière de l'air dans cette direction, donc en douceur à la descente et au couchant,
+        // et reviennent la nuit. Le soleil, lui, reste.
+        const float daylight = dot(scattered, float3(0.2126, 0.7152, 0.0722));
+        color *= exp(-daylight * SkyDaylightFade);
+        color = (distance < 1.0e30 ? float3(0.0) : (color + sun) * transmittance) + scattered;
+    } else {
+        color += sun;
     }
     return float4(ToneMap(color, s.sunColor.w), 1.0);
 }

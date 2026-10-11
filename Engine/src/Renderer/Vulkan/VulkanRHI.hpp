@@ -99,6 +99,17 @@ namespace Flux::Vk {
         Vk::Pipeline m_pipeline;
     };
 
+    // Repères d'étapes d'une image (BeginStep) : noms gardés par le CPU, début et fin notés par le GPU dans `buffer`
+    // (deux uint32 par étape à partir de `offset`, égaux à `serial` une fois atteints).
+    struct StepMarkers
+    {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkDeviceSize offset = 0;
+        std::uint32_t serial = 0;
+        std::array<const char*, RHI::MaxSteps>* names = nullptr;
+        std::uint32_t* count = nullptr;
+    };
+
     // Liste de commandes de l'image en cours, et l'image de la swapchain où dessine sa passe.
     class RhiCommandList final : public RHI::CommandList {
         public:
@@ -118,10 +129,16 @@ namespace Flux::Vk {
         void BindIndexBuffer(const RHI::Buffer& buffer) override;
         void PushConstants(const void* data, std::uint32_t size) override;
         void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) override;
-        void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) override;
+        void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex, std::uint32_t instance) override;
+        void DrawIndexedIndirect(const RHI::Buffer& buffer, std::uint64_t offset, std::uint32_t count) override;
         void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
         void ComputeBarrier() override;
         void WriteTimestamp(std::uint32_t slot) override;
+        void BeginStep(const char* name) override;
+        // Repères de l'image qui commence (après Begin) ; sans appel, BeginStep ne fait rien.
+        void SetStepMarkers(const StepMarkers& markers);
+        // Note la fin de l'étape en cours, s'il y en a une (fin de l'image).
+        void EndStep();
         // Cases écrites pendant l'image (bit i : case i).
         std::uint32_t GetWrittenTimestamps() const { return m_writtenTimestamps; }
 
@@ -141,6 +158,8 @@ namespace Flux::Vk {
         std::uint32_t m_colorLayer = 0;
         VkQueryPool m_queryPool = VK_NULL_HANDLE;
         std::uint32_t m_writtenTimestamps = 0;
+        StepMarkers m_markers;
+        std::uint32_t m_openStep = RHI::MaxSteps; // MaxSteps : aucune
     };
 
     class RhiDevice final : public RHI::Device {
@@ -195,10 +214,19 @@ namespace Flux::Vk {
             VkFence inFlight = VK_NULL_HANDLE;
             VkQueryPool queries = VK_NULL_HANDLE;  // RHI::MaxTimestamps heures ; VK_NULL_HANDLE sans heures du GPU
             std::uint32_t writtenTimestamps = 0;   // cases écrites la dernière fois que l'image a servi
+            // Étapes de la dernière image soumise dans ces ressources (BeginStep), pour le diagnostic de plantage.
+            std::array<const char*, RHI::MaxSteps> steps{};
+            std::uint32_t stepCount = 0;
+            std::uint32_t serial = 0; // numéro de cette image, écrit par le GPU au début et à la fin de chaque étape
+            bool submitted = false;
         };
 
         // Relit les heures de l'image dont le GPU vient de finir (après l'attente de sa barrière).
         void ReadTimestamps(const Frame& frame);
+
+        // Appel Vulkan de l'image : sur la perte du device (GPU bloqué, pilote relancé), écrit le diagnostic.
+        bool CheckFrame(VkResult result, const char* call);
+        void ReportDeviceLost();
 
         RhiDevice() = default;
         bool CreateFrames();
@@ -216,5 +244,8 @@ namespace Flux::Vk {
         std::array<double, RHI::MaxTimestamps> m_timestamps{};
         std::size_t m_timestampCount = 0;
         RHI::WaitTimes m_waitTimes;
+        Vk::Buffer m_stepMarkers; // FramesInFlight x MaxSteps x (début, fin) ; vide sans VK_AMD_buffer_marker
+        std::uint32_t m_frameSerial = 0;
+        bool m_lostReported = false;
     };
 }

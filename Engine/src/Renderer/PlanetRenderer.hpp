@@ -3,7 +3,6 @@
 #include "Flux/Graphics/Planet.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Scene/Components.hpp"
-#include "Renderer/ModelCache.hpp"
 #include "Renderer/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
@@ -19,7 +18,7 @@ namespace Flux {
     struct PlanetGpu
     {
         std::array<float, 4> shape{}; // rayon, relief, altitude de la neige, du sable (m)
-        std::array<float, 4> rock{};  // couleur linéaire ; w : rugosité
+        std::array<float, 4> rock{};  // couleur linéaire (avec les textures du sol : teinte) ; w : rugosité
         std::array<float, 4> grass{};
         std::array<float, 4> sand{};
         std::array<float, 4> snow{};
@@ -34,7 +33,8 @@ namespace Flux {
     // par le GPU (PlanetTileCompute), les plus urgentes d'abord, au début de l'image suivante ; en attendant, leur
     // parente reste affichée (jamais de trou). Le CPU ne fait que choisir les tuiles et préparer quelques valeurs
     // par tuile.
-    // Chaque tuile est un GpuModel (ses sommets ; les indices communs à toutes), dessiné par MeshRenderer.
+    // Chaque tuile occupe une case des pages de PlanetTileCompute (les indices sont communs à toutes) ; MeshRenderer
+    // dessine chaque page en un appel indirect.
     class PlanetRenderer {
         public:
         static std::expected<std::unique_ptr<PlanetRenderer>, std::string> Create(RHI::Device& device);
@@ -42,7 +42,7 @@ namespace Flux {
         // Une tuile à dessiner : son centre relatif à la caméra (calculé en double) et sa sphère englobante.
         struct Tile
         {
-            const GpuModel* model;
+            std::uint32_t tile; // case dans les pages de sommets (PlanetTileCompute)
             Math::Vector3d center;
             Math::Vector3d local; // son centre dans le repère de la planète
             float radius;
@@ -66,17 +66,22 @@ namespace Flux {
         // Calcule les tuiles choisies par EndFrame, hors d'une passe et avant les dessins.
         void Compute(RHI::CommandList& commands, std::uint32_t frameIndex) { m_compute->Record(commands, frameIndex); }
 
+        // Pages de sommets des tuiles, et leurs indices (communs à toutes) ; nullptr avant la première image.
+        const PlanetTileCompute& GetTiles() const { return *m_compute; }
+        const RHI::Buffer* GetIndices() const { return m_indices.get(); }
+        std::uint32_t GetIndexCount() const { return m_indexCount; }
+
         private:
         PlanetRenderer(RHI::Device& device, std::unique_ptr<PlanetTileCompute> compute)
             : m_device(device), m_compute(std::move(compute)) {}
 
+        static constexpr std::uint32_t NoTile = ~0u;
         // Un nœud de l'arbre déjà visité : sa sphère englobante, et sa tuile si elle est calculée (ou le sera au début
         // de l'image suivante, avant tout dessin).
         struct Node
         {
             Planet::TileBounds bounds;
-            GpuModel model; // vertices nul : pas encore calculée
-            std::unique_ptr<RHI::BindGroup> group; // ses buffers, écrits par le GPU
+            std::uint32_t tile = NoTile; // sa case dans les pages ; NoTile : pas encore calculée
             Math::Vector3d center; // de ses sommets, repère de la planète
             float radius = 0.0f;   // celui de `bounds` tant que le GPU n'a pas rendu le sien
             double lowest = 0.0;   // au plus bas possible tant que le GPU n'a pas rendu le sien
@@ -125,18 +130,18 @@ namespace Flux {
 
         RHI::Device& m_device;
         std::unique_ptr<PlanetTileCompute> m_compute; // avant les nœuds : leurs groupes sont rendus à son layout
-        std::shared_ptr<RHI::Buffer> m_indices; // communs à toutes les tuiles
+        std::unique_ptr<RHI::Buffer> m_indices; // communs à toutes les tuiles
         std::uint32_t m_indexCount = 0;
         std::unordered_map<Entity, PlanetState> m_planets;
         std::uint64_t m_frame = 0;
         bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
-        // Buffers de sommets libérés, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
-        struct FreeBuffer
+        // Cases libérées, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
+        struct FreeTile
         {
-            PlanetTileCompute::TileBuffers buffers;
+            std::uint32_t tile;
             std::uint64_t frame;
         };
-        std::vector<FreeBuffer> m_freeBuffers;
+        std::vector<FreeTile> m_freeTiles;
         // Tuiles calculées avec chaque image en vol, dans l'ordre : leurs mesures reviennent quand le GPU a fini.
         struct Computed
         {

@@ -28,7 +28,7 @@ static const uint MaxInteriors = 8;
 struct PlanetData
 {
     float4 shape;             // x : rayon (m) ; y : relief (m) ; z : altitude de la neige (m) ; w : du sable (m)
-    float4 rock;              // rgb : couleur (linéaire) ; w : rugosité
+    float4 rock;              // rgb : couleur (linéaire ; avec les textures du sol : teinte) ; w : rugosité
     float4 grass;
     float4 sand;
     float4 snow;
@@ -86,7 +86,6 @@ struct DrawParams
 {
     float4 color;             // linéaire : couleur de base du matériau x teinte de l'entité
     float4 emissive;          // linéaire : lumière propre du matériau (rgb), multipliée par l'image émissive
-    uint draw;                // dans draws
     uint cascade;             // carte d'ombres en cours de dessin
     float alphaCutoff;        // 0 : pas de seuil
     uint transparent;         // 1 : l'alpha sort vers le mélange ; 0 : opaque (alpha 1)
@@ -157,6 +156,7 @@ struct VertexOutput
     float3 worldPosition : POSITION; // relatif à la caméra
     float3 normal   : NORMAL;
     float2 uv       : TEXCOORD;
+    nointerpolation uint draw : DRAW; // dans draws
 };
 
 float4 Transform(float4 columns[4], float3 p)
@@ -185,10 +185,12 @@ void Skin(SkinnedVertexInput input, uint firstJoint, out float3 position, out fl
     normal = column0.xyz * input.normal.x + column1.xyz * input.normal.y + column2.xyz * input.normal.z;
 }
 
-VertexOutput Output(float3 position, float3 normal, float2 uv)
+// drawIndex : l'indice de l'instance (SV_VulkanInstanceID), que MeshRenderer donne à chaque dessin, direct ou indirect.
+VertexOutput Output(uint drawIndex, float3 position, float3 normal, float2 uv)
 {
-    const DrawData draw = draws[params.draw];
+    const DrawData draw = draws[drawIndex];
     VertexOutput output;
+    output.draw = drawIndex;
     output.worldPosition = Transform(draw.world, position).xyz;
     output.position = Transform(frame[0].viewProjection, output.worldPosition);
     output.normal = draw.normal[0].xyz * normal.x + draw.normal[1].xyz * normal.y + draw.normal[2].xyz * normal.z;
@@ -197,25 +199,25 @@ VertexOutput Output(float3 position, float3 normal, float2 uv)
 }
 
 [shader("vertex")]
-VertexOutput vertexMain(VertexInput input)
+VertexOutput vertexMain(VertexInput input, uint draw : SV_VulkanInstanceID)
 {
-    return Output(input.position, input.normal, input.uv);
+    return Output(draw, input.position, input.normal, input.uv);
 }
 
 [shader("vertex")]
-VertexOutput vertexSkinned(SkinnedVertexInput input)
+VertexOutput vertexSkinned(SkinnedVertexInput input, uint draw : SV_VulkanInstanceID)
 {
     float3 position;
     float3 normal;
-    Skin(input, asuint(draws[params.draw].normal[1].w), position, normal);
-    return Output(position, normal, input.uv);
+    Skin(input, asuint(draws[draw].normal[1].w), position, normal);
+    return Output(draw, position, normal, input.uv);
 }
 
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
 // le relais (calculé sur le sommet de la tuile, pour que deux tuiles voisines glissent pareil au même endroit).
-float PlanetMorph(float3 position)
+float PlanetMorph(uint drawIndex, float3 position)
 {
-    const DrawData draw = draws[params.draw];
+    const DrawData draw = draws[drawIndex];
     const float distance = length(Transform(draw.world, position).xyz);
     return saturate((distance - draw.normal[0].w) * draw.normal[2].w);
 }
@@ -262,15 +264,15 @@ float2 PlanetClimate(PlanetData planet, float3 local)
 }
 
 [shader("vertex")]
-PlanetVertexOutput vertexPlanet(PlanetVertexInput input)
+PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanInstanceID)
 {
-    const float morph = PlanetMorph(input.position);
+    const float morph = PlanetMorph(draw, input.position);
     const float3 position = input.position + input.morphOffset * morph;
     PlanetVertexOutput output;
-    output.base = Output(position, lerp(input.normal, input.morphNormal, morph), input.uv);
-    output.planetPosition = draws[params.draw].rim.xyz + position;
-    output.groundPosition = draws[params.draw].ground.xyz + position;
-    output.climate = PlanetClimate(frame[0].planets[asuint(draws[params.draw].rim.w)], output.planetPosition);
+    output.base = Output(draw, position, lerp(input.normal, input.morphNormal, morph), input.uv);
+    output.planetPosition = draws[draw].rim.xyz + position;
+    output.groundPosition = draws[draw].ground.xyz + position;
+    output.climate = PlanetClimate(frame[0].planets[asuint(draws[draw].rim.w)], output.planetPosition);
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.seaSky = float3(0.0);
     output.seaSkyThrough = float3(1.0);
@@ -599,6 +601,21 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
     return result;
 }
 
+// Teinte de la texture d'une matière (PlanetComponent::rockTint et suivantes, à la place des couleurs unies),
+// ramenée à une luminance de 1 : elle change la couleur sans assombrir (un jaune clair dore un sable gris).
+float3 GroundTint(PlanetData planet, uint layer)
+{
+    float3 tint;
+    switch (layer) {
+        case GroundRock: tint = planet.rock.rgb; break;
+        case GroundGrass: tint = planet.grass.rgb; break;
+        case GroundSoil: tint = planet.soil.rgb; break;
+        case GroundSand: tint = planet.sand.rgb; break;
+        default: tint = planet.snow.rgb; break;
+    }
+    return tint / max(dot(tint, float3(0.2126, 0.7152, 0.0722)), 0.01);
+}
+
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
 void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 {
@@ -617,7 +634,7 @@ void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
 {
     const VertexOutput v = input.base;
-    const DrawData draw = draws[params.draw];
+    const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float3 local = input.planetPosition;
     const float3 up = normalize(local);
@@ -694,6 +711,7 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
             const float weight = weights[layer];
             if (weight > 0.02) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
+                sample.color *= GroundTint(planet, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     const float cold = smoothstep(6.0, -4.0, temperature) * 0.7;
@@ -763,17 +781,17 @@ float3 UntexturedGround(VertexOutput v, PlanetData planet, float3 local, inout f
 // Océan : les tuiles de la planète posées sur la sphère du niveau de la mer, le long de la verticale de chaque
 // sommet. uv.x : profondeur de l'eau au sommet (négative sur la terre ferme, que le sol cache de toute façon).
 [shader("vertex")]
-PlanetVertexOutput vertexOcean(PlanetVertexInput input)
+PlanetVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_VulkanInstanceID)
 {
-    const DrawData draw = draws[params.draw];
+    const DrawData draw = draws[drawIndex];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
-    const float morph = PlanetMorph(input.position);
+    const float morph = PlanetMorph(drawIndex, input.position);
     const float3 ground = input.position + input.morphOffset * morph;
     const float3 local = draw.rim.xyz + ground;
     const float3 up = normalize(local);
     const float depth = planet.water.w - length(local);
     PlanetVertexOutput output;
-    output.base = Output(ground + up * depth, up, float2(depth, 0.0));
+    output.base = Output(drawIndex, ground + up * depth, up, float2(depth, 0.0));
     output.planetPosition = up * planet.water.w;
     output.climate = float2(0.0); // l'eau n'en a pas besoin
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
@@ -807,7 +825,7 @@ float3 WaveSlope(float3 x)
 float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
 {
     const VertexOutput v = input.base;
-    const DrawData draw = draws[params.draw];
+    const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float depth = v.uv.x;
     if (depth <= 0.0) {
@@ -893,7 +911,7 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     }
     // Lumière de contour : d'autant plus forte que la surface est vue de profil (terme de Fresnel), avec le relief.
     // Éteinte dans les volumes intérieurs : les murs du cockpit et de la soute ne s'allument pas.
-    const float4 rim = draws[params.draw].rim;
+    const float4 rim = draws[input.draw].rim;
     if (rim.w > 0.0 && inside < 1.0) {
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
@@ -908,36 +926,36 @@ struct ShadowOutput
     float2 uv       : TEXCOORD;
 };
 
-ShadowOutput ShadowVertex(float3 position, float2 uv)
+ShadowOutput ShadowVertex(uint draw, float3 position, float2 uv)
 {
     const FrameData f = frame[0];
     const uint c = params.cascade;
     float4 m[4] = {f.cascades[c * 4 + 0], f.cascades[c * 4 + 1], f.cascades[c * 4 + 2], f.cascades[c * 4 + 3]};
     ShadowOutput output;
-    output.position = Transform(m, Transform(draws[params.draw].world, position).xyz);
+    output.position = Transform(m, Transform(draws[draw].world, position).xyz);
     output.uv = uv;
     return output;
 }
 
 [shader("vertex")]
-ShadowOutput vertexShadow(VertexInput input)
+ShadowOutput vertexShadow(VertexInput input, uint draw : SV_VulkanInstanceID)
 {
-    return ShadowVertex(input.position, input.uv);
+    return ShadowVertex(draw, input.position, input.uv);
 }
 
 [shader("vertex")]
-ShadowOutput vertexShadowSkinned(SkinnedVertexInput input)
+ShadowOutput vertexShadowSkinned(SkinnedVertexInput input, uint draw : SV_VulkanInstanceID)
 {
     float3 position;
     float3 normal;
-    Skin(input, asuint(draws[params.draw].normal[1].w), position, normal);
-    return ShadowVertex(position, input.uv);
+    Skin(input, asuint(draws[draw].normal[1].w), position, normal);
+    return ShadowVertex(draw, position, input.uv);
 }
 
 [shader("vertex")]
-ShadowOutput vertexShadowPlanet(PlanetVertexInput input)
+ShadowOutput vertexShadowPlanet(PlanetVertexInput input, uint draw : SV_VulkanInstanceID)
 {
-    return ShadowVertex(input.position + input.morphOffset * PlanetMorph(input.position), input.uv);
+    return ShadowVertex(draw, input.position + input.morphOffset * PlanetMorph(draw, input.position), input.uv);
 }
 
 [shader("fragment")]
