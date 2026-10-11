@@ -48,9 +48,10 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ## Prochaines étapes
 
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
+- 🔨 Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
 - ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
   chaque cascade d'ombres) au lieu d'un appel par tuile.
-- ⬜ Perspective aérienne précalculée (texture 3D) au lieu de l'air calculé à chaque pixel.
+- ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - ⬜ Océan : tuiles plus grossières et moins nombreuses (253 tuiles redessinées aujourd'hui).
 - ⬜ Réglage du niveau de détail des tuiles (`LodSplitFactor`).
 
