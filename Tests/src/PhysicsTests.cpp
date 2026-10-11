@@ -428,10 +428,10 @@ namespace {
         frames(1.0, {});
         CHECK(std::abs(shipComponent.velocity.x) < 1.0e-3f && std::abs(shipComponent.velocity.y) < 1.0e-3f
               && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
-        // Espace : il freine jusqu'à l'arrêt (20 m/s à 10 m/s² : 2 s), et ne repart pas.
-        frames(1.0, {.brake = true});
-        CHECK(std::abs(shipComponent.velocity.z + 10.0f) < 0.5f);
-        frames(1.5, {.brake = true});
+        // Espace : il freine jusqu'à l'arrêt (20 m/s, rétrofusées à 30 m/s² : 0,67 s), et ne repart pas.
+        frames(0.5, {.brake = true});
+        CHECK(std::abs(shipComponent.velocity.z + 5.0f) < 0.5f);
+        frames(0.5, {.brake = true});
         frames(0.5, {});
         CHECK(shipComponent.velocity == Math::Vector3f{} && shipComponent.cruiseSpeed == 0.0f);
         // Il a suivi le vaisseau sans bouger de son siège.
@@ -574,14 +574,32 @@ namespace {
         frames(Frame, {.travel = true, .up = up, .air = 0.5f});
         CHECK(!flight.travel);
 
-        // Entrée dans l'atmosphère en plein voyage : la vitesse retombe avec le régime, en 3 s, au lieu de fondre à
-        // 10 m/s² (la vitesse max sans voyage : 1 000 m/s, 2 000 en boost).
+        // Arrêt du voyage (Tab) dans l'espace : la vitesse fond en douceur (moitié de l'excès en 3,5 s) au lieu de
+        // fondre à 10 m/s² (la vitesse normale : 1 000 m/s, 2 000 en boost). Dans l'air, bien plus vite.
+        const auto enterTravel = [&] {
+            flight.acceleration = 500.0f;
+            frames(Frame, {.travel = true, .up = up});
+            frames(25.0, {.up = up});
+            flight.acceleration = 10.0f;
+            return flight.travelLevel == 1.0f && Math::Length(flight.velocity) > 9000.0f;
+        };
+        CHECK(enterTravel());
         frames(Frame, {.travel = true, .up = up});
-        frames(25.0, {.up = up});
-        CHECK(flight.travelLevel == 1.0f && Math::Length(flight.velocity) > 9000.0f);
-        flight.acceleration = 10.0f;
+        frames(3.0, {.up = up});
+        CHECK(!flight.travel && Math::Length(flight.velocity) > 5000.0f);
+        frames(30.0, {.up = up});
+        CHECK(Math::Length(flight.velocity) < 2050.0f);
+        CHECK(enterTravel());
         frames(3.0, {.up = up, .air = 0.01f});
-        CHECK(!flight.travel && flight.travelLevel == 0.0f && Math::Length(flight.velocity) < 2001.0f);
+        CHECK(!flight.travel && flight.travelLevel == 0.0f && Math::Length(flight.velocity) < 5000.0f);
+        frames(5.0, {.up = up, .air = 0.01f});
+        CHECK(Math::Length(flight.velocity) < 2050.0f);
+
+        // S ralentit trois fois plus fort que Z n'accélère : de 1 000 à 0 m/s en un peu plus de 33 s (10 m/s²).
+        flight.velocity = {0.0f, 0.0f, -1000.0f};
+        flight.cruiseSpeed = 1000.0f;
+        frames(10.0, {.thrust = -1.0f, .up = up});
+        CHECK(flight.cruiseSpeed < 710.0f && flight.velocity.z > -710.0f);
 
         // Vers une planète, en voyage, la vitesse d'approche est bornée par la distance qui reste divisée par 3 s : à
         // 60 km, 20 km/s au plus ; à 1 km, la vitesse normale. Le nez droit sur elle.

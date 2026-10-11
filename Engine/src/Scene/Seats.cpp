@@ -66,6 +66,10 @@ namespace Flux::Seats {
         // fait que décoller : ni rotation ni déplacement à plat. Avec ShipComponent::levelAssist et une gravité
         // (SeatInput::up), le lacet tourne autour de la verticale du lieu (virer garde l'horizon à plat) et, sans
         // roulis commandé, les ailes reviennent à plat ; le tangage reste où le pilote le laisse (piquer pour se poser).
+        constexpr float RetroFactor = 3.0f;          // poussée pour ralentir, en multiple de ShipComponent::acceleration
+        constexpr float SpaceSlowdownTime = 5.0f;    // fonte de la vitesse du voyage après son arrêt (constante de temps, s)
+        constexpr float AirSlowdownTime = 1.5f;
+
         void Pilot(ShipComponent& ship, const Math::Quaternionf& rotation, double deltaSeconds, const SeatInput& input) {
             const float delta = static_cast<float>(deltaSeconds);
             if (delta <= 0.0f) {
@@ -145,7 +149,10 @@ namespace Flux::Seats {
             } else if (ship.travel) {
                 ship.cruiseSpeed = std::min(std::max(ship.cruiseSpeed, 0.0f) + acceleration * delta, maxSpeed);
             } else {
-                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * acceleration * delta, -maxSpeed * 0.25f, maxSpeed);
+                // S vers l'arrière ou Z en marche arrière : la vitesse de croisière baisse au rythme des rétrofusées.
+                const bool retro = input.thrust * ship.cruiseSpeed < 0.0f;
+                ship.cruiseSpeed = std::clamp(ship.cruiseSpeed + input.thrust * acceleration * (retro ? RetroFactor : 1.0f) * delta,
+                                              -maxSpeed * 0.25f, maxSpeed);
             }
             Math::Vector3f wanted{input.strafe * ship.strafeSpeed, input.lift * ship.strafeSpeed, -ship.cruiseSpeed};
             if (input.brake) {
@@ -157,15 +164,21 @@ namespace Flux::Seats {
             const float step = acceleration * delta;
             approach(ship.velocity.x, wanted.x, step + std::abs(wanted.x - ship.velocity.x) * grip);
             approach(ship.velocity.y, wanted.y, step + std::abs(wanted.y - ship.velocity.y) * grip);
-            approach(ship.velocity.z, wanted.z, step + std::abs(wanted.z - ship.velocity.z) * grip);
+            // Ralentir (S, frein) pousse plus fort qu'accélérer : les rétrofusées arrêtent le vaisseau en un tiers du
+            // temps qu'il a mis à prendre sa vitesse.
+            const bool slowing = std::abs(wanted.z) < std::abs(ship.velocity.z) && wanted.z * ship.velocity.z >= 0.0f;
+            approach(ship.velocity.z, wanted.z, step * (slowing ? RetroFactor : 1.0f) + std::abs(wanted.z - ship.velocity.z) * grip);
 
             // Le mode voyage porte la vitesse au-delà de ce que tiennent les propulseurs : quand son régime retombe
-            // (Tab, frein, entrée dans une atmosphère), elle redescend avec lui. Sinon les 1 000 m/s du voyage ne
-            // fondaient qu'à ShipComponent::acceleration (une minute et demie) : entré trop vite dans l'atmosphère, le
-            // vaisseau filait vers le sol sans répondre.
+            // (Tab, frein, entrée dans une atmosphère), l'excès fond de lui-même, en douceur dans l'espace (moitié en
+            // 3,5 s), vite dans l'air (moitié en 1 s). Sinon les 1 000 m/s du voyage ne fondaient qu'à
+            // ShipComponent::acceleration (une minute et demie) : entré trop vite dans l'atmosphère, le vaisseau filait
+            // vers le sol sans répondre.
             const float normalSpeed = Math::Length(Math::Vector3f{ship.strafeSpeed, ship.strafeSpeed, ship.maxSpeed}) * std::max(ship.boost, 1.0f);
             if (const float speed = Math::Length(ship.velocity); speed > normalSpeed * travel) {
-                ship.velocity = ship.velocity * (normalSpeed * travel / speed);
+                const float slowdown = air > 0.0f ? AirSlowdownTime : SpaceSlowdownTime;
+                const float limit = normalSpeed * travel + (speed - normalSpeed * travel) * std::exp(-delta / slowdown);
+                ship.velocity = ship.velocity * (limit / speed);
             }
             // Vers une planète, il ne s'approche de sa limite pas plus vite que sa distance en ApproachTime secondes :
             // il ralentit à mesure qu'il arrive et y entre à vitesse normale. Le long de la planète, rien ne change.
