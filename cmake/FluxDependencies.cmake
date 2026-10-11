@@ -129,7 +129,20 @@ FetchContent_Declare(miniaudio
 
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf JoltPhysics miniaudio)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf miniaudio)
+
+# Jolt optimisé même en Debug : sans optimisation, la physique (coque du vaisseau contre le sol, personnages) prend
+# plusieurs fois le temps d'une image et le Debug devient inutilisable. On ne débogue jamais l'intérieur de Jolt.
+# Le runtime reste celui du Debug (/MDd, _DEBUG) : mêmes conteneurs de la bibliothèque standard que notre code.
+# add_subdirectory copie les variables au moment de l'appel : les options ne valent que pour Jolt.
+set(FLUX_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+if (MSVC)
+    set(CMAKE_CXX_FLAGS_DEBUG "/O2 /Ob2")
+else()
+    set(CMAKE_CXX_FLAGS_DEBUG "-O2")
+endif()
+FetchContent_MakeAvailable(JoltPhysics)
+set(CMAKE_CXX_FLAGS_DEBUG "${FLUX_CXX_FLAGS_DEBUG}")
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})

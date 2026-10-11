@@ -4,28 +4,34 @@
 
 namespace Flux {
     namespace {
-        // Tuiles vivantes en même temps au plus (nœuds des planètes et buffers libres gardés).
-        constexpr std::uint32_t MaxTileGroups = 4096;
         constexpr std::uint64_t VertexSize = Planet::TileVertexCount * sizeof(ModelVertex);
         constexpr std::uint64_t MorphSize = Planet::TileVertexCount * sizeof(Planet::MorphVertex);
         static_assert(sizeof(ModelVertex) == 8 * sizeof(float) && sizeof(Planet::MorphVertex) == 6 * sizeof(float),
                       "ModelVertex et MorphVertex doivent correspondre à Write dans shaders/PlanetTile.slang");
+
+        // Doit correspondre à Constants dans shaders/PlanetTile.slang.
+        struct Constants
+        {
+            std::uint32_t job;
+            std::uint32_t firstVertex; // de la case dans sa page
+        };
     }
 
-    std::expected<std::unique_ptr<PlanetTileCompute>, std::string> PlanetTileCompute::Create(RHI::Device& device) {
-        std::unique_ptr<PlanetTileCompute> compute(new PlanetTileCompute(device));
+    std::expected<std::unique_ptr<PlanetTileCompute>, std::string> PlanetTileCompute::Create(RHI::Device& device,
+                                                                                           RHI::MemoryType memory) {
+        std::unique_ptr<PlanetTileCompute> compute(new PlanetTileCompute(device, memory));
         constexpr std::array frameBindings{RHI::Binding{0, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute},
                                            RHI::Binding{1, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute}};
         auto frameLayout = device.CreateBindGroupLayout({frameBindings, RHI::FramesInFlight});
-        auto tileLayout = device.CreateBindGroupLayout({frameBindings, MaxTileGroups});
-        if (!frameLayout || !tileLayout) {
-            return std::unexpected(!frameLayout ? frameLayout.error() : tileLayout.error());
+        auto pageLayout = device.CreateBindGroupLayout({frameBindings, MaxPages});
+        if (!frameLayout || !pageLayout) {
+            return std::unexpected(!frameLayout ? frameLayout.error() : pageLayout.error());
         }
         compute->m_frameLayout = std::move(*frameLayout);
-        compute->m_tileLayout = std::move(*tileLayout);
-        const std::array<const RHI::BindGroupLayout*, 2> layouts{compute->m_frameLayout.get(), compute->m_tileLayout.get()};
+        compute->m_pageLayout = std::move(*pageLayout);
+        const std::array<const RHI::BindGroupLayout*, 2> layouts{compute->m_frameLayout.get(), compute->m_pageLayout.get()};
         auto pipeline = device.CreateComputePipeline(
-            {Platform::GetExecutableDirectory() / "shaders" / "PlanetTile.spv", "computeMain", layouts, sizeof(std::uint32_t)});
+            {Platform::GetExecutableDirectory() / "shaders" / "PlanetTile.spv", "computeMain", layouts, sizeof(Constants)});
         if (!pipeline) {
             return std::unexpected(pipeline.error());
         }
@@ -51,22 +57,36 @@ namespace Flux {
         for (Frame& frame : m_frames) {
             frame.group.reset(); // avant leur layout
         }
+        m_pages.clear();
     }
 
-    std::expected<PlanetTileCompute::TileBuffers, std::string> PlanetTileCompute::CreateTileBuffers(RHI::MemoryType memory) {
-        const RHI::BufferUsage usage = RHI::BufferUsage::Vertex | RHI::BufferUsage::Storage;
-        auto vertices = m_device.CreateBuffer({VertexSize, usage, memory});
-        auto morph = m_device.CreateBuffer({MorphSize, usage, memory});
-        if (!vertices || !morph) {
-            return std::unexpected(!vertices ? vertices.error() : morph.error());
+    std::expected<std::uint32_t, std::string> PlanetTileCompute::CreateTile() {
+        if (m_tileCount == m_pages.size() * TilesPerPage) {
+            if (m_pages.size() >= MaxPages) {
+                return std::unexpected("trop de tuiles de planète");
+            }
+            const RHI::BufferUsage usage = RHI::BufferUsage::Vertex | RHI::BufferUsage::Storage;
+            auto vertices = m_device.CreateBuffer({TilesPerPage * VertexSize, usage, m_memory});
+            auto morph = m_device.CreateBuffer({TilesPerPage * MorphSize, usage, m_memory});
+            if (!vertices || !morph) {
+                return std::unexpected(!vertices ? vertices.error() : morph.error());
+            }
+            Page page{std::move(*vertices), std::move(*morph), m_device.CreateBindGroup(*m_pageLayout)};
+            if (!page.group) {
+                return std::unexpected("trop de pages de tuiles de planète");
+            }
+            page.group->SetBuffer(0, *page.vertices);
+            page.group->SetBuffer(1, *page.morph);
+            m_pages.push_back(std::move(page));
         }
-        TileBuffers buffers{std::move(*vertices), std::move(*morph), m_device.CreateBindGroup(*m_tileLayout)};
-        if (!buffers.group) {
-            return std::unexpected("trop de tuiles de planète");
-        }
-        buffers.group->SetBuffer(0, *buffers.vertices);
-        buffers.group->SetBuffer(1, *buffers.morph);
-        return buffers;
+        return m_tileCount++;
+    }
+
+    void PlanetTileCompute::ReadTile(std::uint32_t tile, ModelVertex* vertices, Planet::MorphVertex* morph) const {
+        const Page& page = m_pages[GetPage(tile)];
+        const std::uint64_t slot = tile % TilesPerPage;
+        page.vertices->Read(vertices, VertexSize, slot * VertexSize);
+        page.morph->Read(morph, MorphSize, slot * MorphSize);
     }
 
     std::span<const PlanetTileCompute::Stats> PlanetTileCompute::GetStats(std::uint32_t frameIndex) {
@@ -79,14 +99,14 @@ namespace Flux {
     }
 
     bool PlanetTileCompute::Add(std::uint32_t frameIndex, const Planet::Terrain& terrain, Planet::TileKey key,
-                                const TileBuffers& buffers) {
+                                std::uint32_t tile) {
         Frame& frame = m_frames[frameIndex];
         if (frame.tiles.size() >= MaxTilesPerFrame) {
             return false;
         }
         Planet::PrepareTileGpu(terrain, key, m_inputs);
         frame.inputs->Write(&m_inputs, sizeof(m_inputs), frame.tiles.size() * sizeof(m_inputs));
-        frame.tiles.push_back(buffers.group.get());
+        frame.tiles.push_back(tile);
         return true;
     }
 
@@ -98,9 +118,15 @@ namespace Flux {
         }
         commands.BindPipeline(*m_pipeline);
         commands.SetBindGroup(0, *frame.group);
+        std::uint32_t boundPage = MaxPages;
         for (std::uint32_t job = 0; job < frame.computed; ++job) {
-            commands.SetBindGroup(1, *frame.tiles[job]);
-            commands.PushConstants(&job, sizeof(job));
+            const std::uint32_t tile = frame.tiles[job];
+            if (GetPage(tile) != boundPage) {
+                boundPage = GetPage(tile);
+                commands.SetBindGroup(1, *m_pages[boundPage].group);
+            }
+            const Constants constants{job, GetFirstVertex(tile)};
+            commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch(1);
         }
         commands.ComputeBarrier();

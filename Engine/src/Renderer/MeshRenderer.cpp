@@ -80,12 +80,12 @@ namespace Flux {
                       && ShadowCascadeCount == 4);
 
 
-        // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive.
+        // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive. L'indice de l'entité
+        // (dans les DrawData) est celui de l'instance dessinée.
         struct DrawParams
         {
             Math::LinearColor color;
             Math::LinearColor emissive;
-            std::uint32_t draw;
             std::uint32_t cascade;
             float alphaCutoff;
             std::uint32_t transparent;
@@ -94,7 +94,7 @@ namespace Flux {
             float normalScale;
             float occlusionStrength;
             std::uint32_t materialOverride;
-            std::array<float, 3> padding;
+            std::array<float, 4> padding;
         };
         static_assert(sizeof(DrawParams) == 80);
 
@@ -111,6 +111,8 @@ namespace Flux {
         constexpr std::uint64_t MinJointBufferSize = 64 * 1024;
         constexpr std::uint64_t MinDrawBufferSize = 64 * 1024;
         constexpr std::uint64_t MinLightBufferSize = 16 * 1024;
+        // Commandes des tuiles de planète : de quoi dessiner un millier de tuiles dans chaque passe sans réallouer.
+        constexpr std::uint64_t MinIndirectBufferSize = 128 * 1024;
 
         // Lumières envoyées au GPU au plus, les plus proches de la caméra parmi celles qui touchent son champ.
         // Chaque pixel les parcourt toutes : le coût croît avec leur nombre (voir SceneLights dans shaders/Mesh.slang).
@@ -310,10 +312,7 @@ namespace Flux {
     }
 
     const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const MeshDraw& draw) const {
-        if (draw.ocean) {
-            return m_ocean;
-        }
-        return draw.model->IsAnimated() ? m_skinned : draw.model->IsPlanetTile() ? m_planet : m_static;
+        return draw.model->IsAnimated() ? m_skinned : m_static;
     }
 
     // Buffer de l'image f (emplacement `slot` du groupe 1) agrandi à size octets au moins, et son groupe mis à jour.
@@ -340,8 +339,9 @@ namespace Flux {
         }
         // La soustraction des positions se fait en double (secteurs compris) : le GPU ne voit que de petits nombres.
         scene.ComputeRelativeTransforms(camera.position, m_relativeTransforms);
-        m_draws.clear();
+        ClearDraws();
         m_drawData.clear();
+        m_tileData.clear();
         m_jointMatrices.clear();
         m_lights.clear();
         m_interiors.clear();
@@ -444,9 +444,13 @@ namespace Flux {
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         m_planets->EndFrame(frameIndex);
         if (!m_boundEnvironment[frameIndex]) {
-            m_draws.clear(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
+            ClearDraws(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
         Upload(camera, aspect, sky, frameIndex);
+        if (!BuildTileCommands(frameIndex)) {
+            m_tileDraws.clear();
+            m_tilePasses = {};
+        }
 
         // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
         // centre de sa boîte) : deux transparents qui s'entrecroisent peuvent se superposer dans le mauvais ordre.
@@ -525,7 +529,6 @@ namespace Flux {
         if (ocean) {
             m_planetData[index].water[3] = static_cast<float>(seaRadius);
         }
-        const Math::LinearColor white{1.0f, 1.0f, 1.0f, 1.0f};
         for (const PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
             // Centre de la tuile dans le repère de la planète : où fragmentPlanet lit l'altitude et le bruit.
@@ -533,20 +536,16 @@ namespace Flux {
             // Le même modulo GroundPeriod, calculé en double : les textures du sol restent nettes et sans couture
             // d'une tuile à l'autre, même à des centaines de kilomètres du centre.
             const auto wrap = [](double value) { return static_cast<float>(value - GroundPeriod * std::floor(value / GroundPeriod)); };
-            m_drawData.push_back({Math::Matrix4f::Translation(center) * rotation,
+            // Eau : mêmes données (vertexOcean pose la tuile sur la sphère de la mer) ; sa sphère englobante grandit de ce
+            // que l'eau dépasse du fond.
+            const bool water = ocean && tile.lowest < seaRadius
+                            && view.Contains(center, tile.radius + static_cast<float>(seaRadius - tile.lowest));
+            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), center, tile.radius,
+                                   Math::Length(center) - tile.radius, water});
+            m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
                                   {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f}});
-            m_draws.push_back({tile.model, white, {0.0f, 0.0f, 0.0f}, 0.0f, roughness, true, center, tile.radius,
-                               Math::Length(center), true, true});
-            if (ocean && tile.lowest < seaRadius) {
-                // Mêmes données (vertexOcean les pose sur la sphère de la mer) ; la sphère englobante grandit de ce que
-                // l'eau dépasse du fond.
-                m_drawData.push_back(m_drawData.back());
-                const float radius = tile.radius + static_cast<float>(seaRadius - tile.lowest);
-                m_draws.push_back({tile.model, white, {0.0f, 0.0f, 0.0f}, 0.0f, 0.05f, true, center, radius, Math::Length(center),
-                                   true, view.Contains(center, radius), true});
-            }
         }
     }
 
@@ -570,7 +569,7 @@ namespace Flux {
     }
 
     bool MeshRenderer::IsTransparent(const MeshDraw& draw, const GpuMaterial& material) {
-        return material.blend || draw.tint.a < 1.0f || draw.ocean;
+        return material.blend || draw.tint.a < 1.0f;
     }
 
     // Pose d'un modèle animé, d'après la lecture de son AnimatorComponent ; sans lui, la pose de repos.
@@ -597,10 +596,12 @@ namespace Flux {
     void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex) {
         static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 144 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
+        // Celles des tuiles des planètes après celles des entités.
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
+        const std::uint64_t tileBytes = m_tileData.size() * sizeof(DrawData);
         if (!GrowBuffer(m_jointBuffers[frameIndex], frameIndex, JointSlot, jointBytes)
-            || !GrowBuffer(m_drawBuffers[frameIndex], frameIndex, DrawSlot, drawBytes)) {
-            m_draws.clear();
+            || !GrowBuffer(m_drawBuffers[frameIndex], frameIndex, DrawSlot, drawBytes + tileBytes)) {
+            ClearDraws();
             return;
         }
         if (jointBytes > 0) {
@@ -608,6 +609,9 @@ namespace Flux {
         }
         if (drawBytes > 0) {
             m_drawBuffers[frameIndex]->Write(m_drawData.data(), drawBytes);
+        }
+        if (tileBytes > 0) {
+            m_drawBuffers[frameIndex]->Write(m_tileData.data(), tileBytes, drawBytes);
         }
         // Trop de lumières : les plus proches de la caméra.
         if (m_lights.size() > MaxLights) {
@@ -672,30 +676,82 @@ namespace Flux {
 
     // L'entité peut faire de l'ombre dans la cascade : sa sphère touche le volume vu par la carte (le carré couvert,
     // de casterDistance devant la tranche jusqu'à son arrière).
-    bool MeshRenderer::InCascade(const MeshDraw& draw, std::size_t cascade) const {
+    bool MeshRenderer::InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const {
         const ShadowCascade& c = m_cascades[cascade];
         const auto& m = c.lightViewProjection.columns;
-        const Math::Vector3f p = draw.center;
+        const Math::Vector3f p = center;
         const float x = m[0][0] * p.x + m[1][0] * p.y + m[2][0] * p.z + m[3][0];
         const float y = m[0][1] * p.x + m[1][1] * p.y + m[2][1] * p.z + m[3][1];
         const float z = m[0][2] * p.x + m[1][2] * p.y + m[2][2] * p.z + m[3][2];
-        const float side = draw.radius / c.radius;
-        const float depth = draw.radius / c.depthRange;
+        const float side = radius / c.radius;
+        const float depth = radius / c.depthRange;
         return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
     }
 
-    void MeshRenderer::DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
-                                     std::uint32_t drawIndex, const ModelPrimitive& primitive, const RHI::Pipeline& pipeline,
-                                     std::uint32_t cascade) const {
-        const MeshDraw& draw = m_draws[drawIndex];
-        const GpuModel& model = *draw.model;
-        if (&model != state.model) {
-            state.model = &model;
-            const RHI::Buffer* second = model.IsAnimated() ? model.skin.get() : model.morph.get();
-            const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), second};
-            commands.BindVertexBuffers(0, std::span(vertexBuffers).first(second ? 2 : 1));
-            commands.BindIndexBuffer(*model.indices);
+    void MeshRenderer::ClearDraws() {
+        m_draws.clear();
+        m_tileDraws.clear();
+        m_tilePasses = {};
+    }
+
+    // Commandes indirectes des tuiles de chaque passe, groupées par page (un appel par page), de près à loin dans
+    // chacune (le sol proche cache le lointain avant qu'il soit éclairé). false si le buffer ne peut grandir.
+    bool MeshRenderer::BuildTileCommands(std::uint32_t frameIndex) {
+        m_tileCommands.clear();
+        m_tileBatches.clear();
+        m_tilePasses = {};
+        const RHI::Buffer* indices = m_planets->GetIndices();
+        if (m_tileDraws.empty() || !indices) {
+            return true;
         }
+        std::ranges::sort(m_tileDraws, [](const TileDraw& a, const TileDraw& b) {
+            const std::uint32_t pageA = PlanetTileCompute::GetPage(a.tile);
+            const std::uint32_t pageB = PlanetTileCompute::GetPage(b.tile);
+            return pageA != pageB ? pageA < pageB : a.distance < b.distance;
+        });
+        const std::uint32_t firstData = static_cast<std::uint32_t>(m_drawData.size());
+        const std::uint32_t indexCount = m_planets->GetIndexCount();
+        std::array<std::size_t, TilePassCount + 1> passStarts{};
+        for (std::size_t pass = 0; pass < TilePassCount; ++pass) {
+            passStarts[pass] = m_tileBatches.size();
+            for (const TileDraw& draw : m_tileDraws) {
+                const bool drawn = pass == GroundPass ? true
+                                 : pass == OceanPass  ? draw.ocean
+                                                      : InCascade(draw.center, draw.radius, pass - 2);
+                if (!drawn) {
+                    continue;
+                }
+                const std::uint32_t page = PlanetTileCompute::GetPage(draw.tile);
+                if (m_tileBatches.size() == passStarts[pass] || m_tileBatches.back().page != page) {
+                    m_tileBatches.push_back({page, static_cast<std::uint32_t>(m_tileCommands.size()), 0});
+                }
+                ++m_tileBatches.back().count;
+                m_tileCommands.push_back({indexCount, 1, 0, static_cast<std::int32_t>(PlanetTileCompute::GetFirstVertex(draw.tile)),
+                                          firstData + draw.data});
+            }
+        }
+        passStarts[TilePassCount] = m_tileBatches.size();
+
+        std::unique_ptr<RHI::Buffer>& buffer = m_indirectBuffers[frameIndex];
+        const std::uint64_t bytes = m_tileCommands.size() * sizeof(RHI::DrawIndexedCommand);
+        if (!buffer || buffer->GetSize() < bytes) {
+            auto grown = m_device.CreateBuffer({std::max(std::bit_ceil(bytes), MinIndirectBufferSize), RHI::BufferUsage::Indirect,
+                                                RHI::MemoryType::Upload});
+            if (!grown) {
+                Log::Error("{}", grown.error());
+                return false;
+            }
+            buffer = std::move(*grown);
+        }
+        buffer->Write(m_tileCommands.data(), bytes);
+        for (std::size_t pass = 0; pass < TilePassCount; ++pass) {
+            m_tilePasses[pass] = std::span(m_tileBatches).subspan(passStarts[pass], passStarts[pass + 1] - passStarts[pass]);
+        }
+        return true;
+    }
+
+    void MeshRenderer::BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
+                                    const RHI::Pipeline& pipeline) const {
         if (&pipeline != state.pipeline) {
             // Autre pipeline : ses groupes sont reliés, sans compter sur la compatibilité des layouts.
             state.pipeline = &pipeline;
@@ -707,10 +763,22 @@ namespace Flux {
             state.frameBound = true;
             commands.SetBindGroup(1, *m_frameGroups[frameIndex]);
         }
+    }
+
+    void MeshRenderer::DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
+                                     std::uint32_t drawIndex, const ModelPrimitive& primitive, const RHI::Pipeline& pipeline,
+                                     std::uint32_t cascade) const {
+        const MeshDraw& draw = m_draws[drawIndex];
+        const GpuModel& model = *draw.model;
+        if (&model != state.model) {
+            state.model = &model;
+            const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
+            commands.BindVertexBuffers(0, std::span(vertexBuffers).first(model.skin ? 2 : 1));
+            commands.BindIndexBuffer(*model.indices);
+        }
+        BindPipeline(commands, state, frameIndex, pipeline);
         const GpuMaterial& material = model.materials[primitive.material];
-        const RHI::BindGroup* group = model.IsPlanetTile() && m_groundGroup ? m_groundGroup
-                                    : material.group                         ? material.group.get()
-                                                                             : &m_models->GetWhiteGroup();
+        const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
         if (group != state.group) {
             state.group = group;
             commands.SetBindGroup(0, *group);
@@ -719,12 +787,39 @@ namespace Flux {
                                  material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a},
                                 {material.emissive.r + draw.emissive.r, material.emissive.g + draw.emissive.g,
                                  material.emissive.b + draw.emissive.b, 0.0f},
-                                drawIndex, cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u,
+                                cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u,
                                 draw.materialOverride ? draw.metallic : material.metallic * draw.metallic,
                                 draw.materialOverride ? draw.roughness : material.roughness * draw.roughness,
                                 material.normalScale, material.occlusionStrength, draw.materialOverride ? 1u : 0u, {}};
         commands.PushConstants(&params, sizeof(params));
-        commands.DrawIndexed(primitive.indexCount, primitive.firstIndex);
+        commands.DrawIndexed(primitive.indexCount, primitive.firstIndex, drawIndex);
+    }
+
+    // Les tuiles d'une passe : un appel indirect par page. Le sol et l'eau se teintent et se règlent eux-mêmes
+    // (PlanetData) : les paramètres sont les mêmes pour toutes.
+    void MeshRenderer::DrawTiles(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
+                                 const RHI::Pipeline& pipeline) const {
+        if (m_tilePasses[pass].empty()) {
+            return;
+        }
+        BindPipeline(commands, state, frameIndex, pipeline);
+        const RHI::BindGroup* group = m_groundGroup ? m_groundGroup : &m_models->GetWhiteGroup();
+        if (group != state.group) {
+            state.group = group;
+            commands.SetBindGroup(0, *group);
+        }
+        const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
+        const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, pass == OceanPass ? 1u : 0u,
+                                0.0f, 1.0f, 0.0f, 0.0f, 1u, {}};
+        commands.PushConstants(&params, sizeof(params));
+        const PlanetTileCompute& tiles = m_planets->GetTiles();
+        commands.BindIndexBuffer(*m_planets->GetIndices());
+        for (const TileBatch& batch : m_tilePasses[pass]) {
+            const std::array<const RHI::Buffer*, 2> vertexBuffers{&tiles.GetVertices(batch.page), &tiles.GetMorph(batch.page)};
+            commands.BindVertexBuffers(0, vertexBuffers);
+            commands.DrawIndexedIndirect(*m_indirectBuffers[frameIndex], batch.first * sizeof(RHI::DrawIndexedCommand), batch.count);
+        }
+        state.model = nullptr; // les sommets liés ne sont plus ceux d'un modèle
     }
 
     void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
@@ -743,7 +838,7 @@ namespace Flux {
             commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
                 const MeshDraw& draw = m_draws[d];
-                if (!InCascade(draw, c)) {
+                if (!InCascade(draw.center, draw.radius, c)) {
                     continue;
                 }
                 const RHI::Pipeline& pipeline = *GetPipelines(draw).shadow;
@@ -754,6 +849,7 @@ namespace Flux {
                     }
                 }
             }
+            DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadow);
         }
         commands.EndRenderPass();
     }
@@ -773,10 +869,14 @@ namespace Flux {
                 }
             }
         }
+        // Le sol des planètes après les entités : ce qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé.
+        DrawTiles(commands, state, frameIndex, GroundPass, *m_planet.opaque);
     }
 
     void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
+        // L'eau d'abord : vue d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière).
+        DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = GetPipelines(draw);

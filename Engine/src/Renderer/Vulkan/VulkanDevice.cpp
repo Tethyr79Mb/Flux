@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <format>
+#include <vector>
 
 namespace Flux::Vk {
     std::expected<std::unique_ptr<Device>, std::string> Device::Create(void* nativeWindowHandle) {
@@ -49,8 +50,15 @@ namespace Flux::Vk {
         features13.dynamicRendering = VK_TRUE;
         features13.synchronization2 = VK_TRUE;
 
+        // Dessin indirect (toutes les tuiles d'une planète en un appel) : plusieurs commandes par appel, chacune avec
+        // son indice d'instance. Présents sur tous les GPU de bureau.
+        VkPhysicalDeviceFeatures features{};
+        features.multiDrawIndirect = VK_TRUE;
+        features.drawIndirectFirstInstance = VK_TRUE;
+
         vkb::PhysicalDeviceSelector selector(device->m_instance);
         selector.set_minimum_version(1, 3)
+                .set_required_features(features)
                 .set_required_features_13(features13)
                 .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
         if (headless) {
@@ -67,6 +75,15 @@ namespace Flux::Vk {
         VkPhysicalDeviceFeatures anisotropy{};
         anisotropy.samplerAnisotropy = VK_TRUE;
         device->m_anisotropy = device->m_physicalDevice.enable_features_if_present(anisotropy);
+        // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
+        device->m_bufferMarkers = device->m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
+        if (device->m_physicalDevice.is_extension_present(VK_EXT_DEVICE_FAULT_EXTENSION_NAME)) {
+            VkPhysicalDeviceFaultFeaturesEXT fault{};
+            fault.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+            fault.deviceFault = VK_TRUE;
+            device->m_deviceFault = device->m_physicalDevice.enable_extension_features_if_present(fault)
+                                    && device->m_physicalDevice.enable_extension_if_present(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+        }
 
         vkb::DeviceBuilder deviceBuilder(device->m_physicalDevice);
         auto logicalDevice = deviceBuilder.build();
@@ -145,6 +162,47 @@ namespace Flux::Vk {
             return 0.0f;
         }
         return m_physicalDevice.properties.limits.timestampPeriod;
+    }
+
+    std::string Device::DescribeFault() const {
+        if (!m_deviceFault || !vkGetDeviceFaultInfoEXT) {
+            return {};
+        }
+        VkDeviceFaultCountsEXT counts{};
+        counts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+        if (vkGetDeviceFaultInfoEXT(m_device.device, &counts, nullptr) < VK_SUCCESS) {
+            return {};
+        }
+        std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+        std::vector<VkDeviceFaultVendorInfoEXT> vendors(counts.vendorInfoCount);
+        counts.vendorBinarySize = 0; // données brutes du fabricant : illisibles sans ses outils
+        VkDeviceFaultInfoEXT info{};
+        info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+        info.pAddressInfos = addresses.data();
+        info.pVendorInfos = vendors.data();
+        if (vkGetDeviceFaultInfoEXT(m_device.device, &counts, &info) < VK_SUCCESS) {
+            return {};
+        }
+        std::string text = info.description;
+        for (std::uint32_t i = 0; i < counts.addressInfoCount; ++i) {
+            const VkDeviceFaultAddressInfoEXT& address = addresses[i];
+            const char* type = "adresse";
+            switch (address.addressType) {
+                case VK_DEVICE_FAULT_ADDRESS_TYPE_READ_INVALID_EXT: type = "lecture invalide"; break;
+                case VK_DEVICE_FAULT_ADDRESS_TYPE_WRITE_INVALID_EXT: type = "écriture invalide"; break;
+                case VK_DEVICE_FAULT_ADDRESS_TYPE_EXECUTE_INVALID_EXT: type = "exécution invalide"; break;
+                case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_UNKNOWN_EXT:
+                case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_INVALID_EXT:
+                case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_FAULT_EXT: type = "instruction"; break;
+                default: break;
+            }
+            text += std::format("\n  {} : 0x{:x}", type, address.reportedAddress);
+        }
+        for (std::uint32_t i = 0; i < counts.vendorInfoCount; ++i) {
+            text += std::format("\n  {} (code 0x{:x}, données 0x{:x})", vendors[i].description, vendors[i].vendorFaultCode,
+                                vendors[i].vendorFaultData);
+        }
+        return text;
     }
 
     void Device::WaitIdle() const {

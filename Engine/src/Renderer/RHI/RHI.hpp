@@ -73,6 +73,7 @@ namespace Flux::RHI {
         Vertex = 1 << 0,
         Index = 1 << 1,   // indices 32 bits
         Storage = 1 << 2, // lu par les shaders (matrices des os), écrit par les compute shaders
+        Indirect = 1 << 3, // commandes de dessin lues par le GPU (CommandList::DrawIndexedIndirect)
     };
 
     enum class ShaderStage : std::uint8_t {
@@ -112,6 +113,17 @@ namespace Flux::RHI {
         std::uint64_t size = 0;
         BufferUsage usage = BufferUsage::Vertex;
         MemoryType memory = MemoryType::GpuOnly;
+    };
+
+    // Une commande de CommandList::DrawIndexedIndirect, comme VkDrawIndexedIndirectCommand. firstInstance arrive
+    // au vertex shader (SV_VulkanInstanceID) : les shaders de Mesh.slang y lisent l'indice de leurs données.
+    struct DrawIndexedCommand
+    {
+        std::uint32_t indexCount;
+        std::uint32_t instanceCount;
+        std::uint32_t firstIndex;
+        std::int32_t vertexOffset;
+        std::uint32_t firstInstance;
     };
 
     enum class Filter : std::uint8_t { Nearest, Linear };
@@ -277,7 +289,11 @@ namespace Flux::RHI {
         virtual void BindIndexBuffer(const Buffer& buffer) = 0;
         virtual void PushConstants(const void* data, std::uint32_t size) = 0;
         virtual void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) = 0;
-        virtual void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex) = 0;
+        // Une instance, d'indice `instance` (SV_VulkanInstanceID).
+        virtual void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex, std::uint32_t instance = 0) = 0;
+        // `count` commandes DrawIndexedCommand lues dans `buffer` (BufferUsage::Indirect) à partir de `offset` : un
+        // seul appel pour beaucoup de maillages qui partagent pipeline, sommets et indices.
+        virtual void DrawIndexedIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t count) = 0;
         // Compute shader du pipeline lié (CreateComputePipeline), en groupes de threads ; hors d'une passe.
         virtual void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1) = 0;
         // Les buffers écrits par les Dispatch précédents deviennent lisibles par la suite : sommets, index, shaders,
@@ -286,9 +302,15 @@ namespace Flux::RHI {
         // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
         // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
         virtual void WriteTimestamp(std::uint32_t slot) = 0;
+        // Diagnostic de plantage : les commandes qui suivent forment l'étape `name` (texte constant, vivant jusqu'à la
+        // fin du programme), jusqu'à l'étape suivante ou la fin de l'image ; MaxSteps par image au plus. Si le GPU se
+        // bloque, le journal et le fichier plantage-gpu.txt disent quelles étapes avaient commencé ou fini. Sans effet
+        // sans l'extension qui le permet (AMD) ni hors d'une image.
+        virtual void BeginStep(const char* name) = 0;
     };
 
     inline constexpr std::uint32_t MaxTimestamps = 8;
+    inline constexpr std::uint32_t MaxSteps = 16;
 
     // Temps passés par le CPU à attendre, pendant l'image précédente (millisecondes) : longs, ils disent que le GPU ou
     // la présentation (V-Sync, plafond du pilote) mène la cadence.

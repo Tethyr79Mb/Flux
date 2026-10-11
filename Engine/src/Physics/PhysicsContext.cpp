@@ -115,11 +115,13 @@ namespace Flux {
         // Tous les cœurs sauf un (le thread principal, qui dessine), au moins un.
         const int threads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
         jobSystem = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
+        serialJobs = std::make_unique<JPH::JobSystemSingleThreaded>(JPH::cMaxPhysicsJobs);
     }
 
     PhysicsContext::Impl::~Impl() {
         meshes.clear(); // formes Jolt : avant que Jolt soit libéré
         jobSystem.reset();
+        serialJobs.reset();
         tempAllocator.reset();
         ReleaseJolt();
     }

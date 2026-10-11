@@ -29,6 +29,11 @@ namespace Flux {
         // Densité de l'air là où il est (0 dans l'espace, 1 au sol d'une atmosphère comme celle de la Terre) :
         // ShipComponent::airGrip.
         float air = 0.0f;
+        // Planète la plus proche, à moins de deux rayons : sa verticale ici (unitaire, monde ; nulle loin de toute
+        // planète) et la distance à sa limite (haut de l'atmosphère, ou le sol sans atmosphère). En mode voyage, le
+        // vaisseau ne s'en approche pas plus vite qu'il ne peut ralentir avant d'y arriver.
+        Math::Vector3f planetUp{};
+        float planetDistance = 0.0f;
     };
 
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège

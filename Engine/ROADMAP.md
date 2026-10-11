@@ -15,20 +15,22 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre).
 - ✅ Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour.
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur).
+- ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
 
 ### Planètes
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU.
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
+- 🔨 Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
-- 🔨 Teinte de chaque texture du sol (PR #92).
+- ✅ Teinte de chaque texture du sol.
 
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
 - ✅ Composants enregistrés une fois : inspecteur et sauvegarde générés.
 - ✅ Physique Jolt : objets simulés, personnage (capsule), un monde physique par vaisseau (on marche à bord pendant qu'il vole).
-- ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, mode voyage, sièges, atterrissage stabilisé.
+- ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, mode voyage (ralenti à l'approche d'une planète, vitesse rendue à sa sortie), sièges, atterrissage stabilisé.
 - ✅ Animation squelettique (fondus, repos/marche/course/chute/s'asseoir).
 - ✅ Son 3D (miniaudio), actions d'entrée réassignables (Touches.json).
 
@@ -40,13 +42,17 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Outillage
 - ✅ Module du jeu en DLL rechargeable à chaud, API versionnée (`GameModuleApiVersion`).
 - ✅ Tests (FluxTests), CI MSVC Debug + Release.
+- 🔨 Debug utilisable : Jolt optimisé en Debug, préréglage « Release + débogage », petits mondes physiques sans fils.
 - ✅ Version affichée dans le jeu : numéro + commit Git.
 
 ## Prochaines étapes
 
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
-- ⬜ Perspective aérienne précalculée (texture 3D) au lieu de l'air calculé à chaque pixel.
+- 🔨 Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
+- ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
+  chaque cascade d'ombres) au lieu d'un appel par tuile.
+- ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - ⬜ Océan : tuiles plus grossières et moins nombreuses (253 tuiles redessinées aujourd'hui).
 - ⬜ Réglage du niveau de détail des tuiles (`LodSplitFactor`).
 
@@ -61,6 +67,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Végétation et rochers posés sur le sol (instancing).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - ⬜ Nuages.
+- ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 
 ### Gameplay
 - ⬜ Prefabs (vaisseau, station réutilisables).

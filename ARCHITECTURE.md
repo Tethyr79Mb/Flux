@@ -29,6 +29,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface et sa mise à jour. L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
+- **Game.exe** n'a qu'un `main` d'une ligne : `Flux::RunGame` (`Core/GameClient.hpp`) lit le projet, charge
+  GameModule.dll, ouvre la scène de démarrage et lance `Engine::Run`. Comme dans Unreal, le moteur possède la boucle et
+  appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage. Les assets sont copiés à côté
   des exécutables (`bin/assets/`).
 
@@ -51,7 +54,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 Couches, de la plus haute à la plus basse :
 
 ```
-Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU)
+Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU), étapes du diagnostic de plantage GPU
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
@@ -73,7 +76,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques
-(`static_assert` sur les tailles).
+(`static_assert` sur les tailles). Un dessin donne l'indice de son `DrawData` comme indice d'instance.
 
 ## Coordonnées et grands mondes
 
@@ -94,7 +97,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 ## Physique (Jolt)
 
-- `PhysicsContext` (créé avec le moteur) : système Jolt, fils de travail, maillages de collision en cache.
+- `PhysicsContext` (créé avec le moteur) : système Jolt, fils de travail, maillages de collision en cache. Un monde
+  de moins de 128 corps actifs est calculé sur le fil principal (réveiller les fils coûtait plus que le calcul).
 - `PhysicsWorld` (par scène lancée) : un monde Jolt pour la scène, plus un par vaisseau dans son propre repère. On
   marche dans un vaisseau qui vole parce que son intérieur est immobile dans son monde. Des copies cinématiques de
   son décor dans le monde extérieur permettent d'y monter.
@@ -112,7 +116,10 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
   tableaux (`GroundTextures`) plaquées en triplanaire ; couleurs unies si les textures manquent ou pendant leur
   décodage (sur d'autres fils, seulement si la scène a une planète).
-- Atmosphère (diffusion calculée au pixel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
+  d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
+  l'instance (`SV_VulkanInstanceID`), comme pour tous les maillages de `Mesh.slang`.
 
 ## Interface (FluxUI)
 
@@ -141,7 +148,9 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 ## Compilation
 
-- CMake + Ninja, préréglages MSVC (`CMakePresets.json`). Dépendances par FetchContent dans `out/deps/<préréglage>`.
+- CMake + Ninja, préréglages MSVC (`CMakePresets.json`) : Debug, Release, et « Release + débogage » (RelWithDebInfo)
+  pour tester vite en gardant les points d'arrêt. Dépendances par FetchContent dans `out/deps/<préréglage>`. Jolt est
+  compilé optimisé même en Debug.
 - `cmake/FluxSources.cmake` trouve les sources tout seul ; `FluxPrecompiled.cmake` les en-têtes précompilés ;
   `FluxResources.cmake` les shaders ; `FluxVersion.cmake` la version affichée (numéro de `project()` + commit Git).
 - CI : `.github/workflows/msvc.yml`, Debug + Release, FluxTests.

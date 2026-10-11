@@ -28,13 +28,15 @@ struct TileInputs
 
 struct Constants
 {
-    uint job; // indice dans `inputs` et `stats`
+    uint job;         // indice dans `inputs` et `stats`
+    uint firstVertex; // premier sommet de la tuile dans les buffers de sa page (PlanetTileCompute)
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<TileInputs> inputs;
 // Par tuile, distances au centre de la planète de ses sommets (forme de la parente comprise, sans les jupes) : x la
 // plus petite (océan), z la plus grande ; y rayon de la sphère englobante (autour du centre de la tuile).
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> stats;
+// Page de tuiles : la tuile écrit à partir de constants.firstVertex.
 [[vk::binding(0, 1)]] RWStructuredBuffer<float> vertices; // ModelVertex : position, normale, uv (8 floats)
 [[vk::binding(1, 1)]] RWStructuredBuffer<float> morph;    // MorphVertex : décalage, normale (6 floats)
 [[vk::push_constant]] ConstantBuffer<Constants> constants;
@@ -216,6 +218,7 @@ TileVertex BuildVertex(uint i, uint j)
 
 void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal)
 {
+    index += constants.firstVertex;
     const uint v = index * 8;
     vertices[v + 0] = position.x;
     vertices[v + 1] = position.y;

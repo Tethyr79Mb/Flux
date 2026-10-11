@@ -450,7 +450,12 @@ namespace Flux {
                     if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
                         seatInput.up = Math::Normalize(gravity) * -1.0f;
                     }
-                    seatInput.air = GetFlightState(ship).air;
+                    const FlightState flight = GetFlightState(ship);
+                    seatInput.air = flight.air;
+                    if (flight.nearPlanet) {
+                        seatInput.planetUp = Math::Vector3f(flight.up);
+                        seatInput.planetDistance = static_cast<float>(flight.boundary);
+                    }
                 }
             }
         } else {
@@ -550,6 +555,7 @@ namespace Flux {
         if (nearest->atmosphere > 0.0f && above < height) {
             flight.air = static_cast<float>(std::min(1.0, nearest->atmosphere * std::exp(-8.0 * above / height)));
         }
+        flight.boundary = std::max(nearest->atmosphere > 0.0f ? above - height : flight.altitude, 0.0);
         return flight;
     }
 
