@@ -114,7 +114,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 - Relief = une formule (`Terrain::GetHeight`), dupliquée dans `shaders/PlanetTile.slang` pour le GPU. Les deux
   versions doivent rester égales (`PlanetGpuTests`). Pas de terrain stocké ni creusable.
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
-  tableaux (`GroundTextures`) plaquées en triplanaire ; couleurs unies si les textures manquent.
+  tableaux (`GroundTextures`) plaquées en triplanaire ; couleurs unies si les textures manquent ou pendant leur
+  décodage (sur d'autres fils, seulement si la scène a une planète).
 - Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
@@ -153,3 +154,4 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 - `cmake/FluxSources.cmake` trouve les sources tout seul ; `FluxPrecompiled.cmake` les en-têtes précompilés ;
   `FluxResources.cmake` les shaders ; `FluxVersion.cmake` la version affichée (numéro de `project()` + commit Git).
 - CI : `.github/workflows/msvc.yml`, Debug + Release, FluxTests.
+- FreeType, msdfgen et stb_image (`cmake/stb`) sont compilés optimisés même en Debug : ils tournent au démarrage.
