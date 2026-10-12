@@ -42,6 +42,10 @@ namespace Flux::Planet {
             return (static_cast<std::uint64_t>(level) << 59) | (static_cast<std::uint64_t>(face) << 56)
                  | (static_cast<std::uint64_t>(x) << 28) | static_cast<std::uint64_t>(y);
         }
+        static constexpr TileKey Unpack(std::uint64_t packed) {
+            return {static_cast<std::uint8_t>((packed >> 56) & 7u), static_cast<std::uint8_t>(packed >> 59),
+                    static_cast<std::uint32_t>((packed >> 28) & 0xFFFFFFFu), static_cast<std::uint32_t>(packed & 0xFFFFFFFu)};
+        }
         // Enfant 0 à 3 : (x, y) puis (x + 1, y), (x, y + 1), (x + 1, y + 1) au niveau suivant.
         constexpr TileKey Child(std::uint32_t index) const {
             return {face, static_cast<std::uint8_t>(level + 1), 2 * x + (index & 1u), 2 * y + (index >> 1)};
@@ -95,12 +99,17 @@ namespace Flux::Planet {
     // Sphère englobante (dans le repère de la planète) et longueur d'un bord d'une tuile, sans la générer.
     struct TileBounds
     {
+        // Point de référence des sommets : au rayon de la planète, au-dessus du milieu de la tuile.
+        Math::Vector3d origin;
+        // Sphère englobante, centrée entre le plus bas et le plus haut : une tuile de 30 m posée à 900 m d'altitude
+        // a un rayon de quelques dizaines de mètres, pas de 900 (centre au rayon de la planète).
         Math::Vector3d center;
         double radius = 0.0;
         double edge = 0.0;
     };
     // Sans hauteurs connues : du plus bas au plus haut de tout le relief de la planète (très prudent pour une petite
-    // tuile). lowest, highest : distances au centre de la planète entre lesquelles la tuile se trouve.
+    // tuile). lowest, highest : distances au centre de la planète entre lesquelles est sa surface (les jupes, plus
+    // bas, sont ajoutées).
     FLUX_API TileBounds GetTileBounds(const Terrain& terrain, TileKey key);
     FLUX_API TileBounds GetTileBounds(const Terrain& terrain, TileKey key, double lowest, double highest);
 

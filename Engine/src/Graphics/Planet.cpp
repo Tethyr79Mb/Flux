@@ -94,6 +94,12 @@ namespace Flux::Planet {
             const double cells = static_cast<double>(TileQuads) * static_cast<double>(std::uint64_t{1} << level);
             return -1.0 + 2.0 * static_cast<double>(index) / cells;
         }
+
+        // Profondeur des jupes d'une tuile (bord de longueur `edge`) : assez pour couvrir l'écart avec une voisine
+        // plus grossière (le relief qu'elle n'a pas).
+        double SkirtDepth(const Terrain& terrain, std::uint32_t octaves, double edge) {
+            return 0.05 * edge + 2.0 * terrain.GetOmittedRelief(octaves) + 1.0;
+        }
     }
 
     Math::Vector3d DirectionFromFace(std::uint32_t face, double s, double t) {
@@ -267,7 +273,11 @@ namespace Flux::Planet {
         constexpr auto half = static_cast<std::int64_t>(TileQuads / 2);
         constexpr auto full = static_cast<std::int64_t>(TileQuads);
         TileBounds bounds;
-        bounds.center = at(half, half) * R;
+        bounds.edge = Math::Length(at(full, 0) - at(0, 0)) * R;
+        // Les jupes descendent sous le bord de la tuile.
+        lowest -= SkirtDepth(terrain, terrain.GetOctaves(key.level), bounds.edge);
+        bounds.origin = at(half, half) * R;
+        bounds.center = at(half, half) * (0.5 * (lowest + highest));
         // Les coins et les milieux des bords, au plus bas et au plus haut.
         for (const std::int64_t j : {std::int64_t{0}, half, full}) {
             for (const std::int64_t i : {std::int64_t{0}, half, full}) {
@@ -277,7 +287,6 @@ namespace Flux::Planet {
                 }
             }
         }
-        bounds.edge = Math::Length(at(full, 0) - at(0, 0)) * R;
         return bounds;
     }
 
@@ -371,7 +380,7 @@ namespace Flux::Planet {
         // vers le centre de la planète. Assez profondes pour couvrir l'écart avec une voisine plus grossière (le
         // relief qu'elle n'a pas) ; la normale reste celle du bord, la jupe se confond avec le terrain.
         const double edge = Math::Length(directions[Wide + 1 + TileQuads] - directions[Wide + 1]) * R;
-        const double depth = 0.05 * edge + 2.0 * terrain.GetOmittedRelief(octaves) + 1.0;
+        const double depth = SkirtDepth(terrain, octaves, edge);
         std::uint32_t next = TileSide * TileSide;
         const auto skirt = [&](std::uint32_t i, std::uint32_t j) {
             const std::uint32_t w = (j + 1) * Wide + (i + 1);
@@ -413,7 +422,7 @@ namespace Flux::Planet {
         // Profondeur des jupes : comme BuildTile.
         const double edge = Math::Length(DirectionFromFace(key.face, GridToFace(x0 + TileQuads, key.level), GridToFace(y0, key.level))
                                          - DirectionFromFace(key.face, GridToFace(x0, key.level), GridToFace(y0, key.level))) * R;
-        const double depth = 0.05 * edge + 2.0 * terrain.GetOmittedRelief(octaves) + 1.0;
+        const double depth = SkirtDepth(terrain, octaves, edge);
         inputs.center = float4(dc, lc);
         inputs.axisN = float4(f.normal, R);
         inputs.axisS = float4(f.s, terrain.GetRelief());

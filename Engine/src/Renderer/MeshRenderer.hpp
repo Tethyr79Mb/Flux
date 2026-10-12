@@ -39,6 +39,15 @@ namespace Flux {
         // Une matrice par maillage, calculée relativement à la caméra, les os des modèles animés et les cascades
         // d'ombres envoyés au GPU. `hidden` et ses descendants ne sont pas dessinés mais gardent leur ombre. Après
         // Device::BeginFrame : les ressources de l'image frameIndex sont libres.
+        // Tuiles de planète de l'image préparée : dessinées, dont recouvertes d'eau, et gardées en mémoire.
+        struct PlanetTileStats
+        {
+            std::uint32_t drawn = 0;
+            std::uint32_t ocean = 0;
+            std::uint32_t stored = 0;
+        };
+        PlanetTileStats GetPlanetTileStats() const;
+
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
         // Calculs sur le GPU préparés par Prepare (tuiles des planètes), avant toute passe.
@@ -46,8 +55,13 @@ namespace Flux {
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image (la carte est
         // effacée puis rendue lisible par Draw).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
-        // Passe principale : les opaques, puis les transparents (le fond du ciel entre les deux).
+        // Passe principale, dans cet ordre (le fond du ciel entre le sol et l'eau). Le sol après les entités : ce
+        // qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres transparents : vue
+        // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le
+        // Renderer mesure chacun au GPU.
         void DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        void DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        void DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
         private:
@@ -72,7 +86,7 @@ namespace Flux {
         {
             std::uint32_t tile;    // case dans les pages de sommets
             std::uint32_t data;    // dans m_tileData
-            Math::Vector3f center; // relatif à la caméra
+            Math::Vector3f center; // de sa sphère englobante, relatif à la caméra
             float radius;
             float distance;        // au bord de sa sphère : ordre de près à loin
             bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra

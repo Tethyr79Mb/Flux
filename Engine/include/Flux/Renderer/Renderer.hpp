@@ -31,8 +31,17 @@ namespace Flux {
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
         double present = 0.0;  // CPU : appel de présentation
         double gpuShadows = -1.0;   // GPU : carte d'ombres
-        double gpuScene = -1.0;     // GPU : maillages de la scène
+        double gpuScene = -1.0;     // GPU : maillages de la scène, somme des cinq suivants
+        double gpuObjects = -1.0;   // GPU : entités opaques
+        double gpuGround = -1.0;    // GPU : sol des planètes
+        double gpuSky = -1.0;       // GPU : fond du ciel
+        double gpuOcean = -1.0;     // GPU : océans
+        double gpuTransparent = -1.0; // GPU : entités transparentes
         double gpuInterface = -1.0; // GPU : interface (overlay 2D)
+        std::uint32_t planetTiles = 0;       // tuiles de planète dessinées
+        std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
+        std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
+        std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
     };
 
     // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.

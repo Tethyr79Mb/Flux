@@ -538,10 +538,12 @@ namespace Flux {
             const auto wrap = [](double value) { return static_cast<float>(value - GroundPeriod * std::floor(value / GroundPeriod)); };
             // Eau : mêmes données (vertexOcean pose la tuile sur la sphère de la mer) ; sa sphère englobante grandit de ce
             // que l'eau dépasse du fond.
+            // Champ, cascades et ordre de près à loin : par la sphère englobante, pas par le point de référence.
+            const Math::Vector3f sphere(tile.sphere);
             const bool water = ocean && tile.lowest < seaRadius
-                            && view.Contains(center, tile.radius + static_cast<float>(seaRadius - tile.lowest));
-            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), center, tile.radius,
-                                   Math::Length(center) - tile.radius, water});
+                            && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
+            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius,
+                                   Math::Length(sphere) - tile.radius, water});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
@@ -686,6 +688,14 @@ namespace Flux {
         const float side = radius / c.radius;
         const float depth = radius / c.depthRange;
         return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
+    }
+
+    MeshRenderer::PlanetTileStats MeshRenderer::GetPlanetTileStats() const {
+        PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()), .stored = m_planets->GetStoredTileCount()};
+        for (const TileDraw& draw : m_tileDraws) {
+            stats.ocean += draw.ocean ? 1u : 0u;
+        }
+        return stats;
     }
 
     void MeshRenderer::ClearDraws() {
@@ -869,14 +879,20 @@ namespace Flux {
                 }
             }
         }
-        // Le sol des planètes après les entités : ce qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé.
+    }
+
+    void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        BindState state;
         DrawTiles(commands, state, frameIndex, GroundPass, *m_planet.opaque);
+    }
+
+    void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        BindState state;
+        DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
     }
 
     void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
-        // L'eau d'abord : vue d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière).
-        DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = GetPipelines(draw);

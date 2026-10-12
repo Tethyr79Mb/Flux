@@ -23,16 +23,19 @@ namespace Flux {
 
     void PlanetRenderer::BeginFrame(std::uint32_t frameIndex) {
         ++m_frame;
-        // Mesures des tuiles calculées avec cette image (le GPU l'a finie) : leur vraie sphère englobante et leur
-        // point le plus bas remplacent les estimations prudentes.
+        // Mesures des tuiles calculées avec cette image (le GPU l'a finie) : leurs hauteurs extrêmes donnent leur
+        // sphère englobante (jupes comprises), à la place des estimations prudentes.
         const auto stats = m_compute->GetStats(frameIndex);
         const std::vector<Computed>& computed = m_computed[frameIndex];
         for (std::size_t i = 0; i < std::min(stats.size(), computed.size()); ++i) {
             if (PlanetState* state = FindOwner(computed[i].owner)) {
                 if (const auto node = state->nodes.find(computed[i].key); node != state->nodes.end() && node->second.tile != NoTile) {
-                    node->second.radius = stats[i].radius;
+                    const Planet::TileKey key = Planet::TileKey::Unpack(computed[i].key);
                     node->second.lowest = stats[i].lowest;
                     node->second.highest = stats[i].highest;
+                    // Un mètre de marge : les mesures sont en float, la sphère passe par quelques points seulement.
+                    node->second.bounds = Planet::GetTileBounds(*state->terrain, key, node->second.lowest - 1.0, node->second.highest + 1.0);
+                    node->second.tight = true;
                     node->second.measured = true;
                 }
             }
@@ -175,7 +178,8 @@ namespace Flux {
                 morphStart = static_cast<float>(Planet::MorphStart * end);
                 morphScale = static_cast<float>(1.0 / ((1.0 - Planet::MorphStart) * end));
             }
-            visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.center), node.center, node.radius,
+            visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
+                                   visit.position + visit.rotation.Rotate(node.bounds.center), static_cast<float>(node.bounds.radius),
                                    morphStart, morphScale, node.lowest});
         }
     }
@@ -213,10 +217,7 @@ namespace Flux {
         }
         m_computed[frameIndex].push_back({state.owner, key.Pack()});
         node.tile = tile;
-        // Le centre de la tuile est celui de sa sphère (Planet::GetTileBounds le calcule pareil) ; rayon et point le
-        // plus bas prudents jusqu'au retour des mesures du GPU.
-        node.center = node.bounds.center;
-        node.radius = static_cast<float>(node.bounds.radius);
+        // Point le plus bas prudent jusqu'au retour des mesures du GPU.
         node.lowest = state.terrain->GetRadius() - 1.5 * state.terrain->GetRelief() - node.bounds.edge;
         node.measured = false;
         node.lastUsed = m_frame;

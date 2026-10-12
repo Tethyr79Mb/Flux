@@ -61,6 +61,11 @@ namespace Flux {
             WaitImageCost,    // CPU arrêté : attente d'une image libre et présentation (V-Sync, plafond)
             GpuShadowsCost,   // GPU
             GpuSceneCost,
+            GpuObjectsCost,   // GPU, compris dans la scène
+            GpuGroundCost,
+            GpuSkyCost,
+            GpuOceanCost,
+            GpuTransparentCost,
             GpuInterfaceCost,
             CostCount,
         };
@@ -131,7 +136,15 @@ namespace Flux {
                 ui.LabelText("Attente écran", FormatCost(stats.Get(WaitImageCost)));
                 ui.LabelText("GPU ombres", FormatCost(stats.Get(GpuShadowsCost)));
                 ui.LabelText("GPU scène", FormatCost(stats.Get(GpuSceneCost)));
+                ui.LabelText("  dont objets", FormatCost(stats.Get(GpuObjectsCost)));
+                ui.LabelText("  dont sol", FormatCost(stats.Get(GpuGroundCost)));
+                ui.LabelText("  dont ciel", FormatCost(stats.Get(GpuSkyCost)));
+                ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
+                ui.LabelText("  dont transparents", FormatCost(stats.Get(GpuTransparentCost)));
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
+                const RenderTimings& render = renderer.GetTimings();
+                ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
+                ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
 
                 if (controller) {
                     ui.Separator();
@@ -304,6 +317,11 @@ namespace Flux {
             stats.Add(WaitImageCost, render.waitImage + render.present);
             stats.Add(GpuShadowsCost, render.gpuShadows);
             stats.Add(GpuSceneCost, render.gpuScene);
+            stats.Add(GpuObjectsCost, render.gpuObjects);
+            stats.Add(GpuGroundCost, render.gpuGround);
+            stats.Add(GpuSkyCost, render.gpuSky);
+            stats.Add(GpuOceanCost, render.gpuOcean);
+            stats.Add(GpuTransparentCost, render.gpuTransparent);
             stats.Add(GpuInterfaceCost, render.gpuInterface);
 
             // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.
