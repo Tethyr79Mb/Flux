@@ -151,14 +151,16 @@ namespace Flux {
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
                 ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
 
-                // RAM : ce que le processus a réservé pour lui (proche du Gestionnaire des tâches) ; GPU : ce que le
-                // rendu a demandé au pilote, en mémoire vidéo et en RAM lisible par le GPU (comptée aussi dans la RAM).
+                // RAM utilisée : présente en RAM en ce moment, bibliothèques partagées comprises (le Gestionnaire des
+                // tâches montre la part privée, plus petite) ; réservée : promise au processus, même pas encore
+                // touchée (pilote compris). GPU : ce que le rendu a demandé au pilote, en mémoire vidéo et en RAM.
                 ui.Separator();
                 const Platform::ProcessMemory memory = Platform::GetProcessMemory();
                 const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
-                ui.LabelText("RAM", FormatMegabytes(memory.privateBytes));
+                ui.LabelText("RAM utilisée", FormatMegabytes(memory.workingSet));
+                ui.LabelText("RAM réservée", FormatMegabytes(memory.privateBytes));
                 ui.LabelText("Mémoire vidéo", FormatMegabytes(gpuDevice));
-                ui.LabelText("  RAM lue par le GPU", FormatMegabytes(gpuHost));
+                ui.LabelText("GPU en RAM", FormatMegabytes(gpuHost));
 
                 if (controller) {
                     ui.Separator();
