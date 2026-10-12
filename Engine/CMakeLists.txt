@@ -53,6 +53,7 @@ flux_precompile_headers(FluxEngine)
 flux_add_version(FluxEngine)
 
 flux_add_shaders(FluxShaders
+        shaders/Flame.slang
         shaders/Mesh.slang
         shaders/Overlay.slang
         shaders/PlanetTile.slang

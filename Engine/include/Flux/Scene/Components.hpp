@@ -218,6 +218,23 @@ namespace Flux {
         float fade = 0.5f;
     };
 
+    // Réacteur : la flamme qui sort de la tuyère, vers le +z de l'entité (l'arrière d'un vaisseau qui regarde vers
+    // son -z), plus la lueur qu'elle jette autour. Son origine est au centre de la sortie de la tuyère ; width et
+    // height donnent la taille de la sortie (une tuyère rectangulaire fait une flamme plate). Sur un vaisseau
+    // (ShipComponent parent), elle suit la poussée de ses moteurs (ShipComponent::throttle) : au ralenti, courte et
+    // pâle ; à fond (boost, mode voyage), longue et blanche au cœur. Un effet de rendu, sans collision.
+    struct ThrusterComponent
+    {
+        Math::LinearColor color{0.25f, 0.5f, 1.0f};
+        float width = 2.3f;      // m, sortie de la tuyère
+        float height = 0.8f;     // m
+        float length = 7.0f;     // m, longueur de la flamme à pleine poussée
+        float intensity = 1.0f;  // éclat de la flamme
+        // Poussée montrée quand les moteurs sont coupés (dans l'éditeur, vaisseau sans pilote) ; 0 : flamme éteinte.
+        float idle = 0.15f;
+        float light = 8.0f;      // intensité de la lumière jetée autour à pleine poussée (0 : aucune)
+    };
+
     enum class ColliderShape : std::uint8_t {
         Box,     // size
         Sphere,  // radius
@@ -332,6 +349,9 @@ namespace Flux {
         float cruiseSpeed = 0.0f;
         bool travel = false;     // mode voyage demandé
         float travelLevel = 0.0f; // régime du mode voyage, de 0 (éteint) à 1
+        // Poussée des moteurs vers l'avant, de 0 (coupés) à 1 (boost, mode voyage) : flammes des réacteurs
+        // (ThrusterComponent). Retombe à 0 sans pilote.
+        float throttle = 0.0f;
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
