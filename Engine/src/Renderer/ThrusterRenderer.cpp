@@ -80,7 +80,10 @@ namespace Flux {
             const auto divide = [](float value, float size) { return value / (std::abs(size) > 1.0e-12f ? size : 1.0e-12f); };
             const Math::Vector3f cameraInBox{divide(local.x, box.x * transform.scale.x), divide(local.y, box.y * transform.scale.y),
                                              divide(local.z, box.z * transform.scale.z)};
-            const float brightness = thruster.intensity * (0.4f + 0.6f * throttle);
+            // Une flamme courte traverse moins de gaz : plus vive par mètre, pour rester bien visible au ralenti
+            // (sinon, à 2 m de long et moitié moins vive, elle disparaissait derrière la tuyère éclairée).
+            const float shortness = std::sqrt(IdleLength + (1.0f - IdleLength) * throttle);
+            const float brightness = thruster.intensity * (0.6f + 0.4f * throttle) / shortness;
             const std::uint32_t seed = static_cast<std::uint32_t>(transform.entity) * 0x9e3779b9u;
             m_flames.push_back({viewProjection * boxToWorld,
                                 {cameraInBox.x, cameraInBox.y, cameraInBox.z, static_cast<float>(seconds)},

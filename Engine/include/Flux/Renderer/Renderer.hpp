@@ -65,6 +65,9 @@ namespace Flux {
         void SetSceneViewport(Math::Vector2f min, Math::Vector2f max);
         // false : ni ombres, ni scène 3D, ni ciel ; seule l'interface est dessinée (l'éditeur d'interface couvre la vue).
         void SetSceneVisible(bool visible);
+        // Flammes des réacteurs montrées à pleine poussée, quels que soient les moteurs : dans l'éditeur, jeu arrêté,
+        // pour les voir et les régler (sinon, au ralenti, elles sont à peine visibles).
+        void SetThrusterPreview(bool preview);
 
         // V-Sync (activée par défaut) : sans elle, autant d'images que le GPU peut en produire.
         // Le changement prend effet à la frame suivante (la swapchain est recréée).

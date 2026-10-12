@@ -402,6 +402,7 @@ namespace Flux {
             stats.Add(UpdateCost, Milliseconds(Clock::now() - now));
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
+            m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
             if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
                 return 1;
             }

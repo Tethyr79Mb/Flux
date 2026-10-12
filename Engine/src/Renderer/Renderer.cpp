@@ -259,6 +259,10 @@ namespace Flux {
         m_impl->sceneVisible = visible;
     }
 
+    void Renderer::SetThrusterPreview(bool preview) {
+        m_impl->meshes->SetThrusterPreview(preview);
+    }
+
     void Renderer::SetClearColor(Math::LinearColor color) {
         m_impl->clearColor = color;
     }

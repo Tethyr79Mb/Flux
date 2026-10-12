@@ -576,11 +576,11 @@ namespace Flux {
 
     // Réacteur : sa flamme (ThrusterRenderer) et la lueur qu'elle jette, une lumière ponctuelle au premier quart de
     // la flamme, d'autant plus forte et plus loin que la poussée est grande. Sur un vaisseau, la poussée de ses
-    // moteurs ; sans vaisseau, toujours à fond.
+    // moteurs ; sans vaisseau, ou dans l'éditeur jeu arrêté (SetThrusterPreview), toujours à fond.
     void MeshRenderer::AddThruster(const Scene& scene, const Camera& camera, float aspect, const RelativeTransform& transform,
                                    const ThrusterComponent& thruster) {
         float throttle = 1.0f;
-        if (const Entity ship = scene.GetShip(transform.entity); ship != NullEntity) {
+        if (const Entity ship = scene.GetShip(transform.entity); ship != NullEntity && !m_thrusterPreview) {
             throttle = std::clamp(scene.Get<ShipComponent>(ship).throttle, 0.0f, 1.0f);
         }
         const float idle = std::clamp(thruster.idle, 0.0f, 1.0f);
