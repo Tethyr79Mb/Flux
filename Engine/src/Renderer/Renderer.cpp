@@ -334,4 +334,9 @@ namespace Flux {
     std::string_view Renderer::GetDeviceName() const {
         return m_impl->device->GetName();
     }
+
+    std::pair<std::uint64_t, std::uint64_t> Renderer::GetGpuMemory() const {
+        const RHI::MemoryUsage usage = m_impl->device->GetMemoryUsage();
+        return {usage.device, usage.host};
+    }
 }

@@ -35,7 +35,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md`. Ce qui est fait et ce qui vient : 
 - Vulkan derrière une couche RHI (`Renderer/RHI`) ; C++23 ; volk, vk-bootstrap, VMA ; shaders Slang.
 - Mondes géants : secteurs `int64` (1e9 m) + positions `double`, rendu relatif à la caméra, reverse-Z infini.
 - Scène EnTT. Chaque composant s'enregistre une fois dans `ComponentRegistry.cpp` : inspecteur et sauvegarde JSON en
-  sont générés. Un champ retiré passe par `.RemovedField`.
+  sont générés. Un champ retiré passe par `.RemovedField`, un champ remplacé par un autre de sens différent par
+  `.ConvertedField` (conversion des anciennes scènes à la lecture).
 - Interface maison FluxUI en mode immédiat (`if (ui.Button(...))`), partagée éditeur/jeu. Jamais d'ImGui.
 - Physique Jolt, privée au moteur ; un monde physique par vaisseau.
 - Ce qui concerne l'affichage est calculé par le GPU, pas par le CPU (tuiles de planète en compute shader). La

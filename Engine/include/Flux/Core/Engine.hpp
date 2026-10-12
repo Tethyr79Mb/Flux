@@ -57,6 +57,8 @@ namespace Flux {
         // Caméra vol libre (ZQSD + clic droit) quand aucun personnage n'est dirigé par le joueur : l'éditeur seulement.
         // Le jeu arrive directement sur le personnage ; sans personnage (écran titre), la caméra ne bouge pas.
         bool freeCamera = true;
+        bool vsync = true;
+        float volume = 1.0f; // volume général, 0 à 1
     };
 
     // État du jeu : l'éditeur démarre à l'arrêt (on édite la scène), Game.exe démarre en cours.

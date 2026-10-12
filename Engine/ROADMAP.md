@@ -14,7 +14,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée.
 - ✅ Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre).
 - ✅ Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour.
-- ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur ; scène détaillée : objets, sol, ciel, océan, transparents).
+- ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur ; scène détaillée : objets, sol, ciel, océan, transparents) et de la mémoire (RAM du processus, mémoire vidéo).
 - ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
 - ✅ Flammes des réacteurs (composant « Réacteur ») : volume de gaz calculé au pixel, longueur et éclat selon la
@@ -27,6 +27,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
 - ✅ Teinte de chaque texture du sol.
+- ✅ Plage réglée en mètres au-dessus de la mer (elle suit le niveau de la mer).
 - ✅ Sol sans répétition visible : pavage hexagonal (rotation et décalage aléatoires par cellule, mélange des 3 cellules voisines).
 
 ### Monde, scène, physique
@@ -77,7 +78,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Gameplay
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
-- ⬜ Menu Échap du jeu, réglages enregistrés pour Game.exe.
+- ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, V-Sync, volume, panneau Moteur).
+- ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).

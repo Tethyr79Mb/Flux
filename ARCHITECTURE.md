@@ -29,11 +29,16 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface et sa mise à jour. L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
-- **Game.exe** n'a qu'un `main` d'une ligne : `Flux::RunGame` (`Core/GameClient.hpp`) lit le projet, charge
-  GameModule.dll, ouvre la scène de démarrage et lance `Engine::Run`. Comme dans Unreal, le moteur possède la boucle et
+- **Game.exe** n'a qu'un `main` d'une ligne : `Flux::GameStartup` (`Core/GameStartup.hpp`) lit le projet et les
+  réglages du joueur (`GameSettings`, `Reglages.json` à côté de l'exe : fenêtre, V-Sync, volume, panneau Moteur), crée
+  le moteur avec, charge GameModule.dll, ouvre la scène de démarrage et lance `Engine::Run` ; à la fermeture, il relit
+  ces réglages sur le moteur et réécrit le fichier. Comme dans Unreal, le moteur possède la boucle et
   appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage. Les assets sont copiés à côté
   des exécutables (`bin/assets/`).
+- Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à
+  lancer) ; `out/build/` garde les fichiers intermédiaires et `out/deps/` les dépendances téléchargées
+  (`FLUX_OUTPUT_DIRECTORY`).
 
 ## Une image (`Engine::Run`)
 

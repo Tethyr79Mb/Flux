@@ -322,6 +322,13 @@ namespace Flux::RHI {
         double present = 0.0; // appel de présentation
     };
 
+    // Mémoire réservée auprès du pilote par l'allocateur (octets) : celle du GPU, et celle de la RAM qu'il peut lire.
+    struct MemoryUsage
+    {
+        std::uint64_t device = 0;
+        std::uint64_t host = 0;
+    };
+
     enum class PresentMode : std::uint8_t { Fifo, FifoRelaxed, Mailbox, Immediate, Other };
 
     enum class FrameStatus : std::uint8_t {
@@ -341,6 +348,7 @@ namespace Flux::RHI {
         virtual ~Device() = default;
 
         virtual std::string_view GetName() const = 0;
+        virtual MemoryUsage GetMemoryUsage() const = 0;
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).
         virtual void WaitIdle() = 0;
 

@@ -35,6 +35,10 @@ namespace Flux {
         void SetTitle(std::string_view title);
         void SetSize(Math::Vector2i size);
         Math::Vector2i GetSize() const;
+        // Taille de la zone de dessin quand la fenêtre n'est pas agrandie (la dernière connue si elle l'est), et
+        // l'état agrandi : de quoi la rouvrir pareil (réglages du jeu).
+        Math::Vector2i GetRestoredSize() const;
+        bool IsMaximized() const;
 
         const Input& GetInput() const;
         bool HasFocus() const;

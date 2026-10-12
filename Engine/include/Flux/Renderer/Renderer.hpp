@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace Flux {
@@ -106,6 +107,8 @@ namespace Flux {
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;
+        // Octets réservés par le rendu en mémoire vidéo (first) et en RAM lisible par le GPU (second).
+        std::pair<std::uint64_t, std::uint64_t> GetGpuMemory() const;
 
         private:
         struct Impl;
