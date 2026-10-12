@@ -50,6 +50,8 @@ namespace Flux {
         PlanetTileStats GetPlanetTileStats() const;
         // Réacteurs de l'image préparée (ThrusterRenderer), leur lumière déjà comptée parmi celles de la scène.
         std::span<const ThrusterDraw> GetThrusters() const { return m_thrusters; }
+        // Voir Renderer::SetThrusterPreview.
+        void SetThrusterPreview(bool preview) { m_thrusterPreview = preview; }
 
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
@@ -226,6 +228,7 @@ namespace Flux {
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         std::vector<PreparedInterior> m_interiors;
         std::vector<ThrusterDraw> m_thrusters;
+        bool m_thrusterPreview = false;
         std::vector<PlanetRenderer::Tile> m_planetTiles;
         std::vector<TileDraw> m_tileDraws;
         std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData
