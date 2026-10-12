@@ -9,6 +9,7 @@
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
+#include "Flux/Platform/Console.hpp"
 #include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Input.hpp"
@@ -307,7 +308,7 @@ namespace Flux {
 
         FrameStats stats;
         Clock::time_point previousFrame = Clock::now();
-        while (!m_quitRequested && m_window->IsOpen()) {
+        while (!m_quitRequested && !Platform::ConsoleCloseRequested() && m_window->IsOpen()) {
             m_window->HandleEvents();
             if (m_window->ConsumeCloseRequest() && (!m_closeRequestHandler || m_closeRequestHandler(*this))) {
                 break;

@@ -17,6 +17,13 @@ namespace Flux {
 
     int GameStartup::Run() {
         Platform::UseUtf8Console();
+        // Console fermée : la boucle s'arrête et les réglages sont enregistrés comme avec la croix de la fenêtre. Le
+        // gardien prévient Windows tout à la fin, quel que soit le chemin de sortie.
+        Platform::CatchConsoleClose();
+        struct CloseGuard
+        {
+            ~CloseGuard() { Platform::ConsoleCloseHandled(); }
+        } closeGuard;
         const std::filesystem::path directory = Platform::GetExecutableDirectory();
 
         // Le projet est copié à côté de l'exe par le build : ses chemins relatifs pointent vers bin/assets.
@@ -29,7 +36,13 @@ namespace Flux {
         // Un fichier de réglages abîmé ne bloque pas le jeu : valeurs par défaut, et il sera réécrit à la fermeture.
         const std::filesystem::path settingsPath = GameSettingsFile::GetPath();
         GameSettings settings;
-        if (auto loaded = GameSettingsFile::Load(settingsPath)) {
+        std::error_code error;
+        if (!std::filesystem::exists(settingsPath, error)) {
+            // Premier lancement : le fichier existe tout de suite, pour qui veut le modifier à la main.
+            if (auto saved = GameSettingsFile::Save(settings, settingsPath); !saved) {
+                Log::Warning("Réglages : {}", saved.error());
+            }
+        } else if (auto loaded = GameSettingsFile::Load(settingsPath)) {
             settings = *loaded;
         } else {
             Log::Warning("Réglages : {} ; valeurs par défaut", loaded.error());

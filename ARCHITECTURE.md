@@ -32,7 +32,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **Game.exe** n'a qu'un `main` d'une ligne : `Flux::GameStartup` (`Core/GameStartup.hpp`) lit le projet et les
   réglages du joueur (`GameSettings`, `Reglages.json` à côté de l'exe : fenêtre, V-Sync, volume, panneau Moteur), crée
   le moteur avec, charge GameModule.dll, ouvre la scène de démarrage et lance `Engine::Run` ; à la fermeture, il relit
-  ces réglages sur le moteur et réécrit le fichier. Comme dans Unreal, le moteur possède la boucle et
+  ces réglages sur le moteur et réécrit le fichier (créé dès le premier lancement ; fermer la console arrête aussi la
+  boucle proprement, `Platform::CatchConsoleClose`). Comme dans Unreal, le moteur possède la boucle et
   appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage. Les assets sont copiés à côté
   des exécutables (`bin/assets/`).
