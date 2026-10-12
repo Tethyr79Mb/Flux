@@ -114,6 +114,17 @@ namespace Flux::Seats {
                 turn.y = std::clamp(turn.y, -rate, rate);
                 turn.z = std::clamp(turn.z, -rate, rate);
             }
+            // Courbure de la planète : à plat, le vaisseau tourne avec l'horizon qui défile sous lui (vitesse horizontale /
+            // distance au centre). Sinon son nez, fixe dans l'espace, pique peu à peu vers le sol, d'autant plus vite
+            // qu'il va vite (5° en 10 s à 5 km/s sur 600 km de rayon), et les propulseurs ne rattrapent pas la vitesse.
+            // Pas en mode voyage : là, on vise librement à travers l'espace.
+            Math::Vector3f carry{};
+            if (ship.levelAssist && Math::Length(input.up) > 0.5f && Math::Length(input.planetUp) > 0.5f && input.planetCenter > 0.0f
+                && !ship.grounded) {
+                const Math::Vector3f up = rotation.Conjugate().Rotate(input.planetUp);
+                carry = Math::Cross(up, ship.velocity) * (Degrees * (1.0f - ship.travelLevel) / input.planetCenter);
+                turn = turn + carry;
+            }
             if (ship.grounded) {
                 turn = {};
                 ship.angularVelocity = {};
@@ -123,9 +134,11 @@ namespace Flux::Seats {
             approach(ship.angularVelocity.y, turn.y, turnStep);
             approach(ship.angularVelocity.z, turn.z, turnStep);
             // Inertie : la physique tourne le vaisseau de cette rotation pendant l'image ; sa vitesse, dans ses axes,
-            // tourne d'autant dans l'autre sens pour rester la même dans le monde.
-            if (const float angle = Math::Length(ship.angularVelocity) * delta / Degrees; angle > 0.0f) {
-                ship.velocity = Math::Quaternionf::FromAxisAngle(ship.angularVelocity, angle).Conjugate().Rotate(ship.velocity);
+            // tourne d'autant dans l'autre sens pour rester la même dans le monde. Sauf la part due à la courbure : la
+            // vitesse tourne avec le vaisseau et reste parallèle au sol.
+            const Math::Vector3f inertial = ship.angularVelocity - carry;
+            if (const float angle = Math::Length(inertial) * delta / Degrees; angle > 0.0f) {
+                ship.velocity = Math::Quaternionf::FromAxisAngle(inertial, angle).Conjugate().Rotate(ship.velocity);
             }
 
             // Dans l'air, la portance range la vitesse derrière le nez : virer ou cabrer change vraiment de direction.

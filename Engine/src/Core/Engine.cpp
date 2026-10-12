@@ -473,6 +473,7 @@ namespace Flux {
                     if (flight.nearPlanet) {
                         seatInput.planetUp = Math::Vector3f(flight.up);
                         seatInput.planetDistance = static_cast<float>(flight.boundary);
+                        seatInput.planetCenter = static_cast<float>(flight.center);
                     }
                 }
             }
@@ -561,6 +562,7 @@ namespace Flux {
         }
         flight.nearPlanet = true;
         flight.up = Math::Normalize(offset);
+        flight.center = Math::Length(offset);
         const Math::Vector3d direction = rotation.Conjugate().Rotate(flight.up);
         double ground = m_flightTerrain->GetHeight(direction, m_flightTerrain->GetOctaves(m_flightTerrain->GetMaxLevel()));
         if (nearest->ocean) {

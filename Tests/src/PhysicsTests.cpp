@@ -624,6 +624,30 @@ namespace {
         CHECK(std::abs(flight.throttle - 0.5f) < 0.01f);
         Seats::Update(scene, NullEntity, 0.5, {}, {});
         CHECK(flight.throttle == 0.0f);
+
+        // A plat à 5 km/s au-dessus d'une planète de 600 km : l'assiette et la vitesse suivent la courbure, l'altitude
+        // reste la même sur 100 km (en ligne droite, elle monterait de 8 km ; le nez fixe finissait par piquer).
+        flight.travel = false;
+        flight.travelLevel = 0.0f;
+        flight.maxSpeed = 6000.0f;
+        flight.cruiseSpeed = 5000.0f;
+        flight.velocity = {0.0f, 0.0f, -5000.0f};
+        flight.angularVelocity = {};
+        scene.Get<TransformComponent>(ship).rotation = {};
+        scene.Get<TransformComponent>(ship).position = {0.0, 5000.0, 0.0};
+        constexpr double Radius = 600000.0;
+        const Math::Vector3d center{0.0, 5000.0 - Radius, 0.0};
+        const auto altitude = [&] { return Math::Length((Math::Delta({}, scene.GetWorldPosition(ship)) - center)) - Radius; };
+        for (int frame = 0; frame < static_cast<int>(std::lround(20.0 / Frame)); ++frame) {
+            const Math::Vector3d offset = (Math::Delta({}, scene.GetWorldPosition(ship)) - center);
+            const Math::Vector3f local = Math::Vector3f(Math::Normalize(offset));
+            Seats::Update(scene, world.GetPlayer(), Frame,
+                          {.up = local, .planetUp = local, .planetCenter = static_cast<float>(Math::Length(offset))}, {});
+            world.Update(scene, Frame, {});
+        }
+        CHECK(std::abs(altitude()) < 20.0);
+        const Math::Vector3f localUp = Math::Vector3f(Math::Normalize((Math::Delta({}, scene.GetWorldPosition(ship)) - center)));
+        CHECK(std::abs(Math::Dot(scene.GetWorldRotation(ship).Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f}), localUp)) < 0.01f);
         return true;
     }
 

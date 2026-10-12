@@ -34,6 +34,9 @@ namespace Flux {
         // vaisseau ne s'en approche pas plus vite qu'il ne peut ralentir avant d'y arriver.
         Math::Vector3f planetUp{};
         float planetDistance = 0.0f;
+        // Distance au centre de cette planète (0 : inconnue). Avec l'aide à plat, l'assiette et la vitesse du vaisseau
+        // suivent la courbure : à plat, il garde son altitude au lieu de piquer peu à peu vers le sol.
+        float planetCenter = 0.0f;
     };
 
     // Le joueur s'assoit, pilote et se relève : voir SeatComponent. La physique pose le personnage sur son siège
