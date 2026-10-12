@@ -307,6 +307,7 @@ namespace Flux {
             Math::Vector3d up;
             float air = 0.0f;
             double boundary = 0.0; // distance au haut de l'atmosphère, ou à l'altitude sans atmosphère (SeatInput::planetDistance)
+            double center = 0.0;   // distance au centre de la planète (SeatInput::planetCenter)
         };
         FlightState GetFlightState(Entity ship);
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
