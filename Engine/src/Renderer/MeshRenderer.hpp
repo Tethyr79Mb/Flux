@@ -8,6 +8,7 @@
 #include "Renderer/PlanetRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
+#include "Renderer/ThrusterRenderer.hpp"
 
 #include <array>
 #include <chrono>
@@ -47,6 +48,8 @@ namespace Flux {
             std::uint32_t stored = 0;
         };
         PlanetTileStats GetPlanetTileStats() const;
+        // Réacteurs de l'image préparée (ThrusterRenderer), leur lumière déjà comptée parmi celles de la scène.
+        std::span<const ThrusterDraw> GetThrusters() const { return m_thrusters; }
 
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
@@ -171,6 +174,8 @@ namespace Flux {
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
+        void AddThruster(const Scene& scene, const Camera& camera, float aspect, const RelativeTransform& transform,
+                         const ThrusterComponent& thruster);
         void ClearDraws();
         bool BuildTileCommands(std::uint32_t frameIndex);
         void Pose(const GpuModel& model, const AnimatorComponent* animator);
@@ -220,6 +225,7 @@ namespace Flux {
         std::vector<PreparedLight> m_lights;
         std::vector<LightData> m_lightData; // les retenues, envoyées au GPU
         std::vector<PreparedInterior> m_interiors;
+        std::vector<ThrusterDraw> m_thrusters;
         std::vector<PlanetRenderer::Tile> m_planetTiles;
         std::vector<TileDraw> m_tileDraws;
         std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData

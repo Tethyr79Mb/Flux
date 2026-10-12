@@ -47,7 +47,10 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Annuler un déplacement de fichier qui remet aussi les anciens chemins dans les scènes.
 
 ### Prefabs
-- ⬜ Enregistrer un groupe d'objets (vaisseau, station) comme prefab et le replacer depuis « Placer ».
+- ✅ Créer un prefab depuis l'inspecteur, le placer depuis « Placer », l'ouvrir pour le modifier (double-clic dans
+  Contenu) ; champs modifiés marqués, « Revenir au prefab », « Délier ».
+- ⬜ « Appliquer au prefab » : envoyer les modifications d'un exemplaire dans le prefab sans l'ouvrir.
+- ⬜ Glisser un prefab du Contenu dans la vue.
 - ⬜ Remplacer les vaisseaux codés en dur dans « Placer » par des prefabs.
 
 ## Plus tard

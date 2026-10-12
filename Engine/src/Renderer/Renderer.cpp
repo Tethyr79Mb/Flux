@@ -9,6 +9,7 @@
 #include "Renderer/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
+#include "Renderer/ThrusterRenderer.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -33,7 +34,7 @@ namespace Flux {
         }
     }
 
-    // Une image : la carte d'ombres, puis la scène dans sa zone (opaques, fond du ciel, transparents) et l'interface
+    // Une image : la carte d'ombres, puis la scène dans sa zone (opaques, fond du ciel, transparents, flammes) et l'interface
     // (OverlayRenderer) sur toute la fenêtre, dans la passe principale. Aucune API graphique ici : tout passe par le RHI.
     struct Renderer::Impl {
         Window& window;
@@ -42,6 +43,7 @@ namespace Flux {
         std::unique_ptr<RHI::Texture> depth; // de la taille de la swapchain
         std::unique_ptr<SkyRenderer> sky;
         std::unique_ptr<MeshRenderer> meshes;
+        std::unique_ptr<ThrusterRenderer> thrusters;
         std::unique_ptr<OverlayRenderer> overlay;
         std::filesystem::path assetsDirectory;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
@@ -126,6 +128,7 @@ namespace Flux {
                 const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
                                                           assetsDirectory, frameIndex);
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
+                thrusters->Prepare(meshes->GetThrusters(), camera, aspect, lighting.exposure);
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
@@ -166,6 +169,8 @@ namespace Flux {
                 commands.WriteTimestamp(OceanDone);
                 commands.BeginStep("transparents");
                 meshes->DrawTransparent(commands, frameIndex);
+                commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
+                thrusters->Draw(commands);
             }
             commands.WriteTimestamp(SceneDone);
             commands.BeginStep("interface");
@@ -221,6 +226,11 @@ namespace Flux {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
+        auto thrusters = ThrusterRenderer::Create(*impl->device, colorFormat, DepthFormat);
+        if (!thrusters) {
+            return std::unexpected(thrusters.error());
+        }
+        impl->thrusters = std::move(*thrusters);
         auto overlay = OverlayRenderer::Create(*impl->device, colorFormat, DepthFormat);
         if (!overlay) {
             return std::unexpected(overlay.error());

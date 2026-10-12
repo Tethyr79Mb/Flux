@@ -414,6 +414,7 @@ namespace Flux::Vk {
             case RHI::CullMode::Front: vkDesc.cullMode = VK_CULL_MODE_FRONT_BIT; break;
         }
         vkDesc.alphaBlend = desc.blend == RHI::BlendMode::Alpha;
+        vkDesc.additiveBlend = desc.blend == RHI::BlendMode::Additive;
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
         auto pipeline = Pipeline::CreateGraphics(m_device->GetHandle(), vkDesc);
