@@ -169,6 +169,7 @@ namespace Flux::Vk {
         ~RhiDevice() override;
 
         std::string_view GetName() const override { return m_device->GetName(); }
+        RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override { m_device->WaitIdle(); }
 
         std::expected<std::unique_ptr<RHI::Buffer>, std::string> CreateBuffer(const RHI::BufferDesc& desc, const void* data) override;
