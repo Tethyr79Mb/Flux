@@ -12,6 +12,7 @@ int main() {
         {"prefabs", RunPrefabTests},
         {"interface (FluxUI) et rotations", RunUiTests},
         {"projet", RunProjectTests},
+        {"réglages du jeu", RunGameSettingsTests},
         {"sélection dans la vue 3D", RunPickingTests},
         {"images et textures", RunImageTests},
         {"textes et images à l'écran", RunScreenUiTests},

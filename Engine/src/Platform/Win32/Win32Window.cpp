@@ -20,6 +20,7 @@ namespace Flux {
     struct Window::Impl {
         HWND hwnd = nullptr;
         Math::Vector2i size;
+        Math::Vector2i restoredSize; // taille hors agrandissement : celle à rendre quand la fenêtre est restaurée
         Input input;
         bool focused = false;
         bool cursorLocked = false;
@@ -158,6 +159,9 @@ namespace Flux {
                 switch (message) {
                     case WM_SIZE:
                         impl->size = {LOWORD(lParam), HIWORD(lParam)};
+                        if (wParam == SIZE_RESTORED) {
+                            impl->restoredSize = impl->size;
+                        }
                         return 0;
                     case WM_SETFOCUS:
                         impl->focused = true;
@@ -256,6 +260,7 @@ namespace Flux {
 
         const SIZE outer = OuterSize(size);
         m_impl->size = size;
+        m_impl->restoredSize = size;
         m_impl->hwnd = CreateWindowExW(
             0, WindowClassName, Win32::ToWide(title).c_str(), WindowStyle,
             CW_USEDEFAULT, CW_USEDEFAULT, outer.cx, outer.cy,
@@ -315,6 +320,14 @@ namespace Flux {
 
     Math::Vector2i Window::GetSize() const {
         return m_impl ? m_impl->size : Math::Vector2i{};
+    }
+
+    Math::Vector2i Window::GetRestoredSize() const {
+        return m_impl ? m_impl->restoredSize : Math::Vector2i{};
+    }
+
+    bool Window::IsMaximized() const {
+        return IsOpen() && IsZoomed(m_impl->hwnd);
     }
 
     const Input& Window::GetInput() const {

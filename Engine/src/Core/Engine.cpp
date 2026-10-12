@@ -179,6 +179,8 @@ namespace Flux {
             return;
         }
         m_renderer = std::move(renderer.value());
+        m_renderer->SetVSync(config.vsync);
+        m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
             const std::optional<Math::LinearColor> picked = Platform::ShowColorDialog(*window, color);

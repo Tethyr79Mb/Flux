@@ -16,6 +16,7 @@ bool RunSceneSerializerTests();
 bool RunPrefabTests();
 bool RunUiTests();
 bool RunProjectTests();
+bool RunGameSettingsTests();
 bool RunPickingTests();
 bool RunScreenUiTests();
 bool RunInterfaceTests();
