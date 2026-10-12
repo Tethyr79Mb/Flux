@@ -475,6 +475,26 @@ namespace Flux::SceneSerializer {
             }
         }
 
+        // Anciens champs à convertir (ComponentInfo::convertedFields), gardés jusqu'à la fin du composant.
+        using ConvertedValues = std::vector<std::pair<const ComponentInfo::ConvertedField*, double>>;
+
+        bool KeepConverted(const ComponentInfo& info, const std::string& fieldKey, const Json& value, ConvertedValues& converted) {
+            const ComponentInfo::ConvertedField* field = info.FindConvertedField(fieldKey);
+            if (!field) {
+                return false;
+            }
+            if (value.is_number()) {
+                converted.emplace_back(field, value.get<double>());
+            }
+            return true;
+        }
+
+        void ApplyConverted(const ConvertedValues& converted, void* instance) {
+            for (const auto& [field, value] : converted) {
+                field->convert(instance, value);
+            }
+        }
+
         // Applique à une pièce ce qu'un exemplaire change de son prefab (voir Differences).
         void ApplyOverrides(const ComponentRegistry& components, EntityData& data, const Json& overrides, bool root) {
             if (!overrides.is_object()) {
@@ -509,9 +529,13 @@ namespace Flux::SceneSerializer {
                     data.components.push_back({info, info->create()});
                     component = data.components.end() - 1;
                 }
+                ConvertedValues converted;
                 for (const auto& [fieldKey, fieldValue] : value.items()) {
                     const FieldInfo* field = info->FindField(fieldKey);
                     if (!field && std::ranges::contains(info->removedFields, fieldKey)) {
+                        continue;
+                    }
+                    if (!field && KeepConverted(*info, fieldKey, fieldValue, converted)) {
                         continue;
                     }
                     if (!field) {
@@ -523,6 +547,7 @@ namespace Flux::SceneSerializer {
                         throw std::runtime_error(std::format("« {} », {} : {}", data.name, key, error.what()));
                     }
                 }
+                ApplyConverted(converted, component->instance.get());
             }
         }
 
@@ -606,10 +631,14 @@ namespace Flux::SceneSerializer {
                 }
                 // Champs absents : valeurs par défaut du composant, pour pouvoir écrire une scène à la main sans tout préciser.
                 ComponentData component{info, info->create()};
+                ConvertedValues converted;
                 for (const auto& [fieldKey, fieldValue] : value.items()) {
                     const FieldInfo* field = info->FindField(fieldKey);
                     if (!field && std::ranges::contains(info->removedFields, fieldKey)) {
                         continue; // ancienne version : sa valeur est perdue, le champ reprend sa valeur par défaut
+                    }
+                    if (!field && KeepConverted(*info, fieldKey, fieldValue, converted)) {
+                        continue;
                     }
                     if (!field) {
                         throw fail(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
@@ -620,6 +649,7 @@ namespace Flux::SceneSerializer {
                         throw fail(std::format("{} : {}", key, error.what()));
                     }
                 }
+                ApplyConverted(converted, component.instance.get());
                 data.components.push_back(std::move(component));
             }
             return data;

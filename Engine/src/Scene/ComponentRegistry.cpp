@@ -107,11 +107,17 @@ namespace Flux {
             .Field("temperature", "Température à l'équateur (°C)", &PlanetComponent::temperature, {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})
             .Field("poleTemperature", "Température aux pôles (°C)", &PlanetComponent::poleTemperature, {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})
             .Field("humidity", "Humidité", &PlanetComponent::humidity, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
-            .Field("sandLevel", "Sable jusqu'à (% du relief)", &PlanetComponent::sandLevel, {.speed = 0.1, .min = -100.0, .max = 100.0, .decimals = 2})
+            .Field("beachHeight", "Plage au-dessus de la mer (m)", &PlanetComponent::beachHeight, {.speed = 0.5, .min = 0.0, .max = 10000.0, .decimals = 1})
             .Field("snowLevel", "Neige à partir de (% du relief)", &PlanetComponent::snowLevel, {.speed = 0.5, .min = -100.0, .max = 200.0, .decimals = 1})
             // Hauteurs en mètres des premières versions de la PR #83, remplacées par les pourcentages.
             .RemovedField("sandHeight")
             .RemovedField("snowHeight")
+            // Sable jusqu'à un % du relief au-dessus du niveau zéro : il ne suivait pas la mer quand on la baissait
+            // (tout ce qui était entre les deux devenait du sable). Converti en hauteur au-dessus de la mer, qui
+            // garde la même plage.
+            .ConvertedField("sandLevel", [](PlanetComponent& planet, double sandLevel) {
+                planet.beachHeight = std::max(static_cast<float>((sandLevel - planet.seaLevel) * 0.01 * planet.relief), 0.0f);
+            })
             .Field("ocean", "Océan", &PlanetComponent::ocean)
             .Field("seaLevel", "Niveau de la mer (% du relief)", &PlanetComponent::seaLevel, {.speed = 0.1, .min = -100.0, .max = 100.0, .decimals = 2})
             .Field("waterColor", "Couleur de l'eau", &PlanetComponent::waterColor, {.alpha = false})
