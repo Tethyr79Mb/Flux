@@ -183,7 +183,7 @@ namespace Flux {
           m_inputActions(std::make_unique<InputActions>()) {
         RegisterEngineComponents(m_components);
         Log::Info("Flux {}", GetFullVersion());
-        if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
+        if (!m_window->Create(config.title, config.windowSize, config.maximized, config.fullscreen)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
             m_quitRequested = true;
             return;
@@ -315,6 +315,12 @@ namespace Flux {
             }
             if (!m_window->IsOpen()) {
                 break;
+            }
+            if (const Input& keys = m_window->GetInput();
+                keys.WasKeyPressed(Key::F11)
+                || ((keys.WasKeyPressed(Key::Enter) || keys.WasKeyPressed(Key::NumpadEnter))
+                    && (keys.IsKeyDown(Key::LeftAlt) || keys.IsKeyDown(Key::RightAlt)))) {
+                m_window->SetFullscreen(!m_window->IsFullscreen());
             }
 
             const Math::Vector2i size = m_window->GetSize();

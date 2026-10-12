@@ -51,6 +51,7 @@ namespace Flux {
         Engine engine({.title = project->name,
                        .windowSize = settings.windowSize,
                        .maximized = settings.maximized,
+                       .fullscreen = settings.fullscreen,
                        .showDebugOverlay = settings.showEngineStats,
                        .freeCamera = false,
                        .vsync = settings.vsync,
@@ -93,6 +94,7 @@ namespace Flux {
                 settings.windowSize = size; // réduite (taille 0) : on garde la précédente
             }
             settings.maximized = window.IsMaximized();
+            settings.fullscreen = window.IsFullscreen();
         }
         settings.vsync = engine.GetRenderer().IsVSyncEnabled();
         settings.volume = engine.GetAudio().GetMasterVolume();

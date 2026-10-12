@@ -15,6 +15,7 @@ namespace Flux {
     struct GameSettings {
         Math::Vector2i windowSize{1280, 720}; // zone de dessin de la fenêtre restaurée
         bool maximized = false;
+        bool fullscreen = false; // plein écran sans bordure (Alt+Entrée ou F11 en jeu)
         bool vsync = true;
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)

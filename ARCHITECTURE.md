@@ -30,7 +30,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
 - **Game.exe** n'a qu'un `main` d'une ligne : `Flux::GameStartup` (`Core/GameStartup.hpp`) lit le projet et les
-  réglages du joueur (`GameSettings`, `Reglages.json` à côté de l'exe : fenêtre, V-Sync, volume, panneau Moteur), crée
+  réglages du joueur (`GameSettings`, `Reglages.json` à côté de l'exe : fenêtre, plein écran, V-Sync, volume, panneau Moteur), crée
   le moteur avec, charge GameModule.dll, ouvre la scène de démarrage et lance `Engine::Run` ; à la fermeture, il relit
   ces réglages sur le moteur et réécrit le fichier (créé dès le premier lancement ; fermer la console arrête aussi la
   boucle proprement, `Platform::CatchConsoleClose`). Comme dans Unreal, le moteur possède la boucle et

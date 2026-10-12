@@ -51,6 +51,7 @@ namespace Flux {
         std::string title = "Flux";
         Math::Vector2i windowSize{1280, 720}; // taille de la fenêtre restaurée si maximized
         bool maximized = false;
+        bool fullscreen = false; // plein écran sans bordure ; Alt+Entrée ou F11 bascule
         bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra (le jeu ; l'éditeur a les siens)
         // Interface de la scène (textes à l'écran) sur toute la fenêtre. L'éditeur la dessine lui-même, dans sa vue.
         bool drawScreenUi = true;
