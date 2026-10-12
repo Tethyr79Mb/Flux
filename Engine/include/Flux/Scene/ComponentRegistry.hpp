@@ -91,6 +91,19 @@ namespace Flux {
         // Champs retirés ou renommés (clés) : ignorés à la lecture, pour que les scènes déjà enregistrées s'ouvrent
         // encore ; un autre champ inconnu reste une erreur (faute de frappe dans un fichier écrit à la main).
         std::vector<std::string> removedFields;
+        // Champs remplacés par un autre de sens différent (clé, conversion) : la valeur lue dans une ancienne scène
+        // (un nombre) est convertie vers les nouveaux champs, une fois tous les autres champs du composant lus.
+        struct ConvertedField
+        {
+            std::string key;
+            std::function<void(void* instance, double oldValue)> convert;
+        };
+        std::vector<ConvertedField> convertedFields;
+
+        const ConvertedField* FindConvertedField(std::string_view fieldKey) const {
+            const auto found = std::ranges::find(convertedFields, fieldKey, &ConvertedField::key);
+            return found != convertedFields.end() ? &*found : nullptr;
+        }
 
         // L'un des deux déclare l'autre incompatible.
         bool Excludes(const ComponentInfo& other) const {
@@ -200,6 +213,14 @@ namespace Flux {
 
         ComponentBuilder& RemovedField(std::string key) {
             m_info->removedFields.push_back(std::move(key));
+            return *this;
+        }
+
+        // Ancien champ (nombre) converti à la lecture : convert(composant, ancienne valeur), appelé après les autres
+        // champs, qui ont alors leur valeur lue (ou par défaut).
+        ComponentBuilder& ConvertedField(std::string key, std::function<void(C&, double)> convert) {
+            m_info->convertedFields.push_back(
+                {std::move(key), [convert = std::move(convert)](void* instance, double value) { convert(*static_cast<C*>(instance), value); }});
             return *this;
         }
 

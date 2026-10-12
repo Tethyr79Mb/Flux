@@ -5,6 +5,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 
+#include <cmath>
 #include <string>
 
 using namespace Flux;
@@ -202,6 +203,19 @@ bool RunSceneSerializerTests() {
     CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 1, "entities": [
         {"id": "00000000000000ce", "planet": {"relief": 5500, "sandHeight": 10, "snowHeight": 520}}]})").has_value());
     CHECK(loaded.TryGet<PlanetComponent>(loaded.FindById(Uuid{0xce}))->snowLevel == PlanetComponent{}.snowLevel);
+
+    // Champ converti : l'ancien sable (% du relief au-dessus du niveau zéro) devient une hauteur au-dessus de la mer,
+    // calculée avec le relief et la mer lus après lui. Sans lui, la valeur par défaut.
+    CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 2, "entities": [
+        {"id": "00000000000000cf", "planet": {"sandLevel": -24.5, "relief": 5500, "seaLevel": -25}},
+        {"id": "00000000000000d0", "planet": {"sandLevel": -30, "seaLevel": -25}},
+        {"id": "00000000000000d1", "planet": {"relief": 5500}}]})").has_value());
+    CHECK(std::abs(loaded.TryGet<PlanetComponent>(loaded.FindById(Uuid{0xcf}))->beachHeight - 27.5f) < 0.01f);
+    CHECK(loaded.TryGet<PlanetComponent>(loaded.FindById(Uuid{0xd0}))->beachHeight == 0.0f); // sous la mer : aucune plage
+    CHECK(loaded.TryGet<PlanetComponent>(loaded.FindById(Uuid{0xd1}))->beachHeight == PlanetComponent{}.beachHeight);
+    // Réécrite : le nouveau champ seulement.
+    const std::string converted = SceneSerializer::SaveToString(loaded, engineOnly);
+    CHECK(converted.find("sandLevel") == std::string::npos && converted.find("beachHeight") != std::string::npos);
 
     // Déchargement d'un module : ses types disparaissent du registre, ceux du moteur restent.
     const std::size_t engineCount = engineOnly.GetCount();

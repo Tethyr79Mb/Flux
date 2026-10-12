@@ -17,7 +17,7 @@ namespace Flux {
     // Sol d'une planète tel que le lit fragmentPlanet (PlanetData dans shaders/Mesh.slang).
     struct PlanetGpu
     {
-        std::array<float, 4> shape{}; // rayon, relief, altitude de la neige, du sable (m)
+        std::array<float, 4> shape{}; // rayon, relief, altitude de la neige (m) ; w : inutilisé
         std::array<float, 4> rock{};  // couleur linéaire (avec les textures du sol : teinte) ; w : rugosité
         std::array<float, 4> grass{};
         std::array<float, 4> sand{};
@@ -25,8 +25,9 @@ namespace Flux {
         std::array<float, 4> water{}; // couleur linéaire ; w : rayon de la surface de l'océan (0 : aucun)
         std::array<float, 4> soil{};
         std::array<float, 4> climate{}; // température à l'équateur, aux pôles (°C), humidité, 1 si textures du sol (GroundTextures)
+        std::array<float, 4> beach{};   // altitude du niveau de la mer, hauteur de la plage au-dessus (m)
     };
-    static_assert(sizeof(PlanetGpu) == 128);
+    static_assert(sizeof(PlanetGpu) == 144);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont calculées

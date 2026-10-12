@@ -27,7 +27,7 @@ static const uint MaxInteriors = 8;
 // Doit correspondre à PlanetData dans MeshRenderer.cpp : le sol d'une planète (PlanetComponent).
 struct PlanetData
 {
-    float4 shape;             // x : rayon (m) ; y : relief (m) ; z : altitude de la neige (m) ; w : du sable (m)
+    float4 shape;             // x : rayon (m) ; y : relief (m) ; z : altitude de la neige (m)
     float4 rock;              // rgb : couleur (linéaire ; avec les textures du sol : teinte) ; w : rugosité
     float4 grass;
     float4 sand;
@@ -35,6 +35,7 @@ struct PlanetData
     float4 water;             // rgb : couleur de l'eau (linéaire) ; w : rayon de la surface de l'océan (0 : aucun)
     float4 soil;
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
+    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m)
 };
 
 static const uint MaxPlanets = 4;
@@ -662,11 +663,13 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
                       + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
 
     const float rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
-    // Limites fondues et déplacées par les taches, en proportion du relief (1 m et 6 m pour un relief de 800 m : la
-    // plage reste une bande étroite, pas toutes les basses terres).
+    // Plage : jusqu'à beach.y mètres au-dessus de la mer (qu'il y ait un océan ou non), limite fondue sur un
+    // cinquième de sa hauteur et déplacée par les taches de 30 % au plus : elle suit la côte sans faire de bande droite.
     const float relief = max(planet.shape.y, 1.0);
-    const float beach = smoothstep(planet.shape.w + 0.0015 * relief, planet.shape.w - 0.0015 * relief, altitude + macro * 0.008 * relief)
-                      * (1.0 - rock);
+    const float beachHeight = max(planet.beach.y, 0.0);
+    const float beachTop = planet.beach.x + beachHeight;
+    const float beachBlur = min(max(0.2 * beachHeight, 0.3), 0.0015 * relief);
+    const float beach = smoothstep(beachTop + beachBlur, beachTop - beachBlur, altitude + macro * 0.6 * beachHeight) * (1.0 - rock);
 
     // Climat des grandes échelles (par sommet), déplacé par les taches.
     const float temperature = input.climate.x + macro * 4.0;

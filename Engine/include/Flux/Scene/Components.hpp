@@ -167,8 +167,8 @@ namespace Flux {
         float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
         std::int32_t seed = 1;
         // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), plage
-        // de sable sous sandLevel, neige au-dessus de snowLevel (en % du relief, au-dessus du niveau zéro : ils suivent
-        // quand le relief change). Ailleurs, le climat choisit (biomes) : la température baisse vers les pôles (axe y
+        // de sable jusqu'à beachHeight mètres au-dessus du niveau de la mer (elle suit la mer), neige au-dessus de
+        // snowLevel (en % du relief, au-dessus du niveau zéro : elle suit quand le relief change). Ailleurs, le climat choisit (biomes) : la température baisse vers les pôles (axe y
         // de la planète) et en altitude (6,5 °C par km) ; l'humidité (bruit à grande échelle, plus forte près de la
         // mer) va de déserts (sable) à prairies (herbe) en passant par la terre nue ; le froid jaunit l'herbe
         // (toundra) puis la couvre de neige.
@@ -193,7 +193,7 @@ namespace Flux {
         float temperature = 20.0f;      // °C à l'équateur, au niveau zéro
         float poleTemperature = -30.0f; // °C aux pôles
         float humidity = 0.5f;          // 0 : planète désertique, 1 : très humide
-        float sandLevel = 0.3f; // % du relief : une plage étroite au-dessus de la mer
+        float beachHeight = 10.0f; // m au-dessus du niveau de la mer (seaLevel)
         float snowLevel = 65.0f;
         // Océan : une surface lisse au niveau de la mer (seaLevel, en % du relief comme le sable), au-dessus du fond qui
         // garde son relief. Claire là où il est peu profond (on voit le fond), de la couleur de l'eau au large.

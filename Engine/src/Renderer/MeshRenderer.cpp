@@ -516,8 +516,7 @@ namespace Flux {
         const std::uint32_t index = static_cast<std::uint32_t>(std::min(m_planetData.size(), MaxPlanets - 1));
         const bool added = m_planetData.size() < MaxPlanets;
         if (added) {
-            m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowLevel * 0.01f * planet.relief,
-                                     planet.sandLevel * 0.01f * planet.relief},
+            m_planetData.push_back({{std::max(planet.radius, 1.0f), planet.relief, planet.snowLevel * 0.01f * planet.relief, 0.0f},
                                     material(planet.color, planet.rockTint, roughness),
                                     material(planet.grassColor, planet.grassTint, 0.95f),
                                     material(planet.sandColor, planet.sandTint, 0.9f),
@@ -525,7 +524,8 @@ namespace Flux {
                                     {planet.waterColor.r, planet.waterColor.g, planet.waterColor.b, 0.0f},
                                     material(planet.soilColor, planet.soilTint, 0.95f),
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
-                                     m_groundGroup ? 1.0f : 0.0f}});
+                                     m_groundGroup ? 1.0f : 0.0f},
+                                    {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), 0.0f, 0.0f}});
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
         const double seaRadius = std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;
