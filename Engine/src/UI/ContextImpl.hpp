@@ -366,7 +366,12 @@ namespace Flux::UI {
         float RowWidth() const { return contentMaxX - (contentMin.x + indent); }
         float TreeRowHeight() const { return LineHeight() + 6.0f; }
 
-        WidgetId GetId(std::string_view label) const { return Hash(idStack.back(), label); }
+        // "Siège (modifié)###seat" : identifié par "###seat" seul, le texte visible peut changer sans que le widget
+        // perde son état (champ en cours de glissement, section dépliée).
+        WidgetId GetId(std::string_view label) const {
+            const std::size_t fixed = label.find("###");
+            return Hash(idStack.back(), fixed == std::string_view::npos ? label : label.substr(fixed));
+        }
 
         Vector2f MeasureText(std::string_view text) const {
             return panel->content.MeasureText(text, style.fontSize);

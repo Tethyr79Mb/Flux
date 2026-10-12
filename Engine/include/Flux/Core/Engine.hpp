@@ -8,6 +8,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -96,9 +97,13 @@ namespace Flux {
         ComponentRegistry& GetComponents() { return m_components; }
 
         // Projet ouvert (nullptr sans projet) : dossier des assets, scène de démarrage.
-        void SetProject(Project project) { m_project = std::move(project); }
+        void SetProject(Project project);
         const Project* GetProject() const { return m_project ? &*m_project : nullptr; }
         Project* GetProject() { return m_project ? &*m_project : nullptr; }
+        // Lecture des prefabs du projet (assets), pour charger et enregistrer les scènes qui en ont ; sans projet,
+        // aucun prefab n'est lisible. Une seule pour tout le projet : les textes lus y restent tant que les fichiers
+        // ne changent pas.
+        const SceneSerializer::PrefabReader& GetPrefabReader() const { return m_prefabReader; }
 
         // Image du projet (chemin relatif au dossier des assets, « textures/logo.png ») chargée pour l'overlay :
         // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
@@ -198,6 +203,7 @@ namespace Flux {
         std::unique_ptr<UI::Context> m_ui;
         ComponentRegistry m_components;
         std::optional<Project> m_project;
+        SceneSerializer::PrefabReader m_prefabReader;
         Scene m_scene;
         UpdateFunction m_gameUpdate;
         GameState m_gameState = GameState::Running;

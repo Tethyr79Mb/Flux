@@ -7,21 +7,29 @@
 #include "Search.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Log.hpp>
+#include <Flux/Core/Project.hpp>
+#include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
+#include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/UI/Context.hpp>
 #include <Flux/UI/DrawList.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <functional>
 #include <map>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -145,6 +153,13 @@ namespace FluxEditor {
         DrawScenes(engine, scene, document, files);
         DrawInspector(engine, scene, selected);
         ApplyAction(engine, scene, selected, history);
+        // En dernier : ouvrir le prefab remplace la scène.
+        if (!m_openPrefab.empty()) {
+            if (const Project* project = engine.GetProject()) {
+                document.OpenFile(engine, project->assetsDirectory / Platform::PathFromUtf8(m_openPrefab));
+            }
+            m_openPrefab.clear();
+        }
     }
 
     void SceneEditor::Select(Scene& scene, Entity entity) {
@@ -349,9 +364,20 @@ namespace FluxEditor {
         // Position sans ancrage (l'éditeur l'ancre à droite) : entre la vue et le panneau « Démo » du jeu.
         ui.SetNextPanelIcon(UI::Icon::Inspector);
         if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screenWidth - 752.0f), 8.0f}, 368.0f)) {
+            m_overrides = {};
             if (selected == NullEntity) {
                 ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans l'onglet Scènes.");
             } else {
+                // Pièce d'un exemplaire de prefab : ce qui diffère du prefab, relu à chaque image (le texte du prefab
+                // est gardé en mémoire tant que son fichier ne change pas). Pas en jeu : rien ne s'y modifie.
+                if (!m_readOnly) {
+                    m_overrides = SceneSerializer::GetPrefabOverrides(scene, engine.GetComponents(), selected,
+                                                                      engine.GetPrefabReader());
+                    // La place de l'exemplaire est la sienne, pas une modification du prefab.
+                    if (scene.TryGet<PrefabInstanceComponent>(selected)) {
+                        std::erase(m_overrides.fields, std::pair<std::string, std::string>{"transform", "position"});
+                    }
+                }
                 const Uuid id = scene.GetId(selected);
                 if (m_anglesFor != id) {
                     m_angles.clear();
@@ -360,7 +386,7 @@ namespace FluxEditor {
                 ui.PushId(id.value); // un champ en cours de saisie ne passe pas d'une entité à l'autre
                 ui.BeginDisabled(m_readOnly);
 
-                m_modified |= ui.InputText("Nom", scene.Get<NameComponent>(selected).name);
+                m_modified |= ui.InputText(m_overrides.name ? "» Nom###nom" : "Nom###nom", scene.Get<NameComponent>(selected).name);
                 ui.LabelText("Identifiant", id.ToString());
                 const Entity parent = scene.GetParent(selected);
                 ui.LabelText("Parent", parent == NullEntity ? "(racine)" : DisplayName(scene, parent));
@@ -378,6 +404,7 @@ namespace FluxEditor {
                     }
                 }
                 ui.EndDisabled();
+                DrawPrefab(engine, scene, selected);
 
                 // Composants enregistrés (moteur puis jeu) : champs générés à partir de leur description.
                 const ComponentRegistry& components = engine.GetComponents();
@@ -443,12 +470,79 @@ namespace FluxEditor {
         ui.EndPanel();
     }
 
+    void SceneEditor::DrawPrefab(Engine& engine, Scene& scene, Entity selected) {
+        UI::Context& ui = engine.GetUi();
+        const ComponentRegistry& components = engine.GetComponents();
+        const auto* link = scene.TryGet<PrefabLinkComponent>(selected);
+        if (const auto* instance = scene.TryGet<PrefabInstanceComponent>(selected)) {
+            ui.LabelText("Prefab", instance->prefab);
+            if (!m_readOnly && !m_overrides.known) {
+                ui.TextDisabled("Prefab illisible : les pièces gardent leurs réglages.");
+            }
+            if (ui.Button("Ouvrir le prefab")) {
+                m_openPrefab = instance->prefab;
+            }
+            if (!m_readOnly) {
+                ui.SameLine();
+                if (ui.Button("Délier")) {
+                    m_pendingAction = Action::UnlinkPrefab;
+                }
+            }
+        } else if (link && scene.IsValid(link->instance)) {
+            ui.LabelText("Prefab", "pièce de « " + DisplayName(scene, link->instance) + " »");
+        } else if (!m_readOnly && engine.GetProject()) {
+            // Un prefab ne contient pas encore d'autre prefab : bouton absent si un exemplaire est dessous.
+            bool linked = false;
+            const std::function<void(Entity)> check = [&](Entity entity) {
+                linked = linked || scene.TryGet<PrefabInstanceComponent>(entity) || scene.TryGet<PrefabLinkComponent>(entity);
+                scene.ForEachChild(entity, check);
+            };
+            check(selected);
+            if (!linked && ui.Button("Créer un prefab", UI::Icon::Prefab, true)) {
+                m_pendingAction = Action::CreatePrefab;
+            }
+        }
+        // Composants du prefab retirés de cette pièce.
+        for (const std::string& key : m_overrides.removed) {
+            const ComponentInfo* info = components.Find(key);
+            ui.TextDisabled("« " + (info ? info->label : key) + " » retiré (présent dans le prefab)");
+            ui.SameLine();
+            ui.PushId(key);
+            if (ui.Button("Remettre")) {
+                m_pendingAction = Action::RevertComponent;
+                m_pendingComponent = key;
+            }
+            ui.PopId();
+        }
+    }
+
+    bool SceneEditor::RefuseMemberChange(Engine& engine, const Scene& scene, Entity entity, std::string_view what) {
+        const auto* link = scene.TryGet<PrefabLinkComponent>(entity);
+        if (!link || link->instance == entity || !scene.IsValid(link->instance)) {
+            return false;
+        }
+        Platform::ShowError(engine.GetWindow(), "Prefab",
+                            "« " + DisplayName(scene, entity) + " » est une pièce du prefab « " + DisplayName(scene, link->instance)
+                                + " » : on ne peut pas la " + std::string(what)
+                                + " seule.\n\nModifier le prefab (« Ouvrir le prefab » sur sa racine), ou délier "
+                                  "l'exemplaire pour en faire des objets ordinaires.");
+        return true;
+    }
+
     void SceneEditor::DrawComponent(Engine& engine, const ComponentInfo& info, void* component) {
         UI::Context& ui = engine.GetUi();
         ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
+        // Pièce de prefab : section marquée si elle diffère du prefab (identifiant fixe : elle reste dépliée).
+        const bool added = std::ranges::contains(m_overrides.added, info.key);
+        const bool changed = std::ranges::any_of(m_overrides.fields, [&](const auto& field) { return field.first == info.key; });
+        const std::string header = info.label + (added ? " (ajouté)" : changed ? " (modifié)" : "") + "###en-tête";
         // Croix au bout du titre pour retirer le composant (pas la transformation, ni pendant le jeu).
         bool remove = false;
-        if (ui.CollapsingHeader(info.label, true, ComponentIcon(info.key), info.removable && !m_readOnly ? &remove : nullptr)) {
+        if (ui.CollapsingHeader(header, true, ComponentIcon(info.key), info.removable && !m_readOnly ? &remove : nullptr)) {
+            if (changed && !m_readOnly && ui.Button("Revenir au prefab")) {
+                m_pendingAction = Action::RevertComponent;
+                m_pendingComponent = info.key;
+            }
             ui.BeginDisabled(m_readOnly); // l'en-tête reste repliable
             for (const FieldInfo& field : info.fields) {
                 m_modified |= DrawField(engine, info, field, field.access(component));
@@ -465,7 +559,10 @@ namespace FluxEditor {
     bool SceneEditor::DrawField(Engine& engine, const ComponentInfo& info, const FieldInfo& field, void* value) {
         UI::Context& ui = engine.GetUi();
         const FieldOptions& o = field.options;
-        const std::string label = field.label + "##" + field.key;
+        // « » » devant un champ qui diffère du prefab ; identifié par sa clé seule, il ne change pas de widget en
+        // devenant modifié au milieu d'un glissement.
+        const bool overridden = std::ranges::contains(m_overrides.fields, std::pair<std::string, std::string>{info.key, field.key});
+        const std::string label = (overridden ? "» " : "") + field.label + "###" + field.key;
         switch (field.type) {
             case FieldType::Bool:
                 return ui.Checkbox(label, *static_cast<bool*>(value));
@@ -581,6 +678,9 @@ namespace FluxEditor {
             case Action::None:
                 break;
             case Action::Delete: {
+                if (RefuseMemberChange(engine, scene, selected, "supprimer")) {
+                    break;
+                }
                 // Avec ses descendants, et sa place parmi ses frères : annuler la remet exactement où elle était.
                 const Uuid id = scene.GetId(selected);
                 std::string before = UndoHistory::Capture(engine, id, true);
@@ -593,7 +693,8 @@ namespace FluxEditor {
                 const Entity entity = scene.FindById(m_pendingMove.entity);
                 const Entity target = scene.FindById(m_pendingMove.target);
                 const bool toRoot = m_pendingMove.zone == DropZone::Root;
-                if (entity == NullEntity || target == NullEntity || (entity == target && !toRoot)) {
+                if (entity == NullEntity || target == NullEntity || (entity == target && !toRoot)
+                    || RefuseMemberChange(engine, scene, entity, "déplacer dans la hiérarchie")) {
                     break;
                 }
                 Entity parent = scene.GetParent(target);
@@ -632,6 +733,69 @@ namespace FluxEditor {
                     scene.Get<CharacterComponent>(entity).player = false;
                     history.Push("Un seul joueur", id, std::move(before), UndoHistory::Capture(engine, id));
                 }
+                break;
+            }
+            case Action::CreatePrefab: {
+                // Fichier choisi dans les assets (Prefabs/ par défaut), puis l'entité en devient le premier exemplaire.
+                const Project* project = engine.GetProject();
+                if (!project) {
+                    break;
+                }
+                const std::filesystem::path directory = project->assetsDirectory / "Prefabs";
+                std::error_code error;
+                std::filesystem::create_directories(directory, error);
+                const auto path = Platform::ShowSaveFileDialog(engine.GetWindow(), "Créer un prefab",
+                                                               {"Prefabs Flux", ".prefab.json"}, directory,
+                                                               DisplayName(scene, selected) + ".prefab.json");
+                if (!path) {
+                    break;
+                }
+                const std::filesystem::path relative = path->lexically_normal().lexically_relative(project->assetsDirectory);
+                if (relative.empty() || *relative.begin() == "..") {
+                    Platform::ShowError(engine.GetWindow(), "Créer un prefab", "Le prefab doit être dans le dossier des assets.");
+                    break;
+                }
+                const auto text = SceneSerializer::SavePrefab(scene, engine.GetComponents(), selected,
+                                                              SceneSerializer::PrefabIds::ForInstance);
+                if (!text) {
+                    Platform::ShowError(engine.GetWindow(), "Créer un prefab", text.error());
+                    break;
+                }
+                if (auto written = SceneSerializer::WriteFile(*path, *text); !written) {
+                    Platform::ShowError(engine.GetWindow(), "Créer un prefab", written.error());
+                    break;
+                }
+                // Annuler délie l'entité ; le fichier reste (à supprimer dans Contenu s'il ne sert plus).
+                const Uuid id = scene.GetId(selected);
+                std::string before = UndoHistory::Capture(engine, id, true);
+                SceneSerializer::LinkPrefab(scene, selected, Platform::ToGenericUtf8(relative));
+                history.Push("Créer un prefab", id, std::move(before), UndoHistory::Capture(engine, id, true));
+                Log::Info("prefab créé : {}", Platform::ToGenericUtf8(relative));
+                break;
+            }
+            case Action::UnlinkPrefab: {
+                const Uuid id = scene.GetId(selected);
+                std::string before = UndoHistory::Capture(engine, id, true);
+                SceneSerializer::UnlinkPrefab(scene, selected);
+                history.Push("Délier du prefab", id, std::move(before), UndoHistory::Capture(engine, id, true));
+                break;
+            }
+            case Action::RevertComponent: {
+                const Uuid id = scene.GetId(selected);
+                std::string before = UndoHistory::Capture(engine, id);
+                // La racine d'un exemplaire garde sa place : seules sa rotation et son échelle reviennent au prefab.
+                const auto* transform = scene.TryGet<TransformComponent>(selected);
+                const std::optional<Math::Vector3d> place = transform && scene.TryGet<PrefabInstanceComponent>(selected)
+                                                                ? std::optional(transform->position)
+                                                                : std::nullopt;
+                if (SceneSerializer::RevertToPrefab(scene, engine.GetComponents(), selected, m_pendingComponent,
+                                                    engine.GetPrefabReader())) {
+                    if (place) {
+                        scene.Get<TransformComponent>(selected).position = *place;
+                    }
+                    history.Push("Revenir au prefab", id, std::move(before), UndoHistory::Capture(engine, id));
+                }
+                m_pendingComponent.clear();
                 break;
             }
             case Action::AddComponent:

@@ -5,11 +5,14 @@
 #include "Panels/SceneEditor.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Project.hpp>
+#include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/Scene/Picking.hpp>
+#include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/Scene/ScreenUi.hpp>
 #include <Flux/UI/DrawList.hpp>
 
@@ -142,8 +145,19 @@ namespace FluxEditor {
                                            {"Volume intérieur", "Intérieur"},
                                            {"Interface...", "Interface"},
                                            {"Son...", "Son"},
-                                           {"Planète", "Planète"}};
+                                           {"Planète", "Planète"},
+                                           {"Prefab", "Prefab"}};
             return Infos[item];
+        }
+
+        // Nom d'un prefab dans le panneau : son fichier sans « .prefab.json ».
+        std::string PrefabLabel(const std::filesystem::path& path) {
+            std::string name = Platform::ToUtf8(path.filename());
+            constexpr std::string_view Extension = ".prefab.json";
+            if (name.ends_with(Extension)) {
+                name.resize(name.size() - Extension.size());
+            }
+            return name;
         }
 
         bool Contains(const UI::Rect& rect, Vector2f point) {
@@ -151,21 +165,23 @@ namespace FluxEditor {
         }
     }
 
-    void PlacePanel::Update(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const UI::Rect& view) {
+    void PlacePanel::Update(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const UI::Rect& view,
+                            const std::vector<std::filesystem::path>& prefabs) {
         UI::Context& ui = engine.GetUi();
         const Input& input = engine.GetWindow().GetInput();
         const Vector2f mouse = input.GetMousePosition();
 
-        std::optional<Item> clicked;
-        std::optional<Item> held;
-        const auto button = [&](Item item) {
-            if (ui.Button(GetInfo(static_cast<int>(item)).label)) {
-                clicked = item;
+        std::optional<Choice> clicked;
+        std::optional<Choice> held;
+        const auto choose = [&](bool pressed, Choice choice) {
+            if (pressed) {
+                clicked = choice;
             }
             if (ui.IsItemActive()) {
-                held = item;
+                held = std::move(choice);
             }
         };
+        const auto button = [&](Item item) { choose(ui.Button(GetInfo(static_cast<int>(item)).label), {item, {}}); };
         // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Scènes »).
         // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (boutons grisés et inertes).
         const bool playing = engine.GetGameState() != GameState::Stopped;
@@ -210,6 +226,16 @@ namespace FluxEditor {
             button(Item::Ship);
             ui.SameLine();
             button(Item::Fighter);
+            if (const Project* project = engine.GetProject(); project && !prefabs.empty()) {
+                ui.Separator();
+                ui.TextDisabled("Prefabs");
+                for (const std::filesystem::path& prefab : prefabs) {
+                    const std::string relative = Platform::ToGenericUtf8(prefab.lexically_relative(project->assetsDirectory));
+                    ui.PushId(relative);
+                    choose(ui.Button(PrefabLabel(prefab)), {Item::Prefab, prefab});
+                    ui.PopId();
+                }
+            }
             ui.Separator();
             ui.TextDisabled("Clic : devant la caméra.\nGlisser dans la vue : à cet endroit.");
             ui.EndDisabled();
@@ -244,7 +270,8 @@ namespace FluxEditor {
         if (m_dragging && m_held) {
             UI::DrawList& list = engine.GetRenderer().GetOverlay();
             const UI::Style& style = ui.GetStyle();
-            const std::string label = GetInfo(static_cast<int>(*m_held)).label;
+            const std::string label = m_held->item == Item::Prefab ? PrefabLabel(m_held->prefab)
+                                                                    : GetInfo(static_cast<int>(m_held->item)).label;
             const Vector2f topLeft = mouse + Vector2f{14.0f, 10.0f};
             const Vector2f size = ui.MeasureText(label) + style.framePadding * 2.0f;
             list.AddRect(topLeft, topLeft + size, style.button);
@@ -252,10 +279,11 @@ namespace FluxEditor {
         }
     }
 
-    void PlacePanel::Place(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, Item item,
+    void PlacePanel::Place(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
                            std::optional<Vector2f> drop, const UI::Rect& view) {
         history.Commit(engine); // un geste en cours est un pas à part, avant celui-ci
         Scene& scene = engine.GetScene();
+        const Item item = choice.item;
         if (item == Item::Sky) {
             // Un seul ciel compte : s'il y en a déjà un, c'est lui qu'on sélectionne (à régler dans l'inspecteur).
             for (const auto [existing, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
@@ -300,7 +328,22 @@ namespace FluxEditor {
                 name = std::move(stem);
             }
         }
-        const Entity entity = scene.CreateEntity(name);
+        Entity entity = NullEntity;
+        if (item == Item::Prefab) {
+            // Nouvel exemplaire : ses pièces suivront le prefab, comme celles des autres exemplaires.
+            const Project* project = engine.GetProject();
+            const std::string path = project ? Platform::ToGenericUtf8(choice.prefab.lexically_relative(project->assetsDirectory))
+                                             : std::string{};
+            auto placed = SceneSerializer::Instantiate(scene, engine.GetComponents(), path, engine.GetPrefabReader());
+            if (!placed) {
+                Platform::ShowError(engine.GetWindow(), "Placer un prefab", placed.error());
+                return;
+            }
+            entity = *placed;
+            name = PrefabLabel(choice.prefab);
+        } else {
+            entity = scene.CreateEntity(name);
+        }
 
         if (item == Item::Interface) {
             // Toute la vue : rien à placer.
@@ -364,7 +407,9 @@ namespace FluxEditor {
             const Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
                                                   : Math::Vector3d(camera.GetForward());
             Math::WorldPosition position = camera.position;
-            double distance = item == Item::Ship ? ShipDistance : item == Item::Fighter ? FighterDistance : PlaceDistance;
+            // Un prefab de vaisseau est vu comme le chasseur : en entier.
+            const bool bigPrefab = item == Item::Prefab && scene.TryGet<ShipComponent>(entity);
+            double distance = item == Item::Ship ? ShipDistance : item == Item::Fighter || bigPrefab ? FighterDistance : PlaceDistance;
             if (item == Item::Planet) {
                 // Assez loin pour la voir en entier.
                 distance = PlanetDistance * static_cast<double>(scene.Get<PlanetComponent>(entity).radius);
@@ -377,9 +422,10 @@ namespace FluxEditor {
         }
 
         sceneEditor.Select(scene, entity);
-        // Avec ses enfants (maquette, chasseur) : annuler retire tout, rétablir remet tout.
-        history.Push(std::string("Placer : ") + info.label, scene.GetId(entity), {},
-                     UndoHistory::Capture(engine, scene.GetId(entity), item == Item::Ship || item == Item::Fighter));
+        // Avec ses enfants (maquette, chasseur, prefab) : annuler retire tout, rétablir remet tout.
+        history.Push(std::string("Placer : ") + (item == Item::Prefab ? name : std::string(info.label)), scene.GetId(entity), {},
+                     UndoHistory::Capture(engine, scene.GetId(entity),
+                                          item == Item::Ship || item == Item::Fighter || item == Item::Prefab));
         if (item == Item::Character) {
             sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
         }

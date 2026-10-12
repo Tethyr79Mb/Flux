@@ -73,7 +73,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 
 ### Gameplay
-- ⬜ Prefabs (vaisseau, station réutilisables).
+- ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
+- ⬜ Prefab dans un prefab (station avec ses vaisseaux).
 - ⬜ Menu Échap du jeu, réglages enregistrés pour Game.exe.
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).

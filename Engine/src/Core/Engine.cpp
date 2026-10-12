@@ -508,8 +508,13 @@ namespace Flux {
         m_physics->Prepare(m_scene);
     }
 
+    void Engine::SetProject(Project project) {
+        m_prefabReader = SceneSerializer::ReadPrefabsFrom(project.assetsDirectory);
+        m_project = std::move(project);
+    }
+
     std::expected<void, std::string> Engine::LoadScene(const std::filesystem::path& path) {
-        if (auto loaded = SceneSerializer::Load(m_scene, m_components, path); !loaded) {
+        if (auto loaded = SceneSerializer::Load(m_scene, m_components, path, GetPrefabReader()); !loaded) {
             return loaded;
         }
         m_physics.reset(); // les corps de l'ancienne scène
