@@ -14,9 +14,12 @@ namespace Flux::Vk {
 
         VmaAllocationCreateInfo allocationInfo{};
         allocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        if (memory == Memory::Upload) {
+        if (memory == Memory::Upload || memory == Memory::Staging) {
             allocationInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
                                  | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            if (memory == Memory::Staging) {
+                allocationInfo.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+            }
         } else if (memory == Memory::Readback) {
             allocationInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
         } else {

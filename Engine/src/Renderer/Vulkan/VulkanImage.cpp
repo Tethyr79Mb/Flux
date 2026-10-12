@@ -84,7 +84,7 @@ namespace Flux::Vk {
                                                            std::span<const std::uint8_t> pixels, bool mipmaps, ImageLayers kind,
                                                            std::uint32_t layerCount) {
         const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
-        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Upload);
+        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Staging);
         if (!staging) {
             return std::unexpected(staging.error());
         }

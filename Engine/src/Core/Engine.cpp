@@ -12,6 +12,7 @@
 #include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Input.hpp"
+#include "Flux/Platform/Memory.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/SceneChange.hpp"
@@ -115,6 +116,10 @@ namespace Flux {
             return milliseconds < 0.0 ? std::string("?") : std::format("{:.2f} ms", milliseconds);
         }
 
+        std::string FormatMegabytes(std::uint64_t bytes) {
+            return std::format("{:.0f} Mo", static_cast<double>(bytes) / (1024.0 * 1024.0));
+        }
+
         void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
                              FlyCameraController* controller) {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
@@ -145,6 +150,15 @@ namespace Flux {
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
                 ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
+
+                // RAM : ce que le processus a réservé pour lui (proche du Gestionnaire des tâches) ; GPU : ce que le
+                // rendu a demandé au pilote, en mémoire vidéo et en RAM lisible par le GPU (comptée aussi dans la RAM).
+                ui.Separator();
+                const Platform::ProcessMemory memory = Platform::GetProcessMemory();
+                const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
+                ui.LabelText("RAM", FormatMegabytes(memory.privateBytes));
+                ui.LabelText("Mémoire vidéo", FormatMegabytes(gpuDevice));
+                ui.LabelText("  RAM lue par le GPU", FormatMegabytes(gpuHost));
 
                 if (controller) {
                     ui.Separator();

@@ -14,7 +14,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée.
 - ✅ Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre).
 - ✅ Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour.
-- ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur ; scène détaillée : objets, sol, ciel, océan, transparents).
+- ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur ; scène détaillée : objets, sol, ciel, océan, transparents) et de la mémoire (RAM du processus, mémoire vidéo).
 - ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
 - ✅ Flammes des réacteurs (composant « Réacteur ») : volume de gaz calculé au pixel, longueur et éclat selon la

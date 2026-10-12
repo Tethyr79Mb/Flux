@@ -12,6 +12,9 @@ namespace Flux::Vk {
         enum class Memory {
             GpuOnly, // mémoire vidéo, remplie par copie depuis un buffer Upload
             Upload,  // visible et mappée en permanence pour le CPU, écrite séquentiellement
+            // Comme Upload, pour une copie unique (buffer intermédiaire) : sa propre allocation, rendue au pilote dès
+            // sa destruction. Dans un bloc partagé, VMA garderait le bloc vide (256 Mo de RAM après un gros envoi).
+            Staging,
             Readback, // visible et mappée en permanence pour le CPU, écrite par le GPU et relue par le CPU
         };
 

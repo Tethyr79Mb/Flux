@@ -4,6 +4,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -223,7 +224,7 @@ namespace Flux::Vk {
             return std::unexpected(buffer.error());
         }
         if (data) {
-            auto staging = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Upload);
+            auto staging = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Staging);
             if (!staging) {
                 return std::unexpected(staging.error());
             }
@@ -477,6 +478,20 @@ namespace Flux::Vk {
 
     RHI::Format RhiDevice::GetSwapchainFormat() const {
         return m_swapchain ? FromVulkan(m_swapchain->GetFormat()) : RHI::Format::Undefined;
+    }
+
+    // Compteurs tenus par VMA (pas de parcours des blocs) : assez léger pour chaque image.
+    RHI::MemoryUsage RhiDevice::GetMemoryUsage() const {
+        const VkPhysicalDeviceMemoryProperties* properties = nullptr;
+        vmaGetMemoryProperties(m_device->GetAllocator(), &properties);
+        std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> budgets{};
+        vmaGetHeapBudgets(m_device->GetAllocator(), budgets.data());
+        RHI::MemoryUsage usage;
+        for (std::uint32_t heap = 0; heap < properties->memoryHeapCount; ++heap) {
+            const bool device = (properties->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+            (device ? usage.device : usage.host) += budgets[heap].statistics.blockBytes;
+        }
+        return usage;
     }
 
     RHI::PresentMode RhiDevice::GetPresentMode() const {
