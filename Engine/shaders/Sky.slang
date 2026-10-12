@@ -242,8 +242,10 @@ float3 ToneMap(float3 color, float exposure)
     return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
 }
 
-// Force de l'effacement des étoiles par la lumière de l'air (voir fragmentMain).
-static const float SkyDaylightFade = 20.0;
+// Force de l'effacement des étoiles et de la nébuleuse par la lumière de l'air (voir fragmentMain). Planète par défaut :
+// au zénith, l'air vaut 0,12 avec le soleil à 45°, 0,06 au coucher, 0,03 à -15°. À 60, il reste 0,07 % du fond en
+// plein jour (20 : 8 %, étoiles encore bien visibles), 2,5 % au coucher, 15 % à -15° : elles reviennent à la nuit.
+static const float SkyDaylightFade = 60.0;
 
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
