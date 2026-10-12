@@ -36,6 +36,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage. Les assets sont copiés à côté
   des exécutables (`bin/assets/`).
+- Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à
+  lancer) ; `out/build/` garde les fichiers intermédiaires et `out/deps/` les dépendances téléchargées
+  (`FLUX_OUTPUT_DIRECTORY`).
 
 ## Une image (`Engine::Run`)
 
