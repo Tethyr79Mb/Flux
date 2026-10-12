@@ -549,6 +549,15 @@ static const uint GroundLayers = 5;
 // multiple.
 static const float GroundNearScale = 4.0;
 static const float GroundFarScale = 32.0;
+static const float GroundPeriod = 1024.0; // même valeur que MeshRenderer::GroundPeriod (C++)
+// Contre la répétition de l'image (un quadrillage visible tous les GroundNearScale mètres) : pavage en triangles
+// presque équilatéraux (« hex tiling », Mikkelsen 2022), chaque sommet lit l'image décalée et tournée au hasard, et
+// chaque point mêle les trois sommets de son triangle, poids durcis (le plus proche l'emporte vite). Pas de carrés :
+// les zones forment des hexagones aux bords fondus. Triangles de côté GroundTriangleSide images, hauteur 1/2 : choisi
+// pour que le pavage se répète exactement sur GroundPeriod, comme les coordonnées du sol (pas de couture entre tuiles).
+static const float GroundTriangleSide = 4.0 / 7.0;
+static const float GroundTriangleHeight = 0.5;
+static const float GroundBlendSharpness = 4.0;
 
 struct GroundSample
 {
@@ -556,6 +565,87 @@ struct GroundSample
     float3 normal;    // repère de la planète, non normalisée
     float2 occlusionRoughness;
 };
+
+// Hachage entier (lowbias32).
+uint GroundHash(uint x)
+{
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+float2 GroundRandom(uint x)
+{
+    const uint h = GroundHash(x);
+    return float2(float(h & 0xffffU), float(h >> 16)) * (1.0 / 65536.0);
+}
+
+// Une version de l'image (décalage et rotation tirés de `variant`) ; normale ramenée dans le repère du plan de
+// projection (rotation inverse).
+void SampleGroundVariant(out float3 color, out float3 tangentNormal, out float2 occlusionRoughness, uint layer,
+                         float2 uv, float2 gx, float2 gy, uint variant)
+{
+    const float2 random = GroundRandom(variant * 0x68e31da4U + 17u);
+    const float angle = random.x * 6.2831853;
+    const float c = cos(angle);
+    const float s = sin(angle);
+    const float2x2 rotation = float2x2(c, -s, s, c);
+    const float3 at = float3(mul(rotation, uv) + GroundRandom(variant * 0xb5297a4dU + 71u), float(layer));
+    const float2 rgx = mul(rotation, gx);
+    const float2 rgy = mul(rotation, gy);
+    color = groundColorTexture.SampleGrad(at, rgx, rgy).rgb;
+    occlusionRoughness = groundRoughnessTexture.SampleGrad(at, rgx, rgy).rg;
+    tangentNormal = groundNormalTexture.SampleGrad(at, rgx, rgy).xyz * 2.0 - 1.0;
+    tangentNormal.xy = mul(tangentNormal.xy, rotation); // transposée : rotation inverse
+}
+
+// Une matière dans un plan de projection, sans répétition visible : les trois sommets du triangle du point (voir
+// GroundTriangleSide), une à trois lectures selon les poids.
+void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2 occlusionRoughness, uint layer,
+                          float2 uv, float2 gx, float2 gy, int period)
+{
+    // Repère du pavage : a le long d'un côté, b le long de l'autre (60° environ). Décaler uv d'une période change a et
+    // b d'entiers ; la clé (2a + b, b), ramenée dans sa période, donne le même tirage aux deux points.
+    const float bf = uv.y / GroundTriangleHeight;
+    const float af = uv.x / GroundTriangleSide - 0.5 * bf;
+    const int2 base = int2(floor(float2(af, bf)));
+    const float2 f = float2(af, bf) - float2(base);
+    // Triangle du bas (f.x + f.y < 1) : sommets (0,0), (1,0), (0,1) ; du haut : (1,1), (0,1), (1,0).
+    const bool upper = f.x + f.y > 1.0;
+    const int2 v0 = base + (upper ? int2(1, 1) : int2(0, 0));
+    const int2 v1 = base + (upper ? int2(0, 1) : int2(1, 0));
+    const int2 v2 = base + (upper ? int2(1, 0) : int2(0, 1));
+    float3 w = upper ? float3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y) : float3(1.0 - f.x - f.y, f.x, f.y);
+    w = pow(max(w, 0.0), GroundBlendSharpness);
+    w /= w.x + w.y + w.z;
+
+    const int periodU = int(2.0 * float(period) / GroundTriangleSide + 0.5); // 2a + b sur une période en x
+    const int periodB = int(float(period) / GroundTriangleHeight + 0.5);
+    color = float3(0.0);
+    tangentNormal = float3(0.0);
+    occlusionRoughness = float2(0.0);
+    [unroll]
+    for (int i = 0; i < 3; ++i) {
+        if (w[i] > 0.01) {
+            const int2 v = i == 0 ? v0 : i == 1 ? v1 : v2;
+            const int u = ((2 * v.x + v.y) % periodU + periodU) % periodU;
+            const int b = (v.y % periodB + periodB) % periodB;
+            float3 c, n;
+            float2 surface;
+            SampleGroundVariant(c, n, surface, layer, uv, gx, gy, uint(u) * 0x9e3779b1U ^ GroundHash(uint(b) + 101u));
+            color += c * w[i];
+            tangentNormal += n * w[i];
+            occlusionRoughness += surface * w[i];
+        }
+    }
+    const float kept = (w.x > 0.01 ? w.x : 0.0) + (w.y > 0.01 ? w.y : 0.0) + (w.z > 0.01 ? w.z : 0.0);
+    color /= kept;
+    tangentNormal /= kept;
+    occlusionRoughness /= kept;
+}
 
 // Une matière plaquée selon les trois axes de la planète (triplanaire), chaque projection pesée par l'orientation de
 // la surface ; les projections presque de profil ne sont pas lues. Normales mêlées façon « whiteout » (Ben Golus).
@@ -567,6 +657,7 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
     result.normal = float3(0.0);
     result.occlusionRoughness = float2(0.0);
     const float inverse = 1.0 / scale;
+    const int period = int(GroundPeriod / scale + 0.5); // images par période
     const float3 axisSign = sign(n);
     [unroll]
     for (int axis = 0; axis < 3; ++axis) {
@@ -575,10 +666,12 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
             const float2 uv = (axis == 0 ? p.zy : axis == 1 ? p.xz : p.xy) * inverse;
             const float2 gx = (axis == 0 ? dpdx.zy : axis == 1 ? dpdx.xz : dpdx.xy) * inverse;
             const float2 gy = (axis == 0 ? dpdy.zy : axis == 1 ? dpdy.xz : dpdy.xy) * inverse;
-            const float3 at = float3(uv, float(layer));
-            result.color += groundColorTexture.SampleGrad(at, gx, gy).rgb * blend[axis];
-            result.occlusionRoughness += groundRoughnessTexture.SampleGrad(at, gx, gy).rg * blend[axis];
-            float3 t = groundNormalTexture.SampleGrad(at, gx, gy).xyz * 2.0 - 1.0;
+            float3 color;
+            float3 t;
+            float2 occlusionRoughness;
+            SampleGroundNoRepeat(color, t, occlusionRoughness, layer, uv, gx, gy, period);
+            result.color += color * blend[axis];
+            result.occlusionRoughness += occlusionRoughness * blend[axis];
             t.z *= axisSign[axis];
             const float2 base = axis == 0 ? n.zy : axis == 1 ? n.xz : n.xy;
             const float3 w = float3(t.xy + base, abs(t.z) * n[axis]);

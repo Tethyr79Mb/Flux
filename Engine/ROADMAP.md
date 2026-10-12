@@ -28,6 +28,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
 - ✅ Teinte de chaque texture du sol.
 - ✅ Plage réglée en mètres au-dessus de la mer (elle suit le niveau de la mer).
+- ✅ Sol sans répétition visible : pavage hexagonal (rotation et décalage aléatoires par cellule, mélange des 3 cellules voisines).
 
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
@@ -72,6 +73,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - ⬜ Nuages.
 - ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
+- ⬜ 2 ou 3 textures par matière, pour varier davantage le sol de près.
 
 ### Gameplay
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
