@@ -46,6 +46,12 @@ namespace FluxEditor {
             return name;
         }
 
+        constexpr std::string_view PrefabExtension = ".prefab.json";
+
+        bool IsPrefab(const std::filesystem::path& path) {
+            return Platform::ToUtf8(path.filename()).ends_with(PrefabExtension);
+        }
+
         constexpr std::string_view InterfaceExtension = ".fluxui";
 
         bool IsInterface(const std::filesystem::path& path) {
@@ -95,6 +101,9 @@ namespace FluxEditor {
             if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga" || extension == ".bmp") {
                 return {"Image", Math::LinearColor::FromSrgb8(52, 128, 80)};
             }
+            if (IsPrefab(entry.path)) {
+                return {"Prefab", Math::LinearColor::FromSrgb8(40, 96, 190)};
+            }
             if (extension == InterfaceExtension) {
                 return {"Interface", Math::LinearColor::FromSrgb8(40, 140, 160)};
             }
@@ -109,11 +118,27 @@ namespace FluxEditor {
             return {upper, Math::LinearColor::FromSrgb8(84, 84, 92)};
         }
 
-        // Champs de fichiers (modèle, image, scène) qui désignent `from` ou un fichier sous lui (dossier déplacé) :
-        // réécrits vers `to`. true si quelque chose a changé.
+        // `value` désigne `from` ou un fichier sous lui (dossier déplacé) : réécrit vers `to`.
+        bool ReplacePath(std::string& value, const std::string& from, const std::string& to) {
+            if (value == from) {
+                value = to;
+                return true;
+            }
+            if (value.starts_with(from + "/")) {
+                value = to + value.substr(from.size());
+                return true;
+            }
+            return false;
+        }
+
+        // Champs de fichiers (modèle, image, scène) et prefabs des exemplaires qui désignent `from` ou un fichier sous
+        // lui : réécrits vers `to`. true si quelque chose a changé.
         bool ReplaceReferences(Scene& scene, const ComponentRegistry& components, const std::string& from, const std::string& to) {
             bool changed = false;
             entt::registry& registry = scene.GetRegistry();
+            for (auto [entity, instance] : registry.view<PrefabInstanceComponent>().each()) {
+                changed |= ReplacePath(instance.prefab, from, to);
+            }
             for (std::size_t c = 0; c < components.GetCount(); ++c) {
                 const ComponentInfo& info = components.Get(c);
                 for (const FieldInfo& field : info.fields) {
@@ -125,14 +150,7 @@ namespace FluxEditor {
                         if (!component) {
                             continue;
                         }
-                        std::string& value = *static_cast<std::string*>(field.access(component));
-                        if (value == from) {
-                            value = to;
-                            changed = true;
-                        } else if (value.starts_with(from + "/")) {
-                            value = to + value.substr(from.size());
-                            changed = true;
-                        }
+                        changed |= ReplacePath(*static_cast<std::string*>(field.access(component)), from, to);
                     }
                 }
             }
@@ -278,6 +296,7 @@ namespace FluxEditor {
         // Un seul parcours pour deux arbres : les assets sans les scènes (un dossier qui ne contenait que des scènes
         // n'y apparaît pas), et les scènes avec les dossiers qui en contiennent ou qui sont vides (tout juste créés).
         m_scenes.clear();
+        m_prefabs.clear();
         m_interfaceFiles.clear();
         struct Trees
         {
@@ -309,6 +328,8 @@ namespace FluxEditor {
                 } else {
                     if (IsInterface(entry.path)) {
                         m_interfaceFiles.push_back(entry.path);
+                    } else if (IsPrefab(entry.path)) {
+                        m_prefabs.push_back(entry.path);
                     }
                     trees.assets.push_back(std::move(entry));
                 }
@@ -324,9 +345,11 @@ namespace FluxEditor {
         Trees trees = root.empty() ? Trees{} : read(read, root);
         m_tree = {root, "assets", true, std::move(trees.assets)};
         m_sceneTree = {root, "assets", true, std::move(trees.scenes)};
-        std::ranges::sort(m_scenes, [](const std::filesystem::path& a, const std::filesystem::path& b) {
+        const auto byFolder = [](const std::filesystem::path& a, const std::filesystem::path& b) {
             return a.parent_path() != b.parent_path() ? a.parent_path() < b.parent_path() : a.filename() < b.filename();
-        });
+        };
+        std::ranges::sort(m_scenes, byFolder);
+        std::ranges::sort(m_prefabs, byFolder);
     }
 
     const ContentBrowser::Entry* ContentBrowser::FindFolder(const Entry& tree, const std::filesystem::path& path) const {
@@ -415,14 +438,16 @@ namespace FluxEditor {
                                         : entry.directory ? std::pair<std::string, Math::LinearColor>{}
                                                           : Badge(entry);
             const bool interfaceFile = !entry.directory && IsInterface(entry.path);
+            const bool prefab = !entry.directory && IsPrefab(entry.path);
             const UI::Icon icon = entry.directory ? UI::Icon::Folder
                                 : scene           ? UI::Icon::Scene
                                 : interfaceFile   ? UI::Icon::Window
+                                : prefab          ? UI::Icon::Prefab
                                                   : UI::Icon::File;
             const bool selected = scene ? entry.path.lexically_normal() == openScene : entry.path == m_selected;
             ui.PushId(entry.name);
             const UI::Context::TileResult tile = ui.Tile(scene ? SceneName(entry.path) : entry.name, icon, badge, color, selected,
-                                                         TileWidth, scene || interfaceFile ? nullptr : GetIcon(engine, entry));
+                                                         TileWidth, scene || interfaceFile || prefab ? nullptr : GetIcon(engine, entry));
             if (tile.clicked && !scene) {
                 m_selected = entry.path;
             }
@@ -432,6 +457,11 @@ namespace FluxEditor {
             if (tile.doubleClicked && entry.directory) {
                 folder = entry.path;
                 m_selected.clear();
+            }
+            // Un prefab s'ouvre comme une scène : on le modifie, on l'enregistre, les scènes qui l'utilisent suivent.
+            if (tile.doubleClicked && prefab && !document.IsLocked()
+                && entry.path.lexically_normal() != document.GetPath().lexically_normal()) {
+                document.OpenFile(engine, entry.path);
             }
             if (tile.doubleClicked && interfaceFile && m_interfaces) {
                 m_interfaces->Open(engine, entry.path);
@@ -529,6 +559,11 @@ namespace FluxEditor {
         }
         if (!entry.directory && IsInterface(entry.path) && m_interfaces && ui.MenuItem("Ouvrir dans l'éditeur d'interface")) {
             m_interfaces->Open(engine, entry.path);
+        }
+        if (!entry.directory && IsPrefab(entry.path)
+            && ui.MenuItem("Ouvrir le prefab", {},
+                           !document.IsLocked() && entry.path.lexically_normal() != document.GetPath().lexically_normal())) {
+            document.OpenFile(engine, entry.path);
         }
         if (ui.MenuItem("Renommer...", {}, !document.IsLocked())) {
             m_request = NameRequest::Rename;
@@ -657,17 +692,42 @@ namespace FluxEditor {
         const std::string newReference = Platform::ToGenericUtf8(to.lexically_relative(m_root));
         const ComponentRegistry& components = engine.GetComponents();
 
-        // Scènes du projet (à leur nouvelle place si elles ont bougé aussi), puis la scène ouverte, en mémoire.
+        // Les scènes désignent encore les prefabs à leur ancienne place : lus à la nouvelle pour les charger.
+        const SceneSerializer::PrefabReader& prefabs = engine.GetPrefabReader();
+        const SceneSerializer::PrefabReader oldPrefabs = [&](std::string_view path) {
+            std::string current(path);
+            ReplacePath(current, oldReference, newReference);
+            return prefabs(current);
+        };
+
+        // Prefabs, puis scènes du projet (à leur nouvelle place s'ils ont bougé aussi), puis la scène ouverte, en
+        // mémoire. Les prefabs d'abord : une scène enregistrée ensuite se compare à leurs nouveaux chemins.
         std::vector<std::string> failures;
+        for (const std::filesystem::path& prefabPath : m_prefabs) {
+            const std::filesystem::path path = moved(prefabPath).value_or(prefabPath);
+            Scene prefab;
+            if (!SceneSerializer::Load(prefab, components, path)) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+                continue;
+            }
+            if (ReplaceReferences(prefab, components, oldReference, newReference)) {
+                Entity root = NullEntity;
+                prefab.ForEachRoot([&](Entity entity) { root = entity; });
+                const auto text = SceneSerializer::SavePrefab(prefab, components, root, SceneSerializer::PrefabIds::Keep);
+                if (!text || !SceneSerializer::WriteFile(path, *text)) {
+                    failures.push_back(Platform::ToUtf8(path.filename()));
+                }
+            }
+        }
         for (const std::filesystem::path& scenePath : m_scenes) {
             const std::filesystem::path path = moved(scenePath).value_or(scenePath);
             Scene scene;
-            if (!SceneSerializer::Load(scene, components, path)) {
+            if (!SceneSerializer::Load(scene, components, path, oldPrefabs)) {
                 failures.push_back(Platform::ToUtf8(path.filename()));
                 continue;
             }
             if (ReplaceReferences(scene, components, oldReference, newReference)
-                && !SceneSerializer::Save(scene, components, path)) {
+                && !SceneSerializer::Save(scene, components, path, prefabs)) {
                 failures.push_back(Platform::ToUtf8(path.filename()));
             }
         }
@@ -748,7 +808,12 @@ namespace FluxEditor {
                                                      "Game.exe ne pourrait plus démarrer.");
             return;
         }
-        if (!Platform::AskYesNo(window, "Supprimer", "Envoyer « " + name + " » à la corbeille ?")) {
+        // Un exemplaire se refait depuis son prefab : sans lui, les scènes qui en ont ne s'ouvrent plus (jusqu'à ce
+        // qu'il revienne de la corbeille).
+        const std::string warning = IsPrefab(path) ? "\n\nLes scènes qui ont des exemplaires de ce prefab ne pourront plus "
+                                                     "s'ouvrir : les délier d'abord (inspecteur, « Délier »)."
+                                                   : "";
+        if (!Platform::AskYesNo(window, "Supprimer", "Envoyer « " + name + " » à la corbeille ?" + warning)) {
             return;
         }
         if (auto deleted = Platform::MoveToRecycleBin(path); !deleted) {

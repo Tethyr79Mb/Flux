@@ -19,9 +19,35 @@ namespace FluxEditor {
 
     namespace {
         const Platform::FileType SceneFileType{"Scènes Flux", ".scene.json"};
+        const Platform::FileType PrefabFileType{"Prefabs Flux", ".prefab.json"};
 
         std::string FileName(const std::filesystem::path& path) {
             return Platform::ToUtf8(path.filename());
+        }
+
+        bool IsPrefabFile(const std::filesystem::path& path) {
+            return Platform::ToUtf8(path.filename()).ends_with(".prefab.json");
+        }
+
+        // Un prefab ouvert s'enregistre comme prefab : sa seule racine et ses descendants, identifiants gardés pour
+        // que les exemplaires des scènes retrouvent leurs pièces.
+        std::expected<void, std::string> WritePrefab(Engine& engine, const std::filesystem::path& path) {
+            const Scene& scene = engine.GetScene();
+            Entity root = NullEntity;
+            int roots = 0;
+            scene.ForEachRoot([&](Entity entity) {
+                root = entity;
+                ++roots;
+            });
+            if (roots != 1) {
+                return std::unexpected(std::format("Un prefab a un seul objet racine (ici {}) : rangez les autres "
+                                                   "dessous, ou enregistrez une scène.", roots));
+            }
+            const auto text = SceneSerializer::SavePrefab(scene, engine.GetComponents(), root, SceneSerializer::PrefabIds::Keep);
+            if (!text) {
+                return std::unexpected(text.error());
+            }
+            return SceneSerializer::WriteFile(path, *text);
         }
     }
 
@@ -96,7 +122,8 @@ namespace FluxEditor {
 
     bool SceneDocument::Load(Engine& engine, const std::filesystem::path& path) {
         // En cas d'erreur, la scène en cours reste intacte (le chargement vérifie tout avant de la remplacer).
-        if (auto loaded = SceneSerializer::Load(engine.GetScene(), engine.GetComponents(), path); !loaded) {
+        if (auto loaded = SceneSerializer::Load(engine.GetScene(), engine.GetComponents(), path, engine.GetPrefabReader());
+            !loaded) {
             Platform::ShowError(engine.GetWindow(), "Ouvrir une scène", loaded.error());
             return false;
         }
@@ -126,13 +153,18 @@ namespace FluxEditor {
 
     bool SceneDocument::SaveAs(Engine& engine) {
         const std::string name = m_path.empty() ? "Nouvelle.scene.json" : FileName(m_path);
-        const auto path = Platform::ShowSaveFileDialog(engine.GetWindow(), "Enregistrer la scène", SceneFileType,
-                                                       DialogDirectory(engine), name);
+        // Un prefab ouvert s'enregistre sous un autre nom de prefab, pas en scène.
+        const bool prefab = IsPrefabFile(m_path);
+        const auto path = Platform::ShowSaveFileDialog(engine.GetWindow(), prefab ? "Enregistrer le prefab" : "Enregistrer la scène",
+                                                       prefab ? PrefabFileType : SceneFileType, DialogDirectory(engine), name);
         return path && WriteTo(engine, *path);
     }
 
     bool SceneDocument::WriteTo(Engine& engine, const std::filesystem::path& path) {
-        if (auto saved = SceneSerializer::Save(engine.GetScene(), engine.GetComponents(), path); !saved) {
+        const auto saved = IsPrefabFile(path) ? WritePrefab(engine, path)
+                                              : SceneSerializer::Save(engine.GetScene(), engine.GetComponents(), path,
+                                                                      engine.GetPrefabReader());
+        if (!saved) {
             Platform::ShowError(engine.GetWindow(), "Enregistrer la scène", saved.error());
             return false;
         }

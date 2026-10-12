@@ -101,6 +101,9 @@ namespace Flux::UI {
             case Icon::Model:
                 DrawCube(pen, LinearColor::FromSrgb8(222, 138, 64));
                 break;
+            case Icon::Prefab:
+                DrawCube(pen, LinearColor::FromSrgb8(64, 140, 240));
+                break;
             case Icon::Character: {
                 const LinearColor color = LinearColor::FromSrgb8(110, 196, 120);
                 pen.Disc(0.5f, 0.24f, 0.18f, color);

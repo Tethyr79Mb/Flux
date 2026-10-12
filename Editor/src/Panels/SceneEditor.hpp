@@ -5,6 +5,7 @@
 #include <Flux/Math/Vector2.hpp>
 #include <Flux/Math/Vector3.hpp>
 #include <Flux/Scene/Components.hpp>
+#include <Flux/Scene/SceneSerializer.hpp>
 
 #include <filesystem>
 #include <string>
@@ -63,7 +64,8 @@ namespace FluxEditor {
         }
 
         private:
-        enum class Action { None, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer };
+        enum class Action { None, Delete, AddComponent, RemoveComponent, Move, ClaimPlayer, CreatePrefab, UnlinkPrefab,
+                            RevertComponent };
 
         // Où poser l'entité glissée dans la hiérarchie, par rapport à la ligne survolée. Root : sur le titre d'un
         // groupe (Cubes, Vaisseaux...), elle devient une racine.
@@ -85,6 +87,11 @@ namespace FluxEditor {
         void DrawNode(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene, Flux::Entity entity);
         void DrawSearchResults(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
+        // Prefab de l'entité : exemplaire (ouvrir, délier), pièce, ou bouton pour en créer un ; composants retirés.
+        void DrawPrefab(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
+        // Pièce d'un exemplaire de prefab qu'on ne peut ni supprimer ni sortir de son exemplaire (le prefab la
+        // referait au chargement) : message et true.
+        bool RefuseMemberChange(Flux::Engine& engine, const Flux::Scene& scene, Flux::Entity entity, std::string_view what);
         void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
         bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
         bool DrawAnimationChoice(Flux::Engine& engine, const std::string& label, std::string& text);
@@ -96,7 +103,10 @@ namespace FluxEditor {
         Flux::Entity m_inspected = Flux::NullEntity; // entité dont l'inspecteur dessine les champs
         // Actions demandées pendant le dessin, appliquées après : on ne détruit rien en parcourant l'arbre.
         Action m_pendingAction = Action::None;
-        std::string m_pendingComponent; // clé du composant à ajouter ou retirer
+        std::string m_pendingComponent; // clé du composant à ajouter, retirer ou remettre comme dans le prefab
+        std::string m_openPrefab;       // prefab à ouvrir (chemin dans les assets), après les panneaux
+        // Ce que la pièce de prefab inspectée change de son prefab : champs marqués « » », sections « (modifié) ».
+        Flux::SceneSerializer::PrefabOverrides m_overrides;
         HierarchyDrag m_hierarchyDrag;
         std::string m_search; // recherche d'objets : vide, l'arbre ; sinon la liste des objets trouvés
         HierarchyDrag m_pendingMove;       // dépôt à appliquer (Action::Move)

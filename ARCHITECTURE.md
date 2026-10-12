@@ -94,6 +94,13 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   L'inspecteur de l'éditeur et la sauvegarde JSON (`flux.scene`) en sont générés. Le jeu enregistre les siens de la
   même façon.
 - Le mode Jouer de l'éditeur copie la scène (aller-retour JSON) et la remet à la fin.
+- Prefabs (`SceneSerializer`) : un `.prefab.json` est une racine et ses descendants. Dans une scène, un exemplaire
+  (`PrefabInstanceComponent` sur sa racine, `PrefabLinkComponent` sur chaque pièce) est écrit comme sa racine, le
+  chemin du prefab et, par pièce, les seuls champs qui en diffèrent (`overrides`, composants ajoutés ou retirés).
+  Au chargement, les pièces sont refaites depuis le prefab puis les différences appliquées : ce qui change dans le
+  prefab arrive partout, sauf là où un exemplaire l'a changé. Identifiant d'une pièce = celui du prefab mélangé à
+  celui de l'exemplaire (`MemberId`, réversible). Lecture des prefabs par `Engine::GetPrefabReader` (textes gardés
+  tant que le fichier ne change pas). Pas encore de prefab dans un prefab.
 
 ## Physique (Jolt)
 
@@ -132,6 +139,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 - `main.cpp` crée le moteur sans panneau Moteur ni interface plein écran, puis branche sa propre mise à jour.
 - `SceneEditor` regroupe les panneaux : Scènes (hiérarchie), Inspecteur, Placer, Contenu, Caméra, Console, Paramètres.
+  L'inspecteur d'une pièce de prefab marque « » » les champs qui diffèrent du prefab (FluxUI : `"libellé###clé"`
+  garde le même widget quand le texte visible change).
 - `SceneViewport` : vue 3D, sélection (`Picking`), gizmo, glisser-déposer.
 - `SceneDocument` : fichier ouvert, annuler / refaire (état avant/après par objet), titre de la fenêtre.
 - `Interface/` : éditeur des `.fluxui`.
@@ -140,7 +149,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 
 | Fichier | Rôle |
 |---|---|
-| `*.scene.json` | scène (`flux.scene` v1) |
+| `*.scene.json` | scène (`flux.scene` v2 : exemplaires de prefabs) |
+| `*.prefab.json` | prefab (`flux.prefab`, même forme qu'une scène, une seule racine) |
 | `*.fluxui` | interface du jeu (`flux.ui` v1) |
 | `Game.fluxproject` | projet : nom, assets, scène de démarrage |
 | `Touches.json` | touches réassignées (à côté de l'exe) |

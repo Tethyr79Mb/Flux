@@ -15,6 +15,7 @@ namespace Flux::UI {
         Scene,       // fichier de scène : un clap
         Cube,
         Model,       // modèle 3D : un cube orange
+        Prefab,      // prefab (fichier ou exemplaire dans la scène) : un cube bleu vif
         Character,
         Ship,
         Collider,    // boîte en fil de fer

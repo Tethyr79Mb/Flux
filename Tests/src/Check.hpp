@@ -13,6 +13,7 @@
 
 bool RunSceneTests();
 bool RunSceneSerializerTests();
+bool RunPrefabTests();
 bool RunUiTests();
 bool RunProjectTests();
 bool RunPickingTests();

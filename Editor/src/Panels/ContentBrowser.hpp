@@ -35,6 +35,8 @@ namespace FluxEditor {
         void SetInterfaceEditor(InterfaceEditor* editor) { m_interfaces = editor; }
         // Fichiers de scène du dossier assets (sous-dossiers compris), triés par dossier puis par nom.
         const std::vector<std::filesystem::path>& GetScenes() const { return m_scenes; }
+        // Prefabs (.prefab.json) du dossier assets, triés de même : le panneau « Placer » les propose.
+        const std::vector<std::filesystem::path>& GetPrefabs() const { return m_prefabs; }
         // Menu clic droit d'une scène (à appeler juste après sa ligne) : ouvrir, renommer, scène de démarrage,
         // afficher dans l'explorateur, supprimer.
         void ShowSceneMenu(Flux::UI::Context& ui, Flux::Engine& engine, SceneDocument& document,
@@ -106,6 +108,7 @@ namespace FluxEditor {
         // Icônes du système par extension en minuscules (« / » : dossier) ; nullopt : pas d'icône, ne pas redemander.
         std::unordered_map<std::string, std::optional<Flux::UI::TextureInfo>> m_icons;
         std::vector<std::filesystem::path> m_scenes;
+        std::vector<std::filesystem::path> m_prefabs;
         std::vector<std::filesystem::path> m_interfaceFiles; // .fluxui du projet : leurs images suivent un déplacement
         InterfaceEditor* m_interfaces = nullptr;
         double m_sinceScan = 0.0;

@@ -427,6 +427,23 @@ namespace Flux {
         float elapsed = 0.0f;  // temps écoulé depuis le chargement de la scène (non enregistré)
     };
 
+    // Exemplaire d'un prefab (fichier .prefab.json des assets : un objet tout monté, un vaisseau avec ses pièces), sur
+    // sa racine. Ses pièces (PrefabLinkComponent) viennent du fichier à chaque chargement de la scène : modifier le
+    // prefab modifie tous ses exemplaires. La scène n'enregistre que ce qui diffère du prefab (position, réglages
+    // changés sur cet exemplaire, entités et composants ajoutés).
+    struct PrefabInstanceComponent
+    {
+        std::string prefab; // relatif aux assets
+    };
+
+    // Pièce d'un exemplaire de prefab (sa racine comprise) : l'entité du prefab dont elle vient. Son identifiant dans
+    // la scène est tiré de celui de l'exemplaire et de `source` : le même à chaque chargement.
+    struct PrefabLinkComponent
+    {
+        Entity instance = NullEntity; // racine de l'exemplaire (PrefabInstanceComponent)
+        Uuid source;                  // identifiant de l'entité dans le fichier du prefab
+    };
+
     // Composants d'un fichier de scène dont le type n'est pas enregistré (module de jeu absent ou ancien) :
     // gardés tels quels (clé, texte JSON) et réécrits à la sauvegarde, pour ne jamais perdre de données.
     struct UnknownComponentsComponent

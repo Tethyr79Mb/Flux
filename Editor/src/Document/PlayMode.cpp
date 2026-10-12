@@ -49,7 +49,7 @@ namespace FluxEditor {
         }
         // Copie par la sauvegarde : tout ce qui s'enregistre revient à l'identique, identifiants compris
         // (la sélection de l'éditeur survit), composants de types inconnus aussi.
-        m_savedScene = SceneSerializer::SaveToString(engine.GetScene(), engine.GetComponents());
+        m_savedScene = SceneSerializer::SaveToString(engine.GetScene(), engine.GetComponents(), engine.GetPrefabReader());
         m_savedCamera = engine.GetCamera();
         m_playing = true;
         engine.SetGameState(GameState::Running);
@@ -62,7 +62,8 @@ namespace FluxEditor {
         }
         engine.SetGameState(GameState::Stopped);
         m_playing = false;
-        if (auto restored = SceneSerializer::LoadFromString(engine.GetScene(), engine.GetComponents(), m_savedScene);
+        if (auto restored = SceneSerializer::LoadFromString(engine.GetScene(), engine.GetComponents(), m_savedScene,
+                                                              engine.GetPrefabReader());
             !restored) {
             // Ne devrait pas arriver (le texte vient de SaveToString) ; la scène du jeu reste alors en place.
             Platform::ShowError(engine.GetWindow(), "Arrêter le jeu", "Scène d'origine non restaurée : " + restored.error());
