@@ -552,6 +552,7 @@ namespace {
         flight.acceleration = 2000.0f;
         frames(1.0, {.boost = true, .up = up, .air = 1.0f});
         CHECK(std::abs(flight.cruiseSpeed - 2000.0f) < 0.01f);
+        CHECK(flight.throttle > 0.99f); // flammes à fond
         frames(Frame, {.up = up, .air = 1.0f});
         CHECK(std::abs(flight.cruiseSpeed - 1000.0f) < 0.01f);
 
@@ -600,6 +601,7 @@ namespace {
         flight.cruiseSpeed = 1000.0f;
         frames(10.0, {.thrust = -1.0f, .up = up});
         CHECK(flight.cruiseSpeed < 710.0f && flight.velocity.z > -710.0f);
+        CHECK(flight.throttle == 0.0f); // moteurs principaux coupés pour ralentir
 
         // Vers une planète, en voyage, la vitesse d'approche est bornée par la distance qui reste divisée par 3 s : à
         // 60 km, 20 km/s au plus ; à 1 km, la vitesse normale. Le nez droit sur elle.
@@ -615,6 +617,13 @@ namespace {
         CHECK(closing() < 20001.0f && closing() > 19000.0f);
         frames(Frame, {.planetUp = planetUp, .planetDistance = 1000.0f});
         CHECK(closing() < 2001.0f);
+
+        // Sans pilote, les moteurs se coupent (de 1 à 0 en 0,4 s).
+        CHECK(flight.throttle > 0.99f);
+        Seats::Update(scene, NullEntity, 0.2, {}, {});
+        CHECK(std::abs(flight.throttle - 0.5f) < 0.01f);
+        Seats::Update(scene, NullEntity, 0.5, {}, {});
+        CHECK(flight.throttle == 0.0f);
         return true;
     }
 

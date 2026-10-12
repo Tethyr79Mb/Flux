@@ -69,6 +69,7 @@ namespace Flux::Seats {
         constexpr float RetroFactor = 3.0f;          // poussée pour ralentir, en multiple de ShipComponent::acceleration
         constexpr float SpaceSlowdownTime = 5.0f;    // fonte de la vitesse du voyage après son arrêt (constante de temps, s)
         constexpr float AirSlowdownTime = 1.5f;
+        constexpr float ThrottleRate = 2.5f;         // poussée des moteurs (flammes) : de coupés à fond en 0,4 s
 
         void Pilot(ShipComponent& ship, const Math::Quaternionf& rotation, double deltaSeconds, const SeatInput& input) {
             const float delta = static_cast<float>(deltaSeconds);
@@ -167,6 +168,20 @@ namespace Flux::Seats {
             // Ralentir (S, frein) pousse plus fort qu'accélérer : les rétrofusées arrêtent le vaisseau en un tiers du
             // temps qu'il a mis à prendre sa vitesse.
             const bool slowing = std::abs(wanted.z) < std::abs(ship.velocity.z) && wanted.z * ship.velocity.z >= 0.0f;
+            // Moteurs principaux (flammes des réacteurs) : à fond en boost et en mode voyage, forts pour prendre de la
+            // vitesse vers l'avant, et en croisière d'autant plus que la vitesse est grande (on s'attend à voir
+            // brûler un vaisseau qui file, même sans frottement à vaincre dans l'espace). Coupés pour ralentir, en
+            // marche arrière et posé.
+            float throttle = 0.0f;
+            if (boosting || ship.travelLevel > 0.0f) {
+                throttle = 1.0f;
+            } else if (!ship.grounded && !input.brake && !slowing && ship.cruiseSpeed > 0.0f) {
+                throttle = 0.5f * std::clamp(-ship.velocity.z / std::max(maxSpeed, 0.001f), 0.0f, 1.0f);
+                if (wanted.z < ship.velocity.z - 0.5f) {
+                    throttle += 0.4f;
+                }
+            }
+            approach(ship.throttle, throttle, ThrottleRate * delta);
             approach(ship.velocity.z, wanted.z, step * (slowing ? RetroFactor : 1.0f) + std::abs(wanted.z - ship.velocity.z) * grip);
 
             // Le mode voyage porte la vitesse au-delà de ce que tiennent les propulseurs : quand son régime retombe
@@ -192,69 +207,84 @@ namespace Flux::Seats {
                 }
             }
         }
-    }
 
-    void Update(Scene& scene, Entity player, double deltaSeconds, const SeatInput& input, const DurationsFunction& durations) {
-        if (player == NullEntity || !scene.IsValid(player)) {
-            return;
-        }
-        auto* character = scene.TryGet<CharacterComponent>(player);
-        if (!character) {
-            return;
-        }
-        // Siège détruit ou devenu autre chose : debout sur place.
-        if (character->seat != NullEntity && (!scene.IsValid(character->seat) || !scene.TryGet<SeatComponent>(character->seat))) {
-            character->seat = NullEntity;
-            character->seatState = SeatState::Standing;
-        }
-        character->seatTime += static_cast<float>(deltaSeconds);
-        const auto enter = [&](SeatState state) {
-            character->seatState = state;
-            character->seatTime = 0.0f;
-            // Aux commandes : le vaisseau garde la vitesse qu'il avait vers l'avant.
-            if (state == SeatState::Seated && scene.Get<SeatComponent>(character->seat).pilot) {
-                if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
-                    ShipComponent& component = scene.Get<ShipComponent>(ship);
-                    component.cruiseSpeed = -component.velocity.z;
-                }
+        // Le joueur s'assoit, pilote, se relève. Rend le vaisseau qu'il a piloté pendant cette image (sinon NullEntity).
+        Entity UpdatePlayer(Scene& scene, Entity player, double deltaSeconds, const SeatInput& input, const DurationsFunction& durations) {
+            if (player == NullEntity || !scene.IsValid(player)) {
+                return NullEntity;
             }
-        };
-
-        switch (character->seatState) {
-            case SeatState::Standing:
-                if (input.interact) {
-                    if (const Entity seat = FindSeat(scene, player); seat != NullEntity) {
-                        Board(scene, player, seat);
-                        character->seat = seat;
-                        enter(durations && durations(player).sitDown > 0.0f ? SeatState::SittingDown : SeatState::Seated);
+            auto* character = scene.TryGet<CharacterComponent>(player);
+            if (!character) {
+                return NullEntity;
+            }
+            // Siège détruit ou devenu autre chose : debout sur place.
+            if (character->seat != NullEntity && (!scene.IsValid(character->seat) || !scene.TryGet<SeatComponent>(character->seat))) {
+                character->seat = NullEntity;
+                character->seatState = SeatState::Standing;
+            }
+            character->seatTime += static_cast<float>(deltaSeconds);
+            const auto enter = [&](SeatState state) {
+                character->seatState = state;
+                character->seatTime = 0.0f;
+                // Aux commandes : le vaisseau garde la vitesse qu'il avait vers l'avant.
+                if (state == SeatState::Seated && scene.Get<SeatComponent>(character->seat).pilot) {
+                    if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
+                        ShipComponent& component = scene.Get<ShipComponent>(ship);
+                        component.cruiseSpeed = -component.velocity.z;
                     }
                 }
-                break;
-            case SeatState::SittingDown:
-                if (character->seatTime >= (durations ? durations(player).sitDown : 0.0f)) {
-                    enter(SeatState::Seated);
-                }
-                break;
-            case SeatState::Seated:
-                if (input.interact) {
-                    if (durations && durations(player).standUp > 0.0f) {
-                        enter(SeatState::StandingUp);
-                    } else {
+            };
+
+            Entity piloted = NullEntity;
+            switch (character->seatState) {
+                case SeatState::Standing:
+                    if (input.interact) {
+                        if (const Entity seat = FindSeat(scene, player); seat != NullEntity) {
+                            Board(scene, player, seat);
+                            character->seat = seat;
+                            enter(durations && durations(player).sitDown > 0.0f ? SeatState::SittingDown : SeatState::Seated);
+                        }
+                    }
+                    break;
+                case SeatState::SittingDown:
+                    if (character->seatTime >= (durations ? durations(player).sitDown : 0.0f)) {
+                        enter(SeatState::Seated);
+                    }
+                    break;
+                case SeatState::Seated:
+                    if (input.interact) {
+                        if (durations && durations(player).standUp > 0.0f) {
+                            enter(SeatState::StandingUp);
+                        } else {
+                            character->seat = NullEntity;
+                            enter(SeatState::Standing);
+                        }
+                    } else if (scene.Get<SeatComponent>(character->seat).pilot) {
+                        if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
+                            Pilot(scene.Get<ShipComponent>(ship), scene.GetWorldRotation(ship), deltaSeconds, input);
+                            piloted = ship;
+                        }
+                    }
+                    break;
+                case SeatState::StandingUp:
+                    if (character->seatTime >= (durations ? durations(player).standUp : 0.0f)) {
                         character->seat = NullEntity;
                         enter(SeatState::Standing);
                     }
-                } else if (scene.Get<SeatComponent>(character->seat).pilot) {
-                    if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
-                        Pilot(scene.Get<ShipComponent>(ship), scene.GetWorldRotation(ship), deltaSeconds, input);
-                    }
-                }
-                break;
-            case SeatState::StandingUp:
-                if (character->seatTime >= (durations ? durations(player).standUp : 0.0f)) {
-                    character->seat = NullEntity;
-                    enter(SeatState::Standing);
-                }
-                break;
+                    break;
+            }
+            return piloted;
+        }
+    }
+
+    void Update(Scene& scene, Entity player, double deltaSeconds, const SeatInput& input, const DurationsFunction& durations) {
+        const Entity piloted = UpdatePlayer(scene, player, deltaSeconds, input, durations);
+        // Moteurs des vaisseaux que personne ne pilote : ils se coupent (flammes au ralenti).
+        const float step = ThrottleRate * static_cast<float>(std::max(deltaSeconds, 0.0));
+        for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
+            if (entity != piloted) {
+                ship.throttle = std::max(ship.throttle - step, 0.0f);
+            }
         }
     }
 

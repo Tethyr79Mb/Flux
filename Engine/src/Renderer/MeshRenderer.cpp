@@ -345,6 +345,7 @@ namespace Flux {
         m_jointMatrices.clear();
         m_lights.clear();
         m_interiors.clear();
+        m_thrusters.clear();
         m_planetData.clear();
         // Textures du sol : lues (sur un autre fil) seulement quand la scène a une planète.
         const bool planets = std::ranges::any_of(m_relativeTransforms, [&scene](const RelativeTransform& transform) {
@@ -359,6 +360,9 @@ namespace Flux {
             }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
+            }
+            if (const auto* thruster = scene.TryGet<ThrusterComponent>(transform.entity)) {
+                AddThruster(scene, camera, aspect, transform, *thruster);
             }
             if (const auto* interior = scene.TryGet<InteriorComponent>(transform.entity)) {
                 // Distance de la caméra (l'origine) à la boîte : 0 dedans.
@@ -568,6 +572,34 @@ namespace Flux {
             data.spot = {1.0f / std::max(inner - outer, 1.0e-4f), 0.0f, 0.0f, 0.0f};
         }
         m_lights.push_back({data, Math::Length(position)});
+    }
+
+    // Réacteur : sa flamme (ThrusterRenderer) et la lueur qu'elle jette, une lumière ponctuelle au premier quart de
+    // la flamme, d'autant plus forte et plus loin que la poussée est grande. Sur un vaisseau, la poussée de ses
+    // moteurs ; sans vaisseau, toujours à fond.
+    void MeshRenderer::AddThruster(const Scene& scene, const Camera& camera, float aspect, const RelativeTransform& transform,
+                                   const ThrusterComponent& thruster) {
+        float throttle = 1.0f;
+        if (const Entity ship = scene.GetShip(transform.entity); ship != NullEntity) {
+            throttle = std::clamp(scene.Get<ShipComponent>(ship).throttle, 0.0f, 1.0f);
+        }
+        const float idle = std::clamp(thruster.idle, 0.0f, 1.0f);
+        const float shown = idle + (1.0f - idle) * throttle;
+        if (shown <= 0.0f) {
+            return;
+        }
+        m_thrusters.push_back({transform, &thruster, shown});
+        if (thruster.light <= 0.0f) {
+            return;
+        }
+        const Math::Vector3f box = ThrusterRenderer::GetBox(thruster, shown);
+        RelativeTransform glow = transform;
+        glow.position += Math::Vector3d(transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 0.25f * box.z * transform.scale.z}));
+        const LightComponent light{.type = LightType::Point,
+                                   .color = thruster.color,
+                                   .intensity = thruster.light * shown,
+                                   .range = 2.0f * std::max(box.x, box.y) + 2.0f * box.z};
+        AddLight(camera, aspect, glow, light);
     }
 
     bool MeshRenderer::IsTransparent(const MeshDraw& draw, const GpuMaterial& material) {

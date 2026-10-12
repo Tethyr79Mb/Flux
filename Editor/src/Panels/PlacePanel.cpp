@@ -114,6 +114,12 @@ namespace FluxEditor {
             sound.followShipSpeed = true;
             sound.minDistance = 6.0f;
             sound.maxDistance = 150.0f;
+            // Flamme de la tuyère (rectangle bleu au bout du bloc moteur, sa face arrière à z 16,12) ; suit la poussée.
+            const Entity thruster = scene.CreateEntity("Réacteur", ship);
+            scene.Get<TransformComponent>(thruster).position = {0.0, 1.695, 16.13};
+            ThrusterComponent& flame = scene.Add<ThrusterComponent>(thruster);
+            flame.width = 2.3f;
+            flame.height = 0.75f;
         }
 
         struct ItemInfo

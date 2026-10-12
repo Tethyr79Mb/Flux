@@ -17,6 +17,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur ; scène détaillée : objets, sol, ciel, océan, transparents).
 - ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
+- ✅ Flammes des réacteurs (composant « Réacteur ») : volume de gaz calculé au pixel, longueur et éclat selon la
+  poussée du vaisseau, lumière autour.
 
 ### Planètes
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU.
@@ -58,6 +60,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 
 ### Rendu
 - ⬜ HDR + bloom (lueurs, soleil, réacteurs).
+- ⬜ Particules sur le GPU : armes, explosions, étincelles, fumée (et poussière sous les réacteurs au sol).
 - ⬜ Anticrénelage (MSAA ou TAA).
 - ⬜ Ombres des lumières intérieures.
 - ⬜ Instancing (champs d'astéroïdes, végétation).

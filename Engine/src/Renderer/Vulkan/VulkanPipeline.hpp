@@ -32,6 +32,8 @@ namespace Flux::Vk {
         VkCullModeFlags cullMode = VK_CULL_MODE_NONE;
         // Mélange alpha classique (couleur non prémultipliée), pour l'UI et le texte.
         bool alphaBlend = false;
+        // Couleur ajoutée à celle de derrière (flammes) ; l'alpha de la cible ne change pas.
+        bool additiveBlend = false;
         // Décalage de profondeur (cartes d'ombres) ; 0 et 0 : aucun.
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;

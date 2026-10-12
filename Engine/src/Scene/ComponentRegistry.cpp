@@ -64,6 +64,14 @@ namespace Flux {
             .Field("range", "Portée (m)", &LightComponent::range, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
             .Field("angle", "Ouverture du spot (°)", &LightComponent::angle, {.speed = 0.5, .min = 1.0, .max = 179.0, .decimals = 1})
             .Field("softness", "Bord du spot adouci", &LightComponent::softness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
+        registry.Register<ThrusterComponent>("thruster", "Réacteur")
+            .Field("color", "Couleur", &ThrusterComponent::color, {.alpha = false})
+            .Field("width", "Largeur de la tuyère (m)", &ThrusterComponent::width, {.speed = 0.01, .min = 0.01, .max = 1.0e3, .decimals = 2})
+            .Field("height", "Hauteur de la tuyère (m)", &ThrusterComponent::height, {.speed = 0.01, .min = 0.01, .max = 1.0e3, .decimals = 2})
+            .Field("length", "Longueur à fond (m)", &ThrusterComponent::length, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
+            .Field("intensity", "Éclat", &ThrusterComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("idle", "Poussée au ralenti", &ThrusterComponent::idle, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("light", "Lumière à fond", &ThrusterComponent::light, {.speed = 0.05, .min = 0.0, .max = 1.0e4, .decimals = 2});
         registry.Register<SkyComponent>("sky", "Ciel")
             .Asset("image", "Panorama (vide : généré)", &SkyComponent::image, AssetType::Image)
             .Field("brightness", "Luminosité", &SkyComponent::brightness, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
