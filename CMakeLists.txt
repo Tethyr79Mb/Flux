@@ -6,9 +6,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Toutes les DLL à côté des exe : Windows ne les trouve pas ailleurs.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# Toutes les DLL à côté des exe : Windows ne les trouve pas ailleurs. Avec les préréglages de Visual Studio, ce dossier
+# est Flux/bin/<préréglage> : le jeu prêt à lancer, à part des fichiers intermédiaires de out/.
+set(FLUX_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin CACHE PATH "Dossier des exe, DLL, shaders et assets")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${FLUX_OUTPUT_DIRECTORY})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${FLUX_OUTPUT_DIRECTORY})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Symboles cachés par défaut partout : seul ce qui porte FLUX_API est exporté.
