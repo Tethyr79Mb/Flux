@@ -140,7 +140,7 @@ namespace Flux {
                 ui.LabelText("  dont sol", FormatCost(stats.Get(GpuGroundCost)));
                 ui.LabelText("  dont ciel", FormatCost(stats.Get(GpuSkyCost)));
                 ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
-                ui.LabelText("  dont transparents", FormatCost(stats.Get(GpuTransparentCost)));
+                ui.LabelText("  dont transparents, flammes", FormatCost(stats.Get(GpuTransparentCost)));
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));

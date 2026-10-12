@@ -178,6 +178,7 @@ namespace Flux::RHI {
     enum class BlendMode : std::uint8_t {
         Opaque,
         Alpha, // mélange classique, couleur non prémultipliée (interface, texte)
+        Additive, // couleur ajoutée à ce qui est derrière (lumière : flammes, lueurs), dans n'importe quel ordre
     };
 
     class BindGroupLayout;

@@ -744,6 +744,12 @@ namespace FluxEditor {
             }
         }
         const Math::LinearColor selectionColor = Math::LinearColor::FromSrgb8(255, 165, 40);
+        if (const auto* thruster = scene.TryGet<ThrusterComponent>(selected)) {
+            // Place de la flamme à pleine poussée : sortie de la tuyère à l'origine, vers le +z.
+            const Math::Box3f flame{{-0.5f * thruster->width, -0.5f * thruster->height, 0.0f},
+                                    {0.5f * thruster->width, 0.5f * thruster->height, thruster->length}};
+            DrawBoxEdges(list, projection, *selectedTransform, flame, Math::LinearColor::FromSrgb8(120, 200, 255));
+        }
         if (const std::optional<Math::Box3f> box = engine.GetMeshBounds(selected)) {
             DrawBoxEdges(list, projection, *selectedTransform, *box, selectionColor);
         } else if (scene.TryGet<ShipComponent>(selected)) {

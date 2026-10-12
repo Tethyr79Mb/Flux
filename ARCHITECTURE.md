@@ -58,6 +58,7 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU), é
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
+├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
 ├─ ModelCache      modèles glTF chargés une fois (GpuModel), matériaux
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
@@ -70,7 +71,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    des opaques de près à loin et des transparents de loin à près.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32.
-4. Scène : opaques, ciel, transparents. PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs,
+4. Scène : opaques, ciel, transparents, flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs,
    atmosphère et océans dans `Mesh.slang`. Tonemapping ACES en sortie du fragment (pas de HDR intermédiaire).
 5. Interface (overlay) par-dessus.
 
