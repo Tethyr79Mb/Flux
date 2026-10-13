@@ -402,6 +402,31 @@ namespace FluxEditor {
         }
     }
 
+    void InterfaceEditor::DrawToolBarItems(UI::Context& ui, Engine& engine) {
+        OpenInterface* open = GetActive();
+        if (!open) {
+            return;
+        }
+        if (ui.MenuBarButton("##enregistrer l'interface", false, UI::Icon::Save)) {
+            CommitHistory(false);
+            Save(engine, *open);
+        }
+        ui.SetItemTooltip("Enregistrer l'interface (Ctrl+S)");
+        ui.ToolBarSeparator();
+        ui.BeginDisabled(open->undo.empty() && !open->changed);
+        if (ui.MenuBarButton("##annuler l'interface", false, UI::Icon::Undo)) {
+            Undo(false);
+        }
+        ui.SetItemTooltip("Annuler (Ctrl+Z)");
+        ui.EndDisabled();
+        ui.BeginDisabled(open->redo.empty());
+        if (ui.MenuBarButton("##rétablir l'interface", false, UI::Icon::Redo)) {
+            Undo(true);
+        }
+        ui.SetItemTooltip("Rétablir (Ctrl+Y)");
+        ui.EndDisabled();
+    }
+
     void InterfaceEditor::DrawFileMenuItems(UI::Context& ui, Engine& engine) {
         OpenInterface* open = GetActive();
         if (!open) {

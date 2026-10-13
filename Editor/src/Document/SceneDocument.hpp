@@ -22,6 +22,8 @@ namespace FluxEditor {
         // Éléments du menu « Fichier » (ouvert par l'appelant, qui y ajoute les siens) : scènes, puis Quitter.
         void DrawSceneMenuItems(Flux::UI::Context& ui, Flux::Engine& engine);
         void DrawQuitMenuItem(Flux::UI::Context& ui, Flux::Engine& engine);
+        // Boutons de la barre d'outils : nouvelle scène, ouvrir, enregistrer.
+        void DrawToolBarItems(Flux::UI::Context& ui, Flux::Engine& engine);
         // Titre de la fenêtre : nom de la scène, étoile si modifiée, projet.
         void UpdateTitle(Flux::Engine& engine);
         // Pendant le jeu : ni ouverture, ni enregistrement (la scène est une copie jetable).

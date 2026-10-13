@@ -46,6 +46,47 @@ namespace Flux::UI {
             return {color.r * factor, color.g * factor, color.b * factor, color.a};
         }
 
+        // Arc de cercle (angles en radians, sens trigonométrique à l'écran : y vers le haut) en traits ; retourne son
+        // dernier point.
+        Vector2f Arc(const Pen& pen, Vector2f center, float radius, float from, float to, LinearColor color, float width) {
+            constexpr int Segments = 16;
+            Vector2f previous{center.x + radius * std::cos(from), center.y - radius * std::sin(from)};
+            for (int i = 1; i <= Segments; ++i) {
+                const float angle = from + (to - from) * static_cast<float>(i) / Segments;
+                const Vector2f next{center.x + radius * std::cos(angle), center.y - radius * std::sin(angle)};
+                pen.Line(previous.x, previous.y, next.x, next.y, color, width);
+                previous = next;
+            }
+            return previous;
+        }
+
+        // Pointe de flèche en `tip`, dirigée selon `direction` (unitaire, repère du carré unité).
+        void ArrowHead(const Pen& pen, Vector2f tip, Vector2f direction, float length, LinearColor color) {
+            const Vector2f side{-direction.y, direction.x};
+            const Vector2f base{tip.x - direction.x * length, tip.y - direction.y * length};
+            pen.Triangle(tip, {base.x + side.x * length * 0.6f, base.y + side.y * length * 0.6f},
+                         {base.x - side.x * length * 0.6f, base.y - side.y * length * 0.6f}, color);
+        }
+
+        // Flèche courbe d'annuler (vers la gauche) ou de refaire (son miroir).
+        void DrawUndo(const Pen& pen, bool redo) {
+            const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+            const float pi = std::numbers::pi_v<float>;
+            const auto flip = [&](Vector2f p) { return Vector2f{redo ? 1.0f - p.x : p.x, p.y}; };
+            // Du bas à droite, demi-cercle par le haut, puis la pointe vers le bas à gauche.
+            const Vector2f center{0.52f, 0.56f};
+            const float radius = 0.3f;
+            Vector2f previous = flip({center.x + radius, center.y + 0.22f});
+            constexpr int Segments = 14;
+            for (int i = 0; i <= Segments; ++i) {
+                const float angle = pi * static_cast<float>(i) / Segments;
+                const Vector2f next = flip({center.x + radius * std::cos(angle), center.y - radius * std::sin(angle)});
+                pen.Line(previous.x, previous.y, next.x, next.y, color, 0.12f);
+                previous = next;
+            }
+            ArrowHead(pen, flip({center.x - radius, center.y + 0.26f}), {0.0f, 1.0f}, 0.24f, color);
+        }
+
         // Cube isométrique : dessus clair, gauche moyenne, droite sombre.
         void DrawCube(const Pen& pen, LinearColor color) {
             const Vector2f top{0.5f, 0.08f}, left{0.1f, 0.3f}, right{0.9f, 0.3f}, center{0.5f, 0.52f};
@@ -296,6 +337,65 @@ namespace Flux::UI {
                 pen.Quad({0.66f, 0.46f}, {0.94f, 0.3f}, {0.94f, 0.78f}, {0.66f, 0.62f}, Shade(body, 0.8f));
                 pen.Disc(0.22f, 0.2f, 0.12f, Shade(body, 0.9f));
                 pen.Disc(0.48f, 0.2f, 0.12f, Shade(body, 0.9f));
+                break;
+            }
+            case Icon::Save: {
+                const LinearColor body = LinearColor::FromSrgb8(84, 132, 214);
+                pen.Rect(0.1f, 0.1f, 0.9f, 0.9f, body);
+                pen.Rect(0.28f, 0.1f, 0.7f, 0.36f, LinearColor::FromSrgb8(214, 220, 232)); // volet
+                pen.Rect(0.56f, 0.15f, 0.64f, 0.31f, body);
+                pen.Rect(0.22f, 0.52f, 0.78f, 0.9f, LinearColor::FromSrgb8(236, 238, 242)); // étiquette
+                break;
+            }
+            case Icon::Undo:
+                DrawUndo(pen, false);
+                break;
+            case Icon::Redo:
+                DrawUndo(pen, true);
+                break;
+            case Icon::Move: {
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                pen.Line(0.5f, 0.2f, 0.5f, 0.8f, color, 0.09f);
+                pen.Line(0.2f, 0.5f, 0.8f, 0.5f, color, 0.09f);
+                ArrowHead(pen, {0.5f, 0.04f}, {0.0f, -1.0f}, 0.22f, color);
+                ArrowHead(pen, {0.5f, 0.96f}, {0.0f, 1.0f}, 0.22f, color);
+                ArrowHead(pen, {0.04f, 0.5f}, {-1.0f, 0.0f}, 0.22f, color);
+                ArrowHead(pen, {0.96f, 0.5f}, {1.0f, 0.0f}, 0.22f, color);
+                break;
+            }
+            case Icon::Rotate: {
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                const float pi = std::numbers::pi_v<float>;
+                // Cercle ouvert en haut à droite, la pointe au bout de l'arc.
+                const Vector2f end = Arc(pen, {0.5f, 0.52f}, 0.34f, 0.35f * pi, 1.95f * pi, color, 0.1f);
+                ArrowHead(pen, {end.x + 0.04f, end.y - 0.12f}, {0.35f, -0.94f}, 0.26f, color);
+                break;
+            }
+            case Icon::Scale: {
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                pen.Line(0.1f, 0.1f, 0.9f, 0.1f, color, 0.08f);
+                pen.Line(0.9f, 0.1f, 0.9f, 0.9f, color, 0.08f);
+                pen.Line(0.9f, 0.9f, 0.1f, 0.9f, color, 0.08f);
+                pen.Line(0.1f, 0.9f, 0.1f, 0.1f, color, 0.08f);
+                pen.Rect(0.1f, 0.54f, 0.46f, 0.9f, color);
+                pen.Line(0.46f, 0.54f, 0.68f, 0.32f, color, 0.08f);
+                ArrowHead(pen, {0.76f, 0.24f}, {0.7071f, -0.7071f}, 0.24f, color);
+                break;
+            }
+            case Icon::Settings: {
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                const float pi = std::numbers::pi_v<float>;
+                pen.Disc(0.5f, 0.5f, 0.3f, color);
+                for (int i = 0; i < 8; ++i) {
+                    const float angle = pi * 0.25f * static_cast<float>(i);
+                    const Vector2f axis{std::cos(angle), std::sin(angle)};
+                    const Vector2f side{-axis.y * 0.08f, axis.x * 0.08f};
+                    const Vector2f inner{0.5f + axis.x * 0.26f, 0.5f + axis.y * 0.26f};
+                    const Vector2f outer{0.5f + axis.x * 0.44f, 0.5f + axis.y * 0.44f};
+                    pen.Quad({inner.x - side.x, inner.y - side.y}, {outer.x - side.x, outer.y - side.y},
+                             {outer.x + side.x, outer.y + side.y}, {inner.x + side.x, inner.y + side.y}, color);
+                }
+                pen.Disc(0.5f, 0.5f, 0.12f, LinearColor::FromSrgb8(40, 42, 46));
                 break;
             }
             case Icon::Inspector: {

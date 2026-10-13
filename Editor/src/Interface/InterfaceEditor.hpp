@@ -43,6 +43,8 @@ namespace FluxEditor {
         void DrawEditMenuItems(Flux::UI::Context& ui);
         // Élément « Enregistrer l'interface » du menu « Fichier ».
         void DrawFileMenuItems(Flux::UI::Context& ui, Flux::Engine& engine);
+        // Boutons de la barre d'outils pour l'interface affichée : enregistrer, annuler, rétablir.
+        void DrawToolBarItems(Flux::UI::Context& ui, Flux::Engine& engine);
         // Fermeture de l'éditeur : propose d'enregistrer chaque interface modifiée ; false si l'utilisateur annule.
         bool ConfirmClose(Flux::Engine& engine);
 

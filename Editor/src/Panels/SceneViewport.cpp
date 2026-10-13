@@ -42,17 +42,19 @@ namespace FluxEditor {
         constexpr float LightIconSize = 24.0f;   // ampoule qui montre une lumière (invisible sinon), cliquable
         constexpr int CircleSegments = 48;       // cercles de la portée d'une lumière
 
-        // Boutons de mode, en haut à gauche de la vue.
+        // Boutons de mode en pictogrammes, en haut à gauche de la vue ; le nom du survolé s'affiche à côté.
         struct ToolbarButton
         {
             SceneViewport::GizmoMode mode;
+            UI::Icon icon;
             const char* label;
         };
-        constexpr ToolbarButton ToolbarButtons[3] = {{SceneViewport::GizmoMode::Move, "Déplacer (W)"},
-                                                     {SceneViewport::GizmoMode::Rotate, "Tourner (E)"},
-                                                     {SceneViewport::GizmoMode::Scale, "Échelle (R)"}};
+        constexpr ToolbarButton ToolbarButtons[3] = {{SceneViewport::GizmoMode::Move, UI::Icon::Move, "Déplacer (W)"},
+                                                     {SceneViewport::GizmoMode::Rotate, UI::Icon::Rotate, "Tourner (E)"},
+                                                     {SceneViewport::GizmoMode::Scale, UI::Icon::Scale, "Échelle (R)"}};
         constexpr float ToolbarTextSize = 14.0f;
-        constexpr Vector2f ToolbarPadding{8.0f, 4.0f};
+        constexpr float ToolbarButtonSize = 30.0f;
+        constexpr float ToolbarIconSize = 18.0f;
         constexpr Vector2f ToolbarMargin{8.0f, 8.0f};
 
         float& Component(Math::Vector3f& v, int axis) {
@@ -369,25 +371,18 @@ namespace FluxEditor {
 
     namespace {
         // Rectangle du bouton index de la barre de modes.
-        UI::Rect ToolbarRect(const UI::DrawList& list, const UI::Rect& view, int index) {
-            Vector2f min = view.min + ToolbarMargin;
-            for (int i = 0;; ++i) {
-                const Vector2f size = list.MeasureText(ToolbarButtons[i].label, ToolbarTextSize) + ToolbarPadding * 2.0f;
-                if (i == index) {
-                    return {min, min + size};
-                }
-                min.x += size.x + 2.0f;
-            }
+        UI::Rect ToolbarRect(const UI::Rect& view, int index) {
+            const Vector2f min = view.min + ToolbarMargin + Vector2f{static_cast<float>(index) * (ToolbarButtonSize + 2.0f), 0.0f};
+            return {min, min + Vector2f{ToolbarButtonSize, ToolbarButtonSize}};
         }
     }
 
     bool SceneViewport::UpdateToolbar(Engine& engine, const UI::Rect& view, bool mouseInView) {
         const Input& input = engine.GetWindow().GetInput();
         const Vector2f mouse = input.GetMousePosition();
-        const UI::DrawList& list = engine.GetRenderer().GetOverlay();
         m_hoveredButton = -1;
         for (int i = 0; mouseInView && i < 3; ++i) {
-            const UI::Rect rect = ToolbarRect(list, view, i);
+            const UI::Rect rect = ToolbarRect(view, i);
             if (mouse.x >= rect.min.x && mouse.x < rect.max.x && mouse.y >= rect.min.y && mouse.y < rect.max.y) {
                 m_hoveredButton = i;
             }
@@ -404,21 +399,30 @@ namespace FluxEditor {
         const UI::Style& style = engine.GetUi().GetStyle();
         list.SetClipRect(view.min, view.max);
         // Les trois boutons dans une barre arrondie, posée sur la vue ; le mode en cours en couleur de sélection.
-        const UI::Rect first = ToolbarRect(list, view, 0);
-        const UI::Rect last = ToolbarRect(list, view, 2);
+        const UI::Rect first = ToolbarRect(view, 0);
+        const UI::Rect last = ToolbarRect(view, 2);
         const Vector2f inset{3.0f, 3.0f};
         Math::LinearColor back = style.panelBackground;
         back.a = 0.85f;
         list.AddShadow(first.min - inset, last.max + inset, style.shadow, style.panelRounding, 8.0f);
         list.AddRoundedRect(first.min - inset, last.max + inset, back, style.panelRounding);
         for (int i = 0; i < 3; ++i) {
-            const UI::Rect rect = ToolbarRect(list, view, i);
+            const UI::Rect rect = ToolbarRect(view, i);
             const bool current = ToolbarButtons[i].mode == m_mode;
             if (current || i == m_hoveredButton) {
                 list.AddRoundedRect(rect.min, rect.max, current ? style.selection : style.buttonHovered, style.frameRounding);
             }
-            list.AddText(rect.min + ToolbarPadding, ToolbarButtons[i].label, ToolbarTextSize,
-                         current || i == m_hoveredButton ? style.text : style.textDisabled);
+            const float iconInset = std::round(0.5f * (ToolbarButtonSize - ToolbarIconSize));
+            UI::DrawIcon(list, ToolbarButtons[i].icon, rect.min + Vector2f{iconInset, iconInset}, ToolbarIconSize);
+        }
+        if (m_hoveredButton >= 0) {
+            // Nom et raccourci du bouton survolé, à droite de la barre.
+            const char* label = ToolbarButtons[m_hoveredButton].label;
+            const Vector2f padding{8.0f, 4.0f};
+            const Vector2f size = list.MeasureText(label, ToolbarTextSize) + padding * 2.0f;
+            const Vector2f min{last.max.x + inset.x + 6.0f, std::round(0.5f * (first.min.y + first.max.y - size.y))};
+            list.AddRoundedRect(min, min + size, back, style.frameRounding);
+            list.AddText(min + padding, label, ToolbarTextSize, style.text);
         }
         list.ResetClipRect();
     }

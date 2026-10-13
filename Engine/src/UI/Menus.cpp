@@ -62,6 +62,7 @@ namespace Flux::UI {
         ui.clipMax = {width, height};
         ui.RestorePanelClip();
         ui.barTop = 0.0f;
+        ui.barItemHeight = height;
         ui.menuBarNextX = ui.contentMin.x;
         ui.menuBarDrawn = true;
         ui.menuBarHeight = height; // dès cette frame pour les panneaux décrits après la barre
@@ -88,12 +89,64 @@ namespace Flux::UI {
         ui.clipMax = {width, top + height};
         ui.RestorePanelClip();
         ui.barTop = top;
+        ui.barItemHeight = height;
         ui.menuBarNextX = ui.contentMin.x;
         ui.statusBarDrawn = true;
         ui.statusBarHeight = height; // dès cette frame pour les panneaux décrits après la barre
         bar.chrome.AddRect({0.0f, top}, {width, top + height}, ui.style.windowBackground);
         bar.chrome.AddRect({0.0f, top}, {width, top + 1.0f}, ui.style.separator);
         return true;
+    }
+
+    bool Context::BeginToolBar() {
+        Impl& ui = *m_impl;
+        if (ui.panel) {
+            return false; // hors de tout panneau
+        }
+        const float top = ui.menuBarDrawn ? ui.FrameHeight() : 0.0f;
+        const float height = ui.ToolBarHeight();
+        const float width = ui.screenSize.x;
+        Impl::Panel& bar = ui.BeginOverlay(Hash(RootId, "#barre d'outils"));
+        bar.position = {0.0f, top};
+        bar.width = width;
+        bar.height = height;
+        ui.contentMin = {ui.style.panelPadding * 0.5f, top};
+        ui.contentMaxX = width;
+        ui.cursorY = top;
+        ui.clipMin = {0.0f, top};
+        ui.clipMax = {width, top + height};
+        ui.RestorePanelClip();
+        // Les boutons laissent une marge au-dessus et en dessous : la barre se lit comme un bandeau, pas une rangée
+        // de champs.
+        constexpr float Margin = 4.0f;
+        ui.barTop = top + Margin;
+        ui.barItemHeight = height - 2.0f * Margin;
+        ui.menuBarNextX = ui.contentMin.x;
+        ui.toolBarDrawn = true;
+        ui.menuBarHeight = top + height; // dès cette frame pour les panneaux décrits après la barre
+        LinearColor background = ui.style.panelBackground;
+        background.a = 1.0f;
+        bar.chrome.AddRect({0.0f, top}, {width, top + height}, background);
+        bar.chrome.AddRect({0.0f, top + height - 1.0f}, {width, top + height}, ui.style.separator);
+        return true;
+    }
+
+    void Context::EndToolBar() {
+        EndMainMenuBar();
+    }
+
+    void Context::ToolBarSeparator() {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
+            return;
+        }
+        const float x = std::round(ui.menuBarNextX + ui.style.itemSpacing);
+        ui.panel->content.AddRect({x, ui.barTop + 3.0f}, {x + 1.0f, ui.barTop + ui.barItemHeight - 3.0f}, ui.style.separator);
+        ui.menuBarNextX = x + 1.0f + 2.0f * ui.style.itemSpacing;
+    }
+
+    float Context::GetBarItemHeight() const {
+        return m_impl->barItemHeight;
     }
 
     void Context::EndStatusBar() {
@@ -262,24 +315,33 @@ namespace Flux::UI {
         }
         const Style& style = ui.style;
         const std::string_view visible = VisibleLabel(label);
-        const float iconSize = icon != Icon::None ? std::round(style.fontSize * 0.9f) : 0.0f;
+        // Barre d'outils (plus haute) : des pictogrammes plus grands, dans des boutons presque carrés.
+        const bool tall = ui.barItemHeight > ui.FrameHeight() + 0.5f;
+        const float iconSize = icon == Icon::None ? 0.0f : std::round(style.fontSize * (tall ? 1.15f : 0.9f));
         const float textWidth = visible.empty() ? 0.0f : ui.MeasureText(visible).x;
         const float gap = iconSize > 0.0f && textWidth > 0.0f ? style.framePadding.x * 0.75f : 0.0f;
-        const Vector2f size{iconSize + gap + textWidth + 2.0f * style.framePadding.x, ui.FrameHeight()};
+        const float padding = tall && textWidth == 0.0f ? std::round(0.5f * (ui.barItemHeight - iconSize)) : style.framePadding.x;
+        const Vector2f size{iconSize + gap + textWidth + 2.0f * padding, ui.barItemHeight};
         const Vector2f min{ui.menuBarNextX, ui.barTop};
         const Vector2f max = min + size;
-        ui.menuBarNextX = max.x + style.itemSpacing;
+        ui.menuBarNextX = max.x + (tall ? 2.0f : style.itemSpacing);
         const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
         const bool pressed = interaction.held && interaction.hovered;
+        const Vector2f inset{0.0f, tall ? 0.0f : 2.0f};
         if (highlighted || pressed || interaction.hovered) {
-            ui.FrameRect(min + Vector2f{0.0f, 2.0f}, max - Vector2f{0.0f, 2.0f},
-                         pressed ? style.buttonActive : highlighted ? style.button : style.frameHovered);
+            ui.FrameRect(min + inset, max - inset, pressed ? style.buttonActive : highlighted ? style.button : style.frameHovered);
         }
         if (iconSize > 0.0f) {
-            DrawIcon(ui.panel->content, icon, {min.x + style.framePadding.x, std::round(0.5f * (min.y + max.y - iconSize))},
-                     iconSize);
+            DrawIcon(ui.panel->content, icon, {min.x + padding, std::round(0.5f * (min.y + max.y - iconSize))}, iconSize);
+            if (ui.disabledDepth > 0) {
+                // Inerte (rien à annuler...) : le pictogramme garde ses couleurs, un voile du fond l'éteint.
+                LinearColor veil = style.panelBackground;
+                veil.a = 0.6f;
+                ui.panel->content.AddRect({min.x + padding, min.y}, {min.x + padding + iconSize, max.y}, veil);
+            }
         }
-        ui.panel->content.AddText(min + style.framePadding + Vector2f{iconSize + gap, 0.0f}, visible, style.fontSize, style.text);
+        const float textY = min.y + std::round(0.5f * (ui.barItemHeight - ui.FrameHeight())) + style.framePadding.y;
+        ui.panel->content.AddText({min.x + padding + iconSize + gap, textY}, visible, style.fontSize, style.text);
         return interaction.clicked;
     }
 
@@ -293,7 +355,7 @@ namespace Flux::UI {
         const float gap = iconSize > 0.0f && !text.empty() ? style.framePadding.x * 0.75f : 0.0f;
         const float width = iconSize + gap + ui.MeasureText(text).x + 2.0f * style.framePadding.x;
         const Vector2f min{ui.menuBarNextX, ui.barTop};
-        const Vector2f max = min + Vector2f{width, ui.FrameHeight()};
+        const Vector2f max = min + Vector2f{width, ui.barItemHeight};
         ui.menuBarNextX = max.x + style.itemSpacing;
         ui.lastItemMin = min;
         ui.lastItemMax = max;
@@ -304,7 +366,8 @@ namespace Flux::UI {
             DrawIcon(ui.panel->content, icon, {min.x + style.framePadding.x, std::round(0.5f * (min.y + max.y - iconSize))},
                      iconSize);
         }
-        ui.ClippedText(min + style.framePadding + Vector2f{iconSize + gap, 0.0f}, max.x, text,
+        const float textY = min.y + std::round(0.5f * (ui.barItemHeight - ui.FrameHeight())) + style.framePadding.y;
+        ui.ClippedText({min.x + style.framePadding.x + iconSize + gap, textY}, max.x, text,
                        disabled ? style.textDisabled : style.text);
     }
 

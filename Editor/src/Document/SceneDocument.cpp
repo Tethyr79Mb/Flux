@@ -84,6 +84,23 @@ namespace FluxEditor {
         }
     }
 
+    void SceneDocument::DrawToolBarItems(UI::Context& ui, Engine& engine) {
+        ui.BeginDisabled(m_locked);
+        if (ui.MenuBarButton("##nouvelle scène", false, UI::Icon::Scene)) {
+            NewScene(engine);
+        }
+        ui.SetItemTooltip("Nouvelle scène (Ctrl+N)");
+        if (ui.MenuBarButton("##ouvrir", false, UI::Icon::Folder)) {
+            Open(engine);
+        }
+        ui.SetItemTooltip("Ouvrir une scène (Ctrl+O)");
+        if (ui.MenuBarButton("##enregistrer", false, UI::Icon::Save)) {
+            Save(engine);
+        }
+        ui.SetItemTooltip(m_modified ? "Enregistrer la scène (Ctrl+S) : modifiée" : "Enregistrer la scène (Ctrl+S)");
+        ui.EndDisabled();
+    }
+
     void SceneDocument::DrawQuitMenuItem(UI::Context& ui, Engine& engine) {
         if (ui.MenuItem("Quitter", "Alt+F4", !m_locked) && ConfirmClose(engine)) {
             engine.RequestQuit();

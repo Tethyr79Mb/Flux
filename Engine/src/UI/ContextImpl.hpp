@@ -215,6 +215,8 @@ namespace Flux::UI {
         float menuBarHeight = 0.0f;             // à la frame précédente
         bool statusBarDrawn = false;
         float statusBarHeight = 0.0f;           // à la frame précédente
+        bool toolBarDrawn = false;
+        float barItemHeight = 0.0f;             // des éléments de la barre en cours (plus haute : la barre d'outils)
         float barTop = 0.0f;                    // haut de la barre en cours (menus : 0 ; état : bas de l'écran)
         float menuBarNextX = 0.0f;              // position du prochain titre dans la barre
         float menuItemWidth = 0.0f;             // plus large élément du menu ouvert
@@ -363,6 +365,7 @@ namespace Flux::UI {
 
         float LineHeight() const { return font.GetLineHeight() * style.fontSize; }
         float FrameHeight() const { return LineHeight() + 2.0f * style.framePadding.y; }
+        float ToolBarHeight() const { return std::round(FrameHeight() * 1.5f); }
         float RowWidth() const { return contentMaxX - (contentMin.x + indent); }
         float TreeRowHeight() const { return LineHeight() + 6.0f; }
 

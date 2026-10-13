@@ -99,6 +99,30 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    bool Context::Selectable(std::string_view label, Icon icon, bool selected) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        // Lignes serrées, comme une liste.
+        const Vector2f size{ui.RowWidth(), ui.FrameHeight() + 2.0f};
+        const Vector2f min = ui.ItemRect(size, 1.0f);
+        const Vector2f max = min + size;
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+        if (selected || interaction.hovered) {
+            ui.FrameRect(min, max, selected ? style.selection : interaction.held ? style.buttonActive : style.frameHovered);
+        }
+        float x = min.x + style.framePadding.x;
+        if (icon != Icon::None) {
+            const float iconSize = std::round(style.fontSize);
+            DrawIcon(ui.panel->content, icon, {x, std::round(0.5f * (min.y + max.y - iconSize))}, iconSize);
+            x += iconSize + style.framePadding.x;
+        }
+        ui.ClippedText({x, min.y + style.framePadding.y + 1.0f}, max.x - style.framePadding.x, VisibleLabel(label), style.text);
+        return interaction.clicked;
+    }
+
     bool Context::ToggleButton(std::string_view label, Icon icon, bool& value) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

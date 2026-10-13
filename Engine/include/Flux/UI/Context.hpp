@@ -152,6 +152,9 @@ namespace Flux::UI {
         bool Button(std::string_view label);
         // Bouton avec un pictogramme devant le libellé ; fullWidth : toute la largeur de la ligne, libellé centré.
         bool Button(std::string_view label, Icon icon, bool fullWidth = false);
+        // Ligne d'une liste sur toute la largeur (un objet à poser, un élément à choisir) : pictogramme et libellé à
+        // gauche, fond au survol, en couleur de sélection si selected. Vrai au clic ; IsItemActive pour un glisser.
+        bool Selectable(std::string_view label, Icon icon = Icon::None, bool selected = false);
         // Bouton à deux états (un filtre) : enfoncé tant que value est vrai, un clic l'inverse. Vrai au clic.
         bool ToggleButton(std::string_view label, Icon icon, bool& value);
         // Info-bulle du dernier widget décrit : apparaît quand la souris reste un instant dessus.
@@ -249,7 +252,16 @@ namespace Flux::UI {
         void SetMenuBarCursor(float x);
         // Taille d'un texte dans la police de l'interface.
         Math::Vector2f MeasureText(std::string_view text) const;
-        // Hauteur de la barre de menus (0 sans barre) : la place à laisser en haut de l'écran.
+        // Barre d'outils sous la barre de menus (décrite après elle), plus haute : des boutons à pictogramme
+        // (MenuBarButton, avec SetItemTooltip pour leur nom), rangés en groupes par ToolBarSeparator. Hors de tout
+        // panneau.
+        bool BeginToolBar();
+        void EndToolBar();
+        void ToolBarSeparator();
+        // Hauteur des éléments de la barre en cours : un MenuBarButton à pictogramme seul est un carré de ce côté dans
+        // la barre d'outils (pour centrer des boutons ou les aligner à droite).
+        float GetBarItemHeight() const;
+        // Hauteur de la barre de menus et de la barre d'outils (0 sans barre) : la place à laisser en haut de l'écran.
         float GetMenuBarHeight() const;
         // Barre d'état en bas de l'écran, au-dessus des panneaux : même contenu que la barre de menus (MenuBarButton,
         // MenuBarText, SetMenuBarCursor), sans menus. Hors de tout panneau.
