@@ -135,6 +135,13 @@ namespace Flux {
             .Field("atmosphereHeight", "Hauteur de l'atmosphère (m)", &PlanetComponent::atmosphereHeight,
                    {.speed = 10.0, .min = 100.0, .max = 1.0e6, .decimals = 0})
             .Field("skyColor", "Couleur du ciel", &PlanetComponent::skyColor, {.alpha = false});
+        registry.Register<CloudsComponent>("clouds", "Nuages")
+            .Field("altitude", "Altitude (m)", &CloudsComponent::altitude, {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            .Field("coverage", "Couverture", &CloudsComponent::coverage, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("opacity", "Opacité", &CloudsComponent::opacity, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("size", "Taille des formations (m)", &CloudsComponent::size, {.speed = 100.0, .min = 100.0, .max = 1.0e7, .decimals = 0})
+            .Field("speed", "Vitesse (m/s)", &CloudsComponent::speed, {.speed = 0.1, .min = -1000.0, .max = 1000.0, .decimals = 1})
+            .Field("color", "Couleur", &CloudsComponent::color, {.alpha = false});
         registry.Register<InteriorComponent>("interior", "Intérieur")
             .Field("size", "Taille (m)", &InteriorComponent::size, {.speed = 0.01, .min = 0.0, .max = 1.0e4})
             .Field("ambient", "Lumière ambiante", &InteriorComponent::ambient, {.alpha = false})

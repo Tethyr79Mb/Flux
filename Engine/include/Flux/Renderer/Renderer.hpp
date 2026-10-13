@@ -32,11 +32,12 @@ namespace Flux {
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
         double present = 0.0;  // CPU : appel de présentation
         double gpuShadows = -1.0;   // GPU : carte d'ombres
-        double gpuScene = -1.0;     // GPU : maillages de la scène, somme des cinq suivants
+        double gpuScene = -1.0;     // GPU : maillages de la scène, somme des six suivants
         double gpuObjects = -1.0;   // GPU : entités opaques
         double gpuGround = -1.0;    // GPU : sol des planètes
         double gpuSky = -1.0;       // GPU : fond du ciel
         double gpuOcean = -1.0;     // GPU : océans
+        double gpuClouds = -1.0;    // GPU : nuages des planètes
         double gpuTransparent = -1.0; // GPU : entités transparentes
         double gpuInterface = -1.0; // GPU : interface (overlay 2D)
         std::uint32_t planetTiles = 0;       // tuiles de planète dessinées

@@ -71,12 +71,15 @@ namespace Flux {
             // x : multiplie la texture cube du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des
             // reflets les plus flous ; w : exposition
             std::array<float, 4> environment;
+            // Rayon d'un pixel (nuages) : avant + droite x clip.x - haut x clip.y (droite et haut à l'échelle du champ).
+            std::array<float, 4> cameraRight;
+            std::array<float, 4> cameraUp;
             std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs
             std::array<InteriorData, MaxInteriors> interiors;
             std::array<PlanetGpu, MaxPlanets> planets;
             AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 432 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
+        static_assert(sizeof(FrameData) == 464 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
                       && ShadowCascadeCount == 4);
 
 
@@ -308,7 +311,26 @@ namespace Flux {
             !result) {
             return result;
         }
-        return createAll(m_ocean, {planetBuffers, oceanAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet", "fragmentOcean"});
+        if (auto result = createAll(m_ocean, {planetBuffers, oceanAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet",
+                                              "fragmentOcean"});
+            !result) {
+            return result;
+        }
+        // Nuages : la profondeur du point touché est écrite par le shader (SV_Depth) et testée contre celle de la
+        // scène, sans être enregistrée : le sol, les montagnes et les vaisseaux devant eux les cachent.
+        RHI::PipelineDesc clouds;
+        clouds.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
+        clouds.vertexEntryPoint = "vertexClouds";
+        clouds.fragmentEntryPoint = "fragmentClouds";
+        clouds.bindGroupLayouts = layouts;
+        clouds.pushConstantsSize = sizeof(DrawParams);
+        clouds.colorFormat = colorFormat;
+        clouds.depthFormat = depthFormat;
+        clouds.depthTest = true;
+        clouds.depthWrite = false;
+        clouds.depthCompare = RHI::CompareOp::GreaterOrEqual;
+        clouds.blend = RHI::BlendMode::Alpha;
+        return create(m_clouds, clouds);
     }
 
     const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const MeshDraw& draw) const {
@@ -347,6 +369,7 @@ namespace Flux {
         m_interiors.clear();
         m_thrusters.clear();
         m_planetData.clear();
+        m_hasClouds = false;
         // Textures du sol : lues (sur un autre fil) seulement quand la scène a une planète.
         const bool planets = std::ranges::any_of(m_relativeTransforms, [&scene](const RelativeTransform& transform) {
             return scene.TryGet<PlanetComponent>(transform.entity) != nullptr;
@@ -356,7 +379,8 @@ namespace Flux {
         m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
-                AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity), view);
+                AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity),
+                          scene.TryGet<CloudsComponent>(transform.entity), view);
             }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
@@ -492,7 +516,7 @@ namespace Flux {
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
     void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
-                                 const ViewCone& view) {
+                                 const CloudsComponent* clouds, const ViewCone& view) {
         m_planetTiles.clear();
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
@@ -531,6 +555,10 @@ namespace Flux {
                 const float intensity = rim->intensity;
                 m_planetData[index].rim = {rim->color.r * intensity, rim->color.g * intensity, rim->color.b * intensity,
                                            std::max(rim->sharpness, 0.5f)};
+            }
+            if (clouds) {
+                AddClouds(m_planetData[index], transform, planet, *clouds);
+                m_hasClouds = m_hasClouds || m_planetData[index].clouds[3] > 0.0f;
             }
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
@@ -686,6 +714,9 @@ namespace Flux {
         // net (rugosité 0) à ce même flou (rugosité 1).
         const float diffuseMip = static_cast<float>(sky.environmentMips > 3 ? sky.environmentMips - 3 : 0);
         frame.environment = {sky.ambient, diffuseMip, diffuseMip, sky.exposure};
+        const float tanY = std::tan(0.5f * camera.verticalFov);
+        frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect));
+        frame.cameraUp = ToArray(camera.GetUp() * tanY);
         // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
         if (m_interiors.size() > MaxInteriors) {
             std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);
@@ -796,6 +827,25 @@ namespace Flux {
             m_tilePasses[pass] = std::span(m_tileBatches).subspan(passStarts[pass], passStarts[pass + 1] - passStarts[pass]);
         }
         return true;
+    }
+
+    void MeshRenderer::AddClouds(PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet,
+                                 const CloudsComponent& clouds) const {
+        const float coverage = std::clamp(clouds.coverage, 0.0f, 1.0f);
+        const float opacity = std::clamp(clouds.opacity, 0.0f, 1.0f);
+        if (coverage <= 0.0f || opacity <= 0.0f) {
+            return;
+        }
+        const double radius = std::max(planet.radius, 1.0f) + std::max(clouds.altitude, 0.0f);
+        // Dérive : l'angle parcouru depuis le lancement, en double (les secondes grandissent sans fin) et ramené à un
+        // tour pour le float. Vers l'est : autour de +y, dans le sens direct vu du pôle nord.
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
+        const double drift = std::fmod(seconds * static_cast<double>(clouds.speed) / radius, 2.0 * std::numbers::pi);
+        data.clouds = {static_cast<float>(transform.position.x), static_cast<float>(transform.position.y),
+                       static_cast<float>(transform.position.z), static_cast<float>(radius)};
+        data.cloudRotation = {transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w};
+        data.cloudShape = {coverage, opacity, 1.0f / std::max(clouds.size, 100.0f), static_cast<float>(drift)};
+        data.cloudColor = {clouds.color.r, clouds.color.g, clouds.color.b, 0.0f};
     }
 
     void MeshRenderer::BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
@@ -927,6 +977,18 @@ namespace Flux {
     void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
         DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
+    }
+
+    void MeshRenderer::DrawClouds(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        if (!m_hasClouds) {
+            return;
+        }
+        BindState state;
+        BindPipeline(commands, state, frameIndex, *m_clouds);
+        commands.SetBindGroup(0, m_models->GetWhiteGroup());
+        const DrawParams params{};
+        commands.PushConstants(&params, sizeof(params));
+        commands.Draw(3, 0);
     }
 
     void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {

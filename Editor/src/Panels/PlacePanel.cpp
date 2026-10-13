@@ -429,6 +429,7 @@ namespace FluxEditor {
                 scene.Add<InteriorComponent>(entity);
             } else if (item == Item::Planet) {
                 scene.Add<PlanetComponent>(entity);
+                scene.Add<CloudsComponent>(entity);
                 if (!scene.GetRegistry().view<const SunComponent>().empty()) {
                     // En orbite autour du Soleil, à la distance de la Terre ; chaque nouvelle planète 40° plus loin.
                     const auto planets = scene.GetRegistry().view<const PlanetComponent, const OrbitComponent>();
