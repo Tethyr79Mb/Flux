@@ -138,6 +138,7 @@ namespace Flux::UI {
             float contentHeight = 0.0f; // hauteur totale du contenu à la dernière frame, défilement compris
             bool collapsed = false;
             bool overlay = false;       // barre de menus ou menu déroulant : au-dessus des panneaux, jamais dans order
+            bool bar = false;           // barre de menus, d'outils ou d'état : dessinée sous les menus ouverts
             float measuredWidth = 0.0f; // menu déroulant : largeur de ses éléments à la dernière frame
             std::string fullTitle;      // titre donné à BeginPanel, ##suffixe compris (pour l'ancrer)
             float floatingWidth = 0.0f; // largeur demandée par BeginPanel : celle reprise en sortant d'une zone

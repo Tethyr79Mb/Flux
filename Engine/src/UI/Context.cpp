@@ -275,6 +275,9 @@ namespace Flux::UI {
         if (ui.dockFrame == ui.frame) {
             output.Append(ui.dockTargets); // cibles de dépôt, par-dessus le panneau glissé
         }
+        // Les barres d'abord, les menus ouverts ensuite : un menu de la barre du haut, décrit avant la barre d'outils,
+        // passe quand même devant elle (et prend le survol avant elle, voir previousOverlays).
+        std::ranges::stable_partition(ui.overlays, [&](WidgetId id) { return ui.panels.at(id)->bar; });
         for (const WidgetId id : ui.overlays) {
             const Impl::Panel& panel = *ui.panels.at(id);
             output.Append(panel.chrome);

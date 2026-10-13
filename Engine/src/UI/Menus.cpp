@@ -52,6 +52,7 @@ namespace Flux::UI {
         const float height = ui.FrameHeight();
         const float width = ui.screenSize.x;
         Impl::Panel& bar = ui.BeginOverlay(Hash(RootId, "#barre de menus"));
+        bar.bar = true;
         bar.position = {0.0f, 0.0f};
         bar.width = width;
         bar.height = height;
@@ -79,6 +80,7 @@ namespace Flux::UI {
         const float width = ui.screenSize.x;
         const float top = ui.screenSize.y - height;
         Impl::Panel& bar = ui.BeginOverlay(Hash(RootId, "#barre d'état"));
+        bar.bar = true;
         bar.position = {0.0f, top};
         bar.width = width;
         bar.height = height;
@@ -107,6 +109,7 @@ namespace Flux::UI {
         const float height = ui.ToolBarHeight();
         const float width = ui.screenSize.x;
         Impl::Panel& bar = ui.BeginOverlay(Hash(RootId, "#barre d'outils"));
+        bar.bar = true;
         bar.position = {0.0f, top};
         bar.width = width;
         bar.height = height;
