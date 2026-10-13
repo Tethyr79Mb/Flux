@@ -104,7 +104,8 @@ namespace {
         CHECK(std::abs(scene.Get<TransformComponent>(character).position.y - 5.0) < 1.0e-3);
         CHECK(std::abs(world.GetOutsideAir(scene, box)) < 1.0e-6f);
 
-        // Air comme sur Terre, chute limitée à 20 m/s : atteinte en quelques secondes, jamais dépassée.
+        // Air comme sur Terre, chute limitée à 20 m/s : atteinte en quelques secondes, jamais dépassée. La caisse,
+        // endormie en apesanteur, se réveille quand la gravité revient.
         settings.gravity = 9.81f;
         settings.air = 1.0f;
         settings.terminalSpeed = 20.0f;
@@ -114,7 +115,7 @@ namespace {
         Run(world, scene, 1.0);
         const double boxSpeed = boxBefore - scene.Get<TransformComponent>(box).position.y;
         const double characterSpeed = characterBefore - scene.Get<TransformComponent>(character).position.y;
-        CHECK(boxSpeed > 19.0 && boxSpeed < 20.1);
+        CHECK(boxSpeed > 18.5 && boxSpeed < 20.1); // un peu moins : Jolt amortit aussi (mLinearDamping)
         CHECK(characterSpeed > 19.0 && characterSpeed < 20.1);
         CHECK(std::abs(world.GetOutsideAir(scene, box) - 1.0f) < 1.0e-6f);
         return true;

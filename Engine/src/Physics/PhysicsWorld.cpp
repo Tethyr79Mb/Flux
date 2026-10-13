@@ -853,6 +853,20 @@ namespace Flux {
             grid.characters.emplace(entity, std::move(character));
         }
 
+        // Jolt ne réveille pas les corps endormis quand la gravité change : une caisse posée en apesanteur y resterait.
+        static void SetGridGravity(Grid& grid, JPH::Vec3Arg gravity) {
+            if (grid.system->GetGravity() == gravity) {
+                return;
+            }
+            grid.system->SetGravity(gravity);
+            JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
+            for (const auto& [entity, id] : grid.bodies) {
+                if (!id.IsInvalid() && bodyInterface.GetMotionType(id) == JPH::EMotionType::Dynamic) {
+                    bodyInterface.ActivateBody(id);
+                }
+            }
+        }
+
         // Vaisseaux apparus ou disparus, repère de chacun pour cette mise à jour.
         void SynchronizeGrids(const Scene& scene) {
             std::erase_if(grids, [&](const std::unique_ptr<Grid>& grid) {
@@ -873,13 +887,13 @@ namespace Flux {
                     grid->frameRotation = transform->rotation;
                     grid->frameScale = transform->scale;
                 }
-                grid->system->SetGravity(JPH::Vec3(0.0f, -ship.gravity, 0.0f)); // le sol du pont
+                SetGridGravity(*grid, JPH::Vec3(0.0f, -ship.gravity, 0.0f)); // le sol du pont
             }
             // Réglages du monde : le premier trouvé. Sans lui, la gravité reste celle donnée par SetGravity.
             const auto worlds = scene.GetRegistry().view<const WorldComponent>();
             if (worlds.begin() != worlds.end()) {
                 const WorldComponent& world = worlds.get<const WorldComponent>(*worlds.begin());
-                grids.front()->system->SetGravity(JPH::Vec3(0.0f, -std::max(world.gravity, 0.0f), 0.0f));
+                SetGridGravity(*grids.front(), JPH::Vec3(0.0f, -std::max(world.gravity, 0.0f), 0.0f));
                 worldAir = std::max(world.air, 0.0f);
                 airDrag = DragFor(world.terminalSpeed);
             } else {
