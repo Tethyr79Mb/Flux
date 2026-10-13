@@ -6,6 +6,7 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Project.hpp>
+#include <Flux/Graphics/Sky.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
@@ -31,6 +32,10 @@ namespace FluxEditor {
         constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
         constexpr double FighterDistance = 32.0; // le chasseur fait 20 m de long et 15 m d'envergure
         constexpr double PlanetDistance = 3.0;   // rayons de la planète, de la caméra à son centre
+        constexpr double SunDistance = 1.496e11; // mètres : de la Terre au Soleil
+        // Soleil du Ciel par défaut (SkyComponent) : celui que remplace un Soleil posé.
+        const float DefaultSunElevation = SkyComponent{}.sunElevation;
+        const float DefaultSunAzimuth = SkyComponent{}.sunAzimuth;
 
         // Maquette de vaisseau en cubes, dans son repère (-z : l'avant, le pont à y = 0) : une cabine de 6 x 3 x 16 m
         // ouverte à l'arrière, avec une console à l'avant. De quoi essayer la marche à bord avant le vrai modèle.
@@ -146,6 +151,7 @@ namespace FluxEditor {
                                            {"Interface...", "Interface"},
                                            {"Son...", "Son"},
                                            {"Planète", "Planète"},
+                                           {"Soleil", "Soleil"},
                                            {"Prefab", "Prefab"}};
             return Infos[item];
         }
@@ -203,6 +209,7 @@ namespace FluxEditor {
             button(Item::Spot);
             ui.SameLine();
             button(Item::Sky);
+            button(Item::Sun);
             button(Item::Interior);
             ui.Separator();
             ui.TextDisabled("Espace");
@@ -290,6 +297,11 @@ namespace FluxEditor {
                 sceneEditor.Select(scene, existing);
                 return;
             }
+        } else if (item == Item::Sun) {
+            for (const auto [existing, sun] : scene.GetRegistry().view<const SunComponent>().each()) {
+                sceneEditor.Select(scene, existing);
+                return;
+            }
         }
         const ItemInfo info = GetInfo(static_cast<int>(item));
         // Un modèle sans fichier ne montrerait rien : le fichier d'abord (copié dans le projet s'il vient d'ailleurs),
@@ -368,6 +380,28 @@ namespace FluxEditor {
         } else if (item == Item::Sky) {
             // Autour de tout, à l'infini : sa position ne compte pas.
             scene.Add<SkyComponent>(entity);
+        } else if (item == Item::Sun) {
+            // À la distance de la Terre au Soleil de la planète de la scène (sinon de la caméra), là où le Ciel mettait
+            // son soleil : l'éclairage ne change pas en le posant. Il se déplace ensuite par son secteur et sa position.
+            scene.Add<SunComponent>(entity);
+            Math::WorldPosition center = engine.GetCamera().position;
+            for (const auto [planet, component] : scene.GetRegistry().view<const PlanetComponent>().each()) {
+                if (scene.GetShip(planet) == NullEntity) {
+                    center = scene.GetWorldPosition(planet);
+                    break;
+                }
+            }
+            Math::Vector3f direction = SunDirection(DefaultSunElevation, DefaultSunAzimuth);
+            for (const auto [sky, component] : scene.GetRegistry().view<const SkyComponent>().each()) {
+                direction = SunDirection(component.sunElevation, component.sunAzimuth);
+                break;
+            }
+            Math::WorldPosition position = center;
+            position += Math::Vector3d(direction) * SunDistance;
+            scene.Get<TransformComponent>(entity).position = position.offset;
+            if (position.sector != Math::Vector3i64{}) {
+                scene.Add<SectorComponent>(entity, position.sector);
+            }
         } else {
             if (item == Item::Cube) {
                 // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.

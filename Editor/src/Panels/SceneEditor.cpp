@@ -79,6 +79,7 @@ namespace FluxEditor {
             {"light", "Lumières", UI::Icon::Light},
             {"sound", "Sons", UI::Icon::Sound},
             {"sky", "Ciel", UI::Icon::Sky},
+            {"sun", "Soleil", UI::Icon::Light},
             {"planet", "Planètes", UI::Icon::Planet},
             {"interior", "Volumes intérieurs", UI::Icon::Collider},
             {"collider", "Collisions", UI::Icon::Collider},

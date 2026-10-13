@@ -130,7 +130,7 @@ namespace Flux {
     };
 
     // Ciel de la scène, autour de tout et à l'infini : un fond, la lumière ambiante et ce que reflètent les surfaces
-    // lisses, plus le soleil (lumière principale et ses ombres). Généré (nébuleuse, bande galactique, étoiles) ou
+    // lisses, plus le soleil (lumière principale et ses ombres) s'il n'y a pas de SunComponent. Généré (nébuleuse, bande galactique, étoiles) ou
     // tiré d'une image panoramique. Un seul ciel compte ; sans ciel, pas de fond (couleur unie), une lumière ambiante
     // grise et le soleil par défaut.
     struct SkyComponent
@@ -154,6 +154,17 @@ namespace Flux {
         Math::LinearColor sunColor{1.0f, 0.96f, 0.9f};
         float sunIntensity = 1.45f; // éclairement d'une surface face au soleil (1 : le blanc d'une surface blanche)
         float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
+    };
+
+    // Soleil : l'étoile de la scène, un objet posé dans l'espace (loin : la Terre est à 150 millions de km du sien). Sa
+    // lumière, ses ombres et son disque dans le ciel viennent de sa position : sur une planète, il est haut à midi d'un
+    // côté, se lève ou se couche sur le bord, et il fait nuit de l'autre côté. Il remplace le soleil du Ciel (hauteur
+    // et direction) ; un seul compte. Ni lui ni la planète ne bougent pendant le jeu : pas de cycle jour / nuit.
+    struct SunComponent
+    {
+        Math::LinearColor color{1.0f, 0.96f, 0.9f};
+        float intensity = 1.45f; // éclairement d'une surface face à lui (1 : le blanc d'une surface blanche)
+        float size = 0.53f;      // diamètre apparent du disque, en degrés (le Soleil vu de la Terre)
     };
 
     // Planète en cube-sphère centrée sur l'entité (qui la fait tourner ; son échelle est ignorée) : une sphère de
