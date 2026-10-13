@@ -6,12 +6,12 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Project.hpp>
-#include <Flux/Graphics/Sky.hpp>
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
+#include <Flux/Scene/Orbits.hpp>
 #include <Flux/Scene/Picking.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/Scene/ScreenUi.hpp>
@@ -35,10 +35,7 @@ namespace FluxEditor {
         constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
         constexpr double FighterDistance = 32.0; // le chasseur fait 20 m de long et 15 m d'envergure
         constexpr double PlanetDistance = 3.0;   // rayons de la planète, de la caméra à son centre
-        constexpr double SunDistance = 1.496e11; // mètres : de la Terre au Soleil
-        // Soleil du Ciel par défaut (SkyComponent) : celui que remplace un Soleil posé.
-        const float DefaultSunElevation = SkyComponent{}.sunElevation;
-        const float DefaultSunAzimuth = SkyComponent{}.sunAzimuth;
+        constexpr double SunDistance = 1.496e11; // mètres : de la Terre au Soleil, orbite d'une nouvelle planète
 
         // Maquette de vaisseau en cubes, dans son repère (-z : l'avant, le pont à y = 0) : une cabine de 6 x 3 x 16 m
         // ouverte à l'arrière, avec une console à l'avant. De quoi essayer la marche à bord avant le vrai modèle.
@@ -405,27 +402,8 @@ namespace FluxEditor {
             // Autour de tout, à l'infini : sa position ne compte pas.
             scene.Add<SkyComponent>(entity);
         } else if (item == Item::Sun) {
-            // À la distance de la Terre au Soleil de la planète de la scène (sinon de la caméra), là où le Ciel mettait
-            // son soleil : l'éclairage ne change pas en le posant. Il se déplace ensuite par son secteur et sa position.
+            // Fixe, au centre de la scène : le système se construit autour de lui (planètes en orbite, Orbits::Update).
             scene.Add<SunComponent>(entity);
-            Math::WorldPosition center = engine.GetCamera().position;
-            for (const auto [planet, component] : scene.GetRegistry().view<const PlanetComponent>().each()) {
-                if (scene.GetShip(planet) == NullEntity) {
-                    center = scene.GetWorldPosition(planet);
-                    break;
-                }
-            }
-            Math::Vector3f direction = SunDirection(DefaultSunElevation, DefaultSunAzimuth);
-            for (const auto [sky, component] : scene.GetRegistry().view<const SkyComponent>().each()) {
-                direction = SunDirection(component.sunElevation, component.sunAzimuth);
-                break;
-            }
-            Math::WorldPosition position = center;
-            position += Math::Vector3d(direction) * SunDistance;
-            scene.Get<TransformComponent>(entity).position = position.offset;
-            if (position.sector != Math::Vector3i64{}) {
-                scene.Add<SectorComponent>(entity, position.sector);
-            }
         } else {
             if (item == Item::Cube) {
                 // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.
@@ -452,9 +430,14 @@ namespace FluxEditor {
             } else if (item == Item::Planet) {
                 scene.Add<PlanetComponent>(entity);
                 if (!scene.GetRegistry().view<const SunComponent>().empty()) {
-                    // En orbite autour du Soleil, prise là où elle est posée : son inspecteur la déplace autour de lui.
-                    scene.Add<OrbitComponent>(entity);
+                    // En orbite autour du Soleil, à la distance de la Terre ; chaque nouvelle planète 40° plus loin.
+                    const auto planets = scene.GetRegistry().view<const PlanetComponent, const OrbitComponent>();
+                    const auto count = std::ranges::distance(planets.begin(), planets.end());
+                    scene.Add<OrbitComponent>(entity, OrbitComponent{.distance = SunDistance / 1.0e9,
+                                                                     .angle = std::fmod(40.0 * static_cast<double>(count), 360.0)});
                 }
+                // Liseré bleuté au bord du disque, vu de l'espace : la planète se détache du noir, même côté nuit.
+                scene.Add<RimLightComponent>(entity, RimLightComponent{.intensity = 0.8f, .sharpness = 6.0f});
             } else if (item == Item::Light || item == Item::Spot) {
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 if (item == Item::Spot) {
@@ -480,6 +463,13 @@ namespace FluxEditor {
             scene.Get<TransformComponent>(entity).position = position.offset;
             if (position.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, position.sector);
+            }
+            if (item == Item::Planet && scene.TryGet<OrbitComponent>(entity)) {
+                // Sur son orbite, loin de la caméra : la caméra va la voir.
+                Orbits::Update(scene);
+                Math::WorldPosition seen = scene.GetWorldPosition(entity);
+                seen += Math::Vector3d(camera.GetForward()) * -distance;
+                engine.GetCamera().position = seen;
             }
         }
 

@@ -24,7 +24,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU.
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
-- 🔨 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; côté nuit, la lumière du ciel de l'espace baisse (planète à atmosphère). Composant « Orbite » : distance, angle et inclinaison autour du Soleil, pour ranger un système comme dans EVE Online.
+- 🔨 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; côté nuit, la lumière du ciel de l'espace baisse (planète à atmosphère). Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour (« Lumière de contour ») aussi sur les planètes, liseré selon la sphère.
 - 🔨 Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
 - ✅ Teinte de chaque texture du sol.

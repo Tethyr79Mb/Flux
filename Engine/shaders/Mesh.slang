@@ -36,6 +36,7 @@ struct PlanetData
     float4 soil;
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
     float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m)
+    float4 rim;               // rgb : couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
 };
 
 static const uint MaxPlanets = 4;
@@ -249,6 +250,16 @@ float3 AirTo(float3 worldPosition, out float3 transmittance);
 // l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
 // des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte dans
 // les 2 % du relief au-dessus de la mer. Ces échelles ne s'effacent pas au loin : vues de l'espace, les zones restent.
+// Lumière de contour d'une planète (RimLightComponent) : selon sa sphère, pas son relief, pour un liseré net au bord
+// du disque sans faire briller chaque montagne de profil. Ajoutée après l'air : elle reste visible à travers lui.
+float3 PlanetRim(PlanetData planet, float3 worldUp, float3 toEye)
+{
+    if (planet.rim.w <= 0.0) {
+        return float3(0.0);
+    }
+    return planet.rim.rgb * pow(1.0 - saturate(dot(worldUp, toEye)), planet.rim.w);
+}
+
 float2 PlanetClimate(PlanetData planet, float3 local)
 {
     const float radius = planet.shape.x;
@@ -841,7 +852,9 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     surface.normal = normal;
     float inside;
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
-    return float4(ToneMap(lit * input.airTransmittance + input.airScattered), 1.0);
+    const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
+    const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
+    return float4(ToneMap(lit * input.airTransmittance + input.airScattered + rim), 1.0);
 }
 
 // Sol sans images : couleurs unies de la planète, avec un grain de bruit (couleur et petit relief) de près. Renvoie la
@@ -978,7 +991,8 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
 
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
-    return float4(ToneMap(lit * input.airTransmittance + input.airScattered), alpha);
+    const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
+    return float4(ToneMap(lit * input.airTransmittance + input.airScattered + rim), alpha);
 }
 
 [shader("fragment")]
