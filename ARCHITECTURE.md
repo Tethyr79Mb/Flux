@@ -118,6 +118,9 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 - Vaisseaux à la racine : déplacés par `MoveShips` (lancers de leur enveloppe convexe contre le décor), avec
   stabilisateur d'atterrissage ; pas de corps dynamique.
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
+- Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
+  d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la
+  vitesse de chute limite) et porte les vaisseaux ; dans l'atmosphère d'une planète, sa densité remplace celle du monde.
 - Sol des planètes (`PlanetGround`) : tuiles de maillage au niveau de détail le plus fin, calculées sur le CPU en
   `double` autour des objets (sondes), sur un fil à part.
 

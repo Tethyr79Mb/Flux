@@ -54,7 +54,7 @@ namespace Flux {
         // Dossier des assets de son contexte (voir PhysicsContext::SetAssetsDirectory).
         void SetAssetsDirectory(const std::filesystem::path& directory);
 
-        // « Bas » de ce monde : (0, -9.81, 0) par défaut. Gravité artificielle d'une station : le sol du pont.
+        // « Bas » de ce monde : (0, -9.81, 0) par défaut, remplacé par celui d'un WorldComponent dans la scène.
         void SetGravity(const Math::Vector3f& gravity);
         Math::Vector3f GetGravity() const;
 
@@ -64,6 +64,9 @@ namespace Flux {
         // Gravité du dehors là où se trouve une entité (m/s², repère du monde) : celle des planètes ou du monde,
         // sans celle des vaisseaux. Nulle dans l'espace (aide au pilotage, ShipComponent::levelAssist).
         Math::Vector3f GetOutsideGravity(const Scene& scene, Entity entity) const;
+        // Densité de l'air du dehors là où se trouve une entité (1 : au sol sur Terre) : celle de l'atmosphère des
+        // planètes ou du monde (WorldComponent::air). Le vaisseau y est porté (ShipComponent::airGrip).
+        float GetOutsideAir(const Scene& scene, Entity entity) const;
         // Personnage dirigé par le joueur (le premier trouvé), NullEntity s'il n'y en a pas : la caméra le suit.
         Entity GetPlayer() const;
         // Distance libre (0 à `distance`) pour une sphère de rayon `radius` partant de `from` dans `direction`

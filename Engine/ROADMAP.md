@@ -37,6 +37,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, assiette qui suit la courbure de la planète (aide à plat), mode voyage (ralenti à l'approche d'une planète, vitesse rendue à sa sortie), sièges, atterrissage stabilisé.
 - ✅ Animation squelettique (fondus, repos/marche/course/chute/s'asseoir).
 - ✅ Son 3D (miniaudio), actions d'entrée réassignables (Touches.json).
+- 🔨 Composant « Monde » (comme les World Settings d'Unreal) : gravité et air hors planètes, freinage par l'air des objets et des personnages (aussi dans l'atmosphère des planètes).
 
 ### Interface (FluxUI)
 - ✅ Mode immédiat partagé éditeur/jeu, texte MSDF, formes SDF, thèmes.
@@ -83,6 +84,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
+- ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.
 
 ## Plus tard
 - ⬜ Launcher (mises à jour, paramètres, bouton Jouer).

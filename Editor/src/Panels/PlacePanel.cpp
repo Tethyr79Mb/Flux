@@ -146,6 +146,7 @@ namespace FluxEditor {
                                            {"Interface...", "Interface"},
                                            {"Son...", "Son"},
                                            {"Planète", "Planète"},
+                                           {"Monde (gravité, air)", "Monde"},
                                            {"Prefab", "Prefab"}};
             return Infos[item];
         }
@@ -226,6 +227,7 @@ namespace FluxEditor {
             button(Item::Ship);
             ui.SameLine();
             button(Item::Fighter);
+            button(Item::World);
             if (const Project* project = engine.GetProject(); project && !prefabs.empty()) {
                 ui.Separator();
                 ui.TextDisabled("Prefabs");
@@ -287,6 +289,11 @@ namespace FluxEditor {
         if (item == Item::Sky) {
             // Un seul ciel compte : s'il y en a déjà un, c'est lui qu'on sélectionne (à régler dans l'inspecteur).
             for (const auto [existing, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+                sceneEditor.Select(scene, existing);
+                return;
+            }
+        } else if (item == Item::World) {
+            for (const auto [existing, world] : scene.GetRegistry().view<const WorldComponent>().each()) {
                 sceneEditor.Select(scene, existing);
                 return;
             }
@@ -368,6 +375,8 @@ namespace FluxEditor {
         } else if (item == Item::Sky) {
             // Autour de tout, à l'infini : sa position ne compte pas.
             scene.Add<SkyComponent>(entity);
+        } else if (item == Item::World) {
+            scene.Add<WorldComponent>(entity); // sa position ne compte pas
         } else {
             if (item == Item::Cube) {
                 // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.

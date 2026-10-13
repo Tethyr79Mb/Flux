@@ -225,6 +225,8 @@ namespace Flux {
             state.position = position;
             state.rotation = rotation;
             state.gravity = planet.gravity;
+            state.atmosphere = planet.atmosphere;
+            state.atmosphereHeight = planet.atmosphereHeight;
             state.seen = true;
         }
         std::erase_if(m_planets, [&](auto& entry) {
@@ -344,6 +346,27 @@ namespace Flux {
             return fallback;
         }
         return Math::Vector3f(pull * weight) + fallback * static_cast<float>(1.0 - weight);
+    }
+
+    float PlanetGround::GetAir(const Math::Vector3d& position, float fallback) const {
+        double weight = 0.0;
+        double air = 0.0;
+        for (const auto& [entity, state] : m_planets) {
+            const double distance = Math::Length(position - state.position);
+            const double radius = state.radius;
+            if (distance >= GravityReach * radius) {
+                continue;
+            }
+            const double t = std::clamp((GravityReach - distance / radius) / (GravityReach - GravityBlend), 0.0, 1.0);
+            weight = std::max(weight, t * t * (3.0 - 2.0 * t));
+            // Comme le ciel (Atmosphere.cpp) : densité divisée par e tous les huitièmes de sa hauteur, nulle au-dessus.
+            const double height = std::max(static_cast<double>(state.atmosphereHeight), 100.0);
+            const double above = std::max(distance - radius, 0.0);
+            if (state.atmosphere > 0.0f && above < height) {
+                air = std::max(air, state.atmosphere * std::exp(-8.0 * above / height));
+            }
+        }
+        return static_cast<float>(air + fallback * (1.0 - weight));
     }
 
     int PlanetGround::GetTileCount() const {

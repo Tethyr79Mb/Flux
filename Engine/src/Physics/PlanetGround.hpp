@@ -58,6 +58,9 @@ namespace Flux {
         // Gravité en ce point (relatif à l'ancre) : vers le centre de la planète la plus attirante, fondue dans
         // `fallback` (celle du monde) entre 1,5 et 2 rayons ; `fallback` loin de toute planète.
         Math::Vector3f GetGravity(const Math::Vector3d& position, const Math::Vector3f& fallback) const;
+        // Densité de l'air en ce point (1 : au sol sur Terre) : celle de l'atmosphère de la planète la plus proche (nulle
+        // au-dessus), fondue dans `fallback` (celle du monde) comme la gravité ; `fallback` loin de toute planète.
+        float GetAir(const Math::Vector3d& position, float fallback) const;
         bool HasPlanets() const { return !m_planets.empty(); }
         // Tuiles de sol dans le monde (pour les tests).
         int GetTileCount() const;
@@ -76,6 +79,8 @@ namespace Flux {
             float relief = -1.0f;
             std::int32_t seed = 0;
             float gravity = 0.0f;
+            float atmosphere = 0.0f;
+            float atmosphereHeight = 0.0f;
             Math::Vector3d position; // centre, relatif à l'ancre
             Math::Quaternionf rotation;
             std::unordered_map<std::uint64_t, Tile> tiles;
