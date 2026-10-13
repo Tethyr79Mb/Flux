@@ -15,11 +15,9 @@ namespace FluxEditor {
     using namespace Flux;
 
     void PlayMode::DrawToolbar(UI::Context& ui, Engine& engine) {
-        // Au milieu de la barre de menus : Jouer (ou Arrêter pendant le jeu) et Pause, en pictogrammes seuls ; leur nom
+        // Au milieu de la barre d'outils : Jouer (ou Arrêter pendant le jeu) et Pause, en pictogrammes seuls ; leur nom
         // et leur raccourci sont dans l'info-bulle.
-        const UI::Style& style = ui.GetStyle();
-        const float button = std::round(style.fontSize * 0.9f) + 2.0f * style.framePadding.x;
-        const float width = 2.0f * button + style.itemSpacing;
+        const float width = 2.0f * ui.GetBarItemHeight() + 2.0f; // deux boutons carrés, 2 pixels entre eux
         ui.SetMenuBarCursor(std::round((static_cast<float>(engine.GetWindow().GetSize().x) - width) * 0.5f));
         if (ui.MenuBarButton("##jouer", m_playing, m_playing ? UI::Icon::Stop : UI::Icon::Play)) {
             m_playing ? Stop(engine) : Start(engine);

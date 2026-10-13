@@ -10,26 +10,30 @@ namespace Flux::UI {
         static_assert(std::size(ThemeNames) == static_cast<std::size_t>(Theme::Count));
     }
 
+    // Gris neutres et accent bleu, comme les éditeurs professionnels (Unreal, Unity) : des champs plus sombres que les
+    // panneaux, des panneaux plus clairs que le fond qui les sépare, des coins à peine arrondis.
     Style Style::Dark() {
         Style style;
-        style.text = C::FromSrgb8(226, 229, 235);
-        style.textDisabled = C::FromSrgb8(134, 140, 152);
-        style.windowBackground = C::FromSrgb8(17, 18, 22);
-        style.panelBackground = C::FromSrgb8(33, 35, 41, 0.96f);
-        style.panelBorder = C::FromSrgb8(0, 0, 0, 0.55f);
-        style.titleBackground = C::FromSrgb8(24, 26, 31);
-        style.titleBackgroundActive = C::FromSrgb8(38, 58, 92);
-        style.frame = C::FromSrgb8(22, 24, 29);
-        style.frameHovered = C::FromSrgb8(52, 56, 66);
-        style.frameActive = C::FromSrgb8(64, 69, 80);
-        style.button = C::FromSrgb8(52, 56, 66);
-        style.buttonHovered = C::FromSrgb8(64, 70, 82);
-        style.buttonActive = C::FromSrgb8(44, 48, 57);
-        style.header = C::FromSrgb8(44, 47, 55);
-        style.headerHovered = C::FromSrgb8(54, 58, 68);
-        style.checkMark = C::FromSrgb8(88, 156, 255);
-        style.selection = C::FromSrgb8(52, 108, 210, 0.85f);
-        style.separator = C::FromSrgb8(52, 55, 63);
+        style.panelRounding = 3.0f;
+        style.frameRounding = 3.0f;
+        style.text = C::FromSrgb8(218, 218, 220);
+        style.textDisabled = C::FromSrgb8(132, 133, 137);
+        style.windowBackground = C::FromSrgb8(16, 16, 17);
+        style.panelBackground = C::FromSrgb8(36, 36, 38, 0.98f);
+        style.panelBorder = C::FromSrgb8(0, 0, 0, 0.6f);
+        style.titleBackground = C::FromSrgb8(26, 26, 28);
+        style.titleBackgroundActive = C::FromSrgb8(30, 64, 112);
+        style.frame = C::FromSrgb8(20, 20, 21);
+        style.frameHovered = C::FromSrgb8(56, 57, 60);
+        style.frameActive = C::FromSrgb8(66, 67, 71);
+        style.button = C::FromSrgb8(56, 57, 60);
+        style.buttonHovered = C::FromSrgb8(72, 73, 77);
+        style.buttonActive = C::FromSrgb8(44, 45, 48);
+        style.header = C::FromSrgb8(47, 47, 50);
+        style.headerHovered = C::FromSrgb8(58, 58, 62);
+        style.checkMark = C::FromSrgb8(56, 140, 245);
+        style.selection = C::FromSrgb8(22, 92, 186, 0.9f);
+        style.separator = C::FromSrgb8(22, 22, 24);
         style.axisX = C::FromSrgb8(226, 76, 76);
         style.axisY = C::FromSrgb8(110, 196, 76);
         style.axisZ = C::FromSrgb8(76, 136, 236);
@@ -246,8 +250,9 @@ namespace Flux::UI {
             ui.openMenu = 0;
         }
         ui.openMenuSeen = false;
-        ui.menuBarHeight = ui.menuBarDrawn ? ui.FrameHeight() : 0.0f;
+        ui.menuBarHeight = (ui.menuBarDrawn ? ui.FrameHeight() : 0.0f) + (ui.toolBarDrawn ? ui.ToolBarHeight() : 0.0f);
         ui.menuBarDrawn = false;
+        ui.toolBarDrawn = false;
         ui.statusBarHeight = ui.statusBarDrawn ? ui.FrameHeight() : 0.0f;
         ui.statusBarDrawn = false;
         if (!ui.tooltipSeen) {
@@ -270,6 +275,9 @@ namespace Flux::UI {
         if (ui.dockFrame == ui.frame) {
             output.Append(ui.dockTargets); // cibles de dépôt, par-dessus le panneau glissé
         }
+        // Les barres d'abord, les menus ouverts ensuite : un menu de la barre du haut, décrit avant la barre d'outils,
+        // passe quand même devant elle (et prend le survol avant elle, voir previousOverlays).
+        std::ranges::stable_partition(ui.overlays, [&](WidgetId id) { return ui.panels.at(id)->bar; });
         for (const WidgetId id : ui.overlays) {
             const Impl::Panel& panel = *ui.panels.at(id);
             output.Append(panel.chrome);
