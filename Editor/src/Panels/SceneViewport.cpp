@@ -369,6 +369,30 @@ namespace FluxEditor {
         }
     }
 
+    // F : aller voir l'objet sélectionné (mêmes conditions que W, E, R ; pas en mode Jouer, où F fait s'asseoir). Une planète ou un soleil peuvent être à des
+    // millions de km : sans cela, impossible de les rejoindre en vol libre.
+    bool SceneViewport::WantsFocus(Engine& engine) const {
+        const Input& input = engine.GetWindow().GetInput();
+        return engine.GetGameState() == GameState::Stopped && !engine.GetUi().WantsKeyboard() && !input.IsControlDown()
+            && !engine.GetCameraController().IsActive() && input.WasLetterPressed('F');
+    }
+
+    void SceneViewport::FocusOn(Engine& engine, const Scene& scene, Entity entity) {
+        // Recul selon la taille : une planète en entier, un vaisseau en entier, sinon quelques mètres.
+        double distance = 8.0;
+        if (const auto* planet = scene.TryGet<PlanetComponent>(entity)) {
+            distance = 3.0 * static_cast<double>(planet->radius);
+        } else if (scene.TryGet<SunComponent>(entity)) {
+            distance = 1.0e9; // son disque garde la même taille apparente : seulement ne pas être dessus
+        } else if (scene.TryGet<ShipComponent>(entity)) {
+            distance = 32.0;
+        }
+        Camera& camera = engine.GetCamera();
+        Math::WorldPosition position = scene.GetWorldPosition(entity);
+        position += Vector3d(camera.GetForward()) * -distance;
+        camera.position = position;
+    }
+
     namespace {
         // Rectangle du bouton index de la barre de modes.
         UI::Rect ToolbarRect(const UI::Rect& view, int index) {
@@ -595,6 +619,9 @@ namespace FluxEditor {
                               && !engine.GetCameraController().IsActive();
         if (m_drag.axis < 0) {
             HandleShortcuts(engine);
+            if (selected != NullEntity && !selectedIsScreen && WantsFocus(engine)) {
+                FocusOn(engine, scene, selected);
+            }
         }
         const bool toolbarClicked = m_drag.axis < 0 && !m_screenDrag.active && UpdateToolbar(engine, view, mouseInView);
 

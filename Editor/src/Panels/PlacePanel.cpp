@@ -451,6 +451,10 @@ namespace FluxEditor {
                 scene.Add<InteriorComponent>(entity);
             } else if (item == Item::Planet) {
                 scene.Add<PlanetComponent>(entity);
+                if (!scene.GetRegistry().view<const SunComponent>().empty()) {
+                    // En orbite autour du Soleil, prise là où elle est posée : son inspecteur la déplace autour de lui.
+                    scene.Add<OrbitComponent>(entity);
+                }
             } else if (item == Item::Light || item == Item::Spot) {
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 if (item == Item::Spot) {

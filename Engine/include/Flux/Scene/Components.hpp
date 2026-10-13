@@ -168,6 +168,18 @@ namespace Flux {
         float size = 0.53f;      // diamètre apparent du disque, en degrés (le Soleil vu de la Terre)
     };
 
+    // Orbite autour du Soleil de la scène (SunComponent), pour ranger un système autour de son étoile comme dans EVE
+    // Online : l'objet (une planète, en général) est à `distance` millions de km du soleil, à `angle` degrés autour de
+    // lui dans le plan horizontal (0 : vers +x) et `inclination` degrés au-dessus. Rien ne tourne pendant le jeu.
+    // Distance nulle : prise de la position actuelle (Orbits::Update). Un objet à la racine seulement ; ce qui est posé
+    // près d'une planète sans en être l'enfant ne la suit pas quand l'orbite change.
+    struct OrbitComponent
+    {
+        double distance = 0.0;
+        double angle = 0.0;
+        double inclination = 0.0;
+    };
+
     // Planète en cube-sphère centrée sur l'entité (qui la fait tourner ; son échelle est ignorée) : une sphère de
     // `radius` mètres déformée par un relief généré (le même pour une même graine), plus détaillée près de la caméra
     // (Flux/Graphics/Planet.hpp). Son sol est solide (personnages, objets simulés, vaisseaux qui se posent) et elle
