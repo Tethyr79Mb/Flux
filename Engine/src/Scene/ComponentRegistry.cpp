@@ -89,7 +89,8 @@ namespace Flux {
             .Field("sunIntensity", "Soleil : intensité", &SkyComponent::sunIntensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2});
         registry.Register<SunComponent>("sun", "Soleil")
-            .Field("color", "Couleur", &SunComponent::color, {.alpha = false})
+            .Field("color", "Couleur du disque", &SunComponent::color, {.alpha = false})
+            .Field("lightColor", "Couleur de la lumière", &SunComponent::lightColor, {.alpha = false})
             .Field("intensity", "Intensité", &SunComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("size", "Taille (°)", &SunComponent::size, {.speed = 0.01, .min = 0.0, .max = 45.0, .decimals = 2});
         registry.Register<PlanetComponent>("planet", "Planète")

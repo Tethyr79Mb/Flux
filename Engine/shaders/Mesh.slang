@@ -387,16 +387,17 @@ float InteriorAt(float3 worldPosition, out float3 interiorLight)
     return inside;
 }
 
-float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight)
+float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, float skyScale)
 {
     const FrameData f = frame[0];
+    const float sky = f.environment.x * skyScale;
     // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
-    const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * f.environment.x,
+    const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * sky,
                                      interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
     // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
-    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * f.environment.x,
+    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * sky,
                                       interiorLight, inside);
     const float nv = saturate(dot(s.normal, s.toEye));
     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
@@ -485,7 +486,11 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
-    float3 ambient = Ambient(surface, occlusion, inside, interiorLight);
+    float skyScale = 1.0;
+    if (HasAtmosphere(f.atmosphere)) {
+        skyScale = AtmosphereNightSky(f.atmosphere, worldPosition - f.atmosphere.center.xyz, toSun);
+    }
+    float3 ambient = Ambient(surface, occlusion, inside, interiorLight, skyScale);
     if (HasAtmosphere(f.atmosphere)) {
         // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
         const float3 local = worldPosition - f.atmosphere.center.xyz;

@@ -16,7 +16,8 @@ struct SkyData
     float4 up;           // xyz : haut de la caméra x tangente du demi-champ vertical
     float4 forward;      // xyz : avant de la caméra ; w : angle couvert par un pixel (radians)
     float4 toSun;        // xyz : direction du soleil (unitaire) ; w : rayon apparent du disque (radians)
-    float4 sunColor;     // rgb : couleur x intensité ; w : exposition
+    float4 sunColor;     // rgb : couleur de la lumière x intensité ; w : exposition
+    float4 discColor;    // rgb : couleur du disque x intensité
     float4 nebulaColor;  // rgb ; w : densité de la nébuleuse
     float4 nebulaColor2; // rgb ; w : éclat de la bande galactique
     float4 galaxyAxis;   // xyz ; w : quantité d'étoiles
@@ -278,7 +279,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float angle = 2.0 * asin(min(length(direction - toSun) * 0.5, 1.0));
         const float disc = saturate((radius - angle) / pixelAngle + 0.5);
         const float halo = exp(-(angle * angle) / (radius * radius * 9.0)) * 0.5 + exp(-angle * 8.0) * 0.06;
-        sun = s.sunColor.rgb * (disc * 40.0 + halo);
+        sun = s.discColor.rgb * (disc * 40.0 + halo);
     }
     if (HasAtmosphere(s.atmosphere)) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.

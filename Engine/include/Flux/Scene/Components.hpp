@@ -162,7 +162,8 @@ namespace Flux {
     // et direction) ; un seul compte. Ni lui ni la planète ne bougent pendant le jeu : pas de cycle jour / nuit.
     struct SunComponent
     {
-        Math::LinearColor color{1.0f, 0.96f, 0.9f};
+        Math::LinearColor color{1.0f, 0.96f, 0.9f};    // couleur du disque vu dans le ciel
+        Math::LinearColor lightColor{1.0f, 1.0f, 1.0f}; // couleur de la lumière (blanche, comme celle du Soleil)
         float intensity = 1.45f; // éclairement d'une surface face à lui (1 : le blanc d'une surface blanche)
         float size = 0.53f;      // diamètre apparent du disque, en degrés (le Soleil vu de la Terre)
     };
