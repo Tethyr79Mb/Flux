@@ -123,6 +123,53 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    int Context::Breadcrumb(std::string_view id, std::span<const std::string> segments) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return -1;
+        }
+        const Style& style = ui.style;
+        // Chevron dessiné en traits : la police n'a que le Latin-1, sans « › ».
+        const float separatorWidth = std::round(style.fontSize * 0.7f);
+        float width = 0.0f;
+        for (const std::string& segment : segments) {
+            width += ui.MeasureText(segment).x + 2.0f * style.framePadding.x * 0.5f + separatorWidth;
+        }
+        const Vector2f min = ui.ItemRect({std::min(width, ui.RowWidth()), ui.FrameHeight()});
+        const WidgetId base = ui.GetId(id);
+        int clicked = -1;
+        float x = min.x;
+        for (std::size_t i = 0; i < segments.size(); ++i) {
+            const float padding = style.framePadding.x * 0.5f;
+            const Vector2f segmentMin{x, min.y};
+            const Vector2f segmentMax{x + ui.MeasureText(segments[i]).x + 2.0f * padding, min.y + ui.FrameHeight()};
+            const bool last = i + 1 == segments.size();
+            const Impl::Interaction interaction = ui.Behavior(Hash(base, &i, sizeof(i)), segmentMin, segmentMax);
+            if (interaction.hovered && !last) {
+                ui.FrameRect(segmentMin, segmentMax, style.frameHovered);
+            }
+            if (interaction.clicked && !last) {
+                clicked = static_cast<int>(i);
+            }
+            ui.ClippedText({segmentMin.x + padding, min.y + style.framePadding.y}, ui.contentMaxX, segments[i],
+                           last || interaction.hovered ? style.text : style.textDisabled);
+            x = segmentMax.x;
+            if (!last) {
+                const float centerX = x + 0.5f * separatorWidth;
+                const float centerY = min.y + 0.5f * ui.FrameHeight();
+                const float half = std::round(style.fontSize * 0.2f);
+                ui.panel->content.AddLine({centerX - half * 0.5f, centerY - half}, {centerX + half * 0.5f, centerY},
+                                          style.textDisabled, 1.5f);
+                ui.panel->content.AddLine({centerX + half * 0.5f, centerY}, {centerX - half * 0.5f, centerY + half},
+                                          style.textDisabled, 1.5f);
+                x += separatorWidth;
+            }
+        }
+        // Le rectangle du dernier widget couvre tout le chemin (SameLine, info-bulle).
+        ui.lastItemMax.x = std::max(ui.lastItemMax.x, x);
+        return clicked;
+    }
+
     bool Context::ToggleButton(std::string_view label, Icon icon, bool& value) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

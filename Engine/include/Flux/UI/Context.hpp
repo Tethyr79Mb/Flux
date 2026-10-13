@@ -155,6 +155,9 @@ namespace Flux::UI {
         // Ligne d'une liste sur toute la largeur (un objet à poser, un élément à choisir) : pictogramme et libellé à
         // gauche, fond au survol, en couleur de sélection si selected. Vrai au clic ; IsItemActive pour un glisser.
         bool Selectable(std::string_view label, Icon icon = Icon::None, bool selected = false);
+        // Chemin cliquable (fil d'Ariane, comme dans un explorateur) : les segments séparés par des chevrons, le dernier
+        // en clair. Retourne l'index du segment cliqué, ou -1.
+        int Breadcrumb(std::string_view id, std::span<const std::string> segments);
         // Bouton à deux états (un filtre) : enfoncé tant que value est vrai, un clic l'inverse. Vrai au clic.
         bool ToggleButton(std::string_view label, Icon icon, bool& value);
         // Info-bulle du dernier widget décrit : apparaît quand la souris reste un instant dessus.

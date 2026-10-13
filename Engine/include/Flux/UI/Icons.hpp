@@ -55,6 +55,7 @@ namespace Flux::UI {
         Rotate,    // cercle fléché : tourner
         Scale,     // petit carré dans un grand, flèche en diagonale : mettre à l'échelle
         Settings,  // roue dentée
+        Up,        // flèche vers le haut : dossier parent
         // Messages de la console : information, avertissement, erreur.
         Info,      // disque bleu, « i »
         Warning,   // triangle jaune, « ! »

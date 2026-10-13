@@ -68,23 +68,31 @@ namespace Flux::UI {
                          {base.x - side.x * length * 0.6f, base.y - side.y * length * 0.6f}, color);
         }
 
-        // Flèche courbe d'annuler (vers la gauche) ou de refaire (son miroir).
+        // Flèche d'annuler (en haut, vers la gauche, revenant du bas par une boucle à droite) ou de refaire (son
+        // miroir).
         void DrawUndo(const Pen& pen, bool redo) {
             const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
             const float pi = std::numbers::pi_v<float>;
             const auto flip = [&](Vector2f p) { return Vector2f{redo ? 1.0f - p.x : p.x, p.y}; };
-            // Du bas à droite, demi-cercle par le haut, puis la pointe vers le bas à gauche.
-            const Vector2f center{0.52f, 0.56f};
-            const float radius = 0.3f;
-            Vector2f previous = flip({center.x + radius, center.y + 0.22f});
-            constexpr int Segments = 14;
-            for (int i = 0; i <= Segments; ++i) {
-                const float angle = pi * static_cast<float>(i) / Segments;
-                const Vector2f next = flip({center.x + radius * std::cos(angle), center.y - radius * std::sin(angle)});
-                pen.Line(previous.x, previous.y, next.x, next.y, color, 0.12f);
+            constexpr float Width = 0.11f;
+            const auto line = [&](Vector2f a, Vector2f b) {
+                const Vector2f fa = flip(a);
+                const Vector2f fb = flip(b);
+                pen.Line(fa.x, fa.y, fb.x, fb.y, color, Width);
+            };
+            const Vector2f center{0.6f, 0.56f};
+            const float radius = 0.24f;
+            line({0.3f, center.y - radius}, {center.x, center.y - radius});
+            constexpr int Segments = 12;
+            Vector2f previous{center.x, center.y - radius};
+            for (int i = 1; i <= Segments; ++i) {
+                const float angle = 0.5f * pi - pi * static_cast<float>(i) / Segments; // du haut vers le bas, par la droite
+                const Vector2f next{center.x + radius * std::cos(angle), center.y - radius * std::sin(angle)};
+                line(previous, next);
                 previous = next;
             }
-            ArrowHead(pen, flip({center.x - radius, center.y + 0.26f}), {0.0f, 1.0f}, 0.24f, color);
+            line(previous, {0.3f, center.y + radius});
+            ArrowHead(pen, flip({0.08f, center.y - radius}), {redo ? 1.0f : -1.0f, 0.0f}, 0.26f, color);
         }
 
         // Cube isométrique : dessus clair, gauche moyenne, droite sombre.
@@ -380,6 +388,12 @@ namespace Flux::UI {
                 pen.Rect(0.1f, 0.54f, 0.46f, 0.9f, color);
                 pen.Line(0.46f, 0.54f, 0.68f, 0.32f, color, 0.08f);
                 ArrowHead(pen, {0.76f, 0.24f}, {0.7071f, -0.7071f}, 0.24f, color);
+                break;
+            }
+            case Icon::Up: {
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                pen.Line(0.5f, 0.3f, 0.5f, 0.88f, color, 0.12f);
+                ArrowHead(pen, {0.5f, 0.08f}, {0.0f, -1.0f}, 0.34f, color);
                 break;
             }
             case Icon::Settings: {
