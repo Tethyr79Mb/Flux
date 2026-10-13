@@ -9,6 +9,7 @@
 #include <bit>
 #include <cmath>
 #include <numbers>
+#include <optional>
 
 namespace Flux {
     namespace {
@@ -20,6 +21,7 @@ namespace Flux {
             std::array<float, 4> forward;      // w : angle d'un pixel
             std::array<float, 4> toSun;        // w : rayon du disque
             std::array<float, 4> sunColor;     // w : exposition
+            std::array<float, 4> discColor;
             std::array<float, 4> nebulaColor;  // w : densité
             std::array<float, 4> nebulaColor2; // w : bande galactique
             std::array<float, 4> galaxyAxis;   // w : quantité d'étoiles
@@ -28,7 +30,7 @@ namespace Flux {
             std::array<std::uint32_t, 4> options; // x : graine ; y : panorama
             AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(SkyData) == 176 + sizeof(AtmosphereGpu));
+        static_assert(sizeof(SkyData) == 192 + sizeof(AtmosphereGpu));
 
         constexpr std::uint32_t DataSlot = 0;
         constexpr std::uint32_t PanoramaSlot = 1;
@@ -227,17 +229,32 @@ namespace Flux {
         data.right = ToArray(camera.GetRight() * (tanY * aspect));
         data.up = ToArray(camera.GetUp() * tanY);
         data.forward = ToArray(camera.GetForward(), 2.0f * tanY / std::max(viewportHeight, 1.0f));
+        // Soleil posé dans l'espace : sa lumière vient de sa position, vue de la caméra (le premier trouvé).
+        std::optional<Math::Vector3f> sunDirection;
+        const SunComponent* sun = nullptr;
+        for (const auto [entity, candidate] : scene.GetRegistry().view<const SunComponent>().each()) {
+            const Math::Vector3d offset = Math::Delta(camera.position, scene.GetWorldPosition(entity));
+            if (Math::Length(offset) > 1.0e-3) {
+                sun = &candidate;
+                sunDirection = Math::Vector3f(Math::Normalize(offset));
+            }
+            break;
+        }
+        const auto sunLight = [&](const Math::LinearColor& color, float intensity) {
+            return Math::Vector3f{color.r, color.g, color.b} * std::max(intensity, 0.0f);
+        };
+        // Disque du soleil : son rayon apparent en radians.
+        const auto sunRadius = [](float degrees) { return 0.5f * std::clamp(degrees, 0.0f, 45.0f) * RadiansPerDegree; };
         if (!component) {
-            // Pas de fond (luminosité nulle), pas de disque du soleil : seulement l'air d'une planète s'il y en a.
-            lighting.toSun = SunDirection(DefaultSunElevation, DefaultSunAzimuth);
-            lighting.sunColor = DefaultSunColor;
-            data.toSun = ToArray(lighting.toSun, 0.0f);
+            // Pas de fond (luminosité nulle) : seulement l'air d'une planète s'il y en a, et le disque d'un Soleil posé.
+            lighting.toSun = sunDirection.value_or(SunDirection(DefaultSunElevation, DefaultSunAzimuth));
+            lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : DefaultSunColor;
+            data.toSun = ToArray(lighting.toSun, sun ? sunRadius(sun->size) : 0.0f);
             data.sunColor = ToArray(lighting.sunColor, Exposure);
         } else {
             const SkyComponent& sky = *component;
-            lighting.toSun = SunDirection(sky.sunElevation, sky.sunAzimuth);
-            const float intensity = std::max(sky.sunIntensity, 0.0f);
-            lighting.sunColor = Math::Vector3f{sky.sunColor.r, sky.sunColor.g, sky.sunColor.b} * intensity;
+            lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
+            lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : sunLight(sky.sunColor, sky.sunIntensity);
             const float brightness = std::max(sky.brightness, 0.0f);
             lighting.ambient = std::max(sky.ambient, 0.0f) * brightness;
 
@@ -253,7 +270,7 @@ namespace Flux {
             }
 
             const SkyParameters parameters = key.kind == EnvironmentKey::Kind::Generated ? key.parameters : MakeSkyParameters(sky);
-            data.toSun = ToArray(lighting.toSun, 0.5f * std::clamp(sky.sunSize, 0.0f, 45.0f) * RadiansPerDegree);
+            data.toSun = ToArray(lighting.toSun, sunRadius(sun ? sun->size : sky.sunSize));
             data.sunColor = ToArray(lighting.sunColor, Exposure);
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);
@@ -262,6 +279,8 @@ namespace Flux {
             data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
             data.options = {parameters.seed, key.kind == EnvironmentKey::Kind::Panorama && panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
+        // Le disque d'un Soleil posé a sa propre couleur ; sa lumière, la sienne (blanche par défaut).
+        data.discColor = ToArray(sun ? sunLight(sun->color, sun->intensity) : lighting.sunColor, 0.0f);
         lighting.atmosphere = PrepareAtmosphere(scene, camera, lighting.sunColor);
         data.atmosphere = lighting.atmosphere;
         m_visible = component != nullptr || lighting.atmosphere.mie[3] > 0.0f;

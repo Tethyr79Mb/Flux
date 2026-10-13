@@ -1,6 +1,7 @@
 // Tests de la scène : hiérarchie, transformations composées, secteurs.
 #include "Check.hpp"
 
+#include "Flux/Scene/Orbits.hpp"
 #include "Flux/Scene/Scene.hpp"
 
 #include <cmath>
@@ -85,5 +86,19 @@ bool RunSceneTests() {
     CHECK((childOrder == std::vector<Entity>{h}));
     scene.Clear();
     CHECK(scene.GetEntityCount() == 0);
+
+    // Orbites : ajoutée, elle garde la position ; changée, elle place la planète autour du soleil (à travers les secteurs).
+    const Entity sun = scene.CreateEntity("Soleil");
+    scene.Add<SunComponent>(sun);
+    scene.Add<SectorComponent>(sun, Math::Vector3i64{150, 0, 0});
+    const Entity planet = scene.CreateEntity("Planète");
+    scene.Get<TransformComponent>(planet).position = {1000.0, 2000.0, -3000.0};
+    OrbitComponent& orbit = scene.Add<OrbitComponent>(planet);
+    Orbits::Update(scene);
+    CHECK(std::abs(orbit.distance - 150.0) < 1.0e-6 && std::abs(std::abs(orbit.angle) - 180.0) < 1.0e-3);
+    CHECK(Near(Math::Delta({}, scene.GetWorldPosition(planet)), {1000.0, 2000.0, -3000.0}, 1.0e-3));
+    orbit = {.distance = 2.0, .angle = 90.0, .inclination = 0.0};
+    Orbits::Update(scene);
+    CHECK(Near(Math::Delta(scene.GetWorldPosition(sun), scene.GetWorldPosition(planet)), {0.0, 0.0, -2.0e9}, 1.0e-3));
     return true;
 }

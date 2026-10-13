@@ -50,7 +50,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
-4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un.
+4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
+   (`Orbits::Update` : objets placés autour du Soleil, aussi quand le jeu est arrêté).
 5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, version, panneau Moteur.
 6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces et changement de scène en fin d'image.
 
@@ -72,7 +73,8 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU), é
 
 Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
-1. Préparation sur le CPU : ciel et soleil, objets visibles (élimination hors champ), tuiles de planète choisies, tri
+1. Préparation sur le CPU : ciel et soleil (direction de la caméra vers le `SunComponent` s'il y en a un, sinon
+   hauteur et direction réglées dans le Ciel), objets visibles (élimination hors champ), tuiles de planète choisies, tri
    des opaques de près à loin et des transparents de loin à près.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32.

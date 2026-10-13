@@ -36,6 +36,7 @@ struct PlanetData
     float4 soil;
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
     float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m)
+    float4 rim;               // rgb : couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
 };
 
 static const uint MaxPlanets = 4;
@@ -249,6 +250,16 @@ float3 AirTo(float3 worldPosition, out float3 transmittance);
 // l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
 // des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte dans
 // les 2 % du relief au-dessus de la mer. Ces échelles ne s'effacent pas au loin : vues de l'espace, les zones restent.
+// Lumière de contour d'une planète (RimLightComponent) : selon sa sphère, pas son relief, pour un liseré net au bord
+// du disque sans faire briller chaque montagne de profil. Ajoutée après l'air : elle reste visible à travers lui.
+float3 PlanetRim(PlanetData planet, float3 worldUp, float3 toEye)
+{
+    if (planet.rim.w <= 0.0) {
+        return float3(0.0);
+    }
+    return planet.rim.rgb * pow(1.0 - saturate(dot(worldUp, toEye)), planet.rim.w);
+}
+
 float2 PlanetClimate(PlanetData planet, float3 local)
 {
     const float radius = planet.shape.x;
@@ -387,16 +398,17 @@ float InteriorAt(float3 worldPosition, out float3 interiorLight)
     return inside;
 }
 
-float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight)
+float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, float skyScale)
 {
     const FrameData f = frame[0];
+    const float sky = f.environment.x * skyScale;
     // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
-    const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * f.environment.x,
+    const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * sky,
                                      interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
     // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
-    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * f.environment.x,
+    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * sky,
                                       interiorLight, inside);
     const float nv = saturate(dot(s.normal, s.toEye));
     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
@@ -485,7 +497,11 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
-    float3 ambient = Ambient(surface, occlusion, inside, interiorLight);
+    float skyScale = 1.0;
+    if (HasAtmosphere(f.atmosphere)) {
+        skyScale = AtmosphereNightSky(f.atmosphere, worldPosition - f.atmosphere.center.xyz, toSun);
+    }
+    float3 ambient = Ambient(surface, occlusion, inside, interiorLight, skyScale);
     if (HasAtmosphere(f.atmosphere)) {
         // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
         const float3 local = worldPosition - f.atmosphere.center.xyz;
@@ -836,7 +852,9 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     surface.normal = normal;
     float inside;
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
-    return float4(ToneMap(lit * input.airTransmittance + input.airScattered), 1.0);
+    const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
+    const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
+    return float4(ToneMap(lit * input.airTransmittance + input.airScattered + rim), 1.0);
 }
 
 // Sol sans images : couleurs unies de la planète, avec un grain de bruit (couleur et petit relief) de près. Renvoie la
@@ -973,7 +991,8 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
 
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
-    return float4(ToneMap(lit * input.airTransmittance + input.airScattered), alpha);
+    const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
+    return float4(ToneMap(lit * input.airTransmittance + input.airScattered + rim), alpha);
 }
 
 [shader("fragment")]

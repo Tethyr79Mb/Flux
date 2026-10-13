@@ -88,6 +88,15 @@ namespace Flux {
             .Field("sunColor", "Soleil : couleur", &SkyComponent::sunColor, {.alpha = false})
             .Field("sunIntensity", "Soleil : intensité", &SkyComponent::sunIntensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2});
+        registry.Register<SunComponent>("sun", "Soleil")
+            .Field("color", "Couleur du disque", &SunComponent::color, {.alpha = false})
+            .Field("lightColor", "Couleur de la lumière", &SunComponent::lightColor, {.alpha = false})
+            .Field("intensity", "Intensité", &SunComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("size", "Taille (°)", &SunComponent::size, {.speed = 0.01, .min = 0.0, .max = 45.0, .decimals = 2});
+        registry.Register<OrbitComponent>("orbit", "Orbite")
+            .Field("distance", "Distance (millions de km)", &OrbitComponent::distance, {.speed = 0.1, .min = 0.0, .max = 1.0e5, .decimals = 3})
+            .Field("angle", "Angle (°)", &OrbitComponent::angle, {.speed = 0.1, .min = -360.0, .max = 360.0, .decimals = 2})
+            .Field("inclination", "Inclinaison (°)", &OrbitComponent::inclination, {.speed = 0.1, .min = -90.0, .max = 90.0, .decimals = 2});
         registry.Register<PlanetComponent>("planet", "Planète")
             .Field("radius", "Rayon (m)", &PlanetComponent::radius, {.speed = 100.0, .min = 100.0, .max = 1.0e7, .decimals = 0})
             .Field("relief", "Relief (m)", &PlanetComponent::relief, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})

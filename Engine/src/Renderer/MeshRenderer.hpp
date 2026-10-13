@@ -174,7 +174,8 @@ namespace Flux {
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
         const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
-        void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view);
+        void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
+                       const ViewCone& view);
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
         void AddThruster(const Scene& scene, const Camera& camera, float aspect, const RelativeTransform& transform,
                          const ThrusterComponent& thruster);
