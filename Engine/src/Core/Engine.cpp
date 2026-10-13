@@ -17,6 +17,7 @@
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
+#include "Flux/Scene/Orbits.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
@@ -395,6 +396,7 @@ namespace Flux {
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
             }
+            Orbits::Update(m_scene); // après l'inspecteur : une orbite changée place la planète dès cette image
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             if (m_drawScreenUi) {
                 ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},

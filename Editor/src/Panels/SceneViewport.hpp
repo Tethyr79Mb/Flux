@@ -59,6 +59,8 @@ namespace FluxEditor {
         };
 
         void HandleShortcuts(Flux::Engine& engine);
+        bool WantsFocus(Flux::Engine& engine) const;
+        static void FocusOn(Flux::Engine& engine, const Flux::Scene& scene, Flux::Entity entity);
         // Boutons de mode en haut à gauche de la vue ; retourne true si la souris en a cliqué un.
         bool UpdateToolbar(Flux::Engine& engine, const Flux::UI::Rect& view, bool mouseInView);
         void DrawToolbar(Flux::Engine& engine, const Flux::UI::Rect& view);

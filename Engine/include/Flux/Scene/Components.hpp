@@ -130,7 +130,7 @@ namespace Flux {
     };
 
     // Ciel de la scène, autour de tout et à l'infini : un fond, la lumière ambiante et ce que reflètent les surfaces
-    // lisses, plus le soleil (lumière principale et ses ombres). Généré (nébuleuse, bande galactique, étoiles) ou
+    // lisses, plus le soleil (lumière principale et ses ombres) s'il n'y a pas de SunComponent. Généré (nébuleuse, bande galactique, étoiles) ou
     // tiré d'une image panoramique. Un seul ciel compte ; sans ciel, pas de fond (couleur unie), une lumière ambiante
     // grise et le soleil par défaut.
     struct SkyComponent
@@ -166,6 +166,30 @@ namespace Flux {
         // personnage ne dépasse pas dans un air comme sur Terre, sous 9,81 m/s². Plus d'air ou moins de gravité :
         // il tombe moins vite.
         float terminalSpeed = 55.0f; // m/s (un parachutiste à plat)
+    };
+
+    // Soleil : l'étoile de la scène, un objet posé dans l'espace (loin : la Terre est à 150 millions de km du sien). Sa
+    // lumière, ses ombres et son disque dans le ciel viennent de sa position : sur une planète, il est haut à midi d'un
+    // côté, se lève ou se couche sur le bord, et il fait nuit de l'autre côté. Il remplace le soleil du Ciel (hauteur
+    // et direction) ; un seul compte. Ni lui ni la planète ne bougent pendant le jeu : pas de cycle jour / nuit.
+    struct SunComponent
+    {
+        Math::LinearColor color{1.0f, 0.96f, 0.9f};    // couleur du disque vu dans le ciel
+        Math::LinearColor lightColor{1.0f, 1.0f, 1.0f}; // couleur de la lumière (blanche, comme celle du Soleil)
+        float intensity = 1.45f; // éclairement d'une surface face à lui (1 : le blanc d'une surface blanche)
+        float size = 0.53f;      // diamètre apparent du disque, en degrés (le Soleil vu de la Terre)
+    };
+
+    // Orbite autour du Soleil de la scène (SunComponent), pour ranger un système autour de son étoile comme dans EVE
+    // Online : l'objet (une planète, en général) est à `distance` millions de km du soleil, à `angle` degrés autour de
+    // lui dans le plan horizontal (0 : vers +x) et `inclination` degrés au-dessus. Rien ne tourne pendant le jeu.
+    // Distance nulle : prise de la position actuelle (Orbits::Update). Un objet à la racine seulement ; ce qui est posé
+    // près d'une planète sans en être l'enfant ne la suit pas quand l'orbite change.
+    struct OrbitComponent
+    {
+        double distance = 0.0;
+        double angle = 0.0;
+        double inclination = 0.0;
     };
 
     // Planète en cube-sphère centrée sur l'entité (qui la fait tourner ; son échelle est ignorée) : une sphère de

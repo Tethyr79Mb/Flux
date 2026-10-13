@@ -356,7 +356,7 @@ namespace Flux {
         m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
-                AddPlanet(transform, *planet, view);
+                AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity), view);
             }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
@@ -491,7 +491,8 @@ namespace Flux {
 
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
-    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const ViewCone& view) {
+    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
+                                 const ViewCone& view) {
         m_planetTiles.clear();
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
@@ -526,6 +527,11 @@ namespace Flux {
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                                      m_groundGroup ? 1.0f : 0.0f},
                                     {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), 0.0f, 0.0f}});
+            if (rim && rim->intensity > 0.0f) {
+                const float intensity = rim->intensity;
+                m_planetData[index].rim = {rim->color.r * intensity, rim->color.g * intensity, rim->color.b * intensity,
+                                           std::max(rim->sharpness, 0.5f)};
+            }
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
         const double seaRadius = std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;
