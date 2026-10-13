@@ -72,7 +72,8 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU), é
 
 Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
-1. Préparation sur le CPU : ciel et soleil, objets visibles (élimination hors champ), tuiles de planète choisies, tri
+1. Préparation sur le CPU : ciel et soleil (direction de la caméra vers le `SunComponent` s'il y en a un, sinon
+   hauteur et direction réglées dans le Ciel), objets visibles (élimination hors champ), tuiles de planète choisies, tri
    des opaques de près à loin et des transparents de loin à près.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32.
