@@ -16,9 +16,12 @@
 #include <Flux/Scene/ScreenUi.hpp>
 #include <Flux/UI/DrawList.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
-#include <numbers>
 #include <cstdint>
+#include <initializer_list>
+#include <numbers>
 #include <string>
 
 namespace FluxEditor {
@@ -129,26 +132,44 @@ namespace FluxEditor {
         {
             const char* label;
             const char* name; // nom de l'entité créée
+            UI::Icon icon;
         };
 
         ItemInfo GetInfo(int item) {
-            constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide"}, {"Cube", "Cube"}, {"Modèle 3D...", "Modèle"},
-                                           {"Texte à l'écran", "Texte"},
-                                           {"Image à l'écran", "Image"},
-                                           {"Changement de scène", "Changement de scène"},
-                                           {"Personnage...", "Joueur"},
-                                           {"Vaisseau (maquette)", "Vaisseau"},
-                                           {"Chasseur", "Chasseur"},
-                                           {"Lumière", "Lumière"},
-                                           {"Spot", "Spot"},
-                                           {"Ciel", "Ciel"},
-                                           {"Volume intérieur", "Intérieur"},
-                                           {"Interface...", "Interface"},
-                                           {"Son...", "Son"},
-                                           {"Planète", "Planète"},
-                                           {"Monde (gravité, air)", "Monde"},
-                                           {"Prefab", "Prefab"}};
+            constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide", UI::Icon::Empty},
+                                           {"Cube", "Cube", UI::Icon::Cube},
+                                           {"Modèle 3D...", "Modèle", UI::Icon::Model},
+                                           {"Texte à l'écran", "Texte", UI::Icon::Text},
+                                           {"Image à l'écran", "Image", UI::Icon::Image},
+                                           {"Changement de scène", "Changement de scène", UI::Icon::SceneChange},
+                                           {"Personnage...", "Joueur", UI::Icon::Character},
+                                           {"Vaisseau (maquette)", "Vaisseau", UI::Icon::Ship},
+                                           {"Chasseur", "Chasseur", UI::Icon::Ship},
+                                           {"Lumière", "Lumière", UI::Icon::Light},
+                                           {"Spot", "Spot", UI::Icon::Light},
+                                           {"Ciel", "Ciel", UI::Icon::Sky},
+                                           {"Volume intérieur", "Intérieur", UI::Icon::Collider},
+                                           {"Interface...", "Interface", UI::Icon::Window},
+                                           {"Son...", "Son", UI::Icon::Sound},
+                                           {"Planète", "Planète", UI::Icon::Planet},
+                                           {"Monde (gravité, air)", "Monde", UI::Icon::Planet},
+                                           {"Prefab", "Prefab", UI::Icon::Prefab}};
             return Infos[item];
+        }
+
+        // Le texte cherché (sans casse, accents compris tels quels) apparaît-il dans le libellé ?
+        bool Matches(std::string_view label, std::string_view filter) {
+            if (filter.empty()) {
+                return true;
+            }
+            const auto lower = [](std::string_view text) {
+                std::string result(text);
+                for (char& c : result) {
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                }
+                return result;
+            };
+            return lower(label).find(lower(filter)) != std::string::npos;
         }
 
         // Nom d'un prefab dans le panneau : son fichier sans « .prefab.json ».
@@ -182,60 +203,63 @@ namespace FluxEditor {
                 held = std::move(choice);
             }
         };
-        const auto button = [&](Item item) { choose(ui.Button(GetInfo(static_cast<int>(item)).label), {item, {}}); };
+        // Une ligne par objet, avec son pictogramme ; la recherche ne garde que les lignes qui contiennent le texte.
+        const auto row = [&](Item item) {
+            const ItemInfo info = GetInfo(static_cast<int>(item));
+            if (Matches(info.label, m_filter)) {
+                choose(ui.Selectable(info.label, info.icon), {item, {}});
+            }
+        };
+        // Catégorie repliable (dépliée au départ) ; en cherchant, toutes s'ouvrent et les vides disparaissent.
+        const auto category = [&](std::string_view title, std::initializer_list<Item> items) {
+            const bool any = std::ranges::any_of(items, [&](Item item) { return Matches(GetInfo(static_cast<int>(item)).label, m_filter); });
+            if (!any) {
+                return;
+            }
+            if (!m_filter.empty()) {
+                ui.SetNextTreeNodeOpen(true);
+            }
+            if (ui.CollapsingHeader(title)) {
+                for (const Item item : items) {
+                    row(item);
+                }
+            }
+        };
         // Position sans ancrage (l'éditeur l'ancre à gauche, en onglet avec « Scènes »).
-        // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (boutons grisés et inertes).
+        // Mode Jouer : rien à placer, la scène du jeu est jetée à l'arrêt (lignes grisées et inertes).
         const bool playing = engine.GetGameState() != GameState::Stopped;
         ui.SetNextPanelIcon(UI::Icon::Place);
         if (ui.BeginPanel("Placer", {8.0f, 8.0f + ui.GetMenuBarHeight()}, 300.0f)) {
+            ui.SearchField("##recherche", m_filter, "Rechercher un objet...");
             if (playing) {
                 ui.TextDisabled("Mode Jouer : arrêter le jeu pour placer.");
             }
             ui.BeginDisabled(playing);
-            ui.TextDisabled("Formes");
-            button(Item::Empty);
-            ui.SameLine();
-            button(Item::Cube);
-            button(Item::Model);
-            ui.Separator();
-            ui.TextDisabled("Lumières");
-            button(Item::Light);
-            ui.SameLine();
-            button(Item::Spot);
-            ui.SameLine();
-            button(Item::Sky);
-            button(Item::Interior);
-            ui.Separator();
-            ui.TextDisabled("Espace");
-            button(Item::Planet);
-            ui.Separator();
-            ui.TextDisabled("Interface");
-            button(Item::ScreenText);
-            ui.SameLine();
-            button(Item::ScreenImage);
-            ui.SameLine();
-            button(Item::Interface);
-            ui.Separator();
-            ui.TextDisabled("Son");
-            button(Item::Sound);
-            ui.Separator();
-            ui.TextDisabled("Logique");
-            button(Item::SceneChange);
-            ui.Separator();
-            ui.TextDisabled("Physique (en mode Jouer)");
-            button(Item::Character);
-            button(Item::Ship);
-            ui.SameLine();
-            button(Item::Fighter);
-            button(Item::World);
+            category("Formes", {Item::Empty, Item::Cube, Item::Model});
+            category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Interior});
+            category("Espace", {Item::Planet, Item::World});
+            category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter});
+            category("Interface", {Item::ScreenText, Item::ScreenImage, Item::Interface});
+            category("Son", {Item::Sound});
+            category("Logique", {Item::SceneChange});
             if (const Project* project = engine.GetProject(); project && !prefabs.empty()) {
-                ui.Separator();
-                ui.TextDisabled("Prefabs");
-                for (const std::filesystem::path& prefab : prefabs) {
-                    const std::string relative = Platform::ToGenericUtf8(prefab.lexically_relative(project->assetsDirectory));
-                    ui.PushId(relative);
-                    choose(ui.Button(PrefabLabel(prefab)), {Item::Prefab, prefab});
-                    ui.PopId();
+                const bool any = std::ranges::any_of(prefabs, [&](const std::filesystem::path& prefab) {
+                    return Matches(PrefabLabel(prefab), m_filter);
+                });
+                if (any && !m_filter.empty()) {
+                    ui.SetNextTreeNodeOpen(true);
+                }
+                if (any && ui.CollapsingHeader("Prefabs")) {
+                    for (const std::filesystem::path& prefab : prefabs) {
+                        const std::string label = PrefabLabel(prefab);
+                        if (!Matches(label, m_filter)) {
+                            continue;
+                        }
+                        const std::string relative = Platform::ToGenericUtf8(prefab.lexically_relative(project->assetsDirectory));
+                        ui.PushId(relative);
+                        choose(ui.Selectable(label, UI::Icon::Prefab), {Item::Prefab, prefab});
+                        ui.PopId();
+                    }
                 }
             }
             ui.Separator();

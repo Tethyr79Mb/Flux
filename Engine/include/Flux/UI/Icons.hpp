@@ -48,6 +48,14 @@ namespace Flux::UI {
         Content,   // dossier ouvert : fichiers du projet
         Search,    // loupe
         Console,   // terminal : « >_ »
+        Save,      // disquette
+        Undo,      // flèche courbe vers la gauche
+        Redo,      // flèche courbe vers la droite
+        Move,      // quatre flèches : déplacer
+        Rotate,    // cercle fléché : tourner
+        Scale,     // petit carré dans un grand, flèche en diagonale : mettre à l'échelle
+        Settings,  // roue dentée
+        Up,        // flèche vers le haut : dossier parent
         // Messages de la console : information, avertissement, erreur.
         Info,      // disque bleu, « i »
         Warning,   // triangle jaune, « ! »

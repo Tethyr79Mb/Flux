@@ -17,7 +17,7 @@ namespace FluxEditor {
     // Hors du jeu, le module de jeu n'est pas mis à jour : la scène ne bouge que sous les mains de l'utilisateur.
     class PlayMode {
         public:
-        // Boutons Jouer / Pause / Arrêter, centrés dans la barre de menus.
+        // Boutons Jouer / Pause / Arrêter, centrés dans la barre d'outils.
         void DrawToolbar(Flux::UI::Context& ui, Flux::Engine& engine);
         // F5 : jouer ou arrêter ; F6 : pause.
         void HandleShortcuts(Flux::Engine& engine);

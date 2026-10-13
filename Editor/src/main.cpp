@@ -76,6 +76,45 @@ namespace {
         ui.EndMenu();
     }
 
+    // Barre d'outils : fichier et annuler / rétablir à gauche (de l'interface affichée, ou de la scène), Jouer et Pause
+    // au milieu, Paramètres à droite.
+    void DrawToolBar(Flux::Engine& engine, FluxEditor::SceneDocument& document, FluxEditor::UndoHistory& history,
+                     FluxEditor::SceneEditor& sceneEditor, FluxEditor::InterfaceEditor& interfaceEditor,
+                     FluxEditor::PlayMode& playMode, FluxEditor::SettingsWindow& settings) {
+        Flux::UI::Context& ui = engine.GetUi();
+        if (!ui.BeginToolBar()) {
+            return;
+        }
+        if (interfaceEditor.IsActive()) {
+            interfaceEditor.DrawToolBarItems(ui, engine);
+        } else {
+            document.DrawToolBarItems(ui, engine);
+            ui.ToolBarSeparator();
+            const bool canUndo = history.IsEnabled() && history.CanUndo();
+            const bool canRedo = history.IsEnabled() && history.CanRedo();
+            ui.BeginDisabled(!canUndo);
+            if (ui.MenuBarButton("##annuler", false, Flux::UI::Icon::Undo)) {
+                Undo(engine, history, sceneEditor, false);
+            }
+            ui.SetItemTooltip(canUndo ? "Annuler : " + history.GetUndoLabel() + " (Ctrl+Z)" : std::string("Annuler (Ctrl+Z)"));
+            ui.EndDisabled();
+            ui.BeginDisabled(!canRedo);
+            if (ui.MenuBarButton("##rétablir", false, Flux::UI::Icon::Redo)) {
+                Undo(engine, history, sceneEditor, true);
+            }
+            ui.SetItemTooltip(canRedo ? "Rétablir : " + history.GetRedoLabel() + " (Ctrl+Y)" : std::string("Rétablir (Ctrl+Y)"));
+            ui.EndDisabled();
+        }
+        playMode.DrawToolbar(ui, engine);
+        const float right = static_cast<float>(engine.GetWindow().GetSize().x) - ui.GetStyle().panelPadding * 0.5f;
+        ui.SetMenuBarCursor(right - ui.GetBarItemHeight());
+        if (ui.MenuBarButton("##paramètres", false, Flux::UI::Icon::Settings)) {
+            settings.Open();
+        }
+        ui.SetItemTooltip("Paramètres de l'éditeur");
+        ui.EndToolBar();
+    }
+
     // Droite de la barre d'état : mode, scène ouverte, nombre d'objets, sélection.
     std::string StatusDetails(Flux::Engine& engine, const FluxEditor::SceneDocument& document,
                               const FluxEditor::SceneEditor& sceneEditor, bool playing) {
@@ -158,9 +197,9 @@ int main(int argc, char** argv) {
             }
             DrawEditMenu(e, history, sceneEditor, interfaceEditor);
             layout.DrawWindowMenu(ui);
-            playMode.DrawToolbar(ui, e);
             ui.EndMainMenuBar();
         }
+        DrawToolBar(e, document, history, sceneEditor, interfaceEditor, playMode, settings);
         console.DrawStatusBar(e, StatusDetails(e, document, sceneEditor, playMode.IsPlaying()));
         document.SetLocked(playMode.IsPlaying());
         if (document.TakeReplaced()) {

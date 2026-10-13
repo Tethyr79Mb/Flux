@@ -9,8 +9,9 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 
 ### Fenêtre et panneaux
 - ✅ Panneaux ancrés en onglets avec glisser-déposer, panneaux flottants redimensionnables, disposition enregistrée.
-- ✅ Thèmes : Sombre, Clair, Graphite, Ars Solaris.
+- ✅ Thèmes : Sombre (gris neutres et accent bleu, façon Unreal / Unity), Clair, Graphite, Ars Solaris.
 - ✅ Barre de menus (Fichier, Édition…), dialogues Windows natifs, étoile dans le titre si la scène est modifiée.
+- 🔨 Barre d'outils : nouvelle scène, ouvrir, enregistrer, annuler / rétablir, Jouer et Pause au milieu, Paramètres à droite.
 - ✅ Paramètres : graphiques (GPU, V-Sync), interface, son, touches.
 - ✅ Console.
 - ✅ Version de l'éditeur dans le titre.
@@ -19,6 +20,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Onglet « Scènes » : scènes en vignettes rangées en dossiers, objets regroupés par type avec icônes, glisser-déposer pour l'ordre et la hiérarchie.
 - ✅ Inspecteur généré depuis les composants (listes déroulantes, couleurs avec sélecteur Windows, choix de fichiers).
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), lumières, ciel, planète, son, interface…
+- 🔨 « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.
 - ✅ Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R ; Ctrl = pas de 15°).
 - ✅ Annuler / refaire (Ctrl+Z, Ctrl+Y).
 - ✅ Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu.

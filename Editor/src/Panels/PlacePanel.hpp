@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace Flux {
@@ -39,6 +40,7 @@ namespace FluxEditor {
                           std::optional<Flux::Math::Vector2f> drop, const Flux::UI::Rect& view);
 
         std::optional<Choice> m_held; // bouton tenu
+        std::string m_filter;         // recherche dans la liste
         Flux::Math::Vector2f m_pressMouse;
         bool m_dragging = false;    // la souris s'est éloignée du bouton tenu : glisser-déposer en cours
     };

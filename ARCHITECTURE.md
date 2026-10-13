@@ -148,6 +148,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 ## Éditeur
 
 - `main.cpp` crée le moteur sans panneau Moteur ni interface plein écran, puis branche sa propre mise à jour.
+- En haut : barre de menus puis barre d'outils (`BeginToolBar`, boutons à pictogramme et info-bulles) ; en bas, la
+  barre d'état. `GetMenuBarHeight` compte les deux barres du haut.
 - `SceneEditor` regroupe les panneaux : Scènes (hiérarchie), Inspecteur, Placer, Contenu, Caméra, Console, Paramètres.
   L'inspecteur d'une pièce de prefab marque « » » les champs qui diffèrent du prefab (FluxUI : `"libellé###clé"`
   garde le même widget quand le texte visible change).

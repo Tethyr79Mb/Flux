@@ -23,12 +23,41 @@
 #include <cmath>
 #include <optional>
 #include <system_error>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace FluxEditor {
     using namespace Flux;
 
     namespace {
+        // Bouton « dossier parent » et chemin cliquable du dossier affiché (dans root) ; true si folder a changé.
+        bool DrawFolderPath(UI::Context& ui, const std::filesystem::path& root, std::filesystem::path& folder) {
+            const std::filesystem::path before = folder;
+            ui.BeginDisabled(folder == root);
+            if (ui.Button("##remonter", UI::Icon::Up)) {
+                folder = folder.parent_path();
+            }
+            ui.SetItemTooltip("Dossier parent");
+            ui.EndDisabled();
+            ui.SameLine();
+            std::vector<std::string> segments{"assets"};
+            const std::filesystem::path relative = folder.lexically_relative(root);
+            if (!relative.empty() && relative != ".") {
+                for (const std::filesystem::path& part : relative) {
+                    segments.push_back(Platform::ToUtf8(part));
+                }
+            }
+            if (const int clicked = ui.Breadcrumb("chemin", segments); clicked >= 0) {
+                std::filesystem::path target = root;
+                for (int i = 1; i <= clicked; ++i) {
+                    target /= Platform::PathFromUtf8(segments[static_cast<std::size_t>(i)]);
+                }
+                folder = target;
+            }
+            return folder != before;
+        }
+
         constexpr double ScanInterval = 2.0; // secondes : quelques dizaines de fichiers, lecture négligeable
 
         constexpr std::string_view SceneExtension = ".scene.json";
@@ -192,17 +221,10 @@ namespace FluxEditor {
             } else if (root.empty() || !std::filesystem::is_directory(root)) {
                 ui.TextDisabled("Dossier des assets introuvable :\n" + Platform::ToUtf8(root));
             } else {
-                // Chemin du dossier affiché, et de quoi remonter d'un cran.
-                ui.BeginDisabled(m_folder == m_root);
-                if (ui.Button("Remonter")) {
-                    m_folder = m_folder.parent_path();
+                // Chemin du dossier affiché, cliquable, et de quoi remonter d'un cran.
+                if (DrawFolderPath(ui, m_root, m_folder)) {
                     m_selected.clear();
                 }
-                ui.SetItemTooltip("Dossier parent");
-                ui.EndDisabled();
-                ui.SameLine();
-                const std::filesystem::path relative = m_folder.lexically_relative(m_root);
-                ui.TextDisabled(relative.empty() || relative == "." ? "assets" : "assets/" + Platform::ToGenericUtf8(relative));
                 ui.SameLine();
                 ui.SearchField("recherche", m_search, "Rechercher dans les assets...");
                 ui.SetItemTooltip("Cherche dans tous les dossiers, sans tenir compte des majuscules ni des accents");
@@ -509,14 +531,7 @@ namespace FluxEditor {
             m_sceneFolder = m_root;
             shown = &m_sceneTree;
         }
-        ui.BeginDisabled(m_sceneFolder == m_root);
-        if (ui.Button("Remonter")) {
-            m_sceneFolder = m_sceneFolder.parent_path();
-        }
-        ui.EndDisabled();
-        ui.SameLine();
-        const std::filesystem::path relative = m_sceneFolder.lexically_relative(m_root);
-        ui.TextDisabled(relative.empty() || relative == "." ? "assets" : "assets/" + Platform::ToGenericUtf8(relative));
+        DrawFolderPath(ui, m_root, m_sceneFolder);
         ui.BeginChild("scenes", 0.0f, height);
         DrawTiles(ui, engine, document, *shown, m_sceneFolder, true);
         ui.EndChild();
