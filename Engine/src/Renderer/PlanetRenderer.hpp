@@ -27,8 +27,15 @@ namespace Flux {
         std::array<float, 4> climate{}; // température à l'équateur, aux pôles (°C), humidité, 1 si textures du sol (GroundTextures)
         std::array<float, 4> beach{};   // altitude du niveau de la mer, hauteur de la plage au-dessus (m)
         std::array<float, 4> rim{};     // couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
+        // Nuages (CloudsComponent) : centre de la planète relatif à la caméra et rayon de leur couche (w, 0 : aucun) ;
+        // rotation de la planète (quaternion) ; couverture, opacité, 1 / taille des formations, angle de dérive ; couleur et
+        // épaisseur de la couche (w, m).
+        std::array<float, 4> clouds{};
+        std::array<float, 4> cloudRotation{0.0f, 0.0f, 0.0f, 1.0f};
+        std::array<float, 4> cloudShape{};
+        std::array<float, 4> cloudColor{};
     };
-    static_assert(sizeof(PlanetGpu) == 160);
+    static_assert(sizeof(PlanetGpu) == 224);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont calculées

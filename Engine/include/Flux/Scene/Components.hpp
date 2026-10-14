@@ -243,6 +243,21 @@ namespace Flux {
         Math::LinearColor skyColor{0.175f, 0.41f, 1.0f}; // ce que l'air diffuse le plus : bleu sur Terre, orangé sur Mars
     };
 
+    // Nuages d'une planète (sur l'entité de son PlanetComponent) : une couche de `thickness` mètres d'épaisseur à
+    // partir de `altitude` mètres au-dessus du niveau zéro, traversée en quelques pas par pixel (shaders/Mesh.slang,
+    // fragmentClouds) : vus du sol comme de l'espace, ils font de l'ombre au sol, à l'eau et aux objets. Ils dérivent
+    // vers l'est (autour de l'axe y de la planète). Trop peu de pas pour voler dedans de façon crédible.
+    struct CloudsComponent
+    {
+        float altitude = 4000.0f;  // m au-dessus du niveau zéro du relief : la base des nuages
+        float thickness = 1500.0f; // m, des plus épais
+        float coverage = 0.5f;     // part du ciel couverte, de 0 (aucun) à 1 (couvert)
+        float opacity = 0.9f;      // des nuages les plus épais
+        float size = 8000.0f;      // m, taille des grandes formations
+        float speed = 10.0f;       // m/s à l'équateur ; négatif : vers l'ouest
+        Math::LinearColor color{1.0f, 1.0f, 1.0f};
+    };
+
     // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec
     // elle. Dedans, la lumière ambiante et les reflets ne viennent plus du ciel (qui n'y entre pas) mais de `ambient`,
     // avec un fondu de `fade` mètres depuis les bords. Le soleil, lui, est arrêté par les ombres.

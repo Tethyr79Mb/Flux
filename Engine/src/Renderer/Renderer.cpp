@@ -24,7 +24,7 @@ namespace Flux {
         // Pendant la passe principale, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux
         // étapes, d'où un léger surcoût et des temps d'étape un peu plus longs qu'en vrai.
         enum Timestamp : std::uint32_t {
-            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, SceneDone, InterfaceDone, TimestampCount
+            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, InterfaceDone, TimestampCount
         };
         static_assert(TimestampCount <= RHI::MaxTimestamps);
 
@@ -167,6 +167,9 @@ namespace Flux {
                 commands.BeginStep("océan");
                 meshes->DrawOcean(commands, frameIndex);
                 commands.WriteTimestamp(OceanDone);
+                commands.BeginStep("nuages");
+                meshes->DrawClouds(commands, frameIndex);
+                commands.WriteTimestamp(CloudsDone);
                 commands.BeginStep("transparents");
                 meshes->DrawTransparent(commands, frameIndex);
                 commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
@@ -199,7 +202,8 @@ namespace Flux {
             timings.gpuGround = between(ObjectsDone, GroundDone);
             timings.gpuSky = between(GroundDone, SkyDone);
             timings.gpuOcean = between(SkyDone, OceanDone);
-            timings.gpuTransparent = between(OceanDone, SceneDone);
+            timings.gpuClouds = between(OceanDone, CloudsDone);
+            timings.gpuTransparent = between(CloudsDone, SceneDone);
             timings.gpuInterface = between(SceneDone, InterfaceDone);
         }
     };

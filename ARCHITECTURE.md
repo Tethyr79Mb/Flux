@@ -136,6 +136,15 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   aléatoires par cellule, périodique sur `GroundPeriod` pour ne pas voir de raccord entre tuiles) ; couleurs unies si les textures manquent ou pendant leur
   décodage (sur d'autres fils, seulement si la scène a une planète).
 - Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Nuages (`CloudsComponent`) : une couche épaisse entre deux sphères (base et sommet), sans maillage. Un triangle
+  plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la
+  caméra, il marche en 8 pas dans le volume (forme en cumulus, érosion, lumière du soleil traversée vers le haut) ;
+  au loin et vu de l'espace, il lit une seule colonne de densité, moins d'octaves et moins d'érosion selon la
+  taille d'un pixel, pour éviter le grain. Il écrit la profondeur du premier nuage touché, jamais plus près que la
+  couche (`SV_DepthLessEqual`, le triangle posé à cette distance) : testée contre la scène sans être enregistrée, et
+  les pixels cachés par le relief sont écartés avant le shader. La couverture s'arrête de lire ses octaves dès
+  qu'elles ne peuvent plus donner de nuage. Leur ombre (`CloudShadow`) multiplie le soleil de tout ce qui est éclairé
+  (objets, sol, eau).
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`), comme pour tous les maillages de `Mesh.slang`.

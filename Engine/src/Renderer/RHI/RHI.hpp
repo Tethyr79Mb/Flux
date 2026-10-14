@@ -310,7 +310,7 @@ namespace Flux::RHI {
         virtual void BeginStep(const char* name) = 0;
     };
 
-    inline constexpr std::uint32_t MaxTimestamps = 8;
+    inline constexpr std::uint32_t MaxTimestamps = 16;
     inline constexpr std::uint32_t MaxSteps = 16;
 
     // Temps passés par le CPU à attendre, pendant l'image précédente (millisecondes) : longs, ils disent que le GPU ou

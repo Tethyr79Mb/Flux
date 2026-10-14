@@ -67,6 +67,8 @@ namespace Flux {
         void DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Nuages des planètes, après l'eau (ils sont devant elle ou cachés par le sol) et avant les autres transparents.
+        void DrawClouds(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
         private:
@@ -175,7 +177,9 @@ namespace Flux {
         const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
-                       const ViewCone& view);
+                       const CloudsComponent* clouds, const ViewCone& view);
+        // Les nuages d'une planète (ses PlanetGpu::cloud*), dans FrameData.
+        void AddClouds(PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet, const CloudsComponent& clouds) const;
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
         void AddThruster(const Scene& scene, const Camera& camera, float aspect, const RelativeTransform& transform,
                          const ThrusterComponent& thruster);
@@ -201,6 +205,9 @@ namespace Flux {
         Pipelines m_planet;
         // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).
         Pipelines m_ocean;
+        // Nuages des planètes : un triangle plein écran (vertexClouds, fragmentClouds), sans sommets.
+        std::unique_ptr<RHI::Pipeline> m_clouds;
+        bool m_hasClouds = false; // une planète de l'image a des nuages
         std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now(); // vagues
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.
         std::unique_ptr<RHI::BindGroupLayout> m_frameLayout;
