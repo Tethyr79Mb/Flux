@@ -70,6 +70,7 @@ namespace Flux {
             GpuOceanCost,
             GpuCloudsCost,
             GpuTransparentCost,
+            GpuBloomCost,
             GpuInterfaceCost,
             CostCount,
         };
@@ -150,6 +151,7 @@ namespace Flux {
                 ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
                 ui.LabelText("  dont nuages", FormatCost(stats.Get(GpuCloudsCost)));
                 ui.LabelText("  dont transparents, flammes", FormatCost(stats.Get(GpuTransparentCost)));
+                ui.LabelText("GPU bloom, image finale", FormatCost(stats.Get(GpuBloomCost)));
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
@@ -351,6 +353,7 @@ namespace Flux {
             stats.Add(GpuOceanCost, render.gpuOcean);
             stats.Add(GpuCloudsCost, render.gpuClouds);
             stats.Add(GpuTransparentCost, render.gpuTransparent);
+            stats.Add(GpuBloomCost, render.gpuBloom);
             stats.Add(GpuInterfaceCost, render.gpuInterface);
 
             // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.

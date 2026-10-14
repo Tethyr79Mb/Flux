@@ -79,9 +79,15 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    des opaques de près à loin et des transparents de loin à près.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32.
-4. Scène : opaques, ciel, transparents, flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs,
-   atmosphère et océans dans `Mesh.slang`. Tonemapping ACES en sortie du fragment (pas de HDR intermédiaire).
-5. Interface (overlay) par-dessus.
+4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
+   (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons fins, bien
+   plus lumineux que le blanc), océans, nuages, transparents, flammes des réacteurs (additives, sans tri). PBR
+   métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
+5. Bloom (`Post.slang`, méthode de Jimenez) : la scène réduite de moitié jusqu'à 6 fois (13 lectures, moyenne de Karis
+   à la première), puis remontée en additionnant chaque niveau flou au niveau au-dessus ; sans seuil.
+6. Passe principale vers la fenêtre : la scène mélangée à son bloom (Paramètres > Graphiques, 4 % par défaut), puis
+   l'exposition et la courbe de tons ACES ; l'interface (overlay) par-dessus. Le fond d'une scène sans ciel est
+   effacé avec la couleur qui redonne exactement la couleur choisie après la courbe (`InverseToneMap`).
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques

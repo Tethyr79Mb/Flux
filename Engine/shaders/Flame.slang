@@ -12,7 +12,7 @@ struct FlameParams
     float4 camera;       // xyz : caméra dans le repère normalisé ; w : temps (s)
     float4 color;        // rgb : couleur x éclat ; w : poussée (0 à 1)
     float4 size;         // xyz : demi-largeur, demi-hauteur et longueur de la boîte (m) ; w : sortie de la tuyère dans la boîte (< 1)
-    float4 options;      // x : graine ; y : exposition
+    float4 options;      // x : graine ; y : gain de la lumière du gaz
 };
 [[vk::push_constant]] ConstantBuffer<FlameParams> flame;
 
@@ -102,6 +102,17 @@ float2 Emission(float3 p, float throttle, float time, uint seed)
     return float2(core, gas);
 }
 
+// La flamme était réglée pour l'image finale (1 - exp(-x) : de 0 au blanc) ; l'image de la scène est en lumière
+// linéaire, avant la courbe de tons de Post.slang. On écrit la lumière qui, après cette courbe, redonne la même
+// couleur sur un fond noir ; sur un fond clair, elle s'y ajoute en lumière, comme le reste.
+float3 InverseToneMap(float3 c)
+{
+    c = min(c, float3(0.999));
+    const float3 a = 2.51 - 2.43 * c;
+    const float3 b = 0.03 - 0.59 * c;
+    return (-b + sqrt(b * b + 4.0 * a * 0.14 * c)) / (2.0 * a) / 0.6;
+}
+
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
@@ -147,5 +158,5 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     // Gaz de la couleur choisie ; cœur qui tire vers le blanc. La courbe 1 - exp(-x) sature doucement : le
     // bleu plafonne en premier, puis le vert et le rouge, d'où un cœur blanc entouré de bleu.
     const float3 light = (flame.color.rgb * (0.45 * sum.y + 0.8 * sum.x) + float3(0.75, 0.85, 1.0) * sum.x * sum.x * 0.6) * flame.options.y;
-    return float4(1.0 - exp(-light), 0.0);
+    return float4(InverseToneMap(1.0 - exp(-light)), 0.0);
 }

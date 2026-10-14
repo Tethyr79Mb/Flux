@@ -145,6 +145,7 @@ namespace Flux::Vk {
         private:
         void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc);
         void BeginTexturePass(const RHI::RenderPassDesc& desc);
+        VkRenderingAttachmentInfo BeginDepthAttachment(const RHI::RenderPassDesc& desc);
 
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
         VkImage m_image = VK_NULL_HANDLE;
@@ -154,7 +155,7 @@ namespace Flux::Vk {
         VkPipelineBindPoint m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         VkShaderStageFlags m_pushStages = 0;
         const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
-        const RhiTexture* m_colorTarget = nullptr;  // passe vers une face de texture cube : lisible à sa fin
+        const RhiTexture* m_colorTarget = nullptr;  // passe vers une texture (2D ou face de cube) : lisible à sa fin
         std::uint32_t m_colorLayer = 0;
         VkQueryPool m_queryPool = VK_NULL_HANDLE;
         std::uint32_t m_writtenTimestamps = 0;

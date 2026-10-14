@@ -57,7 +57,9 @@ flux_add_shaders(FluxShaders
         shaders/Mesh.slang
         shaders/Overlay.slang
         shaders/PlanetTile.slang
+        shaders/Post.slang
         shaders/Sky.slang
+        shaders/Sun.slang
 )
 add_dependencies(FluxEngine FluxShaders)
 

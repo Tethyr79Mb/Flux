@@ -1,33 +1,14 @@
 // Ciel : le fond de la scène, à l'infini, dessiné après les opaques là où rien n'a été dessiné (profondeur restée à
-// 0 en reverse-Z). Généré ou tiré d'un panorama ; plus le disque du soleil et son halo. Même exposition et même courbe
-// de tons que shaders/Mesh.slang.
+// 0 en reverse-Z). Généré ou tiré d'un panorama, en lumière linéaire (la courbe de tons vient après, Post.slang). Le
+// soleil a son propre shader (Sun.slang), dessiné juste après.
 // Ciel généré : la nébuleuse et la bande galactique (une trentaine de couches de bruit 3D, chères) sont calculées une
-// fois dans une texture cube (bakeFragment, quand un réglage change), puis lues ; les étoiles et le soleil, fins et
-// peu coûteux, restent calculés au pixel.
+// fois dans une texture cube (bakeFragment, quand un réglage change), puis lues ; les étoiles, fines et peu coûteuses,
+// restent calculées au pixel.
 
 // Près d'une planète à atmosphère : ce fond est vu à travers son air (ciel bleu le jour, halo vu de l'espace).
 
-#include "Atmosphere.slang"
+#include "SkyData.slang"
 
-// Doit correspondre à SkyData dans SkyRenderer.cpp.
-struct SkyData
-{
-    float4 right;        // xyz : droite de la caméra x tangente du demi-champ horizontal
-    float4 up;           // xyz : haut de la caméra x tangente du demi-champ vertical
-    float4 forward;      // xyz : avant de la caméra ; w : angle couvert par un pixel (radians)
-    float4 toSun;        // xyz : direction du soleil (unitaire) ; w : rayon apparent du disque (radians)
-    float4 sunColor;     // rgb : couleur de la lumière x intensité ; w : exposition
-    float4 discColor;    // rgb : couleur du disque x intensité
-    float4 nebulaColor;  // rgb ; w : densité de la nébuleuse
-    float4 nebulaColor2; // rgb ; w : éclat de la bande galactique
-    float4 galaxyAxis;   // xyz ; w : quantité d'étoiles
-    float4 galaxyCenter; // xyz ; w : éclat des étoiles
-    float4 noiseOffset;  // xyz ; w : luminosité du fond
-    uint4 options;       // x : graine mélangée ; y : 1 panorama, 0 ciel généré
-    AtmosphereData atmosphere;
-};
-
-[[vk::binding(0, 0)]] StructuredBuffer<SkyData> sky;
 [[vk::binding(1, 0)]] Sampler2D panorama; // sRGB, ramené en linéaire à la lecture
 [[vk::binding(2, 0)]] SamplerCube background; // nébuleuse et bande galactique (bakeFragment), en linéaire
 
@@ -237,12 +218,6 @@ float2 PanoramaUv(float3 direction)
     return float2(atan2(direction.x, -direction.z) / (2.0 * Pi) + 0.5, acos(clamp(direction.y, -1.0, 1.0)) / Pi);
 }
 
-float3 ToneMap(float3 color, float exposure)
-{
-    color *= exposure * 0.6;
-    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
-}
-
 // Force de l'effacement des étoiles et de la nébuleuse par la lumière de l'air (voir fragmentMain). Planète par défaut :
 // au zénith, l'air vaut 0,12 avec le soleil à 45°, 0,06 au coucher, 0,03 à -15°. À 60, il reste 0,07 % du fond en
 // plein jour (20 : 8 %, étoiles encore bien visibles), 2,5 % au coucher, 15 % à -15° : elles reviennent à la nuit.
@@ -271,16 +246,6 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     }
     color *= s.noiseOffset.w;
 
-    // Soleil : un disque net (bord adouci sur un pixel), un halo serré et une lueur large.
-    const float radius = s.toSun.w;
-    float3 sun = float3(0.0);
-    if (radius > 0.0) {
-        const float3 toSun = s.toSun.xyz;
-        const float angle = 2.0 * asin(min(length(direction - toSun) * 0.5, 1.0));
-        const float disc = saturate((radius - angle) / pixelAngle + 0.5);
-        const float halo = exp(-(angle * angle) / (radius * radius * 9.0)) * 0.5 + exp(-angle * 8.0) * 0.06;
-        sun = s.discColor.rgb * (disc * 40.0 + halo);
-    }
     if (HasAtmosphere(s.atmosphere)) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
         const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, s.atmosphere.center.w);
@@ -292,12 +257,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
                                                    transmittance);
         // Le jour, l'air éclairé est bien plus lumineux que les étoiles et la nébuleuse : l'œil ne les voit plus. Elles
         // s'effacent d'après la lumière de l'air dans cette direction, donc en douceur à la descente et au couchant,
-        // et reviennent la nuit. Le soleil, lui, reste.
+        // et reviennent la nuit.
         const float daylight = dot(scattered, float3(0.2126, 0.7152, 0.0722));
         color *= exp(-daylight * SkyDaylightFade);
-        color = (distance < 1.0e30 ? float3(0.0) : (color + sun) * transmittance) + scattered;
-    } else {
-        color += sun;
+        color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
     }
-    return float4(ToneMap(color, s.sunColor.w), 1.0);
+    return float4(min(color, float3(60000.0)), 1.0);
 }

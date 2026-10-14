@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
 #include <filesystem>
@@ -9,11 +10,11 @@ namespace Flux {
 }
 
 namespace FluxEditor {
-    // Fenêtre « Paramètres » (Fichier > Paramètres...), un onglet par sujet. Les réglages de l'éditeur (thème, volume)
+    // Fenêtre « Paramètres » (Fichier > Paramètres...), un onglet par sujet. Les réglages de l'éditeur (thème, volume, bloom)
     // sont enregistrés à côté de FluxEditor.exe et relus au démarrage.
     class SettingsWindow {
         public:
-        // Relit les réglages enregistrés et les applique (thème de l'interface, volume du son).
+        // Relit les réglages enregistrés et les applique (thème de l'interface, volume du son, bloom).
         void Load(Flux::Engine& engine);
         void Open() { m_open = true; }
         void Draw(Flux::Engine& engine);
@@ -29,5 +30,8 @@ namespace FluxEditor {
         Flux::UI::Theme m_theme = Flux::UI::Theme::Dark;
         float m_volume = 1.0f; // volume général, 0 à 1
         bool m_volumeChanged = false; // pas encore enregistré (curseur tenu)
+        bool m_bloomEnabled = true;
+        float m_bloom = Flux::Renderer::DefaultBloom; // force quand il est activé, 0 à 1
+        bool m_bloomChanged = false; // pas encore enregistré (curseur tenu)
     };
 }

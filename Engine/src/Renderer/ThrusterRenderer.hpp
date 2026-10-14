@@ -30,10 +30,10 @@ namespace Flux {
         static std::expected<std::unique_ptr<ThrusterRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
                                                                                      RHI::Format depthFormat);
 
-        // Flammes de l'image : boîtes relatives à la caméra, celles hors du champ écartées. `exposure` : celle des
-        // maillages (SkyLighting).
-        void Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect, float exposure);
-        // Dans la passe principale, après les transparents.
+        // Flammes de l'image : boîtes relatives à la caméra, celles hors du champ écartées. L'exposition s'applique
+        // après, sur toute l'image (PostRenderer).
+        void Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect);
+        // Dans la passe de la scène, après les transparents.
         void Draw(RHI::CommandList& commands) const;
 
         // Boîte de la flamme dans le repère de l'entité : demi-largeur, demi-hauteur (un peu plus grandes que la

@@ -56,7 +56,7 @@ struct FrameData
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
     // x : multiplie la texture du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des reflets les
-    // plus flous ; w : exposition
+    // plus flous ; w : exposition (appliquée après le bloom, shaders/Post.slang : inutilisée ici)
     float4 environment;
     // Rayon d'un pixel (nuages) : cameraForward + cameraRight * clip.x - cameraUp * clip.y (à l'échelle du champ).
     float4 cameraRight;
@@ -485,12 +485,11 @@ float3 PerturbNormal(float3 normal, float3 worldPosition, float2 uv)
     return normalize(tangent * (mapped.x * scale) + bitangent * (mapped.y * scale) + normal * mapped.z);
 }
 
-// Courbe de tons ACES (approximation de Narkowicz) : les couleurs trop fortes sont adoucies vers le blanc au lieu
-// d'être coupées net. La même dans shaders/Sky.slang.
-float3 ToneMap(float3 color)
+// Couleur écrite dans l'image HDR de la scène : la lumière linéaire, sans exposition ni courbe de tons (appliquées
+// après le bloom, shaders/Post.slang), bornée à ce que tient un float 16 bits.
+float3 Radiance(float3 color)
 {
-    color *= frame[0].environment.w * 0.6;
-    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
+    return min(color, float3(60000.0));
 }
 
 // Lumière renvoyée vers l'œil par une surface : soleil (ombres, rougi par l'air), ambiante du ciel ou du volume
@@ -1005,7 +1004,7 @@ float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
     const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
-    return float4(ToneMap(lit * input.airTransmittance + input.airScattered + rim), 1.0);
+    return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), 1.0);
 }
 
 // Sol sans images : couleurs unies de la planète, avec un grain de bruit (couleur et petit relief) de près. Renvoie la
@@ -1144,7 +1143,7 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
     const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
-    return float4(ToneMap(lit * input.airTransmittance + input.airScattered + rim), alpha);
+    return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), alpha);
 }
 
 [shader("fragment")]
@@ -1183,7 +1182,7 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
     lit = ThroughAir(lit, input.worldPosition);
-    return float4(ToneMap(lit), params.transparent != 0 ? base.a : 1.0);
+    return float4(Radiance(lit), params.transparent != 0 ? base.a : 1.0);
 }
 
 // Cartes d'ombres : la position vue du soleil (cascade params.cascade), et l'image seulement pour le seuil d'alpha.
@@ -1456,7 +1455,7 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
     const float3 color = light / alpha; // non prémultiplié : le mélange multiplie par alpha
     const float3 up = normalize(direction * hit - planet.clouds.xyz);
     CloudOutput output;
-    output.color = float4(ToneMap(color * airTransmittance + scattered + PlanetRim(planet, up, -direction)), alpha);
+    output.color = float4(Radiance(color * airTransmittance + scattered + PlanetRim(planet, up, -direction)), alpha);
     const float4 clip = Transform(f.viewProjection, direction * hit);
     output.depth = min(clip.z / clip.w, input.position.z);
     return output;

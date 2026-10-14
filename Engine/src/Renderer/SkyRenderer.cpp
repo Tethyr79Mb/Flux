@@ -137,6 +137,16 @@ namespace Flux {
         }
         sky->m_pipeline = std::move(*pipeline);
 
+        // Soleil : au même endroit que le fond, sa lumière ajoutée à lui.
+        RHI::PipelineDesc sunDesc = desc;
+        sunDesc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Sun.spv";
+        sunDesc.blend = RHI::BlendMode::Additive;
+        auto sunPipeline = device.CreatePipeline(sunDesc);
+        if (!sunPipeline) {
+            return std::unexpected(sunPipeline.error());
+        }
+        sky->m_sunPipeline = std::move(*sunPipeline);
+
         // Calcul du fond : le même triangle plein écran, dans chaque face de la texture cube.
         RHI::PipelineDesc bakeDesc;
         bakeDesc.shaderPath = desc.shaderPath;
@@ -382,6 +392,8 @@ namespace Flux {
         }
         commands.BindPipeline(*m_pipeline);
         commands.SetBindGroup(0, *m_groups[frameIndex]);
+        commands.Draw(3, 0);
+        commands.BindPipeline(*m_sunPipeline); // mêmes layouts : le groupe reste lié
         commands.Draw(3, 0);
     }
 }
