@@ -1,8 +1,8 @@
 // Soleil : son propre shader, dessiné juste après le fond du ciel (Sky.slang), au même endroit (là où rien n'a été
 // dessiné, profondeur restée à 0) et ajouté à lui. Un disque bien plus lumineux que tout le reste, assombri vers son
 // bord comme le vrai (la lumière y traverse plus de gaz solaire), un halo serré et quelques rayons fins comme ceux
-// d'un objectif (ou un long trait horizontal, au choix du composant Soleil). Sa lumière dépasse de loin le blanc : c'est le bloom (Post.slang) qui la fait déborder autour de
-// lui. Vu de sous l'air d'une planète, il est rougi et atténué par l'air traversé, et caché sous l'horizon.
+// d'un objectif (ou un long trait horizontal, au choix du composant Soleil). Sa lumière dépasse de loin le blanc :
+// c'est le bloom (Post.slang) qui la fait déborder autour de lui. Vu de sous l'air d'une planète, il est rougi et atténué par l'air traversé, et caché sous l'horizon.
 // Coût : un triangle plein écran, mais tout pixel à plus de MaxAngle du soleil (hors de la bande du trait) s'arrête
 // aussitôt.
 
@@ -100,8 +100,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float along = exp(-abs(screen.x) / StreakLength) + 2.0 * exp(-abs(screen.x) / (radius * 12.0));
         light += exp(-(screen.y * screen.y) / (width * width)) * along * StreakGain;
         const float band = radius * StreakBand;
-        light += exp(-(screen.y * screen.y) / (band * band)) * (exp(-abs(screen.x) / (radius * 20.0)) + 0.3 * exp(-abs(screen.x) / StreakLength))
-               * StreakGain * 0.1;
+        const float glow = exp(-abs(screen.x) / (radius * 20.0)) + 0.3 * exp(-abs(screen.x) / StreakLength);
+        light += exp(-(screen.y * screen.y) / (band * band)) * glow * StreakGain * 0.1;
     }
 
     float3 color = s.discColor.rgb * light;
