@@ -82,7 +82,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Gameplay
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
-- ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, V-Sync, volume, panneau Moteur).
+- ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, volume, panneau Moteur).
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).
