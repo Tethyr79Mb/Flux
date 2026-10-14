@@ -596,22 +596,44 @@ float3 CloudDrift(PlanetData planet, float3 direction)
 // cœur), négative dans le ciel dégagé. p : la direction (dérivée) en tailles de formation. Des régions deux fois plus
 // grandes séparent ciel dégagé et ciel couvert ; le domaine est tordu (`warp`) pour des bords en volutes plutôt qu'en
 // taches rondes. `octaves` : 1 à 4, la dernière en partie ; une octave effacée vaut sa moyenne.
-float CloudCoverage(PlanetData planet, float3 p, float3 warp, float octaves)
+// `minimum` : en dessous, l'appelant n'en fait rien (densité nulle). Dès que les octaves restantes, même toutes à 1,
+// ne peuvent plus l'atteindre, on rend -1 sans les lire : la plupart des pas en ciel dégagé s'arrêtent après un ou
+// deux bruits au lieu de cinq, pour la même image.
+float CloudCoverage(PlanetData planet, float3 p, float3 warp, float octaves, float minimum)
 {
     p += warp;
+    // Comparé avant la division par la somme des amplitudes (0,96875), avec une marge contre les arrondis.
+    const float needed = (minimum + lerp(0.72, 0.28, planet.cloudShape.x)) * 0.96875 - 1.0e-4;
     float value = PlanetNoise(p * 0.5 + 31.0) * 0.5;
+    // Le plus que peuvent encore ajouter les octaves pas encore lues : une octave effacée n'ajoute que sa moyenne.
+    float remaining = 0.0;
+    [unroll]
+    for (int i = 0; i < 4; ++i) {
+        remaining += 0.25 / float(1 << i) * (0.5 + 0.5 * saturate(octaves - float(i)));
+    }
     float amplitude = 0.25;
     float frequency = 1.0;
     [unroll]
     for (int i = 0; i < 4; ++i) {
+        if (value + remaining <= needed) {
+            return -1.0;
+        }
         const float weight = saturate(octaves - float(i));
         const float noise = weight > 0.0 ? PlanetNoise(p * frequency + float(i) * 7.31) : 0.5;
         value += lerp(0.5, noise, weight) * amplitude;
+        remaining -= amplitude * (0.5 + 0.5 * weight);
         amplitude *= 0.5;
         frequency *= 2.0;
     }
     value /= 0.96875; // somme des amplitudes : de 0 à 1
     return value - lerp(0.72, 0.28, planet.cloudShape.x);
+}
+
+// Couverture sous laquelle CloudShape est nulle à la hauteur h : au-dessus du quart de la couche, seul un cœur assez
+// épais monte jusque-là (top = 0,25 + 0,75 · cover / 0,14).
+float CloudMinimumCover(float h)
+{
+    return max(h - 0.25, 0.0) * (0.14 / 0.75);
 }
 
 // Torsion du domaine, une fois par pixel : les volutes à l'échelle des formations.
@@ -657,7 +679,7 @@ float CloudShadow(float3 worldPosition)
         }
         const float3 direction = CloudDrift(planet, RotateInverse(planet.cloudRotation, normalize(origin + f.toSun.xyz * t)));
         const float3 p = direction * (planet.clouds.w * planet.cloudShape.z);
-        const float density = CloudShape(CloudCoverage(planet, p, float3(0.0), 2.0), 0.3);
+        const float density = CloudShape(CloudCoverage(planet, p, float3(0.0), 2.0, CloudMinimumCover(0.3)), 0.3);
         light *= 1.0 - (1.0 - exp(-density * 4.0)) * planet.cloudShape.y * 0.85;
     }
     return light;
@@ -1208,8 +1230,29 @@ struct CloudVertexOutput
 CloudVertexOutput vertexClouds(uint vertexId : SV_VulkanVertexID)
 {
     const float2 clip = float2((vertexId << 1) & 2, vertexId & 2) * 2.0 - 1.0;
+    // Le triangle est placé à la profondeur du nuage le plus proche possible : la distance jusqu'à la couche, ramenée
+    // au plan de vue par le cosinus du coin de l'écran (le pixel le plus de biais). Le fragment n'écrit jamais plus
+    // près (SV_DepthLessEqual) : le GPU peut écarter d'avance les pixels cachés par le relief ou un vaisseau plus
+    // proche, sans lancer le shader. Dans la couche : distance nulle, rien n'est écarté.
+    const FrameData f = frame[0];
+    float nearest = 3.0e38;
+    for (uint i = 0; i < f.lightCount.z; ++i) {
+        const PlanetData planet = f.planets[i];
+        if (planet.clouds.w <= 0.0) {
+            continue;
+        }
+        const float distance = length(planet.clouds.xyz);
+        const float top = planet.clouds.w + max(planet.cloudColor.w, 1.0);
+        nearest = min(nearest, max(max(distance - top, planet.clouds.w - distance), 0.0));
+    }
+    const float viewDepth = nearest / length(f.cameraForward.xyz + abs(f.cameraRight.xyz) + abs(f.cameraUp.xyz));
+    float depth = 1.0;
+    if (viewDepth > 1.0e-3 && viewDepth < 1.0e30) {
+        const float4 plane = Transform(f.viewProjection, f.cameraForward.xyz * viewDepth);
+        depth = saturate(plane.z / plane.w);
+    }
     CloudVertexOutput output;
-    output.position = float4(clip, 0.0, 1.0);
+    output.position = float4(clip, depth, 1.0);
     output.clip = clip;
     return output;
 }
@@ -1217,7 +1260,7 @@ CloudVertexOutput vertexClouds(uint vertexId : SV_VulkanVertexID)
 struct CloudOutput
 {
     float4 color : SV_Target;
-    float depth  : SV_Depth;
+    float depth  : SV_DepthLessEqual; // jamais plus près que le triangle : rejet anticipé permis (vertexClouds)
 };
 
 // Angle d'un pixel (radians), à peu près : 60° sur un millier de lignes. Règle les octaves au loin.
@@ -1313,7 +1356,7 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
         const float h = (radius - baseRadius) / thickness;
         const float3 up = fromCenter / radius;
         const float3 p = CloudDrift(planet, RotateInverse(planet.cloudRotation, up)) * (baseRadius * scale);
-        const float cover = CloudCoverage(planet, p, warp, octaves);
+        const float cover = CloudCoverage(planet, p, warp, octaves, CloudMinimumCover(h));
         if (cover <= 0.0) {
             continue;
         }
@@ -1360,7 +1403,7 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
         const float3 fromCenter = direction * t - planet.clouds.xyz;
         const float3 up = normalize(fromCenter);
         const float3 p = CloudDrift(planet, RotateInverse(planet.cloudRotation, up)) * (baseRadius * scale);
-        const float cover = CloudCoverage(planet, p, warp, octaves);
+        const float cover = CloudCoverage(planet, p, warp, octaves, 0.0);
         float columnAlpha = 0.0;
         float3 columnLight = float3(0.0);
         if (cover > 0.0) {
@@ -1396,6 +1439,6 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
     CloudOutput output;
     output.color = float4(ToneMap(color * airTransmittance + scattered + PlanetRim(planet, up, -direction)), alpha);
     const float4 clip = Transform(f.viewProjection, direction * hit);
-    output.depth = clip.z / clip.w;
+    output.depth = min(clip.z / clip.w, input.position.z);
     return output;
 }

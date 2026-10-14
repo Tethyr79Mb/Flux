@@ -140,8 +140,10 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la
   caméra, il marche en 8 pas dans le volume (forme en cumulus, érosion, lumière du soleil traversée vers le haut) ;
   au loin et vu de l'espace, il lit une seule colonne de densité, moins d'octaves et moins d'érosion selon la
-  taille d'un pixel, pour éviter le grain. Il écrit la profondeur du premier nuage touché (`SV_Depth`) : testée
-  contre la scène, sans être enregistrée. Leur ombre (`CloudShadow`) multiplie le soleil de tout ce qui est éclairé
+  taille d'un pixel, pour éviter le grain. Il écrit la profondeur du premier nuage touché, jamais plus près que la
+  couche (`SV_DepthLessEqual`, le triangle posé à cette distance) : testée contre la scène sans être enregistrée, et
+  les pixels cachés par le relief sont écartés avant le shader. La couverture s'arrête de lire ses octaves dès
+  qu'elles ne peuvent plus donner de nuage. Leur ombre (`CloudShadow`) multiplie le soleil de tout ce qui est éclairé
   (objets, sol, eau).
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
