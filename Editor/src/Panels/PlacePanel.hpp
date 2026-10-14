@@ -27,7 +27,7 @@ namespace FluxEditor {
                     const std::vector<std::filesystem::path>& prefabs);
 
         private:
-        enum class Item { Empty, Cube, Model, ScreenText, ScreenImage, SceneChange, Character, Ship, Fighter, Light, Spot, Sky, Interior, Interface, Sound, Planet, Sun, Prefab };
+        enum class Item { Empty, Cube, Model, ScreenText, ScreenImage, SceneChange, Character, Ship, Fighter, Light, Spot, Sky, Interior, Interface, Sound, Planet, World, Sun, Prefab };
         struct Choice
         {
             Item item;

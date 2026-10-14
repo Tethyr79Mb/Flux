@@ -156,6 +156,18 @@ namespace Flux {
         float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
     };
 
+    // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des
+    // vaisseaux, qui ont les leurs. Un seul compte ; sans lui, comme ses valeurs par défaut.
+    struct WorldComponent
+    {
+        float gravity = 9.81f; // m/s², vers le -y du monde ; 0 : apesanteur (l'espace)
+        float air = 0.0f;      // densité de l'air : 0 aucun, 1 comme au sol sur Terre (le vaisseau y est porté)
+        // Freinage par l'air, ici comme dans l'atmosphère des planètes : la vitesse de chute qu'un objet simulé ou un
+        // personnage ne dépasse pas dans un air comme sur Terre, sous 9,81 m/s². Plus d'air ou moins de gravité :
+        // il tombe moins vite.
+        float terminalSpeed = 55.0f; // m/s (un parachutiste à plat)
+    };
+
     // Soleil : l'étoile de la scène, un objet posé dans l'espace (loin : la Terre est à 150 millions de km du sien). Sa
     // lumière, ses ombres et son disque dans le ciel viennent de sa position : sur une planète, il est haut à midi d'un
     // côté, se lève ou se couche sur le bord, et il fait nuit de l'autre côté. Il remplace le soleil du Ciel (hauteur

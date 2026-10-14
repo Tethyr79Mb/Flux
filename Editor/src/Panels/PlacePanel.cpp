@@ -154,6 +154,7 @@ namespace FluxEditor {
                                            {"Interface...", "Interface", UI::Icon::Window},
                                            {"Son...", "Son", UI::Icon::Sound},
                                            {"Planète", "Planète", UI::Icon::Planet},
+                                           {"Monde (gravité, air)", "Monde", UI::Icon::Planet},
                                            {"Soleil", "Soleil", UI::Icon::Light},
                                            {"Prefab", "Prefab", UI::Icon::Prefab}};
             return Infos[item];
@@ -239,7 +240,7 @@ namespace FluxEditor {
             ui.BeginDisabled(playing);
             category("Formes", {Item::Empty, Item::Cube, Item::Model});
             category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior});
-            category("Espace", {Item::Planet});
+            category("Espace", {Item::Planet, Item::World});
             category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter});
             category("Interface", {Item::ScreenText, Item::ScreenImage, Item::Interface});
             category("Son", {Item::Sound});
@@ -315,6 +316,11 @@ namespace FluxEditor {
         if (item == Item::Sky) {
             // Un seul ciel compte : s'il y en a déjà un, c'est lui qu'on sélectionne (à régler dans l'inspecteur).
             for (const auto [existing, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+                sceneEditor.Select(scene, existing);
+                return;
+            }
+        } else if (item == Item::World) {
+            for (const auto [existing, world] : scene.GetRegistry().view<const WorldComponent>().each()) {
                 sceneEditor.Select(scene, existing);
                 return;
             }
@@ -401,6 +407,8 @@ namespace FluxEditor {
         } else if (item == Item::Sky) {
             // Autour de tout, à l'infini : sa position ne compte pas.
             scene.Add<SkyComponent>(entity);
+        } else if (item == Item::World) {
+            scene.Add<WorldComponent>(entity); // sa position ne compte pas
         } else if (item == Item::Sun) {
             // Fixe, au centre de la scène : le système se construit autour de lui (planètes en orbite, Orbits::Update).
             scene.Add<SunComponent>(entity);

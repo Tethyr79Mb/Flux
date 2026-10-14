@@ -86,6 +86,41 @@ namespace {
         return true;
     }
 
+    // Réglages du monde (WorldComponent) : gravité nulle, puis air qui plafonne la chute des objets et des personnages.
+    bool RunWorldTests() {
+        Scene scene;
+        WorldComponent& settings = scene.Add<WorldComponent>(scene.CreateEntity("Monde"));
+        settings.gravity = 0.0f;
+        const Entity box = scene.CreateEntity("Caisse");
+        scene.Get<TransformComponent>(box).position = {0.0, 5.0, 0.0};
+        scene.Add<ColliderComponent>(box).simulatePhysics = true;
+        const Entity character = scene.CreateEntity("Personnage");
+        scene.Get<TransformComponent>(character).position = {10.0, 5.0, 0.0};
+        scene.Add<CharacterComponent>(character).player = false;
+
+        PhysicsWorld world;
+        Run(world, scene, 1.0);
+        CHECK(std::abs(scene.Get<TransformComponent>(box).position.y - 5.0) < 1.0e-3);
+        CHECK(std::abs(scene.Get<TransformComponent>(character).position.y - 5.0) < 1.0e-3);
+        CHECK(std::abs(world.GetOutsideAir(scene, box)) < 1.0e-6f);
+
+        // Air comme sur Terre, chute limitée à 20 m/s : atteinte en quelques secondes, jamais dépassée. La caisse,
+        // endormie en apesanteur, se réveille quand la gravité revient.
+        settings.gravity = 9.81f;
+        settings.air = 1.0f;
+        settings.terminalSpeed = 20.0f;
+        Run(world, scene, 8.0);
+        const double boxBefore = scene.Get<TransformComponent>(box).position.y;
+        const double characterBefore = scene.Get<TransformComponent>(character).position.y;
+        Run(world, scene, 1.0);
+        const double boxSpeed = boxBefore - scene.Get<TransformComponent>(box).position.y;
+        const double characterSpeed = characterBefore - scene.Get<TransformComponent>(character).position.y;
+        CHECK(boxSpeed > 18.5 && boxSpeed < 20.1); // un peu moins : Jolt amortit aussi (mLinearDamping)
+        CHECK(characterSpeed > 19.0 && characterSpeed < 20.1);
+        CHECK(std::abs(world.GetOutsideAir(scene, box) - 1.0f) < 1.0e-6f);
+        return true;
+    }
+
     // Réglages absurdes (tailles nulles, rotation nulle, rebond parfait) : la simulation reste finie.
     bool RunDegenerateTests() {
         Scene scene;
@@ -974,5 +1009,5 @@ namespace {
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
-        && RunShipCollisionTests() && RunShipRestingTests() && RunPlanetSurfaceTests();
+        && RunShipCollisionTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunWorldTests();
 }
