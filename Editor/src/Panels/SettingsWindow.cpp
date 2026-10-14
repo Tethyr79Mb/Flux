@@ -86,6 +86,7 @@ namespace FluxEditor {
             if (m_tab == Tab::Graphics) {
                 Renderer& renderer = engine.GetRenderer();
                 ui.LabelText("GPU", renderer.GetDeviceName());
+                ui.LabelText("Vulkan", renderer.GetApiVersion());
                 bool vsync = renderer.IsVSyncEnabled();
                 if (ui.Checkbox("V-Sync", vsync)) {
                     renderer.SetVSync(vsync);
