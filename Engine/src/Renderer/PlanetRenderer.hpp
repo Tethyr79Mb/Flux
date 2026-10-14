@@ -28,7 +28,8 @@ namespace Flux {
         std::array<float, 4> beach{};   // altitude du niveau de la mer, hauteur de la plage au-dessus (m)
         std::array<float, 4> rim{};     // couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
         // Nuages (CloudsComponent) : centre de la planète relatif à la caméra et rayon de leur couche (w, 0 : aucun) ;
-        // rotation de la planète (quaternion) ; couverture, opacité, 1 / taille des formations, angle de dérive ; couleur.
+        // rotation de la planète (quaternion) ; couverture, opacité, 1 / taille des formations, angle de dérive ; couleur et
+        // épaisseur de la couche (w, m).
         std::array<float, 4> clouds{};
         std::array<float, 4> cloudRotation{0.0f, 0.0f, 0.0f, 1.0f};
         std::array<float, 4> cloudShape{};

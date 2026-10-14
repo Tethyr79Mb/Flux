@@ -73,8 +73,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Planètes
 - ⬜ Végétation et rochers posés sur le sol (instancing).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
-- ✅ Nuages : une couche fine par planète (`CloudsComponent`), vue du sol et de l'espace, avec son ombre.
-- ⬜ Nuages en volume (on vole dedans), par-dessus la couche : marche de rayons, coûteuse.
+- ✅ Nuages : une couche épaisse par planète (`CloudsComponent`), en volume près de la caméra (8 pas), en colonne au loin et vu de l'espace, avec son ombre.
+- ⬜ Nuages : plus de pas quand on vole dedans, reprojection d'une image à l'autre, formes par type (cumulus, stratus).
 - ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 - ⬜ 2 ou 3 textures par matière, pour varier davantage le sol de près.
 

@@ -142,6 +142,7 @@ namespace Flux {
             .Field("skyColor", "Couleur du ciel", &PlanetComponent::skyColor, {.alpha = false});
         registry.Register<CloudsComponent>("clouds", "Nuages")
             .Field("altitude", "Altitude (m)", &CloudsComponent::altitude, {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            .Field("thickness", "Épaisseur (m)", &CloudsComponent::thickness, {.speed = 10.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
             .Field("coverage", "Couverture", &CloudsComponent::coverage, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("opacity", "Opacité", &CloudsComponent::opacity, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("size", "Taille des formations (m)", &CloudsComponent::size, {.speed = 100.0, .min = 100.0, .max = 1.0e7, .decimals = 0})

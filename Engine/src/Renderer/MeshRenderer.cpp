@@ -845,7 +845,7 @@ namespace Flux {
                        static_cast<float>(transform.position.z), static_cast<float>(radius)};
         data.cloudRotation = {transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w};
         data.cloudShape = {coverage, opacity, 1.0f / std::max(clouds.size, 100.0f), static_cast<float>(drift)};
-        data.cloudColor = {clouds.color.r, clouds.color.g, clouds.color.b, 0.0f};
+        data.cloudColor = {clouds.color.r, clouds.color.g, clouds.color.b, std::max(clouds.thickness, 10.0f)};
     }
 
     void MeshRenderer::BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,

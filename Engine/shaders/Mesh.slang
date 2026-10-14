@@ -40,7 +40,7 @@ struct PlanetData
     float4 clouds;            // xyz : centre de la planète relatif à la caméra ; w : rayon de la couche de nuages (0 : aucune)
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
     float4 cloudShape;        // x : couverture ; y : opacité ; z : 1 / taille des formations (1/m) ; w : angle de dérive
-    float4 cloudColor;        // rgb : couleur linéaire
+    float4 cloudColor;        // rgb : couleur linéaire ; w : épaisseur de la couche (m)
 };
 
 static const uint MaxPlanets = 4;
@@ -561,7 +561,7 @@ float PlanetNoise(float3 x)
                      lerp(PlanetHash(i + float3(0, 1, 1)), PlanetHash(i + float3(1, 1, 1)), t.x), t.y), t.z);
 }
 
-// --- Nuages des planètes (CloudsComponent) : une couche fine, une sphère autour du centre de la planète. ---
+// --- Nuages des planètes (CloudsComponent) : une couche épaisse entre deux sphères autour du centre de la planète. ---
 
 // v ramené dans le repère de la rotation q (quaternion xyzw) : q* v q.
 float3 RotateInverse(float4 q, float3 v)
@@ -570,38 +570,75 @@ float3 RotateInverse(float4 q, float3 v)
     return v + q.w * t + cross(-q.xyz, t);
 }
 
-// Densité des nuages (0 à 1) dans `direction` (unitaire, repère de la planète). `octaves` : nombre d'octaves de bruit
-// (1 à 6, la dernière en partie) ; moins au loin, où les petites scintilleraient, et pour les ombres. Une octave
-// effacée vaut sa moyenne : la couverture ne change pas avec la distance.
-static const int CloudOctaves = 6;
-
-float CloudDensity(PlanetData planet, float3 direction, float octaves)
+// Entrée et sortie d'une sphère de centre `center` (relatif à l'origine du rayon) : x > y si manquée. Distance au
+// centre par la perpendiculaire au rayon : plus précis que b² - c quand la sphère est loin.
+float2 RaySphere(float3 center, float3 direction, float radius)
 {
-    // Dérive : la couche tourne autour de l'axe y de la planète.
+    const float b = dot(center, direction);
+    const float3 closest = center - direction * b;
+    const float discriminant = radius * radius - dot(closest, closest);
+    if (discriminant < 0.0) {
+        return float2(1.0, -1.0);
+    }
+    const float root = sqrt(discriminant);
+    return float2(b - root, b + root);
+}
+
+// Direction (repère de la planète, unitaire) entraînée par la dérive : la couche tourne autour de l'axe y.
+float3 CloudDrift(PlanetData planet, float3 direction)
+{
     const float c = cos(planet.cloudShape.w);
     const float s = sin(planet.cloudShape.w);
-    direction = float3(c * direction.x + s * direction.z, direction.y, c * direction.z - s * direction.x);
-    const float3 p = direction * (planet.clouds.w * planet.cloudShape.z);
-    // Régions deux fois plus grandes que les formations : ciel dégagé ici, couvert là.
+    return float3(c * direction.x + s * direction.z, direction.y, c * direction.z - s * direction.x);
+}
+
+// Carte de couverture : où sont les nuages, vu d'au-dessus. Positive dans un nuage (d'autant plus qu'on va vers son
+// cœur), négative dans le ciel dégagé. p : la direction (dérivée) en tailles de formation. Des régions deux fois plus
+// grandes séparent ciel dégagé et ciel couvert ; le domaine est tordu (`warp`) pour des bords en volutes plutôt qu'en
+// taches rondes. `octaves` : 1 à 4, la dernière en partie ; une octave effacée vaut sa moyenne.
+float CloudCoverage(PlanetData planet, float3 p, float3 warp, float octaves)
+{
+    p += warp;
     float value = PlanetNoise(p * 0.5 + 31.0) * 0.5;
     float amplitude = 0.25;
     float frequency = 1.0;
     [unroll]
-    for (int i = 0; i < CloudOctaves; ++i) {
+    for (int i = 0; i < 4; ++i) {
         const float weight = saturate(octaves - float(i));
         const float noise = weight > 0.0 ? PlanetNoise(p * frequency + float(i) * 7.31) : 0.5;
         value += lerp(0.5, noise, weight) * amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
     }
-    value /= 0.5 + 0.5 * (1.0 - exp2(-float(CloudOctaves))); // somme des amplitudes : de 0 à 1
-    // Couverture : la part du bruit au-dessus du seuil (sa moyenne, 0,5, pour la moitié du ciel), bords fondus.
-    const float threshold = lerp(0.72, 0.28, planet.cloudShape.x);
-    return smoothstep(threshold - 0.06, threshold + 0.06, value);
+    value /= 0.96875; // somme des amplitudes : de 0 à 1
+    return value - lerp(0.72, 0.28, planet.cloudShape.x);
 }
 
-// Part du soleil qui passe à travers les nuages jusqu'à ce point (1 : aucun nuage entre les deux). Peu d'octaves : une
-// ombre de nuage est floue.
+// Torsion du domaine, une fois par pixel : les volutes à l'échelle des formations.
+float3 CloudWarp(float3 p)
+{
+    return (float3(PlanetNoise(p * 0.7 + 3.1), PlanetNoise(p * 0.7 + 11.7), PlanetNoise(p * 0.7 + 23.3)) - 0.5) * 0.9;
+}
+
+// Densité (0 à 1) à la hauteur relative h (0 : base de la couche, 1 : son sommet) pour une couverture `cover` : base
+// plate, sommet en dôme, d'autant plus haut que le nuage est épais (un cumulus monte en son centre).
+float CloudShape(float cover, float h)
+{
+    const float core = saturate(cover / 0.14);
+    const float top = 0.25 + 0.75 * core;
+    return smoothstep(0.0, 0.08, h) * saturate((top - h) / 0.3) * core;
+}
+
+// Bruit « en chou-fleur » (bosses arrondies) qui ronge les bords d'un nuage : 0 à 1.
+float CloudBillow(float3 q)
+{
+    const float a = abs(PlanetNoise(q) * 2.0 - 1.0);
+    const float b = abs(PlanetNoise(q * 2.3 + 5.1) * 2.0 - 1.0);
+    return a * 0.65 + b * 0.35;
+}
+
+// Part du soleil qui passe à travers les nuages jusqu'à ce point (1 : aucun nuage entre les deux). La couverture seule
+// au tiers de la couche, peu d'octaves : une ombre de nuage est floue.
 float CloudShadow(float3 worldPosition)
 {
     const FrameData f = frame[0];
@@ -612,13 +649,16 @@ float CloudShadow(float3 worldPosition)
             continue;
         }
         const float3 origin = worldPosition - planet.clouds.xyz;
-        const float2 hit = AtmosphereRaySphere(origin, f.toSun.xyz, planet.clouds.w);
+        const float radius = planet.clouds.w + planet.cloudColor.w * 0.3;
+        const float2 hit = AtmosphereRaySphere(origin, f.toSun.xyz, radius);
         const float t = hit.x > 0.0 ? hit.x : hit.y; // sous la couche : la sortie ; au-dessus : l'entrée
         if (hit.x > hit.y || t <= 0.0) {
             continue;
         }
-        const float3 direction = RotateInverse(planet.cloudRotation, normalize(origin + f.toSun.xyz * t));
-        light *= 1.0 - CloudDensity(planet, direction, 2.0) * planet.cloudShape.y * 0.85;
+        const float3 direction = CloudDrift(planet, RotateInverse(planet.cloudRotation, normalize(origin + f.toSun.xyz * t)));
+        const float3 p = direction * (planet.clouds.w * planet.cloudShape.z);
+        const float density = CloudShape(CloudCoverage(planet, p, float3(0.0), 2.0), 0.3);
+        light *= 1.0 - (1.0 - exp(-density * 4.0)) * planet.cloudShape.y * 0.85;
     }
     return light;
 }
@@ -1152,10 +1192,12 @@ void fragmentShadow(ShadowOutput input)
     }
 }
 
-// Nuages des planètes : un triangle plein écran ; chaque pixel cherche la couche de nuages la plus proche le long de
-// son rayon, y lit la densité et écrit la profondeur du point touché (SV_Depth) : le sol, les montagnes et les
-// vaisseaux devant la couche la cachent (test de profondeur), ce qui est derrière elle est voilé. Le bruit coûte
-// quelques octaves par pixel couvert, moins au loin ; l'air devant la couche, 8 pas.
+// Nuages des planètes : un triangle plein écran. Chaque pixel cherche la couche de nuages la plus proche le long de
+// son rayon et la traverse en quelques pas (4 à 8) : à chaque pas, la densité (carte de couverture, forme en dôme,
+// bords rongés), la lumière du soleil qui lui arrive (ombre du nuage sur lui-même, lue juste au-dessus vers le
+// soleil), sa diffusion vers l'œil (plus forte en contre-jour : bords argentés) et la lumière du ciel. La profondeur
+// écrite (SV_Depth) est celle du premier nuage touché : le sol, les montagnes et les vaisseaux devant la couche la
+// cachent (test de profondeur). Coût : une dizaine de bruits par pas et par pixel couvert, moins au loin.
 struct CloudVertexOutput
 {
     float4 position : SV_Position;
@@ -1180,31 +1222,47 @@ struct CloudOutput
 
 // Angle d'un pixel (radians), à peu près : 60° sur un millier de lignes. Règle les octaves au loin.
 static const float CloudPixelAngle = 0.0015;
+// Longueur traversée au plus (m) : de biais, la couche peut faire des dizaines de km ; au-delà, l'air voile tout.
+static const float CloudMaxPath = 40000.0;
+
+// Henyey-Greenstein, rapportée à une diffusion égale dans toutes les directions (1).
+float CloudPhase(float g, float mu)
+{
+    const float d = 1.0 + g * g - 2.0 * g * mu;
+    return (1.0 - g * g) / (d * sqrt(d));
+}
 
 [shader("fragment")]
 CloudOutput fragmentClouds(CloudVertexOutput input)
 {
     const FrameData f = frame[0];
     const float3 direction = normalize(f.cameraForward.xyz + f.cameraRight.xyz * input.clip.x - f.cameraUp.xyz * input.clip.y);
-    // La couche la plus proche sur le rayon. Distance au centre par la perpendiculaire au rayon : plus précis que
-    // b² - c quand la planète est loin.
-    float nearest = 3.0e38;
+    // La couche la plus proche sur le rayon : de son entrée à sa sortie, sans traverser la sphère de sa base.
+    float start = 3.0e38;
+    float end = 0.0;
     uint index = MaxPlanets;
     for (uint i = 0; i < f.lightCount.z; ++i) {
-        const float4 clouds = f.planets[i].clouds;
-        if (clouds.w <= 0.0) {
+        const PlanetData candidate = f.planets[i];
+        if (candidate.clouds.w <= 0.0) {
             continue;
         }
-        const float b = dot(clouds.xyz, direction); // le centre est en clouds.xyz, la caméra à l'origine
-        const float3 closest = clouds.xyz - direction * b;
-        const float discriminant = clouds.w * clouds.w - dot(closest, closest);
-        if (discriminant < 0.0) {
+        const float2 outer = RaySphere(candidate.clouds.xyz, direction, candidate.clouds.w + candidate.cloudColor.w);
+        if (outer.x > outer.y || outer.y <= 0.0) {
             continue;
         }
-        const float root = sqrt(discriminant);
-        const float t = b - root > 0.0 ? b - root : b + root; // dedans (sous la couche) : la sortie
-        if (t > 0.0 && t < nearest) {
-            nearest = t;
+        const float2 inner = RaySphere(candidate.clouds.xyz, direction, candidate.clouds.w);
+        float from = max(outer.x, 0.0);
+        float to = outer.y;
+        if (inner.x <= inner.y && inner.y > 0.0) {
+            if (inner.x > 0.0) {
+                to = inner.x;            // au-dessus de la base : jusqu'à elle
+            } else {
+                from = max(from, inner.y); // sous la base : à partir de sa sortie
+            }
+        }
+        if (to > from && from < start) {
+            start = from;
+            end = to;
             index = i;
         }
     }
@@ -1212,39 +1270,132 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
         discard;
     }
     const PlanetData planet = f.planets[index];
-    const float3 position = direction * nearest;
-    const float3 fromCenter = position - planet.clouds.xyz;
-    const float3 up = normalize(fromCenter);
-    const float size = 1.0 / planet.cloudShape.z;
-    const float octaves = clamp(log2(size / max(4.0 * nearest * CloudPixelAngle, 1.0)) + 1.0, 1.0, float(CloudOctaves));
-    const float density = CloudDensity(planet, RotateInverse(planet.cloudRotation, up), octaves);
-    const float alpha = density * planet.cloudShape.y;
+    end = min(end, start + CloudMaxPath);
+    const float baseRadius = planet.clouds.w;
+    const float thickness = max(planet.cloudColor.w, 1.0);
+    const float scale = planet.cloudShape.z; // 1 / taille des formations
+    const float size = 1.0 / scale;
+
+    // Moins de pas et d'octaves au loin (vue de l'espace : la couche n'est qu'une pellicule).
+    // De près (moins de 45 km), la couche est traversée en 8 pas ; de loin, ses pas dessineraient des courbes de niveau
+    // (une strate par pas) : chaque point n'est plus qu'une colonne, sa densité intégrée sur la hauteur. Fondu de
+    // l'un à l'autre entre 45 et 60 km.
+    const float near = saturate(1.0 - start / 60000.0);
+    const float marched = saturate(near * 4.0);
+    const int steps = marched > 0.0 ? 8 : 0;
+    const float octaves = clamp(log2(size / max(4.0 * start * CloudPixelAngle, 1.0)) + 1.0, 1.0, 4.0);
+    // Bords rongés de près seulement : leur bruit le plus fin (size / 14) doit couvrir 4 pixels, sinon il scintille.
+    const float erosion = saturate(log2(size / (14.0 * max(4.0 * start * CloudPixelAngle, 1.0))));
+    const float stepLength = (end - start) / float(steps);
+    // Départ décalé au hasard par pixel, de près : du grain fin au lieu de strates. De loin, la couche est trop mince
+    // pour faire des strates et ce grain se verrait : au milieu des pas.
+    const float jitter = lerp(0.5, PlanetHash(float3(input.position.xy, 0.0)), near);
+    const float3 midDirection = CloudDrift(planet, RotateInverse(planet.cloudRotation,
+                                                                 normalize(direction * (0.5 * (start + end)) - planet.clouds.xyz)));
+    const float3 warp = CloudWarp(midDirection * (baseRadius * scale));
+
+    const float3 toSun = f.toSun.xyz;
+    const float mu = dot(direction, toSun);
+    const float phase = lerp(CloudPhase(-0.15, mu), CloudPhase(0.65, mu), 0.45);
+    const bool air = HasAtmosphere(f.atmosphere)
+                   && dot(f.atmosphere.center.xyz - planet.clouds.xyz, f.atmosphere.center.xyz - planet.clouds.xyz)
+                          < 1.0e-6 * dot(planet.clouds.xyz, planet.clouds.xyz) + 1.0;
+    const float3 sky = environmentMap.SampleLevel(normalize(direction * start - planet.clouds.xyz), f.environment.y).rgb
+                     * f.environment.x;
+
+    float transmittance = 1.0;
+    float3 light = float3(0.0);
+    float firstHit = -1.0;
+    for (int s = 0; s < steps; ++s) {
+        const float t = start + (float(s) + jitter) * stepLength;
+        const float3 fromCenter = direction * t - planet.clouds.xyz;
+        const float radius = length(fromCenter);
+        const float h = (radius - baseRadius) / thickness;
+        const float3 up = fromCenter / radius;
+        const float3 p = CloudDrift(planet, RotateInverse(planet.cloudRotation, up)) * (baseRadius * scale);
+        const float cover = CloudCoverage(planet, p, warp, octaves);
+        if (cover <= 0.0) {
+            continue;
+        }
+        float density = CloudShape(cover, h);
+        if (density <= 0.0) {
+            continue;
+        }
+        if (erosion > 0.0) {
+            // Bords rongés en bosses arrondies, en 3D (la hauteur compte) : du relief qui bouge avec la caméra.
+            const float3 q = (p + warp) * 6.0 + up * (h * thickness * scale * 6.0);
+            const float bite = CloudBillow(q) * 0.55 * erosion;
+            density = saturate((density - bite) / (1.0 - bite));
+        }
+        density *= planet.cloudShape.y;
+        if (density <= 0.001) {
+            continue;
+        }
+        // Le soleil qui arrive ici : la planète le cache la nuit, l'air le rougit, le nuage au-dessus (vers le soleil)
+        // l'arrête. Lumière du ciel : plus forte au sommet du nuage qu'à sa base.
+        const float sunFacing = dot(up, toSun);
+        float3 sunLight = f.sunColor.rgb * smoothstep(-0.08, 0.04, sunFacing);
+        float3 ambient = sky;
+        if (air) {
+            sunLight = f.sunColor.rgb * AtmosphereSunTransmittance(f.atmosphere, fromCenter, toSun);
+            ambient = AtmosphereAmbient(f.atmosphere, fromCenter, up, toSun) + sky * AtmosphereNightSky(f.atmosphere, fromCenter, toSun);
+        }
+        const float above = CloudShape(cover, h + 0.35 * max(sunFacing, 0.2)) * planet.cloudShape.y;
+        const float selfShadow = exp(-above * 3.0) * (1.0 - exp(-density * 6.0) * 0.4); // et un peu plus clair au cœur (« powder »)
+        const float3 lit = planet.cloudColor.rgb * 0.9 * (sunLight * selfShadow * phase + ambient * (0.45 + 0.55 * saturate(h)));
+        // Extinction : un nuage plein (densité 1) arrête presque toute la lumière en une demi-épaisseur.
+        const float stepTransmittance = exp(-density * 6.0 / thickness * stepLength);
+        light += transmittance * (1.0 - stepTransmittance) * lit;
+        transmittance *= stepTransmittance;
+        if (firstHit < 0.0) {
+            firstHit = t;
+        }
+        if (transmittance < 0.02) {
+            break;
+        }
+    }
+    if (marched < 1.0) {
+        // Colonne au milieu de la traversée : le nuage d'autant plus opaque que le regard le traverse de biais.
+        const float t = 0.5 * (start + end);
+        const float3 fromCenter = direction * t - planet.clouds.xyz;
+        const float3 up = normalize(fromCenter);
+        const float3 p = CloudDrift(planet, RotateInverse(planet.cloudRotation, up)) * (baseRadius * scale);
+        const float cover = CloudCoverage(planet, p, warp, octaves);
+        float columnAlpha = 0.0;
+        float3 columnLight = float3(0.0);
+        if (cover > 0.0) {
+            const float core = saturate(cover / 0.14);
+            const float column = core * (0.12 + 0.6 * core); // ∫ CloudShape dh, à peu près
+            const float slant = clamp((end - start) / thickness, 1.0, 6.0);
+            columnAlpha = 1.0 - exp(-column * 6.0 * slant * planet.cloudShape.y);
+            const float sunFacing = dot(up, toSun);
+            float3 sunLight = f.sunColor.rgb * smoothstep(-0.08, 0.04, sunFacing);
+            float3 ambient = sky;
+            if (air) {
+                sunLight = f.sunColor.rgb * AtmosphereSunTransmittance(f.atmosphere, fromCenter, toSun);
+                ambient = AtmosphereAmbient(f.atmosphere, fromCenter, up, toSun) + sky * AtmosphereNightSky(f.atmosphere, fromCenter, toSun);
+            }
+            columnLight = planet.cloudColor.rgb * 0.9 * (sunLight * (1.0 - 0.3 * core) * phase + ambient * 0.8) * columnAlpha;
+        }
+        light = lerp(columnLight, light, marched);
+        transmittance = lerp(1.0 - columnAlpha, transmittance, marched);
+    }
+    const float alpha = 1.0 - transmittance;
     if (alpha < 0.004) {
         discard;
     }
-
-    // Soleil caché par la planète la nuit (adouci au crépuscule) ; ambiante : la texture du ciel.
-    const float3 toSun = f.toSun.xyz;
-    const float sunFacing = dot(up, toSun);
-    float3 sunLight = f.sunColor.rgb * smoothstep(-0.08, 0.04, sunFacing);
-    float3 ambient = environmentMap.SampleLevel(up, f.environment.y).rgb * f.environment.x;
-    float3 transmittance = float3(1.0);
+    const float hit = firstHit > 0.0 ? firstHit : 0.5 * (start + end);
+    // L'air entre la caméra et le nuage.
+    float3 airTransmittance = float3(1.0);
     float3 scattered = float3(0.0);
-    const float3 toAtmosphere = f.atmosphere.center.xyz - planet.clouds.xyz;
-    if (HasAtmosphere(f.atmosphere) && dot(toAtmosphere, toAtmosphere) < 1.0e-6 * dot(planet.clouds.xyz, planet.clouds.xyz) + 1.0) {
-        // L'air de cette planète : le soleil rougi au couchant, la lumière du ciel, et l'air entre la caméra et la couche.
-        sunLight = f.sunColor.rgb * AtmosphereSunTransmittance(f.atmosphere, fromCenter, toSun);
-        ambient = AtmosphereAmbient(f.atmosphere, fromCenter, up, toSun) + ambient * AtmosphereNightSky(f.atmosphere, fromCenter, toSun);
-        scattered = AtmosphereScatter(f.atmosphere, direction, nearest, toSun, f.sunColor.rgb, 8, 0.5, transmittance);
+    if (air) {
+        scattered = AtmosphereScatter(f.atmosphere, direction, hit, toSun, f.sunColor.rgb, 8, 0.5, airTransmittance);
     }
-    // Vu de dessous, le cœur d'un nuage épais est sombre (la lumière l'a traversé) ; de dessus, sa face est au soleil.
-    const bool below = dot(planet.clouds.xyz, planet.clouds.xyz) < planet.clouds.w * planet.clouds.w;
-    const float thickness = below ? lerp(1.0, 0.35, density) : lerp(1.0, 0.85, density);
-    const float3 lit = planet.cloudColor.rgb * 0.85 * (sunLight * (0.3 + 0.7 * saturate(sunFacing + 0.2)) * thickness + ambient);
-
+    const float3 color = light / alpha; // non prémultiplié : le mélange multiplie par alpha
+    const float3 up = normalize(direction * hit - planet.clouds.xyz);
     CloudOutput output;
-    output.color = float4(ToneMap(lit * transmittance + scattered + PlanetRim(planet, up, -direction)), alpha);
-    const float4 clip = Transform(f.viewProjection, position);
+    output.color = float4(ToneMap(color * airTransmittance + scattered + PlanetRim(planet, up, -direction)), alpha);
+    const float4 clip = Transform(f.viewProjection, direction * hit);
     output.depth = clip.z / clip.w;
     return output;
 }
