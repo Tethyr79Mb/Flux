@@ -562,6 +562,10 @@ namespace Flux {
 
     Engine::FlightState Engine::GetFlightState(Entity ship) {
         FlightState flight;
+        // L'air des planètes ou du monde (WorldComponent), comme pour les objets qui tombent.
+        if (m_physics) {
+            flight.air = std::min(1.0f, m_physics->GetOutsideAir(m_scene, ship));
+        }
         const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
         const PlanetComponent* nearest = nullptr;
         Math::Vector3d offset{};
@@ -595,12 +599,8 @@ namespace Flux {
             ground = std::max(ground, nearest->seaLevel * 0.01 * nearest->relief);
         }
         flight.altitude = Math::Length(offset) - nearest->radius - ground;
-        // Comme le ciel (Atmosphere.cpp) : densité divisée par e tous les huitièmes de sa hauteur, nulle au-dessus.
         const double height = std::max(nearest->atmosphereHeight, 100.0f);
         const double above = std::max(Math::Length(offset) - nearest->radius, 0.0);
-        if (nearest->atmosphere > 0.0f && above < height) {
-            flight.air = static_cast<float>(std::min(1.0, nearest->atmosphere * std::exp(-8.0 * above / height)));
-        }
         flight.boundary = std::max(nearest->atmosphere > 0.0f ? above - height : flight.altitude, 0.0);
         return flight;
     }

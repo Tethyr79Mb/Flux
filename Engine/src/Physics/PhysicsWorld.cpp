@@ -253,6 +253,10 @@ namespace Flux {
         // Sol et gravité des planètes, dans le monde de la scène.
         PlanetGround planetGround{Layers::NonMoving};
         std::vector<PlanetGround::Probe> probes;
+        // Réglages du monde (WorldComponent) : densité de l'air hors planètes, et freinage k de l'air (dv/dt = -k ·
+        // densité · |v| · v), tiré de la vitesse de chute limite sur Terre (g = k · v²).
+        float worldAir = 0.0f;
+        float airDrag = DragFor(WorldComponent{}.terminalSpeed);
 
         Impl(std::shared_ptr<PhysicsContext> owner, PhysicsContext::Impl& details)
             : context(std::move(owner)), shared(details) {
@@ -305,6 +309,28 @@ namespace Flux {
         const RelativeTransform* FindTransform(Entity entity) const {
             const auto found = std::ranges::find(transforms, entity, &RelativeTransform::entity);
             return found == transforms.end() ? nullptr : &*found;
+        }
+
+        static float DragFor(float terminalSpeed) {
+            const float speed = std::max(terminalSpeed, 1.0f);
+            return 9.81f / (speed * speed);
+        }
+
+        // Densité de l'air en ce point d'un monde : celle des planètes ou du monde dehors. À bord d'un vaisseau, rien :
+        // on n'y tombe jamais assez longtemps pour que l'air compte.
+        float AirAt(const Grid& grid, JPH::RVec3Arg position) const {
+            if (grid.frame != NullEntity) {
+                return 0.0f;
+            }
+            if (!planetGround.HasPlanets()) {
+                return worldAir;
+            }
+            return planetGround.GetAir({position.GetX(), position.GetY(), position.GetZ()}, worldAir);
+        }
+
+        // Vitesse freinée par l'air pendant un pas : implicite (v / (1 + k·ρ·|v|·dt)), stable même très vite.
+        JPH::Vec3 Brake(JPH::Vec3Arg velocity, float air) const {
+            return velocity / (1.0f + airDrag * air * velocity.Length() * StepSeconds);
         }
 
         // Gravité en ce point d'un monde (dans son repère) : celle du vaisseau à bord, celle des planètes ou du monde dehors.
@@ -393,9 +419,11 @@ namespace Flux {
             }
         }
 
-        // Objets simulés du monde près d'une planète : Jolt les tire vers le bas du monde, on corrige vers son centre.
-        void ApplyPlanetGravity(const Grid& grid) {
-            if (grid.frame != NullEntity || !planetGround.HasPlanets()) {
+        // Objets simulés du monde : près d'une planète, Jolt les tire vers le bas du monde, on corrige vers son centre ;
+        // dans l'air, ils sont freinés.
+        void ApplyOutsideForces(const Grid& grid) {
+            const bool planets = planetGround.HasPlanets();
+            if (grid.frame != NullEntity || (!planets && worldAir <= 0.0f)) {
                 return;
             }
             JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
@@ -404,9 +432,15 @@ namespace Flux {
                 if (id.IsInvalid() || bodyInterface.GetMotionType(id) != JPH::EMotionType::Dynamic || !bodyInterface.IsActive(id)) {
                     continue;
                 }
-                const JPH::Vec3 difference = GravityAt(grid, bodyInterface.GetCenterOfMassPosition(id)) - base;
-                if (difference.LengthSq() > 1.0e-8f) {
-                    bodyInterface.AddLinearVelocity(id, difference * (bodyInterface.GetGravityFactor(id) * StepSeconds));
+                const JPH::RVec3 position = bodyInterface.GetCenterOfMassPosition(id);
+                if (planets) {
+                    const JPH::Vec3 difference = GravityAt(grid, position) - base;
+                    if (difference.LengthSq() > 1.0e-8f) {
+                        bodyInterface.AddLinearVelocity(id, difference * (bodyInterface.GetGravityFactor(id) * StepSeconds));
+                    }
+                }
+                if (const float air = AirAt(grid, position); air > 0.0f) {
+                    bodyInterface.SetLinearVelocity(id, Brake(bodyInterface.GetLinearVelocity(id), air));
                 }
             }
         }
@@ -819,6 +853,20 @@ namespace Flux {
             grid.characters.emplace(entity, std::move(character));
         }
 
+        // Jolt ne réveille pas les corps endormis quand la gravité change : une caisse posée en apesanteur y resterait.
+        static void SetGridGravity(Grid& grid, JPH::Vec3Arg gravity) {
+            if (grid.system->GetGravity() == gravity) {
+                return;
+            }
+            grid.system->SetGravity(gravity);
+            JPH::BodyInterface& bodyInterface = grid.system->GetBodyInterface();
+            for (const auto& [entity, id] : grid.bodies) {
+                if (!id.IsInvalid() && bodyInterface.GetMotionType(id) == JPH::EMotionType::Dynamic) {
+                    bodyInterface.ActivateBody(id);
+                }
+            }
+        }
+
         // Vaisseaux apparus ou disparus, repère de chacun pour cette mise à jour.
         void SynchronizeGrids(const Scene& scene) {
             std::erase_if(grids, [&](const std::unique_ptr<Grid>& grid) {
@@ -839,7 +887,18 @@ namespace Flux {
                     grid->frameRotation = transform->rotation;
                     grid->frameScale = transform->scale;
                 }
-                grid->system->SetGravity(JPH::Vec3(0.0f, -ship.gravity, 0.0f)); // le sol du pont
+                SetGridGravity(*grid, JPH::Vec3(0.0f, -ship.gravity, 0.0f)); // le sol du pont
+            }
+            // Réglages du monde : le premier trouvé. Sans lui, la gravité reste celle donnée par SetGravity.
+            const auto worlds = scene.GetRegistry().view<const WorldComponent>();
+            if (worlds.begin() != worlds.end()) {
+                const WorldComponent& world = worlds.get<const WorldComponent>(*worlds.begin());
+                SetGridGravity(*grids.front(), JPH::Vec3(0.0f, -std::max(world.gravity, 0.0f), 0.0f));
+                worldAir = std::max(world.air, 0.0f);
+                airDrag = DragFor(world.terminalSpeed);
+            } else {
+                worldAir = 0.0f;
+                airDrag = DragFor(WorldComponent{}.terminalSpeed);
             }
         }
 
@@ -1139,6 +1198,8 @@ namespace Flux {
                     if (jump) {
                         velocity += up * component.jumpSpeed;
                     }
+                } else if (const float air = AirAt(grid, body.GetPosition()); air > 0.0f) {
+                    velocity = Brake(vertical, air); // la chute plafonne
                 } else {
                     velocity = vertical;
                 }
@@ -1261,7 +1322,7 @@ namespace Flux {
             for (int step = 0; step < steps; ++step) {
                 for (const std::unique_ptr<Grid>& grid : grids) {
                     UpdateCharacters(*grid, scene, input);
-                    ApplyPlanetGravity(*grid);
+                    ApplyOutsideForces(*grid);
                     JPH::JobSystem* jobs = grid->system->GetNumActiveBodies(JPH::EBodyType::RigidBody) < ParallelBodyCount
                                                ? static_cast<JPH::JobSystem*>(shared.serialJobs.get())
                                                : shared.jobSystem.get();
@@ -1387,6 +1448,14 @@ namespace Flux {
             return base;
         }
         return impl.planetGround.GetGravity(Math::Delta(impl.anchor, scene.GetWorldPosition(entity)), base);
+    }
+
+    float PhysicsWorld::GetOutsideAir(const Scene& scene, Entity entity) const {
+        const Impl& impl = *m_impl;
+        if (!scene.IsValid(entity) || !impl.anchored) {
+            return impl.worldAir;
+        }
+        return impl.planetGround.GetAir(Math::Delta(impl.anchor, scene.GetWorldPosition(entity)), impl.worldAir);
     }
 
     Entity PhysicsWorld::GetPlayer() const {
