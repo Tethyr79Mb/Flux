@@ -27,7 +27,7 @@ namespace Flux {
             std::array<float, 4> galaxyAxis;   // w : quantité d'étoiles
             std::array<float, 4> galaxyCenter; // w : éclat des étoiles
             std::array<float, 4> noiseOffset;  // w : luminosité
-            std::array<std::uint32_t, 4> options; // x : graine ; y : panorama
+            std::array<std::uint32_t, 4> options; // x : graine ; y : panorama ; z : rayons du soleil (SunRays)
             AtmosphereGpu atmosphere;
         };
         static_assert(sizeof(SkyData) == 192 + sizeof(AtmosphereGpu));
@@ -291,6 +291,7 @@ namespace Flux {
         }
         // Le disque d'un Soleil posé a sa propre couleur ; sa lumière, la sienne (blanche par défaut).
         data.discColor = ToArray(sun ? sunLight(sun->color, sun->intensity) : lighting.sunColor, 0.0f);
+        data.options[2] = static_cast<std::uint32_t>(sun ? sun->rays : SunRays::Star);
         lighting.atmosphere = PrepareAtmosphere(scene, camera, lighting.sunColor);
         data.atmosphere = lighting.atmosphere;
         m_visible = component != nullptr || lighting.atmosphere.mie[3] > 0.0f;

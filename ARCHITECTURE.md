@@ -80,9 +80,9 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32.
 4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
-   (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons fins, bien
-   plus lumineux que le blanc), océans, nuages, transparents, flammes des réacteurs (additives, sans tri). PBR
-   métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
+   (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
+   ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans, nuages, transparents,
+   flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
 5. Bloom (`Post.slang`, méthode de Jimenez) : la scène réduite de moitié jusqu'à 6 fois (13 lectures, moyenne de Karis
    à la première), puis remontée en additionnant chaque niveau flou au niveau au-dessus ; sans seuil.
 6. Passe principale vers la fenêtre : la scène mélangée à son bloom (Paramètres > Graphiques, 4 % par défaut), puis
