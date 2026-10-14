@@ -446,11 +446,20 @@ namespace Flux {
         }
 
         void ChooseAnchor(const Scene& scene) {
-            // Le secteur du premier objet physique : la simulation se passe autour de lui.
+            // Là où est le joueur, sinon le premier objet physique : la simulation se passe autour de lui. Pas
+            // seulement son secteur : à des centaines de milliers de km du coin du secteur (une planète en orbite),
+            // les floats de Jolt perdraient des mètres, et le sol fait au chargement garderait ces trous.
             const entt::registry& registry = scene.GetRegistry();
+            for (const auto [entity, character] : registry.view<const CharacterComponent>().each()) {
+                if (character.player) {
+                    anchor = scene.GetWorldPosition(entity);
+                    anchored = true;
+                    return;
+                }
+            }
             const auto first = [&](auto view) {
                 if (view.begin() != view.end()) {
-                    anchor = {scene.GetWorldPosition(*view.begin()).sector, {}};
+                    anchor = scene.GetWorldPosition(*view.begin());
                     anchored = true;
                 }
             };
@@ -567,6 +576,9 @@ namespace Flux {
                                        motion);
             JPH::ShapeCastSettings settings;
             settings.mReturnDeepestPoint = true; // déjà au contact : un vrai point de contact
+            // Au contact (1 mm), Jolt prend parfois la face touchée pour une face arrière et l'ignore : le vaisseau
+            // s'enfonçait alors d'une image dans le sol. Le tri se fait plus bas, sur la vraie normale de la face.
+            settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
             JPH::AllHitCollisionCollector<JPH::CastShapeCollector> collector;
             const StaticFilter filter;
             grid.system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
@@ -1048,8 +1060,9 @@ namespace Flux {
             return to.InFrame({NullEntity, position, {}, {1.0f, 1.0f, 1.0f}}).position;
         }
 
-        // Un sol sous ces pieds (point du monde `to`, dans son repère) qui n'est pas le vaisseau `ignored`.
-        bool HasGroundBelow(const Grid& to, const Math::Vector3d& feet, Entity ignored) const {
+        // Un sol sous ces pieds (point du monde `to`, dans son repère), à moins de `below` mètres, qui n'est pas le
+        // vaisseau `ignored`.
+        bool HasGroundBelow(const Grid& to, const Math::Vector3d& feet, Entity ignored, float below) const {
             class Filter final : public JPH::BodyFilter {
                 public:
                 Filter(const Grid& grid, Entity ignored) : m_grid(grid), m_ignored(ignored) {}
@@ -1063,10 +1076,10 @@ namespace Flux {
                 Entity m_ignored;
             };
             const Filter filter(to, ignored);
-            // Du genou (30 cm au-dessus des pieds) à 30 cm sous eux, vers le bas de ce monde.
+            // Du genou (30 cm au-dessus des pieds) à `below` sous eux, vers le bas de ce monde.
             const JPH::Vec3 down = -UpFrom(GravityAt(to, JPH::RVec3(ToJolt(feet))));
-            constexpr float Reach = 0.3f;
-            const JPH::RRayCast ray(JPH::RVec3(ToJolt(feet)) - down * Reach, down * (2.0f * Reach));
+            constexpr float Knee = 0.3f;
+            const JPH::RRayCast ray(JPH::RVec3(ToJolt(feet)) - down * Knee, down * (Knee + below));
             JPH::RayCastResult hit;
             return to.system->GetNarrowPhaseQuery().CastRay(ray, hit, to.system->GetDefaultBroadPhaseLayerFilter(Layers::Moving),
                                                             to.system->GetDefaultLayerFilter(Layers::Moving), filter);
@@ -1074,23 +1087,30 @@ namespace Flux {
 
         // Monde où un personnage doit passer, d'après ce qui le porte : monter sur le décor d'un vaisseau (sa copie
         // dans ce monde) le fait passer à bord ; en l'air à bord, avec le sol du dehors sous les pieds, il en sort.
+        // Posé sur le vaisseau, il en sort aussi quand le sol du dehors arrive à ses pieds : ce sol (une planète)
+        // n'existe pas dans le monde du vaisseau, et le bout d'une rampe enfoncé dedans l'emmènerait dessous, puis
+        // dans la planète. Le même seuil pour monter à bord : pas d'allers-retours au pied de la rampe.
         // nullptr : il reste où il est.
         Grid* FindTransfer(const Scene& scene, const Grid& grid, const Character& character) {
+            constexpr float AirReach = 0.3f;  // en l'air : le sol à moins de 30 cm sous les pieds
+            constexpr float FootReach = 0.05f; // posé : le sol à leur hauteur
             const JPH::CharacterVirtual& body = *character.character;
             const auto state = body.GetGroundState();
+            const float reach = state == JPH::CharacterVirtual::EGroundState::InAir ? AirReach : FootReach;
+            if (Grid* outer = FindOuterGrid(scene, grid);
+                outer && HasGroundBelow(*outer, Convert(grid, *outer, body.GetPosition()), grid.frame, reach)) {
+                return outer;
+            }
             if (state == JPH::CharacterVirtual::EGroundState::OnGround) {
                 const auto ground = static_cast<Entity>(static_cast<entt::id_type>(body.GetGroundUserData()));
                 if (ground != grid.frame && scene.IsValid(ground) && scene.TryGet<ShipComponent>(ground)
                     && scene.GetShip(ground) == grid.frame) {
-                    return FindGrid(ground);
+                    const JPH::RVec3 feet = body.GetPosition();
+                    const bool outside = HasGroundBelow(grid, {feet.GetX(), feet.GetY(), feet.GetZ()}, ground, FootReach);
+                    return outside ? nullptr : FindGrid(ground);
                 }
-                return nullptr;
             }
-            Grid* outer = FindOuterGrid(scene, grid);
-            if (state != JPH::CharacterVirtual::EGroundState::InAir || !outer) {
-                return nullptr;
-            }
-            return HasGroundBelow(*outer, Convert(grid, *outer, body.GetPosition()), grid.frame) ? outer : nullptr;
+            return nullptr;
         }
 
         // Personnages passés à bord d'un vaisseau ou sortis : ils changent de parent, à la même place dans le monde ;
