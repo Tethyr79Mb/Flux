@@ -446,11 +446,20 @@ namespace Flux {
         }
 
         void ChooseAnchor(const Scene& scene) {
-            // Le secteur du premier objet physique : la simulation se passe autour de lui.
+            // Là où est le joueur, sinon le premier objet physique : la simulation se passe autour de lui. Pas
+            // seulement son secteur : à des centaines de milliers de km du coin du secteur (une planète en orbite),
+            // les floats de Jolt perdraient des mètres, et le sol fait au chargement garderait ces trous.
             const entt::registry& registry = scene.GetRegistry();
+            for (const auto [entity, character] : registry.view<const CharacterComponent>().each()) {
+                if (character.player) {
+                    anchor = scene.GetWorldPosition(entity);
+                    anchored = true;
+                    return;
+                }
+            }
             const auto first = [&](auto view) {
                 if (view.begin() != view.end()) {
-                    anchor = {scene.GetWorldPosition(*view.begin()).sector, {}};
+                    anchor = scene.GetWorldPosition(*view.begin());
                     anchored = true;
                 }
             };
@@ -567,6 +576,9 @@ namespace Flux {
                                        motion);
             JPH::ShapeCastSettings settings;
             settings.mReturnDeepestPoint = true; // déjà au contact : un vrai point de contact
+            // Au contact (1 mm), Jolt prend parfois la face touchée pour une face arrière et l'ignore : le vaisseau
+            // s'enfonçait alors d'une image dans le sol. Le tri se fait plus bas, sur la vraie normale de la face.
+            settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
             JPH::AllHitCollisionCollector<JPH::CastShapeCollector> collector;
             const StaticFilter filter;
             grid.system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
