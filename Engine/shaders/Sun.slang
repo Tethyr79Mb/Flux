@@ -2,7 +2,8 @@
 // dessiné, profondeur restée à 0) et ajouté à lui. Un disque bien plus lumineux que tout le reste, assombri vers son
 // bord comme le vrai (la lumière y traverse plus de gaz solaire), un halo serré et quelques rayons fins comme ceux
 // d'un objectif (ou un long trait horizontal, au choix du composant Soleil). Sa lumière dépasse de loin le blanc :
-// c'est le bloom (Post.slang) qui la fait déborder autour de lui. Vu de sous l'air d'une planète, il est rougi et atténué par l'air traversé, et caché sous l'horizon.
+// c'est le bloom (Post.slang) qui la fait déborder autour de lui. Vu de sous l'air d'une planète, il est rougi et
+// atténué par l'air traversé, et caché sous l'horizon.
 // Coût : un triangle plein écran, mais tout pixel à plus de MaxAngle du soleil (hors de la bande du trait) s'arrête
 // aussitôt.
 
