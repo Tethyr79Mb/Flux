@@ -114,6 +114,8 @@ namespace Flux {
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;
+        // Version de Vulkan utilisée, puis celle que le GPU accepte : « 1.3 (GPU : 1.4.303) ».
+        std::string_view GetApiVersion() const;
         // Octets réservés par le rendu en mémoire vidéo (first) et en RAM lisible par le GPU (second).
         std::pair<std::uint64_t, std::uint64_t> GetGpuMemory() const;
 

@@ -828,9 +828,23 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
     return result;
 }
 
-// La matière à deux échelles, fondues entre 60 et 150 m de la caméra.
+// La matière à deux échelles, fondues entre 60 et 150 m de la caméra, puis sa couleur moyenne (plus petit mip, sol
+// lisse) au-delà de GroundAverageEnd : de haut, les cellules du pavage, chacune avec son propre tirage de l'image,
+// dessinaient un motif régulier de points sombres. Les taches (macro) gardent le sol varié ; moins de lectures au loin.
+static const float GroundAverageStart = 600.0;
+static const float GroundAverageEnd = 2000.0;
+
 GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, float3 n, float3 blend, float distance)
 {
+    GroundSample average;
+    const float3 center = float3(0.5, 0.5, float(layer));
+    average.color = groundColorTexture.SampleLevel(center, 16.0).rgb;
+    average.occlusionRoughness = groundRoughnessTexture.SampleLevel(center, 16.0).rg;
+    average.normal = n;
+    const float faded = smoothstep(GroundAverageStart, GroundAverageEnd, distance);
+    if (faded >= 1.0) {
+        return average;
+    }
     const float far = smoothstep(60.0, 150.0, distance);
     GroundSample result = SampleGround(layer, p, dpdx, dpdy, n, blend, far < 1.0 ? GroundNearScale : GroundFarScale);
     if (far > 0.0 && far < 1.0) {
@@ -838,6 +852,11 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
         result.color = lerp(result.color, other.color, far);
         result.normal = lerp(result.normal, other.normal, far);
         result.occlusionRoughness = lerp(result.occlusionRoughness, other.occlusionRoughness, far);
+    }
+    if (faded > 0.0) {
+        result.color = lerp(result.color, average.color, faded);
+        result.normal = lerp(result.normal, average.normal, faded);
+        result.occlusionRoughness = lerp(result.occlusionRoughness, average.occlusionRoughness, faded);
     }
     return result;
 }

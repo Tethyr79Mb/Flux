@@ -220,9 +220,10 @@ namespace Flux {
         Math::LinearColor snowColor{0.85f, 0.88f, 0.92f};
         Math::LinearColor soilColor{0.14f, 0.09f, 0.055f};
         // Teintes des textures du sol, multipliées à leur couleur sans changer leur luminosité : blanc (ou un gris) garde
-        // l'image telle quelle, un jaune clair la dore.
+        // l'image telle quelle, un jaune clair la dore. L'herbe est verdie : son image, brun olive en moyenne, se confond
+        // de loin avec la roche et la terre.
         Math::LinearColor rockTint{1.0f, 1.0f, 1.0f};
-        Math::LinearColor grassTint{1.0f, 1.0f, 1.0f};
+        Math::LinearColor grassTint{0.25f, 1.0f, 0.2f};
         Math::LinearColor soilTint{1.0f, 1.0f, 1.0f};
         Math::LinearColor sandTint{1.0f, 1.0f, 1.0f};
         Math::LinearColor snowTint{1.0f, 1.0f, 1.0f};

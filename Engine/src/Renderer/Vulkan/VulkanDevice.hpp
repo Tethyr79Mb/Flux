@@ -25,6 +25,8 @@ namespace Flux::Vk {
         const vkb::Device& GetBootstrapDevice() const { return m_device; }
         VkSurfaceKHR GetSurface() const { return m_surface; }
         const std::string& GetName() const { return m_physicalDevice.name; }
+        // « 1.3 (GPU : 1.4.303) » : la version que le moteur utilise, puis la plus haute que le pilote accepte.
+        const std::string& GetApiVersion() const { return m_apiVersion; }
         VmaAllocator GetAllocator() const { return m_allocator; }
 
         VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
@@ -51,6 +53,7 @@ namespace Flux::Vk {
         vkb::Instance m_instance;
         VkSurfaceKHR m_surface = VK_NULL_HANDLE;
         vkb::PhysicalDevice m_physicalDevice;
+        std::string m_apiVersion;
         vkb::Device m_device;
         VmaAllocator m_allocator = VK_NULL_HANDLE;
 

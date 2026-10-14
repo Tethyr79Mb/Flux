@@ -27,9 +27,10 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; côté nuit, la lumière du ciel de l'espace baisse (planète à atmosphère). Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour (« Lumière de contour ») aussi sur les planètes, liseré selon la sphère.
 - 🔨 Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
-- ✅ Teinte de chaque texture du sol.
+- ✅ Teinte de chaque texture du sol (herbe verdie par défaut : son image se confondait de loin avec la roche).
 - ✅ Plage réglée en mètres au-dessus de la mer (elle suit le niveau de la mer).
 - ✅ Sol sans répétition visible : pavage hexagonal (rotation et décalage aléatoires par cellule, mélange des 3 cellules voisines).
+- 🔨 Sol vu de haut : texture fondue vers sa couleur moyenne entre 600 m et 2 km (plus de motif régulier de points sombres, moins de lectures au loin).
 
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
@@ -81,7 +82,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Gameplay
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
-- ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, V-Sync, volume, panneau Moteur).
+- ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, volume, panneau Moteur).
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).

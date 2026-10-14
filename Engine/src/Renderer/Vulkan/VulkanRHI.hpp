@@ -170,6 +170,7 @@ namespace Flux::Vk {
         ~RhiDevice() override;
 
         std::string_view GetName() const override { return m_device->GetName(); }
+        std::string_view GetApiVersion() const override { return m_device->GetApiVersion(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override { m_device->WaitIdle(); }
 

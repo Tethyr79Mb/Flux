@@ -9,6 +9,7 @@
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
+#include "Flux/Platform/Console.hpp"
 #include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Input.hpp"
@@ -187,7 +188,7 @@ namespace Flux {
           m_inputActions(std::make_unique<InputActions>()) {
         RegisterEngineComponents(m_components);
         Log::Info("Flux {}", GetFullVersion());
-        if (!m_window->Create(config.title, config.windowSize, config.maximized)) {
+        if (!m_window->Create(config.title, config.windowSize, config.maximized, config.fullscreen)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
             m_quitRequested = true;
             return;
@@ -312,13 +313,19 @@ namespace Flux {
 
         FrameStats stats;
         Clock::time_point previousFrame = Clock::now();
-        while (!m_quitRequested && m_window->IsOpen()) {
+        while (!m_quitRequested && !Platform::ConsoleCloseRequested() && m_window->IsOpen()) {
             m_window->HandleEvents();
             if (m_window->ConsumeCloseRequest() && (!m_closeRequestHandler || m_closeRequestHandler(*this))) {
                 break;
             }
             if (!m_window->IsOpen()) {
                 break;
+            }
+            if (const Input& keys = m_window->GetInput();
+                keys.WasKeyPressed(Key::F11)
+                || ((keys.WasKeyPressed(Key::Enter) || keys.WasKeyPressed(Key::NumpadEnter))
+                    && (keys.IsKeyDown(Key::LeftAlt) || keys.IsKeyDown(Key::RightAlt)))) {
+                m_window->SetFullscreen(!m_window->IsFullscreen());
             }
 
             const Math::Vector2i size = m_window->GetSize();

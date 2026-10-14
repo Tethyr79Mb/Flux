@@ -956,6 +956,91 @@ namespace {
         }
         return true;
     }
+
+    // Planète en orbite à 340 000 km du coin de son secteur : le sol fait au chargement est précis au millimètre (le
+    // monde physique partait du coin du secteur ; les floats y perdaient des mètres, et le personnage s'enfonçait
+    // puis tombait dans la planète).
+    bool RunFarPlanetTests() {
+        Scene scene;
+        const Math::Vector3d center{3.2e8, 1.0e7, 1.1e8};
+        const Entity planet = scene.CreateEntity("Planète");
+        scene.Get<TransformComponent>(planet).position = center;
+        const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
+        const Planet::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
+        const auto ground = [&](const Math::Vector3d& direction) {
+            return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
+        };
+        const Math::Vector3d up = Math::Normalize(Math::Vector3d{1.0, 0.3, 0.2});
+        const Entity hero = scene.CreateEntity("Joueur");
+        scene.Get<TransformComponent>(hero).position = center + up * (ground(up) + 0.1);
+        scene.Add<CharacterComponent>(hero);
+        const auto altitude = [&] {
+            const Math::Vector3d position = Math::Delta(scene.GetWorldPosition(planet), scene.GetWorldPosition(hero));
+            return Math::Length(position) - ground(Math::Normalize(position));
+        };
+
+        PhysicsWorld world;
+        world.Prepare(scene);
+        Run(world, scene, 1.0);
+        CHECK(std::abs(altitude()) < 0.15);
+        const Math::Vector3d east = Math::Normalize(Math::Cross(up, Math::Vector3d{0.0, 1.0, 0.0}));
+        Run(world, scene, 5.0, CharacterInput{Math::Vector3f(east), false, false});
+        CHECK(std::abs(altitude()) < 0.15);
+        return true;
+    }
+
+    // Vaisseau posé sur une planète, rampe dont le bout entre d'un mètre dans le sol : le personnage qui la descend
+    // passe dehors au ras du sol et marche dessus (il suivait la rampe sous le sol, qui n'existe pas dans le monde du
+    // vaisseau, puis tombait dans la planète) ; il remonte à bord par la même rampe.
+    bool RunPlanetRampTests() {
+        Scene scene;
+        const Entity planet = scene.CreateEntity("Planète");
+        const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
+        const Planet::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
+        const auto ground = [&](const Math::Vector3d& direction) {
+            return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
+        };
+        const Math::Vector3d up = Math::Normalize(Math::Vector3d{1.0, 0.3, 0.2});
+        const Math::Quaternionf rotation = Math::Quaternionf::FromTo({0.0f, 1.0f, 0.0f}, Math::Vector3f(up));
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = up * ground(up);
+        scene.Get<TransformComponent>(ship).rotation = rotation;
+        scene.Add<ShipComponent>(ship);
+        const Entity deck = scene.CreateEntity("Pont", ship);
+        scene.Get<TransformComponent>(deck).position = {0.0, 2.2, 0.0};
+        scene.Get<TransformComponent>(deck).scale = {4.0f, 0.2f, 4.0f}; // dessus à 2,3 m
+        scene.Add<ColliderComponent>(deck);
+        // Du bord du pont (x = 2), 20° vers le bas jusqu'à 1 m sous le sol.
+        const double slope = 20.0 * std::numbers::pi / 180.0;
+        const double length = 3.3 / std::sin(slope);
+        const Entity ramp = scene.CreateEntity("Rampe", ship);
+        TransformComponent& rampTransform = scene.Get<TransformComponent>(ramp);
+        rampTransform.position = {2.0 + 0.5 * length * std::cos(slope), 2.3 - 0.5 * length * std::sin(slope) - 0.1, 0.0};
+        rampTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, -static_cast<float>(slope));
+        rampTransform.scale = {static_cast<float>(length), 0.2f, 3.0f};
+        scene.Add<ColliderComponent>(ramp);
+        const Entity hero = scene.CreateEntity("Joueur", ship);
+        scene.Get<TransformComponent>(hero).position = {0.0, 2.4, 0.0};
+        scene.Add<CharacterComponent>(hero);
+        const auto altitude = [&] {
+            const Math::Vector3d position = Math::Delta(scene.GetWorldPosition(planet), scene.GetWorldPosition(hero));
+            return Math::Length(position) - ground(Math::Normalize(position));
+        };
+
+        PhysicsWorld world;
+        world.Prepare(scene);
+        const Math::Vector3f outward = rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
+        Run(world, scene, 0.5);
+        Run(world, scene, 8.0, CharacterInput{outward, false, false});
+        CHECK(scene.GetParent(hero) == NullEntity);
+        CHECK(std::abs(altitude()) < 0.2);
+        Run(world, scene, 7.5, CharacterInput{outward * -1.0f, false, false});
+        CHECK(scene.GetParent(hero) == ship);
+        CHECK(std::abs(altitude() - 2.3) < 0.2);
+        return true;
+    }
 }
 
 namespace {
@@ -1009,5 +1094,6 @@ namespace {
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
-        && RunShipCollisionTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunWorldTests();
+        && RunShipCollisionTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
+        && RunFarPlanetTests() && RunWorldTests();
 }

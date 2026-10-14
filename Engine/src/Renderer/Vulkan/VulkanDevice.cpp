@@ -4,6 +4,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <format>
 #include <vector>
 
@@ -130,7 +131,13 @@ namespace Flux::Vk {
             return std::unexpected("création du command pool de chargement");
         }
 
-        Log::Info("Vulkan : {}", device->m_physicalDevice.name);
+        // Le device ne dépasse jamais la version demandée à l'instance, même si le pilote en accepte une plus récente.
+        const uint32_t supported = device->m_physicalDevice.properties.apiVersion;
+        const uint32_t used = std::min(device->m_instance.api_version, supported);
+        device->m_apiVersion = std::format("{}.{} (GPU : {}.{}.{})", VK_API_VERSION_MAJOR(used), VK_API_VERSION_MINOR(used),
+                                           VK_API_VERSION_MAJOR(supported), VK_API_VERSION_MINOR(supported),
+                                           VK_API_VERSION_PATCH(supported));
+        Log::Info("Vulkan {} : {}", device->m_apiVersion, device->m_physicalDevice.name);
         return device;
     }
 

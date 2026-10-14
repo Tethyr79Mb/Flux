@@ -25,8 +25,32 @@ namespace Flux {
         bool focused = false;
         bool cursorLocked = false;
         bool closeRequested = false;
+        bool fullscreen = false;
+        WINDOWPLACEMENT windowedPlacement{}; // place, taille et état (agrandie) à rendre en quittant le plein écran
         MouseCursor cursor = MouseCursor::Arrow;
         wchar_t highSurrogate = 0; // WM_CHAR livre les caractères hors BMP en deux moitiés UTF-16
+
+        // Fenêtre sans cadre posée sur tout l'écran qui la contient ; showWindow pour la première apparition.
+        void EnterFullscreen(bool showWindow) {
+            windowedPlacement.length = sizeof(windowedPlacement);
+            GetWindowPlacement(hwnd, &windowedPlacement);
+            MONITORINFO monitor{};
+            monitor.cbSize = sizeof(monitor);
+            GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor);
+            fullscreen = true;
+            SetWindowLongPtrW(hwnd, GWL_STYLE, WS_POPUP | (showWindow ? 0 : WS_VISIBLE));
+            const RECT& area = monitor.rcMonitor;
+            SetWindowPos(hwnd, HWND_TOP, area.left, area.top, area.right - area.left, area.bottom - area.top,
+                         SWP_FRAMECHANGED | SWP_NOOWNERZORDER | (showWindow ? SWP_SHOWWINDOW : 0));
+        }
+
+        void LeaveFullscreen() {
+            fullscreen = false;
+            SetWindowLongPtrW(hwnd, GWL_STYLE, WindowStyle | WS_VISIBLE);
+            SetWindowPlacement(hwnd, &windowedPlacement);
+            SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
 
         void LockCursor(bool locked) {
             if (locked == cursorLocked) {
@@ -159,7 +183,7 @@ namespace Flux {
                 switch (message) {
                     case WM_SIZE:
                         impl->size = {LOWORD(lParam), HIWORD(lParam)};
-                        if (wParam == SIZE_RESTORED) {
+                        if (wParam == SIZE_RESTORED && !impl->fullscreen) {
                             impl->restoredSize = impl->size;
                         }
                         return 0;
@@ -220,6 +244,8 @@ namespace Flux {
                             return TRUE;
                         }
                         break;
+                    case WM_MENUCHAR:
+                        return MAKELRESULT(0, MNC_CLOSE); // Alt+Entrée (plein écran) : pas de bip « pas de menu »
                     case WM_CLOSE:
                         impl->closeRequested = true; // Engine demande confirmation si besoin, puis détruit la fenêtre
                         return 0;
@@ -253,7 +279,7 @@ namespace Flux {
         return *this;
     }
 
-    bool Window::Create(std::string_view title, Math::Vector2i size, bool maximized) {
+    bool Window::Create(std::string_view title, Math::Vector2i size, bool maximized, bool fullscreen) {
         if (!m_impl || m_impl->hwnd || !Impl::RegisterWindowClass()) {
             return false;
         }
@@ -270,6 +296,12 @@ namespace Flux {
         }
 
         Impl::RegisterRawMouse(m_impl->hwnd);
+        if (fullscreen) {
+            // Encore cachée : la place fenêtrée (agrandie ou non) est notée, puis la fenêtre apparaît en plein écran.
+            m_impl->EnterFullscreen(true);
+            m_impl->windowedPlacement.showCmd = maximized ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+            return true;
+        }
         // Maximisée : WM_SIZE donne la taille réelle ; size ne sert qu'une fois la fenêtre restaurée.
         ShowWindow(m_impl->hwnd, maximized ? SW_SHOWMAXIMIZED : SW_SHOW);
         return true;
@@ -327,7 +359,24 @@ namespace Flux {
     }
 
     bool Window::IsMaximized() const {
-        return IsOpen() && IsZoomed(m_impl->hwnd);
+        if (!IsOpen()) {
+            return false;
+        }
+        return m_impl->fullscreen ? m_impl->windowedPlacement.showCmd == SW_SHOWMAXIMIZED : IsZoomed(m_impl->hwnd) != FALSE;
+    }
+
+    void Window::SetFullscreen(bool fullscreen) {
+        if (IsOpen() && fullscreen != m_impl->fullscreen) {
+            if (fullscreen) {
+                m_impl->EnterFullscreen(false);
+            } else {
+                m_impl->LeaveFullscreen();
+            }
+        }
+    }
+
+    bool Window::IsFullscreen() const {
+        return IsOpen() && m_impl->fullscreen;
     }
 
     const Input& Window::GetInput() const {

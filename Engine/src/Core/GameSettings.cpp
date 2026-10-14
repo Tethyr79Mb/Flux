@@ -60,6 +60,7 @@ namespace Flux::GameSettingsFile {
             settings.windowSize.x = std::clamp(settings.windowSize.x, MinWindowSize, MaxWindowSize);
             settings.windowSize.y = std::clamp(settings.windowSize.y, MinWindowSize, MaxWindowSize);
             Read(*window, "maximized", settings.maximized, IsBool, warnings);
+            Read(*window, "fullscreen", settings.fullscreen, IsBool, warnings);
         }
         Read(document, "vsync", settings.vsync, IsBool, warnings);
         Read(document, "volume", settings.volume, IsNumber, warnings);
@@ -72,7 +73,8 @@ namespace Flux::GameSettingsFile {
         nlohmann::ordered_json document;
         document["format"] = FormatName;
         document["version"] = FormatVersion;
-        document["window"] = {{"width", settings.windowSize.x}, {"height", settings.windowSize.y}, {"maximized", settings.maximized}};
+        document["window"] = {{"width", settings.windowSize.x}, {"height", settings.windowSize.y}, {"maximized", settings.maximized},
+                              {"fullscreen", settings.fullscreen}};
         document["vsync"] = settings.vsync;
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;

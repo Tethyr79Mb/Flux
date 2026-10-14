@@ -20,7 +20,8 @@ namespace Flux {
         Window& operator=(Window&&) noexcept;
 
         // maximized : la fenêtre occupe tout l'écran (bureau) dès l'ouverture, barre des tâches exceptée.
-        bool Create(std::string_view title, Math::Vector2i size, bool maximized = false);
+        // fullscreen : plein écran dès l'ouverture (voir SetFullscreen) ; size et maximized servent en le quittant.
+        bool Create(std::string_view title, Math::Vector2i size, bool maximized = false, bool fullscreen = false);
         void Destroy();
 
         // Traite les messages en attente et met à jour GetInput().
@@ -38,7 +39,13 @@ namespace Flux {
         // Taille de la zone de dessin quand la fenêtre n'est pas agrandie (la dernière connue si elle l'est), et
         // l'état agrandi : de quoi la rouvrir pareil (réglages du jeu).
         Math::Vector2i GetRestoredSize() const;
+        // En plein écran : l'état d'avant, celui que retrouvera la fenêtre en le quittant.
         bool IsMaximized() const;
+
+        // Plein écran sans bordure : fenêtre sans cadre qui couvre tout l'écran où elle se trouve, barre des tâches
+        // comprise. Pas de mode exclusif : Alt+Tab immédiat, sans écran noir. En sortir rend la place d'avant.
+        void SetFullscreen(bool fullscreen);
+        bool IsFullscreen() const;
 
         const Input& GetInput() const;
         bool HasFocus() const;
