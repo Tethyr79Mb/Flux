@@ -348,6 +348,8 @@ namespace Flux::RHI {
         virtual ~Device() = default;
 
         virtual std::string_view GetName() const = 0;
+        // Version de l'API graphique utilisée, lisible (« 1.3 (GPU : 1.4.303) » pour Vulkan).
+        virtual std::string_view GetApiVersion() const = 0;
         virtual MemoryUsage GetMemoryUsage() const = 0;
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).
         virtual void WaitIdle() = 0;
