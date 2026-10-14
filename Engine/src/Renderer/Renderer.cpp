@@ -7,6 +7,7 @@
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
 #include "Renderer/PlanetTileCompute.hpp"
+#include "Renderer/PostRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
@@ -24,7 +25,8 @@ namespace Flux {
         // Pendant la passe principale, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux
         // étapes, d'où un léger surcoût et des temps d'étape un peu plus longs qu'en vrai.
         enum Timestamp : std::uint32_t {
-            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, InterfaceDone, TimestampCount
+            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, BloomDone, InterfaceDone,
+            TimestampCount
         };
         static_assert(TimestampCount <= RHI::MaxTimestamps);
 
@@ -34,20 +36,24 @@ namespace Flux {
         }
     }
 
-    // Une image : la carte d'ombres, puis la scène dans sa zone (opaques, fond du ciel, transparents, flammes) et l'interface
-    // (OverlayRenderer) sur toute la fenêtre, dans la passe principale. Aucune API graphique ici : tout passe par le RHI.
+    // Une image : la carte d'ombres, puis la scène (opaques, fond du ciel et soleil, océan, nuages, transparents, flammes)
+    // dans une image HDR à la taille de sa zone, son bloom, et la passe principale vers la fenêtre : la scène avec la
+    // courbe de tons dans sa zone (PostRenderer), puis l'interface (OverlayRenderer) sur toute la fenêtre. Aucune API
+    // graphique ici : tout passe par le RHI.
     struct Renderer::Impl {
         Window& window;
         // Déclaré en premier : détruit en dernier, après les ressources créées par lui.
         std::unique_ptr<RHI::Device> device;
-        std::unique_ptr<RHI::Texture> depth; // de la taille de la swapchain
+        std::unique_ptr<RHI::Texture> depth; // de la taille de la swapchain : passe principale (interface)
         std::unique_ptr<SkyRenderer> sky;
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<ThrusterRenderer> thrusters;
         std::unique_ptr<OverlayRenderer> overlay;
+        std::unique_ptr<PostRenderer> post;
         std::filesystem::path assetsDirectory;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
+        float bloom = Renderer::DefaultBloom; // 0 : sans bloom
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
         Math::Vector2f sceneViewportMax;
         bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
@@ -124,11 +130,17 @@ namespace Flux {
             }
             const RHI::Rect scene3d = SceneRect();
             const float aspect = static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height);
+            float exposure = 1.0f;
             if (sceneVisible) {
+                if (auto resized = post->Resize({scene3d.width, scene3d.height}); !resized) {
+                    Log::Error("{}", resized.error());
+                    return false;
+                }
                 const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
                                                           assetsDirectory, frameIndex);
+                exposure = lighting.exposure;
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
-                thrusters->Prepare(meshes->GetThrusters(), camera, aspect, lighting.exposure);
+                thrusters->Prepare(meshes->GetThrusters(), camera, aspect);
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
@@ -150,11 +162,13 @@ namespace Flux {
                 meshes->DrawShadows(commands, frameIndex);
             }
             commands.WriteTimestamp(ShadowsDone);
-            commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
-            commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
-                                  static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
-            commands.SetScissor(scene3d);
             if (sceneVisible) {
+                // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
+                commands.BeginRenderPass({.clearColor = PostRenderer::InverseToneMap(clearColor, exposure),
+                                          .depth = &post->GetSceneDepth(), .clearDepth = 0.0f,
+                                          .colorTarget = &post->GetSceneTarget()});
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
+                commands.SetScissor({0, 0, scene3d.width, scene3d.height});
                 commands.BeginStep("objets opaques");
                 meshes->DrawOpaque(commands, frameIndex);
                 commands.WriteTimestamp(ObjectsDone);
@@ -174,8 +188,21 @@ namespace Flux {
                 meshes->DrawTransparent(commands, frameIndex);
                 commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
                 thrusters->Draw(commands);
+                commands.EndRenderPass();
             }
             commands.WriteTimestamp(SceneDone);
+            if (sceneVisible) {
+                commands.BeginStep("bloom");
+                post->DrawBloom(commands, bloom);
+            }
+            commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
+            if (sceneVisible) {
+                commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
+                                      static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
+                commands.SetScissor(scene3d);
+                post->Composite(commands, bloom, exposure);
+            }
+            commands.WriteTimestamp(BloomDone); // image finale comptée avec le bloom
             commands.BeginStep("interface");
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
@@ -204,7 +231,8 @@ namespace Flux {
             timings.gpuOcean = between(SkyDone, OceanDone);
             timings.gpuClouds = between(OceanDone, CloudsDone);
             timings.gpuTransparent = between(CloudsDone, SceneDone);
-            timings.gpuInterface = between(SceneDone, InterfaceDone);
+            timings.gpuBloom = between(SceneDone, BloomDone);
+            timings.gpuInterface = between(BloomDone, InterfaceDone);
         }
     };
 
@@ -220,17 +248,19 @@ namespace Flux {
             return std::unexpected(depth.error());
         }
         const RHI::Format colorFormat = impl->device->GetSwapchainFormat();
-        auto sky = SkyRenderer::Create(*impl->device, colorFormat, DepthFormat);
+        // La scène est dessinée en HDR (PostRenderer) ; seules l'image finale et l'interface vont vers la fenêtre.
+        constexpr RHI::Format sceneFormat = PostRenderer::SceneFormat;
+        auto sky = SkyRenderer::Create(*impl->device, sceneFormat, DepthFormat);
         if (!sky) {
             return std::unexpected(sky.error());
         }
         impl->sky = std::move(*sky);
-        auto meshes = MeshRenderer::Create(*impl->device, colorFormat, DepthFormat);
+        auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
-        auto thrusters = ThrusterRenderer::Create(*impl->device, colorFormat, DepthFormat);
+        auto thrusters = ThrusterRenderer::Create(*impl->device, sceneFormat, DepthFormat);
         if (!thrusters) {
             return std::unexpected(thrusters.error());
         }
@@ -240,6 +270,11 @@ namespace Flux {
             return std::unexpected(overlay.error());
         }
         impl->overlay = std::move(*overlay);
+        auto post = PostRenderer::Create(*impl->device, colorFormat, DepthFormat);
+        if (!post) {
+            return std::unexpected(post.error());
+        }
+        impl->post = std::move(*post);
 
         return std::unique_ptr<Renderer>(new Renderer(std::move(impl)));
     }
@@ -277,6 +312,14 @@ namespace Flux {
 
     bool Renderer::IsVSyncEnabled() const {
         return m_impl->vsync;
+    }
+
+    void Renderer::SetBloom(float strength) {
+        m_impl->bloom = std::clamp(strength, 0.0f, 1.0f);
+    }
+
+    float Renderer::GetBloom() const {
+        return m_impl->bloom;
     }
 
     std::string_view Renderer::GetPresentModeName() const {

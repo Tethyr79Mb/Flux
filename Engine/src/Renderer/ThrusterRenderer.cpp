@@ -48,7 +48,7 @@ namespace Flux {
                 std::max(thruster.length, 0.01f) * (IdleLength + (1.0f - IdleLength) * std::clamp(throttle, 0.0f, 1.0f))};
     }
 
-    void ThrusterRenderer::Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect, float exposure) {
+    void ThrusterRenderer::Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect) {
         m_flames.clear();
         const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
         const double seconds = std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count(), TimeWrap);
@@ -89,7 +89,7 @@ namespace Flux {
                                 {cameraInBox.x, cameraInBox.y, cameraInBox.z, static_cast<float>(seconds)},
                                 {thruster.color.r * brightness, thruster.color.g * brightness, thruster.color.b * brightness, throttle},
                                 {meters.x, meters.y, meters.z, 1.0f / BoxMargin},
-                                {std::bit_cast<float>(seed), exposure * Gain, 0.0f, 0.0f}});
+                                {std::bit_cast<float>(seed), Gain, 0.0f, 0.0f}});
         }
     }
 

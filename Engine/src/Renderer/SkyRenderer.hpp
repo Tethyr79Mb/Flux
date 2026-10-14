@@ -52,7 +52,7 @@ namespace Flux {
         // Hors de toute passe et avant la passe principale : calcule la nébuleuse du ciel généré dans sa texture cube si
         // Prepare l'a demandé (nouveau ciel, réglage changé). Rien sinon.
         void Bake(RHI::CommandList& commands, std::uint32_t frameIndex);
-        // Dans la passe principale, après les opaques et avant les transparents.
+        // Dans la passe de la scène, après les opaques et avant les transparents : le fond puis le soleil.
         void Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
         private:
@@ -86,6 +86,7 @@ namespace Flux {
         Math::Vector3f m_ambientSunColor;
         std::array<Math::Vector3f, AtmosphereAmbientSize> m_ambientTable{};
         std::unique_ptr<RHI::Pipeline> m_pipeline;
+        std::unique_ptr<RHI::Pipeline> m_sunPipeline; // shaders/Sun.slang, après le fond
         std::unique_ptr<RHI::BindGroupLayout> m_layout;
         std::unique_ptr<RHI::Sampler> m_panoramaSampler;
         std::unique_ptr<RHI::Sampler> m_cubeSampler;

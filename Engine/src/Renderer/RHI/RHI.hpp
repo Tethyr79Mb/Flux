@@ -5,7 +5,8 @@
 //
 // Portée actuelle, celle dont le renderer a besoin : une fenêtre (sa swapchain est tenue par le Device), des
 // buffers, des textures 2D, cube et tableaux, des groupes de ressources (textures, buffers de stockage) liés aux shaders, des pipelines
-// graphiques et de calcul (compute), et une liste de commandes par image. Une passe dessine dans l'image de la swapchain.
+// graphiques et de calcul (compute), et une liste de commandes par image. Une passe dessine dans l'image de la swapchain
+// ou dans une texture.
 //
 // Durées de vie : un objet créé par le Device doit être détruit avant lui ; un BindGroup avant son BindGroupLayout.
 // Un objet ne se détruit ni ne se modifie pendant que le GPU l'utilise : après Device::WaitIdle, ou (ressources d'une
@@ -262,12 +263,12 @@ namespace Flux::RHI {
     // Passe qui dessine dans l'image de la swapchain, effacée, avec un tampon de profondeur effacé (s'il y en a un).
     // Sans couleur (color = false) : profondeur seule dans `depth` (carte d'ombres, CreateRenderTarget sampled),
     // lisible par les shaders après EndRenderPass.
-    // Avec colorTarget : dans la face colorLayer d'une texture cube (CreateCubeRenderTarget), sans profondeur ;
-    // lisible par les shaders après EndRenderPass.
+    // Avec colorTarget : dans une texture (CreateRenderTarget sampled, de couleur) ou dans la face colorLayer d'une
+    // texture cube (CreateCubeRenderTarget), avec ou sans profondeur ; lisible par les shaders après EndRenderPass.
     struct RenderPassDesc
     {
         Math::LinearColor clearColor;
-        const Texture* depth = nullptr; // Format::D32Float, de la taille de la swapchain (ou de la carte d'ombres)
+        const Texture* depth = nullptr; // Format::D32Float, de la taille de la cible (swapchain, texture, carte d'ombres)
         float clearDepth = 0.0f;        // reverse-Z : 0 = infiniment loin
         bool color = true;
         const Texture* colorTarget = nullptr;
@@ -370,7 +371,8 @@ namespace Flux::RHI {
                                                                                         std::uint32_t layers,
                                                                                         std::span<const std::uint8_t> pixels,
                                                                                         bool mipmaps = false) = 0;
-        // Cible de rendu vierge (tampon de profondeur). sampled : lue ensuite par les shaders (carte d'ombres).
+        // Cible de rendu vierge : tampon de profondeur, ou couleur (RenderPassDesc::colorTarget). sampled : lue
+        // ensuite par les shaders (carte d'ombres, image de la scène avant le bloom).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false) = 0;
         // Texture cube vierge dont chaque face est une cible de rendu (RenderPassDesc::colorTarget), lue ensuite par

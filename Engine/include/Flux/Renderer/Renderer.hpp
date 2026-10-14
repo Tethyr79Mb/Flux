@@ -39,6 +39,7 @@ namespace Flux {
         double gpuOcean = -1.0;     // GPU : océans
         double gpuClouds = -1.0;    // GPU : nuages des planètes
         double gpuTransparent = -1.0; // GPU : entités transparentes
+        double gpuBloom = -1.0;     // GPU : bloom et image finale (courbe de tons)
         double gpuInterface = -1.0; // GPU : interface (overlay 2D)
         std::uint32_t planetTiles = 0;       // tuiles de planète dessinées
         std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
@@ -75,6 +76,11 @@ namespace Flux {
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
         void SetVSync(bool enabled);
         bool IsVSyncEnabled() const;
+        // Force du bloom, de 0 (aucun) à 1 : la part de la lumière de chaque pixel étalée autour de lui. Les zones très
+        // lumineuses (soleil, flammes, émissifs) débordent d'autant plus qu'elles sont fortes.
+        static constexpr float DefaultBloom = 0.04f;
+        void SetBloom(float strength);
+        float GetBloom() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

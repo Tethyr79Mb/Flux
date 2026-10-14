@@ -144,6 +144,27 @@ namespace Flux::Vk {
         m_openStep = RHI::MaxSteps;
     }
 
+    // Tampon de profondeur d'une passe avec couleur, effacé ; son contenu n'est pas gardé après la passe.
+    VkRenderingAttachmentInfo RhiCommandList::BeginDepthAttachment(const RHI::RenderPassDesc& desc) {
+        const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
+        // Deux images en vol partagent le tampon de profondeur : on attend la fin des écritures de la précédente.
+        TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        depth.GetAspect());
+        VkRenderingAttachmentInfo depthAttachment{};
+        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView = depth.GetImage().GetView();
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
+        return depthAttachment;
+    }
+
     void RhiCommandList::BeginRenderPass(const RHI::RenderPassDesc& desc) {
         if (!desc.color) {
             BeginDepthOnlyPass(desc);
@@ -166,24 +187,7 @@ namespace Flux::Vk {
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
 
-        VkRenderingAttachmentInfo depthAttachment{};
-        if (desc.depth) {
-            const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
-            // Deux images en vol partagent le tampon de profondeur : on attend la fin des écritures de la précédente.
-            TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
-                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                            depth.GetAspect());
-            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            depthAttachment.imageView = depth.GetImage().GetView();
-            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-            depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
-        }
+        const VkRenderingAttachmentInfo depthAttachment = desc.depth ? BeginDepthAttachment(desc) : VkRenderingAttachmentInfo{};
 
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -195,8 +199,8 @@ namespace Flux::Vk {
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
-    // Face d'une texture cube : l'image précédente la lisait peut-être encore (même file : la barrière attend ses
-    // lectures). Son contenu est jeté : la passe l'efface puis la remplit.
+    // Texture 2D ou face d'une texture cube : l'image précédente la lisait peut-être encore (même file : la barrière
+    // attend ses lectures). Son contenu est jeté : la passe l'efface puis la remplit.
     void RhiCommandList::BeginTexturePass(const RHI::RenderPassDesc& desc) {
         const auto& target = static_cast<const RhiTexture&>(*desc.colorTarget);
         m_colorTarget = &target;
@@ -207,17 +211,20 @@ namespace Flux::Vk {
                         VK_IMAGE_ASPECT_COLOR_BIT, desc.colorLayer);
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView = target.GetImage().GetFaceView(desc.colorLayer);
+        const VkImageView faceView = target.GetImage().GetFaceView(desc.colorLayer);
+        colorAttachment.imageView = faceView != VK_NULL_HANDLE ? faceView : target.GetImage().GetView();
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        const VkRenderingAttachmentInfo depthAttachment = desc.depth ? BeginDepthAttachment(desc) : VkRenderingAttachmentInfo{};
         renderingInfo.renderArea = {{0, 0}, target.GetImage().GetExtent()};
         renderingInfo.layerCount = 1;
         renderingInfo.colorAttachmentCount = 1;
         renderingInfo.pColorAttachments = &colorAttachment;
+        renderingInfo.pDepthAttachment = desc.depth ? &depthAttachment : nullptr;
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 

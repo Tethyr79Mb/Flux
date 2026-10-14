@@ -38,13 +38,22 @@ namespace FluxEditor {
             m_volume = std::clamp(volume->get<float>(), 0.0f, 1.0f);
             engine.GetAudio().SetMasterVolume(m_volume);
         }
+        if (const auto bloom = json.find("bloom"); bloom != json.end() && bloom->is_number()) {
+            m_bloom = std::clamp(bloom->get<float>(), 0.0f, 1.0f);
+        }
+        if (const auto enabled = json.find("bloomEnabled"); enabled != json.end() && enabled->is_boolean()) {
+            m_bloomEnabled = enabled->get<bool>();
+        }
+        engine.GetRenderer().SetBloom(m_bloomEnabled ? m_bloom : 0.0f);
     }
 
     void SettingsWindow::Save() const {
         const Json json{{"format", "flux.editor-settings"},
                         {"version", 1},
                         {"theme", UI::GetThemeNames()[static_cast<std::size_t>(m_theme)]},
-                        {"volume", m_volume}};
+                        {"volume", m_volume},
+                        {"bloomEnabled", m_bloomEnabled},
+                        {"bloom", m_bloom}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -91,6 +100,25 @@ namespace FluxEditor {
                     renderer.SetVSync(vsync);
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
+                ui.Separator();
+                // Le bloom fait déborder la lumière des zones très lumineuses (soleil, flammes, émissifs).
+                if (ui.Checkbox("Bloom", m_bloomEnabled)) {
+                    renderer.SetBloom(m_bloomEnabled ? m_bloom : 0.0f);
+                    Save();
+                }
+                if (m_bloomEnabled) {
+                    float percent = m_bloom * 100.0f;
+                    if (ui.DragFloat("Intensité du bloom (%)", percent, 0.05f, 0.0, 30.0, 1)) {
+                        m_bloom = percent / 100.0f;
+                        renderer.SetBloom(m_bloom);
+                        m_bloomChanged = true;
+                    }
+                    // Enregistré au lâcher, pas à chaque pixel glissé.
+                    if (m_bloomChanged && !ui.IsItemActive()) {
+                        m_bloomChanged = false;
+                        Save();
+                    }
+                }
             } else if (m_tab == Tab::Sound) {
                 AudioSystem& audio = engine.GetAudio();
                 float percent = m_volume * 100.0f;
