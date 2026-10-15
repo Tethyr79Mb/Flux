@@ -117,6 +117,7 @@ namespace Flux {
         }
         m_motion.reset();
         m_historyValid = false;
+        m_historyCleared = false;
         for (std::uint32_t i = 0; i < MaxLevels; ++i) {
             m_downGroups[i].reset();
             m_upGroups[i].reset();
@@ -241,6 +242,13 @@ namespace Flux {
             return;
         }
         const std::uint32_t target = 1 - m_written;
+        // L'historique lu n'a jamais été écrit à la première image : une passe vide l'efface et le rend lisible
+        // (sinon son layout reste indéfini et la validation Vulkan refuse de l'échantillonner, même avec un poids nul).
+        if (!m_historyCleared) {
+            commands.BeginRenderPass({.colorTarget = m_history[1 - target].get()});
+            commands.EndRenderPass();
+            m_historyCleared = true;
+        }
         const TemporalParams params{reprojection,
                                     {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height),
                                      CurrentWeight, history && m_historyValid ? 1.0f : 0.0f}};

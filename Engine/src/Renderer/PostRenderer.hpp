@@ -96,6 +96,7 @@ namespace Flux {
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_temporalGroups; // [i] : écrit m_history[i]
         std::uint32_t m_written = 0;      // historique écrit à la dernière image
         bool m_historyValid = false;      // m_history[m_written] tient une image de cette taille
+        bool m_historyCleared = false;    // les deux historiques ont déjà servi de cible (lisibles par un shader)
         std::uint32_t m_output = 0;       // 0 : la scène ; 1 + i : m_history[i]
         std::uint32_t m_levels = 0;
         // down[i] : la scène réduite i + 1 fois ; up[i] : down[i] plus tous les niveaux plus petits (up[m_levels - 1]
