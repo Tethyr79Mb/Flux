@@ -167,11 +167,19 @@ namespace Flux::Vk {
             blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
         }
 
+        // Seconde cible : jamais mélangée (des données, pas de la lumière).
+        std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments{blendAttachment, {}};
+        if (desc.writeSecondColor) {
+            blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+                                               | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        }
+        const std::array colorFormats{desc.colorFormat, desc.secondColorFormat};
+        const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED; // sinon : profondeur seule
+        const uint32_t colorCount = !hasColor ? 0 : desc.secondColorFormat != VK_FORMAT_UNDEFINED ? 2 : 1;
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED; // sinon : profondeur seule
-        colorBlend.attachmentCount = hasColor ? 1 : 0;
-        colorBlend.pAttachments = &blendAttachment;
+        colorBlend.attachmentCount = colorCount;
+        colorBlend.pAttachments = blendAttachments.data();
 
         constexpr std::array dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -182,8 +190,8 @@ namespace Flux::Vk {
         // Dynamic rendering : on déclare les formats des attachments au lieu d'un VkRenderPass.
         VkPipelineRenderingCreateInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingInfo.colorAttachmentCount = hasColor ? 1 : 0;
-        renderingInfo.pColorAttachmentFormats = &desc.colorFormat;
+        renderingInfo.colorAttachmentCount = colorCount;
+        renderingInfo.pColorAttachmentFormats = colorFormats.data();
         renderingInfo.depthAttachmentFormat = desc.depthFormat;
 
         VkGraphicsPipelineCreateInfo pipelineInfo{};

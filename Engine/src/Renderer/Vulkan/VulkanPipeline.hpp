@@ -22,6 +22,9 @@ namespace Flux::Vk {
         std::span<const VkPushConstantRange> pushConstants;
 
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+        // Seconde cible de la passe (UNDEFINED : aucune) ; sans writeSecondColor, masque d'écriture vide.
+        VkFormat secondColorFormat = VK_FORMAT_UNDEFINED;
+        bool writeSecondColor = false;
         // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.
         VkFormat depthFormat = VK_FORMAT_UNDEFINED;
         bool depthTest = false;

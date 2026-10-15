@@ -11,12 +11,13 @@ bool RunGameSettingsTests() {
     changed.maximized = true;
     changed.fullscreen = true;
     changed.vsync = false;
+    changed.temporalAA = false;
     changed.volume = 0.25f;
     changed.showEngineStats = false;
     const auto reread = GameSettingsFile::Parse(GameSettingsFile::ToString(changed));
     CHECK(reread.has_value());
     CHECK(reread->windowSize.x == 1920 && reread->windowSize.y == 1080 && reread->maximized && reread->fullscreen);
-    CHECK(!reread->vsync && reread->volume == 0.25f && !reread->showEngineStats);
+    CHECK(!reread->vsync && !reread->temporalAA && reread->volume == 0.25f && !reread->showEngineStats);
 
     // Valeur absente : la valeur par défaut, sans avertissement.
     std::vector<std::string> warnings;

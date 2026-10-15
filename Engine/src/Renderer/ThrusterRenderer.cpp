@@ -2,6 +2,7 @@
 
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Renderer/TemporalView.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -21,6 +22,7 @@ namespace Flux {
     }
 
     std::expected<std::unique_ptr<ThrusterRenderer>, std::string> ThrusterRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
+                                                                                            RHI::Format motionFormat,
                                                                                             RHI::Format depthFormat) {
         std::unique_ptr<ThrusterRenderer> renderer(new ThrusterRenderer());
         // Caché par ce qui est devant (test de profondeur), sans cacher ce qui est derrière (pas d'écriture). Les
@@ -30,6 +32,7 @@ namespace Flux {
         desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Flame.spv";
         desc.pushConstantsSize = sizeof(FlameParams);
         desc.colorFormat = colorFormat;
+        desc.secondColorFormat = motionFormat; // transparentes : le mouvement reste celui de ce qui est derrière
         desc.depthFormat = depthFormat;
         desc.depthTest = true;
         desc.depthWrite = false;
@@ -48,9 +51,10 @@ namespace Flux {
                 std::max(thruster.length, 0.01f) * (IdleLength + (1.0f - IdleLength) * std::clamp(throttle, 0.0f, 1.0f))};
     }
 
-    void ThrusterRenderer::Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect) {
+    void ThrusterRenderer::Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect,
+                                   Math::Vector2f jitter) {
         m_flames.clear();
-        const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+        const Math::Matrix4f viewProjection = Jittered(camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix(), jitter);
         const double seconds = std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count(), TimeWrap);
         const Math::Vector3f forward = camera.GetForward();
         for (const ThrusterDraw& draw : thrusters) {
