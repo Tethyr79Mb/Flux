@@ -47,7 +47,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 2. FluxUI commence l'image (`UI::Context::BeginFrame`) ; la caméra suit le joueur ou vole librement (éditeur).
 3. Si le jeu tourne (`UpdateGameSystems`) :
    - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
-   - sièges et pilotage (`Seats::Update`) ;
+   - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
+     vaisseau aux commandes, moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
