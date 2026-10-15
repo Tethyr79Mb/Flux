@@ -157,6 +157,8 @@ namespace Flux::Vk {
         const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
         const RhiTexture* m_colorTarget = nullptr;  // passe vers une texture (2D ou face de cube) : lisible à sa fin
         std::uint32_t m_colorLayer = 0;
+        const RhiTexture* m_secondTarget = nullptr; // seconde cible de la passe en cours : lisible à sa fin
+        const RhiTexture* m_keptDepth = nullptr;    // profondeur gardée (RenderPassDesc::keepDepth) : lisible à sa fin
         VkQueryPool m_queryPool = VK_NULL_HANDLE;
         std::uint32_t m_writtenTimestamps = 0;
         StepMarkers m_markers;

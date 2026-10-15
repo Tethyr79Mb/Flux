@@ -60,6 +60,7 @@ flux_add_shaders(FluxShaders
         shaders/Post.slang
         shaders/Sky.slang
         shaders/Sun.slang
+        shaders/Temporal.slang
 )
 add_dependencies(FluxEngine FluxShaders)
 

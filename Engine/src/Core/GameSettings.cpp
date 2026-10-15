@@ -63,6 +63,7 @@ namespace Flux::GameSettingsFile {
             Read(*window, "fullscreen", settings.fullscreen, IsBool, warnings);
         }
         Read(document, "vsync", settings.vsync, IsBool, warnings);
+        Read(document, "temporalAA", settings.temporalAA, IsBool, warnings);
         Read(document, "volume", settings.volume, IsNumber, warnings);
         settings.volume = std::clamp(settings.volume, 0.0f, 1.0f);
         Read(document, "engineStats", settings.showEngineStats, IsBool, warnings);
@@ -76,6 +77,7 @@ namespace Flux::GameSettingsFile {
         document["window"] = {{"width", settings.windowSize.x}, {"height", settings.windowSize.y}, {"maximized", settings.maximized},
                               {"fullscreen", settings.fullscreen}};
         document["vsync"] = settings.vsync;
+        document["temporalAA"] = settings.temporalAA;
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;
         return document.dump(2) + "\n";

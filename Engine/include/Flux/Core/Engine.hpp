@@ -62,6 +62,7 @@ namespace Flux {
         // Le jeu arrive directement sur le personnage ; sans personnage (écran titre), la caméra ne bouge pas.
         bool freeCamera = true;
         bool vsync = true;
+        bool temporalAA = true; // anticrénelage temporel (TAA)
         float volume = 1.0f; // volume général, 0 à 1
     };
 

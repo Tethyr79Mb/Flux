@@ -86,9 +86,17 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans, nuages, transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
-5. Bloom (`Post.slang`, méthode de Jimenez) : la scène réduite de moitié jusqu'à 6 fois (13 lectures, moyenne de Karis
-   à la première), puis remontée en additionnant chaque niveau flou au niveau au-dessus ; sans seuil.
-6. Passe principale vers la fenêtre : la scène mélangée à son bloom (Paramètres > Graphiques, 4 % par défaut), puis
+   Avec l'anticrénelage, la projection est décalée d'une fraction de pixel différente à chaque image (8 points de
+   Halton, `TemporalView`), sauf le fond du ciel (étoiles d'un pixel) ; les opaques écrivent aussi leur mouvement
+   propre (seconde cible RG16Float) : où le point était à l'image précédente moins où il serait resté immobile, nul
+   pour le décor et pour un cockpit qui suit la caméra.
+5. Anticrénelage temporel (`Temporal.slang`, Paramètres > Graphiques, activé par défaut) : chaque pixel est retrouvé
+   dans le résultat de l'image précédente (profondeur + caméra d'avant, plus le mouvement propre), ramené dans la boîte
+   de couleurs de son voisinage 3 x 3 (YCoCg, moyenne ± écart type) puis mélangé à 10 % de l'image actuelle. Deux
+   historiques en alternance ; rien de repris après un saut de caméra de plus de 100 km ou un changement de taille.
+6. Bloom (`Post.slang`, méthode de Jimenez) : l'image anticrénelée réduite de moitié jusqu'à 6 fois (13 lectures,
+   moyenne de Karis à la première), puis remontée en additionnant chaque niveau flou au niveau au-dessus ; sans seuil.
+7. Passe principale vers la fenêtre : la scène mélangée à son bloom (Paramètres > Graphiques, 4 % par défaut), puis
    l'exposition et la courbe de tons ACES ; l'interface (overlay) par-dessus. Le fond d'une scène sans ciel est
    effacé avec la couleur qui redonne exactement la couleur choisie après la courbe (`InverseToneMap`).
 
