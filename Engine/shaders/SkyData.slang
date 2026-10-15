@@ -16,7 +16,7 @@ struct SkyData
     float4 galaxyAxis;   // xyz ; w : quantité d'étoiles
     float4 galaxyCenter; // xyz ; w : éclat des étoiles
     float4 noiseOffset;  // xyz ; w : luminosité du fond
-    uint4 options;       // x : graine mélangée ; y : 1 panorama, 0 ciel généré
+    uint4 options;       // x : graine mélangée ; y : 1 panorama, 0 ciel généré ; z : rayons du soleil (SunRays)
     AtmosphereData atmosphere;
 };
 

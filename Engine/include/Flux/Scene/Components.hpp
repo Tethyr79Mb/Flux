@@ -172,12 +172,20 @@ namespace Flux {
     // lumière, ses ombres et son disque dans le ciel viennent de sa position : sur une planète, il est haut à midi d'un
     // côté, se lève ou se couche sur le bord, et il fait nuit de l'autre côté. Il remplace le soleil du Ciel (hauteur
     // et direction) ; un seul compte. Ni lui ni la planète ne bougent pendant le jeu : pas de cycle jour / nuit.
+    // Reflets du soleil dans l'objectif de la caméra.
+    enum class SunRays : std::uint8_t {
+        Star,   // branches d'étoile fines autour du disque
+        Streak, // long trait horizontal de la couleur du disque, comme dans EVE Online
+        None,
+    };
+
     struct SunComponent
     {
         Math::LinearColor color{1.0f, 0.96f, 0.9f};    // couleur du disque vu dans le ciel
         Math::LinearColor lightColor{1.0f, 1.0f, 1.0f}; // couleur de la lumière (blanche, comme celle du Soleil)
         float intensity = 1.45f; // éclairement d'une surface face à lui (1 : le blanc d'une surface blanche)
         float size = 0.53f;      // diamètre apparent du disque, en degrés (le Soleil vu de la Terre)
+        SunRays rays = SunRays::Star;
     };
 
     // Orbite autour du Soleil de la scène (SunComponent), pour ranger un système autour de son étoile comme dans EVE
