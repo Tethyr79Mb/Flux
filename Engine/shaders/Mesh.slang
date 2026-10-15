@@ -1380,6 +1380,13 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
                 from = max(from, inner.y); // sous la base : à partir de sa sortie
             }
         }
+        // La planète arrête le rayon : sans elle, là où rien n'a écrit de profondeur (eau transparente, tuile pas
+        // encore prête), le rayon qui plonge traverserait la planète et montrerait les nuages de l'autre côté.
+        const float solid = candidate.water.w > 0.0 ? candidate.water.w : candidate.shape.x - candidate.shape.y;
+        const float2 ground = RaySphere(candidate.clouds.xyz, direction, solid);
+        if (ground.x <= ground.y && ground.x > 0.0) {
+            to = min(to, ground.x);
+        }
         if (to > from && from < start) {
             start = from;
             end = to;
