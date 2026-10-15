@@ -28,6 +28,7 @@ int main() {
         {"planètes (cube-sphère)", RunPlanetTests},
         {"calculs sur le GPU (compute)", RunComputeTests},
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
+        {"armes des vaisseaux", RunWeaponsTests},
     };
 
     int failures = 0;

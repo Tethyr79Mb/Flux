@@ -21,6 +21,7 @@
 #include "Flux/Scene/Orbits.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
+#include "Flux/Scene/Weapons.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -50,6 +51,10 @@ namespace Flux {
 
         // Caméra qui suit le personnage : un peu moins que la verticale, au-dessus comme en dessous.
         constexpr float FollowMaxPitch = 1.3f;
+        // Les tourelles visent le point regardé, à cette distance devant la caméra (m) : leurs tirs s'y croisent.
+        constexpr float AimDistance = 700.0f;
+        // Projectiles réservés d'avance : un combat chargé n'alloue pas en pleine image.
+        constexpr std::size_t ReservedProjectiles = 4096;
 
         double Milliseconds(Clock::duration duration) {
             return std::chrono::duration<double, std::milli>(duration).count();
@@ -256,6 +261,8 @@ namespace Flux {
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
+        actions.Add("Tirer", "Vaisseau", Key::MouseLeft);
+        m_projectiles.reserve(ReservedProjectiles);
         if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
             const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             if (auto loaded = actions.LoadFromString(text); !loaded) {
@@ -451,6 +458,7 @@ namespace Flux {
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
+            m_renderer->SetProjectiles(m_projectiles);
             if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
                 return 1;
             }
@@ -546,8 +554,20 @@ namespace Flux {
             };
             return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
         });
-        Ships::Update(m_scene, Ships::GetPilotedShip(m_scene, player), deltaSeconds, shipInput);
+        const Entity pilotedShip = Ships::GetPilotedShip(m_scene, player);
+        Ships::Update(m_scene, pilotedShip, deltaSeconds, shipInput);
         m_physics->Update(m_scene, deltaSeconds, character);
+        // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
+        // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
+        Weapons::UpdateProjectiles(m_projectiles, deltaSeconds);
+        WeaponInput weaponInput;
+        if (seated && pilotedShip != NullEntity) {
+            weaponInput.fire = IsActionDown("Tirer") && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
+            weaponInput.aim = true;
+            weaponInput.aimPoint = m_camera.position;
+            weaponInput.aimPoint += Math::Vector3d(m_camera.GetForward() * AimDistance);
+        }
+        Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles);
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 
@@ -567,6 +587,7 @@ namespace Flux {
             return loaded;
         }
         m_physics.reset(); // les corps de l'ancienne scène
+        m_projectiles.clear();
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -583,6 +604,7 @@ namespace Flux {
         }
         if (state == GameState::Stopped) {
             m_physics.reset();
+            m_projectiles.clear();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();

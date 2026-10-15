@@ -72,6 +72,23 @@ namespace Flux {
             .Field("intensity", "Éclat", &ThrusterComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("idle", "Poussée au ralenti", &ThrusterComponent::idle, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("light", "Lumière à fond", &ThrusterComponent::light, {.speed = 0.05, .min = 0.0, .max = 1.0e4, .decimals = 2});
+        const std::initializer_list<EnumValue<WeaponKind>> weaponKinds{{"gun", "Canon", WeaponKind::Gun},
+                                                                       {"missile", "Missiles", WeaponKind::Missile}};
+        registry.Register<HardpointComponent>("hardpoint", "Emport")
+            .Enum("kind", "Accepte", &HardpointComponent::kind, weaponKinds)
+            .Field("size", "Taille max (1 à 3)", &HardpointComponent::size, {.speed = 0.05, .min = 1.0, .max = 3.0, .decimals = 0});
+        registry.Register<WeaponComponent>("weapon", "Arme")
+            .Enum("kind", "Genre", &WeaponComponent::kind, weaponKinds)
+            .Field("size", "Taille (1 à 3)", &WeaponComponent::size, {.speed = 0.05, .min = 1.0, .max = 3.0, .decimals = 0})
+            .Field("fireRate", "Cadence (tirs/s)", &WeaponComponent::fireRate, {.speed = 0.05, .min = 0.1, .max = 100.0, .decimals = 2})
+            .Field("projectileSpeed", "Vitesse des projectiles (m/s)", &WeaponComponent::projectileSpeed,
+                   {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
+            .Field("range", "Portée (m)", &WeaponComponent::range, {.speed = 5.0, .min = 10.0, .max = 1.0e6, .decimals = 0})
+            .Field("damage", "Dégâts", &WeaponComponent::damage, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 1})
+            .Field("cone", "Débattement (°)", &WeaponComponent::cone, {.speed = 0.1, .min = 0.0, .max = 180.0, .decimals = 1})
+            .Field("turnRate", "Pivotement (°/s)", &WeaponComponent::turnRate, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
+            .Field("muzzle", "Bouche du canon (m)", &WeaponComponent::muzzle, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("color", "Couleur des traçantes", &WeaponComponent::color, {.alpha = false});
         registry.Register<SkyComponent>("sky", "Ciel")
             .Asset("image", "Panorama (vide : généré)", &SkyComponent::image, AssetType::Image)
             .Field("brightness", "Luminosité", &SkyComponent::brightness, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})

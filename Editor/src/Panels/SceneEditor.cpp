@@ -1,9 +1,12 @@
 #include "Panels/SceneEditor.hpp"
 
+#include "Panels/Hardpoints.hpp"
+
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
 #include "Panels/ContentBrowser.hpp"
+#include "Panels/Hardpoints.hpp"
 #include "Search.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -714,10 +717,25 @@ namespace FluxEditor {
                         before = scene.GetNextSibling(entity); // déjà juste derrière : reste en place
                     }
                 }
+                // Une arme lâchée sur un emport s'y fixe (aimant), s'il l'accepte.
+                const bool mounting = parent != NullEntity && scene.TryGet<WeaponComponent>(entity)
+                                   && scene.TryGet<HardpointComponent>(parent);
+                if (mounting) {
+                    if (const std::string refusal = Hardpoints::GetRefusal(scene, entity, parent); !refusal.empty()) {
+                        Platform::ShowError(engine.GetWindow(), "Emport",
+                                            "« " + DisplayName(scene, entity) + " » ne se fixe pas sur « "
+                                                + DisplayName(scene, parent) + " » : " + refusal + ".");
+                        break;
+                    }
+                }
                 const Uuid id = m_pendingMove.entity;
                 std::string previous = UndoHistory::Capture(engine, id);
                 if (scene.SetParent(entity, parent, before)) {
-                    history.Push("Déplacer dans la hiérarchie", id, std::move(previous), UndoHistory::Capture(engine, id));
+                    if (mounting) {
+                        Hardpoints::Mount(scene, entity, parent);
+                    }
+                    history.Push(mounting ? "Fixer sur l'emport" : "Déplacer dans la hiérarchie", id, std::move(previous),
+                                 UndoHistory::Capture(engine, id));
                 }
                 break;
             }

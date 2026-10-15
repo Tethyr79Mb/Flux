@@ -295,6 +295,41 @@ namespace Flux {
         float light = 8.0f;      // intensité de la lumière jetée autour à pleine poussée (0 : aucune)
     };
 
+    // Ce qu'un emport accepte, et ce qu'est une arme.
+    enum class WeaponKind : std::uint8_t {
+        Gun,     // canon : tire des projectiles en rafale
+        Missile, // lance-missiles
+    };
+
+    // Point d'emport d'un vaisseau (« hardpoint ») : l'endroit du modèle où se fixe une arme, son -z vers l'avant du
+    // tir. L'arme est une entité enfant (WeaponComponent) : changer d'arme, c'est remplacer cet enfant. Une arme d'un
+    // autre genre, ou plus grande que l'emport, n'y tire pas.
+    struct HardpointComponent
+    {
+        WeaponKind kind = WeaponKind::Gun;
+        std::int32_t size = 1; // de 1 à 3 : la plus grande arme acceptée
+    };
+
+    // Arme posée sur un emport (HardpointComponent parent) d'un vaisseau. Pendant le jeu, aux commandes de ce
+    // vaisseau, elle pivote vers le point que regarde le pilote (sans sortir de son cône autour de l'avant de
+    // l'emport) et tire tant que l'action « Tirer » est tenue. Son -z : le canon ; ses projectiles partent de
+    // muzzle mètres devant son origine.
+    struct WeaponComponent
+    {
+        WeaponKind kind = WeaponKind::Gun;
+        std::int32_t size = 1;
+        float fireRate = 8.0f;          // tirs par seconde
+        float projectileSpeed = 1500.0f; // m/s, en plus de la vitesse du vaisseau
+        float range = 2500.0f;          // m : au-delà, le projectile disparaît
+        float damage = 10.0f;           // par projectile (dégâts : étape suivante)
+        float cone = 20.0f;             // °, débattement autour de l'avant de l'emport (0 : tir fixe)
+        float turnRate = 120.0f;        // °/s, vitesse de pivotement
+        float muzzle = 1.0f;            // m, de l'origine de l'arme à la bouche du canon
+        Math::LinearColor color{1.0f, 0.55f, 0.2f}; // couleur de la traçante
+        // Pendant le jeu (non enregistré) : temps avant le prochain tir (s).
+        float cooldown = 0.0f;
+    };
+
     enum class ColliderShape : std::uint8_t {
         Box,     // size
         Sphere,  // radius

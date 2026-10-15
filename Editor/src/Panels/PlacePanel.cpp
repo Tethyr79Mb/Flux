@@ -128,6 +128,28 @@ namespace FluxEditor {
             ThrusterComponent& flame = scene.Add<ThrusterComponent>(thruster);
             flame.width = 2.3f;
             flame.height = 0.75f;
+            // Armes, chacune sur son emport : la tourelle sous le nez (centre de la boule, canons jusqu'au bout du
+            // nez), les canons sous les racines d'aile (pivot à la culasse) et deux lance-missiles sous les ailes.
+            // Les canons du modèle ne bougent pas encore avec elles (pièces à séparer dans fighter.py).
+            struct Mount { const char* name; Math::Vector3d position; WeaponKind kind; std::int32_t size; float cone; float muzzle; };
+            for (const Mount& mount : {Mount{"Emport du nez", {0.0, -1.55, -1.2}, WeaponKind::Gun, 2, 30.0f, 3.05f},
+                                       Mount{"Emport ventral gauche", {-1.5, -1.07, 7.0}, WeaponKind::Gun, 1, 5.0f, 1.45f},
+                                       Mount{"Emport ventral droit", {1.5, -1.07, 7.0}, WeaponKind::Gun, 1, 5.0f, 1.45f},
+                                       Mount{"Emport d'aile gauche", {-5.0, -1.3, 9.5}, WeaponKind::Missile, 2, 0.0f, 1.0f},
+                                       Mount{"Emport d'aile droit", {5.0, -1.3, 9.5}, WeaponKind::Missile, 2, 0.0f, 1.0f}}) {
+                const Entity hardpoint = scene.CreateEntity(mount.name, ship);
+                scene.Get<TransformComponent>(hardpoint).position = mount.position;
+                scene.Add<HardpointComponent>(hardpoint, HardpointComponent{.kind = mount.kind, .size = mount.size});
+                const Entity weapon = scene.CreateEntity(mount.kind == WeaponKind::Gun ? "Canon" : "Lance-missiles", hardpoint);
+                WeaponComponent& arms = scene.Add<WeaponComponent>(weapon);
+                arms.kind = mount.kind;
+                arms.size = mount.size;
+                arms.cone = mount.cone;
+                arms.muzzle = mount.muzzle;
+                if (mount.size >= 2 && mount.kind == WeaponKind::Gun) {
+                    arms.fireRate = 12.0f; // canon rotatif à six tubes
+                }
+            }
         }
 
         struct ItemInfo

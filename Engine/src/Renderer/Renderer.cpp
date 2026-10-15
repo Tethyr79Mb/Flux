@@ -12,6 +12,7 @@
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
+#include "Renderer/TracerRenderer.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -88,6 +89,8 @@ namespace Flux {
         std::unique_ptr<SkyRenderer> sky;
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<ThrusterRenderer> thrusters;
+        std::unique_ptr<TracerRenderer> tracers;
+        std::span<const Projectile> projectiles; // tableau de l'appelant (Renderer::SetProjectiles)
         std::unique_ptr<OverlayRenderer> overlay;
         std::unique_ptr<PostRenderer> post;
         std::filesystem::path assetsDirectory;
@@ -211,6 +214,7 @@ namespace Flux {
                 exposure = lighting.exposure;
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
                 thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
+                tracers->Prepare(projectiles, camera, aspect, static_cast<float>(scene3d.height), temporal.jitter, frameIndex);
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
@@ -262,6 +266,8 @@ namespace Flux {
                 meshes->DrawTransparent(commands, frameIndex);
                 commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
                 thrusters->Draw(commands);
+                commands.BeginStep("traçantes"); // comptées avec les transparents
+                tracers->Draw(commands);
                 commands.EndRenderPass();
             }
             commands.WriteTimestamp(SceneDone);
@@ -346,6 +352,11 @@ namespace Flux {
             return std::unexpected(thrusters.error());
         }
         impl->thrusters = std::move(*thrusters);
+        auto tracers = TracerRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        if (!tracers) {
+            return std::unexpected(tracers.error());
+        }
+        impl->tracers = std::move(*tracers);
         auto overlay = OverlayRenderer::Create(*impl->device, colorFormat, DepthFormat);
         if (!overlay) {
             return std::unexpected(overlay.error());
@@ -381,6 +392,10 @@ namespace Flux {
 
     void Renderer::SetThrusterPreview(bool preview) {
         m_impl->meshes->SetThrusterPreview(preview);
+    }
+
+    void Renderer::SetProjectiles(std::span<const Projectile> projectiles) {
+        m_impl->projectiles = projectiles;
     }
 
     void Renderer::SetClearColor(Math::LinearColor color) {

@@ -40,6 +40,11 @@ namespace Flux {
         End = 0x14F,
         Down = 0x150,
         Delete = 0x153,
+        // Boutons de la souris, rangés après les scancodes du clavier : une action d'entrée (InputActions) peut
+        // ainsi être un clic (« Tirer » au clic gauche) et se réassigner comme une touche.
+        MouseLeft = 0x1F0,
+        MouseRight,
+        MouseMiddle,
     };
 
     enum class MouseButton : std::uint8_t { Left, Right, Middle, Count };

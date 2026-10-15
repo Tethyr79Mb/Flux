@@ -48,6 +48,7 @@ namespace Flux {
             m_buttonReleased[index] = true;
         }
         m_buttons[index] = down;
+        SetKey(static_cast<std::uint16_t>(static_cast<std::uint16_t>(Key::MouseLeft) + index), down); // voir Key::MouseLeft
     }
 
     void Input::AddMouseDelta(float dx, float dy) {
