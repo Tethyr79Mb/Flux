@@ -45,7 +45,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 
 1. Fenêtre : événements Win32, entrées clavier et souris.
 2. FluxUI commence l'image (`UI::Context::BeginFrame`) ; la caméra suit le joueur ou vole librement (éditeur).
-3. Si le jeu tourne (`UpdateGameSystems`) :
+3. Si le jeu tourne et que la scène est prête (`UpdateGameSystems`) :
    - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes, moteurs des autres coupés) ;
@@ -55,6 +55,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
    (`Orbits::Update` : objets placés autour du Soleil, aussi quand le jeu est arrêté).
 5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, version, panneau Moteur.
+   Après une scène chargée en jeu, l'écran de chargement recouvre tout et le jeu attend (`Engine::IsLoading`) : la
+   scène est quand même rendue, pour que les tuiles des planètes se calculent, jusqu'à ce que le rendu n'attende plus
+   ni tuile ni texture du sol pendant 10 images (`RenderTimings::planetPendingTiles`, `groundTexturesLoading`).
 6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces et changement de scène en fin d'image.
 
 ## Rendu

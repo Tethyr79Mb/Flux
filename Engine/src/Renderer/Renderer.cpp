@@ -215,6 +215,8 @@ namespace Flux {
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
                 timings.planetStoredTiles = tiles.stored;
+                timings.planetPendingTiles = tiles.pending;
+                timings.groundTexturesLoading = tiles.groundLoading;
                 timings.planetTileCapacity = PlanetTileCompute::MaxPages * PlanetTileCompute::TilesPerPage;
             }
 

@@ -46,6 +46,10 @@ namespace Flux {
         std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
         std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
+        // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
+        // encore décodées.
+        std::uint32_t planetPendingTiles = 0;
+        bool groundTexturesLoading = false;
     };
 
     // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.

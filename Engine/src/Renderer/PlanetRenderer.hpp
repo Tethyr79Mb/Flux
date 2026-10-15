@@ -85,6 +85,9 @@ namespace Flux {
             return m_compute->GetTileCount() - static_cast<std::uint32_t>(m_freeTiles.size());
         }
         std::uint32_t GetIndexCount() const { return m_indexCount; }
+        // Tuiles demandées à la dernière image et pas encore prêtes (0 : le sol est au détail voulu partout où on le
+        // voit). Sert à l'écran de chargement.
+        std::uint32_t GetPendingTileCount() const { return m_pendingTiles; }
 
         private:
         PlanetRenderer(RHI::Device& device, std::unique_ptr<PlanetTileCompute> compute)
@@ -148,6 +151,7 @@ namespace Flux {
         std::unordered_map<Entity, PlanetState> m_planets;
         std::uint64_t m_frame = 0;
         bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
+        std::uint32_t m_pendingTiles = 0;
         // Cases libérées, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
         struct FreeTile
         {

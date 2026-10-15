@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     FluxEditor::ConsolePanel console;
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
-                          .drawScreenUi = false}); // la vue dessine l'interface de la scène
+                          .drawScreenUi = false, .loadingScreen = false}); // la vue dessine l'interface de la scène
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     settings.Load(engine); // thème de l'interface choisi la dernière fois
     contentBrowser.SetInterfaceEditor(&interfaceEditor);

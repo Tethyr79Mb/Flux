@@ -37,6 +37,8 @@ namespace Flux {
         // les images quand le dossier des assets change ou qu'une image est modifiée (vérifié toutes les deux
         // secondes).
         const RHI::BindGroup* Get(RHI::Device& device, const ModelCache& models, const std::filesystem::path& assetsDirectory);
+        // Images en cours de décodage (pas encore sur le GPU).
+        bool IsLoading() const { return m_decoding.valid(); }
 
         // Pixels des trois tableaux, décodés hors du fil principal.
         struct Decoded

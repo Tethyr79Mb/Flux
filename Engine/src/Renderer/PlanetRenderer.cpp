@@ -245,6 +245,7 @@ namespace Flux {
                 pending.push_back({&state, request});
             }
         }
+        m_pendingTiles = static_cast<std::uint32_t>(pending.size());
         std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
             return a.request.key.level != b.request.key.level ? a.request.key.level < b.request.key.level
                                                               : a.request.distance < b.request.distance;
