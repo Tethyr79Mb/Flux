@@ -134,6 +134,10 @@ namespace Flux {
                 if (ui.Checkbox("V-Sync", vsync)) {
                     renderer.SetVSync(vsync);
                 }
+                bool temporal = renderer.IsTemporalAAEnabled();
+                if (ui.Checkbox("Anticrénelage (TAA)", temporal)) {
+                    renderer.SetTemporalAA(temporal);
+                }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
 
                 // Lecture : si « Attente » domine alors que le GPU travaille peu, la cadence vient de l'extérieur
@@ -204,6 +208,7 @@ namespace Flux {
         }
         m_renderer = std::move(renderer.value());
         m_renderer->SetVSync(config.vsync);
+        m_renderer->SetTemporalAA(config.temporalAA);
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
@@ -221,6 +226,8 @@ namespace Flux {
                                             m_renderer->SetVSync(value >= 0.5); // recrée la chaîne d'images : pas à chaque image
                                         }
                                     }};
+        m_engineValues["Anticrénelage"] = {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
+                                           .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }};
         m_engineValues["Volume général"] = {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
                                              .set = [this](double value) {
                                                  m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
