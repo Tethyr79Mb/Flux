@@ -6,6 +6,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
+#include "Flux/Scene/Ships.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -403,23 +404,23 @@ namespace {
 
         PhysicsWorld world;
         const Seats::DurationsFunction durations = [](Entity) { return Seats::Durations{1.0f, 1.0f}; };
-        const auto frames = [&](double seconds, const SeatInput& input) {
+        const auto frames = [&](double seconds, const ShipInput& input, bool interact = false) {
             for (int frame = 0; frame < static_cast<int>(std::lround(seconds / Frame)); ++frame) {
-                Seats::Update(scene, world.GetPlayer(), Frame, input, durations);
+                Seats::Update(scene, world.GetPlayer(), Frame, {.interact = interact}, durations);
+                Ships::Update(scene, Ships::GetPilotedShip(scene, world.GetPlayer()), Frame, input);
                 world.Update(scene, Frame, {});
             }
         };
-        const SeatInput interact{.interact = true};
         frames(0.5, {});
         // Trop loin (plus de 1,5 m) : rien.
-        frames(Frame, interact);
+        frames(Frame, {}, true);
         const CharacterComponent& character = scene.Get<CharacterComponent>(hero);
         CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
 
         // Il s'approche (vers -x, 1,4 s à 2 m/s), puis s'assoit, posé sur le siège dès le début de l'animation.
         Run(world, scene, 1.4, Walk(-1.0f));
         frames(0.3, {});
-        frames(Frame, interact);
+        frames(Frame, {}, true);
         CHECK(character.seat == seat && character.seatState == SeatState::SittingDown);
         frames(0.5, {});
         const Math::Vector3d onSeat = scene.Get<TransformComponent>(hero).position;
@@ -475,7 +476,7 @@ namespace {
         CHECK(Math::Length(Math::Delta(scene.GetWorldPosition(seat), scene.GetWorldPosition(hero))) < 0.01);
 
         // Il se relève : toujours posé pendant l'animation, puis debout un demi-mètre devant le siège.
-        frames(Frame, interact);
+        frames(Frame, {}, true);
         CHECK(character.seatState == SeatState::StandingUp);
         frames(1.1, {});
         CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
@@ -485,10 +486,10 @@ namespace {
 
         // Sortie réglée derrière le siège (cockpit étroit) : il se relève 1,2 m derrière.
         scene.Get<SeatComponent>(seat).exit = {0.0f, 0.0f, 1.2f};
-        frames(Frame, interact);
+        frames(Frame, {}, true);
         frames(1.1, {});
         CHECK(character.seatState == SeatState::Seated);
-        frames(Frame, interact);
+        frames(Frame, {}, true);
         frames(1.6, {});
         const Math::Vector3d behind = scene.Get<TransformComponent>(hero).position;
         CHECK(character.seatState == SeatState::Standing);
@@ -520,16 +521,17 @@ namespace {
         scene.Add<CharacterComponent>(hero);
 
         PhysicsWorld world;
-        const auto frames = [&](double seconds, const SeatInput& input) {
+        const auto frames = [&](double seconds, const ShipInput& input, bool interact = false) {
             for (int frame = 0; frame < static_cast<int>(std::lround(seconds / Frame)); ++frame) {
-                Seats::Update(scene, world.GetPlayer(), Frame, input, {});
+                Seats::Update(scene, world.GetPlayer(), Frame, {.interact = interact}, {});
+                Ships::Update(scene, Ships::GetPilotedShip(scene, world.GetPlayer()), Frame, input);
                 world.Update(scene, Frame, {});
             }
         };
         frames(0.5, {});
         const CharacterComponent& character = scene.Get<CharacterComponent>(hero);
         // A 5,6 m du siège, dehors : E le met aux commandes, à bord du chasseur.
-        frames(Frame, {.interact = true});
+        frames(Frame, {}, true);
         CHECK(character.seat == seat && character.seatState == SeatState::Seated);
         CHECK(scene.GetParent(hero) == ship);
         frames(0.2, {});
@@ -537,7 +539,7 @@ namespace {
         CHECK(Seats::GetPilotSeat(scene, hero) == seat);
 
         // Il se relève : au sol à côté du vaisseau, puis rendu au monde du dehors.
-        frames(Frame, {.interact = true});
+        frames(Frame, {}, true);
         CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
         frames(1.0, {});
         CHECK(scene.GetParent(hero) == NullEntity);
@@ -546,7 +548,7 @@ namespace {
 
         // Remonte aux commandes. Stabilisation à plat : décolle, s'incline à droite, lâche le roulis ; les ailes reviennent à plat (sans
         // l'aide, l'inclinaison reste).
-        frames(Frame, {.interact = true});
+        frames(Frame, {}, true);
         CHECK(Seats::GetPilotSeat(scene, hero) == seat);
         const Math::Vector3f up{0.0f, 1.0f, 0.0f};
         const auto bank = [&] {
@@ -655,9 +657,9 @@ namespace {
 
         // Sans pilote, les moteurs se coupent (de 1 à 0 en 0,4 s).
         CHECK(flight.throttle > 0.99f);
-        Seats::Update(scene, NullEntity, 0.2, {}, {});
+        Ships::Update(scene, NullEntity, 0.2, {});
         CHECK(std::abs(flight.throttle - 0.5f) < 0.01f);
-        Seats::Update(scene, NullEntity, 0.5, {}, {});
+        Ships::Update(scene, NullEntity, 0.5, {});
         CHECK(flight.throttle == 0.0f);
 
         // A plat à 5 km/s au-dessus d'une planète de 600 km : l'assiette et la vitesse suivent la courbure, l'altitude
@@ -676,8 +678,8 @@ namespace {
         for (int frame = 0; frame < static_cast<int>(std::lround(20.0 / Frame)); ++frame) {
             const Math::Vector3d offset = (Math::Delta({}, scene.GetWorldPosition(ship)) - center);
             const Math::Vector3f local = Math::Vector3f(Math::Normalize(offset));
-            Seats::Update(scene, world.GetPlayer(), Frame,
-                          {.up = local, .planetUp = local, .planetCenter = static_cast<float>(Math::Length(offset))}, {});
+            Ships::Update(scene, Ships::GetPilotedShip(scene, world.GetPlayer()), Frame,
+                          {.up = local, .planetUp = local, .planetCenter = static_cast<float>(Math::Length(offset))});
             world.Update(scene, Frame, {});
         }
         CHECK(std::abs(altitude()) < 20.0);

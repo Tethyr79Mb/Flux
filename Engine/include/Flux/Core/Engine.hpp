@@ -309,15 +309,15 @@ namespace Flux {
         Entity GetCockpitSeat(Entity player) const;
         void TurnWithShip(Entity player);
         // Où vole un vaisseau par rapport à la planète la plus proche : altitude au-dessus du sol (ou de la mer qui
-        // le recouvre), verticale du lieu (unitaire, monde) et densité de l'air (0 dans l'espace, voir SeatInput::air).
+        // le recouvre), verticale du lieu (unitaire, monde) et densité de l'air (0 dans l'espace, voir ShipInput::air).
         struct FlightState
         {
             bool nearPlanet = false;
             double altitude = 0.0;
             Math::Vector3d up;
             float air = 0.0f;
-            double boundary = 0.0; // distance au haut de l'atmosphère, ou à l'altitude sans atmosphère (SeatInput::planetDistance)
-            double center = 0.0;   // distance au centre de la planète (SeatInput::planetCenter)
+            double boundary = 0.0; // distance au haut de l'atmosphère, ou à l'altitude sans atmosphère (ShipInput::planetDistance)
+            double center = 0.0;   // distance au centre de la planète (ShipInput::planetCenter)
         };
         FlightState GetFlightState(Entity ship);
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
