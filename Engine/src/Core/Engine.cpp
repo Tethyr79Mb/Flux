@@ -70,6 +70,7 @@ namespace Flux {
             GpuOceanCost,
             GpuCloudsCost,
             GpuTransparentCost,
+            GpuTemporalCost,
             GpuBloomCost,
             GpuInterfaceCost,
             CostCount,
@@ -151,6 +152,7 @@ namespace Flux {
                 ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
                 ui.LabelText("  dont nuages", FormatCost(stats.Get(GpuCloudsCost)));
                 ui.LabelText("  dont transparents, flammes", FormatCost(stats.Get(GpuTransparentCost)));
+                ui.LabelText("GPU anticrénelage", FormatCost(stats.Get(GpuTemporalCost)));
                 ui.LabelText("GPU bloom, image finale", FormatCost(stats.Get(GpuBloomCost)));
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
                 const RenderTimings& render = renderer.GetTimings();
@@ -353,6 +355,7 @@ namespace Flux {
             stats.Add(GpuOceanCost, render.gpuOcean);
             stats.Add(GpuCloudsCost, render.gpuClouds);
             stats.Add(GpuTransparentCost, render.gpuTransparent);
+            stats.Add(GpuTemporalCost, render.gpuTemporal);
             stats.Add(GpuBloomCost, render.gpuBloom);
             stats.Add(GpuInterfaceCost, render.gpuInterface);
 

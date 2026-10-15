@@ -39,6 +39,7 @@ namespace Flux {
         double gpuOcean = -1.0;     // GPU : océans
         double gpuClouds = -1.0;    // GPU : nuages des planètes
         double gpuTransparent = -1.0; // GPU : entités transparentes
+        double gpuTemporal = -1.0;  // GPU : anticrénelage temporel
         double gpuBloom = -1.0;     // GPU : bloom et image finale (courbe de tons)
         double gpuInterface = -1.0; // GPU : interface (overlay 2D)
         std::uint32_t planetTiles = 0;       // tuiles de planète dessinées
@@ -81,6 +82,10 @@ namespace Flux {
         static constexpr float DefaultBloom = 0.04f;
         void SetBloom(float strength);
         float GetBloom() const;
+        // Anticrénelage temporel (activé par défaut) : chaque image est décalée d'une fraction de pixel, puis mélangée
+        // aux précédentes ; les bords en escalier et le grain des nuages s'effacent.
+        void SetTemporalAA(bool enabled);
+        bool IsTemporalAAEnabled() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

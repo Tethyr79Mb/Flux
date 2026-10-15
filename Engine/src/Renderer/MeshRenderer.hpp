@@ -8,6 +8,7 @@
 #include "Renderer/PlanetRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
+#include "Renderer/TemporalView.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
 
 #include <array>
@@ -32,8 +33,10 @@ namespace Flux {
     // (PlanetTileCompute) et par passe, plutôt qu'un appel par tuile.
     class MeshRenderer {
         public:
+        // `motionFormat` : seconde cible de la passe de la scène, où les opaques écrivent leur mouvement propre
+        // (PostRenderer::GetMotionTarget).
         static std::expected<std::unique_ptr<MeshRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                 RHI::Format depthFormat);
+                                                                                 RHI::Format motionFormat, RHI::Format depthFormat);
 
         ModelCache& GetModels() { return *m_models; }
 
@@ -54,7 +57,7 @@ namespace Flux {
         void SetThrusterPreview(bool preview) { m_thrusterPreview = preview; }
 
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
-                     const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
+                     const TemporalView& temporal, const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
         // Calculs sur le GPU préparés par Prepare (tuiles des planètes), avant toute passe.
         void Compute(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image (la carte est
@@ -118,6 +121,9 @@ namespace Flux {
             std::array<std::array<float, 4>, 3> normal;
             std::array<float, 4> rim; // lumière de contour : couleur x intensité ; finesse (0 : aucune)
             std::array<float, 4> ground; // tuile de planète : xyz, son centre modulo GroundPeriod (textures du sol)
+            // world à l'image précédente, relative à sa caméra (mouvement propre pour l'anticrénelage temporel) ; nulle
+            // pour les tuiles de planète, immobiles.
+            Math::Matrix4f previousWorld;
         };
         // Période (m) des coordonnées des textures du sol : multiple de leurs tailles (GroundScale dans Mesh.slang).
         static constexpr double GroundPeriod = 1024.0;
@@ -173,7 +179,7 @@ namespace Flux {
         };
 
         explicit MeshRenderer(RHI::Device& device) : m_device(device) {}
-        std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat);
+        std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format motionFormat, RHI::Format depthFormat);
         const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
@@ -186,7 +192,7 @@ namespace Flux {
         void ClearDraws();
         bool BuildTileCommands(std::uint32_t frameIndex);
         void Pose(const GpuModel& model, const AnimatorComponent* animator);
-        void Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex);
+        void Upload(const Camera& camera, float aspect, const SkyLighting& sky, const TemporalView& temporal, std::uint32_t frameIndex);
         static bool IsTransparent(const MeshDraw& draw, const GpuMaterial& material);
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         void BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, const RHI::Pipeline& pipeline) const;
@@ -229,6 +235,11 @@ namespace Flux {
         std::vector<RelativeTransform> m_relativeTransforms;
         std::vector<MeshDraw> m_draws;
         std::vector<DrawData> m_drawData; // une par entité de m_draws, envoyées au GPU
+        // Par indice d'entité : sa matrice world de la dernière image où elle a été préparée, et le numéro de cette
+        // image (m_preparedFrame). Une entité absente de l'image précédente est prise pour immobile.
+        std::vector<Math::Matrix4f> m_previousWorld;
+        std::vector<std::uint32_t> m_previousFrame;
+        std::uint32_t m_preparedFrame = 0;
         std::vector<std::uint32_t> m_opaque;        // dans m_draws, visibles, du plus proche au plus loin
         std::vector<TransparentDraw> m_transparent; // triés du plus loin au plus proche
         std::vector<Math::Matrix4f> m_jointMatrices;

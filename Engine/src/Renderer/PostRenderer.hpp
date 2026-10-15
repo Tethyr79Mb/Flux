@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Math/Color.hpp"
+#include "Flux/Math/Matrix4.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -10,9 +11,12 @@
 #include <string>
 
 namespace Flux {
-    // Image de la scène en HDR et ce qui la transforme en image de la fenêtre : bloom puis courbe de tons
-    // (shaders/Post.slang). La scène est dessinée dans GetSceneTarget (lumière linéaire, sans plafond) avec son propre
-    // tampon de profondeur, tous deux à la taille de la vue 3D ; Composite l'écrit ensuite dans la passe principale.
+    // Image de la scène en HDR et ce qui la transforme en image de la fenêtre : anticrénelage temporel
+    // (shaders/Temporal.slang), bloom puis courbe de tons (shaders/Post.slang). La scène est dessinée dans
+    // GetSceneTarget (lumière linéaire, sans plafond), son mouvement propre dans GetMotionTarget, avec son propre
+    // tampon de profondeur, tous trois à la taille de la vue 3D ; Composite l'écrit ensuite dans la passe principale.
+    // Coût de l'anticrénelage : une passe plein écran (25 lectures de texture par pixel, la plupart dans le même
+    // voisinage 3 x 3), et 40 Mo environ de mémoire vidéo en 1080p (deux historiques HDR et le mouvement).
     // Coût du bloom : une demi-douzaine de petites passes plein écran (la première à la moitié de la taille de la vue),
     // une quinzaine de lectures de texture par pixel, et 5 Mo environ de mémoire vidéo en 1080p.
     class PostRenderer {
@@ -24,11 +28,20 @@ namespace Flux {
         // Format de l'image de la scène : ce que les pipelines de la scène déclarent.
         static constexpr RHI::Format SceneFormat = RHI::Format::RGBA16Float;
         static constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
+        // Seconde cible de la passe de la scène : le mouvement propre de ce qu'on voit (voir Motion dans Mesh.slang).
+        static constexpr RHI::Format MotionFormat = RHI::Format::RG16Float;
 
         // Cibles à la taille de la vue 3D, recréées si elle change (le GPU attendu avant).
         std::expected<void, std::string> Resize(RHI::Extent extent);
         const RHI::Texture& GetSceneTarget() const { return *m_scene; }
         const RHI::Texture& GetSceneDepth() const { return *m_depth; }
+        const RHI::Texture& GetMotionTarget() const { return *m_motion; }
+
+        // Hors de toute passe, après la scène et avant DrawBloom : mélange la scène à l'historique (voir Temporal.slang).
+        // `reprojection` : clip space de cette image sans décalage (x, y, profondeur, 1) -> celui de l'image précédente ;
+        // `history` false : rien à reprendre (saut de la caméra). Sans `enabled`, rien : le bloom et l'image finale
+        // lisent la scène telle quelle.
+        void ResolveTemporal(RHI::CommandList& commands, bool enabled, const Math::Matrix4f& reprojection, bool history);
 
         // Hors de toute passe, après la scène : réductions et remontées du bloom. Rien si `strength` vaut 0.
         void DrawBloom(RHI::CommandList& commands, float strength);
@@ -47,9 +60,19 @@ namespace Flux {
             std::array<float, 4> options;
         };
 
+        // Doit correspondre à TemporalParams dans shaders/Temporal.slang.
+        struct TemporalParams
+        {
+            Math::Matrix4f reprojection;
+            std::array<float, 4> texel;
+        };
+
         static constexpr std::uint32_t MaxLevels = 6;
+        // Image que lisent le bloom et l'image finale : la scène, ou l'un des deux historiques.
+        static constexpr std::uint32_t OutputCount = 3;
 
         explicit PostRenderer(RHI::Device& device) : m_device(device) {}
+        const RHI::Texture& GetOutput(std::uint32_t output) const;
         void DrawPass(RHI::CommandList& commands, const RHI::Pipeline& pipeline, const RHI::Texture& target,
                       const RHI::BindGroup& group, const RHI::Texture& source, float radius) const;
 
@@ -60,18 +83,31 @@ namespace Flux {
         std::unique_ptr<RHI::Pipeline> m_downsample;
         std::unique_ptr<RHI::Pipeline> m_upsample;
         std::unique_ptr<RHI::Pipeline> m_composite;
+        std::unique_ptr<RHI::Sampler> m_pointSampler; // profondeur et mouvement : lus tels quels
+        std::unique_ptr<RHI::BindGroupLayout> m_temporalLayout;
+        std::unique_ptr<RHI::Pipeline> m_temporal;
 
         RHI::Extent m_extent;
         std::unique_ptr<RHI::Texture> m_scene;
         std::unique_ptr<RHI::Texture> m_depth;
+        std::unique_ptr<RHI::Texture> m_motion;
+        // Résultats de l'anticrénelage, en alternance : celui de cette image est écrit en lisant l'autre.
+        std::array<std::unique_ptr<RHI::Texture>, 2> m_history;
+        std::array<std::unique_ptr<RHI::BindGroup>, 2> m_temporalGroups; // [i] : écrit m_history[i]
+        std::uint32_t m_written = 0;      // historique écrit à la dernière image
+        bool m_historyValid = false;      // m_history[m_written] tient une image de cette taille
+        std::uint32_t m_output = 0;       // 0 : la scène ; 1 + i : m_history[i]
         std::uint32_t m_levels = 0;
         // down[i] : la scène réduite i + 1 fois ; up[i] : down[i] plus tous les niveaux plus petits (up[m_levels - 1]
         // n'existe pas : c'est down[m_levels - 1]).
         std::array<std::unique_ptr<RHI::Texture>, MaxLevels> m_down;
         std::array<std::unique_ptr<RHI::Texture>, MaxLevels> m_up;
+        // La première réduction lit l'image de sortie (m_output) : un groupe par sortie possible, comme l'image finale
+        // (m_downGroups[0] n'est pas utilisé).
         std::array<std::unique_ptr<RHI::BindGroup>, MaxLevels> m_downGroups;
         std::array<std::unique_ptr<RHI::BindGroup>, MaxLevels> m_upGroups;
-        std::unique_ptr<RHI::BindGroup> m_compositeGroup;
+        std::array<std::unique_ptr<RHI::BindGroup>, OutputCount> m_firstDownGroups;
+        std::array<std::unique_ptr<RHI::BindGroup>, OutputCount> m_compositeGroups;
         bool m_bloomDrawn = false; // up[0] (ou down[0]) rempli cette image : sinon Composite lit la scène deux fois
     };
 }

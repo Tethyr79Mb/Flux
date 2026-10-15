@@ -9,6 +9,12 @@ namespace Flux {
     namespace {
         constexpr std::uint32_t SourceSlot = 0;
         constexpr std::uint32_t OtherSlot = 1;
+        // Anticrénelage temporel (Temporal.slang) : SourceSlot la scène, OtherSlot l'historique, puis :
+        constexpr std::uint32_t DepthSlot = 2;
+        constexpr std::uint32_t MotionSlot = 3;
+        // Part de l'image actuelle dans le mélange : la moyenne d'une dizaine d'images. Plus haut, les bords lissent
+        // moins ; plus bas, ce qui change (lumière, objet qui apparaît) traîne plus longtemps.
+        constexpr float CurrentWeight = 0.1f;
         // Le plus petit niveau du bloom garde au moins ce côté (pixels) : plus petit, il ne fait plus que du gris.
         constexpr std::uint32_t MinLevelSize = 8;
     }
@@ -27,7 +33,7 @@ namespace Flux {
             RHI::Binding{SourceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{OtherSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
-        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 2 * MaxLevels + 1});
+        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 2 * MaxLevels + 2 * OutputCount});
         if (!layout) {
             return std::unexpected(layout.error());
         }
@@ -50,6 +56,36 @@ namespace Flux {
             out = std::move(*pipeline);
             return {};
         };
+        auto pointSampler = device.CreateSampler({.filter = RHI::Filter::Nearest, .mipFilter = RHI::Filter::Nearest,
+                                                  .address = RHI::AddressMode::ClampToEdge});
+        if (!pointSampler) {
+            return std::unexpected(pointSampler.error());
+        }
+        post->m_pointSampler = std::move(*pointSampler);
+        constexpr std::array temporalBindings{
+            RHI::Binding{SourceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{OtherSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{DepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{MotionSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+        };
+        auto temporalLayout = device.CreateBindGroupLayout({.bindings = temporalBindings, .maxGroups = 2});
+        if (!temporalLayout) {
+            return std::unexpected(temporalLayout.error());
+        }
+        post->m_temporalLayout = std::move(*temporalLayout);
+        const RHI::BindGroupLayout* temporalLayouts[] = {post->m_temporalLayout.get()};
+        RHI::PipelineDesc temporalDesc;
+        temporalDesc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Temporal.spv";
+        temporalDesc.fragmentEntryPoint = "fragmentTemporal";
+        temporalDesc.bindGroupLayouts = temporalLayouts;
+        temporalDesc.pushConstantsSize = sizeof(TemporalParams);
+        temporalDesc.colorFormat = SceneFormat;
+        auto temporal = device.CreatePipeline(temporalDesc);
+        if (!temporal) {
+            return std::unexpected(temporal.error());
+        }
+        post->m_temporal = std::move(*temporal);
+
         for (auto result : {create(post->m_downsampleFirst, "fragmentDownsampleFirst", SceneFormat, RHI::Format::Undefined),
                             create(post->m_downsample, "fragmentDownsample", SceneFormat, RHI::Format::Undefined),
                             create(post->m_upsample, "fragmentUpsample", SceneFormat, RHI::Format::Undefined),
@@ -69,7 +105,18 @@ namespace Flux {
         }
         m_device.WaitIdle(); // les images en vol les utilisent peut-être encore
         // Groupes libérés avant les textures qu'ils désignent, et tout libéré avant d'allouer à la nouvelle taille.
-        m_compositeGroup.reset();
+        for (std::uint32_t o = 0; o < OutputCount; ++o) {
+            m_compositeGroups[o].reset();
+            m_firstDownGroups[o].reset();
+        }
+        for (auto& group : m_temporalGroups) {
+            group.reset();
+        }
+        for (auto& history : m_history) {
+            history.reset();
+        }
+        m_motion.reset();
+        m_historyValid = false;
         for (std::uint32_t i = 0; i < MaxLevels; ++i) {
             m_downGroups[i].reset();
             m_upGroups[i].reset();
@@ -80,13 +127,23 @@ namespace Flux {
         m_depth.reset();
         m_extent = extent;
 
+        // Profondeur lisible : l'anticrénelage y retrouve où était chaque point.
         auto scene = m_device.CreateRenderTarget(SceneFormat, extent, true);
-        auto depth = m_device.CreateRenderTarget(DepthFormat, extent);
-        if (!scene || !depth) {
-            return std::unexpected(!scene ? scene.error() : depth.error());
+        auto depth = m_device.CreateRenderTarget(DepthFormat, extent, true);
+        auto motion = m_device.CreateRenderTarget(MotionFormat, extent, true);
+        if (!scene || !depth || !motion) {
+            return std::unexpected(!scene ? scene.error() : !depth ? depth.error() : motion.error());
         }
         m_scene = std::move(*scene);
         m_depth = std::move(*depth);
+        m_motion = std::move(*motion);
+        for (auto& history : m_history) {
+            auto created = m_device.CreateRenderTarget(SceneFormat, extent, true);
+            if (!created) {
+                return std::unexpected(created.error());
+            }
+            history = std::move(*created);
+        }
 
         // Niveaux : la moitié de la vue, puis la moitié de la moitié... tant que le petit côté garde MinLevelSize.
         m_levels = 0;
@@ -120,21 +177,38 @@ namespace Flux {
             }
             return created;
         };
-        for (std::uint32_t i = 0; i < m_levels; ++i) {
-            const RHI::Texture& source = i == 0 ? *m_scene : *m_down[i - 1];
-            m_downGroups[i] = group(source, source);
-            if (i + 1 < m_levels) {
-                const RHI::Texture& smaller = i + 2 < m_levels ? *m_up[i + 1] : *m_down[i + 1];
-                m_upGroups[i] = group(smaller, *m_down[i]);
-            }
-            if (!m_downGroups[i] || (i + 1 < m_levels && !m_upGroups[i])) {
+        for (std::uint32_t i = 1; i < m_levels; ++i) {
+            m_downGroups[i] = group(*m_down[i - 1], *m_down[i - 1]);
+            if (!m_downGroups[i]) {
                 return std::unexpected("création des groupes du bloom");
             }
         }
-        const RHI::Texture* bloom = m_levels >= 2 ? m_up[0].get() : m_levels == 1 ? m_down[0].get() : m_scene.get();
-        m_compositeGroup = group(*m_scene, *bloom);
-        if (!m_compositeGroup) {
-            return std::unexpected("création du groupe de l'image finale");
+        for (std::uint32_t i = 0; i + 1 < m_levels; ++i) {
+            const RHI::Texture& smaller = i + 2 < m_levels ? *m_up[i + 1] : *m_down[i + 1];
+            m_upGroups[i] = group(smaller, *m_down[i]);
+            if (!m_upGroups[i]) {
+                return std::unexpected("création des groupes du bloom");
+            }
+        }
+        for (std::uint32_t o = 0; o < OutputCount; ++o) {
+            const RHI::Texture& output = GetOutput(o);
+            // Sans niveau de bloom, l'image finale lit deux fois la sortie (force du bloom à 0).
+            const RHI::Texture* bloom = m_levels >= 2 ? m_up[0].get() : m_levels == 1 ? m_down[0].get() : &output;
+            m_firstDownGroups[o] = group(output, output);
+            m_compositeGroups[o] = group(output, *bloom);
+            if (!m_firstDownGroups[o] || !m_compositeGroups[o]) {
+                return std::unexpected("création des groupes de l'image finale");
+            }
+        }
+        for (std::uint32_t i = 0; i < 2; ++i) {
+            m_temporalGroups[i] = m_device.CreateBindGroup(*m_temporalLayout);
+            if (!m_temporalGroups[i]) {
+                return std::unexpected("création des groupes de l'anticrénelage");
+            }
+            m_temporalGroups[i]->SetTexture(SourceSlot, *m_scene, *m_sampler);
+            m_temporalGroups[i]->SetTexture(OtherSlot, *m_history[1 - i], *m_sampler);
+            m_temporalGroups[i]->SetTexture(DepthSlot, *m_depth, *m_pointSampler);
+            m_temporalGroups[i]->SetTexture(MotionSlot, *m_motion, *m_pointSampler);
         }
         return {};
     }
@@ -155,14 +229,43 @@ namespace Flux {
         commands.EndRenderPass();
     }
 
+    const RHI::Texture& PostRenderer::GetOutput(std::uint32_t output) const {
+        return output == 0 ? *m_scene : *m_history[output - 1];
+    }
+
+    void PostRenderer::ResolveTemporal(RHI::CommandList& commands, bool enabled, const Math::Matrix4f& reprojection,
+                                       bool history) {
+        if (!enabled) {
+            m_output = 0;
+            m_historyValid = false;
+            return;
+        }
+        const std::uint32_t target = 1 - m_written;
+        const TemporalParams params{reprojection,
+                                    {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height),
+                                     CurrentWeight, history && m_historyValid ? 1.0f : 0.0f}};
+        commands.BeginRenderPass({.colorTarget = m_history[target].get()});
+        commands.SetViewport({0.0f, 0.0f, static_cast<float>(m_extent.width), static_cast<float>(m_extent.height)});
+        commands.SetScissor({0, 0, m_extent.width, m_extent.height});
+        commands.BindPipeline(*m_temporal);
+        commands.SetBindGroup(0, *m_temporalGroups[target]);
+        commands.PushConstants(&params, sizeof(params));
+        commands.Draw(3, 0);
+        commands.EndRenderPass();
+        m_written = target;
+        m_historyValid = true;
+        m_output = 1 + target;
+    }
+
     void PostRenderer::DrawBloom(RHI::CommandList& commands, float strength) {
         m_bloomDrawn = strength > 0.0f && m_levels > 0;
         if (!m_bloomDrawn) {
             return;
         }
         for (std::uint32_t i = 0; i < m_levels; ++i) {
-            const RHI::Texture& source = i == 0 ? *m_scene : *m_down[i - 1];
-            DrawPass(commands, i == 0 ? *m_downsampleFirst : *m_downsample, *m_down[i], *m_downGroups[i], source, 0.0f);
+            const RHI::Texture& source = i == 0 ? GetOutput(m_output) : *m_down[i - 1];
+            DrawPass(commands, i == 0 ? *m_downsampleFirst : *m_downsample, *m_down[i],
+                     i == 0 ? *m_firstDownGroups[m_output] : *m_downGroups[i], source, 0.0f);
         }
         for (std::uint32_t i = m_levels - 1; i-- > 0;) {
             const RHI::Texture& smaller = i + 2 < m_levels ? *m_up[i + 1] : *m_down[i + 1];
@@ -172,7 +275,7 @@ namespace Flux {
 
     void PostRenderer::Composite(RHI::CommandList& commands, float strength, float exposure) const {
         commands.BindPipeline(*m_composite);
-        commands.SetBindGroup(0, *m_compositeGroup);
+        commands.SetBindGroup(0, *m_compositeGroups[m_output]);
         const float levels = static_cast<float>(std::max(m_levels, 1u));
         const PostParams params{{}, {m_bloomDrawn ? strength : 0.0f, exposure, 1.0f / levels, 0.0f}};
         commands.PushConstants(&params, sizeof(params));

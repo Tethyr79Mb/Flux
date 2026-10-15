@@ -48,20 +48,25 @@ static const uint MaxPlanets = 4;
 // Doit correspondre à FrameData dans MeshRenderer.cpp. Matrices par colonnes : aucune ambiguïté de convention.
 struct FrameData
 {
-    float4 viewProjection[4];
+    float4 viewProjection[4];  // décalée d'un sous-pixel pour l'anticrénelage temporel (cameraRight.w, cameraUp.w)
+    float4 previousViewProjection[4]; // de l'image précédente, sans décalage, relative à sa caméra
     float4 cascades[4 * 4];   // cascade c : colonnes [4c, 4c + 3] ; relatif caméra -> carte (xy dans [-1, 1], z dans [0, 1])
     float4 cascadeEnds;       // fin de chaque tranche, en mètres devant la caméra
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
     float4 cameraForward;     // xyz ; w : secondes écoulées (vagues), repartent de 0 toutes les heures
+    float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
     // x : multiplie la texture du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des reflets les
     // plus flous ; w : exposition (appliquée après le bloom, shaders/Post.slang : inutilisée ici)
     float4 environment;
-    // Rayon d'un pixel (nuages) : cameraForward + cameraRight * clip.x - cameraUp * clip.y (à l'échelle du champ).
+    // Rayon d'un pixel (nuages) : cameraForward + cameraRight * clip.x - cameraUp * clip.y (à l'échelle du champ), le
+    // clip du pixel moins le décalage d'un sous-pixel (w de cameraRight et de cameraUp).
     float4 cameraRight;
     float4 cameraUp;
-    uint4 lightCount;         // x : nombre de lumières dans lights ; y : nombre de volumes intérieurs ; z : de planètes
+    // x : nombre de lumières dans lights ; y : nombre de volumes intérieurs ; z : de planètes ; w : numéro de l'image
+    // pour les bruits qui changent à chaque image (0 : fixes, sans anticrénelage temporel)
+    uint4 lightCount;
     InteriorData interiors[MaxInteriors];
     PlanetData planets[MaxPlanets];
     AtmosphereData atmosphere;
@@ -88,6 +93,7 @@ struct DrawData
     // tuile dans le repère de la planète ; w, indice dans FrameData::planets (bits d'un entier).
     float4 rim;
     float4 ground;            // tuile de planète : xyz, centre de rim modulo GroundPeriod (MeshRenderer.hpp)
+    float4 previousWorld[4];  // world à l'image précédente, relative à sa caméra (tuiles de planète : non lue)
 };
 
 // Doit correspondre à DrawParams dans MeshRenderer.cpp : une primitive (un matériau) d'une entité.
@@ -166,6 +172,10 @@ struct VertexOutput
     float3 normal   : NORMAL;
     float2 uv       : TEXCOORD;
     nointerpolation uint draw : DRAW; // dans draws
+    // Le point à l'image précédente (clip space, sans décalage), là où était l'entité et là où il serait resté
+    // immobile : leur écart est le mouvement propre de l'entité (voir Motion). Nuls pour les tuiles de planète.
+    float4 previousClip : PREVIOUS_CLIP;
+    float4 staticClip   : STATIC_CLIP;
 };
 
 float4 Transform(float4 columns[4], float3 p)
@@ -204,13 +214,27 @@ VertexOutput Output(uint drawIndex, float3 position, float3 normal, float2 uv)
     output.position = Transform(frame[0].viewProjection, output.worldPosition);
     output.normal = draw.normal[0].xyz * normal.x + draw.normal[1].xyz * normal.y + draw.normal[2].xyz * normal.z;
     output.uv = uv;
+    output.previousClip = float4(0.0);
+    output.staticClip = float4(0.0);
+    return output;
+}
+
+// Output, plus où était le sommet à l'image précédente (entités seulement : les planètes ne bougent pas). La pose de
+// l'image précédente n'est pas gardée : le mouvement des os d'un modèle animé n'est pas compté, seulement celui de
+// l'entité.
+VertexOutput MovingOutput(uint drawIndex, float3 position, float3 normal, float2 uv)
+{
+    VertexOutput output = Output(drawIndex, position, normal, uv);
+    const FrameData f = frame[0];
+    output.previousClip = Transform(f.previousViewProjection, Transform(draws[drawIndex].previousWorld, position).xyz);
+    output.staticClip = Transform(f.previousViewProjection, output.worldPosition + f.cameraDelta.xyz);
     return output;
 }
 
 [shader("vertex")]
 VertexOutput vertexMain(VertexInput input, uint draw : SV_VulkanInstanceID)
 {
-    return Output(draw, input.position, input.normal, input.uv);
+    return MovingOutput(draw, input.position, input.normal, input.uv);
 }
 
 [shader("vertex")]
@@ -219,7 +243,7 @@ VertexOutput vertexSkinned(SkinnedVertexInput input, uint draw : SV_VulkanInstan
     float3 position;
     float3 normal;
     Skin(input, asuint(draws[draw].normal[1].w), position, normal);
-    return Output(draw, position, normal, input.uv);
+    return MovingOutput(draw, position, normal, input.uv);
 }
 
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
@@ -890,8 +914,34 @@ void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 // désert selon le climat, avec des taches à grande échelle (les zones ne suivent pas des lignes droites). Chaque
 // matière est une image (GroundTextures) ; sans images, une couleur unie avec un grain de bruit de près (couleur et
 // petit relief, effacés au loin où ils scintilleraient).
+// Couleur de la scène, et mouvement propre de ce qu'on voit (l'anticrénelage temporel y ajoute celui de la caméra).
+struct SceneOutput
+{
+    float4 color  : SV_Target0;
+    float2 motion : SV_Target1;
+};
+
+// Mouvement propre à l'écran (en fraction de l'image, comme les uv) : où le point était à l'image précédente, moins
+// où il aurait été s'il n'avait pas bougé dans le monde. Nul pour tout ce qui est immobile, cockpit autour de la
+// caméra compris : il bouge avec elle, son mouvement propre annule celui de la caméra.
+float2 Motion(VertexOutput input)
+{
+    if (input.previousClip.w <= 0.0 || input.staticClip.w <= 0.0) {
+        return float2(0.0); // derrière l'ancienne caméra : rien de mieux que la reprojection par la profondeur
+    }
+    return (input.previousClip.xy / input.previousClip.w - input.staticClip.xy / input.staticClip.w) * 0.5;
+}
+
 [shader("fragment")]
-float4 fragmentPlanet(PlanetVertexOutput input) : SV_Target
+SceneOutput fragmentPlanet(PlanetVertexOutput input)
+{
+    SceneOutput output;
+    output.color = PlanetColor(input);
+    output.motion = float2(0.0);
+    return output;
+}
+
+float4 PlanetColor(PlanetVertexOutput input)
 {
     const VertexOutput v = input.base;
     const DrawData draw = draws[v.draw];
@@ -1147,7 +1197,15 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
 }
 
 [shader("fragment")]
-float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target
+SceneOutput fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    SceneOutput output;
+    output.color = MeshColor(input, frontFacing);
+    output.motion = Motion(input);
+    return output;
+}
+
+float4 MeshColor(VertexOutput input, bool frontFacing)
 {
     float4 base = baseColorTexture.Sample(input.uv) * params.color;
     if (base.a < params.alphaCutoff) {
@@ -1297,7 +1355,8 @@ float CloudPhase(float g, float mu)
 CloudOutput fragmentClouds(CloudVertexOutput input)
 {
     const FrameData f = frame[0];
-    const float3 direction = normalize(f.cameraForward.xyz + f.cameraRight.xyz * input.clip.x - f.cameraUp.xyz * input.clip.y);
+    const float2 pixel = input.clip - float2(f.cameraRight.w, f.cameraUp.w); // sans le décalage d'un sous-pixel
+    const float3 direction = normalize(f.cameraForward.xyz + f.cameraRight.xyz * pixel.x - f.cameraUp.xyz * pixel.y);
     // La couche la plus proche sur le rayon : de son entrée à sa sortie, sans traverser la sphère de sa base.
     float start = 3.0e38;
     float end = 0.0;
@@ -1349,8 +1408,10 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
     const float erosion = saturate(log2(size / (14.0 * max(4.0 * start * CloudPixelAngle, 1.0))));
     const float stepLength = (end - start) / float(steps);
     // Départ décalé au hasard par pixel, de près : du grain fin au lieu de strates. De loin, la couche est trop mince
-    // pour faire des strates et ce grain se verrait : au milieu des pas.
-    const float jitter = lerp(0.5, PlanetHash(float3(input.position.xy, 0.0)), near);
+    // pour faire des strates et ce grain se verrait : au milieu des pas. Avec l'anticrénelage temporel, le décalage
+    // avance d'un nombre d'or à chaque image : la moyenne des images efface le grain.
+    const float shift = float(f.lightCount.w % 1024u) * 0.61803398875;
+    const float jitter = lerp(0.5, frac(PlanetHash(float3(input.position.xy, 0.0)) + shift), near);
     const float3 midDirection = CloudDrift(planet, RotateInverse(planet.cloudRotation,
                                                                  normalize(direction * (0.5 * (start + end)) - planet.clouds.xyz)));
     const float3 warp = CloudWarp(midDirection * (baseRadius * scale));

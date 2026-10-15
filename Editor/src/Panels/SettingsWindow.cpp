@@ -45,6 +45,10 @@ namespace FluxEditor {
             m_bloomEnabled = enabled->get<bool>();
         }
         engine.GetRenderer().SetBloom(m_bloomEnabled ? m_bloom : 0.0f);
+        if (const auto temporal = json.find("temporalAA"); temporal != json.end() && temporal->is_boolean()) {
+            m_temporalAA = temporal->get<bool>();
+        }
+        engine.GetRenderer().SetTemporalAA(m_temporalAA);
     }
 
     void SettingsWindow::Save() const {
@@ -53,7 +57,8 @@ namespace FluxEditor {
                         {"theme", UI::GetThemeNames()[static_cast<std::size_t>(m_theme)]},
                         {"volume", m_volume},
                         {"bloomEnabled", m_bloomEnabled},
-                        {"bloom", m_bloom}};
+                        {"bloom", m_bloom},
+                        {"temporalAA", m_temporalAA}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -102,6 +107,11 @@ namespace FluxEditor {
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
                 ui.Separator();
+                // Lisse les bords en escalier et le grain des nuages en mélangeant les images successives.
+                if (ui.Checkbox("Anticrénelage (TAA)", m_temporalAA)) {
+                    renderer.SetTemporalAA(m_temporalAA);
+                    Save();
+                }
                 // Le bloom fait déborder la lumière des zones très lumineuses (soleil, flammes, émissifs).
                 if (ui.Checkbox("Bloom", m_bloomEnabled)) {
                     renderer.SetBloom(m_bloomEnabled ? m_bloom : 0.0f);

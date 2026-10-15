@@ -10,6 +10,7 @@
 #include "Renderer/PostRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
+#include "Renderer/TemporalView.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
 
 #include <algorithm>
@@ -25,10 +26,49 @@ namespace Flux {
         // Pendant la passe principale, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux
         // étapes, d'où un léger surcoût et des temps d'étape un peu plus longs qu'en vrai.
         enum Timestamp : std::uint32_t {
-            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, BloomDone, InterfaceDone,
+            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, TemporalDone, BloomDone,
+            InterfaceDone,
             TimestampCount
         };
         static_assert(TimestampCount <= RHI::MaxTimestamps);
+
+        // Décalages d'un sous-pixel de l'anticrénelage : 8 points de la suite de Halton (bases 2 et 3), bien répartis
+        // dans le pixel, puis on recommence. Plus de points lisseraient un peu mieux les bords presque droits, au prix
+        // d'un scintillement plus lent à disparaître.
+        constexpr std::uint32_t JitterPhases = 8;
+        // Au-delà (m) d'une image à l'autre, la caméra a sauté (changement de scène, téléportation) : rien à reprendre.
+        // En vol à 100 km/s, elle avance de 2 km par image : la reprojection suit encore.
+        constexpr double MaxTemporalJump = 1.0e5;
+
+        float Halton(std::uint32_t index, std::uint32_t base) {
+            float result = 0.0f;
+            float fraction = 1.0f;
+            for (; index > 0; index /= base) {
+                fraction /= static_cast<float>(base);
+                result += fraction * static_cast<float>(index % base);
+            }
+            return result;
+        }
+
+        // Inverse de la vue et de la projection (reverse-Z infini) de Camera, sans inversion générale : la vue est une
+        // rotation (sa transposée), la projection s'inverse terme à terme.
+        Math::Matrix4f InverseViewProjection(const Camera& camera, float aspect) {
+            const float f = 1.0f / std::tan(0.5f * camera.verticalFov);
+            Math::Matrix4f inverseProjection;
+            inverseProjection.columns[0] = {aspect / f, 0.0f, 0.0f, 0.0f};
+            inverseProjection.columns[1] = {0.0f, -1.0f / f, 0.0f, 0.0f};
+            inverseProjection.columns[2] = {0.0f, 0.0f, 0.0f, 1.0f / camera.nearPlane};
+            inverseProjection.columns[3] = {0.0f, 0.0f, -1.0f, 0.0f};
+            const Math::Vector3f right = camera.GetRight();
+            const Math::Vector3f up = camera.GetUp();
+            const Math::Vector3f forward = camera.GetForward();
+            Math::Matrix4f inverseView;
+            inverseView.columns[0] = {right.x, right.y, right.z, 0.0f};
+            inverseView.columns[1] = {up.x, up.y, up.z, 0.0f};
+            inverseView.columns[2] = {-forward.x, -forward.y, -forward.z, 0.0f};
+            inverseView.columns[3] = {0.0f, 0.0f, 0.0f, 1.0f};
+            return inverseView * inverseProjection;
+        }
 
         using Clock = std::chrono::steady_clock;
         double Milliseconds(Clock::duration duration) {
@@ -37,7 +77,7 @@ namespace Flux {
     }
 
     // Une image : la carte d'ombres, puis la scène (opaques, fond du ciel et soleil, océan, nuages, transparents, flammes)
-    // dans une image HDR à la taille de sa zone, son bloom, et la passe principale vers la fenêtre : la scène avec la
+    // dans une image HDR à la taille de sa zone, son anticrénelage, son bloom, et la passe principale vers la fenêtre : la scène avec la
     // courbe de tons dans sa zone (PostRenderer), puis l'interface (OverlayRenderer) sur toute la fenêtre. Aucune API
     // graphique ici : tout passe par le RHI.
     struct Renderer::Impl {
@@ -54,6 +94,12 @@ namespace Flux {
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
         float bloom = Renderer::DefaultBloom; // 0 : sans bloom
+        bool temporalAA = true;
+        // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
+        std::uint32_t temporalFrame = 0;
+        bool hasPrevious = false;
+        Math::Matrix4f previousViewProjection;
+        Math::WorldPosition previousPosition;
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
         Math::Vector2f sceneViewportMax;
         bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
@@ -131,6 +177,30 @@ namespace Flux {
             const RHI::Rect scene3d = SceneRect();
             const float aspect = static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height);
             float exposure = 1.0f;
+            const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+            TemporalView temporal;
+            Math::Matrix4f reprojection = Math::Matrix4f::Identity();
+            if (sceneVisible) {
+                const Math::Vector3d moved = Math::Delta(previousPosition, camera.position);
+                temporal.history = temporalAA && hasPrevious && Math::Length(moved) < MaxTemporalJump;
+                if (temporal.history) {
+                    temporal.previousViewProjection = previousViewProjection;
+                    temporal.cameraDelta = Math::Vector3f(moved);
+                    // Un pixel et sa profondeur -> relatif à la caméra -> relatif à l'ancienne -> son clip d'alors.
+                    reprojection = previousViewProjection * Math::Matrix4f::Translation(temporal.cameraDelta)
+                                 * InverseViewProjection(camera, aspect);
+                }
+                if (temporalAA) {
+                    ++temporalFrame;
+                    const std::uint32_t phase = temporalFrame % JitterPhases + 1; // Halton(0) vaut 0 : sauté
+                    temporal.jitter = {(2.0f * Halton(phase, 2) - 1.0f) / static_cast<float>(scene3d.width),
+                                       (2.0f * Halton(phase, 3) - 1.0f) / static_cast<float>(scene3d.height)};
+                    temporal.noiseFrame = temporalFrame;
+                }
+            }
+            hasPrevious = sceneVisible;
+            previousViewProjection = viewProjection;
+            previousPosition = camera.position;
             if (sceneVisible) {
                 if (auto resized = post->Resize({scene3d.width, scene3d.height}); !resized) {
                     Log::Error("{}", resized.error());
@@ -139,8 +209,8 @@ namespace Flux {
                 const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
                                                           assetsDirectory, frameIndex);
                 exposure = lighting.exposure;
-                meshes->Prepare(scene, camera, aspect, hidden, lighting, assetsDirectory, frameIndex);
-                thrusters->Prepare(meshes->GetThrusters(), camera, aspect);
+                meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
+                thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
@@ -164,9 +234,11 @@ namespace Flux {
             commands.WriteTimestamp(ShadowsDone);
             if (sceneVisible) {
                 // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
+                // Profondeur et mouvement gardés pour l'anticrénelage.
                 commands.BeginRenderPass({.clearColor = PostRenderer::InverseToneMap(clearColor, exposure),
                                           .depth = &post->GetSceneDepth(), .clearDepth = 0.0f,
-                                          .colorTarget = &post->GetSceneTarget()});
+                                          .colorTarget = &post->GetSceneTarget(),
+                                          .secondColorTarget = &post->GetMotionTarget(), .keepDepth = true});
                 commands.SetViewport({0.0f, 0.0f, static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
                 commands.SetScissor({0, 0, scene3d.width, scene3d.height});
                 commands.BeginStep("objets opaques");
@@ -191,6 +263,11 @@ namespace Flux {
                 commands.EndRenderPass();
             }
             commands.WriteTimestamp(SceneDone);
+            if (sceneVisible) {
+                commands.BeginStep("anticrénelage");
+                post->ResolveTemporal(commands, temporalAA, reprojection, temporal.history);
+            }
+            commands.WriteTimestamp(TemporalDone);
             if (sceneVisible) {
                 commands.BeginStep("bloom");
                 post->DrawBloom(commands, bloom);
@@ -231,7 +308,8 @@ namespace Flux {
             timings.gpuOcean = between(SkyDone, OceanDone);
             timings.gpuClouds = between(OceanDone, CloudsDone);
             timings.gpuTransparent = between(CloudsDone, SceneDone);
-            timings.gpuBloom = between(SceneDone, BloomDone);
+            timings.gpuTemporal = between(SceneDone, TemporalDone);
+            timings.gpuBloom = between(TemporalDone, BloomDone);
             timings.gpuInterface = between(BloomDone, InterfaceDone);
         }
     };
@@ -250,17 +328,18 @@ namespace Flux {
         const RHI::Format colorFormat = impl->device->GetSwapchainFormat();
         // La scène est dessinée en HDR (PostRenderer) ; seules l'image finale et l'interface vont vers la fenêtre.
         constexpr RHI::Format sceneFormat = PostRenderer::SceneFormat;
-        auto sky = SkyRenderer::Create(*impl->device, sceneFormat, DepthFormat);
+        constexpr RHI::Format motionFormat = PostRenderer::MotionFormat;
+        auto sky = SkyRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
         if (!sky) {
             return std::unexpected(sky.error());
         }
         impl->sky = std::move(*sky);
-        auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, DepthFormat);
+        auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
-        auto thrusters = ThrusterRenderer::Create(*impl->device, sceneFormat, DepthFormat);
+        auto thrusters = ThrusterRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
         if (!thrusters) {
             return std::unexpected(thrusters.error());
         }
@@ -320,6 +399,14 @@ namespace Flux {
 
     float Renderer::GetBloom() const {
         return m_impl->bloom;
+    }
+
+    void Renderer::SetTemporalAA(bool enabled) {
+        m_impl->temporalAA = enabled;
+    }
+
+    bool Renderer::IsTemporalAAEnabled() const {
+        return m_impl->temporalAA;
     }
 
     std::string_view Renderer::GetPresentModeName() const {

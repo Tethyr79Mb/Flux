@@ -61,25 +61,28 @@ namespace Flux {
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
         {
-            Math::Matrix4f viewProjection;
+            Math::Matrix4f viewProjection; // décalée d'un sous-pixel (TemporalView::jitter)
+            Math::Matrix4f previousViewProjection; // de l'image précédente, sans décalage
             std::array<Math::Matrix4f, ShadowCascadeCount> cascades;
             std::array<float, 4> cascadeEnds;
             std::array<float, 4> cascadeTexels;
             std::array<float, 4> cameraForward;
+            std::array<float, 4> cameraDelta; // TemporalView::cameraDelta
             std::array<float, 4> toSun;
             std::array<float, 4> sunColor;      // couleur x intensité
             // x : multiplie la texture cube du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des
             // reflets les plus flous ; w : exposition
             std::array<float, 4> environment;
-            // Rayon d'un pixel (nuages) : avant + droite x clip.x - haut x clip.y (droite et haut à l'échelle du champ).
+            // Rayon d'un pixel (nuages) : avant + droite x clip.x - haut x clip.y (droite et haut à l'échelle du champ) ;
+            // w : décalage d'un sous-pixel (TemporalView::jitter), à retirer du clip du pixel.
             std::array<float, 4> cameraRight;
             std::array<float, 4> cameraUp;
-            std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs
+            std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs ; z : planètes ; w : TemporalView::noiseFrame
             std::array<InteriorData, MaxInteriors> interiors;
             std::array<PlanetGpu, MaxPlanets> planets;
             AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 464 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
+        static_assert(sizeof(FrameData) == 544 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
                       && ShadowCascadeCount == 4);
 
 
@@ -146,7 +149,7 @@ namespace Flux {
     }
 
     std::expected<std::unique_ptr<MeshRenderer>, std::string> MeshRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                   RHI::Format depthFormat) {
+                                                                                   RHI::Format motionFormat, RHI::Format depthFormat) {
         std::unique_ptr<MeshRenderer> renderer(new MeshRenderer(device));
         auto models = ModelCache::Create(device);
         if (!models) {
@@ -199,13 +202,13 @@ namespace Flux {
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
         }
 
-        if (auto pipelines = renderer->CreatePipelines(colorFormat, depthFormat); !pipelines) {
+        if (auto pipelines = renderer->CreatePipelines(colorFormat, motionFormat, depthFormat); !pipelines) {
             return std::unexpected(pipelines.error());
         }
         return renderer;
     }
 
-    std::expected<void, std::string> MeshRenderer::CreatePipelines(RHI::Format colorFormat, RHI::Format depthFormat) {
+    std::expected<void, std::string> MeshRenderer::CreatePipelines(RHI::Format colorFormat, RHI::Format motionFormat, RHI::Format depthFormat) {
         // Flux 0 : ModelVertex pour tous. Flux 1 : os et poids (modèles animés) ou forme parente (tuiles de planète).
         const std::array staticBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)}};
         const std::array skinnedBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
@@ -238,6 +241,7 @@ namespace Flux {
             const char* vertex;
             const char* shadowVertex;
             const char* fragment = "fragmentMain";
+            bool motion = true; // le fragment écrit le mouvement propre (SV_Target1)
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -276,6 +280,7 @@ namespace Flux {
             desc.vertexAttributes = kind.attributes;
             desc.fragmentEntryPoint = kind.fragment;
             desc.colorFormat = colorFormat;
+            desc.secondColorFormat = motionFormat;
             desc.depthFormat = depthFormat;
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
             desc.depthBiasConstant = 0.0f;
@@ -286,6 +291,8 @@ namespace Flux {
                 // écrire la profondeur (un transparent ne doit pas masquer ce qui est derrière lui).
                 desc.depthWrite = !transparent;
                 desc.blend = transparent ? RHI::BlendMode::Alpha : RHI::BlendMode::Opaque;
+                // Transparents : le mouvement reste celui de ce qu'on voit à travers.
+                desc.writeSecondColor = kind.motion && !transparent;
                 return create(pipeline, desc);
             };
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
@@ -312,7 +319,7 @@ namespace Flux {
             return result;
         }
         if (auto result = createAll(m_ocean, {planetBuffers, oceanAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet",
-                                              "fragmentOcean"});
+                                              "fragmentOcean", false});
             !result) {
             return result;
         }
@@ -325,6 +332,7 @@ namespace Flux {
         clouds.bindGroupLayouts = layouts;
         clouds.pushConstantsSize = sizeof(DrawParams);
         clouds.colorFormat = colorFormat;
+        clouds.secondColorFormat = motionFormat;
         clouds.depthFormat = depthFormat;
         clouds.depthTest = true;
         clouds.depthWrite = false;
@@ -354,7 +362,8 @@ namespace Flux {
     }
 
     void MeshRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
-                               const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex) {
+                               const TemporalView& temporal, const std::filesystem::path& assetsDirectory,
+                               std::uint32_t frameIndex) {
         if (sky.environment && sky.environment != m_boundEnvironment[frameIndex]) {
             m_frameGroups[frameIndex]->SetTexture(EnvironmentSlot, *sky.environment, *sky.environmentSampler);
             m_boundEnvironment[frameIndex] = sky.environment;
@@ -370,6 +379,7 @@ namespace Flux {
         m_thrusters.clear();
         m_planetData.clear();
         m_hasClouds = false;
+        ++m_preparedFrame;
         // Textures du sol : lues (sur un autre fil) seulement quand la scène a une planète.
         const bool planets = std::ranges::any_of(m_relativeTransforms, [&scene](const RelativeTransform& transform) {
             return scene.TryGet<PlanetComponent>(transform.entity) != nullptr;
@@ -452,9 +462,20 @@ namespace Flux {
                     break;
                 }
             }
+            // Où était l'entité à l'image précédente, vue de l'ancienne caméra : sa matrice d'alors si elle était déjà
+            // là, sinon la même place dans le monde (immobile).
+            const auto index = static_cast<std::size_t>(entt::to_entity(transform.entity));
+            if (index >= m_previousWorld.size()) {
+                m_previousWorld.resize(index + 1);
+                m_previousFrame.resize(index + 1, 0);
+            }
+            const bool moved = temporal.history && m_previousFrame[index] + 1 == m_preparedFrame;
+            const Math::Matrix4f previous = moved ? m_previousWorld[index] : Math::Matrix4f::Translation(temporal.cameraDelta) * world;
+            m_previousWorld[index] = world;
+            m_previousFrame[index] = m_preparedFrame;
             m_drawData.push_back({world,
                                   {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
-                                  rim, {}});
+                                  rim, {}, previous});
 
             // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
             const Math::Vector3f center = model->bounds.GetCenter();
@@ -474,7 +495,7 @@ namespace Flux {
         if (!m_boundEnvironment[frameIndex]) {
             ClearDraws(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
-        Upload(camera, aspect, sky, frameIndex);
+        Upload(camera, aspect, sky, temporal, frameIndex);
         if (!BuildTileCommands(frameIndex)) {
             m_tileDraws.clear();
             m_tilePasses = {};
@@ -585,7 +606,8 @@ namespace Flux {
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
-                                  {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f}});
+                                  {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f},
+                                  {}});
         }
     }
 
@@ -661,8 +683,9 @@ namespace Flux {
     // Envoie au GPU les matrices des os (par colonnes comme jointColumns dans shaders/Mesh.slang), celles des entités
     // et les données de l'image (caméra, cascades). Si un buffer ne peut grandir (mémoire épuisée), rien n'est dessiné
     // plutôt que lu hors du buffer.
-    void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, std::uint32_t frameIndex) {
-        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 144 && sizeof(LightData) == 64);
+    void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, const TemporalView& temporal,
+                              std::uint32_t frameIndex) {
+        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 208 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         // Celles des tuiles des planètes après celles des entités.
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
@@ -699,7 +722,10 @@ namespace Flux {
 
         m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
         FrameData frame{};
-        frame.viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+        const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+        frame.viewProjection = Jittered(viewProjection, temporal.jitter);
+        frame.previousViewProjection = temporal.history ? temporal.previousViewProjection : viewProjection;
+        frame.cameraDelta = ToArray(temporal.history ? temporal.cameraDelta : Math::Vector3f{});
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
             frame.cascades[c] = m_cascades[c].lightViewProjection;
             frame.cascadeEnds[c] = ShadowCascadeEnds[c];
@@ -715,8 +741,8 @@ namespace Flux {
         const float diffuseMip = static_cast<float>(sky.environmentMips > 3 ? sky.environmentMips - 3 : 0);
         frame.environment = {sky.ambient, diffuseMip, diffuseMip, sky.exposure};
         const float tanY = std::tan(0.5f * camera.verticalFov);
-        frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect));
-        frame.cameraUp = ToArray(camera.GetUp() * tanY);
+        frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
+        frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);
         // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
         if (m_interiors.size() > MaxInteriors) {
             std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);
@@ -739,7 +765,7 @@ namespace Flux {
             data.ambient = {interior.ambient.r * intensity, interior.ambient.g * intensity, interior.ambient.b * intensity, 0.0f};
         }
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
-                            static_cast<std::uint32_t>(m_planetData.size()), 0};
+                            static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};
         std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));

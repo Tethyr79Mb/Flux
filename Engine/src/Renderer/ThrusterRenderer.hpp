@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/RHI/RHI.hpp"
@@ -27,12 +28,14 @@ namespace Flux {
     // le coût est au pixel couvert par la boîte : une vingtaine de pas de bruit chacun.
     class ThrusterRenderer {
         public:
+        // `motionFormat` : seconde cible de la passe de la scène (PostRenderer::MotionFormat), laissée telle quelle.
         static std::expected<std::unique_ptr<ThrusterRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
+                                                                                     RHI::Format motionFormat,
                                                                                      RHI::Format depthFormat);
 
         // Flammes de l'image : boîtes relatives à la caméra, celles hors du champ écartées. L'exposition s'applique
-        // après, sur toute l'image (PostRenderer).
-        void Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect);
+        // après, sur toute l'image (PostRenderer). `jitter` : TemporalView::jitter.
+        void Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect, Math::Vector2f jitter);
         // Dans la passe de la scène, après les transparents.
         void Draw(RHI::CommandList& commands) const;
 

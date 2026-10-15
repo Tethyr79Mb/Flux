@@ -43,10 +43,13 @@ namespace Flux {
     // l'espace (même sans SkyComponent, sur un fond noir).
     class SkyRenderer {
         public:
+        // `motionFormat` : seconde cible de la passe de la scène (PostRenderer::MotionFormat), laissée telle quelle.
         static std::expected<std::unique_ptr<SkyRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                RHI::Format depthFormat);
+                                                                                RHI::Format motionFormat, RHI::Format depthFormat);
 
         // Après Device::BeginFrame : les ressources de l'image frameIndex sont libres. `viewportHeight` en pixels.
+        // Pas de décalage d'un sous-pixel (TemporalView::jitter), contrairement au reste de la scène : les étoiles, d'un
+        // pixel, étalées par l'anticrénelage sur ceux d'à côté, pâliraient ; le fond, lui, est déjà lisse.
         SkyLighting Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
                             const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
         // Hors de toute passe et avant la passe principale : calcule la nébuleuse du ciel généré dans sa texture cube si
