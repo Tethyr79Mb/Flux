@@ -181,6 +181,7 @@ namespace Flux {
         : m_window(std::make_unique<Window>()),
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
+          m_loadingScreen(config.loadingScreen),
           m_freeCamera(config.freeCamera),
           m_physicsContext(std::make_shared<PhysicsContext>()),
           m_audio(std::make_unique<AudioSystem>()),
@@ -383,7 +384,7 @@ namespace Flux {
                     m_window->SetCursorLocked(false); // personnage retiré pendant un clic droit
                 }
             }
-            if (m_gameState != GameState::Stopped) {
+            if (m_gameState != GameState::Stopped && !m_loading) {
                 // Pause : celle de l'éditeur (F6), ou un menu ouvert qui la demande.
                 const double gameDelta = m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0;
                 const Clock::time_point gameStart = Clock::now();
@@ -405,7 +406,7 @@ namespace Flux {
             // Sons des entités, à la caméra de cette image (qui suit le joueur ou vole librement).
             m_audio->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_audio->Update(m_scene, m_camera, m_gameState != GameState::Stopped,
-                            m_gameState == GameState::Paused || m_interfacePaused, deltaSeconds);
+                            m_gameState == GameState::Paused || m_interfacePaused || m_loading, deltaSeconds);
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
             }
@@ -427,6 +428,9 @@ namespace Flux {
                 list.AddText({static_cast<float>(size.x) - extent.x - 8.0f, static_cast<float>(size.y) - extent.y - 6.0f}, version,
                              VersionSize, {1.0f, 1.0f, 1.0f, 0.45f});
             }
+            if (m_loading) {
+                DrawLoadingScreen({static_cast<float>(size.x), static_cast<float>(size.y)}); // par-dessus la scène
+            }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_freeCamera ? &m_cameraController : nullptr);
             }
@@ -439,6 +443,7 @@ namespace Flux {
             if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
                 return 1;
             }
+            UpdateLoading(deltaSeconds);
             RunInterfaceActions(); // avant le changement de scène : une fonction peut en demander un
             LoadRequestedScene();
         }
@@ -554,6 +559,7 @@ namespace Flux {
         m_physics.reset(); // les corps de l'ancienne scène
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
+            BeginLoading();
         }
         return {};
     }
@@ -563,6 +569,7 @@ namespace Flux {
         m_gameState = state;
         if (starting) {
             StartPhysics(); // lancement du jeu (éditeur) : la scène est prête
+            BeginLoading();
         }
         if (state == GameState::Stopped) {
             m_physics.reset();
@@ -571,6 +578,62 @@ namespace Flux {
             m_interfaceActions.clear();
             m_interfacePaused = m_interfacePausedNow = false;
         }
+    }
+
+    void Engine::BeginLoading() {
+        if (!m_loadingScreen) {
+            return;
+        }
+        m_loading = true;
+        m_loadingSeconds = 0.0;
+        m_loadingQuietFrames = 0;
+        m_loadingMostPending = 0;
+    }
+
+    void Engine::UpdateLoading(double deltaSeconds) {
+        if (!m_loading) {
+            return;
+        }
+        // Plus rien d'attendu pendant quelques images : les tuiles prêtes en font demander de plus fines tant que le
+        // sol n'est pas au détail voulu, une seule image vide ne suffit pas. Au-delà de MaxSeconds, la scène est
+        // montrée quand même (une tuile qui ne viendrait jamais ne doit pas bloquer le jeu).
+        constexpr std::uint32_t QuietFrames = 10;
+        constexpr double MinSeconds = 0.2;
+        constexpr double MaxSeconds = 30.0;
+        const RenderTimings& render = m_renderer->GetTimings();
+        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u);
+        m_loadingMostPending = std::max(m_loadingMostPending, pending);
+        m_loadingQuietFrames = pending == 0 ? m_loadingQuietFrames + 1 : 0;
+        m_loadingSeconds += deltaSeconds;
+        if (m_loadingSeconds >= MaxSeconds) {
+            Log::Warning("Chargement : scène montrée après {:.0f} s, {} tuiles encore attendues", MaxSeconds, pending);
+        } else if (m_loadingQuietFrames < QuietFrames || m_loadingSeconds < MinSeconds) {
+            return;
+        }
+        m_loading = false;
+        Log::Info("Scène prête en {:.1f} s", m_loadingSeconds);
+    }
+
+    void Engine::DrawLoadingScreen(Math::Vector2f screen) {
+        UI::DrawList& list = m_renderer->GetOverlay();
+        list.AddRect({0.0f, 0.0f}, screen, {0.012f, 0.014f, 0.02f, 1.0f});
+        constexpr float TextSize = 28.0f;
+        const std::string_view text = "Chargement..."; // police en Latin-1 : pas de « … »
+        const Math::Vector2f extent = list.MeasureText(text, TextSize);
+        const Math::Vector2f center = screen * 0.5f;
+        list.AddText({center.x - extent.x * 0.5f, center.y - extent.y - 16.0f}, text, TextSize, {0.85f, 0.88f, 0.95f, 1.0f});
+        // Avancement : la part des attentes déjà levées, puis les dernières images de vérification.
+        const RenderTimings& render = m_renderer->GetTimings();
+        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u);
+        const float done = m_loadingMostPending > 0
+                               ? 1.0f - static_cast<float>(pending) / static_cast<float>(m_loadingMostPending)
+                               : 1.0f;
+        const float progress = std::clamp(0.9f * done + 0.1f * static_cast<float>(m_loadingQuietFrames) / 10.0f, 0.0f, 1.0f);
+        constexpr float BarWidth = 320.0f;
+        constexpr float BarHeight = 4.0f;
+        const Math::Vector2f barMin{center.x - BarWidth * 0.5f, center.y + 8.0f};
+        list.AddRect(barMin, {barMin.x + BarWidth, barMin.y + BarHeight}, {1.0f, 1.0f, 1.0f, 0.12f});
+        list.AddRect(barMin, {barMin.x + BarWidth * progress, barMin.y + BarHeight}, {0.55f, 0.75f, 1.0f, 1.0f});
     }
 
     Engine::FlightState Engine::GetFlightState(Entity ship) {

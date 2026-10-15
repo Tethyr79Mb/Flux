@@ -55,6 +55,9 @@ namespace Flux {
         bool showDebugOverlay = true; // panneau « Moteur » : fps, GPU, V-Sync, caméra (le jeu ; l'éditeur a les siens)
         // Interface de la scène (textes à l'écran) sur toute la fenêtre. L'éditeur la dessine lui-même, dans sa vue.
         bool drawScreenUi = true;
+        // Écran de chargement après chaque scène chargée en jeu : la scène reste cachée et le jeu arrêté tant que le
+        // sol des planètes et ses textures ne sont pas prêts. L'éditeur a déjà sa scène affichée : il s'en passe.
+        bool loadingScreen = true;
         // Caméra vol libre (ZQSD + clic droit) quand aucun personnage n'est dirigé par le joueur : l'éditeur seulement.
         // Le jeu arrive directement sur le personnage ; sans personnage (écran titre), la caméra ne bouge pas.
         bool freeCamera = true;
@@ -195,6 +198,8 @@ namespace Flux {
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
+        // Écran de chargement affiché (EngineConfig::loadingScreen) : le jeu (physique, module du jeu) attend.
+        bool IsLoading() const { return m_loading; }
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
         void SetEditorUpdate(UpdateFunction update);
         // Appelée quand l'utilisateur ferme la fenêtre ; sans fonction, la fenêtre se ferme toujours.
@@ -218,6 +223,13 @@ namespace Flux {
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
         bool m_drawScreenUi = true;
+        bool m_loadingScreen = true;
+        // Écran de chargement : en cours, depuis combien de temps, images de suite sans rien à attendre, et le plus
+        // d'attentes vues (pour la barre d'avancement).
+        bool m_loading = false;
+        double m_loadingSeconds = 0.0;
+        std::uint32_t m_loadingQuietFrames = 0;
+        std::uint32_t m_loadingMostPending = 0;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
         std::shared_ptr<PhysicsContext> m_physicsContext;
@@ -321,6 +333,10 @@ namespace Flux {
         FlightState GetFlightState(Entity ship);
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
         void DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
+        void BeginLoading();
+        // Après le rendu : le chargement est fini quand plus rien n'est attendu pendant quelques images.
+        void UpdateLoading(double deltaSeconds);
+        void DrawLoadingScreen(Math::Vector2f screen);
         // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
         void AimFollowCamera();
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).

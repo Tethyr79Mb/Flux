@@ -760,7 +760,10 @@ namespace Flux {
     }
 
     MeshRenderer::PlanetTileStats MeshRenderer::GetPlanetTileStats() const {
-        PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()), .stored = m_planets->GetStoredTileCount()};
+        PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()),
+                              .stored = m_planets->GetStoredTileCount(),
+                              .pending = m_planets->GetPendingTileCount(),
+                              .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading()};
         for (const TileDraw& draw : m_tileDraws) {
             stats.ocean += draw.ocean ? 1u : 0u;
         }

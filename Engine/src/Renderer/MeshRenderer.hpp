@@ -46,6 +46,8 @@ namespace Flux {
             std::uint32_t drawn = 0;
             std::uint32_t ocean = 0;
             std::uint32_t stored = 0;
+            std::uint32_t pending = 0;  // demandées, pas encore prêtes
+            bool groundLoading = false; // textures du sol en cours de lecture
         };
         PlanetTileStats GetPlanetTileStats() const;
         // Réacteurs de l'image préparée (ThrusterRenderer), leur lumière déjà comptée parmi celles de la scène.
