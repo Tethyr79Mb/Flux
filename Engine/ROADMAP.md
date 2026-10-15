@@ -92,7 +92,14 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.
 
 ## Plus tard
-- ⬜ Launcher (mises à jour, paramètres, bouton Jouer).
+- ⬜ Réseau, géré par le moteur : domaine `Network` du moteur. Transport UDP avec messages fiables et non fiables (bibliothèque à choisir :
+  GameNetworkingSockets ou ENet), serveur qui fait autorité, composants à répliquer marqués dans `ComponentRegistry`
+  (comme l'inspecteur et la sauvegarde), positions en secteurs + double, prédiction du joueur et interpolation des
+  autres. Les mondes physiques par vaisseau tournent sur le serveur.
+- ⬜ Mises à jour, gérées par le moteur : manifeste de version (liste des fichiers et de leurs empreintes) publié en HTTPS, seuls les fichiers
+  changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Game.exe
+  vérifie au démarrage qu'il est à jour.
+- ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
 - ⬜ Render graph.
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).
 - ⬜ Backend DX12.

@@ -20,6 +20,7 @@
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Orbits.hpp"
 #include "Flux/Scene/Seats.hpp"
+#include "Flux/Scene/Ships.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -491,39 +492,37 @@ namespace Flux {
         // Personnage du joueur, par rapport à la caméra ; assis, les mêmes actions pilotent le vaisseau (poste de
         // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, F par défaut).
         CharacterInput character;
-        SeatInput seatInput;
-        seatInput.interact = WasActionPressed("Interagir");
+        const SeatInput seatInput{.interact = WasActionPressed("Interagir")};
+        ShipInput shipInput;
         if (seated) {
-            seatInput.thrust = axis("Avancer", "Reculer");
-            seatInput.strafe = axis("Aller à droite", "Aller à gauche");
-            seatInput.lift = axis("Monter", "Descendre");
-            seatInput.roll = axis("Rouler à droite", "Rouler à gauche");
-            seatInput.brake = IsActionDown("Freiner");
-            seatInput.boost = IsActionDown("Boost");
-            seatInput.travel = WasActionPressed("Mode voyage");
-            seatInput.mouseYaw = m_steerYaw;
-            seatInput.mousePitch = m_steerPitch;
+            shipInput.thrust = axis("Avancer", "Reculer");
+            shipInput.strafe = axis("Aller à droite", "Aller à gauche");
+            shipInput.lift = axis("Monter", "Descendre");
+            shipInput.roll = axis("Rouler à droite", "Rouler à gauche");
+            shipInput.brake = IsActionDown("Freiner");
+            shipInput.boost = IsActionDown("Boost");
+            shipInput.travel = WasActionPressed("Mode voyage");
+            shipInput.mouseYaw = m_steerYaw;
+            shipInput.mousePitch = m_steerPitch;
             if (WasActionPressed("Changer de vue")) {
                 m_cockpitView = !m_cockpitView;
             }
             // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
-            if (const Entity seat = Seats::GetPilotSeat(m_scene, player); seat != NullEntity) {
-                if (const Entity ship = m_scene.GetShip(seat); ship != NullEntity) {
-                    ShipComponent& component = m_scene.Get<ShipComponent>(ship);
-                    if (WasActionPressed("Stabiliser à plat")) {
-                        component.levelAssist = !component.levelAssist;
-                        Log::Info("Stabilisation à plat : {}", component.levelAssist ? "oui" : "non");
-                    }
-                    if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
-                        seatInput.up = Math::Normalize(gravity) * -1.0f;
-                    }
-                    const FlightState flight = GetFlightState(ship);
-                    seatInput.air = flight.air;
-                    if (flight.nearPlanet) {
-                        seatInput.planetUp = Math::Vector3f(flight.up);
-                        seatInput.planetDistance = static_cast<float>(flight.boundary);
-                        seatInput.planetCenter = static_cast<float>(flight.center);
-                    }
+            if (const Entity ship = Ships::GetPilotedShip(m_scene, player); ship != NullEntity) {
+                ShipComponent& component = m_scene.Get<ShipComponent>(ship);
+                if (WasActionPressed("Stabiliser à plat")) {
+                    component.levelAssist = !component.levelAssist;
+                    Log::Info("Stabilisation à plat : {}", component.levelAssist ? "oui" : "non");
+                }
+                if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
+                    shipInput.up = Math::Normalize(gravity) * -1.0f;
+                }
+                const FlightState flight = GetFlightState(ship);
+                shipInput.air = flight.air;
+                if (flight.nearPlanet) {
+                    shipInput.planetUp = Math::Vector3f(flight.up);
+                    shipInput.planetDistance = static_cast<float>(flight.boundary);
+                    shipInput.planetCenter = static_cast<float>(flight.center);
                 }
             }
         } else {
@@ -547,6 +546,7 @@ namespace Flux {
             };
             return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
         });
+        Ships::Update(m_scene, Ships::GetPilotedShip(m_scene, player), deltaSeconds, shipInput);
         m_physics->Update(m_scene, deltaSeconds, character);
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
