@@ -68,6 +68,7 @@ namespace Flux::RHI {
         RGBA32Float,
         RGBA16Uint,
         RGBA16Float, // couleur au-delà de 1 (lumières, ciel) sans perte
+        RG16Float,   // deux valeurs signées (déplacement des pixels d'une image à l'autre)
     };
 
     enum class BufferUsage : std::uint8_t {
@@ -198,6 +199,10 @@ namespace Flux::RHI {
         // étapes ; 128 octets au plus sont garantis partout.
         std::uint32_t pushConstantsSize = 0;
         Format colorFormat = Format::Undefined; // Undefined : pas de couleur (passe de profondeur seule)
+        // Seconde cible de couleur de la passe (RenderPassDesc::secondColorTarget), écrite par SV_Target1 si
+        // writeSecondColor ; sinon laissée telle quelle (le shader n'a pas à l'écrire).
+        Format secondColorFormat = Format::Undefined;
+        bool writeSecondColor = false;
         // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.
         Format depthFormat = Format::Undefined;
         bool depthTest = false;
@@ -273,6 +278,10 @@ namespace Flux::RHI {
         bool color = true;
         const Texture* colorTarget = nullptr;
         std::uint32_t colorLayer = 0;
+        // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0, lisible après la passe.
+        const Texture* secondColorTarget = nullptr;
+        // Tampon de profondeur gardé et lisible par les shaders après la passe (CreateRenderTarget sampled).
+        bool keepDepth = false;
     };
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.

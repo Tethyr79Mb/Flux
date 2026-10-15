@@ -17,6 +17,7 @@ namespace Flux {
         bool maximized = false;
         bool fullscreen = false; // plein écran sans bordure (Alt+Entrée ou F11 en jeu)
         bool vsync = true;
+        bool temporalAA = true;    // anticrénelage temporel (TAA)
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)
     };

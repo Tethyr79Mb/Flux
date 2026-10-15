@@ -1,6 +1,7 @@
 #include "Renderer/Vulkan/VulkanRHI.hpp"
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 namespace Flux::Vk {
@@ -17,6 +18,7 @@ namespace Flux::Vk {
             case RHI::Format::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
             case RHI::Format::RGBA16Uint: return VK_FORMAT_R16G16B16A16_UINT;
             case RHI::Format::RGBA16Float: return VK_FORMAT_R16G16B16A16_SFLOAT;
+            case RHI::Format::RG16Float: return VK_FORMAT_R16G16_SFLOAT;
         }
         return VK_FORMAT_UNDEFINED;
     }
@@ -144,13 +146,16 @@ namespace Flux::Vk {
         m_openStep = RHI::MaxSteps;
     }
 
-    // Tampon de profondeur d'une passe avec couleur, effacé ; son contenu n'est pas gardé après la passe.
+    // Tampon de profondeur d'une passe avec couleur, effacé ; son contenu n'est gardé (lisible après la passe) qu'avec
+    // keepDepth.
     VkRenderingAttachmentInfo RhiCommandList::BeginDepthAttachment(const RHI::RenderPassDesc& desc) {
         const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
-        // Deux images en vol partagent le tampon de profondeur : on attend la fin des écritures de la précédente.
+        // Deux images en vol partagent le tampon de profondeur : on attend la fin des écritures de la précédente (et
+        // de ses lectures s'il est gardé).
         TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
+                            | (desc.keepDepth ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_2_NONE),
                         VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                         VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
@@ -160,8 +165,11 @@ namespace Flux::Vk {
         depthAttachment.imageView = depth.GetImage().GetView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.storeOp = desc.keepDepth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
+        if (desc.keepDepth) {
+            m_keptDepth = &depth;
+        }
         return depthAttachment;
     }
 
@@ -217,13 +225,25 @@ namespace Flux::Vk {
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
+        std::array<VkRenderingAttachmentInfo, 2> colorAttachments{colorAttachment, {}};
+        if (desc.secondColorTarget) {
+            const auto& second = static_cast<const RhiTexture&>(*desc.secondColorTarget);
+            m_secondTarget = &second;
+            TransitionImage(m_commandBuffer, second.GetImage().GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT, 0);
+            colorAttachments[1] = colorAttachment;
+            colorAttachments[1].imageView = second.GetImage().GetView();
+            colorAttachments[1].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+        }
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         const VkRenderingAttachmentInfo depthAttachment = desc.depth ? BeginDepthAttachment(desc) : VkRenderingAttachmentInfo{};
         renderingInfo.renderArea = {{0, 0}, target.GetImage().GetExtent()};
         renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = 1;
-        renderingInfo.pColorAttachments = &colorAttachment;
+        renderingInfo.colorAttachmentCount = desc.secondColorTarget ? 2 : 1;
+        renderingInfo.pColorAttachments = colorAttachments.data();
         renderingInfo.pDepthAttachment = desc.depth ? &depthAttachment : nullptr;
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
@@ -263,6 +283,20 @@ namespace Flux::Vk {
                             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
                             depth->GetAspect());
+        }
+        if (const RhiTexture* depth = std::exchange(m_keptDepth, nullptr)) {
+            TransitionImage(m_commandBuffer, depth->GetImage().GetHandle(),
+                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                            depth->GetAspect());
+        }
+        if (const RhiTexture* second = std::exchange(m_secondTarget, nullptr)) {
+            TransitionImage(m_commandBuffer, second->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0);
         }
         if (const RhiTexture* target = std::exchange(m_colorTarget, nullptr)) {
             TransitionImage(m_commandBuffer, target->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,

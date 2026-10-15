@@ -10,11 +10,11 @@ namespace Flux {
 }
 
 namespace FluxEditor {
-    // Fenêtre « Paramètres » (Fichier > Paramètres...), un onglet par sujet. Les réglages de l'éditeur (thème, volume, bloom)
-    // sont enregistrés à côté de FluxEditor.exe et relus au démarrage.
+    // Fenêtre « Paramètres » (Fichier > Paramètres...), un onglet par sujet. Les réglages de l'éditeur (thème, volume,
+    // bloom, anticrénelage) sont enregistrés à côté de FluxEditor.exe et relus au démarrage.
     class SettingsWindow {
         public:
-        // Relit les réglages enregistrés et les applique (thème de l'interface, volume du son, bloom).
+        // Relit les réglages enregistrés et les applique (thème de l'interface, volume du son, bloom, anticrénelage).
         void Load(Flux::Engine& engine);
         void Open() { m_open = true; }
         void Draw(Flux::Engine& engine);
@@ -33,5 +33,6 @@ namespace FluxEditor {
         bool m_bloomEnabled = true;
         float m_bloom = Flux::Renderer::DefaultBloom; // force quand il est activé, 0 à 1
         bool m_bloomChanged = false; // pas encore enregistré (curseur tenu)
+        bool m_temporalAA = true;
     };
 }

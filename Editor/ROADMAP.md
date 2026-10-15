@@ -12,7 +12,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Thèmes : Sombre (gris neutres et accent bleu, façon Unreal / Unity), Clair, Graphite, Ars Solaris.
 - ✅ Barre de menus (Fichier, Édition…), dialogues Windows natifs, étoile dans le titre si la scène est modifiée.
 - ✅ Barre d'outils : nouvelle scène, ouvrir, enregistrer, annuler / rétablir, Jouer et Pause au milieu, Paramètres à droite.
-- ✅ Paramètres : graphiques (GPU, version de Vulkan, V-Sync, bloom et son intensité), interface, son, touches.
+- ✅ Paramètres : graphiques (GPU, version de Vulkan, V-Sync, anticrénelage, bloom et son intensité), interface, son, touches.
 - ✅ Console.
 - ✅ Version de l'éditeur dans le titre.
 
