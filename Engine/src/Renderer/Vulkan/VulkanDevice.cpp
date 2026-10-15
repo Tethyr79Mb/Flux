@@ -56,6 +56,9 @@ namespace Flux::Vk {
         VkPhysicalDeviceFeatures features{};
         features.multiDrawIndirect = VK_TRUE;
         features.drawIndirectFirstInstance = VK_TRUE;
+        // Cible des vecteurs de mouvement (TAA) jamais mélangée, à côté d'une couleur mélangée (transparents,
+        // réacteurs) : deux états de mélange différents dans un même pipeline. Présent sur tous les GPU de bureau.
+        features.independentBlend = VK_TRUE;
 
         vkb::PhysicalDeviceSelector selector(device->m_instance);
         selector.set_minimum_version(1, 3)
