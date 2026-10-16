@@ -6,6 +6,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
+#include "Flux/Scene/Ships.hpp"
 
 // Jolt : ses en-têtes seulement ici (et jamais dans un en-tête public).
 #include <Jolt/Jolt.h>
@@ -641,6 +642,9 @@ namespace Flux {
         // Mouvement des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes. Un vaisseau à la
         // racine bute sur le décor immobile du monde : il s'arrête contre le sol ou un mur et glisse le long, et ne
         // tourne pas s'il devait s'y enfoncer. Posé (le décor sous son ventre, à moins de 5 cm), il ne tourne pas du tout.
+        // Sans pilote (ShipComponent::fallsWithoutPilot), ses moteurs ne le portent plus : il tombe avec la gravité du
+        // lieu, freiné par l'air, jusqu'à se poser. Dans une scène à planètes, seulement près d'elles (leur gravité) :
+        // dans l'espace, il reste où il est ; sans planète, avec la gravité du monde (sol plat).
         void MoveShips(Scene& scene, double deltaSeconds) {
             const Grid* worldGrid = nullptr;
             for (const std::unique_ptr<Grid>& grid : grids) {
@@ -648,10 +652,16 @@ namespace Flux {
                     worldGrid = grid.get();
                 }
             }
+            const Entity piloted = player != NullEntity && scene.IsValid(player) ? Ships::GetPilotedShip(scene, player) : NullEntity;
+            // Lu dans la scène, pas dans planetGround : au premier pas, il ne connaît pas encore les planètes.
+            const auto planets = scene.GetRegistry().view<const PlanetComponent>();
+            const bool hasPlanets = planets.begin() != planets.end();
             for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
                 const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
+                // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas.
+                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted;
                 if (!shape && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }
@@ -692,6 +702,23 @@ namespace Flux {
                                     && normal.Dot(-down) > 0.7f;
                     if (ship.grounded) {
                         ship.angularVelocity = {};
+                        if (falls) {
+                            // Posé sans pilote : freins serrés. Il ne glisse pas sur une pente avec la vitesse de sa
+                            // chute (sans frottement, il partirait à l'infini).
+                            ship.velocity = {};
+                        }
+                    } else if (falls) {
+                        const float delta = static_cast<float>(deltaSeconds);
+                        const JPH::RVec3 at(start);
+                        const JPH::Vec3 gravity =
+                            hasPlanets
+                                ? ToJolt(planetGround.GetGravity({at.GetX(), at.GetY(), at.GetZ()}, Math::Vector3f{}))
+                                : worldGrid->system->GetGravity();
+                        JPH::Vec3 velocity = ToJolt(transform.rotation.Rotate(ship.velocity)) + gravity * delta;
+                        if (const float air = AirAt(*worldGrid, at); air > 0.0f) {
+                            velocity /= 1.0f + airDrag * air * velocity.Length() * delta;
+                        }
+                        ship.velocity = transform.rotation.Conjugate().Rotate(FromJolt(velocity));
                     }
                 }
                 const Math::Quaternionf previousRotation = transform.rotation;

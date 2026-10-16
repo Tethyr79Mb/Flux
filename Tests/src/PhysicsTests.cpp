@@ -232,7 +232,9 @@ namespace {
         Scene scene;
         const Entity ship = scene.CreateEntity("Vaisseau");
         scene.Get<TransformComponent>(ship).position = {100.0, 50.0, -30.0};
-        scene.Add<ShipComponent>(ship, ShipComponent{.velocity = {0.0f, 0.0f, -20.0f}, .angularVelocity = {0.0f, 30.0f, 0.0f}});
+        // Personne aux commandes : sans fallsWithoutPilot décoché, il tomberait (RunShipFallTests).
+        scene.Add<ShipComponent>(ship, ShipComponent{.velocity = {0.0f, 0.0f, -20.0f}, .angularVelocity = {0.0f, 30.0f, 0.0f},
+                                                     .fallsWithoutPilot = false});
         const Entity deck = scene.CreateEntity("Pont", ship);
         TransformComponent& deckTransform = scene.Get<TransformComponent>(deck);
         deckTransform.position = {0.0, -0.1, 0.0};
@@ -504,7 +506,7 @@ namespace {
         AddFloor(scene);
         const Entity ship = scene.CreateEntity("Chasseur");
         scene.Get<TransformComponent>(ship).position = {0.0, 2.3, 0.0};
-        scene.Add<ShipComponent>(ship);
+        scene.Add<ShipComponent>(ship).fallsWithoutPilot = false; // sans train : tenu à 2,3 m comme sur ses roues
         const Entity deck = scene.CreateEntity("Plancher", ship);
         TransformComponent& deckTransform = scene.Get<TransformComponent>(deck);
         deckTransform.position = {0.0, -0.1, 0.0};
@@ -788,6 +790,7 @@ namespace {
         const Entity ship = scene.CreateEntity("Vaisseau");
         scene.Get<TransformComponent>(ship).position = {0.0, 5.0, 0.0};
         ShipComponent& component = scene.Add<ShipComponent>(ship);
+        component.fallsWithoutPilot = false; // vitesses imposées comme par un pilote
         const Entity hull = scene.CreateEntity("Coque", ship);
         scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f}; // dessous à 1 m sous l'origine
         scene.Add<ColliderComponent>(hull);
@@ -834,6 +837,48 @@ namespace {
         Run(world, scene, 4.0);
         const Math::Vector3f up = scene.Get<TransformComponent>(ship).rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
         CHECK(up.y > 0.9999f && std::abs(scene.Get<TransformComponent>(ship).position.y - 1.0) < 0.05 && component.grounded);
+        return true;
+    }
+}
+
+namespace {
+    // Vaisseau sans pilote : il tombe et se pose sur le sol ; décoché « Tombe sans pilote », il reste en l'air ; loin
+    // d'une planète (dans l'espace), il ne tombe pas.
+    bool RunShipFallTests() {
+        Scene scene;
+        AddFloor(scene); // dessus à y = 0
+        const auto addShip = [&](const char* name, Math::Vector3d position) {
+            const Entity ship = scene.CreateEntity(name);
+            scene.Get<TransformComponent>(ship).position = position;
+            scene.Add<ShipComponent>(ship);
+            const Entity hull = scene.CreateEntity("Coque", ship);
+            scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f}; // dessous à 1 m sous l'origine
+            scene.Add<ColliderComponent>(hull);
+            return ship;
+        };
+        const Entity falling = addShip("Chasseur", {0.0, 20.0, 0.0});
+        const Entity station = addShip("Station", {30.0, 20.0, 0.0});
+        scene.Get<ShipComponent>(station).fallsWithoutPilot = false;
+        PhysicsWorld world;
+        Run(world, scene, 0.5);
+        CHECK(scene.Get<TransformComponent>(falling).position.y < 19.0 && scene.Get<ShipComponent>(falling).velocity.y < -3.0f);
+        Run(world, scene, 3.0);
+        CHECK(std::abs(scene.Get<TransformComponent>(falling).position.y - 1.0) < 0.05 && scene.Get<ShipComponent>(falling).grounded);
+        CHECK(scene.Get<TransformComponent>(station).position.y == 20.0);
+
+        // Une planète dans la scène : sa gravité s'arrête à deux rayons de son centre ; au-delà, l'espace.
+        Scene space;
+        const Entity planet = space.CreateEntity("Planète");
+        const float radius = space.Add<PlanetComponent>(planet).radius;
+        const Entity drifting = space.CreateEntity("Chasseur");
+        space.Get<TransformComponent>(drifting).position = {0.0, 3.0 * radius, 0.0};
+        space.Add<ShipComponent>(drifting);
+        const Entity driftingHull = space.CreateEntity("Coque", drifting);
+        space.Add<ColliderComponent>(driftingHull);
+        PhysicsWorld spaceWorld;
+        Run(spaceWorld, space, 1.0);
+        CHECK(Math::Length(space.Get<ShipComponent>(drifting).velocity) < 1.0e-4f);
+        CHECK(space.Get<TransformComponent>(drifting).position.y == 3.0 * radius);
         return true;
     }
 }
@@ -1096,6 +1141,6 @@ namespace {
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
-        && RunShipCollisionTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
+        && RunShipCollisionTests() && RunShipFallTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
         && RunFarPlanetTests() && RunWorldTests();
 }

@@ -141,7 +141,9 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   marche dans un vaisseau qui vole parce que son intérieur est immobile dans son monde. Des copies cinématiques de
   son décor dans le monde extérieur permettent d'y monter.
 - Vaisseaux à la racine : déplacés par `MoveShips` (lancers de leur enveloppe convexe contre le décor), avec
-  stabilisateur d'atterrissage ; pas de corps dynamique.
+  stabilisateur d'atterrissage ; pas de corps dynamique. Sans pilote (« Tombe sans pilote », coché par défaut), un
+  vaisseau qui a une collision tombe avec la gravité des planètes (rien dans l'espace, au-delà de deux rayons) ou,
+  dans une scène sans planète, celle du monde ; freiné par l'air ; posé, il s'immobilise (freins serrés).
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la

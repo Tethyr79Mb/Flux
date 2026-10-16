@@ -102,6 +102,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
   armes des PNJ.
 - ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
   couleurs unies), et un vrai modèle de lance-missiles.
+- 🔨 Vaisseau sans pilote soumis à la gravité près d'une planète ou dans son atmosphère, pas dans l'espace (« Tombe
+  sans pilote », décochable pour une station).
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.
