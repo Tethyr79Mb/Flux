@@ -1,6 +1,7 @@
 #include "Flux/Scene/Docking.hpp"
 
 #include "Flux/Scene/Scene.hpp"
+#include "Steering.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +9,6 @@
 
 namespace Flux::Docking {
     namespace {
-        constexpr float Degrees = 180.0f / std::numbers::pi_v<float>;
         // Le trajet est une suite de points dans le repère du quai, rejoints un à un : à PassTolerance mètres d'un point
         // de passage, on vise le suivant ; les points où l'on s'arrête (au-dessus du quai, posé) sont plus serrés.
         constexpr double PassTolerance = 3.0;
@@ -18,7 +18,6 @@ namespace Flux::Docking {
         constexpr float EnterSpeed = 15.0f;    // m/s dans la station
         constexpr float DescendSpeed = 2.0f;   // m/s en se posant et en décollant du quai
         constexpr float ExitSpeed = 30.0f;     // m/s en sortant, vitesse gardée quand le pilote reprend la main
-        constexpr float TurnGain = 2.0f;       // 1/s : vitesse de rotation par degré restant (arrivée en douceur)
         constexpr double FacingDistance = 20.0; // m : plus loin, on se tourne vers le point avant d'y foncer
 
         struct Frame
@@ -37,36 +36,6 @@ namespace Flux::Docking {
 
         Math::Vector3d ToLocal(const Frame& frame, const Math::WorldPosition& position) {
             return Math::Vector3d(frame.rotation.Conjugate().Rotate(Math::Vector3f(Math::Delta(frame.position, position))));
-        }
-
-        // Rotation d'un vaisseau qui regarde vers forward (son -z), le haut vers up (unitaires).
-        Math::Quaternionf Look(const Math::Vector3f& forward, const Math::Vector3f& up) {
-            const Math::Quaternionf turn = Math::Quaternionf::FromTo({0.0f, 0.0f, -1.0f}, forward);
-            const Math::Vector3f wantedUp = up - forward * Math::Dot(up, forward);
-            if (Math::Length(wantedUp) < 1.0e-4f) {
-                return turn;
-            }
-            const Math::Vector3f currentUp = turn.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
-            return Math::Normalize(Math::Quaternionf::FromTo(currentUp, Math::Normalize(wantedUp)) * turn);
-        }
-
-        // Tourne vers target : vitesse de rotation dans les axes du vaisseau, proportionnelle à l'angle restant, bornée
-        // par ShipComponent::turnRate et prise au rythme de turnAcceleration. Retourne l'angle restant (°).
-        float Steer(ShipComponent& ship, const Math::Quaternionf& rotation, const Math::Quaternionf& target, float delta) {
-            Math::Quaternionf error = rotation.Conjugate() * target;
-            if (error.w < 0.0f) {
-                error = {-error.x, -error.y, -error.z, -error.w}; // le plus court chemin
-            }
-            const Math::Vector3f axis{error.x, error.y, error.z};
-            const float sine = Math::Length(axis);
-            const float angle = 2.0f * std::atan2(sine, error.w) * Degrees;
-            const Math::Vector3f wanted = sine > 1.0e-6f ? axis * (std::min(ship.turnRate, angle * TurnGain) / sine) : Math::Vector3f{};
-            const float step = std::max(ship.turnAcceleration, 1.0f) * delta;
-            const auto approach = [&](float& value, float goal) { value += std::clamp(goal - value, -step, step); };
-            approach(ship.angularVelocity.x, wanted.x);
-            approach(ship.angularVelocity.y, wanted.y);
-            approach(ship.angularVelocity.z, wanted.z);
-            return angle;
         }
 
         // Vole vers target : droit dessus, pas plus vite que maxSpeed ni que ce qui permet de s'y arrêter (les
@@ -181,7 +150,7 @@ namespace Flux::Docking {
                 const Math::Vector3f flat = offset - up * Math::Dot(offset, up);
                 const Math::Vector3f forward = rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
                 const Math::Vector3f heading = Math::Length(flat) > 1.0f ? Math::Normalize(flat) : Math::Normalize(forward - up * Math::Dot(forward, up));
-                Steer(ship, rotation, Look(heading, up), delta);
+                Steering::Steer(ship, rotation, Steering::Look(heading, up), delta);
                 float facing = 1.0f;
                 if (Math::Length(flat) > FacingDistance) {
                     facing = std::clamp(Math::Dot(forward, heading), 0.0f, 1.0f);
@@ -191,7 +160,7 @@ namespace Flux::Docking {
             };
             // Au-dessus du quai ou posé : orienté comme lui.
             const auto hold = [&](const Math::Vector3d& point, float maxSpeed, float& angle) {
-                angle = Steer(ship, rotation, frame.rotation, delta);
+                angle = Steering::Steer(ship, rotation, frame.rotation, delta);
                 return Fly(ship, rotation, position, ToWorld(frame, point), maxSpeed, delta);
             };
             const Math::Vector3d approachPoint{0.0, hover, approach};

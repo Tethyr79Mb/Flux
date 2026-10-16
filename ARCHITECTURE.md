@@ -152,6 +152,12 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   quai, demi-tour, descente), puis en fait un enfant de la station. La station devient son monde extérieur
   (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
   (`TransferCharacters`).
+- Warp (`Warp`, après `Docking::Update`) : pour les grandes distances. Destinations : stations (vaisseaux à quais),
+  planètes, objectif de la mission en cours ; J vise celle à moins de 30° du nez. Le vaisseau charge 3 s en se
+  tournant vers elle, puis sa vitesse est multipliée par e chaque seconde, bornée par la distance restante (et par
+  celle des planètes) en une seconde : il ralentit en arrivant et sort à 4 km d'une station, 10 km au-dessus de
+  l'atmosphère d'une planète. En vol (`WarpStage::Cruising`), `MoveShips` le déplace sans collision et
+  `CollectProbes` ne demande pas de sol pour lui ; une planète sur le chemin l'arrête 2 km au-dessus de son atmosphère.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
   (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
   `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou cubes

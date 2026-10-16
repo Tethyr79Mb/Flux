@@ -116,7 +116,10 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Missions : un PNJ de la station (Placer > Station, boutique 1) donne une mission « détruire un groupe
   d'ennemis » (F pour parler, Accepter / Refuser / Abandonner) ; groupe à 500 km par défaut, marqueur et distance à
   l'écran, « Mission accomplie » quand tout est détruit.
-- ⬜ Warp pour les grandes distances (le mode voyage, Tab, reste un déplacement accéléré).
+- 🔨 Warp pour les grandes distances (J vers la destination visée : station, planète, objectif de mission ; le mode
+  voyage, Tab, reste un déplacement accéléré).
+- ⬜ Rétrofusées vers l'avant (demande de Bruno) : freinage net, flammes visibles à l'avant, et dérive en virage
+  corrigée plus fort (aujourd'hui les propulseurs latéraux ne tiennent que ShipComponent::acceleration).
 - ⬜ Missions : récompenses, autres sortes, ennemis qui se défendent (IA, armes), sauvegarde de la mission en cours.
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.

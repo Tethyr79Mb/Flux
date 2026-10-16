@@ -693,6 +693,7 @@ namespace FluxEditor {
                 ship.strafeSpeed = 0.0f;
                 ship.levelAssist = false;
                 ship.fallsWithoutPilot = false;
+                ship.warpSpeed = 0.0f;
                 AddStation(scene, entity);
             } else if (item == Item::Sound) {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);

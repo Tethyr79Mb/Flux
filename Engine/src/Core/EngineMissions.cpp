@@ -7,6 +7,7 @@
 #include "Flux/Scene/Missions.hpp"
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/UI/Context.hpp"
+#include "HudText.hpp"
 
 #include <algorithm>
 #include <format>
@@ -43,13 +44,6 @@ namespace Flux {
             return lines;
         }
 
-        // Nombre à la française, en m ou km selon sa taille.
-        std::string FormatDistance(double meters) {
-            std::string text = meters >= 10000.0 ? std::format("{:.1f} km", meters / 1000.0) : std::format("{:.0f} m", meters);
-            std::ranges::replace(text, '.', ',');
-            return text;
-        }
-
         std::string NameOf(const Scene& scene, Entity entity) {
             const auto* name = scene.IsValid(entity) ? scene.TryGet<NameComponent>(entity) : nullptr;
             return name ? name->name : std::string("le donneur");
@@ -60,6 +54,10 @@ namespace Flux {
         m_mission.reset();
         m_missionWindow = NullEntity;
         m_missionMessageSeconds = 0.0;
+        // Et le warp, dont l'objectif de mission est une destination.
+        m_warpDestinations.clear();
+        m_warpAim = -1;
+        m_warpName.clear();
     }
 
     void Engine::UpdateMissions(Entity player, bool& interact) {
@@ -100,6 +98,7 @@ namespace Flux {
             if (m_mission && m_mission->giver == giver) {
                 const int alive = Missions::CountAlive(m_scene, m_mission->enemies);
                 ui.Text(std::format("Mission en cours : {} ennemi{} restant{}", alive, alive > 1 ? "s" : "", alive > 1 ? "s" : ""));
+                ui.TextDisabled("Aux commandes : nez vers son marqueur, J pour le warp.");
                 if (ui.Button("Abandonner")) {
                     // Le groupe repart avec la mission : rien ne reste à abattre pour rien.
                     for (const Entity enemy : m_mission->enemies) {
@@ -118,7 +117,7 @@ namespace Flux {
                                     FormatDistance(mission.distance)));
                 if (ui.Button("Accepter")) {
                     if (auto enemies = Missions::SpawnEnemies(m_scene, m_components, GetPrefabReader(), giver)) {
-                        m_mission = ActiveMission{giver, mission.title, std::move(*enemies)};
+                        m_mission = ActiveMission{giver, mission.title, std::move(*enemies), Missions::GetTargetArea(m_scene, giver)};
                         Log::Info("Mission acceptée : {}", mission.title);
                     } else {
                         Log::Warning("Mission « {} » : {}", mission.title, enemies.error());

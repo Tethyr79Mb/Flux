@@ -389,8 +389,8 @@ namespace Flux {
                 probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), 20.0 + speed, speed});
             }
             for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
-                if (scene.GetParent(entity) != NullEntity) {
-                    continue;
+                if (scene.GetParent(entity) != NullEntity || ship.warp == WarpStage::Cruising) {
+                    continue; // en warp, il ne touche pas le sol : pas d'immenses disques de sol devant lui
                 }
                 const JPH::Shape* shape = GetShipShape(scene, entity);
                 const double size = shape ? shape->GetLocalBounds().GetExtent().Length() : 10.0;
@@ -670,7 +670,8 @@ namespace Flux {
             for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
-                const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
+                // En warp, il file sans collision (des milliers de km par image : Warp le tient loin des planètes).
+                const JPH::Shape* shape = root && worldGrid && ship.warp != WarpStage::Cruising ? GetShipShape(scene, entity) : nullptr;
                 // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas. Le pilote automatique le tient.
                 const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && ship.autopilot == AutopilotStage::Off;
                 if (!shape && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {

@@ -10,6 +10,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
+#include "Flux/Scene/Warp.hpp"
 #include "Flux/Scene/Weapons.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -291,12 +292,18 @@ namespace Flux {
         // Message bref sous les infos de vol (pilote automatique lancé, aucun quai à portée), et son temps restant.
         std::string m_flightMessage;
         double m_flightMessageSeconds = 0.0;
+        // Warp (EngineWarp.cpp) : destinations du vaisseau piloté (recalculées à chaque image, mémoire gardée), celle
+        // que vise son nez (-1 : aucune) et le nom de celle vers laquelle il file (vide hors warp).
+        std::vector<Warp::Destination> m_warpDestinations;
+        int m_warpAim = -1;
+        std::string m_warpName;
         // Mission acceptée auprès d'un donneur (Missions), une seule à la fois : ses ennemis encore à détruire.
         struct ActiveMission
         {
             Entity giver = NullEntity;
             std::string title;
             std::vector<Entity> enemies;
+            Math::WorldPosition area; // où ils sont apparus : destination du warp
         };
         std::optional<ActiveMission> m_mission;
         Entity m_missionWindow = NullEntity; // donneur dont la fenêtre est ouverte
@@ -356,6 +363,9 @@ namespace Flux {
         FlightState GetFlightState(Entity ship);
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
         void DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
+        void UpdateWarp(Entity ship, bool toggle);
+        void DrawWarpInfo(Entity player, Math::Vector2f screen);
+        std::string GetDestinationName(const Warp::Destination& destination) const;
         void ShowFlightMessage(std::string message);
         // Missions (EngineMissions.cpp) : parler au donneur (consomme F), suivre les ennemis ; fenêtre et indications.
         void UpdateMissions(Entity player, bool& interact);

@@ -177,7 +177,8 @@ namespace Flux::Ships {
 
     void Update(Scene& scene, Entity piloted, double deltaSeconds, const ShipInput& input) {
         if (piloted != NullEntity && scene.IsValid(piloted)) {
-            if (auto* ship = scene.TryGet<ShipComponent>(piloted)) {
+            // En warp, Warp le mène.
+            if (auto* ship = scene.TryGet<ShipComponent>(piloted); ship && ship->warp == WarpStage::Off) {
                 Pilot(*ship, scene.GetWorldRotation(piloted), deltaSeconds, input);
             }
         }
