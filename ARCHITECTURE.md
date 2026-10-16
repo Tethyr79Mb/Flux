@@ -151,7 +151,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   le repère du quai (par-dessus la station si on arrive de derrière, par-dessous si on est plus bas qu'elle ; point d'approche devant l'entrée, au-dessus du
   quai, demi-tour, descente), puis en fait un enfant de la station. La station devient son monde extérieur
   (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
-  (`TransferCharacters`).
+  (`TransferCharacters`). Un vaisseau garé sans pilote dans son hangar (dans la boîte de son enveloppe) tombe avec
+  la gravité de son pont et se pose (`FindCarrierGravity`), même loin de toute planète.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
   (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
   `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou cubes
