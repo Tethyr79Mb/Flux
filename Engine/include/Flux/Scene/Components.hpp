@@ -455,6 +455,9 @@ namespace Flux {
         // Seulement dans l'espace : l'atmosphère d'une planète, le frein ou un atterrissage le coupent.
         float travelFactor = 10.0f;
         float travelSpoolTime = 3.0f;
+        // Sans pilote, il tombe avec la gravité du lieu (planète, monde) jusqu'à se poser ; décoché : il reste où il
+        // est (station, vaisseau amiral en orbite). Seulement à la racine de la scène et avec une collision.
+        bool fallsWithoutPilot = true;
         // Pendant le jeu (non enregistrés) : posé sur le décor (ni rotation ni déplacement à plat), et vitesse de
         // croisière vers l'avant que le pilote a choisie (m/s ; négative : en arrière).
         bool grounded = false;
