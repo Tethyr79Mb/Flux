@@ -144,6 +144,9 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   stabilisateur d'atterrissage ; pas de corps dynamique. Sans pilote (« Tombe sans pilote », coché par défaut), un
   vaisseau qui a une collision tombe avec la gravité des planètes (rien dans l'espace, au-delà de deux rayons) ou,
   dans une scène sans planète, celle du monde ; freiné par l'air ; posé, il s'immobilise (freins serrés).
+- Station : un vaisseau immobile (`ShipComponent` sans moteurs ni chute) ; sa gravité tient les personnages sur ses
+  ponts, et ses quais (« Quai N », origine d'un chasseur posé) sont de simples entités repères. Un vaisseau amarré en
+  deviendra l'enfant : la station sera son monde extérieur (`FindOuterGrid`).
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la
