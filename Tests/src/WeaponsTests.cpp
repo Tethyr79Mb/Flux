@@ -1,6 +1,7 @@
 // Armes des vaisseaux (Weapons) : emports, visée dans le cône, cadence, projectiles, sauvegarde.
 #include "Check.hpp"
 
+#include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -21,6 +22,85 @@ namespace {
     // Direction (monde) du canon de l'arme.
     Math::Vector3f Barrel(const Scene& scene, Entity weapon) {
         return scene.GetWorldRotation(weapon).Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+    }
+}
+
+namespace {
+    // Projectiles contre les corps de la physique : le tireur n'est pas touché, la cible perd ses points de vie et
+    // disparaît à 0, sauf si elle porte le joueur.
+    bool RunWeaponHitTests() {
+        Scene scene;
+        const Entity shooter = scene.CreateEntity("Tireur");
+        scene.Add<ShipComponent>(shooter);
+        const Entity hull = scene.CreateEntity("Coque", shooter);
+        scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f};
+        scene.Add<ColliderComponent>(hull);
+        const Entity target = scene.CreateEntity("Cible");
+        TransformComponent& transform = scene.Get<TransformComponent>(target);
+        transform.position = {0.0, 0.0, -50.0};
+        transform.scale = {4.0f, 4.0f, 4.0f}; // face avant à z = -48
+        scene.Add<HealthComponent>(target).health = 25.0f;
+        const Entity part = scene.CreateEntity("Blindage", target); // un enfant touché abîme la cible
+        scene.Get<TransformComponent>(part).position = {0.0, 3.0, 0.0};
+        scene.Add<ColliderComponent>(part);
+        scene.Add<ColliderComponent>(target);
+
+        PhysicsWorld world;
+        world.Update(scene, 0.0, {});
+        const Math::WorldPosition origin{};
+        // Le rayon part de la coque du tireur : elle compte (vue du dehors, c'est le vaisseau), sauf pour ses tirs.
+        const auto own = world.CastRay(scene, origin, {0.0f, 0.0f, -100.0f});
+        CHECK(own && own->entity == shooter && own->fraction == 0.0f);
+        const auto aimed = world.CastRay(scene, origin, {0.0f, 0.0f, -100.0f}, shooter);
+        CHECK(aimed && aimed->entity == target && Near(aimed->fraction, 0.48, 1.0e-3));
+        CHECK(!world.CastRay(scene, origin, {0.0f, 0.0f, -40.0f}, shooter));
+        CHECK(Weapons::FindTarget(scene, part) == target && Weapons::FindTarget(scene, hull) == NullEntity);
+
+        const ProjectileCast cast = [&](const Math::WorldPosition& from, const Math::Vector3f& segment,
+                                                 Entity ship) -> std::optional<std::pair<Entity, float>> {
+            if (const auto hit = world.CastRay(scene, from, segment, ship)) {
+                return std::pair{hit->entity, hit->fraction};
+            }
+            return std::nullopt;
+        };
+        std::vector<Projectile> projectiles;
+        Projectile shot;
+        shot.velocity = {0.0f, 0.0f, -1000.0f};
+        shot.life = 1.0f;
+        shot.damage = 10.0f;
+        shot.ship = shooter;
+        std::vector<ProjectileHit> hits;
+        std::vector<std::string> destroyed;
+        // 20 m par image : rien les deux premières, l'impact à la troisième, sur la face avant.
+        projectiles.push_back(shot);
+        Weapons::UpdateProjectiles(projectiles, 0.02, cast, &hits);
+        Weapons::UpdateProjectiles(projectiles, 0.02, cast, &hits);
+        CHECK(hits.empty() && projectiles.size() == 1);
+        Weapons::UpdateProjectiles(projectiles, 0.02, cast, &hits);
+        CHECK(hits.size() == 1 && projectiles.empty());
+        CHECK(hits[0].entity == target && Near(hits[0].position.offset.z, -48.0, 1.0e-2) && hits[0].damage == 10.0f);
+        Weapons::ApplyHits(scene, hits, NullEntity, &destroyed);
+        CHECK(scene.Get<HealthComponent>(target).health == 15.0f && destroyed.empty());
+
+        // Deux impacts de plus : détruite, avec ses enfants ; un impact sur une entité disparue ne casse rien.
+        const std::vector<ProjectileHit> two{hits[0], hits[0], hits[0]};
+        Weapons::ApplyHits(scene, two, NullEntity, &destroyed);
+        CHECK(!scene.IsValid(target) && !scene.IsValid(part));
+        CHECK(destroyed.size() == 1 && destroyed[0] == "Cible");
+
+        // Une cible qui porte le joueur reste à 0 sans disparaître.
+        const Entity carrier = scene.CreateEntity("Porteur");
+        scene.Add<HealthComponent>(carrier).health = 5.0f;
+        const Entity pilot = scene.CreateEntity("Pilote", carrier);
+        const ProjectileHit onCarrier{carrier, {}, 10.0f, {}};
+        Weapons::ApplyHits(scene, std::span(&onCarrier, 1), pilot, nullptr);
+        CHECK(scene.IsValid(carrier) && scene.Get<HealthComponent>(carrier).health == 0.0f);
+
+        // Les éclats d'impact s'éteignent.
+        std::vector<Impact> impacts{{{}, {}, 0.1f}, {{}, {}, 0.3f}};
+        Weapons::UpdateImpacts(impacts, 0.2);
+        CHECK(impacts.size() == 1);
+        return true;
     }
 }
 
@@ -128,5 +208,5 @@ bool RunWeaponsTests() {
     CHECK(loadedMount && loadedMount->kind == WeaponKind::Gun && loadedMount->size == 1);
     CHECK(loadedGun && loadedGun->fireRate == 10.0f && loadedGun->cone == 20.0f && loadedGun->muzzle == 2.0f);
     CHECK(loadedGun->cooldown == 0.0f);
-    return true;
+    return RunWeaponHitTests();
 }

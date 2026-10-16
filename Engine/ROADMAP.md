@@ -91,7 +91,9 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
   pivotent vers le point regardé dans leur cône, tir au clic gauche (action « Tirer »), projectiles en liste (pas
   des entités), traçantes dessinées par le GPU en un seul appel. Le Chasseur a 5 emports, avec leurs armes en
   modèles séparés qui pivotent (Gatling MK1 sous le nez, Autocanon MK1 sous les racines d'aile, lance-missiles).
-- ⬜ Armes, étape 2 : cibles et dégâts (projectiles lancés contre les mondes physiques, points de vie).
+- 🔨 Armes, étape 2 : cibles et dégâts. Chaque projectile lance son segment de l'image contre tous les mondes
+  physiques (`PhysicsWorld::CastRay`, le tireur ignoré) ; composant « Points de vie » sur la cible ou un ancêtre,
+  détruite avec ses enfants à 0 (sauf si elle porte le joueur) ; éclat lumineux à l'impact ; Placer > Cible.
 - ⬜ Armes, étape 3 : missiles guidés (verrouillage, poursuite).
 - ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
   couleurs unies), et un vrai modèle de lance-missiles.

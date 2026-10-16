@@ -113,22 +113,82 @@ namespace Flux::Weapons {
         }
     }
 
-    void UpdateProjectiles(std::vector<Projectile>& projectiles, double deltaSeconds) {
+    void UpdateProjectiles(std::vector<Projectile>& projectiles, double deltaSeconds, const ProjectileCast& cast,
+                           std::vector<ProjectileHit>* hits) {
         const float delta = static_cast<float>(deltaSeconds);
         if (delta <= 0.0f) {
             return;
         }
         for (std::size_t i = 0; i < projectiles.size();) {
             Projectile& projectile = projectiles[i];
+            // Jamais plus loin que la fin de sa course.
+            const float step = std::min(delta, std::max(projectile.life, 0.0f));
+            const Math::Vector3f segment = projectile.velocity * step;
+            bool stopped = projectile.life <= 0.0f;
+            if (!stopped && cast) {
+                if (const auto hit = cast(projectile.position, segment, projectile.ship)) {
+                    if (hits) {
+                        Math::WorldPosition at = projectile.position;
+                        at += Math::Vector3d(segment * hit->second);
+                        hits->push_back({hit->first, at, projectile.damage, projectile.color});
+                    }
+                    stopped = true;
+                }
+            }
             projectile.life -= delta;
-            if (projectile.life <= 0.0f) {
+            if (stopped || projectile.life <= 0.0f) {
                 projectile = projectiles.back();
                 projectiles.pop_back();
                 continue;
             }
             projectile.age += delta;
-            projectile.position += Math::Vector3d(projectile.velocity) * deltaSeconds;
+            projectile.position += Math::Vector3d(segment);
             ++i;
         }
+    }
+
+    Entity FindTarget(const Scene& scene, Entity entity) {
+        for (Entity current = entity; current != NullEntity && scene.IsValid(current); current = scene.GetParent(current)) {
+            if (scene.TryGet<HealthComponent>(current)) {
+                return current;
+            }
+        }
+        return NullEntity;
+    }
+
+    void ApplyHits(Scene& scene, std::span<const ProjectileHit> hits, Entity protectedEntity, std::vector<std::string>* destroyed) {
+        for (const ProjectileHit& hit : hits) {
+            const Entity target = FindTarget(scene, hit.entity);
+            if (target == NullEntity) {
+                continue; // décor sans points de vie : l'impact se voit, rien ne casse
+            }
+            HealthComponent& health = scene.Get<HealthComponent>(target);
+            if (health.health <= 0.0f) {
+                continue; // déjà à 0 (porte le joueur)
+            }
+            health.health = std::max(health.health - std::max(hit.damage, 0.0f), 0.0f);
+            if (health.health > 0.0f) {
+                continue;
+            }
+            bool carriesProtected = false;
+            for (Entity current = protectedEntity; current != NullEntity && scene.IsValid(current); current = scene.GetParent(current)) {
+                carriesProtected |= current == target;
+            }
+            if (carriesProtected) {
+                continue;
+            }
+            if (destroyed) {
+                destroyed->push_back(scene.Get<NameComponent>(target).name);
+            }
+            scene.DestroyEntity(target); // les impacts suivants sur elle ne trouvent plus d'entité valide
+        }
+    }
+
+    void UpdateImpacts(std::vector<Impact>& impacts, double deltaSeconds) {
+        const float delta = static_cast<float>(deltaSeconds);
+        std::erase_if(impacts, [delta](Impact& impact) {
+            impact.life -= delta;
+            return impact.life <= 0.0f;
+        });
     }
 }

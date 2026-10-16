@@ -55,6 +55,8 @@ namespace Flux {
         constexpr float AimDistance = 700.0f;
         // Projectiles réservés d'avance : un combat chargé n'alloue pas en pleine image.
         constexpr std::size_t ReservedProjectiles = 4096;
+        // Durée de l'éclat d'un impact (s).
+        constexpr float ImpactSeconds = 0.12f;
 
         double Milliseconds(Clock::duration duration) {
             return std::chrono::duration<double, std::milli>(duration).count();
@@ -263,6 +265,8 @@ namespace Flux {
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
         actions.Add("Tirer", "Vaisseau", Key::MouseLeft);
         m_projectiles.reserve(ReservedProjectiles);
+        m_projectileHits.reserve(ReservedProjectiles);
+        m_impacts.reserve(ReservedProjectiles);
         if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
             const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             if (auto loaded = actions.LoadFromString(text); !loaded) {
@@ -458,7 +462,7 @@ namespace Flux {
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
-            m_renderer->SetProjectiles(m_projectiles);
+            m_renderer->SetProjectiles(m_projectiles, m_impacts);
             if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
                 return 1;
             }
@@ -559,7 +563,25 @@ namespace Flux {
         m_physics->Update(m_scene, deltaSeconds, character);
         // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
         // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
-        Weapons::UpdateProjectiles(m_projectiles, deltaSeconds);
+        m_projectileHits.clear();
+        Weapons::UpdateProjectiles(
+            m_projectiles, deltaSeconds,
+            [this](const Math::WorldPosition& from, const Math::Vector3f& segment, Entity ship) -> std::optional<std::pair<Entity, float>> {
+                if (const auto hit = m_physics->CastRay(m_scene, from, segment, ship)) {
+                    return std::pair{hit->entity, hit->fraction};
+                }
+                return std::nullopt;
+            },
+            &m_projectileHits);
+        Weapons::UpdateImpacts(m_impacts, deltaSeconds);
+        for (const ProjectileHit& hit : m_projectileHits) {
+            m_impacts.push_back({hit.position, hit.color, ImpactSeconds});
+        }
+        m_destroyedNames.clear();
+        Weapons::ApplyHits(m_scene, m_projectileHits, player, &m_destroyedNames);
+        for (const std::string& name : m_destroyedNames) {
+            Log::Info("« {} » détruit", name);
+        }
         WeaponInput weaponInput;
         if (seated && pilotedShip != NullEntity) {
             weaponInput.fire = IsActionDown("Tirer") && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
@@ -588,6 +610,7 @@ namespace Flux {
         }
         m_physics.reset(); // les corps de l'ancienne scène
         m_projectiles.clear();
+        m_impacts.clear();
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -605,6 +628,7 @@ namespace Flux {
         if (state == GameState::Stopped) {
             m_physics.reset();
             m_projectiles.clear();
+        m_impacts.clear();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();

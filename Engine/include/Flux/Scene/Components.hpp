@@ -330,6 +330,15 @@ namespace Flux {
         float cooldown = 0.0f;
     };
 
+    // Points de vie d'une cible (vaisseau, décor) : les projectiles qui touchent ses corps de collision, ou ceux de
+    // ses enfants, les retirent ; à 0, elle est détruite avec ses enfants (sauf si elle porte le joueur : elle reste
+    // à 0, la fin de partie viendra plus tard). Pendant le jeu, sur la copie de la scène : le fichier garde la valeur
+    // de départ.
+    struct HealthComponent
+    {
+        float health = 100.0f;
+    };
+
     enum class ColliderShape : std::uint8_t {
         Box,     // size
         Sphere,  // radius

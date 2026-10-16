@@ -6,7 +6,7 @@
 struct TracerData
 {
     float4 head;  // xyz : tête relative à la caméra (m) ; w : largeur (m)
-    float4 tail;  // xyz : queue relative à la caméra (m)
+    float4 tail;  // xyz : queue relative à la caméra (m) ; w : 1 pour un éclat d'impact (point rond, sans queue)
     float4 color; // rgb : couleur x éclat
 };
 [[vk::binding(0, 0)]] StructuredBuffer<TracerData> tracers;
@@ -24,6 +24,7 @@ struct VertexOutput
     float4 position : SV_Position;
     float2 uv       : TEXCOORD0; // x : -1 à 1 en travers ; y : 0 à la tête, 1 à la queue
     float3 color    : COLOR;
+    float  round    : TEXCOORD1; // 1 : éclat d'impact
 };
 
 // Coins des deux triangles de la bande : (côté, 0 tête / 1 queue).
@@ -38,8 +39,13 @@ VertexOutput vertexMain(uint vertexId : SV_VulkanVertexID)
     const TracerData tracer = tracers[vertexId / 6];
     const float2 corner = Corners[vertexId % 6];
     const float3 along = tracer.tail.xyz - tracer.head.xyz;
-    const float3 direction = length(along) > 1.0e-4 ? normalize(along) : float3(0.0, 0.0, 1.0);
     const float3 point = lerp(tracer.head.xyz, tracer.tail.xyz, corner.y);
+    // Sans longueur (éclat) : n'importe quelle direction perpendiculaire à la vue, la bande devient un carré.
+    float3 direction = length(along) > 1.0e-4 ? normalize(along) : cross(point, float3(0.0, 1.0, 0.0));
+    if (length(direction) < 1.0e-6) {
+        direction = cross(point, float3(1.0, 0.0, 0.0));
+    }
+    direction = normalize(direction);
     // Au moins un pixel et demi de large : plus fine, une traçante lointaine clignoterait entre les pixels. Élargie,
     // elle s'assombrit d'autant (même lumière en tout) : au loin elle s'estompe au lieu de grossir.
     const float distance = max(length(point), 1.0e-3);
@@ -53,12 +59,19 @@ VertexOutput vertexMain(uint vertexId : SV_VulkanVertexID)
                     + params.viewToClip[2] * position.z + params.viewToClip[3];
     output.uv = corner;
     output.color = tracer.color.rgb * (tracer.head.w / width);
+    output.round = tracer.tail.w;
     return output;
 }
 
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
+    if (input.round > 0.5) {
+        // Éclat : disque doux, sans queue.
+        const float2 p = float2(input.uv.x, input.uv.y * 2.0 - 1.0);
+        const float disc = saturate(1.0 - dot(p, p));
+        return float4(input.color * (disc * disc), 0.0);
+    }
     // Cœur vif au milieu, bords doux ; la queue s'éteint.
     const float across = 1.0 - input.uv.x * input.uv.x;
     const float fade = lerp(1.0, 0.15, input.uv.y);

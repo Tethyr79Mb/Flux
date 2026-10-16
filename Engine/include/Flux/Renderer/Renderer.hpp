@@ -23,6 +23,7 @@ namespace Flux {
     struct Camera;
     class Scene;
     struct Projectile;
+    struct Impact;
 
     // Temps de la dernière image rendue, en millisecondes. Les temps du GPU sont ceux d'une image un peu plus ancienne
     // (relus quand il l'a finie) ; négatifs s'ils sont inconnus (GPU sans heures, ou pas encore mesurés).
@@ -78,9 +79,9 @@ namespace Flux {
         // Flammes des réacteurs montrées à pleine poussée, quels que soient les moteurs : dans l'éditeur, jeu arrêté,
         // pour les voir et les régler (sinon, au ralenti, elles sont à peine visibles).
         void SetThrusterPreview(bool preview);
-        // Projectiles à dessiner en traçantes aux prochains RenderFrame (Weapons). Le tableau n'est pas copié : il
-        // doit rester valide jusqu'au prochain appel (vide : aucune traçante).
-        void SetProjectiles(std::span<const Projectile> projectiles);
+        // Projectiles à dessiner en traçantes, et éclats d'impact, aux prochains RenderFrame (Weapons). Les tableaux
+        // ne sont pas copiés : ils doivent rester valides jusqu'au prochain appel (vides : rien).
+        void SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts = {});
 
         // V-Sync (activée par défaut) : sans elle, autant d'images que le GPU peut en produire.
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
