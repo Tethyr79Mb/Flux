@@ -16,6 +16,7 @@
 #include "Flux/Platform/Memory.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Orbits.hpp"
@@ -271,6 +272,8 @@ namespace Flux {
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
+        // Près d'une station : se faire conduire au quai libre le plus proche ; amarré : repartir (choix de Bruno).
+        actions.Add("Pilote automatique", "Vaisseau", Key::L);
         // Groupes d'armes sur les chiffres au-dessus des lettres (choix de Bruno) : sur le Chasseur, 1 le nez, 2 les
         // autocanons, 3 les missiles.
         constexpr std::array GroupKeys{Key::Digit1, Key::Digit2, Key::Digit3, Key::Digit4, Key::Digit5,
@@ -573,7 +576,18 @@ namespace Flux {
             return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
         });
         const Entity pilotedShip = Ships::GetPilotedShip(m_scene, player);
+        if (pilotedShip != NullEntity && WasActionPressed("Pilote automatique")) {
+            switch (Docking::Toggle(m_scene, pilotedShip)) {
+            case Docking::ToggleResult::Docking:
+            case Docking::ToggleResult::Leaving: break; // l'étape s'affiche dans les infos de vol
+            case Docking::ToggleResult::Cancelled: ShowFlightMessage("Pilote automatique coupé"); break;
+            case Docking::ToggleResult::NoDock:
+                ShowFlightMessage(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
+                break;
+            }
+        }
         Ships::Update(m_scene, pilotedShip, deltaSeconds, shipInput);
+        Docking::Update(m_scene, deltaSeconds); // après le pilote : il prend la main sous pilote automatique
         m_physics->Update(m_scene, deltaSeconds, character);
         // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
         // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
@@ -781,6 +795,12 @@ namespace Flux {
         return flight;
     }
 
+    void Engine::ShowFlightMessage(std::string message) {
+        constexpr double MessageSeconds = 3.0;
+        m_flightMessage = std::move(message);
+        m_flightMessageSeconds = MessageSeconds;
+    }
+
     void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds) {
         const Entity seat = Seats::GetPilotSeat(m_scene, player);
         const Entity ship = seat != NullEntity ? m_scene.GetShip(seat) : NullEntity;
@@ -819,6 +839,13 @@ namespace Flux {
             if (flight.air > 0.001f) {
                 text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
             }
+        }
+        if (const std::string docking = Docking::Describe(m_scene, ship); !docking.empty()) {
+            text += "\n" + docking;
+        }
+        if (m_flightMessageSeconds > 0.0) {
+            m_flightMessageSeconds -= deltaSeconds;
+            text += "\n" + m_flightMessage;
         }
         if (m_activeGroups != 0) {
             text += "\nTir auto ";

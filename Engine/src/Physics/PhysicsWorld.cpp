@@ -660,8 +660,8 @@ namespace Flux {
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
                 const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
-                // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas.
-                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted;
+                // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas. Le pilote automatique le tient.
+                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && ship.autopilot == AutopilotStage::Off;
                 if (!shape && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }

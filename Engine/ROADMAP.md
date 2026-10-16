@@ -106,8 +106,11 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
   sans pilote », décochable pour une station).
 - 🔨 Station, étape 1 : maquette en cubes (Placer > Station) : hangar de 140 x 30 x 100 m ouvert sur l'espace avec
   4 quais, couloir, deux boutiques (comptoir, place du marchand) et une salle de 4 terminaux ; gravité à bord, immobile.
-- ⬜ Station, étape 2 : amarrage par pilote automatique (touche L près de la station : un quai libre est attribué, le
-  vaisseau y est conduit et posé, puis devient enfant de la station ; on se lève et on marche dans la station).
+- 🔨 Station, étape 2 : amarrage par pilote automatique (action « Pilote automatique », L : le quai libre le plus proche
+  à moins de 5 km est réservé, le vaisseau y est conduit et posé, puis devient enfant de la station ; on se lève et on
+  marche dans la station ; L amarré : il ressort par l'entrée et rend la main ; L en route : coupé). Composant « Quai ».
+- ⬜ Pilote automatique : contourner la station par le côté (aujourd'hui par-dessus, en montant tout droit : un vaisseau
+  juste sous la station la traverse), éviter les autres vaisseaux.
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).

@@ -288,6 +288,9 @@ namespace Flux {
         std::vector<std::string> m_destroyedNames;
         Entity m_lockTarget = NullEntity; // cible verrouillée par les armes du vaisseau piloté (DrawFlightInfo)
         std::uint16_t m_activeGroups = 0;  // groupes d'armes en tir automatique (bit 0 : touche 1)
+        // Message bref sous les infos de vol (pilote automatique lancé, aucun quai à portée), et son temps restant.
+        std::string m_flightMessage;
+        double m_flightMessageSeconds = 0.0;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
@@ -342,6 +345,7 @@ namespace Flux {
         FlightState GetFlightState(Entity ship);
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
         void DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
+        void ShowFlightMessage(std::string message);
         void BeginLoading();
         // Après le rendu : le chargement est fini quand plus rien n'est attendu pendant quelques images.
         void UpdateLoading(double deltaSeconds);

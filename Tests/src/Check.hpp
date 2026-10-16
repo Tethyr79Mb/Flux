@@ -33,3 +33,4 @@ bool RunPlanetTests();
 bool RunComputeTests();
 bool RunPlanetGpuTests();
 bool RunWeaponsTests();
+bool RunDockingAutopilotTests();

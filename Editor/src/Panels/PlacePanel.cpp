@@ -245,7 +245,7 @@ namespace FluxEditor {
                 addBox(box, hangar);
             }
 
-            // Quatre quais de 24 x 28 m en ligne, au milieu du hangar. Chaque « Quai N » est le point d'amarrage :
+            // Quatre quais de 24 x 28 m en ligne, au milieu du hangar. Chaque « Quai N » (DockComponent) est le point d'amarrage :
             // l'origine d'un chasseur posé (son plancher de cockpit, 2,3 m au-dessus de ses roues), le nez vers la
             // sortie (-z), prêt à repartir. Le marquage au sol est seulement peint (pas de marche à franchir).
             constexpr double DockX[] = {-51.0, -17.0, 17.0, 51.0};
@@ -259,6 +259,9 @@ namespace FluxEditor {
                 const std::string name = "Quai " + std::to_string(i + 1);
                 const Entity dock = scene.CreateEntity(name, station);
                 scene.Get<TransformComponent>(dock).position = {x, 2.3, DockZ};
+                // Point d'approche à 100 m devant (50 m hors de l'entrée), arrivée à 6 m de haut (sous le linteau, à
+                // 24 m) ; par-dessus la station (31 m) à 150 m.
+                scene.Add<DockComponent>(dock);
                 const Entity marks = scene.CreateEntity("Marquage du " + name, hangar);
                 const double x0 = x - HalfWidth, x1 = x + HalfWidth, z0 = DockZ - HalfLength, z1 = DockZ + HalfLength;
                 for (const Box& box : {Box{"Dalle", {x0, 0.0, z0}, {x1, 0.01, z1}, grey(60), 0.0f, false},

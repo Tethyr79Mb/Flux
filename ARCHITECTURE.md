@@ -145,8 +145,13 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   vaisseau qui a une collision tombe avec la gravité des planètes (rien dans l'espace, au-delà de deux rayons) ou,
   dans une scène sans planète, celle du monde ; freiné par l'air ; posé, il s'immobilise (freins serrés).
 - Station : un vaisseau immobile (`ShipComponent` sans moteurs ni chute) ; sa gravité tient les personnages sur ses
-  ponts, et ses quais (« Quai N », origine d'un chasseur posé) sont de simples entités repères. Un vaisseau amarré en
-  deviendra l'enfant : la station sera son monde extérieur (`FindOuterGrid`).
+  ponts. Ses quais (`DockComponent`, origine d'un vaisseau posé, sortie vers leur -z) servent au pilote automatique
+  (`Docking`, après `Ships::Update`) : il règle la vitesse et la rotation du vaisseau le long d'un trajet calculé dans
+  le repère du quai (par-dessus la station si on arrive de derrière, point d'approche devant l'entrée, au-dessus du
+  quai, demi-tour, descente), puis en fait un enfant de la station. La station devient son monde extérieur
+  (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
+  (`TransferCharacters`). Le vaisseau ne heurte pas la station en vol (seulement le décor immobile du monde) : le trajet
+  évite ses murs, pas la physique.
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la
