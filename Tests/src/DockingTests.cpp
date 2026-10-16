@@ -158,6 +158,39 @@ namespace {
     }
 }
 
+namespace {
+    // Un vaisseau garé sans pilote dans le hangar d'une station tombe avec la gravité de son pont et se pose, même
+    // dans une scène à planètes où il n'y a pas de gravité dans l'espace.
+    bool RunParkedShipTests() {
+        Scene scene;
+        const Entity planet = scene.CreateEntity("Planète lointaine");
+        scene.Get<TransformComponent>(planet).position = {0.0, 0.0, 5.0e8};
+        scene.Add<PlanetComponent>(planet);
+        const Entity station = scene.CreateEntity("Station");
+        scene.Get<TransformComponent>(station).position = {300.0, 0.0, 0.0};
+        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity floor = scene.CreateEntity("Sol", station);
+        scene.Get<TransformComponent>(floor).position = {0.0, -0.5, 0.0};
+        scene.Get<TransformComponent>(floor).scale = {60.0f, 1.0f, 60.0f};
+        scene.Add<ColliderComponent>(floor);
+        const Entity roof = scene.CreateEntity("Toit", station);
+        scene.Get<TransformComponent>(roof).position = {0.0, 20.5, 0.0};
+        scene.Get<TransformComponent>(roof).scale = {60.0f, 1.0f, 60.0f};
+        scene.Add<ColliderComponent>(roof);
+        // Garé à 6 m du sol (le dessous de sa coque à 1 m sous son origine), et un autre dehors, dans l'espace.
+        const Entity parked = AddFighter(scene, "Garé", {300.0, 6.0, 0.0});
+        const Entity outside = AddFighter(scene, "Dehors", {300.0, 6.0, 200.0});
+        PhysicsWorld world;
+        world.Update(scene, 0.0, {});
+        CHECK(RunUntil(world, scene, 5.0, [&] { return scene.Get<ShipComponent>(parked).grounded; }));
+        CHECK(std::abs(scene.GetWorldPosition(parked).offset.y - 1.0) < 0.1);
+        RunUntil(world, scene, 1.0, [] { return false; });
+        CHECK(std::abs(scene.GetWorldPosition(parked).offset.y - 1.0) < 0.1); // reste posé
+        CHECK(std::abs(scene.GetWorldPosition(outside).offset.y - 6.0) < 0.01);
+        return true;
+    }
+}
+
 bool RunDockingAutopilotTests() {
-    return RunShipObstacleTests() && RunDockingTests();
+    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests();
 }
