@@ -321,13 +321,20 @@ namespace Flux {
         float fireRate = 8.0f;          // tirs par seconde
         float projectileSpeed = 1500.0f; // m/s, en plus de la vitesse du vaisseau
         float range = 2500.0f;          // m : au-delà, le projectile disparaît
-        float damage = 10.0f;           // par projectile (dégâts : étape suivante)
+        float damage = 10.0f;           // par projectile
         float cone = 20.0f;             // °, débattement autour de l'avant de l'emport (0 : tir fixe)
         float turnRate = 120.0f;        // °/s, vitesse de pivotement
         float muzzle = 1.0f;            // m, de l'origine de l'arme à la bouche du canon
         Math::LinearColor color{1.0f, 0.55f, 0.2f}; // couleur de la traçante
-        // Pendant le jeu (non enregistré) : temps avant le prochain tir (s).
+        // Missiles : nombre emporté (0 : illimité), virage le plus serré en vol (°/s) et écart autour du centre de la
+        // vue dans lequel une cible se verrouille (°). Un missile part par appui sur « Tirer un missile », du
+        // lance-missiles qui en a tiré le moins ; la cadence est alors son temps de rechargement.
+        std::int32_t ammo = 0;
+        float guidance = 90.0f;
+        float lockAngle = 10.0f;
+        // Pendant le jeu (non enregistrés) : temps avant le prochain tir (s), missiles déjà tirés.
         float cooldown = 0.0f;
+        std::int32_t fired = 0;
     };
 
     // Points de vie d'une cible (vaisseau, décor) : les projectiles qui touchent ses corps de collision, ou ceux de

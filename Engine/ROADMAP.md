@@ -94,7 +94,12 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Armes, étape 2 : cibles et dégâts. Chaque projectile lance son segment de l'image contre tous les mondes
   physiques (`PhysicsWorld::CastRay`, le tireur ignoré) ; composant « Points de vie » sur la cible ou un ancêtre,
   détruite avec ses enfants à 0 (sauf si elle porte le joueur) ; éclat lumineux à l'impact ; Placer > Cible.
-- ⬜ Armes, étape 3 : missiles guidés (verrouillage, poursuite).
+- 🔨 Armes, étape 3 : missiles guidés. Verrouillage automatique de la cible au centre de la vue (marque à quatre
+  coins et distance à l'écran), un missile par clic milieu (action « Tirer un missile »), ailes à tour de rôle,
+  4 missiles par lance-missiles (champ « Missiles emportés »), poursuite en avance sur un vaisseau qui vole,
+  explosion plus grande à l'impact, missiles restants dans les infos de vol.
+- ⬜ Armes, suite : dégâts de zone des missiles, leurres, alerte quand on est verrouillé, barre de vie de la cible,
+  armes des PNJ.
 - ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
   couleurs unies), et un vrai modèle de lance-missiles.
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).

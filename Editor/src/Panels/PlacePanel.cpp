@@ -164,6 +164,15 @@ namespace FluxEditor {
                 if (mount.size >= 2 && mount.kind == WeaponKind::Gun) {
                     arms.fireRate = 12.0f; // Gatling à six tubes
                 }
+                if (mount.kind == WeaponKind::Missile) {
+                    // Quatre tubes ; plus lent qu'un obus mais guidé, deux missiles détruisent une Cible.
+                    arms.ammo = 4;
+                    arms.fireRate = 1.0f;
+                    arms.projectileSpeed = 400.0f;
+                    arms.range = 4000.0f;
+                    arms.damage = 60.0f;
+                    arms.color = {1.0f, 0.85f, 0.6f};
+                }
             }
         }
 

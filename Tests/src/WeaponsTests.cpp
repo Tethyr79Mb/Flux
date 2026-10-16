@@ -1,4 +1,4 @@
-// Armes des vaisseaux (Weapons) : emports, visée dans le cône, cadence, projectiles, sauvegarde.
+// Armes des vaisseaux (Weapons) : emports, visée dans le cône, cadence, projectiles, dégâts, missiles guidés, sauvegarde.
 #include "Check.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
@@ -7,9 +7,12 @@
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Weapons.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace Flux;
@@ -22,6 +25,139 @@ namespace {
     // Direction (monde) du canon de l'arme.
     Math::Vector3f Barrel(const Scene& scene, Entity weapon) {
         return scene.GetWorldRotation(weapon).Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+    }
+}
+
+namespace {
+    // Missiles : verrouillage au centre de la vue, tir alterné des deux lance-missiles jusqu'à épuisement, poursuite
+    // (en avance sur un vaisseau qui vole), cible détruite en vol, sauvegarde du nombre emporté.
+    bool RunMissileTests() {
+        Scene scene;
+        const Entity ship = scene.CreateEntity("Chasseur");
+        scene.Add<ShipComponent>(ship);
+        scene.Add<HealthComponent>(ship);
+        const Entity hull = scene.CreateEntity("Coque", ship);
+        scene.Add<HealthComponent>(hull); // sa propre pièce : jamais verrouillée
+        std::vector<Entity> launchers;
+        for (const double x : {-5.0, 5.0}) {
+            const Entity mount = scene.CreateEntity("Emport", ship);
+            scene.Get<TransformComponent>(mount).position = {x, 0.0, 0.0};
+            scene.Add<HardpointComponent>(mount).kind = WeaponKind::Missile;
+            const Entity launcher = scene.CreateEntity("Lance-missiles", mount);
+            WeaponComponent& weapon = scene.Add<WeaponComponent>(launcher);
+            weapon.kind = WeaponKind::Missile;
+            weapon.cone = 0.0f;
+            weapon.fireRate = 1.0f;
+            weapon.projectileSpeed = 100.0f;
+            weapon.range = 2000.0f;
+            weapon.ammo = 2;
+            launchers.push_back(launcher);
+        }
+        const Entity ahead = scene.CreateEntity("Devant");
+        scene.Get<TransformComponent>(ahead).position = {0.0, 0.0, -500.0};
+        scene.Add<HealthComponent>(ahead);
+        const Entity aside = scene.CreateEntity("De côté");
+        scene.Get<TransformComponent>(aside).position = {300.0, 0.0, -500.0};
+        scene.Add<HealthComponent>(aside);
+        const Entity wreck = scene.CreateEntity("Épave");
+        scene.Get<TransformComponent>(wreck).position = {0.0, 0.0, -400.0};
+        scene.Add<HealthComponent>(wreck).health = 0.0f; // plus de points de vie : pas une cible
+        const Entity far = scene.CreateEntity("Trop loin");
+        scene.Get<TransformComponent>(far).position = {0.0, 0.0, -5000.0};
+        scene.Add<HealthComponent>(far);
+
+        // Verrouillage : la cible au centre de la vue, une autre à 31° seulement si on la regarde, rien en l'air.
+        const Math::WorldPosition eye = scene.GetWorldPosition(ship);
+        CHECK(Weapons::FindLockTarget(scene, ship, eye, {0.0f, 0.0f, -1.0f}) == ahead);
+        CHECK(Weapons::FindLockTarget(scene, ship, eye, Math::Normalize(Math::Vector3f{300.0f, 0.0f, -500.0f})) == aside);
+        CHECK(Weapons::FindLockTarget(scene, ship, eye, {0.0f, 1.0f, 0.0f}) == NullEntity);
+        CHECK(Weapons::FindLockTarget(scene, NullEntity, eye, {0.0f, 0.0f, -1.0f}) == NullEntity);
+        CHECK(Weapons::GetMissileCount(scene, ship) == 4);
+
+        // Un missile par appui, les deux ailes à tour de rôle, le temps de rechargement de chacune respecté.
+        std::vector<Projectile> projectiles;
+        WeaponInput input;
+        input.launch = true;
+        input.target = ahead;
+        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        CHECK(projectiles.size() == 1);
+        CHECK(projectiles[0].missile && projectiles[0].target == ahead && projectiles[0].ship == ship);
+        CHECK(Near(projectiles[0].guidance, 90.0 * std::numbers::pi / 180.0, 1.0e-4));
+        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        CHECK(projectiles.size() == 2);
+        CHECK(Near(Math::Delta(projectiles[0].position, projectiles[1].position).x, 10.0, 1.0e-3)
+              || Near(Math::Delta(projectiles[0].position, projectiles[1].position).x, -10.0, 1.0e-3));
+        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        CHECK(projectiles.size() == 2); // les deux rechargent
+        Weapons::Update(scene, ship, 0.01, WeaponInput{}, projectiles);
+        CHECK(projectiles.size() == 2);
+        CHECK(Weapons::GetMissileCount(scene, ship) == 2);
+        Weapons::Update(scene, ship, 1.0, input, projectiles);
+        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        CHECK(projectiles.size() == 4 && Weapons::GetMissileCount(scene, ship) == 0);
+        Weapons::Update(scene, ship, 1.0, input, projectiles);
+        CHECK(projectiles.size() == 4); // vides
+        CHECK(Weapons::FindLockTarget(scene, ship, eye, {0.0f, 0.0f, -1.0f}) == NullEntity);
+
+        // Poursuite : le missile vire d'au plus son guidage, garde sa vitesse et finit sur la cible.
+        projectiles.clear();
+        Projectile missile;
+        missile.position = eye;
+        missile.velocity = {0.0f, 0.0f, -100.0f};
+        missile.life = 20.0f;
+        missile.missile = true;
+        missile.target = aside;
+        missile.guidance = 90.0f * std::numbers::pi_v<float> / 180.0f;
+        projectiles.push_back(missile);
+        Weapons::GuideMissiles(scene, projectiles, 0.1);
+        CHECK(Near(std::acos(-projectiles[0].velocity.z / 100.0f), 9.0 * std::numbers::pi / 180.0, 1.0e-3));
+        CHECK(projectiles[0].velocity.x > 0.0f && Near(Math::Length(projectiles[0].velocity), 100.0, 1.0e-3));
+        double closest = 1.0e9;
+        for (int i = 0; i < 200 && !projectiles.empty(); ++i) {
+            Weapons::GuideMissiles(scene, projectiles, 0.05);
+            Weapons::UpdateProjectiles(projectiles, 0.05);
+            if (!projectiles.empty()) {
+                closest = std::min(closest, Math::Length(Math::Delta(projectiles[0].position, scene.GetWorldPosition(aside))));
+            }
+        }
+        CHECK(closest < 5.0);
+
+        // Un vaisseau qui file sur le côté : visé en avance (sans avance, le missile irait tout droit vers -z).
+        const Entity fleeing = scene.CreateEntity("Fuyard");
+        scene.Get<TransformComponent>(fleeing).position = {0.0, 0.0, -500.0};
+        scene.Add<ShipComponent>(fleeing).velocity = {50.0f, 0.0f, 0.0f};
+        projectiles.assign(1, missile);
+        projectiles[0].target = fleeing;
+        projectiles[0].guidance = 100.0f; // vire d'un coup : on lit la direction visée
+        Weapons::GuideMissiles(scene, projectiles, 0.1);
+        CHECK(Near(projectiles[0].velocity.x / -projectiles[0].velocity.z, 0.5, 0.05));
+
+        // Cible détruite en vol : le missile continue tout droit.
+        const Math::Vector3f before = projectiles[0].velocity;
+        scene.DestroyEntity(fleeing);
+        Weapons::GuideMissiles(scene, projectiles, 0.1);
+        CHECK(projectiles[0].target == NullEntity && Math::Length(projectiles[0].velocity - before) < 1.0e-4f);
+
+        // Un missile qui touche : l'impact le dit (explosion plus grande).
+        std::vector<ProjectileHit> hits;
+        Weapons::UpdateProjectiles(
+            projectiles, 0.1,
+            [&](const Math::WorldPosition&, const Math::Vector3f&, Entity) -> std::optional<std::pair<Entity, float>> {
+                return std::pair{ahead, 0.5f};
+            },
+            &hits);
+        CHECK(hits.size() == 1 && hits[0].missile && projectiles.empty());
+
+        // Sauvegarde : le nombre emporté, pas les missiles déjà tirés.
+        ComponentRegistry components;
+        RegisterEngineComponents(components);
+        const std::string text = SceneSerializer::SaveToString(scene, components);
+        CHECK(text.find("\"fired\"") == std::string::npos);
+        Scene loaded;
+        CHECK(SceneSerializer::LoadFromString(loaded, components, text).has_value());
+        const auto* loadedLauncher = loaded.TryGet<WeaponComponent>(loaded.FindByName("Lance-missiles"));
+        CHECK(loadedLauncher && loadedLauncher->ammo == 2 && loadedLauncher->fired == 0 && loadedLauncher->guidance == 90.0f);
+        return true;
     }
 }
 
@@ -208,5 +344,5 @@ bool RunWeaponsTests() {
     CHECK(loadedMount && loadedMount->kind == WeaponKind::Gun && loadedMount->size == 1);
     CHECK(loadedGun && loadedGun->fireRate == 10.0f && loadedGun->cone == 20.0f && loadedGun->muzzle == 2.0f);
     CHECK(loadedGun->cooldown == 0.0f);
-    return RunWeaponHitTests();
+    return RunWeaponHitTests() && RunMissileTests();
 }

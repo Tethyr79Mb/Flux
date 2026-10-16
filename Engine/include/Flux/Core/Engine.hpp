@@ -286,6 +286,7 @@ namespace Flux {
         std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
         std::vector<Impact> m_impacts;
         std::vector<std::string> m_destroyedNames;
+        Entity m_lockTarget = NullEntity; // cible verrouillée par les missiles du vaisseau piloté (DrawFlightInfo)
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;

@@ -51,7 +51,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
      vaisseau aux commandes, moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
    - armes, après la physique (le vaisseau est à sa place de l'image) : les projectiles avancent et touchent
-     (`Weapons::UpdateProjectiles`, `ApplyHits`), puis les armes du vaisseau piloté visent et tirent
+     (`Weapons::GuideMissiles`, `UpdateProjectiles`, `ApplyHits`), puis les armes du vaisseau piloté visent et tirent
      (`Weapons::Update`) ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
@@ -162,6 +162,13 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   (`PhysicsWorld::CastRay` ; corps du tireur ignorés). La cible est l'entité touchée ou son ancêtre le plus proche
   qui a un `HealthComponent` ; à 0, elle est détruite avec ses enfants, et la physique retire ses corps à sa
   prochaine mise à jour. Le personnage du joueur protège ce qui le porte (fin de partie à venir).
+- Missiles : des `Projectile` marqués `missile`, avec une cible. Le verrouillage (`Weapons::FindLockTarget`) est
+  recherché à chaque image : la cible à points de vie la plus proche du centre de la vue, dans l'angle et la portée
+  des lance-missiles chargés (parcours de tous les `HealthComponent` : linéaire, peu nombreux). Un appui sur « Tirer
+  un missile » en lance un, du lance-missiles qui a le moins tiré. En vol, `GuideMissiles` tourne la vitesse vers la
+  cible (en avance sur un vaisseau qui vole, d'après la vitesse de son `ShipComponent`), sans dépasser le virage du
+  missile ni changer sa vitesse. Le nombre tiré (`fired`) n'est pas enregistré : la copie de la scène du mode Jouer
+  repart pleine.
 
 ## Planètes
 

@@ -19,6 +19,7 @@
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Orbits.hpp"
+#include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
 #include "Flux/Scene/Weapons.hpp"
@@ -57,6 +58,9 @@ namespace Flux {
         constexpr std::size_t ReservedProjectiles = 4096;
         // Durée de l'éclat d'un impact (s).
         constexpr float ImpactSeconds = 0.12f;
+        // Explosion d'un missile : plus grande et plus longue qu'un impact d'obus (vif, puis pâlit comme lui).
+        constexpr float ExplosionSize = 5.0f;
+        constexpr float ExplosionSeconds = 0.3f;
 
         double Milliseconds(Clock::duration duration) {
             return std::chrono::duration<double, std::milli>(duration).count();
@@ -264,6 +268,7 @@ namespace Flux {
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
         actions.Add("Tirer", "Vaisseau", Key::MouseLeft);
+        actions.Add("Tirer un missile", "Vaisseau", Key::MouseMiddle);
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
         m_impacts.reserve(ReservedProjectiles);
@@ -564,6 +569,7 @@ namespace Flux {
         // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
         // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
         m_projectileHits.clear();
+        Weapons::GuideMissiles(m_scene, m_projectiles, deltaSeconds);
         Weapons::UpdateProjectiles(
             m_projectiles, deltaSeconds,
             [this](const Math::WorldPosition& from, const Math::Vector3f& segment, Entity ship) -> std::optional<std::pair<Entity, float>> {
@@ -575,7 +581,8 @@ namespace Flux {
             &m_projectileHits);
         Weapons::UpdateImpacts(m_impacts, deltaSeconds);
         for (const ProjectileHit& hit : m_projectileHits) {
-            m_impacts.push_back({hit.position, hit.color, ImpactSeconds});
+            m_impacts.push_back(hit.missile ? Impact{hit.position, hit.color, ExplosionSeconds, ExplosionSize}
+                                            : Impact{hit.position, hit.color, ImpactSeconds});
         }
         m_destroyedNames.clear();
         Weapons::ApplyHits(m_scene, m_projectileHits, player, &m_destroyedNames);
@@ -583,11 +590,17 @@ namespace Flux {
             Log::Info("« {} » détruit", name);
         }
         WeaponInput weaponInput;
+        m_lockTarget = NullEntity;
         if (seated && pilotedShip != NullEntity) {
-            weaponInput.fire = IsActionDown("Tirer") && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
+            const bool mouse = !m_ui->WantsMouse() && !m_interfaceWantsMouse;
+            weaponInput.fire = IsActionDown("Tirer") && mouse;
             weaponInput.aim = true;
             weaponInput.aimPoint = m_camera.position;
             weaponInput.aimPoint += Math::Vector3d(m_camera.GetForward() * AimDistance);
+            // Verrouillage au centre de la vue, recherché à chaque image : il suit ce que regarde le pilote.
+            m_lockTarget = Weapons::FindLockTarget(m_scene, pilotedShip, m_camera.position, m_camera.GetForward());
+            weaponInput.launch = WasActionPressed("Tirer un missile") && mouse;
+            weaponInput.target = m_lockTarget;
         }
         Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles);
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
@@ -611,6 +624,7 @@ namespace Flux {
         m_physics.reset(); // les corps de l'ancienne scène
         m_projectiles.clear();
         m_impacts.clear();
+        m_lockTarget = NullEntity;
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -628,7 +642,8 @@ namespace Flux {
         if (state == GameState::Stopped) {
             m_physics.reset();
             m_projectiles.clear();
-        m_impacts.clear();
+            m_impacts.clear();
+            m_lockTarget = NullEntity;
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();
@@ -776,8 +791,31 @@ namespace Flux {
                 text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
             }
         }
+        if (const int missiles = Weapons::GetMissileCount(m_scene, ship); missiles != 0) {
+            text += missiles < 0 ? std::string("\nMissiles") : std::format("\nMissiles  {}", missiles);
+        }
         const float size = 20.0f;
         UI::DrawList& list = m_renderer->GetOverlay();
+        if (m_lockTarget != NullEntity && m_scene.IsValid(m_lockTarget)) {
+            // Cible verrouillée : quatre coins autour d'elle et sa distance.
+            const Math::Vector3d offset = Math::Delta(m_camera.position, m_scene.GetWorldPosition(m_lockTarget));
+            if (const auto point = ScreenProjection(m_camera, {}, screen).ToScreen(offset)) {
+                constexpr float Half = 22.0f;
+                constexpr float Corner = 9.0f;
+                constexpr Math::LinearColor LockColor{1.0f, 0.35f, 0.2f, 0.95f};
+                for (const float sx : {-1.0f, 1.0f}) {
+                    for (const float sy : {-1.0f, 1.0f}) {
+                        const Math::Vector2f tip{point->x + sx * Half, point->y + sy * Half};
+                        list.AddLine(tip, {tip.x - sx * Corner, tip.y}, LockColor, 2.0f);
+                        list.AddLine(tip, {tip.x, tip.y - sy * Corner}, LockColor, 2.0f);
+                    }
+                }
+                const std::string label = distance(Math::Length(offset), "m");
+                constexpr float LabelSize = 15.0f;
+                const Math::Vector2f labelExtent = list.MeasureText(label, LabelSize);
+                list.AddText({point->x - labelExtent.x * 0.5f, point->y + Half + 4.0f}, label, LabelSize, LockColor);
+            }
+        }
         const Math::Vector2f extent = list.MeasureText(text, size);
         const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, screen.y - extent.y - 40.0f};
         list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 10.0f}, topLeft + extent + Math::Vector2f{14.0f, 10.0f}, {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
