@@ -77,12 +77,12 @@ namespace {
         // Un missile par appui, les deux ailes à tour de rôle, le temps de rechargement de chacune respecté.
         std::vector<Projectile> projectiles;
         WeaponInput input;
-        input.pressed = 1; // groupe 1 : les deux lance-missiles
-        input.target = far; // hors de portée : pas de tir
-        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        input.active = 1; // groupe 1 : les deux lance-missiles
+        input.target = far; // hors de portée : pas de tir, le groupe reste actif
+        CHECK(Weapons::Update(scene, ship, 0.01, input, projectiles) == 0);
         CHECK(projectiles.empty());
         input.target = ahead;
-        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        CHECK(Weapons::Update(scene, ship, 0.01, input, projectiles) == 1); // le groupe 1 a lancé : l'appelant l'arrête
         CHECK(projectiles.size() == 1);
         CHECK(projectiles[0].missile && projectiles[0].target == ahead && projectiles[0].ship == ship);
         CHECK(Near(projectiles[0].guidance, 90.0 * std::numbers::pi / 180.0, 1.0e-4));
@@ -294,7 +294,7 @@ bool RunWeaponsTests() {
     CHECK(projectiles.empty()); // visée sans tir
 
     // Touche tenue sans cible verrouillée, ou cible hors de portée : rien ne part.
-    input.held = 1;
+    input.active = 1;
     input.target = NullEntity;
     Weapons::Update(scene, ship, 0.1, input, projectiles);
     CHECK(projectiles.empty());
@@ -350,11 +350,11 @@ bool RunWeaponsTests() {
     weapon.group = 2;
     Weapons::Update(scene, ship, 0.1, input, projectiles);
     CHECK(projectiles.empty());
-    input.held = 1u << 1;
+    input.active = 1u << 1;
     Weapons::Update(scene, ship, 0.1, input, projectiles);
     CHECK(projectiles.size() == 1);
     projectiles.clear();
-    input.held = 1;
+    input.active = 1;
     weapon.group = 1;
     Weapons::Update(scene, NullEntity, 0.1, input, projectiles);
     CHECK(projectiles.empty());

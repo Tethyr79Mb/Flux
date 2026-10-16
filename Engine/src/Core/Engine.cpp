@@ -601,18 +601,22 @@ namespace Flux {
         WeaponInput weaponInput;
         if (!seated || pilotedShip == NullEntity) {
             m_lockTarget = NullEntity; // lâche le verrou en quittant les commandes
+            m_activeGroups = 0;
         } else {
+            // Tir automatique (choix de Bruno) : un appui active le groupe, un nouvel appui l'arrête. Ses canons tirent
+            // seuls dès que la cible verrouillée est à leur portée ; ses lance-missiles en lancent un, puis le groupe
+            // s'arrête (un appui, un missile).
+            std::uint16_t pressed = 0;
             for (std::size_t group = 0; group < WeaponGroupActions.size(); ++group) {
-                const auto bit = static_cast<std::uint16_t>(1u << group);
-                weaponInput.held |= IsActionDown(WeaponGroupActions[group]) ? bit : 0;
-                weaponInput.pressed |= WasActionPressed(WeaponGroupActions[group]) ? bit : 0;
+                pressed |= WasActionPressed(WeaponGroupActions[group]) ? static_cast<std::uint16_t>(1u << group) : 0;
             }
+            m_activeGroups ^= pressed;
             weaponInput.aim = true;
             weaponInput.aimPoint = m_camera.position;
             weaponInput.aimPoint += Math::Vector3d(m_camera.GetForward() * AimDistance);
             // Verrouillage à l'appui sur une touche de tir (choix de Bruno) : la cible au centre de la vue. Rien dans
             // le viseur : le verrou d'avant reste. Il tient ensuite hors du viseur, tant que la cible est à portée.
-            if (weaponInput.pressed != 0) {
+            if (pressed != 0) {
                 if (const Entity target = Weapons::FindLockTarget(m_scene, pilotedShip, m_camera.position, m_camera.GetForward());
                     target != NullEntity) {
                     m_lockTarget = target;
@@ -620,10 +624,12 @@ namespace Flux {
             }
             if (!Weapons::KeepsLock(m_scene, pilotedShip, m_lockTarget, m_camera.position)) {
                 m_lockTarget = NullEntity;
+                m_activeGroups = 0; // cible perdue ou détruite : tout s'arrête
             }
             weaponInput.target = m_lockTarget;
+            weaponInput.active = m_activeGroups;
         }
-        Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles);
+        m_activeGroups &= static_cast<std::uint16_t>(~Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles));
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 
@@ -646,6 +652,7 @@ namespace Flux {
         m_projectiles.clear();
         m_impacts.clear();
         m_lockTarget = NullEntity;
+        m_activeGroups = 0;
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -665,6 +672,7 @@ namespace Flux {
             m_projectiles.clear();
             m_impacts.clear();
             m_lockTarget = NullEntity;
+            m_activeGroups = 0;
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();
@@ -810,6 +818,14 @@ namespace Flux {
             text += "\nAltitude  " + distance(flight.altitude, "m");
             if (flight.air > 0.001f) {
                 text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
+            }
+        }
+        if (m_activeGroups != 0) {
+            text += "\nTir auto ";
+            for (int group = 0; group < 10; ++group) {
+                if (m_activeGroups & (1u << group)) {
+                    text += std::format(" {}", (group + 1) % 10); // groupe 10 : touche 0
+                }
             }
         }
         if (const int missiles = Weapons::GetMissileCount(m_scene, ship); missiles != 0) {

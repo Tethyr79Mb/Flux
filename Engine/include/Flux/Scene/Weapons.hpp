@@ -60,11 +60,10 @@ namespace Flux {
     // Commandes du pilote pour les armes de son vaisseau.
     struct WeaponInput
     {
-        // Groupes d'armes (bit 0 : groupe 1, ... bit 9 : groupe 10), touches 1 à 0 : `held` tenus, `pressed` appuyés à
-        // cette image. Les canons d'un groupe tenu tirent ; un appui lance un missile d'un lance-missiles du groupe. Rien
-        // ne part sans cible verrouillée à la portée de l'arme.
-        std::uint16_t held = 0;
-        std::uint16_t pressed = 0;
+        // Groupes d'armes actifs (bit 0 : groupe 1, ... bit 9 : groupe 10 ; touches 1 à 0). Les canons d'un groupe actif
+        // tirent seuls ; un lance-missiles d'un groupe actif lance un missile (voir Update). Rien ne part sans cible
+        // verrouillée à la portée de l'arme.
+        std::uint16_t active = 0;
         bool aim = false;  // aimPoint donné : les tourelles s'y tournent ; sinon elles reviennent vers l'avant
         Math::WorldPosition aimPoint;
         Entity target = NullEntity; // cible verrouillée (FindLockTarget) : visée en avance, poursuivie par les missiles
@@ -80,8 +79,9 @@ namespace Flux {
 
         // Vaisseau piloté (NullEntity : aucun) : ses armes pivotent vers le point visé et tirent. Les projectiles
         // tirés sont ajoutés à `projectiles`. Les armes des autres vaisseaux ne bougent pas. Pendant le jeu, après
-        // Ships::Update (le vaisseau a sa vitesse de cette image).
-        FLUX_API void Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input,
+        // Ships::Update (le vaisseau a sa vitesse de cette image). Au plus un missile part par image : retourne le
+        // groupe (bit) qui l'a lancé, 0 sinon, pour que l'appelant désactive ce groupe (un appui, un missile).
+        FLUX_API std::uint16_t Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input,
                              std::vector<Projectile>& projectiles);
 
         // Cible à verrouiller quand le pilote appuie sur une touche de tir : celle qui a des points de vie, à portée des

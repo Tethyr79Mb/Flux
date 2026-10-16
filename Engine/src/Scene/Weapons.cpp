@@ -112,10 +112,10 @@ namespace Flux::Weapons {
         return {};
     }
 
-    void Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input, std::vector<Projectile>& projectiles) {
+    std::uint16_t Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input, std::vector<Projectile>& projectiles) {
         const float delta = static_cast<float>(deltaSeconds);
         if (ship == NullEntity || !scene.IsValid(ship) || delta <= 0.0f) {
-            return; // pause : les tourelles ne bougent pas, rien ne part
+            return 0; // pause : les tourelles ne bougent pas, rien ne part
         }
         const ShipComponent* shipComponent = scene.TryGet<ShipComponent>(ship);
         const Math::Vector3f shipVelocity =
@@ -125,7 +125,7 @@ namespace Flux::Weapons {
         const bool locked = input.target != NullEntity && scene.IsValid(input.target);
         const Math::WorldPosition targetPosition = locked ? scene.GetWorldPosition(input.target) : Math::WorldPosition{};
         const Math::Vector3f targetVelocity = locked ? GetTargetVelocity(scene, input.target) : Math::Vector3f{};
-        // Lance-missiles qui tirera si la touche de son groupe est appuyée : prêt, celui qui a le moins tiré (les deux
+        // Lance-missiles qui tirera, d'un groupe actif : prêt, celui qui a le moins tiré (les deux
         // ailes à tour de rôle).
         Entity launcher = NullEntity;
         for (const auto [entity, weapon] : registry.view<WeaponComponent>().each()) {
@@ -163,13 +163,13 @@ namespace Flux::Weapons {
             weapon.cooldown = std::max(weapon.cooldown - delta, 0.0f);
             const bool inRange = locked && targetDistance <= weapon.range;
             if (weapon.kind == WeaponKind::Missile) {
-                if (inRange && InGroups(weapon, input.pressed) && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
+                if (inRange && InGroups(weapon, input.active) && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
                     && (launcher == NullEntity || weapon.fired < registry.get<WeaponComponent>(launcher).fired)) {
                     launcher = entity;
                 }
                 continue;
             }
-            if (!inRange || !InGroups(weapon, input.held) || weapon.kind != WeaponKind::Gun || weapon.fireRate <= 0.0f || weapon.projectileSpeed <= 0.0f) {
+            if (!inRange || !InGroups(weapon, input.active) || weapon.kind != WeaponKind::Gun || weapon.fireRate <= 0.0f || weapon.projectileSpeed <= 0.0f) {
                 continue;
             }
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
@@ -208,7 +208,9 @@ namespace Flux::Weapons {
             projectiles.push_back(missile);
             weapon.cooldown = weapon.fireRate > 0.0f ? 1.0f / weapon.fireRate : 0.0f;
             ++weapon.fired;
+            return static_cast<std::uint16_t>(1u << (weapon.group - 1));
         }
+        return 0;
     }
 
     Entity FindLockTarget(const Scene& scene, Entity ship, const Math::WorldPosition& from, const Math::Vector3f& direction) {

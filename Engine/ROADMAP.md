@@ -94,7 +94,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Armes, étape 2 : cibles et dégâts. Chaque projectile lance son segment de l'image contre tous les mondes
   physiques (`PhysicsWorld::CastRay`, le tireur ignoré) ; composant « Points de vie » sur la cible ou un ancêtre,
   détruite avec ses enfants à 0 (sauf si elle porte le joueur) ; éclat lumineux à l'impact ; Placer > Cible.
-- 🔨 Armes, étape 3 : missiles guidés. Verrouillage de la cible au centre de la vue à l'appui sur une touche de tir, gardé hors du viseur tant qu'elle est à portée ; les tourelles visent la cible en avance et ne tirent que si elle est à leur portée (marque à quatre
+- 🔨 Armes, étape 3 : missiles guidés. Verrouillage de la cible au centre de la vue à l'appui sur une touche de tir, gardé hors du viseur tant qu'elle est à portée ; les tourelles visent la cible en avance ; tir automatique (un appui active le groupe, ses armes tirent seules à portée, un nouvel appui l'arrête) (marque à quatre
   coins et distance à l'écran), un missile par appui sur la touche de son groupe, ailes à tour de rôle,
   4 missiles par lance-missiles (champ « Missiles emportés »), poursuite en avance sur un vaisseau qui vole,
   explosion plus grande à l'impact, missiles restants dans les infos de vol.
