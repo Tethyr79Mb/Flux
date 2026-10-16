@@ -1,4 +1,4 @@
-// Warp : vers la destination visée, sans collision, sortie à l'arrivée ou à la limite d'une planète sur le chemin.
+// Warp : vers la destination visée, sans collision ni arrêt avant elle, en contournant les planètes sur le chemin.
 #include "Check.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
@@ -95,7 +95,7 @@ namespace {
         return true;
     }
 
-    // Sans physique : sur plusieurs secteurs, et arrêté par une planète sur le chemin.
+    // Sans physique : sur plusieurs secteurs, autour d'une planète sur le chemin, puis vers elle.
     bool RunWarpPlanetTests() {
         Scene scene;
         const Math::WorldPosition far{{}, {0.0, 0.0, -3.0e9}};
@@ -107,11 +107,16 @@ namespace {
         const double boundary = planetComponent.radius + planetComponent.relief + planetComponent.atmosphereHeight;
         const Entity fighter = AddFighter(scene);
 
+        // Au plus près de la planète pendant le trajet, au-dessus de son atmosphère.
+        double lowest = 1.0e30;
         const auto fly = [&](double limit) {
             double seconds = 0.0;
             while (scene.Get<ShipComponent>(fighter).warp != WarpStage::Off && seconds < limit) {
                 Warp::Update(scene, Frame);
                 Integrate(scene, fighter, Frame);
+                if (scene.IsValid(planet)) {
+                    lowest = std::min(lowest, Distance(scene.GetWorldPosition(fighter), scene.GetWorldPosition(planet)) - boundary);
+                }
                 seconds += Frame;
             }
             return seconds;
@@ -119,23 +124,21 @@ namespace {
         std::vector<Warp::Destination> destinations;
         Warp::FindDestinations(scene, fighter, destinations);
         CHECK(destinations.size() == 2);
-        CHECK(Warp::Engage(scene, fighter, {station, scene.GetWorldPosition(station), Warp::StationExit}) == Warp::EngageResult::Started);
-        fly(120.0);
-        CHECK(scene.Get<ShipComponent>(fighter).warp == WarpStage::Off);
-        const double above = Distance(scene.GetWorldPosition(fighter), scene.GetWorldPosition(planet)) - boundary;
-        CHECK(above > 0.0 && above < 2500.0);
 
-        // Contre l'atmosphère : il ne repart pas de là.
-        CHECK(Warp::Engage(scene, fighter, {station, far, Warp::StationExit}) == Warp::EngageResult::Unavailable);
-
-        // Sans la planète : jusqu'à la station, à 3 millions de km, en moins d'une minute.
-        scene.DestroyEntity(planet);
-        scene.Get<TransformComponent>(fighter).position = {};
-        scene.Remove<SectorComponent>(fighter);
+        // La planète en plein sur la route : il la contourne sans s'arrêter et va jusqu'à la station, à 3 millions de km.
         CHECK(Warp::Engage(scene, fighter, {station, far, Warp::StationExit}) == Warp::EngageResult::Started);
-        CHECK(fly(120.0) < 60.0);
+        CHECK(fly(120.0) < 90.0);
+        CHECK(scene.Get<ShipComponent>(fighter).warp == WarpStage::Off);
         CHECK(std::abs(Distance(scene.GetWorldPosition(fighter), far) - Warp::StationExit) < 50.0);
         CHECK(scene.GetWorldPosition(fighter).sector != Math::Vector3i64{});
+        CHECK(lowest > 5000.0);
+
+        // Vers la planète elle-même : sortie 10 km au-dessus de son atmosphère.
+        const Math::WorldPosition planetCenter = scene.GetWorldPosition(planet);
+        CHECK(Warp::Engage(scene, fighter, {planet, planetCenter, boundary + 10000.0}) == Warp::EngageResult::Started);
+        fly(120.0);
+        CHECK(scene.Get<ShipComponent>(fighter).warp == WarpStage::Off);
+        CHECK(std::abs(Distance(scene.GetWorldPosition(fighter), planetCenter) - boundary - 10000.0) < 50.0);
         return true;
     }
 }

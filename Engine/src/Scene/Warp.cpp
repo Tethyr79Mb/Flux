@@ -14,7 +14,8 @@ namespace Flux::Warp {
         constexpr float GrowthTime = 1.0f;          // ...puis sa vitesse est multipliée par e chaque seconde
         constexpr double BrakeTime = 1.0;           // s : il ne va pas plus vite que la distance restante en BrakeTime
         constexpr double MinSpeed = 2000.0;         // m/s en fin de course, pour finir d'arriver
-        constexpr double PlanetMargin = 2000.0;     // m au-dessus de l'atmosphère d'une planète : il sort du warp
+        constexpr double PlanetMargin = 2000.0;     // m au-dessus de l'atmosphère : on n'entre pas en warp plus près
+        constexpr double PlanetClearance = 20000.0; // m au-dessus de l'atmosphère d'une planète qu'il contourne
         constexpr double PlanetExit = 10000.0;      // m au-dessus de l'atmosphère d'une planète visée
 
         // Limite d'une planète : le haut de son atmosphère, ou de ses montagnes sans atmosphère.
@@ -35,6 +36,40 @@ namespace Flux::Warp {
 
         double Remaining(const Scene& scene, Entity entity, const ShipComponent& ship) {
             return Math::Length(Math::Delta(scene.GetWorldPosition(entity), ship.warpTarget)) - ship.warpExit;
+        }
+
+        // Cap vers la destination. Une planète sur la ligne droite (pas celle qu'on vise) est contournée : il vise le
+        // point à PlanetClearance au-dessus de son atmosphère, du côté où passe déjà la ligne ; recalculé à chaque
+        // image, le trajet s'incurve autour d'elle et repart droit une fois la vue dégagée.
+        Math::Vector3d Heading(const Scene& scene, const Math::WorldPosition& position, const Math::WorldPosition& target) {
+            const Math::Vector3d offset = Math::Delta(position, target);
+            const double distance = Math::Length(offset);
+            const Math::Vector3d direction = offset / distance;
+            double nearest = distance;
+            Math::Vector3d heading = direction;
+            for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
+                const Math::WorldPosition center = scene.GetWorldPosition(entity);
+                if (scene.GetShip(entity) != NullEntity || Math::Length(Math::Delta(center, target)) < 1.0) {
+                    continue; // décor d'un vaisseau, ou la planète visée
+                }
+                const Math::Vector3d toCenter = Math::Delta(position, center);
+                const double along = Math::Dot(toCenter, direction);
+                const Math::Vector3d across = toCenter - direction * along; // de la ligne vers le centre
+                const double clearance = Boundary(planet) + PlanetClearance;
+                if (along <= 0.0 || along >= nearest || Math::Length(across) >= clearance) {
+                    continue; // derrière, plus loin qu'une autre, ou à côté de la ligne
+                }
+                // Ligne par le centre : n'importe quel côté, perpendiculaire à la route.
+                Math::Vector3d side = across * -1.0;
+                if (Math::Length(side) < 1.0) {
+                    side = Math::Vector3d(Math::Cross(Math::Vector3f(direction), std::abs(direction.y) < 0.9 ? Math::Vector3f{0.0f, 1.0f, 0.0f}
+                                                                                                              : Math::Vector3f{1.0f, 0.0f, 0.0f}));
+                }
+                const Math::Vector3d detour = toCenter + side / Math::Length(side) * (clearance * 1.1);
+                nearest = along;
+                heading = detour / Math::Length(detour);
+            }
+            return heading;
         }
 
         void Leave(ShipComponent& ship) {
@@ -136,7 +171,7 @@ namespace Flux::Warp {
                 Leave(ship); // arrivé
                 continue;
             }
-            const Math::Vector3f direction(offset / distance);
+            const Math::Vector3f direction(Heading(scene, position, ship.warpTarget));
             const float angle = Steering::Steer(ship, rotation,
                                                 Steering::Look(direction, rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f})), delta);
             ship.throttle = 1.0f;
@@ -147,20 +182,16 @@ namespace Flux::Warp {
                 }
                 continue; // garde sa vitesse en se tournant
             }
-            // Près d'une planète, il ralentit comme à l'arrivée ; à sa limite, il sort du warp. Une image ne le porte
-            // jamais plus loin que la distance qui l'en sépare : il ne passe pas au travers.
-            const double planets = DistanceToPlanets(scene, position);
-            if (planets < PlanetMargin) {
-                Leave(ship);
-                continue;
-            }
-            double limit = std::min({static_cast<double>(ship.warpSpeed) * 1000.0, remaining / BrakeTime, planets / BrakeTime});
+            // Il ne s'arrête qu'à destination. Près d'une planète, une image ne le porte jamais plus loin que le quart
+            // de la distance qui l'en sépare : il ne la traverse pas en la contournant.
+            const double planets = std::max(DistanceToPlanets(scene, position), 0.0);
+            double limit = std::min({static_cast<double>(ship.warpSpeed) * 1000.0, remaining / BrakeTime, 0.25 * planets / deltaSeconds});
             limit = std::max(limit, MinSpeed);
             limit = std::min(limit, remaining / deltaSeconds); // pile à la sortie, pas au-delà
             const double speed = Math::Length(ship.velocity);
             const double grown = std::max(speed + StartAcceleration * deltaSeconds, speed * std::exp(deltaSeconds / GrowthTime));
             const float wanted = static_cast<float>(std::min(grown, limit));
-            // Droit sur la destination (pas le long du nez, qui la rattrape) : il y arrive même mal tourné.
+            // Le long du cap (pas du nez, qui le rattrape) : il y arrive même mal tourné.
             ship.velocity = rotation.Conjugate().Rotate(direction * wanted);
         }
     }
