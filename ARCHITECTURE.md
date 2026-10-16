@@ -151,7 +151,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   le repère du quai (par-dessus la station si on arrive de derrière, par-dessous si on est plus bas qu'elle ; point d'approche devant l'entrée, au-dessus du
   quai, demi-tour, descente), puis en fait un enfant de la station. La station devient son monde extérieur
   (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
-  (`TransferCharacters`).
+  (`TransferCharacters`). Un vaisseau garé sans pilote dans son hangar (dans la boîte de son enveloppe) tombe avec
+  la gravité de son pont et se pose (`FindCarrierGravity`), même loin de toute planète.
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la
