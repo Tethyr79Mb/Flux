@@ -10,6 +10,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
+#include "Flux/Scene/Weapons.hpp"
 #include "Flux/UI/DrawList.hpp"
 
 #include <cstdint>
@@ -280,6 +281,8 @@ namespace Flux {
         // Rotation demandée à cette image, en radians.
         float m_steerYaw = 0.0f;
         float m_steerPitch = 0.0f;
+        // Projectiles en vol (Weapons), vidés quand le jeu s'arrête ou qu'une scène se charge.
+        std::vector<Projectile> m_projectiles;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;

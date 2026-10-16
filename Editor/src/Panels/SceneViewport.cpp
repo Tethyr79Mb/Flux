@@ -1,8 +1,10 @@
 #include "Panels/SceneViewport.hpp"
 
+#include "Panels/Hardpoints.hpp"
 #include "Panels/SceneEditor.hpp"
 
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
@@ -540,6 +542,25 @@ namespace FluxEditor {
         }
         if (!input.IsMouseButtonDown(MouseButton::Left)) {
             m_drag.axis = -1;
+            if (m_drag.mode == GizmoMode::Move && scene.TryGet<WeaponComponent>(selected)) {
+                SnapToHardpoint(scene, selected);
+            }
+        }
+    }
+
+    void SceneViewport::SnapToHardpoint(Scene& scene, Entity weapon) {
+        const Entity hardpoint = Hardpoints::FindNearby(scene, weapon);
+        if (hardpoint == NullEntity) {
+            return;
+        }
+        // Lâchée sans le vouloir près d'un emport qui la refuse : un mot dans la console, pas une fenêtre.
+        if (const std::string refusal = Hardpoints::GetRefusal(scene, weapon, hardpoint); !refusal.empty()) {
+            Log::Warning("« {} » non fixée sur « {} » : {}", scene.Get<NameComponent>(weapon).name,
+                         scene.Get<NameComponent>(hardpoint).name, refusal);
+            return;
+        }
+        if (Hardpoints::Mount(scene, weapon, hardpoint)) {
+            m_modified = true; // même geste que le déplacement : un seul Annuler
         }
     }
 

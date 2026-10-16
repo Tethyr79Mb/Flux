@@ -50,6 +50,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes, moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
+   - armes, après la physique (le vaisseau est à sa place de l'image) : les projectiles avancent
+     (`Weapons::UpdateProjectiles`), puis les armes du vaisseau piloté visent et tirent (`Weapons::Update`) ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
@@ -70,6 +72,7 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU), é
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
+├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
 ├─ ModelCache      modèles glTF chargés une fois (GpuModel), matériaux
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
@@ -144,6 +147,16 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   vitesse de chute limite) et porte les vaisseaux ; dans l'atmosphère d'une planète, sa densité remplace celle du monde.
 - Sol des planètes (`PlanetGround`) : tuiles de maillage au niveau de détail le plus fin, calculées sur le CPU en
   `double` autour des objets (sondes), sur un fil à part.
+
+## Armes (`Weapons`)
+
+- Un emport (`HardpointComponent`) est une entité du vaisseau ; l'arme (`WeaponComponent`) est son enfant direct. Une
+  arme d'un autre genre ou plus grande que l'emport ne tire pas (`Weapons::Fits`).
+- Visée : le point regardé à 700 m devant la caméra, ramené dans le cône de l'arme, à sa vitesse de pivotement ;
+  seule la rotation locale de l'arme change (pas de roulis).
+- Projectiles : un `std::vector<Projectile>` gardé par le moteur (des centaines par seconde : pas des entités),
+  réservé d'avance ; un projectile part de la bouche du canon avec la vitesse du vaisseau en plus de la sienne. Les
+  traçantes (`TracerRenderer`) en sont tirées à chaque image, positions relatives à la caméra.
 
 ## Planètes
 

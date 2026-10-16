@@ -1,0 +1,64 @@
+#pragma once
+
+#include "Flux/Math/Matrix4.hpp"
+#include "Flux/Math/Vector2.hpp"
+#include "Flux/Scene/Weapons.hpp"
+#include "Renderer/RHI/RHI.hpp"
+
+#include <array>
+#include <expected>
+#include <memory>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace Flux {
+    struct Camera;
+
+    // Traçantes des projectiles (Weapons) : un trait lumineux par projectile (shaders/Tracer.slang), toutes en un
+    // seul appel de dessin dans la passe de la scène, après les flammes. Au plus MaxTracers par image : au-delà,
+    // ceux du début de la liste ne sont pas dessinés.
+    class TracerRenderer {
+        public:
+        static constexpr std::uint32_t MaxTracers = 4096;
+
+        // `motionFormat` : seconde cible de la passe de la scène (PostRenderer::MotionFormat), laissée telle quelle.
+        static std::expected<std::unique_ptr<TracerRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
+                                                                                   RHI::Format motionFormat,
+                                                                                   RHI::Format depthFormat);
+
+        // Traçantes de l'image, relatives à la caméra, envoyées dans le buffer de l'image en vol. `jitter` :
+        // TemporalView::jitter ; `height` : hauteur de la vue en pixels (largeur minimale d'une traçante).
+        void Prepare(std::span<const Projectile> projectiles, const Camera& camera, float aspect, float height,
+                     Math::Vector2f jitter, std::uint32_t frameIndex);
+        // Dans la passe de la scène, après les transparents.
+        void Draw(RHI::CommandList& commands) const;
+
+        private:
+        // Doit correspondre à TracerData dans shaders/Tracer.slang.
+        struct TracerData
+        {
+            std::array<float, 4> head;
+            std::array<float, 4> tail;
+            std::array<float, 4> color;
+        };
+        static_assert(sizeof(TracerData) == 48);
+        // Doit correspondre à TracerParams dans shaders/Tracer.slang.
+        struct TracerParams
+        {
+            Math::Matrix4f viewToClip;
+            std::array<float, 4> options;
+        };
+        static_assert(sizeof(TracerParams) == 80);
+
+        TracerRenderer() = default;
+
+        std::unique_ptr<RHI::BindGroupLayout> m_layout;
+        std::unique_ptr<RHI::Pipeline> m_pipeline;
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_buffers;
+        std::array<std::unique_ptr<RHI::BindGroup>, RHI::FramesInFlight> m_groups;
+        std::vector<TracerData> m_tracers; // réservé à MaxTracers : pas d'allocation par image
+        TracerParams m_params{};
+        std::uint32_t m_frameIndex = 0;
+    };
+}

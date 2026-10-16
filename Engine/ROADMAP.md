@@ -87,6 +87,14 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Écran de chargement : attendre aussi les modèles (chargés aujourd'hui d'un bloc à leur premier dessin), image ou interface `.fluxui` au choix.
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
+- 🔨 Armes des vaisseaux, étape 1 : composants « Emport » (genre, taille) et « Arme » (son enfant), tourelles qui
+  pivotent vers le point regardé dans leur cône, tir au clic gauche (action « Tirer »), projectiles en liste (pas
+  des entités), traçantes dessinées par le GPU en un seul appel. Le Chasseur a 5 emports, avec leurs armes en
+  modèles séparés qui pivotent (Gatling MK1 sous le nez, Autocanon MK1 sous les racines d'aile, lance-missiles).
+- ⬜ Armes, étape 2 : cibles et dégâts (projectiles lancés contre les mondes physiques, points de vie).
+- ⬜ Armes, étape 3 : missiles guidés (verrouillage, poursuite).
+- ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
+  couleurs unies), et un vrai modèle de lance-missiles.
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.

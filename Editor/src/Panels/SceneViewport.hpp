@@ -67,6 +67,8 @@ namespace FluxEditor {
         // Applique le glissement en cours à la transformation locale de l'entité.
         void UpdateDrag(Flux::Engine& engine, Flux::Entity selected, Flux::RelativeTransform& selectedTransform,
                         const Flux::RelativeTransform* parentTransform, const Flux::Ray& ray);
+        // Arme lâchée au gizmo près d'un emport : s'y fixe s'il l'accepte (Hardpoints).
+        void SnapToHardpoint(Flux::Scene& scene, Flux::Entity weapon);
 
         // Glissement d'un élément à l'écran (texte, image) : son décalage suit la souris.
         struct ScreenDrag
