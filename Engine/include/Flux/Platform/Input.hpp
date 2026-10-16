@@ -41,7 +41,7 @@ namespace Flux {
         Down = 0x150,
         Delete = 0x153,
         // Boutons de la souris, rangés après les scancodes du clavier : une action d'entrée (InputActions) peut
-        // ainsi être un clic (« Tirer » au clic gauche) et se réassigner comme une touche.
+        // ainsi être un clic (une action du jeu au clic gauche) et se réassigner comme une touche.
         MouseLeft = 0x1F0,
         MouseRight,
         MouseMiddle,

@@ -13,6 +13,9 @@ namespace Flux {
         // Longueur du trait d'une traçante (m) et sa largeur au plus près (le shader l'élargit au loin).
         constexpr float TracerLength = 12.0f;
         constexpr float TracerWidth = 0.12f;
+        // Missile : un point plus gros, à la traîne plus longue (sa flamme et sa fumée chaude).
+        constexpr float MissileLength = 30.0f;
+        constexpr float MissileWidth = 0.4f;
         // Éclat du cœur : assez pour déborder en bloom, comme une flamme.
         constexpr float Brightness = 40.0f;
         // Éclat d'impact : largeur (m), éclat par rapport à une traçante, et durée sur laquelle il pâlit (s), celle
@@ -78,13 +81,13 @@ namespace Flux {
                 continue;
             }
             const Math::Vector3f head(Math::Delta(camera.position, projectile.position));
-            const float length = std::min(TracerLength, projectile.age * speed);
+            const float length = std::min(projectile.missile ? MissileLength : TracerLength, projectile.age * speed);
             if (Math::Dot(head, forward) < -length) {
                 continue; // derrière la caméra, le trait entier
             }
             const Math::Vector3f tail = head - projectile.velocity * (length / speed);
             const Math::LinearColor& color = projectile.color;
-            m_tracers.push_back({{head.x, head.y, head.z, TracerWidth},
+            m_tracers.push_back({{head.x, head.y, head.z, projectile.missile ? MissileWidth : TracerWidth},
                                  {tail.x, tail.y, tail.z, 0.0f},
                                  {color.r * Brightness, color.g * Brightness, color.b * Brightness, 0.0f}});
         }
@@ -95,12 +98,13 @@ namespace Flux {
                 break;
             }
             const Math::Vector3f at(Math::Delta(camera.position, impact.position));
-            if (Math::Dot(at, forward) < -ImpactWidth) {
+            const float width = ImpactWidth * impact.size;
+            if (Math::Dot(at, forward) < -width) {
                 continue;
             }
             const float glow = Brightness * ImpactGlow * std::clamp(impact.life / ImpactFade, 0.0f, 1.0f);
             const Math::LinearColor& color = impact.color;
-            m_tracers.push_back({{at.x, at.y, at.z, ImpactWidth},
+            m_tracers.push_back({{at.x, at.y, at.z, width},
                                  {at.x, at.y, at.z, 1.0f},
                                  {color.r * glow, color.g * glow, color.b * glow, 0.0f}});
         }

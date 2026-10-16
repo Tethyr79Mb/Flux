@@ -4,6 +4,7 @@
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/Scene/Components.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -25,6 +26,10 @@ namespace Flux {
         float damage = 0.0f;
         Math::LinearColor color;
         Entity ship = NullEntity; // vaisseau qui l'a tiré : il ne se touche pas lui-même
+        // Missile : la cible qu'il poursuit (NullEntity : tout droit, comme un obus) et son virage le plus serré.
+        bool missile = false;
+        Entity target = NullEntity;
+        float guidance = 0.0f; // rad/s
     };
 
     // Projectile arrivé sur un corps, pendant Weapons::UpdateProjectiles : de quoi retirer des points de vie et
@@ -35,6 +40,7 @@ namespace Flux {
         Math::WorldPosition position;
         float damage = 0.0f;
         Math::LinearColor color;
+        bool missile = false;
     };
 
     // Éclat lumineux bref à l'endroit d'un impact, dessiné avec les traçantes.
@@ -43,6 +49,7 @@ namespace Flux {
         Math::WorldPosition position;
         Math::LinearColor color;
         float life = 0.0f; // s restantes
+        float size = 1.0f; // largeur par rapport à celle d'un impact d'obus (explosion de missile : plus grand)
     };
 
     // Premier corps sur le segment `from` -> `from + segment` (PhysicsWorld::CastRay), sans toucher `ship` : entité
@@ -53,9 +60,13 @@ namespace Flux {
     // Commandes du pilote pour les armes de son vaisseau.
     struct WeaponInput
     {
-        bool fire = false; // action « Tirer » tenue
+        // Groupes d'armes actifs (bit 0 : groupe 1, ... bit 9 : groupe 10 ; touches 1 à 0). Les canons d'un groupe actif
+        // tirent seuls ; un lance-missiles d'un groupe actif lance un missile (voir Update). Rien ne part sans cible
+        // verrouillée à la portée de l'arme.
+        std::uint16_t active = 0;
         bool aim = false;  // aimPoint donné : les tourelles s'y tournent ; sinon elles reviennent vers l'avant
         Math::WorldPosition aimPoint;
+        Entity target = NullEntity; // cible verrouillée (FindLockTarget) : visée en avance, poursuivie par les missiles
     };
 
     // Armes des vaisseaux : une arme (WeaponComponent) n'est active que posée sur un emport (HardpointComponent, son
@@ -68,9 +79,25 @@ namespace Flux {
 
         // Vaisseau piloté (NullEntity : aucun) : ses armes pivotent vers le point visé et tirent. Les projectiles
         // tirés sont ajoutés à `projectiles`. Les armes des autres vaisseaux ne bougent pas. Pendant le jeu, après
-        // Ships::Update (le vaisseau a sa vitesse de cette image).
-        FLUX_API void Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input,
+        // Ships::Update (le vaisseau a sa vitesse de cette image). Au plus un missile part par image : retourne le
+        // groupe (bit) qui l'a lancé, 0 sinon, pour que l'appelant désactive ce groupe (un appui, un missile).
+        FLUX_API std::uint16_t Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input,
                              std::vector<Projectile>& projectiles);
+
+        // Cible à verrouiller quand le pilote appuie sur une touche de tir : celle qui a des points de vie, à portée des
+        // armes du vaisseau, la plus proche de la direction regardée depuis `from` sans s'en écarter de plus de leur
+        // angle de verrouillage. NullEntity sans arme montée, ou si rien n'est dans le viseur. Ni le vaisseau, ni ce
+        // qui le porte.
+        FLUX_API Entity FindLockTarget(const Scene& scene, Entity ship, const Math::WorldPosition& from, const Math::Vector3f& direction);
+        // Le verrou tient tant que la cible existe, a des points de vie et reste à portée des armes du vaisseau (elle
+        // peut sortir du viseur).
+        FLUX_API bool KeepsLock(const Scene& scene, Entity ship, Entity target, const Math::WorldPosition& from);
+        // Missiles restants dans les lance-missiles du vaisseau ; -1 s'ils sont illimités, 0 sans lance-missiles.
+        FLUX_API int GetMissileCount(const Scene& scene, Entity ship);
+        // Les missiles tournent vers leur cible (où elle sera quand ils l'atteindront, si c'est un vaisseau qui vole),
+        // sans virer plus serré que leur guidage. Une cible détruite : ils continuent tout droit. Avant
+        // UpdateProjectiles.
+        FLUX_API void GuideMissiles(const Scene& scene, std::vector<Projectile>& projectiles, double deltaSeconds);
 
         // Les projectiles avancent ; ceux en fin de course sont retirés (sans garder l'ordre ni réallouer). Avec
         // `cast`, chacun lance son segment de l'image : s'il touche un corps, il s'arrête et rejoint `hits`.

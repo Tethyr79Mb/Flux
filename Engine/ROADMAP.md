@@ -88,13 +88,18 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
 - 🔨 Armes des vaisseaux, étape 1 : composants « Emport » (genre, taille) et « Arme » (son enfant), tourelles qui
-  pivotent vers le point regardé dans leur cône, tir au clic gauche (action « Tirer »), projectiles en liste (pas
+  pivotent vers le point regardé dans leur cône, tir par groupes d'armes sur les touches 1 à 0 (1 le nez, 2 les autocanons, 3 les missiles sur le Chasseur), projectiles en liste (pas
   des entités), traçantes dessinées par le GPU en un seul appel. Le Chasseur a 5 emports, avec leurs armes en
   modèles séparés qui pivotent (Gatling MK1 sous le nez, Autocanon MK1 sous les racines d'aile, lance-missiles).
 - 🔨 Armes, étape 2 : cibles et dégâts. Chaque projectile lance son segment de l'image contre tous les mondes
   physiques (`PhysicsWorld::CastRay`, le tireur ignoré) ; composant « Points de vie » sur la cible ou un ancêtre,
   détruite avec ses enfants à 0 (sauf si elle porte le joueur) ; éclat lumineux à l'impact ; Placer > Cible.
-- ⬜ Armes, étape 3 : missiles guidés (verrouillage, poursuite).
+- 🔨 Armes, étape 3 : missiles guidés. Verrouillage de la cible au centre de la vue à l'appui sur une touche de tir, gardé hors du viseur tant qu'elle est à portée ; les tourelles visent la cible en avance ; tir automatique (un appui active le groupe, ses armes tirent seules à portée, un nouvel appui l'arrête) (marque à quatre
+  coins et distance à l'écran), un missile par appui sur la touche de son groupe, ailes à tour de rôle,
+  4 missiles par lance-missiles (champ « Missiles emportés »), poursuite en avance sur un vaisseau qui vole,
+  explosion plus grande à l'impact, missiles restants dans les infos de vol.
+- ⬜ Armes, suite : dégâts de zone des missiles, leurres, alerte quand on est verrouillé, barre de vie de la cible,
+  armes des PNJ.
 - ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
   couleurs unies), et un vrai modèle de lance-missiles.
 - ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).

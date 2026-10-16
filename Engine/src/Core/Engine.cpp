@@ -19,6 +19,7 @@
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Orbits.hpp"
+#include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
 #include "Flux/Scene/Weapons.hpp"
@@ -57,6 +58,13 @@ namespace Flux {
         constexpr std::size_t ReservedProjectiles = 4096;
         // Durée de l'éclat d'un impact (s).
         constexpr float ImpactSeconds = 0.12f;
+        // Actions des groupes d'armes (WeaponComponent::group), touches 1 à 0.
+        constexpr std::array<std::string_view, 10> WeaponGroupActions{
+            "Groupe d'armes 1", "Groupe d'armes 2", "Groupe d'armes 3", "Groupe d'armes 4", "Groupe d'armes 5",
+            "Groupe d'armes 6", "Groupe d'armes 7", "Groupe d'armes 8", "Groupe d'armes 9", "Groupe d'armes 10"};
+        // Explosion d'un missile : plus grande et plus longue qu'un impact d'obus (vif, puis pâlit comme lui).
+        constexpr float ExplosionSize = 5.0f;
+        constexpr float ExplosionSeconds = 0.3f;
 
         double Milliseconds(Clock::duration duration) {
             return std::chrono::duration<double, std::milli>(duration).count();
@@ -263,7 +271,13 @@ namespace Flux {
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
-        actions.Add("Tirer", "Vaisseau", Key::MouseLeft);
+        // Groupes d'armes sur les chiffres au-dessus des lettres (choix de Bruno) : sur le Chasseur, 1 le nez, 2 les
+        // autocanons, 3 les missiles.
+        constexpr std::array GroupKeys{Key::Digit1, Key::Digit2, Key::Digit3, Key::Digit4, Key::Digit5,
+                                       Key::Digit6, Key::Digit7, Key::Digit8, Key::Digit9, Key::Digit0};
+        for (std::size_t group = 0; group < GroupKeys.size(); ++group) {
+            actions.Add(std::string(WeaponGroupActions[group]), "Vaisseau", GroupKeys[group]);
+        }
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
         m_impacts.reserve(ReservedProjectiles);
@@ -564,6 +578,7 @@ namespace Flux {
         // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
         // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
         m_projectileHits.clear();
+        Weapons::GuideMissiles(m_scene, m_projectiles, deltaSeconds);
         Weapons::UpdateProjectiles(
             m_projectiles, deltaSeconds,
             [this](const Math::WorldPosition& from, const Math::Vector3f& segment, Entity ship) -> std::optional<std::pair<Entity, float>> {
@@ -575,7 +590,8 @@ namespace Flux {
             &m_projectileHits);
         Weapons::UpdateImpacts(m_impacts, deltaSeconds);
         for (const ProjectileHit& hit : m_projectileHits) {
-            m_impacts.push_back({hit.position, hit.color, ImpactSeconds});
+            m_impacts.push_back(hit.missile ? Impact{hit.position, hit.color, ExplosionSeconds, ExplosionSize}
+                                            : Impact{hit.position, hit.color, ImpactSeconds});
         }
         m_destroyedNames.clear();
         Weapons::ApplyHits(m_scene, m_projectileHits, player, &m_destroyedNames);
@@ -583,13 +599,37 @@ namespace Flux {
             Log::Info("« {} » détruit", name);
         }
         WeaponInput weaponInput;
-        if (seated && pilotedShip != NullEntity) {
-            weaponInput.fire = IsActionDown("Tirer") && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
+        if (!seated || pilotedShip == NullEntity) {
+            m_lockTarget = NullEntity; // lâche le verrou en quittant les commandes
+            m_activeGroups = 0;
+        } else {
+            // Tir automatique (choix de Bruno) : un appui active le groupe, un nouvel appui l'arrête. Ses canons tirent
+            // seuls dès que la cible verrouillée est à leur portée ; ses lance-missiles en lancent un, puis le groupe
+            // s'arrête (un appui, un missile).
+            std::uint16_t pressed = 0;
+            for (std::size_t group = 0; group < WeaponGroupActions.size(); ++group) {
+                pressed |= WasActionPressed(WeaponGroupActions[group]) ? static_cast<std::uint16_t>(1u << group) : 0;
+            }
+            m_activeGroups ^= pressed;
             weaponInput.aim = true;
             weaponInput.aimPoint = m_camera.position;
             weaponInput.aimPoint += Math::Vector3d(m_camera.GetForward() * AimDistance);
+            // Verrouillage à l'appui sur une touche de tir (choix de Bruno) : la cible au centre de la vue. Rien dans
+            // le viseur : le verrou d'avant reste. Il tient ensuite hors du viseur, tant que la cible est à portée.
+            if (pressed != 0) {
+                if (const Entity target = Weapons::FindLockTarget(m_scene, pilotedShip, m_camera.position, m_camera.GetForward());
+                    target != NullEntity) {
+                    m_lockTarget = target;
+                }
+            }
+            if (!Weapons::KeepsLock(m_scene, pilotedShip, m_lockTarget, m_camera.position)) {
+                m_lockTarget = NullEntity;
+                m_activeGroups = 0; // cible perdue ou détruite : tout s'arrête
+            }
+            weaponInput.target = m_lockTarget;
+            weaponInput.active = m_activeGroups;
         }
-        Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles);
+        m_activeGroups &= static_cast<std::uint16_t>(~Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles));
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 
@@ -611,6 +651,8 @@ namespace Flux {
         m_physics.reset(); // les corps de l'ancienne scène
         m_projectiles.clear();
         m_impacts.clear();
+        m_lockTarget = NullEntity;
+        m_activeGroups = 0;
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -628,7 +670,9 @@ namespace Flux {
         if (state == GameState::Stopped) {
             m_physics.reset();
             m_projectiles.clear();
-        m_impacts.clear();
+            m_impacts.clear();
+            m_lockTarget = NullEntity;
+            m_activeGroups = 0;
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();
@@ -776,8 +820,39 @@ namespace Flux {
                 text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
             }
         }
+        if (m_activeGroups != 0) {
+            text += "\nTir auto ";
+            for (int group = 0; group < 10; ++group) {
+                if (m_activeGroups & (1u << group)) {
+                    text += std::format(" {}", (group + 1) % 10); // groupe 10 : touche 0
+                }
+            }
+        }
+        if (const int missiles = Weapons::GetMissileCount(m_scene, ship); missiles != 0) {
+            text += missiles < 0 ? std::string("\nMissiles") : std::format("\nMissiles  {}", missiles);
+        }
         const float size = 20.0f;
         UI::DrawList& list = m_renderer->GetOverlay();
+        if (m_lockTarget != NullEntity && m_scene.IsValid(m_lockTarget)) {
+            // Cible verrouillée : quatre coins autour d'elle et sa distance.
+            const Math::Vector3d offset = Math::Delta(m_camera.position, m_scene.GetWorldPosition(m_lockTarget));
+            if (const auto point = ScreenProjection(m_camera, {}, screen).ToScreen(offset)) {
+                constexpr float Half = 22.0f;
+                constexpr float Corner = 9.0f;
+                constexpr Math::LinearColor LockColor{1.0f, 0.35f, 0.2f, 0.95f};
+                for (const float sx : {-1.0f, 1.0f}) {
+                    for (const float sy : {-1.0f, 1.0f}) {
+                        const Math::Vector2f tip{point->x + sx * Half, point->y + sy * Half};
+                        list.AddLine(tip, {tip.x - sx * Corner, tip.y}, LockColor, 2.0f);
+                        list.AddLine(tip, {tip.x, tip.y - sy * Corner}, LockColor, 2.0f);
+                    }
+                }
+                const std::string label = distance(Math::Length(offset), "m");
+                constexpr float LabelSize = 15.0f;
+                const Math::Vector2f labelExtent = list.MeasureText(label, LabelSize);
+                list.AddText({point->x - labelExtent.x * 0.5f, point->y + Half + 4.0f}, label, LabelSize, LockColor);
+            }
+        }
         const Math::Vector2f extent = list.MeasureText(text, size);
         const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, screen.y - extent.y - 40.0f};
         list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 10.0f}, topLeft + extent + Math::Vector2f{14.0f, 10.0f}, {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);

@@ -32,6 +32,64 @@ namespace Flux::Weapons {
             return Math::Normalize(Math::Quaternionf::FromAxisAngle(axis, angle).Rotate(from));
         }
 
+        // L'une est l'ancêtre de l'autre (ou c'est la même) : un vaisseau ne verrouille ni lui-même, ni ses pièces, ni
+        // la station qui le porte.
+        bool Related(const Scene& scene, Entity a, Entity b) {
+            for (Entity current = a; current != NullEntity; current = scene.GetParent(current)) {
+                if (current == b) {
+                    return true;
+                }
+            }
+            for (Entity current = b; current != NullEntity; current = scene.GetParent(current)) {
+                if (current == a) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Arme de ce vaisseau, sur un emport qui l'accepte.
+        bool IsMounted(const Scene& scene, Entity entity, const WeaponComponent& weapon, Entity ship) {
+            if (scene.GetShip(entity) != ship) {
+                return false;
+            }
+            const Entity hardpointEntity = scene.GetParent(entity);
+            const HardpointComponent* hardpoint = hardpointEntity != NullEntity ? scene.TryGet<HardpointComponent>(hardpointEntity) : nullptr;
+            return hardpoint && Fits(*hardpoint, weapon);
+        }
+
+        // Lance-missiles en état de tirer de ce vaisseau : monté et pas vide.
+        bool IsLoadedLauncher(const Scene& scene, Entity entity, const WeaponComponent& weapon, Entity ship) {
+            return weapon.kind == WeaponKind::Missile && IsMounted(scene, entity, weapon, ship)
+                   && (weapon.ammo <= 0 || weapon.fired < weapon.ammo);
+        }
+
+        // Le plus large verrouillage (rad) et la plus longue portée (m) des armes du vaisseau ; angle négatif sans arme.
+        std::pair<float, float> GetLockReach(const Scene& scene, Entity ship) {
+            float lockAngle = -1.0f;
+            float range = 0.0f;
+            for (const auto [entity, weapon] : scene.GetRegistry().view<const WeaponComponent>().each()) {
+                if (IsMounted(scene, entity, weapon, ship)) {
+                    lockAngle = std::max(lockAngle, weapon.lockAngle * Radians);
+                    range = std::max(range, weapon.range);
+                }
+            }
+            return {lockAngle, range};
+        }
+
+        // Vitesse (monde) d'une cible : celle de son vaisseau si elle en est un ou y est posée ; les autres cibles ne
+        // bougent pas seules.
+        Math::Vector3f GetTargetVelocity(const Scene& scene, Entity target) {
+            const Entity ship = scene.TryGet<ShipComponent>(target) ? target : scene.GetShip(target);
+            const ShipComponent* component = ship != NullEntity ? scene.TryGet<ShipComponent>(ship) : nullptr;
+            return component ? scene.GetWorldRotation(ship).Rotate(component->velocity) : Math::Vector3f{};
+        }
+
+        // Le groupe de l'arme est dans ce masque de groupes (WeaponInput).
+        bool InGroups(const WeaponComponent& weapon, std::uint16_t groups) {
+            return weapon.group >= 1 && weapon.group <= 10 && (groups & (1u << (weapon.group - 1))) != 0;
+        }
+
         // Rotation locale d'une arme dont le canon (-z) pointe vers `forward` (repère de l'emport), sans roulis.
         Math::Quaternionf Aim(const Math::Vector3f& forward) {
             const float yaw = std::atan2(-forward.x, -forward.z);
@@ -54,15 +112,22 @@ namespace Flux::Weapons {
         return {};
     }
 
-    void Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input, std::vector<Projectile>& projectiles) {
+    std::uint16_t Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input, std::vector<Projectile>& projectiles) {
         const float delta = static_cast<float>(deltaSeconds);
         if (ship == NullEntity || !scene.IsValid(ship) || delta <= 0.0f) {
-            return; // pause : les tourelles ne bougent pas, rien ne part
+            return 0; // pause : les tourelles ne bougent pas, rien ne part
         }
         const ShipComponent* shipComponent = scene.TryGet<ShipComponent>(ship);
         const Math::Vector3f shipVelocity =
             shipComponent ? scene.GetWorldRotation(ship).Rotate(shipComponent->velocity) : Math::Vector3f{};
         auto& registry = scene.GetRegistry();
+        // Cible verrouillée : les armes la visent et ne tirent que si elle est à leur portée ; sans elle, rien ne part.
+        const bool locked = input.target != NullEntity && scene.IsValid(input.target);
+        const Math::WorldPosition targetPosition = locked ? scene.GetWorldPosition(input.target) : Math::WorldPosition{};
+        const Math::Vector3f targetVelocity = locked ? GetTargetVelocity(scene, input.target) : Math::Vector3f{};
+        // Lance-missiles qui tirera, d'un groupe actif : prêt, celui qui a le moins tiré (les deux
+        // ailes à tour de rôle).
+        Entity launcher = NullEntity;
         for (const auto [entity, weapon] : registry.view<WeaponComponent>().each()) {
             const Entity hardpointEntity = scene.GetParent(entity);
             if (hardpointEntity == NullEntity || scene.GetShip(entity) != ship) {
@@ -73,12 +138,19 @@ namespace Flux::Weapons {
                 continue;
             }
 
-            // Visée : vers le point regardé, ramené dans le cône de l'emport, à la vitesse de pivotement.
+            // Visée : vers la cible verrouillée, là où elle sera quand les obus l'atteindront (vitesse relative au
+            // vaisseau, qui les emporte) ; sinon vers le point regardé. Ramenée dans le cône de l'emport, à la vitesse
+            // de pivotement.
             TransformComponent& transform = scene.Get<TransformComponent>(entity);
             const Math::Vector3f current = Math::Normalize(transform.rotation.Rotate(Forward));
             Math::Vector3f wanted = Forward;
-            if (input.aim) {
-                const Math::Vector3d toTarget = Math::Delta(scene.GetWorldPosition(entity), input.aimPoint);
+            const Math::WorldPosition weaponPosition = scene.GetWorldPosition(entity);
+            const double targetDistance = locked ? Math::Length(Math::Delta(weaponPosition, targetPosition)) : 0.0;
+            if (locked || input.aim) {
+                Math::Vector3d toTarget = Math::Delta(weaponPosition, locked ? targetPosition : input.aimPoint);
+                if (locked && weapon.kind == WeaponKind::Gun && weapon.projectileSpeed > 0.0f) {
+                    toTarget = toTarget + Math::Vector3d(targetVelocity - shipVelocity) * (targetDistance / weapon.projectileSpeed);
+                }
                 if (Math::Length(toTarget) > 1.0e-3) {
                     const Math::Vector3f local =
                         scene.GetWorldRotation(hardpointEntity).Conjugate().Rotate(Math::Vector3f(Math::Normalize(toTarget)));
@@ -88,9 +160,16 @@ namespace Flux::Weapons {
             const Math::Vector3f aimed = TurnToward(current, wanted, std::max(weapon.turnRate, 0.0f) * Radians * delta);
             transform.rotation = Aim(aimed);
 
-            // Tir : les canons seulement à cette étape (missiles guidés plus tard).
             weapon.cooldown = std::max(weapon.cooldown - delta, 0.0f);
-            if (!input.fire || weapon.kind != WeaponKind::Gun || weapon.fireRate <= 0.0f || weapon.projectileSpeed <= 0.0f) {
+            const bool inRange = locked && targetDistance <= weapon.range;
+            if (weapon.kind == WeaponKind::Missile) {
+                if (inRange && InGroups(weapon, input.active) && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
+                    && (launcher == NullEntity || weapon.fired < registry.get<WeaponComponent>(launcher).fired)) {
+                    launcher = entity;
+                }
+                continue;
+            }
+            if (!inRange || !InGroups(weapon, input.active) || weapon.kind != WeaponKind::Gun || weapon.fireRate <= 0.0f || weapon.projectileSpeed <= 0.0f) {
                 continue;
             }
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
@@ -111,6 +190,120 @@ namespace Flux::Weapons {
             }
             weapon.cooldown = std::max(weapon.cooldown, 0.0f);
         }
+
+        if (launcher != NullEntity) {
+            WeaponComponent& weapon = registry.get<WeaponComponent>(launcher);
+            const Math::Vector3f direction = Math::Normalize(scene.GetWorldRotation(launcher).Rotate(Forward));
+            Projectile missile;
+            missile.position = scene.GetWorldPosition(launcher);
+            missile.position += Math::Vector3d(direction * std::max(weapon.muzzle, 0.0f));
+            missile.velocity = shipVelocity + direction * weapon.projectileSpeed;
+            missile.life = std::max(weapon.range, 0.0f) / weapon.projectileSpeed;
+            missile.damage = weapon.damage;
+            missile.color = weapon.color;
+            missile.ship = ship;
+            missile.missile = true;
+            missile.target = input.target;
+            missile.guidance = std::max(weapon.guidance, 0.0f) * Radians;
+            projectiles.push_back(missile);
+            weapon.cooldown = weapon.fireRate > 0.0f ? 1.0f / weapon.fireRate : 0.0f;
+            ++weapon.fired;
+            return static_cast<std::uint16_t>(1u << (weapon.group - 1));
+        }
+        return 0;
+    }
+
+    Entity FindLockTarget(const Scene& scene, Entity ship, const Math::WorldPosition& from, const Math::Vector3f& direction) {
+        if (ship == NullEntity || !scene.IsValid(ship) || Math::Length(direction) < 1.0e-6f) {
+            return NullEntity;
+        }
+        auto& registry = scene.GetRegistry();
+        const auto [lockAngle, range] = GetLockReach(scene, ship);
+        if (lockAngle < 0.0f) {
+            return NullEntity;
+        }
+        const Math::Vector3d forward(Math::Normalize(direction));
+        const double cosLock = std::cos(static_cast<double>(lockAngle));
+        Entity best = NullEntity;
+        double bestCos = -2.0;
+        for (const auto [entity, health] : registry.view<const HealthComponent>().each()) {
+            if (health.health <= 0.0f) {
+                continue;
+            }
+            const Math::Vector3d toTarget = Math::Delta(from, scene.GetWorldPosition(entity));
+            const double distance = Math::Length(toTarget);
+            if (distance < 1.0e-3 || distance > range) {
+                continue;
+            }
+            const double cosine = Math::Dot(toTarget, forward) / distance;
+            if (cosine < cosLock || cosine <= bestCos || Related(scene, entity, ship)) {
+                continue;
+            }
+            best = entity;
+            bestCos = cosine;
+        }
+        return best;
+    }
+
+    bool KeepsLock(const Scene& scene, Entity ship, Entity target, const Math::WorldPosition& from) {
+        if (ship == NullEntity || target == NullEntity || !scene.IsValid(ship) || !scene.IsValid(target)) {
+            return false;
+        }
+        const HealthComponent* health = scene.TryGet<HealthComponent>(target);
+        const auto [lockAngle, range] = GetLockReach(scene, ship);
+        return health && health->health > 0.0f && lockAngle >= 0.0f
+               && Math::Length(Math::Delta(from, scene.GetWorldPosition(target))) <= range;
+    }
+
+    int GetMissileCount(const Scene& scene, Entity ship) {
+        if (ship == NullEntity || !scene.IsValid(ship)) {
+            return 0;
+        }
+        int count = 0;
+        for (const auto [entity, weapon] : scene.GetRegistry().view<const WeaponComponent>().each()) {
+            if (weapon.kind != WeaponKind::Missile || scene.GetShip(entity) != ship) {
+                continue;
+            }
+            const Entity hardpointEntity = scene.GetParent(entity);
+            const HardpointComponent* hardpoint = hardpointEntity != NullEntity ? scene.TryGet<HardpointComponent>(hardpointEntity) : nullptr;
+            if (!hardpoint || !Fits(*hardpoint, weapon)) {
+                continue;
+            }
+            if (weapon.ammo <= 0) {
+                return -1;
+            }
+            count += std::max(weapon.ammo - weapon.fired, 0);
+        }
+        return count;
+    }
+
+    void GuideMissiles(const Scene& scene, std::vector<Projectile>& projectiles, double deltaSeconds) {
+        const float delta = static_cast<float>(deltaSeconds);
+        if (delta <= 0.0f) {
+            return;
+        }
+        for (Projectile& projectile : projectiles) {
+            if (!projectile.missile || projectile.target == NullEntity) {
+                continue;
+            }
+            if (!scene.IsValid(projectile.target)) {
+                projectile.target = NullEntity; // détruite (par un autre tir) : tout droit
+                continue;
+            }
+            const float speed = Math::Length(projectile.velocity);
+            if (speed <= 0.0f) {
+                continue;
+            }
+            // Visée en avance sur un vaisseau qui vole : là où il sera au bout du temps de vol restant. Les autres
+            // cibles ne bougent pas seules (une cible portée par un vaisseau : celle du vaisseau).
+            Math::Vector3f toTarget(Math::Delta(projectile.position, scene.GetWorldPosition(projectile.target)));
+            toTarget += GetTargetVelocity(scene, projectile.target) * (Math::Length(toTarget) / speed);
+            if (Math::Length(toTarget) < 1.0e-3f) {
+                continue;
+            }
+            const Math::Vector3f direction = TurnToward(projectile.velocity * (1.0f / speed), Math::Normalize(toTarget), projectile.guidance * delta);
+            projectile.velocity = direction * speed;
+        }
     }
 
     void UpdateProjectiles(std::vector<Projectile>& projectiles, double deltaSeconds, const ProjectileCast& cast,
@@ -130,7 +323,7 @@ namespace Flux::Weapons {
                     if (hits) {
                         Math::WorldPosition at = projectile.position;
                         at += Math::Vector3d(segment * hit->second);
-                        hits->push_back({hit->first, at, projectile.damage, projectile.color});
+                        hits->push_back({hit->first, at, projectile.damage, projectile.color, projectile.missile});
                     }
                     stopped = true;
                 }

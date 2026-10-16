@@ -80,6 +80,7 @@ namespace Flux {
         registry.Register<WeaponComponent>("weapon", "Arme")
             .Enum("kind", "Genre", &WeaponComponent::kind, weaponKinds)
             .Field("size", "Taille (1 à 3)", &WeaponComponent::size, {.speed = 0.05, .min = 1.0, .max = 3.0, .decimals = 0})
+            .Field("group", "Groupe de tir (touches 1 à 9 ; 10 : touche 0)", &WeaponComponent::group, {.speed = 0.05, .min = 0.0, .max = 10.0, .decimals = 0})
             .Field("fireRate", "Cadence (tirs/s)", &WeaponComponent::fireRate, {.speed = 0.05, .min = 0.1, .max = 100.0, .decimals = 2})
             .Field("projectileSpeed", "Vitesse des projectiles (m/s)", &WeaponComponent::projectileSpeed,
                    {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
@@ -88,7 +89,10 @@ namespace Flux {
             .Field("cone", "Débattement (°)", &WeaponComponent::cone, {.speed = 0.1, .min = 0.0, .max = 180.0, .decimals = 1})
             .Field("turnRate", "Pivotement (°/s)", &WeaponComponent::turnRate, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
             .Field("muzzle", "Bouche du canon (m)", &WeaponComponent::muzzle, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
-            .Field("color", "Couleur des traçantes", &WeaponComponent::color, {.alpha = false});
+            .Field("color", "Couleur des traçantes", &WeaponComponent::color, {.alpha = false})
+            .Field("ammo", "Missiles emportés (0 : illimités)", &WeaponComponent::ammo, {.speed = 0.05, .min = 0.0, .max = 1000.0, .decimals = 0})
+            .Field("guidance", "Missiles : virage (°/s)", &WeaponComponent::guidance, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
+            .Field("lockAngle", "Verrouillage (°)", &WeaponComponent::lockAngle, {.speed = 0.1, .min = 0.0, .max = 90.0, .decimals = 1});
         registry.Register<HealthComponent>("health", "Points de vie")
             .Field("health", "Points de vie", &HealthComponent::health, {.speed = 1.0, .min = 0.0, .max = 1.0e9, .decimals = 0});
         registry.Register<SkyComponent>("sky", "Ciel")
