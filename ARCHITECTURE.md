@@ -152,6 +152,11 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   quai, demi-tour, descente), puis en fait un enfant de la station. La station devient son monde extérieur
   (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
   (`TransferCharacters`).
+- Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
+  (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
+  `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou cubes
+  rouges), avec des points de vie s'ils n'en ont pas. Le moteur garde une mission en cours (`m_mission`), finie quand
+  plus aucun ennemi n'existe ; elle n'est pas enregistrée et s'efface au chargement d'une scène.
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la

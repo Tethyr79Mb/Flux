@@ -491,6 +491,22 @@ namespace Flux {
         Entity ship = NullEntity;
     };
 
+    // Donneur de missions (un personnage non joueur) : à moins de reach mètres, F ouvre sa fenêtre de mission. Une
+    // seule sorte de mission pour l'instant : détruire un groupe d'ennemis qui apparaît à distance mètres devant la
+    // station où il se trouve (le -z de son vaisseau ; sans vaisseau, le sien), répartis sur un cercle de spread mètres.
+    // Chaque ennemi est un exemplaire de enemyPrefab (un vaisseau qui n'a pas de points de vie en reçoit) ; sans prefab,
+    // un cube rouge à abattre.
+    struct MissionGiverComponent
+    {
+        std::string title = "Chasse aux pirates";
+        std::string briefing = "Des pirates rôdent près de la station. Détruisez tout le groupe.";
+        std::string enemyPrefab;     // relatif aux assets (.prefab.json)
+        std::int32_t enemyCount = 3;
+        float distance = 500000.0f;  // m, de la station au centre du groupe : loin, on y va en warp
+        float spread = 60.0f;        // m, rayon du cercle des ennemis
+        float reach = 2.5f;          // m, du joueur au donneur pour lui parler
+    };
+
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
     // la première image de son animation. Sur un personnage (CharacterComponent), le choix suit ses pas : repos
     // quand il est immobile, marche, puis course au-delà de la moitié entre ses vitesses de marche et de course,

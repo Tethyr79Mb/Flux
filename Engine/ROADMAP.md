@@ -113,6 +113,11 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
   autres (copies cinématiques dans le monde) comme sur le décor immobile.
 - ⬜ Pilote automatique : chercher un trajet libre (aujourd'hui par-dessus ou par-dessous la station, en ligne droite :
   il reste bloqué contre un obstacle sur son chemin), éviter les autres vaisseaux.
+- 🔨 Missions : un PNJ de la station (Placer > Station, boutique 1) donne une mission « détruire un groupe
+  d'ennemis » (F pour parler, Accepter / Refuser / Abandonner) ; groupe à 500 km par défaut, marqueur et distance à
+  l'écran, « Mission accomplie » quand tout est détruit.
+- ⬜ Warp pour les grandes distances (le mode voyage, Tab, reste un déplacement accéléré).
+- ⬜ Missions : récompenses, autres sortes, ennemis qui se défendent (IA, armes), sauvegarde de la mission en cours.
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.
 - ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).

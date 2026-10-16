@@ -456,7 +456,10 @@ namespace Flux {
                                GetScreenUiOptions());
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
-                DrawFlightInfo(player, {static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds);
+                const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
+                DrawFlightInfo(player, screen, deltaSeconds);
+                DrawMissionInfo(player, screen, deltaSeconds);
+                DrawMissionWindow(player, screen);
             }
             if (m_drawScreenUi) {
                 // Version dans le coin bas droit : dit quelle compilation tourne sur une capture d'écran.
@@ -521,7 +524,12 @@ namespace Flux {
         // Personnage du joueur, par rapport à la caméra ; assis, les mêmes actions pilotent le vaisseau (poste de
         // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, F par défaut).
         CharacterInput character;
-        const SeatInput seatInput{.interact = WasActionPressed("Interagir")};
+        SeatInput seatInput{.interact = WasActionPressed("Interagir")};
+        if (!seated) {
+            UpdateMissions(player, seatInput.interact); // F près d'un donneur de missions : lui parler, pas s'asseoir
+        } else {
+            m_missionWindow = NullEntity;
+        }
         ShipInput shipInput;
         if (seated) {
             shipInput.thrust = axis("Avancer", "Reculer");
@@ -667,6 +675,7 @@ namespace Flux {
         m_impacts.clear();
         m_lockTarget = NullEntity;
         m_activeGroups = 0;
+        ResetMissions();
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -687,6 +696,7 @@ namespace Flux {
             m_impacts.clear();
             m_lockTarget = NullEntity;
             m_activeGroups = 0;
+            ResetMissions();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();
