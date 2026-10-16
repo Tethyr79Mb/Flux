@@ -50,8 +50,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes, moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
-   - armes, après la physique (le vaisseau est à sa place de l'image) : les projectiles avancent
-     (`Weapons::UpdateProjectiles`), puis les armes du vaisseau piloté visent et tirent (`Weapons::Update`) ;
+   - armes, après la physique (le vaisseau est à sa place de l'image) : les projectiles avancent et touchent
+     (`Weapons::UpdateProjectiles`, `ApplyHits`), puis les armes du vaisseau piloté visent et tirent
+     (`Weapons::Update`) ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
@@ -157,6 +158,10 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
 - Projectiles : un `std::vector<Projectile>` gardé par le moteur (des centaines par seconde : pas des entités),
   réservé d'avance ; un projectile part de la bouche du canon avec la vitesse du vaisseau en plus de la sienne. Les
   traçantes (`TracerRenderer`) en sont tirées à chaque image, positions relatives à la caméra.
+- Impacts : chaque projectile lance le segment qu'il parcourt dans l'image contre tous les mondes physiques
+  (`PhysicsWorld::CastRay` ; corps du tireur ignorés). La cible est l'entité touchée ou son ancêtre le plus proche
+  qui a un `HealthComponent` ; à 0, elle est détruite avec ses enfants, et la physique retire ses corps à sa
+  prochaine mise à jour. Le personnage du joueur protège ce qui le porte (fin de partie à venir).
 
 ## Planètes
 

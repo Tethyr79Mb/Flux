@@ -1408,6 +1408,61 @@ namespace Flux {
             }
             return fraction;
         }
+
+        std::optional<PhysicsWorld::RayHit> CastRay(const Scene& scene, const Math::WorldPosition& from,
+                                                    const Math::Vector3f& segment, Entity ignoredShip) const {
+            if (!anchored) {
+                return std::nullopt;
+            }
+            // Le tireur et tout ce qu'il porte : les corps de son monde, et ses copies dans le monde du dehors
+            // (dont la donnée est le vaisseau lui-même).
+            class Filter final : public JPH::BodyFilter {
+                public:
+                Filter(const Scene& scene, Entity ship) : m_scene(scene), m_ship(ship) {}
+                bool ShouldCollideLocked(const JPH::Body& body) const override {
+                    const auto entity = static_cast<Entity>(static_cast<entt::id_type>(body.GetUserData()));
+                    if (m_ship == NullEntity || !m_scene.IsValid(entity)) {
+                        return true;
+                    }
+                    for (Entity ship = entity; ship != NullEntity; ship = m_scene.GetShip(ship)) {
+                        if (ship == m_ship) {
+                            return false;
+                        }
+                        if (!m_scene.IsValid(ship)) {
+                            break;
+                        }
+                    }
+                    return true;
+                }
+
+                private:
+                const Scene& m_scene;
+                Entity m_ship;
+            };
+            const Filter filter(scene, ignoredShip);
+            const Math::Vector3d start = Math::Delta(anchor, from);
+            std::optional<PhysicsWorld::RayHit> nearest;
+            for (const std::unique_ptr<Grid>& grid : grids) {
+                if (ignoredShip != NullEntity && grid->frame == ignoredShip) {
+                    continue;
+                }
+                const Math::Quaternionf inverse = grid->frameRotation.Conjugate();
+                const bool world = grid->frame == NullEntity;
+                const Math::Vector3d origin = world ? start : inverse.Rotate(start - grid->framePosition);
+                const Math::Vector3f direction = world ? segment : inverse.Rotate(segment);
+                const JPH::RRayCast ray(JPH::RVec3(ToJolt(origin)), ToJolt(direction));
+                JPH::RayCastResult hit;
+                if (!grid->system->GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) {
+                    continue;
+                }
+                if (!nearest || hit.mFraction < nearest->fraction) {
+                    const auto entity = static_cast<Entity>(static_cast<entt::id_type>(
+                        grid->system->GetBodyInterfaceNoLock().GetUserData(hit.mBodyID)));
+                    nearest = PhysicsWorld::RayHit{entity, hit.mFraction};
+                }
+            }
+            return nearest;
+        }
     };
 
     PhysicsWorld::PhysicsWorld(std::shared_ptr<PhysicsContext> context) {
@@ -1480,6 +1535,11 @@ namespace Flux {
 
     Entity PhysicsWorld::GetPlayer() const {
         return m_impl->player;
+    }
+
+    std::optional<PhysicsWorld::RayHit> PhysicsWorld::CastRay(const Scene& scene, const Math::WorldPosition& from,
+                                                              const Math::Vector3f& segment, Entity ignoredShip) const {
+        return m_impl->CastRay(scene, from, segment, ignoredShip);
     }
 
     int PhysicsWorld::GetBodyCount() const {

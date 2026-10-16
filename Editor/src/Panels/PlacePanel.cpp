@@ -184,6 +184,7 @@ namespace FluxEditor {
                                            {"Personnage...", "Joueur", UI::Icon::Character},
                                            {"Vaisseau (maquette)", "Vaisseau", UI::Icon::Ship},
                                            {"Chasseur", "Chasseur", UI::Icon::Ship},
+                                           {"Cible", "Cible", UI::Icon::Cube},
                                            {"Lumière", "Lumière", UI::Icon::Light},
                                            {"Spot", "Spot", UI::Icon::Light},
                                            {"Ciel", "Ciel", UI::Icon::Sky},
@@ -278,7 +279,7 @@ namespace FluxEditor {
             category("Formes", {Item::Empty, Item::Cube, Item::Model});
             category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior});
             category("Espace", {Item::Planet, Item::World});
-            category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter});
+            category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter, Item::Target});
             category("Interface", {Item::ScreenText, Item::ScreenImage, Item::Interface});
             category("Son", {Item::Sound});
             category("Logique", {Item::SceneChange});
@@ -454,6 +455,12 @@ namespace FluxEditor {
                 // Solide dès sa création (immobile) : on marche dessus. « Simuler la physique » (inspecteur, Collision) le fait tomber.
                 scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(180, 180, 185));
                 scene.Add<ColliderComponent>(entity);
+            } else if (item == Item::Target) {
+                // Cube de 4 m à abattre : 100 points de vie, 10 obus du Gatling.
+                scene.Get<TransformComponent>(entity).scale = {4.0f, 4.0f, 4.0f};
+                scene.Add<MeshRendererComponent>(entity, MeshType::Cube, Math::LinearColor::FromSrgb8(200, 70, 50));
+                scene.Add<ColliderComponent>(entity);
+                scene.Add<HealthComponent>(entity);
             } else if (item == Item::Model) {
                 scene.Add<ModelComponent>(entity).model = std::move(*model);
             } else if (item == Item::Character) {
@@ -467,6 +474,7 @@ namespace FluxEditor {
             } else if (item == Item::Fighter) {
                 // Chasseur : vire vite, pour suivre la souris (30 °/s par défaut, celle d'un transport, paraît mou).
                 scene.Add<ShipComponent>(entity).turnRate = 90.0f;
+                scene.Add<HealthComponent>(entity, HealthComponent{.health = 500.0f});
                 AddFighter(scene, entity);
             } else if (item == Item::Sound) {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);

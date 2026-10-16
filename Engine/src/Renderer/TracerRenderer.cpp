@@ -15,6 +15,11 @@ namespace Flux {
         constexpr float TracerWidth = 0.12f;
         // Éclat du cœur : assez pour déborder en bloom, comme une flamme.
         constexpr float Brightness = 40.0f;
+        // Éclat d'impact : largeur (m), éclat par rapport à une traçante, et durée sur laquelle il pâlit (s), celle
+        // donnée par le moteur (Engine.cpp, ImpactSeconds).
+        constexpr float ImpactWidth = 1.2f;
+        constexpr float ImpactGlow = 2.0f;
+        constexpr float ImpactFade = 0.12f;
     }
 
     std::expected<std::unique_ptr<TracerRenderer>, std::string> TracerRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
@@ -59,7 +64,7 @@ namespace Flux {
         return renderer;
     }
 
-    void TracerRenderer::Prepare(std::span<const Projectile> projectiles, const Camera& camera, float aspect, float height,
+    void TracerRenderer::Prepare(std::span<const Projectile> projectiles, std::span<const Impact> impacts, const Camera& camera, float aspect, float height,
                                  Math::Vector2f jitter, std::uint32_t frameIndex) {
         m_tracers.clear();
         m_frameIndex = frameIndex;
@@ -82,6 +87,22 @@ namespace Flux {
             m_tracers.push_back({{head.x, head.y, head.z, TracerWidth},
                                  {tail.x, tail.y, tail.z, 0.0f},
                                  {color.r * Brightness, color.g * Brightness, color.b * Brightness, 0.0f}});
+        }
+        // Éclats : un trait de longueur nulle marqué rond (le shader en fait un disque de sa largeur), plus large et plus vif
+        // qu'une traçante au début, qui pâlit.
+        for (const Impact& impact : impacts) {
+            if (m_tracers.size() >= MaxTracers) {
+                break;
+            }
+            const Math::Vector3f at(Math::Delta(camera.position, impact.position));
+            if (Math::Dot(at, forward) < -ImpactWidth) {
+                continue;
+            }
+            const float glow = Brightness * ImpactGlow * std::clamp(impact.life / ImpactFade, 0.0f, 1.0f);
+            const Math::LinearColor& color = impact.color;
+            m_tracers.push_back({{at.x, at.y, at.z, ImpactWidth},
+                                 {at.x, at.y, at.z, 1.0f},
+                                 {color.r * glow, color.g * glow, color.b * glow, 0.0f}});
         }
         if (m_tracers.empty()) {
             return;

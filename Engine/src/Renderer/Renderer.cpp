@@ -90,7 +90,8 @@ namespace Flux {
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<ThrusterRenderer> thrusters;
         std::unique_ptr<TracerRenderer> tracers;
-        std::span<const Projectile> projectiles; // tableau de l'appelant (Renderer::SetProjectiles)
+        std::span<const Projectile> projectiles; // tableaux de l'appelant (Renderer::SetProjectiles)
+        std::span<const Impact> impacts;
         std::unique_ptr<OverlayRenderer> overlay;
         std::unique_ptr<PostRenderer> post;
         std::filesystem::path assetsDirectory;
@@ -214,7 +215,7 @@ namespace Flux {
                 exposure = lighting.exposure;
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
                 thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
-                tracers->Prepare(projectiles, camera, aspect, static_cast<float>(scene3d.height), temporal.jitter, frameIndex);
+                tracers->Prepare(projectiles, impacts, camera, aspect, static_cast<float>(scene3d.height), temporal.jitter, frameIndex);
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
@@ -394,8 +395,9 @@ namespace Flux {
         m_impl->meshes->SetThrusterPreview(preview);
     }
 
-    void Renderer::SetProjectiles(std::span<const Projectile> projectiles) {
+    void Renderer::SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts) {
         m_impl->projectiles = projectiles;
+        m_impl->impacts = impacts;
     }
 
     void Renderer::SetClearColor(Math::LinearColor color) {

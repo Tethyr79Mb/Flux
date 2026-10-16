@@ -89,6 +89,8 @@ namespace Flux {
             .Field("turnRate", "Pivotement (°/s)", &WeaponComponent::turnRate, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
             .Field("muzzle", "Bouche du canon (m)", &WeaponComponent::muzzle, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("color", "Couleur des traçantes", &WeaponComponent::color, {.alpha = false});
+        registry.Register<HealthComponent>("health", "Points de vie")
+            .Field("health", "Points de vie", &HealthComponent::health, {.speed = 1.0, .min = 0.0, .max = 1.0e9, .decimals = 0});
         registry.Register<SkyComponent>("sky", "Ciel")
             .Asset("image", "Panorama (vide : généré)", &SkyComponent::image, AssetType::Image)
             .Field("brightness", "Luminosité", &SkyComponent::brightness, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})

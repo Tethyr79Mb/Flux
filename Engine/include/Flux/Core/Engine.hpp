@@ -283,6 +283,9 @@ namespace Flux {
         float m_steerPitch = 0.0f;
         // Projectiles en vol (Weapons), vidés quand le jeu s'arrête ou qu'une scène se charge.
         std::vector<Projectile> m_projectiles;
+        std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
+        std::vector<Impact> m_impacts;
+        std::vector<std::string> m_destroyedNames;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;

@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace Flux {
     class PhysicsContext;
@@ -76,6 +77,16 @@ namespace Flux {
         // suit de l'extérieur quand le joueur le pilote.
         float CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from, const Math::Vector3f& direction,
                          float distance, float radius, Entity ignoredShip = NullEntity) const;
+        // Premier corps touché par le segment `from` -> `from + segment` (un projectile pendant une image), dans tous
+        // les mondes : entité du corps (pour une coque vue du dehors, le vaisseau) et part du segment parcourue.
+        // ignoredShip : vaisseau qui a tiré, jamais touché (sa coque, son décor de bord, ses copies au dehors).
+        struct RayHit
+        {
+            Entity entity = NullEntity;
+            float fraction = 1.0f;
+        };
+        std::optional<RayHit> CastRay(const Scene& scene, const Math::WorldPosition& from, const Math::Vector3f& segment,
+                                      Entity ignoredShip = NullEntity) const;
         // Nombre de corps (hors personnages), pour les tests et le panneau Moteur.
         int GetBodyCount() const;
         // Tuiles du sol des planètes déjà faites, pour les tests.
