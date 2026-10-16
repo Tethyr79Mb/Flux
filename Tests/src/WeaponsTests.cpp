@@ -29,7 +29,7 @@ namespace {
 }
 
 namespace {
-    // Missiles : verrouillage au centre de la vue, tir alterné des deux lance-missiles jusqu'à épuisement, poursuite
+    // Missiles : verrouillage au centre de la vue (gardé hors du viseur), tir alterné des deux lance-missiles jusqu'à épuisement, poursuite
     // (en avance sur un vaisseau qui vole), cible détruite en vol, sauvegarde du nombre emporté.
     bool RunMissileTests() {
         Scene scene;
@@ -78,6 +78,9 @@ namespace {
         std::vector<Projectile> projectiles;
         WeaponInput input;
         input.pressed = 1; // groupe 1 : les deux lance-missiles
+        input.target = far; // hors de portée : pas de tir
+        Weapons::Update(scene, ship, 0.01, input, projectiles);
+        CHECK(projectiles.empty());
         input.target = ahead;
         Weapons::Update(scene, ship, 0.01, input, projectiles);
         CHECK(projectiles.size() == 1);
@@ -97,7 +100,14 @@ namespace {
         CHECK(projectiles.size() == 4 && Weapons::GetMissileCount(scene, ship) == 0);
         Weapons::Update(scene, ship, 1.0, input, projectiles);
         CHECK(projectiles.size() == 4); // vides
-        CHECK(Weapons::FindLockTarget(scene, ship, eye, {0.0f, 0.0f, -1.0f}) == NullEntity);
+        CHECK(Weapons::FindLockTarget(scene, ship, eye, {0.0f, 0.0f, -1.0f}) == ahead); // le verrou ne demande pas de munitions
+
+        // Le verrou tient hors du viseur, tant que la cible a des points de vie et reste à portée.
+        CHECK(Weapons::KeepsLock(scene, ship, aside, eye));
+        CHECK(!Weapons::KeepsLock(scene, ship, far, eye));
+        CHECK(!Weapons::KeepsLock(scene, ship, wreck, eye));
+        CHECK(!Weapons::KeepsLock(scene, ship, NullEntity, eye));
+        CHECK(!Weapons::KeepsLock(scene, NullEntity, aside, eye));
 
         // Poursuite : le missile vire d'au plus son guidage, garde sa vitesse et finit sur la cible.
         projectiles.clear();
@@ -266,11 +276,13 @@ bool RunWeaponsTests() {
     weapon.muzzle = 2.0f;
 
     std::vector<Projectile> projectiles;
-    // Visée à 45° sur la droite : hors du cône, la tourelle s'arrête à 20°, à 90°/s (pas encore là en 0,1 s).
+    // Cible verrouillée à 45° sur la droite (un peu plus avec l'avance) : hors du cône, la tourelle s'arrête à 20°, à
+    // 90°/s (pas encore là en 0,1 s).
+    const Entity target = scene.CreateEntity("Cible");
+    scene.Get<TransformComponent>(target).position = {100.0, -2.0, -100.0};
+    scene.Add<HealthComponent>(target);
     WeaponInput input;
-    input.aim = true;
-    input.aimPoint = scene.GetWorldPosition(mount);
-    input.aimPoint += Math::Vector3d{100.0, 0.0, -100.0};
+    input.target = target;
     Weapons::Update(scene, ship, 0.1, input, projectiles);
     CHECK(Near(std::acos(-Barrel(scene, gun).z), 9.0 * std::numbers::pi / 180.0, 1.0e-3));
     for (int i = 0; i < 10; ++i) {
@@ -281,8 +293,18 @@ bool RunWeaponsTests() {
     CHECK(aimed.x > 0.0f && Near(aimed.y, 0.0, 1.0e-4));
     CHECK(projectiles.empty()); // visée sans tir
 
-    // Tir : 10 par seconde, depuis la bouche du canon, vitesse du vaisseau comprise.
+    // Touche tenue sans cible verrouillée, ou cible hors de portée : rien ne part.
     input.held = 1;
+    input.target = NullEntity;
+    Weapons::Update(scene, ship, 0.1, input, projectiles);
+    CHECK(projectiles.empty());
+    input.target = target;
+    weapon.range = 100.0f;
+    Weapons::Update(scene, ship, 0.1, input, projectiles);
+    CHECK(projectiles.empty());
+    weapon.range = 2500.0f;
+
+    // Tir : 10 par seconde, depuis la bouche du canon, vitesse du vaisseau comprise.
     for (int i = 0; i < 10; ++i) {
         Weapons::Update(scene, ship, 0.1, input, projectiles);
     }

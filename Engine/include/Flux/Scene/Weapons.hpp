@@ -61,12 +61,13 @@ namespace Flux {
     struct WeaponInput
     {
         // Groupes d'armes (bit 0 : groupe 1, ... bit 9 : groupe 10), touches 1 à 0 : `held` tenus, `pressed` appuyés à
-        // cette image. Les canons d'un groupe tenu tirent ; un appui lance un missile d'un lance-missiles du groupe.
+        // cette image. Les canons d'un groupe tenu tirent ; un appui lance un missile d'un lance-missiles du groupe. Rien
+        // ne part sans cible verrouillée à la portée de l'arme.
         std::uint16_t held = 0;
         std::uint16_t pressed = 0;
         bool aim = false;  // aimPoint donné : les tourelles s'y tournent ; sinon elles reviennent vers l'avant
         Math::WorldPosition aimPoint;
-        Entity target = NullEntity; // cible verrouillée (FindLockTarget) que le missile poursuivra
+        Entity target = NullEntity; // cible verrouillée (FindLockTarget) : visée en avance, poursuivie par les missiles
     };
 
     // Armes des vaisseaux : une arme (WeaponComponent) n'est active que posée sur un emport (HardpointComponent, son
@@ -83,10 +84,14 @@ namespace Flux {
         FLUX_API void Update(Scene& scene, Entity ship, double deltaSeconds, const WeaponInput& input,
                              std::vector<Projectile>& projectiles);
 
-        // Cible que verrouillent les lance-missiles du vaisseau : celle qui a des points de vie, à leur portée, la plus
-        // proche de la direction regardée depuis `from` sans s'en écarter de plus de leur angle de verrouillage.
-        // NullEntity sans lance-missiles chargé, ou si rien n'est dans le viseur. Ni le vaisseau, ni ce qui le porte.
+        // Cible à verrouiller quand le pilote appuie sur une touche de tir : celle qui a des points de vie, à portée des
+        // armes du vaisseau, la plus proche de la direction regardée depuis `from` sans s'en écarter de plus de leur
+        // angle de verrouillage. NullEntity sans arme montée, ou si rien n'est dans le viseur. Ni le vaisseau, ni ce
+        // qui le porte.
         FLUX_API Entity FindLockTarget(const Scene& scene, Entity ship, const Math::WorldPosition& from, const Math::Vector3f& direction);
+        // Le verrou tient tant que la cible existe, a des points de vie et reste à portée des armes du vaisseau (elle
+        // peut sortir du viseur).
+        FLUX_API bool KeepsLock(const Scene& scene, Entity ship, Entity target, const Math::WorldPosition& from);
         // Missiles restants dans les lance-missiles du vaisseau ; -1 s'ils sont illimités, 0 sans lance-missiles.
         FLUX_API int GetMissileCount(const Scene& scene, Entity ship);
         // Les missiles tournent vers leur cible (où elle sera quand ils l'atteindront, si c'est un vaisseau qui vole),

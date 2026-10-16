@@ -155,8 +155,10 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   arme d'un autre genre ou plus grande que l'emport ne tire pas (`Weapons::Fits`).
 - Tir par groupes : chaque arme a un groupe (`WeaponComponent::group`), tiré par les actions « Groupe d'armes 1 »
   à « 10 » (touches 1 à 0 au-dessus des lettres) ; les canons tirent tant que la touche est tenue.
-- Visée : le point regardé à 700 m devant la caméra, ramené dans le cône de l'arme, à sa vitesse de pivotement ;
-  seule la rotation locale de l'arme change (pas de roulis).
+- Visée : la cible verrouillée, en avance (sa vitesse moins celle du vaisseau, sur le temps de vol des obus) ; sans
+  verrou, le point regardé à 700 m devant la caméra. Ramenée dans le cône de l'arme, à sa vitesse de pivotement ;
+  seule la rotation locale de l'arme change (pas de roulis). Une arme ne tire que si la cible verrouillée est à sa
+  portée : sans verrou, rien ne part.
 - Projectiles : un `std::vector<Projectile>` gardé par le moteur (des centaines par seconde : pas des entités),
   réservé d'avance ; un projectile part de la bouche du canon avec la vitesse du vaisseau en plus de la sienne. Les
   traçantes (`TracerRenderer`) en sont tirées à chaque image, positions relatives à la caméra.
@@ -164,9 +166,10 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   (`PhysicsWorld::CastRay` ; corps du tireur ignorés). La cible est l'entité touchée ou son ancêtre le plus proche
   qui a un `HealthComponent` ; à 0, elle est détruite avec ses enfants, et la physique retire ses corps à sa
   prochaine mise à jour. Le personnage du joueur protège ce qui le porte (fin de partie à venir).
-- Missiles : des `Projectile` marqués `missile`, avec une cible. Le verrouillage (`Weapons::FindLockTarget`) est
-  recherché à chaque image : la cible à points de vie la plus proche du centre de la vue, dans l'angle et la portée
-  des lance-missiles chargés (parcours de tous les `HealthComponent` : linéaire, peu nombreux). Un appui sur la
+- Missiles : des `Projectile` marqués `missile`, avec une cible. Le verrouillage (`Weapons::FindLockTarget`) se
+  fait à l'appui sur une touche de tir : la cible à points de vie la plus proche du centre de la vue, dans l'angle et
+  la portée des armes montées (parcours de tous les `HealthComponent` : linéaire, peu nombreux). Il tient ensuite hors
+  du viseur tant que la cible vit et reste à portée (`KeepsLock`, à chaque image). Un appui sur la
   touche du groupe en lance un, du lance-missiles de ce groupe qui a le moins tiré. En vol, `GuideMissiles` tourne
   la vitesse vers la cible (en avance sur un vaisseau qui vole, d'après la vitesse de son `ShipComponent`), sans
   dépasser le virage du missile ni changer sa vitesse. Le nombre tiré (`fired`) n'est pas enregistré : la copie de la scène du mode Jouer

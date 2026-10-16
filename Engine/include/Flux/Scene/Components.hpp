@@ -327,8 +327,8 @@ namespace Flux {
         float turnRate = 120.0f;        // °/s, vitesse de pivotement
         float muzzle = 1.0f;            // m, de l'origine de l'arme à la bouche du canon
         Math::LinearColor color{1.0f, 0.55f, 0.2f}; // couleur de la traçante
-        // Missiles : nombre emporté (0 : illimité), virage le plus serré en vol (°/s) et écart autour du centre de la
-        // vue dans lequel une cible se verrouille (°). Un missile part par appui sur la touche du groupe, du
+        // Missiles : nombre emporté (0 : illimité) et virage le plus serré en vol (°/s). Verrouillage : écart autour
+        // du centre de la vue dans lequel une cible se verrouille à l'appui sur une touche de tir (°). Un missile part par appui sur la touche du groupe, du
         // lance-missiles de ce groupe qui en a tiré le moins ; la cadence est alors son temps de rechargement.
         std::int32_t ammo = 0;
         float guidance = 90.0f;

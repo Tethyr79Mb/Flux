@@ -92,7 +92,7 @@ namespace Flux {
             .Field("color", "Couleur des traçantes", &WeaponComponent::color, {.alpha = false})
             .Field("ammo", "Missiles emportés (0 : illimités)", &WeaponComponent::ammo, {.speed = 0.05, .min = 0.0, .max = 1000.0, .decimals = 0})
             .Field("guidance", "Missiles : virage (°/s)", &WeaponComponent::guidance, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
-            .Field("lockAngle", "Missiles : verrouillage (°)", &WeaponComponent::lockAngle, {.speed = 0.1, .min = 0.0, .max = 90.0, .decimals = 1});
+            .Field("lockAngle", "Verrouillage (°)", &WeaponComponent::lockAngle, {.speed = 0.1, .min = 0.0, .max = 90.0, .decimals = 1});
         registry.Register<HealthComponent>("health", "Points de vie")
             .Field("health", "Points de vie", &HealthComponent::health, {.speed = 1.0, .min = 0.0, .max = 1.0e9, .decimals = 0});
         registry.Register<SkyComponent>("sky", "Ciel")

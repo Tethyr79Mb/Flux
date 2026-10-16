@@ -599,8 +599,9 @@ namespace Flux {
             Log::Info("« {} » détruit", name);
         }
         WeaponInput weaponInput;
-        m_lockTarget = NullEntity;
-        if (seated && pilotedShip != NullEntity) {
+        if (!seated || pilotedShip == NullEntity) {
+            m_lockTarget = NullEntity; // lâche le verrou en quittant les commandes
+        } else {
             for (std::size_t group = 0; group < WeaponGroupActions.size(); ++group) {
                 const auto bit = static_cast<std::uint16_t>(1u << group);
                 weaponInput.held |= IsActionDown(WeaponGroupActions[group]) ? bit : 0;
@@ -609,8 +610,17 @@ namespace Flux {
             weaponInput.aim = true;
             weaponInput.aimPoint = m_camera.position;
             weaponInput.aimPoint += Math::Vector3d(m_camera.GetForward() * AimDistance);
-            // Verrouillage au centre de la vue, recherché à chaque image : il suit ce que regarde le pilote.
-            m_lockTarget = Weapons::FindLockTarget(m_scene, pilotedShip, m_camera.position, m_camera.GetForward());
+            // Verrouillage à l'appui sur une touche de tir (choix de Bruno) : la cible au centre de la vue. Rien dans
+            // le viseur : le verrou d'avant reste. Il tient ensuite hors du viseur, tant que la cible est à portée.
+            if (weaponInput.pressed != 0) {
+                if (const Entity target = Weapons::FindLockTarget(m_scene, pilotedShip, m_camera.position, m_camera.GetForward());
+                    target != NullEntity) {
+                    m_lockTarget = target;
+                }
+            }
+            if (!Weapons::KeepsLock(m_scene, pilotedShip, m_lockTarget, m_camera.position)) {
+                m_lockTarget = NullEntity;
+            }
             weaponInput.target = m_lockTarget;
         }
         Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles);
