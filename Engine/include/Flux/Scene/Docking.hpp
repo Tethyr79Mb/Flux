@@ -11,7 +11,7 @@ namespace Flux {
     // Pilote automatique d'amarrage : conduit un vaisseau jusqu'à un quai libre d'une station (DockComponent), l'y pose
     // et en fait un enfant de la station (on se lève et on marche dans la station), puis l'en ressort. Il pilote à la
     // place du joueur en réglant ShipComponent::velocity et angularVelocity ; la physique le déplace comme d'habitude.
-    // Le vaisseau ne heurte pas la station (seulement le décor immobile du monde) : le trajet passe par l'entrée.
+    // Le vaisseau heurte la station comme le reste (PhysicsWorld) : le trajet passe par l'entrée.
     namespace Docking {
         // Distance maximale (m) entre le vaisseau et un quai libre pour lancer le pilote automatique.
         inline constexpr double Range = 5000.0;

@@ -209,6 +209,12 @@ namespace Flux::Docking {
                     ship.autopilot = AutopilotStage::Approach;
                 }
                 break;
+            case AutopilotStage::Under:
+                // À sa hauteur, sous la station, jusque devant elle ; il remonte ensuite vers le point d'approche.
+                if (travel({local.x, std::min(local.y, -hover), approach}, ship.maxSpeed) < PassTolerance) {
+                    ship.autopilot = AutopilotStage::Approach;
+                }
+                break;
             case AutopilotStage::Approach:
                 if (travel(approachPoint, ship.maxSpeed) < PassTolerance) {
                     ship.autopilot = AutopilotStage::Enter;
@@ -301,10 +307,13 @@ namespace Flux::Docking {
         DockComponent& dock = scene.Get<DockComponent>(best);
         dock.ship = entity;
         ship->dock = best;
-        // Devant le point d'approche : droit dessus. Ailleurs (à côté, derrière, dessous), par-dessus la station.
+        // Devant le point d'approche : droit dessus. Plus bas que la station (sous son sol), par-dessous. Ailleurs (à
+        // côté, derrière), par-dessus.
         const Math::Vector3d local = ToLocal(GetFrame(scene, best), position);
         if (local.z <= -static_cast<double>(dock.approach)) {
             ship->autopilot = AutopilotStage::Approach;
+        } else if (local.y < -static_cast<double>(dock.hover)) {
+            ship->autopilot = AutopilotStage::Under;
         } else {
             ship->autopilot = local.y < dock.clearance ? AutopilotStage::Climb : AutopilotStage::Over;
         }
@@ -334,6 +343,8 @@ namespace Flux::Docking {
         case AutopilotStage::Climb:
         case AutopilotStage::Over:
             return "Pilote auto : passage au-dessus de la station";
+        case AutopilotStage::Under:
+            return "Pilote auto : passage sous la station";
         case AutopilotStage::Approach:
             return "Pilote auto : vers " + dock;
         case AutopilotStage::Enter:

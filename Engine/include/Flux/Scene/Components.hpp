@@ -424,9 +424,10 @@ namespace Flux {
         float reach = 1.5f; // m, distance du personnage au siège pour s'y asseoir
     };
 
-    // Étape du pilote automatique d'un vaisseau (Docking) : vers un quai (au-dessus de la station si on arrive par
-    // l'arrière, puis devant l'entrée, au-dessus du quai, demi-tour, descente), ou en repartant (remonter, sortir).
-    enum class AutopilotStage : std::uint8_t { Off, Climb, Over, Approach, Enter, Turn, Descend, Rise, Exit };
+    // Étape du pilote automatique d'un vaisseau (Docking) : vers un quai (par-dessus la station si on arrive par
+    // l'arrière ou le côté, ou par-dessous si on est plus bas qu'elle ; puis devant l'entrée, au-dessus du quai,
+    // demi-tour, descente), ou en repartant (remonter, sortir).
+    enum class AutopilotStage : std::uint8_t { Off, Climb, Over, Under, Approach, Enter, Turn, Descend, Rise, Exit };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
     // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou

@@ -29,7 +29,7 @@ int main() {
         {"calculs sur le GPU (compute)", RunComputeTests},
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
         {"armes des vaisseaux", RunWeaponsTests},
-        {"amarrage (pilote automatique)", RunDockingAutopilotTests},
+        {"collisions des vaisseaux et amarrage", RunDockingAutopilotTests},
     };
 
     int failures = 0;

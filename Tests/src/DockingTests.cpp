@@ -1,4 +1,4 @@
-// Pilote automatique d'amarrage : un vaisseau rejoint un quai libre d'une station (par l'avant, ou par-dessus en
+// Collisions entre vaisseaux, et pilote automatique d'amarrage : un vaisseau rejoint un quai libre d'une station (par l'avant, ou par-dessus en
 // arrivant de derrière), s'y pose et devient son enfant ; on en sort à pied dans la station ; il repart.
 #include "Check.hpp"
 
@@ -125,8 +125,39 @@ namespace {
         CHECK(scene.Get<ShipComponent>(first).autopilot == AutopilotStage::Off && scene.Get<DockComponent>(dock1).ship == NullEntity);
         return true;
     }
+
+    // Un vaisseau à la racine bute sur les murs d'une station et sur la coque d'un autre vaisseau.
+    bool RunShipObstacleTests() {
+        Scene scene;
+        const Entity station = scene.CreateEntity("Station");
+        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity wall = scene.CreateEntity("Mur", station);
+        scene.Get<TransformComponent>(wall).position = {0.0, 0.0, 0.0};
+        scene.Get<TransformComponent>(wall).scale = {2.0f, 20.0f, 20.0f}; // de x = -1 à 1
+        scene.Add<ColliderComponent>(wall);
+        // Lancé vers +x à 20 m/s, sans pilote ni chute : il s'arrête contre le mur (sa coque fait 4 m de large).
+        const Entity fighter = AddFighter(scene, "Chasseur", {-30.0, 0.0, 0.0});
+        ShipComponent& ship = scene.Get<ShipComponent>(fighter);
+        ship.fallsWithoutPilot = false;
+        ship.velocity = {20.0f, 0.0f, 0.0f};
+        // Un autre chasseur, immobile, sur le chemin d'un troisième lancé vers -x.
+        const Entity parked = AddFighter(scene, "Garé", {0.0, 0.0, 40.0});
+        scene.Get<ShipComponent>(parked).fallsWithoutPilot = false;
+        const Entity rammer = AddFighter(scene, "Lancé", {30.0, 0.0, 40.0});
+        scene.Get<ShipComponent>(rammer).fallsWithoutPilot = false;
+        scene.Get<ShipComponent>(rammer).velocity = {-20.0f, 0.0f, 0.0f};
+        PhysicsWorld world;
+        world.Update(scene, 0.0, {});
+        RunUntil(world, scene, 3.0, [] { return false; });
+        const double x = scene.Get<TransformComponent>(fighter).position.x;
+        CHECK(x > -3.2 && x < -2.9);
+        const double rammed = scene.Get<TransformComponent>(rammer).position.x;
+        CHECK(rammed > 3.9 && rammed < 4.2);
+        CHECK(std::abs(scene.Get<TransformComponent>(parked).position.x) < 1.0e-6);
+        return true;
+    }
 }
 
 bool RunDockingAutopilotTests() {
-    return RunDockingTests();
+    return RunShipObstacleTests() && RunDockingTests();
 }

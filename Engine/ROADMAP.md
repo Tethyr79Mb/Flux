@@ -109,11 +109,13 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Station, étape 2 : amarrage par pilote automatique (action « Pilote automatique », L : le quai libre le plus proche
   à moins de 5 km est réservé, le vaisseau y est conduit et posé, puis devient enfant de la station ; on se lève et on
   marche dans la station ; L amarré : il ressort par l'entrée et rend la main ; L en route : coupé). Composant « Quai ».
-- ⬜ Pilote automatique : contourner la station par le côté (aujourd'hui par-dessus, en montant tout droit : un vaisseau
-  juste sous la station la traverse), éviter les autres vaisseaux.
+- 🔨 Collision vaisseau contre vaisseau et contre station : un vaisseau à la racine bute sur la coque et le décor des
+  autres (copies cinématiques dans le monde) comme sur le décor immobile.
+- ⬜ Pilote automatique : chercher un trajet libre (aujourd'hui par-dessus ou par-dessous la station, en ligne droite :
+  il reste bloqué contre un obstacle sur son chemin), éviter les autres vaisseaux.
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.
-- ⬜ Collision vaisseau contre vaisseau ; vol sous un surplomb (enveloppe convexe aujourd'hui).
+- ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.
 
