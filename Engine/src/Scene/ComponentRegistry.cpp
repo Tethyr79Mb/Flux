@@ -80,6 +80,7 @@ namespace Flux {
         registry.Register<WeaponComponent>("weapon", "Arme")
             .Enum("kind", "Genre", &WeaponComponent::kind, weaponKinds)
             .Field("size", "Taille (1 à 3)", &WeaponComponent::size, {.speed = 0.05, .min = 1.0, .max = 3.0, .decimals = 0})
+            .Field("group", "Groupe de tir (touches 1 à 9 ; 10 : touche 0)", &WeaponComponent::group, {.speed = 0.05, .min = 0.0, .max = 10.0, .decimals = 0})
             .Field("fireRate", "Cadence (tirs/s)", &WeaponComponent::fireRate, {.speed = 0.05, .min = 0.1, .max = 100.0, .decimals = 2})
             .Field("projectileSpeed", "Vitesse des projectiles (m/s)", &WeaponComponent::projectileSpeed,
                    {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})

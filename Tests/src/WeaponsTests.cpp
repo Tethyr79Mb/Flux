@@ -77,7 +77,7 @@ namespace {
         // Un missile par appui, les deux ailes à tour de rôle, le temps de rechargement de chacune respecté.
         std::vector<Projectile> projectiles;
         WeaponInput input;
-        input.launch = true;
+        input.pressed = 1; // groupe 1 : les deux lance-missiles
         input.target = ahead;
         Weapons::Update(scene, ship, 0.01, input, projectiles);
         CHECK(projectiles.size() == 1);
@@ -282,7 +282,7 @@ bool RunWeaponsTests() {
     CHECK(projectiles.empty()); // visée sans tir
 
     // Tir : 10 par seconde, depuis la bouche du canon, vitesse du vaisseau comprise.
-    input.fire = true;
+    input.held = 1;
     for (int i = 0; i < 10; ++i) {
         Weapons::Update(scene, ship, 0.1, input, projectiles);
     }
@@ -324,6 +324,16 @@ bool RunWeaponsTests() {
     Weapons::Update(scene, ship, 0.1, input, projectiles);
     CHECK(projectiles.empty() && Near(Barrel(scene, gun).z, -1.0, 1.0e-4));
     weapon.kind = WeaponKind::Gun;
+    // Touche d'un autre groupe que celui de l'arme : elle ne tire pas.
+    weapon.group = 2;
+    Weapons::Update(scene, ship, 0.1, input, projectiles);
+    CHECK(projectiles.empty());
+    input.held = 1u << 1;
+    Weapons::Update(scene, ship, 0.1, input, projectiles);
+    CHECK(projectiles.size() == 1);
+    projectiles.clear();
+    input.held = 1;
+    weapon.group = 1;
     Weapons::Update(scene, NullEntity, 0.1, input, projectiles);
     CHECK(projectiles.empty());
     const Entity other = scene.CreateEntity("Autre vaisseau");

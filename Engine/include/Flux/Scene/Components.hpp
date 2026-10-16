@@ -312,12 +312,13 @@ namespace Flux {
 
     // Arme posée sur un emport (HardpointComponent parent) d'un vaisseau. Pendant le jeu, aux commandes de ce
     // vaisseau, elle pivote vers le point que regarde le pilote (sans sortir de son cône autour de l'avant de
-    // l'emport) et tire tant que l'action « Tirer » est tenue. Son -z : le canon ; ses projectiles partent de
+    // l'emport) et tire tant que la touche de son groupe est tenue (1 à 0 au-dessus des lettres). Son -z : le canon ; ses projectiles partent de
     // muzzle mètres devant son origine.
     struct WeaponComponent
     {
         WeaponKind kind = WeaponKind::Gun;
         std::int32_t size = 1;
+        std::int32_t group = 1;         // groupe de tir : touche 1 à 9, 10 pour la touche 0 ; 0 : ne tire pas
         float fireRate = 8.0f;          // tirs par seconde
         float projectileSpeed = 1500.0f; // m/s, en plus de la vitesse du vaisseau
         float range = 2500.0f;          // m : au-delà, le projectile disparaît
@@ -327,8 +328,8 @@ namespace Flux {
         float muzzle = 1.0f;            // m, de l'origine de l'arme à la bouche du canon
         Math::LinearColor color{1.0f, 0.55f, 0.2f}; // couleur de la traçante
         // Missiles : nombre emporté (0 : illimité), virage le plus serré en vol (°/s) et écart autour du centre de la
-        // vue dans lequel une cible se verrouille (°). Un missile part par appui sur « Tirer un missile », du
-        // lance-missiles qui en a tiré le moins ; la cadence est alors son temps de rechargement.
+        // vue dans lequel une cible se verrouille (°). Un missile part par appui sur la touche du groupe, du
+        // lance-missiles de ce groupe qui en a tiré le moins ; la cadence est alors son temps de rechargement.
         std::int32_t ammo = 0;
         float guidance = 90.0f;
         float lockAngle = 10.0f;

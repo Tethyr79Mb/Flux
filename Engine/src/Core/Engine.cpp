@@ -58,6 +58,10 @@ namespace Flux {
         constexpr std::size_t ReservedProjectiles = 4096;
         // Durée de l'éclat d'un impact (s).
         constexpr float ImpactSeconds = 0.12f;
+        // Actions des groupes d'armes (WeaponComponent::group), touches 1 à 0.
+        constexpr std::array<std::string_view, 10> WeaponGroupActions{
+            "Groupe d'armes 1", "Groupe d'armes 2", "Groupe d'armes 3", "Groupe d'armes 4", "Groupe d'armes 5",
+            "Groupe d'armes 6", "Groupe d'armes 7", "Groupe d'armes 8", "Groupe d'armes 9", "Groupe d'armes 10"};
         // Explosion d'un missile : plus grande et plus longue qu'un impact d'obus (vif, puis pâlit comme lui).
         constexpr float ExplosionSize = 5.0f;
         constexpr float ExplosionSeconds = 0.3f;
@@ -267,8 +271,13 @@ namespace Flux {
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
-        actions.Add("Tirer", "Vaisseau", Key::MouseLeft);
-        actions.Add("Tirer un missile", "Vaisseau", Key::MouseMiddle);
+        // Groupes d'armes sur les chiffres au-dessus des lettres (choix de Bruno) : sur le Chasseur, 1 le nez, 2 les
+        // autocanons, 3 les missiles.
+        constexpr std::array GroupKeys{Key::Digit1, Key::Digit2, Key::Digit3, Key::Digit4, Key::Digit5,
+                                       Key::Digit6, Key::Digit7, Key::Digit8, Key::Digit9, Key::Digit0};
+        for (std::size_t group = 0; group < GroupKeys.size(); ++group) {
+            actions.Add(std::string(WeaponGroupActions[group]), "Vaisseau", GroupKeys[group]);
+        }
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
         m_impacts.reserve(ReservedProjectiles);
@@ -592,14 +601,16 @@ namespace Flux {
         WeaponInput weaponInput;
         m_lockTarget = NullEntity;
         if (seated && pilotedShip != NullEntity) {
-            const bool mouse = !m_ui->WantsMouse() && !m_interfaceWantsMouse;
-            weaponInput.fire = IsActionDown("Tirer") && mouse;
+            for (std::size_t group = 0; group < WeaponGroupActions.size(); ++group) {
+                const auto bit = static_cast<std::uint16_t>(1u << group);
+                weaponInput.held |= IsActionDown(WeaponGroupActions[group]) ? bit : 0;
+                weaponInput.pressed |= WasActionPressed(WeaponGroupActions[group]) ? bit : 0;
+            }
             weaponInput.aim = true;
             weaponInput.aimPoint = m_camera.position;
             weaponInput.aimPoint += Math::Vector3d(m_camera.GetForward() * AimDistance);
             // Verrouillage au centre de la vue, recherché à chaque image : il suit ce que regarde le pilote.
             m_lockTarget = Weapons::FindLockTarget(m_scene, pilotedShip, m_camera.position, m_camera.GetForward());
-            weaponInput.launch = WasActionPressed("Tirer un missile") && mouse;
             weaponInput.target = m_lockTarget;
         }
         Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles);

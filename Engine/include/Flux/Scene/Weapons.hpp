@@ -4,6 +4,7 @@
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/Scene/Components.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -59,10 +60,12 @@ namespace Flux {
     // Commandes du pilote pour les armes de son vaisseau.
     struct WeaponInput
     {
-        bool fire = false; // action « Tirer » tenue
+        // Groupes d'armes (bit 0 : groupe 1, ... bit 9 : groupe 10), touches 1 à 0 : `held` tenus, `pressed` appuyés à
+        // cette image. Les canons d'un groupe tenu tirent ; un appui lance un missile d'un lance-missiles du groupe.
+        std::uint16_t held = 0;
+        std::uint16_t pressed = 0;
         bool aim = false;  // aimPoint donné : les tourelles s'y tournent ; sinon elles reviennent vers l'avant
         Math::WorldPosition aimPoint;
-        bool launch = false;       // action « Tirer un missile » appuyée à cette image : un missile part
         Entity target = NullEntity; // cible verrouillée (FindLockTarget) que le missile poursuivra
     };
 

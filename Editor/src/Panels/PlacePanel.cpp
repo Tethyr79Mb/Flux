@@ -141,16 +141,17 @@ namespace FluxEditor {
                 std::int32_t size;
                 float cone;
                 float muzzle;
+                std::int32_t group; // touche de tir
             };
             constexpr const char* Gatling = "Modeles/Chasseur/Gatling-MK1.glb";
             constexpr const char* Autocanon = "Modeles/Chasseur/Autocanon-MK1.glb";
             constexpr const char* Missiles = "Modeles/Chasseur/Lance-missiles.glb";
             for (const Mount& mount :
-                 {Mount{"Emport du nez", "Gatling MK1", Gatling, {0.0, -1.55, -1.2}, WeaponKind::Gun, 2, 30.0f, 3.05f},
-                  Mount{"Emport ventral gauche", "Autocanon MK1", Autocanon, {-1.5, -1.06, 7.2}, WeaponKind::Gun, 1, 5.0f, 1.61f},
-                  Mount{"Emport ventral droit", "Autocanon MK1", Autocanon, {1.5, -1.06, 7.2}, WeaponKind::Gun, 1, 5.0f, 1.61f},
-                  Mount{"Emport d'aile gauche", "Lance-missiles", Missiles, {-5.0, -1.3, 9.5}, WeaponKind::Missile, 2, 0.0f, 0.85f},
-                  Mount{"Emport d'aile droit", "Lance-missiles", Missiles, {5.0, -1.3, 9.5}, WeaponKind::Missile, 2, 0.0f, 0.85f}}) {
+                 {Mount{"Emport du nez", "Gatling MK1", Gatling, {0.0, -1.55, -1.2}, WeaponKind::Gun, 2, 30.0f, 3.05f, 1},
+                  Mount{"Emport ventral gauche", "Autocanon MK1", Autocanon, {-1.5, -1.06, 7.2}, WeaponKind::Gun, 1, 5.0f, 1.61f, 2},
+                  Mount{"Emport ventral droit", "Autocanon MK1", Autocanon, {1.5, -1.06, 7.2}, WeaponKind::Gun, 1, 5.0f, 1.61f, 2},
+                  Mount{"Emport d'aile gauche", "Lance-missiles", Missiles, {-5.0, -1.3, 9.5}, WeaponKind::Missile, 2, 0.0f, 0.85f, 3},
+                  Mount{"Emport d'aile droit", "Lance-missiles", Missiles, {5.0, -1.3, 9.5}, WeaponKind::Missile, 2, 0.0f, 0.85f, 3}}) {
                 const Entity hardpoint = scene.CreateEntity(mount.name, ship);
                 scene.Get<TransformComponent>(hardpoint).position = mount.position;
                 scene.Add<HardpointComponent>(hardpoint, HardpointComponent{.kind = mount.kind, .size = mount.size});
@@ -161,6 +162,7 @@ namespace FluxEditor {
                 arms.size = mount.size;
                 arms.cone = mount.cone;
                 arms.muzzle = mount.muzzle;
+                arms.group = mount.group;
                 if (mount.size >= 2 && mount.kind == WeaponKind::Gun) {
                     arms.fireRate = 12.0f; // Gatling à six tubes
                 }

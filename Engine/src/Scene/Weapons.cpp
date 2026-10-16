@@ -58,6 +58,11 @@ namespace Flux::Weapons {
             return hardpoint && Fits(*hardpoint, weapon) && (weapon.ammo <= 0 || weapon.fired < weapon.ammo);
         }
 
+        // Le groupe de l'arme est dans ce masque de groupes (WeaponInput).
+        bool InGroups(const WeaponComponent& weapon, std::uint16_t groups) {
+            return weapon.group >= 1 && weapon.group <= 10 && (groups & (1u << (weapon.group - 1))) != 0;
+        }
+
         // Rotation locale d'une arme dont le canon (-z) pointe vers `forward` (repère de l'emport), sans roulis.
         Math::Quaternionf Aim(const Math::Vector3f& forward) {
             const float yaw = std::atan2(-forward.x, -forward.z);
@@ -89,7 +94,7 @@ namespace Flux::Weapons {
         const Math::Vector3f shipVelocity =
             shipComponent ? scene.GetWorldRotation(ship).Rotate(shipComponent->velocity) : Math::Vector3f{};
         auto& registry = scene.GetRegistry();
-        // Lance-missiles qui tirera si « Tirer un missile » est appuyée : prêt, celui qui a le moins tiré (les deux
+        // Lance-missiles qui tirera si la touche de son groupe est appuyée : prêt, celui qui a le moins tiré (les deux
         // ailes à tour de rôle).
         Entity launcher = NullEntity;
         for (const auto [entity, weapon] : registry.view<WeaponComponent>().each()) {
@@ -119,13 +124,13 @@ namespace Flux::Weapons {
 
             weapon.cooldown = std::max(weapon.cooldown - delta, 0.0f);
             if (weapon.kind == WeaponKind::Missile) {
-                if (input.launch && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
+                if (InGroups(weapon, input.pressed) && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
                     && (launcher == NullEntity || weapon.fired < registry.get<WeaponComponent>(launcher).fired)) {
                     launcher = entity;
                 }
                 continue;
             }
-            if (!input.fire || weapon.kind != WeaponKind::Gun || weapon.fireRate <= 0.0f || weapon.projectileSpeed <= 0.0f) {
+            if (!InGroups(weapon, input.held) || weapon.kind != WeaponKind::Gun || weapon.fireRate <= 0.0f || weapon.projectileSpeed <= 0.0f) {
                 continue;
             }
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
