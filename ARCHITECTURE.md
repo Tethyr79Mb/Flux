@@ -153,6 +153,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
   (`TransferCharacters`). Un vaisseau garé sans pilote dans son hangar (dans la boîte de son enveloppe) tombe avec
   la gravité de son pont et se pose (`FindCarrierGravity`), même loin de toute planète.
+  Un vaisseau immobile, sans pilote ni chute (une station), ne teste pas sa collision : son enveloppe englobe le
+  hangar, et chaque test contre le maillage d'un chasseur racine garé dedans coûtait 26 ms par image.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
   (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
   `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou cubes

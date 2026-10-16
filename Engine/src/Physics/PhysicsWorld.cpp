@@ -696,7 +696,11 @@ namespace Flux {
                 const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
                 // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas. Le pilote automatique le tient.
                 const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && ship.autopilot == AutopilotStage::Off;
-                if (!shape && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
+                // Immobile, sans pilote ni chute : rien à tester, il garde son état (posé ou non). Une station ne
+                // cherche plus son sol à chaque image : son enveloppe englobe le hangar, et un chasseur racine garé
+                // dedans lui faisait tester ses 19 000 triangles un par un (26 ms par image et par chasseur).
+                const bool resting = !falls && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                if ((!shape || resting) && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }
                 ship.grounded = false;
