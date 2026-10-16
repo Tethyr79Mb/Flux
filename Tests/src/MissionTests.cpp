@@ -43,7 +43,8 @@ bool RunMissionTests() {
     const Math::WorldPosition area = Missions::GetTargetArea(scene, giver);
     CHECK(Distance(area, Math::WorldPosition{{}, {-4000.0, 0.0, 0.0}}) < 0.1);
 
-    // Sans prefab : des cubes rouges solides, destructibles, en cercle autour de la zone, à la racine.
+    // Sans prefab : des drones (vaisseaux cubes armés, menés par l'IA de combat), destructibles, en cercle autour de
+    // la zone, à la racine.
     const ComponentRegistry& registry = components;
     const SceneSerializer::PrefabReader none = [](std::string_view) -> std::expected<std::string, std::string> {
         return std::unexpected("absent");
@@ -52,7 +53,10 @@ bool RunMissionTests() {
     CHECK(cubes.has_value() && cubes->size() == 3);
     for (const Entity enemy : *cubes) {
         CHECK(scene.GetParent(enemy) == NullEntity);
-        CHECK(scene.TryGet<HealthComponent>(enemy) && scene.TryGet<ColliderComponent>(enemy));
+        CHECK(scene.TryGet<HealthComponent>(enemy) && scene.TryGet<ShipComponent>(enemy) && scene.TryGet<CombatAIComponent>(enemy));
+        bool armed = false;
+        scene.ForEachChild(enemy, [&](Entity child) { armed = armed || scene.TryGet<HardpointComponent>(child); });
+        CHECK(armed);
         CHECK(std::abs(Distance(scene.GetWorldPosition(enemy), area) - 50.0) < 0.1);
     }
     CHECK(Missions::CountAlive(scene, *cubes) == 3);
@@ -84,6 +88,7 @@ bool RunMissionTests() {
     const Entity ship = ships->front();
     CHECK(scene.TryGet<HealthComponent>(ship) != nullptr);
     CHECK(!scene.Get<ShipComponent>(ship).fallsWithoutPilot);
+    CHECK(scene.TryGet<CombatAIComponent>(ship) != nullptr); // il se défendra
     CHECK(Distance(scene.GetWorldPosition(ship), area) < 0.1); // seul : au centre
     return true;
 }

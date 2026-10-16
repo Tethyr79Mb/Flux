@@ -16,6 +16,7 @@
 #include "Flux/Platform/Memory.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
+#include "Flux/Scene/CombatAI.hpp"
 #include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -604,6 +605,14 @@ namespace Flux {
         Docking::Update(m_scene, deltaSeconds); // après le pilote : il prend la main sous pilote automatique
         UpdateWarp(pilotedShip, pilotedShip != NullEntity && WasActionPressed("Warp"));
         Warp::Update(m_scene, deltaSeconds); // après le pilote, comme le pilote automatique
+        // Cible des ennemis : le vaisseau du joueur, aux commandes ou à bord (pas une station où il marche).
+        Entity enemyTarget = pilotedShip;
+        if (enemyTarget == NullEntity && player != NullEntity) {
+            const Entity aboard = m_scene.GetShip(player);
+            const auto* ship = aboard != NullEntity ? m_scene.TryGet<ShipComponent>(aboard) : nullptr;
+            enemyTarget = ship && ship->maxSpeed > 0.0f ? aboard : NullEntity;
+        }
+        CombatAI::Steer(m_scene, deltaSeconds, enemyTarget);
         m_physics->Update(m_scene, deltaSeconds, character);
         // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
         // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
@@ -660,6 +669,7 @@ namespace Flux {
             weaponInput.active = m_activeGroups;
         }
         m_activeGroups &= static_cast<std::uint16_t>(~Weapons::Update(m_scene, pilotedShip, deltaSeconds, weaponInput, m_projectiles));
+        CombatAI::Fire(m_scene, deltaSeconds, enemyTarget, m_projectiles);
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 

@@ -151,6 +151,9 @@ namespace Flux::Weapons {
                 if (locked && weapon.kind == WeaponKind::Gun && weapon.projectileSpeed > 0.0f) {
                     toTarget = toTarget + Math::Vector3d(targetVelocity - shipVelocity) * (targetDistance / weapon.projectileSpeed);
                 }
+                if (locked) {
+                    toTarget = toTarget + Math::Vector3d(input.aimOffset);
+                }
                 if (Math::Length(toTarget) > 1.0e-3) {
                     const Math::Vector3f local =
                         scene.GetWorldRotation(hardpointEntity).Conjugate().Rotate(Math::Vector3f(Math::Normalize(toTarget)));
@@ -163,7 +166,7 @@ namespace Flux::Weapons {
             weapon.cooldown = std::max(weapon.cooldown - delta, 0.0f);
             const bool inRange = locked && targetDistance <= weapon.range;
             if (weapon.kind == WeaponKind::Missile) {
-                if (inRange && InGroups(weapon, input.active) && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
+                if (inRange && input.missiles && InGroups(weapon, input.active) && weapon.cooldown <= 0.0f && weapon.projectileSpeed > 0.0f && IsLoadedLauncher(scene, entity, weapon, ship)
                     && (launcher == NullEntity || weapon.fired < registry.get<WeaponComponent>(launcher).fired)) {
                     launcher = entity;
                 }

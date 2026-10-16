@@ -120,7 +120,11 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
   voyage, Tab, reste un déplacement accéléré).
 - ⬜ Rétrofusées vers l'avant (demande de Bruno) : freinage net, flammes visibles à l'avant, et dérive en virage
   corrigée plus fort (aujourd'hui les propulseurs latéraux ne tiennent que ShipComponent::acceleration).
-- ⬜ Missions : récompenses, autres sortes, ennemis qui se défendent (IA, armes), sauvegarde de la mission en cours.
+- 🔨 IA de combat des ennemis (composant « IA de combat ») : patrouille, attaque, rupture, fuite ; tir avec les armes
+  du vaisseau. Missions sans prefab : drones cubes armés.
+- ⬜ IA : factions (qui attaque qui), escortes, formations, appels de renforts ; arbres de comportement si besoin.
+- ⬜ Mort du joueur : son vaisseau ne peut pas être détruit aujourd'hui (Weapons::ApplyHits le protège).
+- ⬜ Missions : récompenses, autres sortes, sauvegarde de la mission en cours.
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.
 - ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).

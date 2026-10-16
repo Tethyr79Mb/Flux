@@ -221,6 +221,13 @@ namespace Flux {
             .Field("travelSpoolTime", "Mode voyage : mise en route (s)", &ShipComponent::travelSpoolTime, {.speed = 0.05, .min = 0.0, .max = 60.0, .decimals = 1})
             .Field("warpSpeed", "Warp : vitesse max (km/s)", &ShipComponent::warpSpeed, {.speed = 1000.0, .min = 0.0, .max = 1.0e9, .decimals = 0})
             .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot);
+        registry.Register<CombatAIComponent>("combatAI", "IA de combat")
+            .Field("detectionRange", "Détection (m)", &CombatAIComponent::detectionRange, {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            .Field("preferredRange", "Distance de combat (m)", &CombatAIComponent::preferredRange, {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
+            .Field("aggression", "Agressivité (0 à 1)", &CombatAIComponent::aggression, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("inaccuracy", "Imprécision (°)", &CombatAIComponent::inaccuracy, {.speed = 0.1, .min = 0.0, .max = 45.0, .decimals = 1})
+            .Field("fleeHealth", "Fuite sous (% de vie)", &CombatAIComponent::fleeHealth, {.speed = 0.5, .min = 0.0, .max = 100.0, .decimals = 0})
+            .Field("patrolRadius", "Rayon de patrouille (m)", &CombatAIComponent::patrolRadius, {.speed = 5.0, .min = 0.0, .max = 1.0e5, .decimals = 0});
         registry.Register<DockComponent>("dock", "Quai")
             .Field("approach", "Approche devant (m)", &DockComponent::approach, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
             .Field("hover", "Hauteur d'arrivée (m)", &DockComponent::hover, {.speed = 0.1, .min = 0.0, .max = 1.0e3, .decimals = 1})
