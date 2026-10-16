@@ -649,13 +649,36 @@ namespace Flux {
             return true;
         }
 
+        // Dans un autre vaisseau à la racine (le hangar d'une station, d'un porte-vaisseaux : dans la boîte de son
+        // enveloppe), la gravité de son pont : un vaisseau garé sans pilote s'y pose sur ses roues, même loin de
+        // toute planète. Parcourt les vaisseaux de la scène : seulement pour ceux qui tombent, peu nombreux.
+        bool FindCarrierGravity(const Scene& scene, Entity self, const Math::WorldPosition& at, JPH::Vec3& gravity) {
+            for (const auto [other, carrier] : scene.GetRegistry().view<const ShipComponent>().each()) {
+                if (other == self || carrier.gravity <= 0.0f || scene.GetParent(other) != NullEntity) {
+                    continue;
+                }
+                const JPH::Shape* hull = GetShipShape(scene, other);
+                if (!hull) {
+                    continue;
+                }
+                const Math::Quaternionf rotation = scene.GetWorldRotation(other);
+                const Math::Vector3f local = rotation.Conjugate().Rotate(Math::Vector3f(Math::Delta(scene.GetWorldPosition(other), at)));
+                if (hull->GetLocalBounds().Contains(ToJolt(local))) {
+                    gravity = ToJolt(rotation.Rotate(Math::Vector3f{0.0f, -carrier.gravity, 0.0f}));
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // Mouvement des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes. Un vaisseau à la
         // racine bute sur le décor immobile du monde et sur les autres vaisseaux (ShipFilter : une station, un
         // chasseur) : il s'arrête contre le sol ou un mur et glisse le long, et ne
         // tourne pas s'il devait s'y enfoncer. Posé (le décor sous son ventre, à moins de 5 cm), il ne tourne pas du tout.
         // Sans pilote (ShipComponent::fallsWithoutPilot), ses moteurs ne le portent plus : il tombe avec la gravité du
-        // lieu, freiné par l'air, jusqu'à se poser. Dans une scène à planètes, seulement près d'elles (leur gravité) :
-        // dans l'espace, il reste où il est ; sans planète, avec la gravité du monde (sol plat).
+        // lieu, freiné par l'air, jusqu'à se poser. Dans le hangar d'une station, la gravité de son pont
+        // (FindCarrierGravity) ; sinon, dans une scène à planètes, seulement près d'elles (leur gravité) : dans
+        // l'espace, il reste où il est ; sans planète, avec la gravité du monde (sol plat).
         void MoveShips(Scene& scene, double deltaSeconds) {
             const Grid* worldGrid = nullptr;
             for (const std::unique_ptr<Grid>& grid : grids) {
@@ -722,10 +745,11 @@ namespace Flux {
                     } else if (falls) {
                         const float delta = static_cast<float>(deltaSeconds);
                         const JPH::RVec3 at(start);
-                        const JPH::Vec3 gravity =
-                            hasPlanets
-                                ? ToJolt(planetGround.GetGravity({at.GetX(), at.GetY(), at.GetZ()}, Math::Vector3f{}))
-                                : worldGrid->system->GetGravity();
+                        JPH::Vec3 gravity;
+                        if (!FindCarrierGravity(scene, entity, scene.GetWorldPosition(entity), gravity)) {
+                            gravity = hasPlanets ? ToJolt(planetGround.GetGravity({at.GetX(), at.GetY(), at.GetZ()}, Math::Vector3f{}))
+                                                 : worldGrid->system->GetGravity();
+                        }
                         JPH::Vec3 velocity = ToJolt(transform.rotation.Rotate(ship.velocity)) + gravity * delta;
                         if (const float air = AirAt(*worldGrid, at); air > 0.0f) {
                             velocity /= 1.0f + airDrag * air * velocity.Length() * delta;

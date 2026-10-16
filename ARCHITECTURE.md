@@ -151,7 +151,8 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   le repère du quai (par-dessus la station si on arrive de derrière, par-dessous si on est plus bas qu'elle ; point d'approche devant l'entrée, au-dessus du
   quai, demi-tour, descente), puis en fait un enfant de la station. La station devient son monde extérieur
   (`FindOuterGrid`) : les copies de sa coque y passent, et le personnage qui en descend passe dans la station
-  (`TransferCharacters`).
+  (`TransferCharacters`). Un vaisseau garé sans pilote dans son hangar (dans la boîte de son enveloppe) tombe avec
+  la gravité de son pont et se pose (`FindCarrierGravity`), même loin de toute planète.
 - Warp (`Warp`, après `Docking::Update`) : pour les grandes distances. Destinations : stations (vaisseaux à quais),
   planètes, objectif de la mission en cours ; J vise celle à moins de 30° du nez. Le vaisseau charge 3 s en se
   tournant vers elle, puis sa vitesse est multipliée par e chaque seconde, bornée par la distance restante en une seconde : il ralentit en arrivant et sort à 4 km d'une station, 10 km au-dessus de
