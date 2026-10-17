@@ -30,6 +30,7 @@ int main() {
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
         {"armes des vaisseaux", RunWeaponsTests},
         {"collisions des vaisseaux et amarrage", RunDockingAutopilotTests},
+        {"missions", RunMissionTests},
     };
 
     int failures = 0;

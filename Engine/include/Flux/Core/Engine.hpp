@@ -291,6 +291,17 @@ namespace Flux {
         // Message bref sous les infos de vol (pilote automatique lancé, aucun quai à portée), et son temps restant.
         std::string m_flightMessage;
         double m_flightMessageSeconds = 0.0;
+        // Mission acceptée auprès d'un donneur (Missions), une seule à la fois : ses ennemis encore à détruire.
+        struct ActiveMission
+        {
+            Entity giver = NullEntity;
+            std::string title;
+            std::vector<Entity> enemies;
+        };
+        std::optional<ActiveMission> m_mission;
+        Entity m_missionWindow = NullEntity; // donneur dont la fenêtre est ouverte
+        std::string m_missionMessage;        // « Mission accomplie », en haut de l'écran
+        double m_missionMessageSeconds = 0.0;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
@@ -346,6 +357,11 @@ namespace Flux {
         // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
         void DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
         void ShowFlightMessage(std::string message);
+        // Missions (EngineMissions.cpp) : parler au donneur (consomme F), suivre les ennemis ; fenêtre et indications.
+        void UpdateMissions(Entity player, bool& interact);
+        void DrawMissionWindow(Entity player, Math::Vector2f screen);
+        void DrawMissionInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
+        void ResetMissions();
         void BeginLoading();
         // Après le rendu : le chargement est fini quand plus rien n'est attendu pendant quelques images.
         void UpdateLoading(double deltaSeconds);

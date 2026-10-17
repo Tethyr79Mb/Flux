@@ -44,6 +44,7 @@ namespace Flux {
         Sound, // .wav, .ogg, .mp3, .flac
         // Pas un fichier : le nom d'une animation du modèle 3D de l'entité (ModelComponent), choisi dans une liste.
         Animation,
+        Prefab, // .prefab.json
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).

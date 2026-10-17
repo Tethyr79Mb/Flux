@@ -62,7 +62,7 @@ namespace Flux::Docking {
             const float angle = 2.0f * std::atan2(sine, error.w) * Degrees;
             const Math::Vector3f wanted = sine > 1.0e-6f ? axis * (std::min(ship.turnRate, angle * TurnGain) / sine) : Math::Vector3f{};
             const float step = std::max(ship.turnAcceleration, 1.0f) * delta;
-            const auto approach = [&](float& value, float target) { value += std::clamp(target - value, -step, step); };
+            const auto approach = [&](float& value, float goal) { value += std::clamp(goal - value, -step, step); };
             approach(ship.angularVelocity.x, wanted.x);
             approach(ship.angularVelocity.y, wanted.y);
             approach(ship.angularVelocity.z, wanted.z);

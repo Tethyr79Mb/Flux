@@ -89,6 +89,7 @@ namespace FluxEditor {
             {"collider", "Collisions", UI::Icon::Collider},
             {"seat", "Sièges", UI::Icon::Seat},
             {"dock", "Quais", UI::Icon::Ship},
+            {"missionGiver", "Donneurs de missions", UI::Icon::Character},
             {"interface", "Interfaces", UI::Icon::Window},
             {"screenText", "Textes à l'écran", UI::Icon::Text},
             {"screenImage", "Images à l'écran", UI::Icon::Image},

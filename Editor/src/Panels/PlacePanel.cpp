@@ -335,6 +335,37 @@ namespace FluxEditor {
                 addInterior(("Intérieur de la " + name).c_str(), {x, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 1.0f);
             }
 
+            // Donneur de missions derrière le comptoir de la première boutique (à 1,8 m du client qui s'y accoude), tourné
+            // vers la porte. Il prend le modèle du personnage du joueur s'il y en a un dans la scène, sinon un corps en
+            // cube. Personnage : enfant direct de la station (sa gravité, son monde physique).
+            const Entity agent = scene.CreateEntity("Donneur de missions", station);
+            TransformComponent& agentTransform = scene.Get<TransformComponent>(agent);
+            agentTransform.position = {Rooms[0], 0.0, 63.3};
+            agentTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, std::numbers::pi_v<float>); // le modèle regarde vers son +z
+            scene.Add<CharacterComponent>(agent).player = false;
+            scene.Add<MissionGiverComponent>(agent);
+            Entity body = NullEntity;
+            for (const auto [entity, character, model] : scene.GetRegistry().view<const CharacterComponent, const ModelComponent>().each()) {
+                if (entity != agent && !model.model.empty()) {
+                    body = entity;
+                    break;
+                }
+            }
+            if (body != NullEntity) {
+                scene.Add<ModelComponent>(agent).model = scene.Get<ModelComponent>(body).model;
+                if (const auto* animator = scene.TryGet<AnimatorComponent>(body)) {
+                    AnimatorComponent idle;
+                    idle.animation = animator->idleAnimation.empty() ? animator->animation : animator->idleAnimation;
+                    idle.idleAnimation = idle.animation;
+                    scene.Add<AnimatorComponent>(agent, std::move(idle));
+                }
+            } else {
+                const Entity cube = scene.CreateEntity("Corps", agent);
+                scene.Get<TransformComponent>(cube).position = {0.0, 0.9, 0.0};
+                scene.Get<TransformComponent>(cube).scale = {0.5f, 1.8f, 0.3f};
+                scene.Add<MeshRendererComponent>(cube, MeshType::Cube, Math::LinearColor::FromSrgb8(60, 110, 170));
+            }
+
             // Salle des terminaux : quatre bornes contre le mur du fond, écran allumé.
             const double terminals = Rooms[2];
             const Entity room = scene.CreateEntity("Salle des terminaux", station);

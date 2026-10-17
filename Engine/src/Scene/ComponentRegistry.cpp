@@ -224,6 +224,14 @@ namespace Flux {
             .Field("approach", "Approche devant (m)", &DockComponent::approach, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
             .Field("hover", "Hauteur d'arrivée (m)", &DockComponent::hover, {.speed = 0.1, .min = 0.0, .max = 1.0e3, .decimals = 1})
             .Field("clearance", "Passage au-dessus (m)", &DockComponent::clearance, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1});
+        registry.Register<MissionGiverComponent>("missionGiver", "Donneur de missions")
+            .Field("title", "Titre", &MissionGiverComponent::title)
+            .Field("briefing", "Ordre de mission", &MissionGiverComponent::briefing)
+            .Asset("enemyPrefab", "Ennemis (prefab)", &MissionGiverComponent::enemyPrefab, AssetType::Prefab)
+            .Field("enemyCount", "Nombre d'ennemis", &MissionGiverComponent::enemyCount, {.speed = 0.1, .min = 1.0, .max = 50.0, .decimals = 0})
+            .Field("distance", "Distance (m)", &MissionGiverComponent::distance, {.speed = 100.0, .min = 0.0, .max = 1.0e8, .decimals = 0})
+            .Field("spread", "Écart (m)", &MissionGiverComponent::spread, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
+            .Field("reach", "Portée pour parler (m)", &MissionGiverComponent::reach, {.speed = 0.05, .min = 0.5, .max = 20.0, .decimals = 2});
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})
