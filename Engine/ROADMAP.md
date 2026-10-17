@@ -10,7 +10,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 ### Performances du rendu (demandé par Bruno le 2026-10-17)
 - 🔨 Ombres sans programme de pixel ni faces arrière, petits objets hors des cascades lointaines ; opaques sans
   `discard` (test de profondeur avant éclairage) ; objets ni en vue ni dans une ombre écartés (pose comprise) ; heures
-  GPU au milieu des passes seulement panneau Moteur ouvert.
+  GPU seulement panneau Moteur ouvert (fermé : le compteur d'images/s seul).
 - ⬜ Dessins triés par pipeline, modèle et matériau ; objets identiques en un seul appel (instancing).
 - ⬜ Objets cachés derrière d'autres (occlusion sur le GPU, profondeur de l'image précédente).
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).

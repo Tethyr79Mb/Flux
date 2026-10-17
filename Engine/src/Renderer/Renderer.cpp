@@ -23,10 +23,10 @@ namespace Flux {
         // Profondeur 32 bits flottante : obligatoire pour que le reverse-Z tienne l'échelle galaxie.
         constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
 
-        // Heures notées par le GPU pendant l'image (RHI::CommandList::WriteTimestamp).
-        // Pendant une passe, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux étapes,
-        // d'où un surcoût et des temps d'étape un peu plus longs qu'en vrai. Celles-là (le détail de la scène, l'image
-        // finale) ne sont notées que si le panneau Moteur les affiche (Renderer::RequestDetailedTimings).
+        // Heures notées par le GPU pendant l'image (RHI::CommandList::WriteTimestamp), seulement quand le panneau
+        // Moteur les affiche (Renderer::RequestDetailedTimings). Pendant une passe, une heure attend la fin des dessins
+        // d'avant : le GPU ne fait plus chevaucher deux étapes, d'où un surcoût et des temps d'étape un peu plus longs
+        // qu'en vrai.
         enum Timestamp : std::uint32_t {
             FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, TemporalDone, BloomDone,
             InterfaceDone,
@@ -100,7 +100,7 @@ namespace Flux {
         bool vsync = true;
         float bloom = Renderer::DefaultBloom; // 0 : sans bloom
         bool temporalAA = true;
-        bool detailedTimings = false; // demandé pour cette image seulement
+        bool detailedTimings = false; // heures du GPU demandées pour cette image seulement
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
         bool hasPrevious = false;
@@ -230,14 +230,14 @@ namespace Flux {
             const Clock::time_point recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
             RHI::CommandList& commands = device->GetCommandList();
-            const bool detailed = std::exchange(detailedTimings, false);
-            const auto detail = [&](Timestamp stamp) {
-                if (detailed) {
+            const bool measured = std::exchange(detailedTimings, false);
+            const auto timestamp = [&](Timestamp stamp) {
+                if (measured) {
                     commands.WriteTimestamp(stamp);
                 }
             };
             // Étapes nommées (BeginStep) : si le GPU se bloque, le rapport dit laquelle n'a pas fini.
-            commands.WriteTimestamp(FrameStart);
+            timestamp(FrameStart);
             if (sceneVisible) {
                 commands.BeginStep("tuiles de planète (compute)");
                 meshes->Compute(commands, frameIndex); // compté avec les ombres
@@ -246,7 +246,7 @@ namespace Flux {
                 commands.BeginStep("ombres");
                 meshes->DrawShadows(commands, frameIndex);
             }
-            commands.WriteTimestamp(ShadowsDone);
+            timestamp(ShadowsDone);
             if (sceneVisible) {
                 // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
                 // Profondeur et mouvement gardés pour l'anticrénelage.
@@ -258,19 +258,19 @@ namespace Flux {
                 commands.SetScissor({0, 0, scene3d.width, scene3d.height});
                 commands.BeginStep("objets opaques");
                 meshes->DrawOpaque(commands, frameIndex);
-                detail(ObjectsDone);
+                timestamp(ObjectsDone);
                 commands.BeginStep("sol des planètes");
                 meshes->DrawGround(commands, frameIndex);
-                detail(GroundDone);
+                timestamp(GroundDone);
                 commands.BeginStep("fond du ciel");
                 sky->Draw(commands, frameIndex);
-                detail(SkyDone);
+                timestamp(SkyDone);
                 commands.BeginStep("océan");
                 meshes->DrawOcean(commands, frameIndex);
-                detail(OceanDone);
+                timestamp(OceanDone);
                 commands.BeginStep("nuages");
                 meshes->DrawClouds(commands, frameIndex);
-                detail(CloudsDone);
+                timestamp(CloudsDone);
                 commands.BeginStep("transparents");
                 meshes->DrawTransparent(commands, frameIndex);
                 commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
@@ -279,12 +279,12 @@ namespace Flux {
                 tracers->Draw(commands);
                 commands.EndRenderPass();
             }
-            commands.WriteTimestamp(SceneDone);
+            timestamp(SceneDone);
             if (sceneVisible) {
                 commands.BeginStep("anticrénelage");
                 post->ResolveTemporal(commands, temporalAA, reprojection, temporal.history);
             }
-            commands.WriteTimestamp(TemporalDone);
+            timestamp(TemporalDone);
             if (sceneVisible) {
                 commands.BeginStep("bloom");
                 post->DrawBloom(commands, bloom);
@@ -296,11 +296,11 @@ namespace Flux {
                 commands.SetScissor(scene3d);
                 post->Composite(commands, bloom, exposure);
             }
-            detail(BloomDone); // image finale comptée avec le bloom
+            timestamp(BloomDone); // image finale comptée avec le bloom
             commands.BeginStep("interface");
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
-            commands.WriteTimestamp(InterfaceDone);
+            timestamp(InterfaceDone);
             const bool presented = device->EndFrame();
             // Présentation exclue : mesurée à part par le RHI.
             timings.record = Milliseconds(Clock::now() - recordStart) - device->GetWaitTimes().present;

@@ -68,8 +68,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 Couches, de la plus haute à la plus basse :
 
 ```
-Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU ; le détail au milieu des passes
-                   seulement panneau Moteur ouvert), étapes du diagnostic de plantage GPU
+Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seulement panneau Moteur ouvert),
+                   étapes du diagnostic de plantage GPU
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
