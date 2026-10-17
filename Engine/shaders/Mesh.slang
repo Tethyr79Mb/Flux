@@ -94,12 +94,17 @@ struct DrawData
     float4 rim;
     float4 ground;            // tuile de planète : xyz, centre de rim modulo GroundPeriod (MeshRenderer.hpp)
     float4 previousWorld[4];  // world à l'image précédente, relative à sa caméra (tuiles de planète : non lue)
+    // De l'entité (pas des tuiles de planète), combinés à ceux du matériau (DrawParams) : un même appel dessine des
+    // entités de teintes différentes.
+    float4 tint;              // multiplie la couleur du matériau
+    float4 emissive;          // ajouté à celui du matériau ; w : 1 si surface remplace métal et rugosité
+    float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent)
 };
 
-// Doit correspondre à DrawParams dans MeshRenderer.cpp : une primitive (un matériau) d'une entité.
+// Doit correspondre à DrawParams dans MeshRenderer.cpp : le matériau d'une primitive, commun à tout un lot d'entités.
 struct DrawParams
 {
-    float4 color;             // linéaire : couleur de base du matériau x teinte de l'entité
+    float4 color;             // linéaire : couleur de base du matériau
     float4 emissive;          // linéaire : lumière propre du matériau (rgb), multipliée par l'image émissive
     uint cascade;             // carte d'ombres en cours de dessin
     float alphaCutoff;        // 0 : pas de seuil
@@ -108,7 +113,7 @@ struct DrawParams
     float roughness;          // x canal vert
     float normalScale;        // 0 : pas de carte de normales
     float occlusionStrength;  // 0 : pas d'occlusion
-    uint materialOverride;    // 1 : metallic et roughness tels quels, sans l'image métal-rugosité
+    uint padding;
 };
 
 [[vk::push_constant]] ConstantBuffer<DrawParams> params;
@@ -137,6 +142,9 @@ struct DrawParams
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour (SkyRenderer), réduit à chaque niveau de mip : de plus en plus flou.
 [[vk::binding(5, 1)]] SamplerCube environmentMap;
+// Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i] (les appels des
+// tuiles de planète donnent directement l'indice dans draws).
+[[vk::binding(6, 1)]] StructuredBuffer<uint> instances;
 
 struct VertexInput
 {
@@ -232,14 +240,15 @@ VertexOutput MovingOutput(uint drawIndex, float3 position, float3 normal, float2
 }
 
 [shader("vertex")]
-VertexOutput vertexMain(VertexInput input, uint draw : SV_VulkanInstanceID)
+VertexOutput vertexMain(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    return MovingOutput(draw, input.position, input.normal, input.uv);
+    return MovingOutput(instances[instance], input.position, input.normal, input.uv);
 }
 
 [shader("vertex")]
-VertexOutput vertexSkinned(SkinnedVertexInput input, uint draw : SV_VulkanInstanceID)
+VertexOutput vertexSkinned(SkinnedVertexInput input, uint instance : SV_VulkanInstanceID)
 {
+    const uint draw = instances[instance];
     float3 position;
     float3 normal;
     Skin(input, asuint(draws[draw].normal[1].w), position, normal);
@@ -1220,7 +1229,8 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 [ForceInline] // alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
 {
-    float4 base = baseColorTexture.Sample(input.uv) * params.color;
+    const DrawData draw = draws[input.draw];
+    float4 base = baseColorTexture.Sample(input.uv) * params.color * draw.tint;
     if (alphaTest && base.a < params.alphaCutoff) {
         discard;
     }
@@ -1231,24 +1241,26 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
         normal = PerturbNormal(geometryNormal, input.worldPosition, input.uv);
     }
     const float4 metallicRoughness = metallicRoughnessTexture.Sample(input.uv);
-    const bool fixed = params.materialOverride != 0;
-    const float metallic = saturate(params.metallic * (fixed ? 1.0 : metallicRoughness.b));
+    // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
+    const bool fixed = draw.emissive.w != 0.0;
+    const float metallic = saturate(fixed ? draw.surface.x : params.metallic * draw.surface.x * metallicRoughness.b);
     Surface surface;
     surface.normal = normal;
     surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
-    surface.roughness = saturate(params.roughness * (fixed ? 1.0 : metallicRoughness.g));
+    surface.roughness = saturate(fixed ? draw.surface.y : params.roughness * draw.surface.y * metallicRoughness.g);
     const float occlusion = 1.0 + params.occlusionStrength * (occlusionTexture.Sample(input.uv).r - 1.0);
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, inside);
-    if (any(params.emissive.rgb > 0.0)) { // le même pour toute la primitive : pas d'image lue sans émissif
-        lit += params.emissive.rgb * emissiveTexture.Sample(input.uv).rgb;
+    const float3 emissive = params.emissive.rgb + draw.emissive.rgb;
+    if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
+        lit += emissive * emissiveTexture.Sample(input.uv).rgb;
     }
     // Lumière de contour : d'autant plus forte que la surface est vue de profil (terme de Fresnel), avec le relief.
     // Éteinte dans les volumes intérieurs : les murs du cockpit et de la soute ne s'allument pas.
-    const float4 rim = draws[input.draw].rim;
+    const float4 rim = draw.rim;
     if (rim.w > 0.0 && inside < 1.0) {
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
@@ -1275,14 +1287,15 @@ ShadowOutput ShadowVertex(uint draw, float3 position, float2 uv)
 }
 
 [shader("vertex")]
-ShadowOutput vertexShadow(VertexInput input, uint draw : SV_VulkanInstanceID)
+ShadowOutput vertexShadow(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    return ShadowVertex(draw, input.position, input.uv);
+    return ShadowVertex(instances[instance], input.position, input.uv);
 }
 
 [shader("vertex")]
-ShadowOutput vertexShadowSkinned(SkinnedVertexInput input, uint draw : SV_VulkanInstanceID)
+ShadowOutput vertexShadowSkinned(SkinnedVertexInput input, uint instance : SV_VulkanInstanceID)
 {
+    const uint draw = instances[instance];
     float3 position;
     float3 normal;
     Skin(input, asuint(draws[draw].normal[1].w), position, normal);

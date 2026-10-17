@@ -86,8 +86,8 @@ namespace Flux {
                       && ShadowCascadeCount == 4);
 
 
-        // Doit correspondre à DrawParams dans shaders/Mesh.slang : envoyé avec chaque primitive. L'indice de l'entité
-        // (dans les DrawData) est celui de l'instance dessinée.
+        // Doit correspondre à DrawParams dans shaders/Mesh.slang : le matériau d'une primitive, envoyé avec chaque lot
+        // (ModelBatch). Ce qui est propre à chaque entité (teinte, émissif, métal, rugosité) est dans ses DrawData.
         struct DrawParams
         {
             Math::LinearColor color;
@@ -99,7 +99,7 @@ namespace Flux {
             float roughness;
             float normalScale;
             float occlusionStrength;
-            std::uint32_t materialOverride;
+            std::uint32_t padding0;
             std::array<float, 4> padding;
         };
         static_assert(sizeof(DrawParams) == 80);
@@ -111,12 +111,15 @@ namespace Flux {
         constexpr std::uint32_t ShadowMapSlot = 3;
         constexpr std::uint32_t LightSlot = 4;
         constexpr std::uint32_t EnvironmentSlot = 5;
+        constexpr std::uint32_t InstanceSlot = 6;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
         constexpr std::uint64_t MinJointBufferSize = 64 * 1024;
         constexpr std::uint64_t MinDrawBufferSize = 64 * 1024;
         constexpr std::uint64_t MinLightBufferSize = 16 * 1024;
+        constexpr std::uint64_t MinInstanceBufferSize = 16 * 1024;
+        constexpr std::uint64_t MinModelCommandBufferSize = 16 * 1024;
         // Commandes des tuiles de planète : de quoi dessiner un millier de tuiles dans chaque passe sans réallouer.
         constexpr std::uint64_t MinIndirectBufferSize = 128 * 1024;
 
@@ -182,6 +185,7 @@ namespace Flux {
             RHI::Binding{ShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
             RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{InstanceSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -196,7 +200,8 @@ namespace Flux {
             if (!renderer->GrowBuffer(renderer->m_jointBuffers[f], f, JointSlot, MinJointBufferSize)
                 || !renderer->GrowBuffer(renderer->m_drawBuffers[f], f, DrawSlot, MinDrawBufferSize)
                 || !renderer->GrowBuffer(renderer->m_frameBuffers[f], f, FrameSlot, sizeof(FrameData))
-                || !renderer->GrowBuffer(renderer->m_lightBuffers[f], f, LightSlot, MinLightBufferSize)) {
+                || !renderer->GrowBuffer(renderer->m_lightBuffers[f], f, LightSlot, MinLightBufferSize)
+                || !renderer->GrowBuffer(renderer->m_instanceBuffers[f], f, InstanceSlot, MinInstanceBufferSize)) {
                 return std::unexpected("création des buffers de l'image");
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
@@ -535,7 +540,10 @@ namespace Flux {
             m_previousFrame[index] = m_preparedFrame;
             m_drawData.push_back({world,
                                   {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
-                                  rim, {}, previous});
+                                  rim, {}, previous,
+                                  {tint.r, tint.g, tint.b, tint.a},
+                                  {emissive.r, emissive.g, emissive.b, materialOverride ? 1.0f : 0.0f},
+                                  {metallic, roughness, 0.0f, 0.0f}});
 
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
                                Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
@@ -553,8 +561,7 @@ namespace Flux {
 
         // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
         // centre de sa boîte) : deux transparents qui s'entrecroisent peuvent se superposer dans le mauvais ordre.
-        // Opaques du plus proche au plus loin : ce qu'ils cachent échoue au test de profondeur avant d'être éclairé.
-        // Hors champ : ombre seulement.
+        // Opaques : rangés en lots (BuildModelBatches). Hors champ : ombre seulement.
         m_transparent.clear();
         m_opaque.clear();
         for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
@@ -574,14 +581,13 @@ namespace Flux {
                 m_opaque.push_back(d);
             }
         }
-        // Distance au bord de la sphère : la coque d'un vaisseau autour de la caméra passe en premier.
-        std::sort(m_opaque.begin(), m_opaque.end(), [this](std::uint32_t a, std::uint32_t b) {
-            return m_draws[a].distance - m_draws[a].radius < m_draws[b].distance - m_draws[b].radius;
-        });
         // Stable : les primitives d'une même entité gardent l'ordre du fichier.
         std::stable_sort(m_transparent.begin(), m_transparent.end(), [this](const TransparentDraw& a, const TransparentDraw& b) {
             return m_draws[a.draw].distance > m_draws[b.draw].distance;
         });
+        if (!BuildModelBatches(frameIndex)) {
+            m_modelPasses = {};
+        }
     }
 
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
@@ -657,7 +663,7 @@ namespace Flux {
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
                                   {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f},
-                                  {}});
+                                  {}, {}, {}, {}});
         }
     }
 
@@ -735,7 +741,7 @@ namespace Flux {
     // plutôt que lu hors du buffer.
     void MeshRenderer::Upload(const Camera& camera, float aspect, const SkyLighting& sky, const TemporalView& temporal,
                               std::uint32_t frameIndex) {
-        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 208 && sizeof(LightData) == 64);
+        static_assert(sizeof(Math::Matrix4f) == 64 && sizeof(DrawData) == 256 && sizeof(LightData) == 64);
         const std::uint64_t jointBytes = m_jointMatrices.size() * sizeof(Math::Matrix4f);
         // Celles des tuiles des planètes après celles des entités.
         const std::uint64_t drawBytes = m_drawData.size() * sizeof(DrawData);
@@ -865,6 +871,7 @@ namespace Flux {
         m_draws.clear();
         m_tileDraws.clear();
         m_tilePasses = {};
+        m_modelPasses = {};
     }
 
     // Commandes indirectes des tuiles de chaque passe, groupées par page (un appel par page), de près à loin dans
@@ -957,34 +964,157 @@ namespace Flux {
         }
     }
 
-    void MeshRenderer::DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
-                                     std::uint32_t drawIndex, const ModelPrimitive& primitive, const RHI::Pipeline& pipeline,
-                                     std::uint32_t cascade) const {
-        const MeshDraw& draw = m_draws[drawIndex];
-        const GpuModel& model = *draw.model;
-        if (&model != state.model) {
-            state.model = &model;
-            const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
-            commands.BindVertexBuffers(0, std::span(vertexBuffers).first(model.skin ? 2 : 1));
-            commands.BindIndexBuffer(*model.indices);
+    // Range les entités de m_batchEntries en lots (même pipeline, même modèle, même primitive), chacun un appel. Avec
+    // nearestFirst, les lots passent dans l'ordre de leur entité la plus proche et chaque lot de près à loin : ce qu'ils
+    // cachent échoue au test de profondeur avant d'être éclairé (coque d'un vaisseau autour de la caméra d'abord).
+    void MeshRenderer::AddBatches(bool nearestFirst) {
+        std::ranges::sort(m_batchEntries, [](const BatchEntry& a, const BatchEntry& b) {
+            if (a.pipeline != b.pipeline) {
+                return std::less<>{}(a.pipeline, b.pipeline);
+            }
+            if (a.model != b.model) {
+                return std::less<>{}(a.model, b.model);
+            }
+            return a.primitive != b.primitive ? a.primitive < b.primitive : a.distance < b.distance;
+        });
+        m_batchGroups.clear();
+        for (std::uint32_t i = 0; i < m_batchEntries.size(); ++i) {
+            const BatchEntry& entry = m_batchEntries[i];
+            const bool same = !m_batchGroups.empty() && [&] {
+                const BatchEntry& first = m_batchEntries[m_batchGroups.back().first];
+                return first.pipeline == entry.pipeline && first.model == entry.model && first.primitive == entry.primitive;
+            }();
+            if (!same) {
+                m_batchGroups.push_back({i, 0, entry.distance});
+            }
+            ++m_batchGroups.back().count;
         }
-        BindPipeline(commands, state, frameIndex, pipeline);
-        const GpuMaterial& material = model.materials[primitive.material];
-        const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
-        if (group != state.group) {
-            state.group = group;
-            commands.SetBindGroup(0, *group);
+        if (nearestFirst) {
+            std::ranges::sort(m_batchGroups, {}, &BatchGroup::distance);
         }
-        const DrawParams params{{material.baseColor.r * draw.tint.r, material.baseColor.g * draw.tint.g,
-                                 material.baseColor.b * draw.tint.b, material.baseColor.a * draw.tint.a},
-                                {material.emissive.r + draw.emissive.r, material.emissive.g + draw.emissive.g,
-                                 material.emissive.b + draw.emissive.b, 0.0f},
-                                cascade, material.alphaCutoff, IsTransparent(draw, material) ? 1u : 0u,
-                                draw.materialOverride ? draw.metallic : material.metallic * draw.metallic,
-                                draw.materialOverride ? draw.roughness : material.roughness * draw.roughness,
-                                material.normalScale, material.occlusionStrength, draw.materialOverride ? 1u : 0u, {}};
-        commands.PushConstants(&params, sizeof(params));
-        commands.DrawIndexed(primitive.indexCount, primitive.firstIndex, drawIndex);
+        for (const BatchGroup& group : m_batchGroups) {
+            for (std::uint32_t i = group.first; i < group.first + group.count; ++i) {
+                m_instances.push_back(m_batchEntries[i].draw);
+            }
+            AddBatch(m_batchEntries[group.first], group.count);
+        }
+        m_batchEntries.clear();
+    }
+
+    // Un lot pour les `count` dernières entités de m_instances.
+    void MeshRenderer::AddBatch(const BatchEntry& entry, std::uint32_t count) {
+        const ModelPrimitive& primitive = entry.model->primitives[entry.primitive];
+        m_modelBatches.push_back({entry.pipeline, entry.model, entry.primitive, static_cast<std::uint32_t>(m_modelCommands.size())});
+        m_modelCommands.push_back({primitive.indexCount, count, primitive.firstIndex, 0,
+                                   static_cast<std::uint32_t>(m_instances.size()) - count});
+    }
+
+    // Lots de chaque passe des modèles, leurs entités (m_instances) et leurs commandes, envoyés au GPU. false si un
+    // buffer ne peut grandir.
+    bool MeshRenderer::BuildModelBatches(std::uint32_t frameIndex) {
+        m_instances.clear();
+        m_modelCommands.clear();
+        m_modelBatches.clear();
+        m_modelPasses = {};
+        std::array<std::size_t, ModelPassCount + 1> passStarts{};
+
+        passStarts[OpaqueModelPass] = m_modelBatches.size();
+        for (const std::uint32_t d : m_opaque) {
+            const MeshDraw& draw = m_draws[d];
+            const Pipelines& pipelines = GetPipelines(draw);
+            for (std::uint32_t p = 0; p < draw.model->primitives.size(); ++p) {
+                const GpuMaterial& material = draw.model->materials[draw.model->primitives[p].material];
+                if (!IsTransparent(draw, material)) {
+                    m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, p, d, draw.distance - draw.radius});
+                }
+            }
+        }
+        AddBatches(true);
+
+        // Transparents : dans leur ordre (de loin à près), une entité par lot. Double face : les faces arrière (le fond
+        // de l'objet) d'abord, puis les faces avant par-dessus ; exact pour une forme convexe (bulle de verrière, cube).
+        passStarts[TransparentModelPass] = m_modelBatches.size();
+        for (const TransparentDraw& item : m_transparent) {
+            const MeshDraw& draw = m_draws[item.draw];
+            const Pipelines& pipelines = GetPipelines(draw);
+            if (draw.model->materials[draw.model->primitives[item.primitive].material].doubleSided) {
+                m_instances.push_back(item.draw);
+                AddBatch({pipelines.transparentBack.get(), draw.model, item.primitive, item.draw, 0.0f}, 1);
+            }
+            m_instances.push_back(item.draw);
+            AddBatch({pipelines.transparent.get(), draw.model, item.primitive, item.draw, 0.0f}, 1);
+        }
+
+        // Ombres : toutes les entités qui en font une dans la cascade, même hors champ ou cachées (le personnage vu
+        // de l'intérieur). Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle).
+        for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
+            passStarts[2 + c] = m_modelBatches.size();
+            for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
+                const MeshDraw& draw = m_draws[d];
+                if (!CastsShadow(draw.center, draw.radius, c)) {
+                    continue;
+                }
+                const Pipelines& pipelines = GetPipelines(draw);
+                for (std::uint32_t p = 0; p < draw.model->primitives.size(); ++p) {
+                    const GpuMaterial& material = draw.model->materials[draw.model->primitives[p].material];
+                    if (!IsTransparent(draw, material)) {
+                        m_batchEntries.push_back({&ShadowPipeline(pipelines, material), draw.model, p, d, draw.distance});
+                    }
+                }
+            }
+            AddBatches(false);
+        }
+        passStarts[ModelPassCount] = m_modelBatches.size();
+
+        const std::uint64_t instanceBytes = m_instances.size() * sizeof(std::uint32_t);
+        const std::uint64_t commandBytes = m_modelCommands.size() * sizeof(RHI::DrawIndexedCommand);
+        if (!GrowBuffer(m_instanceBuffers[frameIndex], frameIndex, InstanceSlot, instanceBytes)) {
+            return false;
+        }
+        std::unique_ptr<RHI::Buffer>& commands = m_modelCommandBuffers[frameIndex];
+        if (!commands || commands->GetSize() < commandBytes) {
+            auto grown = m_device.CreateBuffer({std::max(std::bit_ceil(commandBytes), MinModelCommandBufferSize),
+                                                RHI::BufferUsage::Indirect, RHI::MemoryType::Upload});
+            if (!grown) {
+                Log::Error("{}", grown.error());
+                return false;
+            }
+            commands = std::move(*grown);
+        }
+        if (instanceBytes > 0) {
+            m_instanceBuffers[frameIndex]->Write(m_instances.data(), instanceBytes);
+            commands->Write(m_modelCommands.data(), commandBytes);
+        }
+        for (std::size_t pass = 0; pass < ModelPassCount; ++pass) {
+            m_modelPasses[pass] = std::span(m_modelBatches).subspan(passStarts[pass], passStarts[pass + 1] - passStarts[pass]);
+        }
+        return true;
+    }
+
+    // Les lots d'une passe des modèles : un appel indirect chacun, les changements d'état seulement quand il le faut.
+    void MeshRenderer::DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const {
+        const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
+        for (const ModelBatch& batch : m_modelPasses[pass]) {
+            const GpuModel& model = *batch.model;
+            if (&model != state.model) {
+                state.model = &model;
+                const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
+                commands.BindVertexBuffers(0, std::span(vertexBuffers).first(model.skin ? 2 : 1));
+                commands.BindIndexBuffer(*model.indices);
+            }
+            BindPipeline(commands, state, frameIndex, *batch.pipeline);
+            const GpuMaterial& material = model.materials[model.primitives[batch.primitive].material];
+            const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
+            if (group != state.group) {
+                state.group = group;
+                commands.SetBindGroup(0, *group);
+            }
+            const DrawParams params{material.baseColor, material.emissive, cascade, material.alphaCutoff,
+                                    pass == TransparentModelPass ? 1u : 0u, material.metallic, material.roughness,
+                                    material.normalScale, material.occlusionStrength, 0u, {}};
+            commands.PushConstants(&params, sizeof(params));
+            commands.DrawIndexedIndirect(*m_modelCommandBuffers[frameIndex], batch.command * sizeof(RHI::DrawIndexedCommand), 1);
+        }
     }
 
     // Les tuiles d'une passe : un appel indirect par page. Le sol et l'eau se teintent et se règlent eux-mêmes
@@ -1002,7 +1132,7 @@ namespace Flux {
         }
         const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
         const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, pass == OceanPass ? 1u : 0u,
-                                0.0f, 1.0f, 0.0f, 0.0f, 1u, {}};
+                                0.0f, 1.0f, 0.0f, 0.0f, 0u, {}};
         commands.PushConstants(&params, sizeof(params));
         const PlanetTileCompute& tiles = m_planets->GetTiles();
         commands.BindIndexBuffer(*m_planets->GetIndices());
@@ -1028,39 +1158,15 @@ namespace Flux {
             constexpr auto size = static_cast<float>(ShadowCascadeResolution);
             commands.SetViewport({static_cast<float>(x), static_cast<float>(y), size, size});
             commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
-            for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
-                const MeshDraw& draw = m_draws[d];
-                if (!CastsShadow(draw.center, draw.radius, c)) {
-                    continue;
-                }
-                const Pipelines& pipelines = GetPipelines(draw);
-                for (const ModelPrimitive& primitive : draw.model->primitives) {
-                    // Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle pour l'instant).
-                    const GpuMaterial& material = draw.model->materials[primitive.material];
-                    if (!IsTransparent(draw, material)) {
-                        DrawPrimitive(commands, state, frameIndex, d, primitive, ShadowPipeline(pipelines, material), c);
-                    }
-                }
-            }
+            DrawBatches(commands, state, frameIndex, 2 + c);
             DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
         }
         commands.EndRenderPass();
     }
 
     void MeshRenderer::DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const {
-        // Changements d'état seulement quand il le faut. L'ordre de près à loin (Prepare) sépare parfois les entités
-        // d'un même modèle : quelques changements de plus, contre moins de pixels éclairés pour rien.
         BindState state;
-        for (const std::uint32_t d : m_opaque) {
-            const MeshDraw& draw = m_draws[d];
-            const Pipelines& pipelines = GetPipelines(draw);
-            for (const ModelPrimitive& primitive : draw.model->primitives) {
-                const GpuMaterial& material = draw.model->materials[primitive.material];
-                if (!IsTransparent(draw, material)) {
-                    DrawPrimitive(commands, state, frameIndex, d, primitive, OpaquePipeline(pipelines, material));
-                }
-            }
-        }
+        DrawBatches(commands, state, frameIndex, OpaqueModelPass);
     }
 
     void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {
@@ -1087,16 +1193,6 @@ namespace Flux {
 
     void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
-        for (const TransparentDraw& item : m_transparent) {
-            const MeshDraw& draw = m_draws[item.draw];
-            const Pipelines& pipelines = GetPipelines(draw);
-            const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
-            // Double face : les faces arrière (le fond de l'objet) d'abord, puis les faces avant par-dessus.
-            // Exact pour une forme convexe (bulle de verrière, cube).
-            if (draw.model->materials[primitive.material].doubleSided) {
-                DrawPrimitive(commands, state, frameIndex, item.draw, primitive, *pipelines.transparentBack);
-            }
-            DrawPrimitive(commands, state, frameIndex, item.draw, primitive, *pipelines.transparent);
-        }
+        DrawBatches(commands, state, frameIndex, TransparentModelPass);
     }
 }

@@ -11,7 +11,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - 🔨 Ombres sans programme de pixel ni faces arrière, petits objets hors des cascades lointaines ; opaques sans
   `discard` (test de profondeur avant éclairage) ; objets ni en vue ni dans une ombre écartés (pose comprise) ; heures
   GPU seulement panneau Moteur ouvert (fermé : le compteur d'images/s seul).
-- ⬜ Dessins triés par pipeline, modèle et matériau ; objets identiques en un seul appel (instancing).
+- 🔨 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
+  indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
 - ⬜ Objets cachés derrière d'autres (occlusion sur le GPU, profondeur de l'image précédente).
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
@@ -77,7 +78,7 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Particules sur le GPU : armes, explosions, étincelles, fumée (et poussière sous les réacteurs au sol).
 - ✅ Anticrénelage temporel (TAA) : sous-pixels de Halton, reprojection par la profondeur, mouvement propre des objets (vaisseau, cockpit), voisinage en YCoCg ; grain des nuages qui change à chaque image et s'efface. Limites : le mouvement des os d'un personnage animé n'est pas compté (le voisinage rattrape), le mouvement des nuages non plus.
 - ⬜ Ombres des lumières intérieures.
-- ⬜ Instancing (champs d'astéroïdes, végétation).
+- ⬜ Champs d'astéroïdes et végétation (l'instancing des modèles est fait : reste à les générer et à les placer).
 - ⬜ Rendu vers texture : écrans du cockpit, interfaces dans le monde 3D.
 
 ### Planètes
