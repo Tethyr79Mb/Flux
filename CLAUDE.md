@@ -50,6 +50,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md`. Ce qui est fait et ce qui vient : 
 - Bruit du ciel en deux exemplaires : `Graphics/Sky.cpp` et `shaders/Sky.slang`, à modifier ensemble.
 - Performances : pas d'allocation ni de copie par image dans le code chaud ; dire dans la PR ce qui coûte (appels de
   dessin un par un, parcours quadratiques) ; mesurer (panneau Moteur, timestamps GPU) avant d'optimiser.
+- Feuilles de route (`Engine/ROADMAP.md`, `Editor/ROADMAP.md`) : chaque objectif porte son état (demande de Bruno) :
+  ✅ atteint, 🔧 à améliorer (fait, limites dites sur la ligne), 🔨 commencé, ⬜ à faire. Mettre à jour à chaque PR.
 - Commentaires : dire pourquoi, pas répéter le code ; garder la densité du code voisin.
 - Ne jamais désactiver ni sauter un test pour obtenir une CI verte.
 

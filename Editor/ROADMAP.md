@@ -3,7 +3,7 @@
 Éditeur de scènes et d'interfaces d'**Ars Solaris**, construit avec FluxUI (pas d'ImGui). Ce fichier dit où on en est
 et ce qui vient ensuite. L'ordre des sections « Prochaines étapes » est une proposition : Bruno décide.
 
-Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
+Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, dites sur la ligne) · 🔨 commencé (en cours ou PR ouverte) · ⬜ à faire
 
 ## Où on en est
 
@@ -21,16 +21,16 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ✅ Inspecteur généré depuis les composants (listes déroulantes, couleurs avec sélecteur Windows, choix de fichiers).
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…
 - ✅ « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.
-- 🔨 Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté.
-- ✅ Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R ; Ctrl = pas de 15°).
-- ✅ Annuler / refaire (Ctrl+Z, Ctrl+Y).
-- 🔨 Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de
+- ✅ Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté.
+- 🔧 Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R ; Ctrl = pas de 15°). À améliorer : un seul objet sélectionné à la fois, gizmo dans les axes du monde.
+- 🔧 Annuler / refaire (Ctrl+Z, Ctrl+Y). À améliorer : un objet à la fois, l'étoile du titre reste après une annulation.
+- ✅ Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de
   lui, s'y fixe (enfant, à sa place exacte) ; refus expliqué si l'emport ne l'accepte pas (genre, taille, déjà occupé).
-- ✅ Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu.
+- 🔧 Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu. À améliorer : la scène est copiée en JSON, lent sur une grosse scène.
 - ✅ Scène de démarrage du projet.
 
 ### Contenu (assets)
-- ✅ Explorateur de fichiers : arbre de dossiers, vignettes avec icônes Windows, nouveau dossier, renommer, déplacer (les références des scènes suivent), corbeille.
+- 🔧 Explorateur de fichiers : arbre de dossiers, vignettes avec icônes Windows, nouveau dossier, renommer, déplacer (les références des scènes suivent), corbeille. À améliorer : pas d'aperçu des images et des modèles, `.gltf` refusé.
 - ✅ Copie des assets à côté de l'exe, rechargement à chaud des images, modèles et textures du sol.
 
 ### Interfaces du jeu
@@ -44,7 +44,6 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Gizmo dans les axes de l'objet (aujourd'hui : déplacement et rotation dans les axes du monde).
 - ⬜ Magnétisme : grille de déplacement, pas d'échelle.
 - ⬜ Glisser un modèle ou un son du Contenu directement dans la vue 3D.
-- ⬜ Aller à l'objet sélectionné (touche F) depuis la vue.
 
 ### Contenu
 - ⬜ Aperçu des images et des modèles dans les vignettes.
@@ -52,8 +51,8 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Annuler un déplacement de fichier qui remet aussi les anciens chemins dans les scènes.
 
 ### Prefabs
-- ✅ Créer un prefab depuis l'inspecteur, le placer depuis « Placer », l'ouvrir pour le modifier (double-clic dans
-  Contenu) ; champs modifiés marqués, « Revenir au prefab », « Délier ».
+- 🔧 Créer un prefab depuis l'inspecteur, le placer depuis « Placer », l'ouvrir pour le modifier (double-clic dans
+  Contenu) ; champs modifiés marqués, « Revenir au prefab », « Délier ». À améliorer : pas encore « Appliquer au prefab ».
 - ⬜ « Appliquer au prefab » : envoyer les modifications d'un exemplaire dans le prefab sans l'ouvrir.
 - ⬜ Glisser un prefab du Contenu dans la vue.
 - ⬜ Remplacer les vaisseaux codés en dur dans « Placer » par des prefabs.
