@@ -28,8 +28,8 @@ namespace Flux {
         // d'avant : le GPU ne fait plus chevaucher deux étapes, d'où un surcoût et des temps d'étape un peu plus longs
         // qu'en vrai.
         enum Timestamp : std::uint32_t {
-            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, TemporalDone, BloomDone,
-            InterfaceDone,
+            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, PyramidDone, TemporalDone,
+            BloomDone, InterfaceDone,
             TimestampCount
         };
         static_assert(TimestampCount <= RHI::MaxTimestamps);
@@ -188,8 +188,9 @@ namespace Flux {
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             if (sceneVisible) {
                 const Math::Vector3d moved = Math::Delta(previousPosition, camera.position);
-                temporal.history = temporalAA && hasPrevious && Math::Length(moved) < MaxTemporalJump;
-                if (temporal.history) {
+                temporal.continuous = hasPrevious && Math::Length(moved) < MaxTemporalJump;
+                temporal.history = temporalAA && temporal.continuous;
+                if (temporal.continuous) {
                     temporal.previousViewProjection = previousViewProjection;
                     temporal.cameraDelta = Math::Vector3f(moved);
                     // Un pixel et sa profondeur -> relatif à la caméra -> relatif à l'ancienne -> son clip d'alors.
@@ -218,6 +219,9 @@ namespace Flux {
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
                 thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
                 tracers->Prepare(projectiles, impacts, camera, aspect, static_cast<float>(scene3d.height), temporal.jitter, frameIndex);
+                const OcclusionCulling::Stats occlusion = meshes->GetOcclusionStats();
+                timings.occlusionTested = occlusion.tested;
+                timings.occlusionHidden = occlusion.hidden;
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;
@@ -281,6 +285,12 @@ namespace Flux {
             }
             timestamp(SceneDone);
             if (sceneVisible) {
+                // La profondeur de la scène réduite, pour écarter à l'image suivante ce qui sera caché.
+                commands.BeginStep("pyramide de profondeur");
+                meshes->BuildDepthPyramid(commands, frameIndex, post->GetSceneDepth(), {scene3d.width, scene3d.height});
+            }
+            timestamp(PyramidDone);
+            if (sceneVisible) {
                 commands.BeginStep("anticrénelage");
                 post->ResolveTemporal(commands, temporalAA, reprojection, temporal.history);
             }
@@ -325,7 +335,8 @@ namespace Flux {
             timings.gpuOcean = between(SkyDone, OceanDone);
             timings.gpuClouds = between(OceanDone, CloudsDone);
             timings.gpuTransparent = between(CloudsDone, SceneDone);
-            timings.gpuTemporal = between(SceneDone, TemporalDone);
+            timings.gpuPyramid = between(SceneDone, PyramidDone);
+            timings.gpuTemporal = between(PyramidDone, TemporalDone);
             timings.gpuBloom = between(TemporalDone, BloomDone);
             timings.gpuInterface = between(BloomDone, InterfaceDone);
         }
@@ -438,6 +449,14 @@ namespace Flux {
 
     bool Renderer::IsTemporalAAEnabled() const {
         return m_impl->temporalAA;
+    }
+
+    void Renderer::SetOcclusionCulling(bool enabled) {
+        m_impl->meshes->SetOcclusionCulling(enabled);
+    }
+
+    bool Renderer::IsOcclusionCullingEnabled() const {
+        return m_impl->meshes->IsOcclusionCullingEnabled();
     }
 
     std::string_view Renderer::GetPresentModeName() const {

@@ -89,6 +89,7 @@ namespace Flux {
             GpuOceanCost,
             GpuCloudsCost,
             GpuTransparentCost,
+            GpuPyramidCost,
             GpuTemporalCost,
             GpuBloomCost,
             GpuInterfaceCost,
@@ -158,6 +159,10 @@ namespace Flux {
                 if (ui.Checkbox("Anticrénelage (TAA)", temporal)) {
                     renderer.SetTemporalAA(temporal);
                 }
+                bool occlusion = renderer.IsOcclusionCullingEnabled();
+                if (ui.Checkbox("Objets cachés écartés", occlusion)) {
+                    renderer.SetOcclusionCulling(occlusion);
+                }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
 
                 // Lecture : si « Attente » domine alors que le GPU travaille peu, la cadence vient de l'extérieur
@@ -176,10 +181,12 @@ namespace Flux {
                 ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
                 ui.LabelText("  dont nuages", FormatCost(stats.Get(GpuCloudsCost)));
                 ui.LabelText("  dont transparents, flammes", FormatCost(stats.Get(GpuTransparentCost)));
+                ui.LabelText("GPU pyramide de profondeur", FormatCost(stats.Get(GpuPyramidCost)));
                 ui.LabelText("GPU anticrénelage", FormatCost(stats.Get(GpuTemporalCost)));
                 ui.LabelText("GPU bloom, image finale", FormatCost(stats.Get(GpuBloomCost)));
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
                 const RenderTimings& render = renderer.GetTimings();
+                ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
                 ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
 
@@ -397,6 +404,7 @@ namespace Flux {
             stats.Add(GpuOceanCost, render.gpuOcean);
             stats.Add(GpuCloudsCost, render.gpuClouds);
             stats.Add(GpuTransparentCost, render.gpuTransparent);
+            stats.Add(GpuPyramidCost, render.gpuPyramid);
             stats.Add(GpuTemporalCost, render.gpuTemporal);
             stats.Add(GpuBloomCost, render.gpuBloom);
             stats.Add(GpuInterfaceCost, render.gpuInterface);

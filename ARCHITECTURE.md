@@ -78,6 +78,7 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
 ├─ ModelCache      modèles glTF chargés une fois (GpuModel), rangés au chargement (PrepareModel) ; géométrie dans
 │                  des pages partagées (GeometryPage, RangeAllocator), images et matériaux en tables (groupe 2)
+├─ OcclusionCulling entités cachées écartées par le GPU (Culling.slang, pyramide de profondeur)
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
@@ -99,7 +100,11 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    `DrawIndexedIndirect` (une commande par lot, le matériau de chaque objet lu par indice dans la table) ; les lots opaques passent dans l'ordre de leur objet
    le plus proche (ce qu'ils cachent échoue au test de profondeur avant d'être éclairé). Les transparents restent un
    appel par objet, dans leur ordre.
-2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
+2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé, entités cachées écartées
+   (`OcclusionCulling`, `Culling.slang`) : chaque entité des lots opaques et transparents (ou chaque bloc d'un grand
+   modèle) est comparée, là où elle était à l'image précédente (`previousWorld`), à la pyramide de la profondeur de
+   cette image ; ses commandes partent vides du CPU et le GPU n'y ajoute que les visibles. Pas de test au premier
+   affichage ni après un saut de la caméra (`TemporalView::continuous`).
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32, profondeur seule sans programme de pixel (sauf seuil
    d'alpha) ; un objet fermé à une face n'y dessine que ses faces tournées vers le soleil, et un objet de moins de
    1,5 texel de rayon n'est pas dessiné dans la cascade.
@@ -113,6 +118,8 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    Halton, `TemporalView`), sauf le fond du ciel (étoiles d'un pixel) ; les opaques écrivent aussi leur mouvement
    propre (seconde cible RG16Float) : où le point était à l'image précédente moins où il serait resté immobile, nul
    pour le décor et pour un cockpit qui suit la caméra.
+   Après la passe, sa profondeur est réduite en pyramide (chaque niveau garde la plus lointaine de 2 x 2 texels) pour
+   le test des entités cachées de l'image suivante.
 5. Anticrénelage temporel (`Temporal.slang`, Paramètres > Graphiques, activé par défaut) : chaque pixel est retrouvé
    dans le résultat de l'image précédente (profondeur + caméra d'avant, plus le mouvement propre), ramené dans la boîte
    de couleurs de son voisinage 3 x 3 (YCoCg, moyenne ± écart type) puis mélangé à 10 % de l'image actuelle. Deux

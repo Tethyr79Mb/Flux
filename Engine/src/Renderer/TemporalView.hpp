@@ -7,7 +7,8 @@
 #include <cstdint>
 
 namespace Flux {
-    // Ce que l'anticrénelage temporel (PostRenderer::ResolveTemporal) demande aux passes de la scène pour une image.
+    // Ce que l'anticrénelage temporel (PostRenderer::ResolveTemporal) et l'élimination des entités cachées
+    // (OcclusionCulling) demandent aux passes de la scène pour une image.
     struct TemporalView
     {
         // Décalage de la projection en clip space (2 / taille de la vue fois une fraction de pixel) : chaque image voit
@@ -21,7 +22,10 @@ namespace Flux {
         // Numéro de l'image pour les bruits qui doivent changer d'une image à l'autre (nuages) ; 0 sans anticrénelage
         // (un bruit fixe ne scintille pas).
         std::uint32_t noiseFrame = 0;
-        // false : rien à reprendre de l'image précédente (premier affichage, saut de la caméra).
+        // L'image précédente montrait la même scène, caméra sans saut : previousViewProjection et cameraDelta sont
+        // valables (mouvement des objets, entités cachées écartées par OcclusionCulling), avec ou sans anticrénelage.
+        bool continuous = false;
+        // Anticrénelage et continuous : l'image précédente est reprise.
         bool history = false;
     };
 

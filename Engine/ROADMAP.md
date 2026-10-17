@@ -21,8 +21,11 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   modèle, grands modèles découpés en blocs de 16 m écartés un par un (champ, cascades).
 - 🔨 Rendu piloté par le GPU, commencé le 2026-10-17. Fait : géométrie de tous les modèles dans des pages partagées
   (modèles animés à part), images et matériaux dans deux tables lues par indice, lots du même pipeline et de la même
-  page dessinés en un seul `DrawIndexedIndirect` (plusieurs commandes). Reste : blocs écartés par un compute shader
-  (hors champ, puis cachés derrière d'autres avec la profondeur de l'image précédente).
+  page dessinés en un seul `DrawIndexedIndirect` (plusieurs commandes) ; entités et blocs cachés derrière d'autres
+  écartés par un compute shader (pyramide de la profondeur de l'image précédente, case « Objets cachés écartés » et
+  compteur au panneau Moteur). L'élimination hors champ reste sur le CPU (par entité et par bloc, peu coûteuse ; elle
+  évite aussi de calculer la pose des personnages hors champ). Reste : ce qu'un mur découvre apparaît une image plus
+  tard (seconde passe à faire), les ombres ne profitent pas du test.
 - ⬜ Chargement en arrière-plan : lecture et décodage sur d'autres fils, envois au GPU sans `vkQueueWaitIdle`
   (aujourd'hui chaque envoi arrête le fil principal jusqu'à la fin du travail du GPU), puis file de transfert.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
