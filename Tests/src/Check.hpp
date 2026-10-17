@@ -35,3 +35,4 @@ bool RunPlanetGpuTests();
 bool RunWeaponsTests();
 bool RunDockingAutopilotTests();
 bool RunMissionTests();
+bool RunWarpTests();

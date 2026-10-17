@@ -23,6 +23,7 @@
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
+#include "Flux/Scene/Warp.hpp"
 #include "Flux/Scene/Weapons.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
@@ -274,6 +275,8 @@ namespace Flux {
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
         // Près d'une station : se faire conduire au quai libre le plus proche ; amarré : repartir (choix de Bruno).
         actions.Add("Pilote automatique", "Vaisseau", Key::L);
+        // Vers la destination que vise le nez (station, planète, objectif de mission) ; en warp : le couper.
+        actions.Add("Warp", "Vaisseau", Key::J);
         // Groupes d'armes sur les chiffres au-dessus des lettres (choix de Bruno) : sur le Chasseur, 1 le nez, 2 les
         // autocanons, 3 les missiles.
         constexpr std::array GroupKeys{Key::Digit1, Key::Digit2, Key::Digit3, Key::Digit4, Key::Digit5,
@@ -458,6 +461,7 @@ namespace Flux {
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
                 const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
                 DrawFlightInfo(player, screen, deltaSeconds);
+                DrawWarpInfo(player, screen);
                 DrawMissionInfo(player, screen, deltaSeconds);
                 DrawMissionWindow(player, screen);
             }
@@ -585,6 +589,8 @@ namespace Flux {
         });
         const Entity pilotedShip = Ships::GetPilotedShip(m_scene, player);
         if (pilotedShip != NullEntity && WasActionPressed("Pilote automatique")) {
+            Warp::Stop(m_scene, pilotedShip); // L en warp : il en sort et cherche un quai
+            m_warpName.clear();
             switch (Docking::Toggle(m_scene, pilotedShip)) {
             case Docking::ToggleResult::Docking:
             case Docking::ToggleResult::Leaving: break; // l'étape s'affiche dans les infos de vol
@@ -596,6 +602,8 @@ namespace Flux {
         }
         Ships::Update(m_scene, pilotedShip, deltaSeconds, shipInput);
         Docking::Update(m_scene, deltaSeconds); // après le pilote : il prend la main sous pilote automatique
+        UpdateWarp(pilotedShip, pilotedShip != NullEntity && WasActionPressed("Warp"));
+        Warp::Update(m_scene, deltaSeconds); // après le pilote, comme le pilote automatique
         m_physics->Update(m_scene, deltaSeconds, character);
         // Armes après la physique : le vaisseau est à sa place de cette image, les projectiles partent de la bouche
         // des canons (avant, ils naîtraient en retard d'une image : 16 m à 1 000 m/s). Les anciens avancent d'abord.

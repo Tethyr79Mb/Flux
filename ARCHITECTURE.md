@@ -155,6 +155,13 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   la gravité de son pont et se pose (`FindCarrierGravity`), même loin de toute planète.
   Un vaisseau immobile, sans pilote ni chute (une station), ne teste pas sa collision : son enveloppe englobe le
   hangar, et chaque test contre le maillage d'un chasseur racine garé dedans coûtait 26 ms par image.
+- Warp (`Warp`, après `Docking::Update`) : pour les grandes distances. Destinations : stations (vaisseaux à quais),
+  planètes, objectif de la mission en cours ; J vise celle à moins de 30° du nez. Le vaisseau charge 3 s en se
+  tournant vers elle, puis sa vitesse est multipliée par e chaque seconde, bornée par la distance restante en une seconde : il ralentit en arrivant et sort à 4 km d'une station, 10 km au-dessus de
+  l'atmosphère d'une planète. En vol (`WarpStage::Cruising`), `MoveShips` le déplace sans collision et
+  `CollectProbes` ne demande pas de sol pour lui. Il ne s'arrête qu'à destination : une planète sur la ligne droite est
+  contournée à 20 km au-dessus de son atmosphère, et près d'elle une image ne le porte pas plus loin que le quart de
+  la distance qui l'en sépare.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
   (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
   `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou cubes

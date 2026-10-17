@@ -4,6 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Math/Vector3.hpp"
+#include "Flux/Math/WorldPosition.hpp"
 
 #include <entt/entity/entity.hpp>
 
@@ -429,6 +430,10 @@ namespace Flux {
     // demi-tour, descente), ou en repartant (remonter, sortir).
     enum class AutopilotStage : std::uint8_t { Off, Climb, Over, Under, Approach, Enter, Turn, Descend, Rise, Exit };
 
+    // Warp d'un vaisseau (Warp) : il se tourne vers sa destination en chargeant, puis y file sans collision et en sort
+    // de lui-même à son arrivée.
+    enum class WarpStage : std::uint8_t { Off, Charging, Cruising };
+
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
     // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou
     // tourne, sans glisser. Sa propre collision, s'il en a une, reste dans le repère de son parent (sa coque).
@@ -460,6 +465,9 @@ namespace Flux {
         // Seulement dans l'espace : l'atmosphère d'une planète, le frein ou un atterrissage le coupent.
         float travelFactor = 10.0f;
         float travelSpoolTime = 3.0f;
+        // Warp (J, vers la destination visée) : pour les grandes distances, jusqu'à warpSpeed km/s ; 0 : pas de warp
+        // (une station).
+        float warpSpeed = 1.0e7f;
         // Sans pilote, il tombe avec la gravité du lieu (planète, monde) jusqu'à se poser ; décoché : il reste où il
         // est (station, vaisseau amiral en orbite). Seulement à la racine de la scène et avec une collision.
         bool fallsWithoutPilot = true;
@@ -476,6 +484,12 @@ namespace Flux {
         // (étape Off, le vaisseau enfant de la station).
         AutopilotStage autopilot = AutopilotStage::Off;
         Entity dock = NullEntity;
+        // Warp en cours : son étape, sa destination, le rayon autour d'elle où il en sort (le haut de l'atmosphère d'une
+        // planète, quelques km d'une station) et le temps déjà chargé (s).
+        WarpStage warp = WarpStage::Off;
+        Math::WorldPosition warpTarget;
+        double warpExit = 0.0;
+        float warpCharge = 0.0f;
     };
 
     // Quai d'une station (entité enfant d'un vaisseau immobile) : là où un vaisseau s'amarre. Son origine est celle
