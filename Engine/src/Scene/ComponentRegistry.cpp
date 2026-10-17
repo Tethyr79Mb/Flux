@@ -220,6 +220,10 @@ namespace Flux {
             .Field("travelFactor", "Mode voyage (x)", &ShipComponent::travelFactor, {.speed = 0.1, .min = 1.0, .max = 1000.0, .decimals = 1})
             .Field("travelSpoolTime", "Mode voyage : mise en route (s)", &ShipComponent::travelSpoolTime, {.speed = 0.05, .min = 0.0, .max = 60.0, .decimals = 1})
             .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot);
+        registry.Register<DockComponent>("dock", "Quai")
+            .Field("approach", "Approche devant (m)", &DockComponent::approach, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
+            .Field("hover", "Hauteur d'arrivée (m)", &DockComponent::hover, {.speed = 0.1, .min = 0.0, .max = 1.0e3, .decimals = 1})
+            .Field("clearance", "Passage au-dessus (m)", &DockComponent::clearance, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1});
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})

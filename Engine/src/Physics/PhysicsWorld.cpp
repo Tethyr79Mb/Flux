@@ -547,17 +547,27 @@ namespace Flux {
 
         // Le décor immobile du monde (pas la verrière « caméra seulement », ni les caisses, coques et copies qui
         // bougent) : ce sur quoi un vaisseau bute.
-        class StaticFilter final : public JPH::BodyFilter {
+        // Ce qu'un vaisseau à la racine heurte : le décor immobile du monde, et les autres vaisseaux (leur coque, et les
+        // copies de leur décor : murs et sol d'une station, coque d'un chasseur). Ni les siennes, ni les objets
+        // simulés (caisses), ni ce qui n'arrête que la caméra.
+        class ShipFilter final : public JPH::BodyFilter {
             public:
+            explicit ShipFilter(Entity self) : m_self(self) {}
             bool ShouldCollideLocked(const JPH::Body& body) const override {
-                return body.IsStatic() && body.GetObjectLayer() != Layers::CameraOnly;
+                if (body.GetObjectLayer() == Layers::CameraOnly || body.IsDynamic()) {
+                    return false;
+                }
+                return body.IsStatic() || static_cast<Entity>(static_cast<entt::id_type>(body.GetUserData())) != m_self;
             }
+
+            private:
+            Entity m_self;
         };
 
         // Enfoncement le plus profond de l'enveloppe dans le décor, à cette place.
-        float Penetration(const Grid& grid, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position) const {
+        float Penetration(const Grid& grid, Entity self, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position) const {
             JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
-            const StaticFilter filter;
+            const ShipFilter filter(self);
             grid.system->GetNarrowPhaseQuery().CollideShape(&shape, JPH::Vec3::sOne(),
                                                             JPH::RMat44::sRotationTranslation(rotation, JPH::RVec3(position)),
                                                             JPH::CollideShapeSettings{}, JPH::RVec3::sZero(), collector, {}, {},
@@ -571,7 +581,7 @@ namespace Flux {
 
         // Premier obstacle sur le trajet de l'enveloppe : fraction du trajet et normale de la surface (vers le
         // vaisseau). Les surfaces dont on s'éloigne ou qu'on longe (posé au sol, on roule) ne comptent pas.
-        bool CastShip(const Grid& grid, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position,
+        bool CastShip(const Grid& grid, Entity self, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position,
                       JPH::Vec3Arg motion, float& fraction, JPH::Vec3& normal) const {
             const JPH::RShapeCast cast(&shape, JPH::Vec3::sOne(), JPH::RMat44::sRotationTranslation(rotation, JPH::RVec3(position)),
                                        motion);
@@ -581,7 +591,7 @@ namespace Flux {
             // s'enfonçait alors d'une image dans le sol. Le tri se fait plus bas, sur la vraie normale de la face.
             settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
             JPH::AllHitCollisionCollector<JPH::CastShapeCollector> collector;
-            const StaticFilter filter;
+            const ShipFilter filter(self);
             grid.system->GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, filter);
             bool hit = false;
             fraction = 1.0f;
@@ -610,14 +620,14 @@ namespace Flux {
         // son bas, sur `reach` mètres sous elle). Pas la face que l'enveloppe toucherait la première : sur un sol
         // bosselé, elle change dès qu'il tourne un peu, et se remettre parallèle à elle le ferait basculer sans fin
         // d'une face à l'autre. Faux si un coin est au-dessus du vide.
-        bool FindGroundSlope(const Grid& grid, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position,
+        bool FindGroundSlope(const Grid& grid, Entity self, const JPH::Shape& shape, JPH::QuatArg rotation, JPH::Vec3Arg position,
                              float reach, JPH::Vec3& normal) const {
             const JPH::AABox bounds = shape.GetLocalBounds();
             const JPH::Vec3 center = bounds.GetCenter();
             const JPH::Vec3 extent = bounds.GetExtent();
             const JPH::Vec3 down = rotation * JPH::Vec3(0.0f, -1.0f, 0.0f);
             const float length = 2.0f * extent.GetY() + reach;
-            const StaticFilter filter;
+            const ShipFilter filter(self);
             std::array<JPH::Vec3, 4> ground;
             for (int corner = 0; corner < 4; ++corner) {
                 // Un peu en retrait des coins : sous un bout d'aile, le sol ne compte pas plus qu'ailleurs.
@@ -639,12 +649,36 @@ namespace Flux {
             return true;
         }
 
+        // Dans un autre vaisseau à la racine (le hangar d'une station, d'un porte-vaisseaux : dans la boîte de son
+        // enveloppe), la gravité de son pont : un vaisseau garé sans pilote s'y pose sur ses roues, même loin de
+        // toute planète. Parcourt les vaisseaux de la scène : seulement pour ceux qui tombent, peu nombreux.
+        bool FindCarrierGravity(const Scene& scene, Entity self, const Math::WorldPosition& at, JPH::Vec3& gravity) {
+            for (const auto [other, carrier] : scene.GetRegistry().view<const ShipComponent>().each()) {
+                if (other == self || carrier.gravity <= 0.0f || scene.GetParent(other) != NullEntity) {
+                    continue;
+                }
+                const JPH::Shape* hull = GetShipShape(scene, other);
+                if (!hull) {
+                    continue;
+                }
+                const Math::Quaternionf rotation = scene.GetWorldRotation(other);
+                const Math::Vector3f local = rotation.Conjugate().Rotate(Math::Vector3f(Math::Delta(scene.GetWorldPosition(other), at)));
+                if (hull->GetLocalBounds().Contains(ToJolt(local))) {
+                    gravity = ToJolt(rotation.Rotate(Math::Vector3f{0.0f, -carrier.gravity, 0.0f}));
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // Mouvement des vaisseaux (ShipComponent::velocity, angularVelocity), dans leurs propres axes. Un vaisseau à la
-        // racine bute sur le décor immobile du monde : il s'arrête contre le sol ou un mur et glisse le long, et ne
+        // racine bute sur le décor immobile du monde et sur les autres vaisseaux (ShipFilter : une station, un
+        // chasseur) : il s'arrête contre le sol ou un mur et glisse le long, et ne
         // tourne pas s'il devait s'y enfoncer. Posé (le décor sous son ventre, à moins de 5 cm), il ne tourne pas du tout.
         // Sans pilote (ShipComponent::fallsWithoutPilot), ses moteurs ne le portent plus : il tombe avec la gravité du
-        // lieu, freiné par l'air, jusqu'à se poser. Dans une scène à planètes, seulement près d'elles (leur gravité) :
-        // dans l'espace, il reste où il est ; sans planète, avec la gravité du monde (sol plat).
+        // lieu, freiné par l'air, jusqu'à se poser. Dans le hangar d'une station, la gravité de son pont
+        // (FindCarrierGravity) ; sinon, dans une scène à planètes, seulement près d'elles (leur gravité) : dans
+        // l'espace, il reste où il est ; sans planète, avec la gravité du monde (sol plat).
         void MoveShips(Scene& scene, double deltaSeconds) {
             const Grid* worldGrid = nullptr;
             for (const std::unique_ptr<Grid>& grid : grids) {
@@ -660,9 +694,13 @@ namespace Flux {
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
                 const JPH::Shape* shape = root && worldGrid ? GetShipShape(scene, entity) : nullptr;
-                // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas.
-                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted;
-                if (!shape && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
+                // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas. Le pilote automatique le tient.
+                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                // Immobile, sans pilote ni chute : rien à tester, il garde son état (posé ou non). Une station ne
+                // cherche plus son sol à chaque image : son enveloppe englobe le hangar, et un chasseur racine garé
+                // dedans lui faisait tester ses 19 000 triangles un par un (26 ms par image et par chasseur).
+                const bool resting = !falls && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                if ((!shape || resting) && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }
                 ship.grounded = false;
@@ -675,7 +713,7 @@ namespace Flux {
                     // Stabilisateur d'atterrissage : à moins de 4 m d'un sol (pente < 60°) et lent sur le plan (moins
                     // de 10 m/s), le vaisseau se remet parallèle au sol, à 60 °/s au plus, sans toucher à son cap.
                     const float flatSpeed = std::hypot(ship.velocity.x, ship.velocity.z);
-                    if (flatSpeed < 10.0f && FindGroundSlope(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, 4.0f, normal)
+                    if (flatSpeed < 10.0f && FindGroundSlope(*worldGrid, entity, *shape, ToJoltRotation(transform.rotation), start, 4.0f, normal)
                         && normal.Dot(up) > 0.5f) {
                         const JPH::Vec3 axis = up.Cross(normal);
                         const float angle = std::asin(std::min(1.0f, axis.Length()));
@@ -686,8 +724,8 @@ namespace Flux {
                             const Math::Quaternionf leveled = Math::Normalize(level * transform.rotation);
                             // Posé sur une aile, il se redresse en s'appuyant dessus : il remonte de ce qu'il
                             // s'enfoncerait (le train touche le sol au lieu de passer dessous).
-                            const float before = Penetration(*worldGrid, *shape, ToJoltRotation(transform.rotation), start);
-                            const float after = Penetration(*worldGrid, *shape, ToJoltRotation(leveled), start);
+                            const float before = Penetration(*worldGrid, entity, *shape, ToJoltRotation(transform.rotation), start);
+                            const float after = Penetration(*worldGrid, entity, *shape, ToJoltRotation(leveled), start);
                             if (after > before) {
                                 lift = normal * (after - before + 0.001f);
                             }
@@ -698,7 +736,7 @@ namespace Flux {
                     // quelques centimètres en le remettant à plat), face tournée vers son haut (pente < 45°). Il ne
                     // tourne plus de lui-même (le stabilisateur, si : il se met à plat sur ses roues).
                     const JPH::Vec3 down = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, -1.0f, 0.0f}));
-                    ship.grounded = CastShip(*worldGrid, *shape, ToJoltRotation(transform.rotation), start, down * 0.15f, fraction, normal)
+                    ship.grounded = CastShip(*worldGrid, entity, *shape, ToJoltRotation(transform.rotation), start, down * 0.15f, fraction, normal)
                                     && normal.Dot(-down) > 0.7f;
                     if (ship.grounded) {
                         ship.angularVelocity = {};
@@ -710,10 +748,11 @@ namespace Flux {
                     } else if (falls) {
                         const float delta = static_cast<float>(deltaSeconds);
                         const JPH::RVec3 at(start);
-                        const JPH::Vec3 gravity =
-                            hasPlanets
-                                ? ToJolt(planetGround.GetGravity({at.GetX(), at.GetY(), at.GetZ()}, Math::Vector3f{}))
-                                : worldGrid->system->GetGravity();
+                        JPH::Vec3 gravity;
+                        if (!FindCarrierGravity(scene, entity, scene.GetWorldPosition(entity), gravity)) {
+                            gravity = hasPlanets ? ToJolt(planetGround.GetGravity({at.GetX(), at.GetY(), at.GetZ()}, Math::Vector3f{}))
+                                                 : worldGrid->system->GetGravity();
+                        }
                         JPH::Vec3 velocity = ToJolt(transform.rotation.Rotate(ship.velocity)) + gravity * delta;
                         if (const float air = AirAt(*worldGrid, at); air > 0.0f) {
                             velocity /= 1.0f + airDrag * air * velocity.Length() * delta;
@@ -734,8 +773,8 @@ namespace Flux {
                     const JPH::Vec3 start = ToJolt(Math::Delta(anchor, scene.GetWorldPosition(entity)));
                     if (speed > 0.0f) {
                         // Une rotation qui l'enfoncerait dans le décor (nez contre le sol) est refusée.
-                        const float before = Penetration(*worldGrid, *shape, ToJoltRotation(previousRotation), start);
-                        const float after = Penetration(*worldGrid, *shape, ToJoltRotation(transform.rotation), start);
+                        const float before = Penetration(*worldGrid, entity, *shape, ToJoltRotation(previousRotation), start);
+                        const float after = Penetration(*worldGrid, entity, *shape, ToJoltRotation(transform.rotation), start);
                         if (after > before + 0.01f) {
                             transform.rotation = previousRotation;
                             move = Math::Vector3d(transform.rotation.Rotate(ship.velocity)) * deltaSeconds + Math::Vector3d(FromJolt(lift));
@@ -748,7 +787,7 @@ namespace Flux {
                     for (int pass = 0; pass < 2 && motion.LengthSq() > 1.0e-12f; ++pass) {
                         float fraction = 1.0f;
                         JPH::Vec3 normal;
-                        if (!CastShip(*worldGrid, *shape, rotation, position, motion, fraction, normal)) {
+                        if (!CastShip(*worldGrid, entity, *shape, rotation, position, motion, fraction, normal)) {
                             position += motion;
                             break;
                         }

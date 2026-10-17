@@ -245,7 +245,7 @@ namespace FluxEditor {
                 addBox(box, hangar);
             }
 
-            // Quatre quais de 24 x 28 m en ligne, au milieu du hangar. Chaque « Quai N » est le point d'amarrage :
+            // Quatre quais de 24 x 28 m en ligne, au milieu du hangar. Chaque « Quai N » (DockComponent) est le point d'amarrage :
             // l'origine d'un chasseur posé (son plancher de cockpit, 2,3 m au-dessus de ses roues), le nez vers la
             // sortie (-z), prêt à repartir. Le marquage au sol est seulement peint (pas de marche à franchir).
             constexpr double DockX[] = {-51.0, -17.0, 17.0, 51.0};
@@ -259,13 +259,21 @@ namespace FluxEditor {
                 const std::string name = "Quai " + std::to_string(i + 1);
                 const Entity dock = scene.CreateEntity(name, station);
                 scene.Get<TransformComponent>(dock).position = {x, 2.3, DockZ};
+                // Point d'approche à 100 m devant (50 m hors de l'entrée), arrivée à 6 m de haut (sous le linteau, à
+                // 24 m) ; par-dessus la station (31 m) à 150 m.
+                scene.Add<DockComponent>(dock);
                 const Entity marks = scene.CreateEntity("Marquage du " + name, hangar);
                 const double x0 = x - HalfWidth, x1 = x + HalfWidth, z0 = DockZ - HalfLength, z1 = DockZ + HalfLength;
-                for (const Box& box : {Box{"Dalle", {x0, 0.0, z0}, {x1, 0.01, z1}, grey(60), 0.0f, false},
-                                       Box{"Bord avant", {x0, 0.0, z0}, {x1, 0.02, z0 + Line}, yellow, 1.5f, false},
-                                       Box{"Bord arrière", {x0, 0.0, z1 - Line}, {x1, 0.02, z1}, yellow, 1.5f, false},
-                                       Box{"Bord gauche", {x0, 0.0, z0}, {x0 + Line, 0.02, z1}, yellow, 1.5f, false},
-                                       Box{"Bord droit", {x1 - Line, 0.0, z0}, {x1, 0.02, z1}, yellow, 1.5f, false},
+                // Les bandes sont posées sur la dalle et ne se chevauchent pas (les côtés vont d'un bord à l'autre) : deux
+                // faces au même endroit, l'une passe devant l'autre au hasard d'une image à l'autre (scintillement).
+                // Lueur modérée : une bande très lumineuse vue de loin, plus fine qu'un pixel, clignote elle aussi.
+                constexpr double Top = 0.02, Paint = 0.04;
+                constexpr float Glow = 0.5f;
+                for (const Box& box : {Box{"Dalle", {x0, 0.0, z0}, {x1, Top, z1}, grey(60), 0.0f, false},
+                                       Box{"Bord avant", {x0, Top, z0}, {x1, Paint, z0 + Line}, yellow, Glow, false},
+                                       Box{"Bord arrière", {x0, Top, z1 - Line}, {x1, Paint, z1}, yellow, Glow, false},
+                                       Box{"Bord gauche", {x0, Top, z0 + Line}, {x0 + Line, Paint, z1 - Line}, yellow, Glow, false},
+                                       Box{"Bord droit", {x1 - Line, Top, z0 + Line}, {x1, Paint, z1 - Line}, yellow, Glow, false},
                                        // Néon au plafond, au-dessus du quai.
                                        Box{"Plafonnier", {x - 4.0, 29.7, DockZ - 4.0}, {x + 4.0, 30.0, DockZ + 4.0},
                                            Math::LinearColor{1.0f, 0.95f, 0.88f}, 3.0f, false}}) {

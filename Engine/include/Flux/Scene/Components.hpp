@@ -424,6 +424,11 @@ namespace Flux {
         float reach = 1.5f; // m, distance du personnage au siège pour s'y asseoir
     };
 
+    // Étape du pilote automatique d'un vaisseau (Docking) : vers un quai (par-dessus la station si on arrive par
+    // l'arrière ou le côté, ou par-dessous si on est plus bas qu'elle ; puis devant l'entrée, au-dessus du quai,
+    // demi-tour, descente), ou en repartant (remonter, sortir).
+    enum class AutopilotStage : std::uint8_t { Off, Climb, Over, Under, Approach, Enter, Turn, Descend, Rise, Exit };
+
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
     // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou
     // tourne, sans glisser. Sa propre collision, s'il en a une, reste dans le repère de son parent (sa coque).
@@ -467,6 +472,23 @@ namespace Flux {
         // Poussée des moteurs vers l'avant, de 0 (coupés) à 1 (boost, mode voyage) : flammes des réacteurs
         // (ThrusterComponent). Retombe à 0 sans pilote.
         float throttle = 0.0f;
+        // Pilote automatique (Docking) : son étape, et le quai (DockComponent) réservé, ou occupé une fois amarré
+        // (étape Off, le vaisseau enfant de la station).
+        AutopilotStage autopilot = AutopilotStage::Off;
+        Entity dock = NullEntity;
+    };
+
+    // Quai d'une station (entité enfant d'un vaisseau immobile) : là où un vaisseau s'amarre. Son origine est celle
+    // du vaisseau posé (pour le Chasseur, son plancher de cockpit, 2,3 m au-dessus de la dalle), son -z la direction
+    // de la sortie : le vaisseau amarré a son nez tourné vers elle, prêt à repartir. Le pilote automatique arrive par
+    // l'avant du quai (approach mètres devant, à hover mètres de haut), s'arrête au-dessus, fait demi-tour et descend.
+    struct DockComponent
+    {
+        float approach = 100.0f;  // m devant le quai : point d'approche, hors de la station
+        float hover = 6.0f;       // m au-dessus du quai : hauteur de l'approche et du demi-tour
+        float clearance = 150.0f; // m au-dessus du quai : on passe par-dessus la station quand on arrive de derrière
+        // Pendant le jeu : vaisseau qui l'a réservé ou qui y est amarré.
+        Entity ship = NullEntity;
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
