@@ -240,8 +240,10 @@ namespace Flux {
             std::span<const RHI::VertexAttribute> shadowAttributes;
             const char* vertex;
             const char* shadowVertex;
-            const char* fragment = "fragmentMain";
+            const char* fragment = "fragmentOpaque";
             bool motion = true; // le fragment écrit le mouvement propre (SV_Target1)
+            // Modèles : variantes double face et à seuil d'alpha (le sol et l'eau des planètes n'en ont pas).
+            bool materials = false;
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -259,21 +261,36 @@ namespace Flux {
             desc.depthTest = true;
             desc.depthWrite = true;
 
-            // Carte d'ombres : profondeur seule, la plus proche du soleil (0 côté soleil). Les deux faces : une
-            // coque ouverte ou un matériau double face fait aussi de l'ombre. Le décalage de profondeur (selon la
-            // pente) évite qu'une surface s'ombre elle-même par endroits (« acné »), avec le décalage le long de la
-            // normale fait à la lecture.
+            // Carte d'ombres : profondeur seule, la plus proche du soleil (0 côté soleil). Le décalage de profondeur
+            // (selon la pente) évite qu'une surface s'ombre elle-même par endroits (« acné »), avec le décalage le
+            // long de la normale fait à la lecture. Sans programme de pixel : rien à calculer par texel, sauf pour le
+            // seuil d'alpha (feuillage), qui doit lire son image.
             desc.vertexEntryPoint = kind.shadowVertex;
             desc.vertexAttributes = kind.shadowAttributes;
-            desc.fragmentEntryPoint = "fragmentShadow";
+            desc.fragmentEntryPoint = nullptr;
             desc.colorFormat = RHI::Format::Undefined;
             desc.depthFormat = RHI::Format::D32Float;
             desc.depthCompare = RHI::CompareOp::Less;
-            desc.cullMode = RHI::CullMode::None;
             desc.depthBiasConstant = 1.0f;
             desc.depthBiasSlope = 1.5f;
+            // Les deux faces : une coque ouverte ou un matériau double face fait aussi de l'ombre.
+            desc.cullMode = RHI::CullMode::None;
+            if (auto result = create(pipelines.shadowDoubleSided, desc); !result) {
+                return result;
+            }
+            // Objet fermé, une face : seules celles tournées vers le soleil, les plus proches de lui, comptent. Vues
+            // du soleil, elles tournent dans le sens inverse de celles vues de la caméra (profondeur vers le soleil
+            // en 0, au lieu de 1 vers la caméra) : on élimine donc les faces « avant » de la convention du rendu.
+            desc.cullMode = RHI::CullMode::Front;
             if (auto result = create(pipelines.shadow, desc); !result) {
                 return result;
+            }
+            if (kind.materials) {
+                desc.fragmentEntryPoint = "fragmentShadow";
+                desc.cullMode = RHI::CullMode::None;
+                if (auto result = create(pipelines.shadowMasked, desc); !result) {
+                    return result;
+                }
             }
 
             desc.vertexEntryPoint = kind.vertex;
@@ -298,7 +315,18 @@ namespace Flux {
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
                 return result;
             }
+            if (!kind.materials) {
+                return createMain(pipelines.transparent, RHI::CullMode::Back, true);
+            }
             if (auto result = createMain(pipelines.opaqueDoubleSided, RHI::CullMode::None, false); !result) {
+                return result;
+            }
+            // Seuil d'alpha et transparents : le programme qui peut jeter des pixels.
+            desc.fragmentEntryPoint = "fragmentMain";
+            if (auto result = createMain(pipelines.masked, RHI::CullMode::Back, false); !result) {
+                return result;
+            }
+            if (auto result = createMain(pipelines.maskedDoubleSided, RHI::CullMode::None, false); !result) {
                 return result;
             }
             if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true); !result) {
@@ -306,10 +334,13 @@ namespace Flux {
             }
             return createMain(pipelines.transparentBack, RHI::CullMode::Front, true);
         };
-        if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow"}); !result) {
+        if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow",
+                                               "fragmentOpaque", true, true});
+            !result) {
             return result;
         }
-        if (auto result = createAll(m_skinned, {skinnedBuffers, skinnedAttributes, skinnedShadow, "vertexSkinned", "vertexShadowSkinned"});
+        if (auto result = createAll(m_skinned, {skinnedBuffers, skinnedAttributes, skinnedShadow, "vertexSkinned", "vertexShadowSkinned",
+                                                "fragmentOpaque", true, true});
             !result) {
             return result;
         }
@@ -339,6 +370,19 @@ namespace Flux {
         clouds.depthCompare = RHI::CompareOp::GreaterOrEqual;
         clouds.blend = RHI::BlendMode::Alpha;
         return create(m_clouds, clouds);
+    }
+
+    const RHI::Pipeline& MeshRenderer::ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material) {
+        return material.alphaCutoff > 0.0f ? *pipelines.shadowMasked
+             : material.doubleSided        ? *pipelines.shadowDoubleSided
+                                           : *pipelines.shadow;
+    }
+
+    const RHI::Pipeline& MeshRenderer::OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material) {
+        if (material.alphaCutoff > 0.0f) {
+            return material.doubleSided ? *pipelines.maskedDoubleSided : *pipelines.masked;
+        }
+        return material.doubleSided ? *pipelines.opaqueDoubleSided : *pipelines.opaque;
     }
 
     const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const MeshDraw& draw) const {
@@ -386,6 +430,8 @@ namespace Flux {
         });
         m_groundGroup = planets ? m_ground.Get(m_device, *m_models, assetsDirectory) : nullptr;
         const ViewCone view(camera, aspect);
+        // Avant les entités : celles qui ne sont ni en vue ni dans une ombre sont écartées dès maintenant.
+        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
         m_planets->BeginFrame(frameIndex);
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
@@ -435,6 +481,20 @@ namespace Flux {
             if (!model) {
                 continue;
             }
+            // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
+            const Math::Vector3f center = model->bounds.GetCenter();
+            const Math::Vector3f half = model->bounds.GetSize() * 0.5f;
+            const Math::Vector3f scaledHalf{half.x * std::abs(transform.scale.x), half.y * std::abs(transform.scale.y),
+                                            half.z * std::abs(transform.scale.z)};
+            const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
+            const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
+            const float radius = Math::Length(scaledHalf);
+            // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
+            const bool inView = view.Contains(relativeCenter, model->IsAnimated() ? 1.5f * radius : radius);
+            // Ni en vue ni dans une ombre : rien à dessiner, ni pose à calculer (personnage loin derrière la caméra).
+            if (!inView && !CastsAnyShadow(relativeCenter, radius)) {
+                continue;
+            }
             const Math::Matrix4f world = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
                                        * transform.rotation.ToMatrix()
                                        * Math::Matrix4f::Scale(transform.scale);
@@ -477,16 +537,6 @@ namespace Flux {
                                   {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
                                   rim, {}, previous});
 
-            // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
-            const Math::Vector3f center = model->bounds.GetCenter();
-            const Math::Vector3f half = model->bounds.GetSize() * 0.5f;
-            const Math::Vector3f scaledHalf{half.x * std::abs(transform.scale.x), half.y * std::abs(transform.scale.y),
-                                            half.z * std::abs(transform.scale.z)};
-            const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
-            const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            const float radius = Math::Length(scaledHalf);
-            // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
-            const bool inView = view.Contains(relativeCenter, model->IsAnimated() ? 1.5f * radius : radius);
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
                                Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
         }
@@ -720,7 +770,6 @@ namespace Flux {
             m_lightBuffers[frameIndex]->Write(m_lightData.data(), lightBytes);
         }
 
-        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
         FrameData frame{};
         const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
         frame.viewProjection = Jittered(viewProjection, temporal.jitter);
@@ -783,6 +832,22 @@ namespace Flux {
         const float side = radius / c.radius;
         const float depth = radius / c.depthRange;
         return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
+    }
+
+    // L'entité fait une ombre visible dans la cascade : dans son volume, et pas plus petite que quelques texels (au
+    // loin, un objet de quelques centimètres ne ferait qu'un point flou de la carte : il n'y est pas dessiné).
+    bool MeshRenderer::CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const {
+        constexpr float MinTexels = 1.5f; // rayon, en texels de la carte
+        return radius >= MinTexels * m_cascades[cascade].texelSize && InCascade(center, radius, cascade);
+    }
+
+    bool MeshRenderer::CastsAnyShadow(const Math::Vector3f& center, float radius) const {
+        for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
+            if (CastsShadow(center, radius, c)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     MeshRenderer::PlanetTileStats MeshRenderer::GetPlanetTileStats() const {
@@ -965,18 +1030,19 @@ namespace Flux {
             commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
                 const MeshDraw& draw = m_draws[d];
-                if (!InCascade(draw.center, draw.radius, c)) {
+                if (!CastsShadow(draw.center, draw.radius, c)) {
                     continue;
                 }
-                const RHI::Pipeline& pipeline = *GetPipelines(draw).shadow;
+                const Pipelines& pipelines = GetPipelines(draw);
                 for (const ModelPrimitive& primitive : draw.model->primitives) {
                     // Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle pour l'instant).
-                    if (!IsTransparent(draw, draw.model->materials[primitive.material])) {
-                        DrawPrimitive(commands, state, frameIndex, d, primitive, pipeline, c);
+                    const GpuMaterial& material = draw.model->materials[primitive.material];
+                    if (!IsTransparent(draw, material)) {
+                        DrawPrimitive(commands, state, frameIndex, d, primitive, ShadowPipeline(pipelines, material), c);
                     }
                 }
             }
-            DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadow);
+            DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
         }
         commands.EndRenderPass();
     }
@@ -991,8 +1057,7 @@ namespace Flux {
             for (const ModelPrimitive& primitive : draw.model->primitives) {
                 const GpuMaterial& material = draw.model->materials[primitive.material];
                 if (!IsTransparent(draw, material)) {
-                    DrawPrimitive(commands, state, frameIndex, d, primitive,
-                                  material.doubleSided ? *pipelines.opaqueDoubleSided : *pipelines.opaque);
+                    DrawPrimitive(commands, state, frameIndex, d, primitive, OpaquePipeline(pipelines, material));
                 }
             }
         }

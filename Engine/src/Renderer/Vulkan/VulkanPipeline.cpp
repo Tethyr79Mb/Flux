@@ -197,7 +197,8 @@ namespace Flux::Vk {
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.pNext = &renderingInfo;
-        pipelineInfo.stageCount = static_cast<uint32_t>(stages.size());
+        // Sans fragment (carte d'ombres) : la profondeur seule, les pixels ne passent par aucun programme.
+        pipelineInfo.stageCount = desc.fragmentEntryPoint ? 2u : 1u;
         pipelineInfo.pStages = stages.data();
         pipelineInfo.pVertexInputState = &vertexInput;
         pipelineInfo.pInputAssemblyState = &inputAssembly;

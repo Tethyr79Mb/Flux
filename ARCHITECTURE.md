@@ -68,7 +68,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 Couches, de la plus haute à la plus basse :
 
 ```
-Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU), étapes du diagnostic de plantage GPU
+Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seulement panneau Moteur ouvert),
+                   étapes du diagnostic de plantage GPU
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
@@ -84,13 +85,18 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
 1. Préparation sur le CPU : ciel et soleil (direction de la caméra vers le `SunComponent` s'il y en a un, sinon
    hauteur et direction réglées dans le Ciel), objets visibles (élimination hors champ), tuiles de planète choisies, tri
-   des opaques de près à loin et des transparents de loin à près.
+   des opaques de près à loin et des transparents de loin à près. Un objet ni en vue ni dans une cascade d'ombre est
+   écarté avant tout calcul (pose d'un personnage comprise).
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
-3. Ombres du soleil : 4 cascades dans une carte 4096² D32.
+3. Ombres du soleil : 4 cascades dans une carte 4096² D32, profondeur seule sans programme de pixel (sauf seuil
+   d'alpha) ; un objet fermé à une face n'y dessine que ses faces tournées vers le soleil, et un objet de moins de
+   1,5 texel de rayon n'est pas dessiné dans la cascade.
 4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
    (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans, nuages, transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
+   Les matériaux opaques sans seuil d'alpha passent par `fragmentOpaque`, qui ne jette aucun pixel : le GPU teste la
+   profondeur avant le programme et n'éclaire pas ce qu'un objet plus proche cache.
    Avec l'anticrénelage, la projection est décalée d'une fraction de pixel différente à chaque image (8 points de
    Halton, `TemporalView`), sauf le fond du ciel (étoiles d'un pixel) ; les opaques écrivent aussi leur mouvement
    propre (seconde cible RG16Float) : où le point était à l'image précédente moins où il serait resté immobile, nul
