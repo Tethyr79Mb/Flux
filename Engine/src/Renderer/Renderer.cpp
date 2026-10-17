@@ -24,8 +24,9 @@ namespace Flux {
         constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
 
         // Heures notées par le GPU pendant l'image (RHI::CommandList::WriteTimestamp).
-        // Pendant la passe principale, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux
-        // étapes, d'où un léger surcoût et des temps d'étape un peu plus longs qu'en vrai.
+        // Pendant une passe, une heure attend la fin des dessins d'avant : le GPU ne fait plus chevaucher deux étapes,
+        // d'où un surcoût et des temps d'étape un peu plus longs qu'en vrai. Celles-là (le détail de la scène, l'image
+        // finale) ne sont notées que si le panneau Moteur les affiche (Renderer::RequestDetailedTimings).
         enum Timestamp : std::uint32_t {
             FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, TemporalDone, BloomDone,
             InterfaceDone,
@@ -99,6 +100,7 @@ namespace Flux {
         bool vsync = true;
         float bloom = Renderer::DefaultBloom; // 0 : sans bloom
         bool temporalAA = true;
+        bool detailedTimings = false; // demandé pour cette image seulement
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
         bool hasPrevious = false;
@@ -228,6 +230,12 @@ namespace Flux {
             const Clock::time_point recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
             RHI::CommandList& commands = device->GetCommandList();
+            const bool detailed = std::exchange(detailedTimings, false);
+            const auto detail = [&](Timestamp stamp) {
+                if (detailed) {
+                    commands.WriteTimestamp(stamp);
+                }
+            };
             // Étapes nommées (BeginStep) : si le GPU se bloque, le rapport dit laquelle n'a pas fini.
             commands.WriteTimestamp(FrameStart);
             if (sceneVisible) {
@@ -250,19 +258,19 @@ namespace Flux {
                 commands.SetScissor({0, 0, scene3d.width, scene3d.height});
                 commands.BeginStep("objets opaques");
                 meshes->DrawOpaque(commands, frameIndex);
-                commands.WriteTimestamp(ObjectsDone);
+                detail(ObjectsDone);
                 commands.BeginStep("sol des planètes");
                 meshes->DrawGround(commands, frameIndex);
-                commands.WriteTimestamp(GroundDone);
+                detail(GroundDone);
                 commands.BeginStep("fond du ciel");
                 sky->Draw(commands, frameIndex);
-                commands.WriteTimestamp(SkyDone);
+                detail(SkyDone);
                 commands.BeginStep("océan");
                 meshes->DrawOcean(commands, frameIndex);
-                commands.WriteTimestamp(OceanDone);
+                detail(OceanDone);
                 commands.BeginStep("nuages");
                 meshes->DrawClouds(commands, frameIndex);
-                commands.WriteTimestamp(CloudsDone);
+                detail(CloudsDone);
                 commands.BeginStep("transparents");
                 meshes->DrawTransparent(commands, frameIndex);
                 commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
@@ -288,7 +296,7 @@ namespace Flux {
                 commands.SetScissor(scene3d);
                 post->Composite(commands, bloom, exposure);
             }
-            commands.WriteTimestamp(BloomDone); // image finale comptée avec le bloom
+            detail(BloomDone); // image finale comptée avec le bloom
             commands.BeginStep("interface");
             overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
             commands.EndRenderPass();
@@ -418,6 +426,10 @@ namespace Flux {
 
     float Renderer::GetBloom() const {
         return m_impl->bloom;
+    }
+
+    void Renderer::RequestDetailedTimings() {
+        m_impl->detailedTimings = true;
     }
 
     void Renderer::SetTemporalAA(bool enabled) {

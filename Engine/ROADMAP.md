@@ -7,6 +7,15 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 
 ## Où on en est
 
+### Performances du rendu (demandé par Bruno le 2026-10-17)
+- 🔨 Ombres sans programme de pixel ni faces arrière, petits objets hors des cascades lointaines ; opaques sans
+  `discard` (test de profondeur avant éclairage) ; objets ni en vue ni dans une ombre écartés (pose comprise) ; heures
+  GPU au milieu des passes seulement panneau Moteur ouvert.
+- ⬜ Dessins triés par pipeline, modèle et matériau ; objets identiques en un seul appel (instancing).
+- ⬜ Objets cachés derrière d'autres (occlusion sur le GPU, profondeur de l'image précédente).
+- ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
+- ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
+
 ### Rendu
 - ✅ Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`Renderer/RHI`) : un autre backend (DX12) reste possible.
 - ✅ Shaders Slang compilés par CMake.

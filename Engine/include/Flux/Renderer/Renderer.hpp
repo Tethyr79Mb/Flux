@@ -126,6 +126,10 @@ namespace Flux {
         float GetAnimationDuration(const std::filesystem::path& path, std::string_view name);
 
         const RenderTimings& GetTimings() const;
+        // Temps du GPU étape par étape (objets, sol, ciel, océan, nuages ; bloom et interface séparés) pour la prochaine
+        // image : à demander à chaque image où on les affiche. Sans, seuls les grands blocs sont mesurés (GetTimings
+        // donne -1 pour le reste) : les heures prises au milieu d'une passe empêchent le GPU d'enchaîner ses étapes.
+        void RequestDetailedTimings();
 
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;

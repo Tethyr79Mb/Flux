@@ -147,6 +147,7 @@ namespace Flux {
         void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
                              FlyCameraController* controller) {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
+                renderer.RequestDetailedTimings();
                 ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
                 ui.LabelText("GPU", renderer.GetDeviceName());
                 bool vsync = renderer.IsVSyncEnabled();

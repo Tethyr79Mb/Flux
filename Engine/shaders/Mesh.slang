@@ -1196,19 +1196,32 @@ float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
     return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), alpha);
 }
 
+// Matériau à seuil d'alpha (feuillage, grillage) et transparents : les pixels sous le seuil sont jetés.
 [shader("fragment")]
 SceneOutput fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
     SceneOutput output;
-    output.color = MeshColor(input, frontFacing);
+    output.color = MeshColor(input, frontFacing, true);
     output.motion = Motion(input);
     return output;
 }
 
-float4 MeshColor(VertexOutput input, bool frontFacing)
+// Matériau opaque sans seuil : aucun pixel jeté. Un programme qui peut jeter des pixels oblige le GPU à attendre sa
+// fin pour tester la profondeur ; sans, il écarte avant tout calcul les pixels cachés par un objet plus proche.
+[shader("fragment")]
+SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    SceneOutput output;
+    output.color = MeshColor(input, frontFacing, false);
+    output.motion = Motion(input);
+    return output;
+}
+
+[ForceInline] // alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard
+float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
 {
     float4 base = baseColorTexture.Sample(input.uv) * params.color;
-    if (base.a < params.alphaCutoff) {
+    if (alphaTest && base.a < params.alphaCutoff) {
         discard;
     }
     // Face arrière d'un matériau double face : éclairée comme vue de son côté.

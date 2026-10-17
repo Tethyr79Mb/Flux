@@ -164,9 +164,14 @@ namespace Flux {
         // Pipelines d'un type de sommets (statique ou animé).
         struct Pipelines
         {
-            std::unique_ptr<RHI::Pipeline> shadow;            // profondeur vue du soleil, double face
-            std::unique_ptr<RHI::Pipeline> opaque;            // faces arrière éliminées
-            std::unique_ptr<RHI::Pipeline> opaqueDoubleSided;  // faces arrière gardées
+            // Ombres : profondeur vue du soleil, sans programme de pixel sauf pour le seuil d'alpha.
+            std::unique_ptr<RHI::Pipeline> shadow;             // faces tournées vers le soleil seules
+            std::unique_ptr<RHI::Pipeline> shadowDoubleSided;  // les deux faces
+            std::unique_ptr<RHI::Pipeline> shadowMasked;       // les deux faces, pixels sous le seuil d'alpha jetés
+            std::unique_ptr<RHI::Pipeline> opaque;            // faces arrière éliminées, aucun pixel jeté
+            std::unique_ptr<RHI::Pipeline> opaqueDoubleSided;  // faces arrière gardées, aucun pixel jeté
+            std::unique_ptr<RHI::Pipeline> masked;             // seuil d'alpha, faces arrière éliminées
+            std::unique_ptr<RHI::Pipeline> maskedDoubleSided;  // seuil d'alpha, faces arrière gardées
             std::unique_ptr<RHI::Pipeline> transparent;        // mélange alpha, profondeur lue mais pas écrite
             std::unique_ptr<RHI::Pipeline> transparentBack;    // idem, faces arrière seules (double face : avant les faces avant)
         };
@@ -197,6 +202,10 @@ namespace Flux {
         void Upload(const Camera& camera, float aspect, const SkyLighting& sky, const TemporalView& temporal, std::uint32_t frameIndex);
         static bool IsTransparent(const MeshDraw& draw, const GpuMaterial& material);
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
+        bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
+        bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
+        static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
+        static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
         void BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, const RHI::Pipeline& pipeline) const;
         void DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::uint32_t drawIndex,
                            const ModelPrimitive& primitive, const RHI::Pipeline& pipeline, std::uint32_t cascade = 0) const;

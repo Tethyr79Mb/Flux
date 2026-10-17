@@ -190,7 +190,7 @@ namespace Flux::RHI {
         // Programme compilé (SPIR-V pour Vulkan) contenant les deux points d'entrée.
         std::filesystem::path shaderPath;
         const char* vertexEntryPoint = "vertexMain";
-        const char* fragmentEntryPoint = "fragmentMain";
+        const char* fragmentEntryPoint = "fragmentMain"; // nullptr : aucun (passe de profondeur seule)
         std::span<const VertexBufferLayout> vertexBuffers;
         std::span<const VertexAttribute> vertexAttributes;
         // Groupe i : layouts[i] (BindGroup lié à l'indice i).
