@@ -42,6 +42,7 @@ namespace Flux {
         double gpuOcean = -1.0;     // GPU : océans
         double gpuClouds = -1.0;    // GPU : nuages des planètes
         double gpuTransparent = -1.0; // GPU : entités transparentes
+        double gpuPyramid = -1.0;   // GPU : pyramide de profondeur (entités cachées écartées à l'image suivante)
         double gpuTemporal = -1.0;  // GPU : anticrénelage temporel
         double gpuBloom = -1.0;     // GPU : bloom et image finale (courbe de tons)
         double gpuInterface = -1.0; // GPU : interface (overlay 2D)
@@ -53,6 +54,10 @@ namespace Flux {
         // encore décodées.
         std::uint32_t planetPendingTiles = 0;
         bool groundTexturesLoading = false;
+        // Entités (et blocs de grands modèles) de la passe principale testées par le GPU, et dont cachées derrière
+        // d'autres (non dessinées), deux images plus tôt.
+        std::uint32_t occlusionTested = 0;
+        std::uint32_t occlusionHidden = 0;
     };
 
     // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.
@@ -96,6 +101,10 @@ namespace Flux {
         // aux précédentes ; les bords en escalier et le grain des nuages s'effacent.
         void SetTemporalAA(bool enabled);
         bool IsTemporalAAEnabled() const;
+        // Entités cachées derrière d'autres écartées par le GPU (activé par défaut), d'après la profondeur de l'image
+        // précédente. Désactivable pour comparer.
+        void SetOcclusionCulling(bool enabled);
+        bool IsOcclusionCullingEnabled() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

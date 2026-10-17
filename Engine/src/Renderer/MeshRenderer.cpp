@@ -165,6 +165,11 @@ namespace Flux {
             return std::unexpected(planets.error());
         }
         renderer->m_planets = std::move(*planets);
+        auto occlusion = OcclusionCulling::Create(device);
+        if (!occlusion) {
+            return std::unexpected(occlusion.error());
+        }
+        renderer->m_occlusion = std::move(*occlusion);
 
         auto shadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {ShadowMapResolution, ShadowMapResolution}, true);
         if (!shadowMap) {
@@ -431,6 +436,7 @@ namespace Flux {
         m_planetData.clear();
         m_hasClouds = false;
         ++m_preparedFrame;
+        m_occlusionActive = m_occlusion->Begin(frameIndex, temporal.continuous, temporal.previousViewProjection);
         // Textures du sol : lues (sur un autre fil) seulement quand la scène a une planète.
         const bool planets = std::ranges::any_of(m_relativeTransforms, [&scene](const RelativeTransform& transform) {
             return scene.TryGet<PlanetComponent>(transform.entity) != nullptr;
@@ -541,7 +547,7 @@ namespace Flux {
                 m_previousWorld.resize(index + 1);
                 m_previousFrame.resize(index + 1, 0);
             }
-            const bool moved = temporal.history && m_previousFrame[index] + 1 == m_preparedFrame;
+            const bool moved = temporal.continuous && m_previousFrame[index] + 1 == m_preparedFrame;
             const Math::Matrix4f previous = moved ? m_previousWorld[index] : Math::Matrix4f::Translation(temporal.cameraDelta) * world;
             m_previousWorld[index] = world;
             m_previousFrame[index] = m_preparedFrame;
@@ -796,8 +802,8 @@ namespace Flux {
         FrameData frame{};
         const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
         frame.viewProjection = Jittered(viewProjection, temporal.jitter);
-        frame.previousViewProjection = temporal.history ? temporal.previousViewProjection : viewProjection;
-        frame.cameraDelta = ToArray(temporal.history ? temporal.cameraDelta : Math::Vector3f{});
+        frame.previousViewProjection = temporal.continuous ? temporal.previousViewProjection : viewProjection;
+        frame.cameraDelta = ToArray(temporal.continuous ? temporal.cameraDelta : Math::Vector3f{});
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
             frame.cascades[c] = m_cascades[c].lightViewProjection;
             frame.cascadeEnds[c] = ShadowCascadeEnds[c];
@@ -991,8 +997,10 @@ namespace Flux {
     // Range les entités de m_batchEntries en commandes (même pipeline, même modèle, même primitive), puis les commandes
     // en appels (même pipeline, même page de géométrie). Avec nearestFirst, les appels passent dans l'ordre de leur
     // entité la plus proche, et dans chacun les commandes et leurs entités de près à loin : ce qu'elles cachent échoue
-    // au test de profondeur avant d'être éclairé (coque d'un vaisseau autour de la caméra d'abord).
-    void MeshRenderer::AddBatches(bool nearestFirst) {
+    // au test de profondeur avant d'être éclairé (coque d'un vaisseau autour de la caméra d'abord). Avec occlusion,
+    // les entités sont envoyées au test du GPU (OcclusionCulling) et leurs commandes partent vides : le GPU y ajoute
+    // les visibles, dans un ordre quelconque.
+    void MeshRenderer::AddBatches(bool nearestFirst, bool occlusion) {
         const auto pageOf = [](const BatchEntry& entry) { return entry.model->resources.page; };
         std::ranges::sort(m_batchEntries, [&pageOf](const BatchEntry& a, const BatchEntry& b) {
             if (a.pipeline != b.pipeline) {
@@ -1031,14 +1039,36 @@ namespace Flux {
             for (std::uint32_t g = bucket.first; g < bucket.first + bucket.count; ++g) {
                 const BatchGroup& group = m_batchGroups[g];
                 const BatchEntry& first = m_batchEntries[group.first];
+                const std::uint32_t material = first.model->materials[first.primitive->material].index;
                 for (std::uint32_t i = group.first; i < group.first + group.count; ++i) {
-                    m_instances.push_back({m_batchEntries[i].draw, first.model->materials[first.primitive->material].index});
+                    m_instances.push_back({m_batchEntries[i].draw, material});
+                    if (occlusion) {
+                        AddOcclusionItem(m_batchEntries[i], material);
+                    }
                 }
                 AddCommand(first, group.count);
+                if (occlusion) {
+                    m_modelCommands.back().instanceCount = 0;
+                }
                 AddToBatch(*first.pipeline, pageOf(first), g != bucket.first);
             }
         }
         m_batchEntries.clear();
+    }
+
+    // Sphère de la primitive (son bloc, ou tout le modèle) dans le repère du modèle, rayon dans le monde.
+    std::array<float, 4> MeshRenderer::OcclusionSphere(const MeshDraw& draw, const ModelPrimitive& primitive) const {
+        const ClusterDraw* cluster = FindCluster(draw, primitive);
+        const Math::Box3f& box = cluster ? draw.model->clusters[primitive.cluster] : draw.model->bounds;
+        // Un modèle animé peut sortir de sa boîte de repos : même marge que pour le champ.
+        const float radius = cluster ? cluster->radius : draw.model->IsAnimated() ? 1.5f * draw.radius : draw.radius;
+        const Math::Vector3f center = box.GetCenter();
+        return {center.x, center.y, center.z, radius};
+    }
+
+    // L'entité, dans la commande qui va suivre (AddCommand), à tester par le GPU.
+    void MeshRenderer::AddOcclusionItem(const BatchEntry& entry, std::uint32_t material) {
+        m_occlusion->GetItems().push_back({entry.sphere, static_cast<std::uint32_t>(m_modelCommands.size()), entry.draw, material});
     }
 
     // Une commande pour les `count` dernières entités de m_instances.
@@ -1084,10 +1114,11 @@ namespace Flux {
                     }
                     distance = Math::Length(cluster->center) - cluster->radius;
                 }
-                m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, &primitive, d, distance});
+                m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, &primitive, d, distance,
+                                          OcclusionSphere(draw, primitive)});
             }
         }
-        AddBatches(true);
+        AddBatches(true, m_occlusionActive);
 
         // Transparents : dans leur ordre (de loin à près), une commande par entité. Double face : les faces arrière
         // (le fond de l'objet) d'abord, puis les faces avant par-dessus ; exact pour une forme convexe (bulle de
@@ -1102,14 +1133,23 @@ namespace Flux {
             const GpuMaterial& material = draw.model->materials[primitive.material];
             const std::uint32_t page = draw.model->resources.page;
             const bool first = m_modelBatches.size() == passStarts[TransparentModelPass];
-            if (material.doubleSided) {
+            // Une entité par commande : le test du GPU ne change pas leur ordre.
+            const auto add = [&](const RHI::Pipeline& pipeline, bool merge) {
+                const BatchEntry entry{&pipeline, draw.model, &primitive, item.draw, 0.0f, OcclusionSphere(draw, primitive)};
                 m_instances.push_back({item.draw, material.index});
-                AddCommand({pipelines.transparentBack.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
-                AddToBatch(*pipelines.transparentBack, page, !first);
+                if (m_occlusionActive) {
+                    AddOcclusionItem(entry, material.index);
+                }
+                AddCommand(entry, 1);
+                if (m_occlusionActive) {
+                    m_modelCommands.back().instanceCount = 0;
+                }
+                AddToBatch(pipeline, page, merge);
+            };
+            if (material.doubleSided) {
+                add(*pipelines.transparentBack, !first);
             }
-            m_instances.push_back({item.draw, material.index});
-            AddCommand({pipelines.transparent.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
-            AddToBatch(*pipelines.transparent, page, !first || material.doubleSided);
+            add(*pipelines.transparent, !first || material.doubleSided);
         }
 
         // Ombres : toutes les entités qui en font une dans la cascade, même hors champ ou cachées (le personnage vu
@@ -1136,7 +1176,7 @@ namespace Flux {
                     m_batchEntries.push_back({&ShadowPipeline(pipelines, material), draw.model, &primitive, d, draw.distance});
                 }
             }
-            AddBatches(false);
+            AddBatches(false, false); // le test ne vaut que pour la vue de la caméra
         }
         passStarts[ModelPassCount] = m_modelBatches.size();
 
@@ -1147,13 +1187,20 @@ namespace Flux {
         }
         std::unique_ptr<RHI::Buffer>& commands = m_modelCommandBuffers[frameIndex];
         if (!commands || commands->GetSize() < commandBytes) {
+            // Storage : le test des entités cachées (OcclusionCulling) y écrit le nombre d'entités visibles.
             auto grown = m_device.CreateBuffer({std::max(std::bit_ceil(commandBytes), MinModelCommandBufferSize),
-                                                RHI::BufferUsage::Indirect, RHI::MemoryType::Upload});
+                                                RHI::BufferUsage::Indirect | RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
             if (!grown) {
                 Log::Error("{}", grown.error());
                 return false;
             }
             commands = std::move(*grown);
+        }
+        if (m_occlusionActive && !m_occlusion->Upload(frameIndex, *m_drawBuffers[frameIndex], *commands, *m_instanceBuffers[frameIndex])) {
+            // Pas de test : les entités retournent dans leurs commandes, où elles sont déjà rangées.
+            for (const OcclusionCulling::Item& item : m_occlusion->GetItems()) {
+                ++m_modelCommands[item.command].instanceCount;
+            }
         }
         if (instanceBytes > 0) {
             m_instanceBuffers[frameIndex]->Write(m_instances.data(), instanceBytes);
@@ -1218,6 +1265,12 @@ namespace Flux {
 
     void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
         m_planets->Compute(commands, frameIndex);
+        m_occlusion->Record(commands, frameIndex);
+    }
+
+    void MeshRenderer::BuildDepthPyramid(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::Texture& depth,
+                                         RHI::Extent size) {
+        m_occlusion->BuildPyramid(commands, frameIndex, depth, size);
     }
 
     void MeshRenderer::DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
