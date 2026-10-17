@@ -55,6 +55,7 @@ namespace Flux {
             }
             mesh.primitives.push_back({0, static_cast<uint32_t>(mesh.indices.size()), 0});
             mesh.materials.emplace_back();
+            PrepareModel(mesh);
             return mesh;
         }
     }
@@ -198,6 +199,8 @@ namespace Flux {
             model.materials.push_back(std::move(material));
         }
         model.primitives = data.primitives;
+        model.shadowPrimitives = data.shadowPrimitives;
+        model.clusters = data.clusters;
         model.bounds = data.bounds;
         model.loaded = true;
         return model;

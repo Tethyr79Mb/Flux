@@ -13,8 +13,17 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
   GPU seulement panneau Moteur ouvert (fermé : le compteur d'images/s seul).
 - 🔨 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
-- ⬜ Objets cachés derrière d'autres (occlusion sur le GPU, profondeur de l'image précédente).
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
+
+### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)
+Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pièces à la main.
+- 🔨 Préparation au chargement : matériaux identiques réunis, une primitive par matériau, ombres en un appel par
+  modèle, grands modèles découpés en blocs de 16 m écartés un par un (champ, cascades).
+- ⬜ Rendu piloté par le GPU : géométrie dans un seul buffer, textures dans un seul tableau, blocs écartés par un
+  compute shader (hors champ et cachés derrière d'autres, profondeur de l'image précédente), un appel par pipeline.
+- ⬜ Chargement en arrière-plan : lecture et décodage sur d'autres fils, envois au GPU sans `vkQueueWaitIdle`
+  (aujourd'hui chaque envoi arrête le fil principal jusqu'à la fin du travail du GPU), puis file de transfert.
+- ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
 
 ### Rendu
@@ -97,6 +106,10 @@ Légende : ✅ fait · 🔨 en cours (PR ouverte) · ⬜ à faire
 - ⬜ Écran de chargement : attendre aussi les modèles (chargés aujourd'hui d'un bloc à leur premier dessin), image ou interface `.fluxui` au choix.
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
+- ⬜ Vêtements et équipement des personnages (demandé par Bruno le 2026-10-17) : aujourd'hui, seuls les vêtements
+  du même fichier que le corps s'animent. À faire : vêtements interchangeables dans leur propre fichier qui suivent
+  le squelette du corps, objets accrochés à un os (casque, arme en main, sac), parties du corps cachées sous le
+  vêtement ; plus tard, tissu simulé (cape) et morph targets.
 - 🔨 Armes des vaisseaux, étape 1 : composants « Emport » (genre, taille) et « Arme » (son enfant), tourelles qui
   pivotent vers le point regardé dans leur cône, tir par groupes d'armes sur les touches 1 à 0 (1 le nez, 2 les autocanons, 3 les missiles sur le Chasseur), projectiles en liste (pas
   des entités), traçantes dessinées par le GPU en un seul appel. Le Chasseur a 5 emports, avec leurs armes en

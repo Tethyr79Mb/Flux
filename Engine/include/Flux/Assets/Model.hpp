@@ -58,6 +58,7 @@ namespace Flux {
         std::uint32_t firstIndex = 0;
         std::uint32_t indexCount = 0;
         std::uint32_t material = 0;
+        std::uint32_t cluster = 0; // bloc d'un grand modèle (ModelData::clusters) ; 0 sinon
     };
 
     // Os qui déforment un sommet d'un modèle animé, envoyés au GPU à côté de ModelVertex (SkinInput dans
@@ -135,6 +136,12 @@ namespace Flux {
         Math::Box3f bounds; // boîte englobante des sommets (pose de repos pour un modèle animé)
         std::vector<ModelSkinVertex> skinVertices; // un par sommet si le modèle est animé, sinon vide
         ModelSkeleton skeleton;
+        // Préparés pour le rendu (PrepareModel). Ombres : les primitives opaques qui se suivent et n'ont pas besoin de
+        // leur matériau (sans seuil d'alpha, même sorte de faces, même bloc) réunies en une ; material : la première.
+        std::vector<ModelPrimitive> shadowPrimitives;
+        // Blocs d'un grand modèle (station), chacun avec la boîte de ses triangles : écartés un par un hors du champ
+        // et des ombres. Vide : un seul bloc, la boîte du modèle.
+        std::vector<Math::Box3f> clusters;
         // Ce qui a été ignoré sans empêcher le chargement (image illisible, primitive en lignes...).
         std::vector<std::string> warnings;
 
@@ -148,6 +155,13 @@ namespace Flux {
     // meshopt, KTX2) ne sont pas gérées : le fichier est refusé. images = false : les images ne sont pas décodées
     // (ModelData::images vide, indices d'image à -1), pour qui n'a besoin que des triangles (collisions).
     FLUX_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true);
+
+    // Rangement pour le rendu, appelé par LoadModelFile : le modèle se dessine en peu d'appels quelle que soit la façon
+    // dont il a été modélisé. Les matériaux identiques (tout sauf le nom) n'en font plus qu'un, les triangles d'un même
+    // matériau ne forment plus qu'une primitive, et shadowPrimitives est rempli. Un modèle fixe dont un côté dépasse
+    // 2 x ModelClusterSize est en plus découpé en blocs de ModelClusterSize (selon le centre de chaque triangle).
+    inline constexpr float ModelClusterSize = 16.0f;
+    FLUX_API void PrepareModel(ModelData& model);
 
     // Fichiers dont dépend un modèle (.bin, images), relatifs à son dossier, avec des « / » : ce qu'il faut copier
     // avec un .gltf pour qu'il reste lisible ailleurs. Vide pour un .glb autonome.

@@ -91,6 +91,14 @@ namespace Flux {
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
             bool visible = true;   // false : ombre seulement (personnage vu de l'intérieur)
             bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
+            std::uint32_t firstCluster = 0; // dans m_clusters, si son modèle est découpé en blocs (GpuModel::clusters)
+        };
+        // Un bloc d'un grand modèle dessiné (GpuModel::clusters), relatif à la caméra.
+        struct ClusterDraw
+        {
+            Math::Vector3f center;
+            float radius;
+            bool inView;
         };
 
         // Une tuile de planète à dessiner (toutes sont dans le champ de la caméra : PlanetRenderer::Collect).
@@ -165,7 +173,7 @@ namespace Flux {
         {
             const RHI::Pipeline* pipeline;
             const GpuModel* model;
-            std::uint32_t primitive;
+            const ModelPrimitive* primitive; // dans GpuModel::primitives ou shadowPrimitives
             std::uint32_t command;
         };
         // Une entité à ranger dans un lot : même pipeline, même modèle et même primitive = même lot.
@@ -173,7 +181,7 @@ namespace Flux {
         {
             const RHI::Pipeline* pipeline;
             const GpuModel* model;
-            std::uint32_t primitive;
+            const ModelPrimitive* primitive;
             std::uint32_t draw;
             float distance; // au bord de sa sphère
         };
@@ -238,6 +246,7 @@ namespace Flux {
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
+        const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
         static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
         void AddBatches(bool nearestFirst);
@@ -290,6 +299,7 @@ namespace Flux {
         std::vector<std::uint32_t> m_previousFrame;
         std::uint32_t m_preparedFrame = 0;
         std::vector<std::uint32_t> m_opaque;        // dans m_draws, visibles
+        std::vector<ClusterDraw> m_clusters;
         std::vector<TransparentDraw> m_transparent; // triés du plus loin au plus proche
         std::vector<Math::Matrix4f> m_jointMatrices;
         std::vector<PreparedLight> m_lights;

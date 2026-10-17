@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <tuple>
 
 // Implémentation de cgltf compilée ici seulement. Code C tiers : ses avertissements MSVC (fopen, strncpy...) ne
 // nous concernent pas.
@@ -806,7 +807,127 @@ namespace Flux {
         if (loader.model.indices.empty()) {
             return std::unexpected("« " + fileName + " » : aucun triangle");
         }
+        PrepareModel(loader.model);
         return std::move(loader.model);
+    }
+
+    namespace {
+        // Tout sauf le nom : deux matériaux égaux se dessinent pareil.
+        auto MaterialKey(const ModelMaterial& m) {
+            return std::tie(m.baseColor, m.baseColorImage, m.emissive, m.emissiveImage, m.metallic, m.roughness,
+                            m.metallicRoughnessImage, m.normalImage, m.normalScale, m.occlusionImage, m.occlusionStrength,
+                            m.alphaCutoff, m.doubleSided, m.blend);
+        }
+
+        // Ordre des triangles dans un bloc : opaques à une face, opaques à deux faces (ces deux sortes font chacune une
+        // seule primitive d'ombre), à seuil d'alpha (une ombre par matériau), transparents (pas d'ombre).
+        enum class ShadowKind : std::uint32_t { SingleSided, DoubleSided, Masked, None };
+        ShadowKind GetShadowKind(const ModelMaterial& material) {
+            if (material.blend) {
+                return ShadowKind::None;
+            }
+            if (material.alphaCutoff > 0.0f) {
+                return ShadowKind::Masked;
+            }
+            return material.doubleSided ? ShadowKind::DoubleSided : ShadowKind::SingleSided;
+        }
+    }
+
+    void PrepareModel(ModelData& model) {
+        if (model.materials.empty() || model.indices.size() < 3) {
+            return;
+        }
+        // Matériaux identiques réunis : le premier reste, les suivants pointent vers lui.
+        std::vector<std::uint32_t> remap(model.materials.size());
+        std::vector<ModelMaterial> materials;
+        for (std::size_t m = 0; m < model.materials.size(); ++m) {
+            const auto same = std::ranges::find_if(materials, [&](const ModelMaterial& kept) {
+                return MaterialKey(kept) == MaterialKey(model.materials[m]);
+            });
+            remap[m] = static_cast<std::uint32_t>(same - materials.begin());
+            if (same == materials.end()) {
+                materials.push_back(std::move(model.materials[m]));
+            }
+        }
+        model.materials = std::move(materials);
+
+        // Bloc de chaque triangle (selon son centre) pour un grand modèle fixe. Un modèle animé reste d'un bloc : ses
+        // sommets bougent.
+        const Math::Vector3f size = model.bounds.GetSize();
+        const bool split = !model.IsAnimated() && std::max({size.x, size.y, size.z}) > 2.0f * ModelClusterSize;
+        const auto cellOf = [&](std::uint32_t first) -> std::uint64_t {
+            if (!split) {
+                return 0;
+            }
+            const Math::Vector3f center = (model.vertices[model.indices[first]].position + model.vertices[model.indices[first + 1]].position
+                                           + model.vertices[model.indices[first + 2]].position) / 3.0f;
+            const auto cell = [&](float value, float min) {
+                return static_cast<std::uint64_t>(std::clamp((value - min) / ModelClusterSize, 0.0f, 2097151.0f));
+            };
+            return cell(center.x, model.bounds.min.x) << 42 | cell(center.y, model.bounds.min.y) << 21
+                 | cell(center.z, model.bounds.min.z);
+        };
+
+        // Triangles rangés par bloc, sorte d'ombre, puis matériau (dans l'ordre du fichier pour un même matériau).
+        struct Triangle
+        {
+            std::uint64_t cell;
+            std::uint32_t kind;
+            std::uint32_t material;
+            std::uint32_t first; // dans model.indices
+        };
+        std::vector<Triangle> triangles;
+        triangles.reserve(model.indices.size() / 3);
+        for (const ModelPrimitive& primitive : model.primitives) {
+            const std::uint32_t material = remap[std::min<std::size_t>(primitive.material, remap.size() - 1)];
+            const auto kind = static_cast<std::uint32_t>(GetShadowKind(model.materials[material]));
+            for (std::uint32_t i = 0; i + 3 <= primitive.indexCount; i += 3) {
+                triangles.push_back({cellOf(primitive.firstIndex + i), kind, material, primitive.firstIndex + i});
+            }
+        }
+        std::ranges::stable_sort(triangles, [](const Triangle& a, const Triangle& b) {
+            return std::tie(a.cell, a.kind, a.material) < std::tie(b.cell, b.kind, b.material);
+        });
+
+        std::vector<std::uint32_t> indices;
+        indices.reserve(triangles.size() * 3);
+        model.primitives.clear();
+        model.shadowPrimitives.clear();
+        model.clusters.clear();
+        for (std::size_t t = 0; t < triangles.size(); ++t) {
+            const Triangle& triangle = triangles[t];
+            const bool newCell = t == 0 || triangle.cell != triangles[t - 1].cell;
+            if (newCell && split) {
+                const Math::Vector3f p = model.vertices[model.indices[triangle.first]].position;
+                model.clusters.push_back({p, p});
+            }
+            const auto cluster = split ? static_cast<std::uint32_t>(model.clusters.size() - 1) : 0u;
+            const auto first = static_cast<std::uint32_t>(indices.size());
+            if (newCell || triangle.material != triangles[t - 1].material) {
+                model.primitives.push_back({first, 0, triangle.material, cluster});
+            }
+            model.primitives.back().indexCount += 3;
+            const auto kind = static_cast<ShadowKind>(triangle.kind);
+            if (kind != ShadowKind::None) {
+                const bool joined = !newCell && triangle.kind == triangles[t - 1].kind
+                                 && (kind != ShadowKind::Masked || triangle.material == triangles[t - 1].material);
+                if (!joined) {
+                    model.shadowPrimitives.push_back({first, 0, triangle.material, cluster});
+                }
+                model.shadowPrimitives.back().indexCount += 3;
+            }
+            for (std::uint32_t corner = 0; corner < 3; ++corner) {
+                const std::uint32_t index = model.indices[triangle.first + corner];
+                indices.push_back(index);
+                if (split) {
+                    Math::Box3f& box = model.clusters.back();
+                    const Math::Vector3f p = model.vertices[index].position;
+                    box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
+                    box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
+                }
+            }
+        }
+        model.indices = std::move(indices);
     }
 
     std::expected<std::vector<std::string>, std::string> ListModelFiles(const std::filesystem::path& path) {
