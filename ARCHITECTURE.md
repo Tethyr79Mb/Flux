@@ -76,10 +76,17 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
-├─ ModelCache      modèles glTF chargés une fois (GpuModel), matériaux
+├─ ModelCache      modèles glTF chargés une fois (GpuModel), matériaux ; rangés au chargement (PrepareModel)
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
+
+Les modèles sont rangés au chargement (`PrepareModel`, `Assets/Model.cpp`) pour se dessiner en peu d'appels quelle
+que soit la façon dont ils ont été modélisés : matériaux identiques (tout sauf le nom) réunis, une primitive par
+matériau, et des primitives d'ombre qui réunissent tous les opaques sans seuil d'alpha d'une même sorte de faces (les
+ombres n'ont pas besoin du matériau). Un modèle fixe de plus de 32 m est découpé en blocs de 16 m (`ModelClusterSize`,
+selon le centre de chaque triangle), chacun avec sa boîte : `MeshRenderer` les écarte un par un du champ et des
+cascades (`ClusterDraw`), une station n'est dessinée que là où on la voit.
 
 Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 

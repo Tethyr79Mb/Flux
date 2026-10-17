@@ -228,12 +228,83 @@ namespace {
     }
 }
 
+namespace {
+    // Un triangle par coin de départ, ajouté avec son matériau (une primitive par triangle, comme un fichier découpé).
+    void AddTriangle(ModelData& model, Vector3f corner, std::uint32_t material) {
+        const auto base = static_cast<std::uint32_t>(model.vertices.size());
+        for (const Vector3f offset : {Vector3f{0, 0, 0}, Vector3f{1, 0, 0}, Vector3f{0, 1, 0}}) {
+            model.vertices.push_back({corner + offset, {0, 0, 1}, {0, 0}});
+        }
+        model.primitives.push_back({static_cast<std::uint32_t>(model.indices.size()), 3, material});
+        model.indices.insert(model.indices.end(), {base, base + 1, base + 2});
+    }
+
+    // PrepareModel : matériaux identiques réunis, une primitive par matériau, ombres réunies, grands modèles en blocs.
+    bool RunPrepareTests() {
+        ModelData model;
+        model.materials.resize(5);
+        model.materials[0].name = "Coque";
+        model.materials[1].name = "Lumière";
+        model.materials[1].emissive = {1.0f, 0.5f, 0.0f};
+        model.materials[2].name = "Coque bis"; // identique à Coque, sauf le nom
+        model.materials[3].name = "Verre";
+        model.materials[3].blend = true;
+        model.materials[4].name = "Feuilles";
+        model.materials[4].alphaCutoff = 0.5f;
+        AddTriangle(model, {0, 0, 0}, 0);
+        AddTriangle(model, {2, 0, 0}, 3);
+        AddTriangle(model, {4, 0, 0}, 1);
+        AddTriangle(model, {6, 0, 0}, 2);
+        AddTriangle(model, {8, 0, 0}, 4);
+        model.bounds = {{0, 0, 0}, {9, 1, 0}};
+        PrepareModel(model);
+        CHECK(model.materials.size() == 4 && model.materials[0].name == "Coque" && model.materials[2].name == "Verre");
+        CHECK(model.indices.size() == 15 && model.clusters.empty());
+        // Opaques (Coque avec ses deux triangles dans l'ordre du fichier, Lumière), seuil d'alpha, transparent.
+        CHECK(model.primitives.size() == 4);
+        CHECK(model.primitives[0].material == 0 && model.primitives[0].firstIndex == 0 && model.primitives[0].indexCount == 6);
+        CHECK(model.vertices[model.indices[0]].position.x == 0.0f && model.vertices[model.indices[3]].position.x == 6.0f);
+        CHECK(model.primitives[1].material == 1 && model.primitives[1].indexCount == 3);
+        CHECK(model.primitives[2].material == 3 && model.primitives[3].material == 2 && model.primitives[3].firstIndex == 12);
+        // Ombres : Coque et Lumière en un seul appel, Feuilles à part (son seuil d'alpha), pas de Verre.
+        CHECK(model.shadowPrimitives.size() == 2);
+        CHECK(model.shadowPrimitives[0].firstIndex == 0 && model.shadowPrimitives[0].indexCount == 9);
+        CHECK(model.shadowPrimitives[1].material == 3 && model.shadowPrimitives[1].indexCount == 3);
+
+        // Deux faces : une autre primitive d'ombre (autre pipeline).
+        ModelData sides;
+        sides.materials.resize(2);
+        sides.materials[1].doubleSided = true;
+        AddTriangle(sides, {0, 0, 0}, 1);
+        AddTriangle(sides, {2, 0, 0}, 0);
+        sides.bounds = {{0, 0, 0}, {3, 1, 0}};
+        PrepareModel(sides);
+        CHECK(sides.primitives.size() == 2 && sides.primitives[0].material == 0 && sides.shadowPrimitives.size() == 2);
+
+        // Grand modèle fixe : un bloc par zone de ModelClusterSize, chacun avec la boîte de ses triangles.
+        ModelData station;
+        station.materials.resize(1);
+        AddTriangle(station, {0, 0, 0}, 0);
+        AddTriangle(station, {100, 0, 0}, 0);
+        AddTriangle(station, {1, 1, 0}, 0);
+        station.bounds = {{0, 0, 0}, {101, 2, 0}};
+        PrepareModel(station);
+        CHECK(station.clusters.size() == 2 && station.primitives.size() == 2 && station.shadowPrimitives.size() == 2);
+        CHECK(station.primitives[0].cluster == 0 && station.primitives[0].indexCount == 6 && station.primitives[1].cluster == 1);
+        CHECK(station.clusters[0].min == (Vector3f{0, 0, 0}) && station.clusters[0].max == (Vector3f{2, 2, 0}));
+        CHECK(station.clusters[1].min == (Vector3f{100, 0, 0}) && station.clusters[1].max == (Vector3f{101, 1, 0}));
+        CHECK(station.shadowPrimitives[1].cluster == 1 && station.shadowPrimitives[1].firstIndex == 6);
+        return true;
+    }
+}
+
 bool RunModelTests() {
     const std::filesystem::path directory = std::filesystem::temp_directory_path() / "FluxModelTests";
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunTextGltfTests(directory) && RunBinaryGltfTests(directory) && RunErrorTests(directory);
+    const bool passed = RunPrepareTests() && RunTextGltfTests(directory) && RunBinaryGltfTests(directory)
+                     && RunErrorTests(directory);
     std::filesystem::remove_all(directory, error);
     return passed;
 }

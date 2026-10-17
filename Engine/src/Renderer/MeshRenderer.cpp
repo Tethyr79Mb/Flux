@@ -486,14 +486,19 @@ namespace Flux {
             if (!model) {
                 continue;
             }
-            // Sphère englobant la boîte du modèle (un modèle animé peut en sortir un peu : ombre coupée au pire).
-            const Math::Vector3f center = model->bounds.GetCenter();
-            const Math::Vector3f half = model->bounds.GetSize() * 0.5f;
-            const Math::Vector3f scaledHalf{half.x * std::abs(transform.scale.x), half.y * std::abs(transform.scale.y),
-                                            half.z * std::abs(transform.scale.z)};
-            const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
-            const Math::Vector3f relativeCenter = Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter);
-            const float radius = Math::Length(scaledHalf);
+            // Sphère englobant une boîte du modèle, relative à la caméra.
+            const auto sphereOf = [&transform](const Math::Box3f& box) {
+                const Math::Vector3f center = box.GetCenter();
+                const Math::Vector3f half = box.GetSize() * 0.5f;
+                const Math::Vector3f scaledHalf{half.x * std::abs(transform.scale.x), half.y * std::abs(transform.scale.y),
+                                                half.z * std::abs(transform.scale.z)};
+                const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y,
+                                                  center.z * transform.scale.z};
+                return std::pair{Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter),
+                                 Math::Length(scaledHalf)};
+            };
+            // Celle de tout le modèle (un modèle animé peut sortir de sa boîte : ombre coupée au pire).
+            const auto [relativeCenter, radius] = sphereOf(model->bounds);
             // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
             const bool inView = view.Contains(relativeCenter, model->IsAnimated() ? 1.5f * radius : radius);
             // Ni en vue ni dans une ombre : rien à dessiner, ni pose à calculer (personnage loin derrière la caméra).
@@ -545,8 +550,15 @@ namespace Flux {
                                   {emissive.r, emissive.g, emissive.b, materialOverride ? 1.0f : 0.0f},
                                   {metallic, roughness, 0.0f, 0.0f}});
 
+            // Blocs d'un grand modèle : chacun écarté à part, du champ ici et des cascades au rangement des ombres.
+            const auto firstCluster = static_cast<std::uint32_t>(m_clusters.size());
+            for (const Math::Box3f& cluster : model->clusters) {
+                const auto [clusterCenter, clusterRadius] = sphereOf(cluster);
+                m_clusters.push_back({clusterCenter, clusterRadius, inView && view.Contains(clusterCenter, clusterRadius)});
+            }
+
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
-                               Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView});
+                               Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView, firstCluster});
         }
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         m_planets->EndFrame(frameIndex);
@@ -571,6 +583,9 @@ namespace Flux {
             }
             bool opaque = false;
             for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
+                if (const ClusterDraw* cluster = FindCluster(m_draws[d], model.primitives[p]); cluster && !cluster->inView) {
+                    continue;
+                }
                 if (IsTransparent(m_draws[d], model.materials[model.primitives[p].material])) {
                     m_transparent.push_back({d, p});
                 } else {
@@ -847,6 +862,10 @@ namespace Flux {
         return radius >= MinTexels * m_cascades[cascade].texelSize && InCascade(center, radius, cascade);
     }
 
+    const MeshRenderer::ClusterDraw* MeshRenderer::FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const {
+        return draw.model->clusters.empty() ? nullptr : &m_clusters[draw.firstCluster + primitive.cluster];
+    }
+
     bool MeshRenderer::CastsAnyShadow(const Math::Vector3f& center, float radius) const {
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
             if (CastsShadow(center, radius, c)) {
@@ -869,6 +888,7 @@ namespace Flux {
 
     void MeshRenderer::ClearDraws() {
         m_draws.clear();
+        m_clusters.clear();
         m_tileDraws.clear();
         m_tilePasses = {};
         m_modelPasses = {};
@@ -975,7 +995,7 @@ namespace Flux {
             if (a.model != b.model) {
                 return std::less<>{}(a.model, b.model);
             }
-            return a.primitive != b.primitive ? a.primitive < b.primitive : a.distance < b.distance;
+            return a.primitive != b.primitive ? std::less<>{}(a.primitive, b.primitive) : a.distance < b.distance;
         });
         m_batchGroups.clear();
         for (std::uint32_t i = 0; i < m_batchEntries.size(); ++i) {
@@ -1003,7 +1023,7 @@ namespace Flux {
 
     // Un lot pour les `count` dernières entités de m_instances.
     void MeshRenderer::AddBatch(const BatchEntry& entry, std::uint32_t count) {
-        const ModelPrimitive& primitive = entry.model->primitives[entry.primitive];
+        const ModelPrimitive& primitive = *entry.primitive;
         m_modelBatches.push_back({entry.pipeline, entry.model, entry.primitive, static_cast<std::uint32_t>(m_modelCommands.size())});
         m_modelCommands.push_back({primitive.indexCount, count, primitive.firstIndex, 0,
                                    static_cast<std::uint32_t>(m_instances.size()) - count});
@@ -1022,11 +1042,19 @@ namespace Flux {
         for (const std::uint32_t d : m_opaque) {
             const MeshDraw& draw = m_draws[d];
             const Pipelines& pipelines = GetPipelines(draw);
-            for (std::uint32_t p = 0; p < draw.model->primitives.size(); ++p) {
-                const GpuMaterial& material = draw.model->materials[draw.model->primitives[p].material];
-                if (!IsTransparent(draw, material)) {
-                    m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, p, d, draw.distance - draw.radius});
+            for (const ModelPrimitive& primitive : draw.model->primitives) {
+                const GpuMaterial& material = draw.model->materials[primitive.material];
+                if (IsTransparent(draw, material)) {
+                    continue;
                 }
+                float distance = draw.distance - draw.radius;
+                if (const ClusterDraw* cluster = FindCluster(draw, primitive)) {
+                    if (!cluster->inView) {
+                        continue;
+                    }
+                    distance = Math::Length(cluster->center) - cluster->radius;
+                }
+                m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, &primitive, d, distance});
             }
         }
         AddBatches(true);
@@ -1037,16 +1065,19 @@ namespace Flux {
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = GetPipelines(draw);
-            if (draw.model->materials[draw.model->primitives[item.primitive].material].doubleSided) {
+            const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
+            if (draw.model->materials[primitive.material].doubleSided) {
                 m_instances.push_back(item.draw);
-                AddBatch({pipelines.transparentBack.get(), draw.model, item.primitive, item.draw, 0.0f}, 1);
+                AddBatch({pipelines.transparentBack.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
             }
             m_instances.push_back(item.draw);
-            AddBatch({pipelines.transparent.get(), draw.model, item.primitive, item.draw, 0.0f}, 1);
+            AddBatch({pipelines.transparent.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
         }
 
         // Ombres : toutes les entités qui en font une dans la cascade, même hors champ ou cachées (le personnage vu
-        // de l'intérieur). Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle).
+        // de l'intérieur). Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle). Le
+        // matériau n'y sert pas (sauf seuil d'alpha) : les primitives d'ombre réunissent ceux d'un même bloc
+        // (PrepareModel), le plus souvent un seul appel par modèle.
         for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
             passStarts[2 + c] = m_modelBatches.size();
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
@@ -1055,11 +1086,16 @@ namespace Flux {
                     continue;
                 }
                 const Pipelines& pipelines = GetPipelines(draw);
-                for (std::uint32_t p = 0; p < draw.model->primitives.size(); ++p) {
-                    const GpuMaterial& material = draw.model->materials[draw.model->primitives[p].material];
-                    if (!IsTransparent(draw, material)) {
-                        m_batchEntries.push_back({&ShadowPipeline(pipelines, material), draw.model, p, d, draw.distance});
+                for (const ModelPrimitive& primitive : draw.model->shadowPrimitives) {
+                    const GpuMaterial& material = draw.model->materials[primitive.material];
+                    if (IsTransparent(draw, material)) {
+                        continue;
                     }
+                    if (const ClusterDraw* cluster = FindCluster(draw, primitive);
+                        cluster && !CastsShadow(cluster->center, cluster->radius, c)) {
+                        continue;
+                    }
+                    m_batchEntries.push_back({&ShadowPipeline(pipelines, material), draw.model, &primitive, d, draw.distance});
                 }
             }
             AddBatches(false);
@@ -1103,7 +1139,7 @@ namespace Flux {
                 commands.BindIndexBuffer(*model.indices);
             }
             BindPipeline(commands, state, frameIndex, *batch.pipeline);
-            const GpuMaterial& material = model.materials[model.primitives[batch.primitive].material];
+            const GpuMaterial& material = model.materials[batch.primitive->material];
             const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
             if (group != state.group) {
                 state.group = group;

@@ -43,6 +43,8 @@ namespace Flux {
         std::vector<std::unique_ptr<RHI::Texture>> images;
         std::vector<GpuMaterial> materials;
         std::vector<ModelPrimitive> primitives;
+        std::vector<ModelPrimitive> shadowPrimitives; // ModelData::shadowPrimitives
+        std::vector<Math::Box3f> clusters;            // ModelData::clusters ; vide : un seul bloc
         Math::Box3f bounds;
         bool loaded = false;
         std::filesystem::file_time_type writeTime{};
