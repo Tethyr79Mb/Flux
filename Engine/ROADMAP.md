@@ -54,6 +54,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
 - ✅ Composants enregistrés une fois : inspecteur et sauvegarde générés.
+- 🔨 Scène ou prefab d'une version plus récente du moteur refusé avec un message clair (« non compatible avec la
+  version actuelle »), dans l'éditeur et dans le jeu ; version du moteur notée dans chaque fichier enregistré.
 - ✅ Physique Jolt : objets simulés, personnage (capsule), un monde physique par vaisseau (on marche à bord pendant qu'il vole).
 - ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, assiette qui suit la courbure de la planète (aide à plat), mode voyage (ralenti à l'approche d'une planète, vitesse rendue à sa sortie), sièges, atterrissage stabilisé.
 - ✅ Animation squelettique (fondus, repos/marche/course/chute/s'asseoir).

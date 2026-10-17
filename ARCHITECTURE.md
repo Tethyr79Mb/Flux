@@ -144,6 +144,11 @@ planète donne directement le sien comme indice d'instance.
   L'inspecteur de l'éditeur et la sauvegarde JSON (`flux.scene`) en sont générés. Le jeu enregistre les siens de la
   même façon.
 - Le mode Jouer de l'éditeur copie la scène (aller-retour JSON) et la remet à la fin.
+- Chaque scène et chaque prefab notent la version du moteur qui les a écrits (`"engine"` = `GameModuleApiVersion`). Un
+  fichier plus récent que le moteur, d'un format plus récent ou avec un champ inconnu (autre branche) est refusé
+  avec « Scène non chargée car non compatible avec la version actuelle du moteur » et le détail, la scène en cours
+  intacte ; dans le jeu, le message s'affiche dans une fenêtre. Un fichier plus ancien (ou sans ce numéro) est lu et
+  converti (`.RemovedField`, `.ConvertedField`).
 - Prefabs (`SceneSerializer`) : un `.prefab.json` est une racine et ses descendants. Dans une scène, un exemplaire
   (`PrefabInstanceComponent` sur sa racine, `PrefabLinkComponent` sur chaque pièce) est écrit comme sa racine, le
   chemin du prefab et, par pièce, les seuls champs qui en diffèrent (`overrides`, composants ajoutés ou retirés).

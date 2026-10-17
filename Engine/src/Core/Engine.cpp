@@ -1174,7 +1174,9 @@ namespace Flux {
         }
         const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(*requested);
         if (auto loaded = LoadScene(path); !loaded) {
+            // Le jeu reste sur la scène en cours ; le joueur doit savoir pourquoi il ne change pas de scène.
             Log::Error("scène {} : {}", *requested, loaded.error());
+            Platform::ShowError(GetWindow(), *requested, loaded.error());
             return;
         }
         m_audio->StopAll(); // ses sons aussi ; ceux de la nouvelle partent à la prochaine image
