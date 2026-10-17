@@ -49,6 +49,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Teinte de chaque texture du sol (herbe verdie par défaut : son image se confondait de loin avec la roche).
 - ✅ Plage réglée en mètres au-dessus de la mer (elle suit le niveau de la mer).
 - ✅ Sol sans répétition visible : pavage hexagonal (rotation et décalage aléatoires par cellule, mélange des 3 cellules voisines).
+- ✅ Rotation du sol bornée par matière (`Textures/Sol/matieres.json`) : sable et neige ±10° (rides dans le même sens), roche, herbe et terre libres.
 - 🔨 Sol vu de haut : texture fondue vers sa couleur moyenne entre 600 m et 2 km (plus de motif régulier de points sombres, moins de lectures au loin).
 
 ### Monde, scène, physique

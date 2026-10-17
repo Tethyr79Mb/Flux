@@ -4,7 +4,10 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <numbers>
 #include <format>
 #include <mutex>
 #include <thread>
@@ -20,6 +23,15 @@ namespace Flux {
         // 2048² avec leurs mips : 335 Mo sans compression).
         constexpr int MaxSize = 2048;
         constexpr auto CheckInterval = std::chrono::seconds(2);
+        constexpr std::string_view SettingsFile = "matieres.json";
+
+        std::array<float, LayerNames.size()> ToRadians(const std::array<float, LayerNames.size()>& degrees) {
+            std::array<float, LayerNames.size()> radians{};
+            for (std::size_t i = 0; i < degrees.size(); ++i) {
+                radians[i] = std::clamp(degrees[i], 0.0f, 180.0f) * (std::numbers::pi_v<float> / 180.0f);
+            }
+            return radians;
+        }
 
         // L'image <nom>-<suffixe> en .png ou .jpg, chemin vide si aucune.
         std::filesystem::path FindImage(const std::filesystem::path& directory, std::string_view name, std::string_view suffix) {
@@ -171,6 +183,31 @@ namespace Flux {
         }
     }
 
+    void GroundTextures::ReadSettings() {
+        std::array<float, LayerNames.size()> degrees = DefaultMaxAngles;
+        const std::filesystem::path path = m_directory / Platform::PathFromUtf8(std::string(SettingsFile));
+        std::vector<std::uint8_t> bytes;
+        if (Platform::ReadFileBytes(path, bytes)) {
+            // Fichier faux : les valeurs par défaut, et un message ; une matière inconnue est signalée (faute de frappe).
+            const nlohmann::json document = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
+            const auto rotation = document.is_object() ? document.find("rotation") : document.end();
+            if (document.is_discarded() || !document.is_object() || rotation == document.end() || !rotation->is_object()) {
+                Log::Error("Sol des planètes : {} illisible (attendu : {{\"rotation\": {{\"sable\": 10, ...}}}})", Platform::ToUtf8(path));
+            } else {
+                for (const auto& [name, value] : rotation->items()) {
+                    const auto layer = std::ranges::find(LayerNames, name);
+                    if (layer == LayerNames.end() || !value.is_number()) {
+                        Log::Error("Sol des planètes : {} : « {} » ignoré (matières : roche, herbe, terre, sable, neige ; angle en degrés)",
+                                   Platform::ToUtf8(path.filename()), name);
+                        continue;
+                    }
+                    degrees[static_cast<std::size_t>(layer - LayerNames.begin())] = value.get<float>();
+                }
+            }
+        }
+        m_maxAngles = ToRadians(degrees);
+    }
+
     GroundTextures::~GroundTextures() {
         if (m_cancel) {
             *m_cancel = true; // fermeture : les images restantes ne sont pas décodées (le futur attend la fin)
@@ -200,10 +237,21 @@ namespace Flux {
             m_directory = directory;
             m_writeTime = std::filesystem::file_time_type::min();
             m_checked = {};
+            m_settingsTime = std::filesystem::file_time_type::max(); // relu à la vérification ci-dessous
         }
         // Un décodage à la fois : les changements arrivés pendant celui-ci sont vus à la vérification suivante.
         if (now - m_checked >= CheckInterval && !m_decoding.valid()) {
             m_checked = now;
+            std::error_code error;
+            const std::filesystem::path settings = m_directory / Platform::PathFromUtf8(std::string(SettingsFile));
+            std::filesystem::file_time_type settingsTime = std::filesystem::last_write_time(settings, error);
+            if (error) {
+                settingsTime = std::filesystem::file_time_type::min();
+            }
+            if (settingsTime != m_settingsTime) {
+                m_settingsTime = settingsTime;
+                ReadSettings();
+            }
             const std::filesystem::file_time_type writeTime = NewestWriteTime();
             if (writeTime != m_writeTime) {
                 m_writeTime = writeTime;
