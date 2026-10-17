@@ -1,0 +1,9 @@
+{
+  "rotation": {
+    "roche": 180,
+    "herbe": 180,
+    "terre": 180,
+    "sable": 10,
+    "neige": 10
+  }
+}

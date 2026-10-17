@@ -78,11 +78,12 @@ namespace Flux {
             std::array<float, 4> cameraRight;
             std::array<float, 4> cameraUp;
             std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs ; z : planètes ; w : TemporalView::noiseFrame
+            std::array<float, 8> groundRotations; // GroundTextures::GetMaxAngles, une par GroundLayer
             std::array<InteriorData, MaxInteriors> interiors;
             std::array<PlanetGpu, MaxPlanets> planets;
             AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 544 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
+        static_assert(sizeof(FrameData) == 576 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
                       && ShadowCascadeCount == 4);
 
 
@@ -836,6 +837,7 @@ namespace Flux {
         }
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
                             static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};
+        std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
         std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));

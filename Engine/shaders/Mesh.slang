@@ -67,6 +67,9 @@ struct FrameData
     // x : nombre de lumières dans lights ; y : nombre de volumes intérieurs ; z : de planètes ; w : numéro de l'image
     // pour les bruits qui changent à chaque image (0 : fixes, sans anticrénelage temporel)
     uint4 lightCount;
+    // Rotation maximale de l'image de chaque matière du sol (radians, GroundRock et suivantes : [0].xyzw puis [1].x) :
+    // pi, tournée au hasard ; moins, toutes dans à peu près le même sens (rides du sable). Voir GroundTextures.hpp.
+    float4 groundRotations[2];
     InteriorData interiors[MaxInteriors];
     PlanetData planets[MaxPlanets];
     AtmosphereData atmosphere;
@@ -763,13 +766,13 @@ float2 GroundRandom(uint x)
     return float2(float(h & 0xffffU), float(h >> 16)) * (1.0 / 65536.0);
 }
 
-// Une version de l'image (décalage et rotation tirés de `variant`) ; normale ramenée dans le repère du plan de
-// projection (rotation inverse).
+// Une version de l'image (décalage et rotation tirés de `variant`, rotation dans [-maxAngle, maxAngle]) ; normale
+// ramenée dans le repère du plan de projection (rotation inverse).
 void SampleGroundVariant(out float3 color, out float3 tangentNormal, out float2 occlusionRoughness, uint layer,
-                         float2 uv, float2 gx, float2 gy, uint variant)
+                         float2 uv, float2 gx, float2 gy, uint variant, float maxAngle)
 {
     const float2 random = GroundRandom(variant * 0x68e31da4U + 17u);
-    const float angle = random.x * 6.2831853;
+    const float angle = (random.x * 2.0 - 1.0) * maxAngle;
     const float c = cos(angle);
     const float s = sin(angle);
     const float2x2 rotation = float2x2(c, -s, s, c);
@@ -785,7 +788,7 @@ void SampleGroundVariant(out float3 color, out float3 tangentNormal, out float2 
 // Une matière dans un plan de projection, sans répétition visible : les trois sommets du triangle du point (voir
 // GroundTriangleSide), une à trois lectures selon les poids.
 void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2 occlusionRoughness, uint layer,
-                          float2 uv, float2 gx, float2 gy, int period)
+                          float2 uv, float2 gx, float2 gy, int period, float maxAngle)
 {
     // Repère du pavage : a le long d'un côté, b le long de l'autre (60° environ). Décaler uv d'une période change a et
     // b d'entiers ; la clé (2a + b, b), ramenée dans sa période, donne le même tirage aux deux points.
@@ -815,7 +818,8 @@ void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2
             const int b = (v.y % periodB + periodB) % periodB;
             float3 c, n;
             float2 surface;
-            SampleGroundVariant(c, n, surface, layer, uv, gx, gy, uint(u) * 0x9e3779b1U ^ GroundHash(uint(b) + 101u));
+            SampleGroundVariant(c, n, surface, layer, uv, gx, gy, uint(u) * 0x9e3779b1U ^ GroundHash(uint(b) + 101u),
+                                maxAngle);
             color += c * w[i];
             tangentNormal += n * w[i];
             occlusionRoughness += surface * w[i];
@@ -838,6 +842,7 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
     result.occlusionRoughness = float2(0.0);
     const float inverse = 1.0 / scale;
     const int period = int(GroundPeriod / scale + 0.5); // images par période
+    const float maxAngle = frame[0].groundRotations[layer / 4][layer % 4];
     const float3 axisSign = sign(n);
     [unroll]
     for (int axis = 0; axis < 3; ++axis) {
@@ -849,7 +854,7 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
             float3 color;
             float3 t;
             float2 occlusionRoughness;
-            SampleGroundNoRepeat(color, t, occlusionRoughness, layer, uv, gx, gy, period);
+            SampleGroundNoRepeat(color, t, occlusionRoughness, layer, uv, gx, gy, period, maxAngle);
             result.color += color * blend[axis];
             result.occlusionRoughness += occlusionRoughness * blend[axis];
             t.z *= axisSign[axis];
