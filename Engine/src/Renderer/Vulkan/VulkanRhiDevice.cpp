@@ -60,7 +60,7 @@ namespace Flux::Vk {
         }
 
         VkDescriptorType ToVulkan(RHI::BindingType type) {
-            return type == RHI::BindingType::Texture ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            return type == RHI::BindingType::StorageBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         }
 
         VkFilter ToVulkan(RHI::Filter filter) {
@@ -240,6 +240,26 @@ namespace Flux::Vk {
         return std::make_unique<RhiBuffer>(std::move(*buffer));
     }
 
+    bool RhiDevice::WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) {
+        auto& target = static_cast<RhiBuffer&>(buffer);
+        if (size == 0) {
+            return true;
+        }
+        if (target.IsMapped()) {
+            target.Write(data, size, offset);
+            return true;
+        }
+        auto staging = Vk::Buffer::Create(m_device->GetAllocator(), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Staging);
+        if (!staging) {
+            return false;
+        }
+        staging->Write(data, size);
+        return m_device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
+            const VkBufferCopy region{0, offset, size};
+            vkCmdCopyBuffer(commandBuffer, staging->GetHandle(), target.GetHandle(), 1, &region);
+        });
+    }
+
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTexture(RHI::Format format, RHI::Extent extent,
                                                                                       std::span<const std::uint8_t> pixels,
                                                                                       bool mipmaps) {
@@ -329,14 +349,30 @@ namespace Flux::Vk {
     std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> RhiDevice::CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) {
         const VkDevice device = m_device->GetHandle();
         std::vector<VkDescriptorSetLayoutBinding> bindings;
+        // Tables de textures : cases non remplies permises, remplies pendant que le GPU dessine avec d'autres
+        // (« descriptor indexing », Vulkan 1.2, demandé à la création du device).
+        std::vector<VkDescriptorBindingFlags> flags;
+        bool table = false;
         std::unordered_map<VkDescriptorType, std::uint32_t> counts;
         for (const RHI::Binding& binding : desc.bindings) {
             const VkDescriptorType type = ToVulkan(binding.type);
-            bindings.push_back({binding.slot, type, 1, ToVulkan(binding.stages), nullptr});
-            counts[type] += desc.maxGroups;
+            const bool isTable = binding.type == RHI::BindingType::TextureTable;
+            const std::uint32_t count = isTable ? binding.count : 1;
+            bindings.push_back({binding.slot, type, count, ToVulkan(binding.stages), nullptr});
+            flags.push_back(isTable ? VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
+                                          | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
+                                    : 0);
+            table = table || isTable;
+            counts[type] += count * desc.maxGroups;
         }
+        VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
+        flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        flagsInfo.bindingCount = static_cast<std::uint32_t>(flags.size());
+        flagsInfo.pBindingFlags = flags.data();
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.pNext = table ? &flagsInfo : nullptr;
+        layoutInfo.flags = table ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT : 0;
         layoutInfo.bindingCount = static_cast<std::uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
@@ -351,7 +387,8 @@ namespace Flux::Vk {
         }
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
+                       | (table ? VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT : 0);
         poolInfo.maxSets = desc.maxGroups;
         poolInfo.poolSizeCount = static_cast<std::uint32_t>(sizes.size());
         poolInfo.pPoolSizes = sizes.data();

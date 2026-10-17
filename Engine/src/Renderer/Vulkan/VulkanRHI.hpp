@@ -22,6 +22,7 @@ namespace Flux::Vk {
         explicit RhiBuffer(Vk::Buffer buffer) : m_buffer(std::move(buffer)) {}
         std::uint64_t GetSize() const override { return m_buffer.GetSize(); }
         void Write(const void* data, std::uint64_t size, std::uint64_t offset) override { m_buffer.Write(data, size, offset); }
+        bool IsMapped() const { return m_buffer.GetMappedData() != nullptr; }
         void Read(void* data, std::uint64_t size, std::uint64_t offset) const override { m_buffer.Read(data, size, offset); }
         VkBuffer GetHandle() const { return m_buffer.GetHandle(); }
 
@@ -82,6 +83,7 @@ namespace Flux::Vk {
         RhiBindGroup& operator=(const RhiBindGroup&) = delete;
         void SetTexture(std::uint32_t slot, const RHI::Texture& texture, const RHI::Sampler& sampler) override;
         void SetBuffer(std::uint32_t slot, const RHI::Buffer& buffer) override;
+        void SetTableTexture(std::uint32_t slot, std::uint32_t element, const RHI::Texture& texture, const RHI::Sampler& sampler) override;
         VkDescriptorSet GetHandle() const { return m_set; }
 
         private:
@@ -177,6 +179,7 @@ namespace Flux::Vk {
         void WaitIdle() override { m_device->WaitIdle(); }
 
         std::expected<std::unique_ptr<RHI::Buffer>, std::string> CreateBuffer(const RHI::BufferDesc& desc, const void* data) override;
+        bool WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
                                                                                 std::span<const std::uint8_t> pixels,
                                                                                 bool mipmaps) override;

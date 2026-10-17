@@ -143,15 +143,18 @@ namespace Flux::RHI {
         float anisotropy = 1.0f;
     };
 
-    // Une ressource d'un groupe : texture échantillonnée (avec son sampler) ou buffer de stockage (lu par les shaders de
-    // dessin, lu et écrit par les compute shaders).
-    enum class BindingType : std::uint8_t { Texture, StorageBuffer };
+    // Une ressource d'un groupe : texture échantillonnée (avec son sampler), buffer de stockage (lu par les shaders de
+    // dessin, lu et écrit par les compute shaders), ou table de textures (`count` cases, `Sampler2D t[]` dans les
+    // shaders) : toutes les images des matériaux dans un seul groupe, choisies par indice dans le shader. Les cases non
+    // remplies ne doivent pas être lues ; une case que le GPU ne lit pas peut être remplie pendant qu'il dessine.
+    enum class BindingType : std::uint8_t { Texture, StorageBuffer, TextureTable };
 
     struct Binding
     {
         std::uint32_t slot = 0;
         BindingType type = BindingType::Texture;
         ShaderStage stages = ShaderStage::Fragment;
+        std::uint32_t count = 1; // TextureTable seulement : nombre de cases
     };
 
     struct BindGroupLayoutDesc
@@ -258,6 +261,8 @@ namespace Flux::RHI {
         virtual ~BindGroup() = default;
         virtual void SetTexture(std::uint32_t slot, const Texture& texture, const Sampler& sampler) = 0;
         virtual void SetBuffer(std::uint32_t slot, const Buffer& buffer) = 0;
+        // Case `element` d'une table de textures (BindingType::TextureTable).
+        virtual void SetTableTexture(std::uint32_t slot, std::uint32_t element, const Texture& texture, const Sampler& sampler) = 0;
     };
 
     class Pipeline {
@@ -366,6 +371,9 @@ namespace Flux::RHI {
 
         // GpuOnly : `data` (size octets) y est copié, et la copie attendue. Upload : `data` peut être nul.
         virtual std::expected<std::unique_ptr<Buffer>, std::string> CreateBuffer(const BufferDesc& desc, const void* data = nullptr) = 0;
+        // Remplit une partie d'un buffer : GpuOnly par une copie attendue (le GPU ne doit pas lire cette partie pendant
+        // ce temps), Upload directement. false si la copie échoue.
+        virtual bool WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) = 0;
         // Texture échantillonnée remplie de pixels (4 octets chacun) ; mipmaps : réductions successives calculées
         // par le GPU, pour une texture vue de loin sans scintillement.
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTexture(Format format, Extent extent,

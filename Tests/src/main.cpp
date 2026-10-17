@@ -33,6 +33,7 @@ int main() {
         {"missions", RunMissionTests},
         {"warp", RunWarpTests},
         {"IA de combat", RunCombatAITests},
+        {"géométrie partagée des modèles", RunGeometryTests},
     };
 
     int failures = 0;

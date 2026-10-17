@@ -76,7 +76,8 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
-├─ ModelCache      modèles glTF chargés une fois (GpuModel), matériaux ; rangés au chargement (PrepareModel)
+├─ ModelCache      modèles glTF chargés une fois (GpuModel), rangés au chargement (PrepareModel) ; géométrie dans
+│                  des pages partagées (GeometryPage, RangeAllocator), images et matériaux en tables (groupe 2)
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
@@ -94,7 +95,8 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    hauteur et direction réglées dans le Ciel), objets visibles (élimination hors champ), tuiles de planète choisies,
    transparents triés de loin à près. Un objet ni en vue ni dans une cascade d'ombre est écarté avant tout calcul (pose
    d'un personnage comprise). Les opaques et les ombres sont rangés en lots (même pipeline, même modèle, même
-   primitive), chacun dessiné en un seul `DrawIndexedIndirect` ; les lots opaques passent dans l'ordre de leur objet
+   primitive), et les lots du même pipeline et de la même page de géométrie partent ensemble dans un seul
+   `DrawIndexedIndirect` (une commande par lot, le matériau de chaque objet lu par indice dans la table) ; les lots opaques passent dans l'ordre de leur objet
    le plus proche (ce qu'ils cachent échoue au test de profondeur avant d'être éclairé). Les transparents restent un
    appel par objet, dans leur ordre.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.

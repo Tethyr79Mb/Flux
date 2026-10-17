@@ -312,13 +312,9 @@ namespace Flux {
             }
             m_sampler = std::move(*sampler);
         }
-        m_group = device.CreateBindGroup(models.GetMaterialLayout());
+        m_group = device.CreateBindGroup(models.GetGroundLayout());
         if (!m_group) {
             return fail("plus de groupe libre pour les textures");
-        }
-        // Les images d'un matériau glTF (lues par l'ombre des tuiles : seuil d'alpha) : blanches.
-        for (std::uint32_t slot = 0; slot < ModelCache::GroundColorSlot; ++slot) {
-            m_group->SetTexture(slot, models.GetWhiteImage(), models.GetSampler());
         }
         m_group->SetTexture(ModelCache::GroundColorSlot, *m_textures[0], *m_sampler);
         m_group->SetTexture(ModelCache::GroundNormalSlot, *m_textures[1], *m_sampler);

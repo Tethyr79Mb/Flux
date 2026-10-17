@@ -167,16 +167,25 @@ namespace Flux {
             float distance; // de la caméra à la boîte : les plus proches d'abord s'il y en a trop
         };
 
-        // Une primitive de modèle, dessinée en un appel indirect pour toutes les entités du lot (leurs indices dans
-        // m_instances, que le shader lit à la place de l'indice d'instance) : commande `command` de m_modelCommands.
+        // Doit correspondre à instances dans shaders/Mesh.slang : une entité d'un lot et le matériau de la primitive.
+        struct Instance
+        {
+            std::uint32_t draw;     // dans m_draws (et ses DrawData)
+            std::uint32_t material; // GpuMaterial::index
+        };
+        // Un appel indirect : `count` commandes de m_modelCommands à partir de `first`, une par primitive de modèle
+        // (chacune pour toutes ses entités, rangées dans m_instances, que le shader lit à la place de l'indice
+        // d'instance). Tout ce qui partage pipeline et page de géométrie part dans le même appel, quels que soient le
+        // modèle et le matériau.
         struct ModelBatch
         {
             const RHI::Pipeline* pipeline;
-            const GpuModel* model;
-            const ModelPrimitive* primitive; // dans GpuModel::primitives ou shadowPrimitives
-            std::uint32_t command;
+            std::uint32_t page; // ModelCache::GetPage
+            std::uint32_t first;
+            std::uint32_t count;
         };
-        // Une entité à ranger dans un lot : même pipeline, même modèle et même primitive = même lot.
+        // Une entité à ranger : même pipeline, même modèle et même primitive = même commande ; même pipeline et même
+        // page = même appel.
         struct BatchEntry
         {
             const RHI::Pipeline* pipeline;
@@ -185,11 +194,19 @@ namespace Flux {
             std::uint32_t draw;
             float distance; // au bord de sa sphère
         };
+        // Les entités d'une commande, dans m_batchEntries.
         struct BatchGroup
         {
-            std::uint32_t first; // dans m_batchEntries
+            std::uint32_t first;
             std::uint32_t count;
-            float distance;      // du plus proche du lot
+            float distance; // du plus proche
+        };
+        // Les commandes d'un appel, dans m_batchGroups (après leur tri par pipeline et page).
+        struct BatchBucket
+        {
+            std::uint32_t first;
+            std::uint32_t count;
+            float distance; // du plus proche
         };
         // Passes des modèles : opaques, transparents, puis une par cascade d'ombres.
         static constexpr std::size_t OpaqueModelPass = 0;
@@ -221,8 +238,9 @@ namespace Flux {
         // Relie ce qui change d'un appel à l'autre (pipeline, sommets, groupes), seulement quand il le faut.
         struct BindState
         {
+            static constexpr std::uint32_t NoPage = ~0u;
             const RHI::Pipeline* pipeline = nullptr;
-            const GpuModel* model = nullptr;
+            std::uint32_t page = NoPage; // page de géométrie liée (NoPage : aucune, ou les sommets d'autre chose)
             const RHI::BindGroup* group = nullptr;
             bool frameBound = false;
         };
@@ -250,7 +268,8 @@ namespace Flux {
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
         static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
         void AddBatches(bool nearestFirst);
-        void AddBatch(const BatchEntry& entry, std::uint32_t count);
+        void AddCommand(const BatchEntry& entry, std::uint32_t count);
+        void AddToBatch(const RHI::Pipeline& pipeline, std::uint32_t page, bool merge);
         bool BuildModelBatches(std::uint32_t frameIndex);
         void BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, const RHI::Pipeline& pipeline) const;
         void DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const;
@@ -315,7 +334,8 @@ namespace Flux {
         std::array<std::span<const TileBatch>, TilePassCount> m_tilePasses; // dans m_tileBatches
         std::vector<BatchEntry> m_batchEntries; // de la passe en cours de rangement
         std::vector<BatchGroup> m_batchGroups;
-        std::vector<std::uint32_t> m_instances; // indices dans m_draws, lot après lot
+        std::vector<BatchBucket> m_batchBuckets;
+        std::vector<Instance> m_instances; // lot après lot
         std::vector<RHI::DrawIndexedCommand> m_modelCommands;
         std::vector<ModelBatch> m_modelBatches;
         std::array<std::span<const ModelBatch>, ModelPassCount> m_modelPasses; // dans m_modelBatches
