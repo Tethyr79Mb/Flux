@@ -9,7 +9,43 @@
 namespace Flux::Missions {
     namespace {
         constexpr float DefaultHealth = 100.0f; // ennemi sans points de vie : 10 obus du Gatling
-        constexpr float TargetSize = 6.0f;      // m, cube rouge quand le donneur n'a pas de prefab
+        constexpr float DroneSize = 6.0f;       // m, drone cube quand le donneur n'a pas de prefab
+
+        // Ennemi par défaut, sans prefab : un drone cube rouge qui vole et tire (un canon devant), mené par l'IA de
+        // combat.
+        Entity CreateDrone(Scene& scene, int number) {
+            const Entity drone = scene.CreateEntity("Ennemi " + std::to_string(number));
+            ShipComponent ship;
+            ship.maxSpeed = 120.0f;
+            ship.acceleration = 30.0f;
+            ship.turnRate = 70.0f;
+            ship.levelAssist = false;
+            ship.fallsWithoutPilot = false;
+            ship.warpSpeed = 0.0f;
+            scene.Add<ShipComponent>(drone, ship);
+            const Entity hull = scene.CreateEntity("Coque", drone);
+            scene.Get<TransformComponent>(hull).scale = {DroneSize, DroneSize, DroneSize};
+            scene.Add<MeshRendererComponent>(hull, MeshType::Cube, Math::LinearColor::FromSrgb8(200, 40, 30));
+            scene.Add<ColliderComponent>(hull);
+            const Entity hardpoint = scene.CreateEntity("Emport", drone);
+            scene.Get<TransformComponent>(hardpoint).position = {0.0, 0.0, -DroneSize * 0.5 - 0.1};
+            scene.Add<HardpointComponent>(hardpoint);
+            const Entity gun = scene.CreateEntity("Canon", hardpoint);
+            WeaponComponent weapon;
+            weapon.fireRate = 4.0f;
+            weapon.damage = 4.0f;
+            weapon.range = 2000.0f;
+            weapon.cone = 15.0f;
+            weapon.muzzle = 1.5f;
+            weapon.color = {1.0f, 0.2f, 0.15f};
+            scene.Add<WeaponComponent>(gun, weapon);
+            const Entity barrel = scene.CreateEntity("Tube", gun);
+            scene.Get<TransformComponent>(barrel).position = {0.0, 0.0, -0.75};
+            scene.Get<TransformComponent>(barrel).scale = {0.4f, 0.4f, 1.5f};
+            scene.Add<MeshRendererComponent>(barrel, MeshType::Cube, Math::LinearColor::FromSrgb8(60, 60, 60));
+            scene.Add<CombatAIComponent>(drone);
+            return drone;
+        }
 
         // Repère de la station du donneur (son vaisseau), ou du donneur lui-même hors de tout vaisseau.
         Entity GetFrame(const Scene& scene, Entity giver) {
@@ -68,10 +104,7 @@ namespace Flux::Missions {
         for (int i = 0; i < count; ++i) {
             Entity enemy = NullEntity;
             if (mission.enemyPrefab.empty()) {
-                enemy = scene.CreateEntity("Ennemi " + std::to_string(i + 1));
-                scene.Get<TransformComponent>(enemy).scale = {TargetSize, TargetSize, TargetSize};
-                scene.Add<MeshRendererComponent>(enemy, MeshType::Cube, Math::LinearColor::FromSrgb8(200, 40, 30));
-                scene.Add<ColliderComponent>(enemy);
+                enemy = CreateDrone(scene, i + 1);
             } else {
                 auto placed = SceneSerializer::Instantiate(scene, components, mission.enemyPrefab, prefabs);
                 if (!placed) {
@@ -95,10 +128,14 @@ namespace Flux::Missions {
             } else if (scene.TryGet<SectorComponent>(enemy)) {
                 scene.Remove<SectorComponent>(enemy);
             }
-            // Un vaisseau ennemi attend en place (sans pilote, il tomberait près d'une planète ou dans un monde à
-            // gravité) ; sans points de vie, il serait indestructible et la mission impossible.
+            // Un vaisseau ennemi ne tombe pas sans pilote (près d'une planète ou dans un monde à gravité) ; sans
+            // points de vie, il serait indestructible et la mission impossible. Sans IA de combat, il en reçoit une :
+            // il se défend.
             if (auto* ship = scene.TryGet<ShipComponent>(enemy)) {
                 ship->fallsWithoutPilot = false;
+                if (!scene.TryGet<CombatAIComponent>(enemy)) {
+                    scene.Add<CombatAIComponent>(enemy);
+                }
             }
             if (!HasHealth(scene, enemy)) {
                 scene.Add<HealthComponent>(enemy, HealthComponent{.health = DefaultHealth});

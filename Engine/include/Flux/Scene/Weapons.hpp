@@ -67,6 +67,9 @@ namespace Flux {
         bool aim = false;  // aimPoint donné : les tourelles s'y tournent ; sinon elles reviennent vers l'avant
         Math::WorldPosition aimPoint;
         Entity target = NullEntity; // cible verrouillée (FindLockTarget) : visée en avance, poursuivie par les missiles
+        // Erreur de visée ajoutée au point visé sur la cible verrouillée (m, monde) : l'imprécision d'un pilote PNJ.
+        Math::Vector3f aimOffset{};
+        bool missiles = true; // faux : les lance-missiles attendent (un PNJ espace ses tirs de missiles)
     };
 
     // Armes des vaisseaux : une arme (WeaponComponent) n'est active que posée sur un emport (HardpointComponent, son

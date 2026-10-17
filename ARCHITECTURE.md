@@ -162,10 +162,16 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   `CollectProbes` ne demande pas de sol pour lui. Il ne s'arrête qu'à destination : une planète sur la ligne droite est
   contournée à 20 km au-dessus de son atmosphère, et près d'elle une image ne le porte pas plus loin que le quart de
   la distance qui l'en sépare.
+- IA de combat (`CombatAI`, `CombatAIComponent`) : machine à états en C++ (choix de Bruno, pas de langage de script)
+  sur les vaisseaux ennemis à la racine : patrouille autour du point de départ, attaque dans `detectionRange`
+  (vise en avance, ralentit à `preferredRange`), rupture de côté quand il passe trop près ou, prudent, quand il est
+  touché, fuite sous `fleeHealth`. `Steer` (avant la physique) règle vitesse et rotation comme le pilote automatique
+  (`Steering.hpp`) ; `Fire` (après la physique) appelle `Weapons::Update` avec la cible verrouillée, une erreur de
+  visée (`WeaponInput::aimOffset`) et des missiles espacés (`WeaponInput::missiles`). Cible : le vaisseau du joueur.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
   (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
-  `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou cubes
-  rouges), avec des points de vie s'ils n'en ont pas. Le moteur garde une mission en cours (`m_mission`), finie quand
+  `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou drones
+  cubes armés), avec des points de vie et une IA de combat s'ils n'en ont pas. Le moteur garde une mission en cours (`m_mission`), finie quand
   plus aucun ennemi n'existe ; elle n'est pas enregistrée et s'efface au chargement d'une scène.
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings

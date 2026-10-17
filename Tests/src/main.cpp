@@ -32,6 +32,7 @@ int main() {
         {"collisions des vaisseaux et amarrage", RunDockingAutopilotTests},
         {"missions", RunMissionTests},
         {"warp", RunWarpTests},
+        {"IA de combat", RunCombatAITests},
     };
 
     int failures = 0;
