@@ -84,9 +84,12 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
 1. Préparation sur le CPU : ciel et soleil (direction de la caméra vers le `SunComponent` s'il y en a un, sinon
-   hauteur et direction réglées dans le Ciel), objets visibles (élimination hors champ), tuiles de planète choisies, tri
-   des opaques de près à loin et des transparents de loin à près. Un objet ni en vue ni dans une cascade d'ombre est
-   écarté avant tout calcul (pose d'un personnage comprise).
+   hauteur et direction réglées dans le Ciel), objets visibles (élimination hors champ), tuiles de planète choisies,
+   transparents triés de loin à près. Un objet ni en vue ni dans une cascade d'ombre est écarté avant tout calcul (pose
+   d'un personnage comprise). Les opaques et les ombres sont rangés en lots (même pipeline, même modèle, même
+   primitive), chacun dessiné en un seul `DrawIndexedIndirect` ; les lots opaques passent dans l'ordre de leur objet
+   le plus proche (ce qu'ils cachent échoue au test de profondeur avant d'être éclairé). Les transparents restent un
+   appel par objet, dans leur ordre.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé.
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32, profondeur seule sans programme de pixel (sauf seuil
    d'alpha) ; un objet fermé à une face n'y dessine que ses faces tournées vers le soleil, et un objet de moins de
@@ -113,7 +116,10 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques
-(`static_assert` sur les tailles). Un dessin donne l'indice de son `DrawData` comme indice d'instance.
+(`static_assert` sur les tailles). Teinte, émissif, métal et rugosité propres à l'objet sont dans son `DrawData`, le
+matériau dans les push constants (`DrawParams`) : un lot dessine des objets de réglages différents. L'instance `i`
+d'un lot de modèles lit l'indice de son `DrawData` dans le buffer `instances` (groupe 1, emplacement 6) ; une tuile de
+planète donne directement le sien comme indice d'instance.
 
 ## Coordonnées et grands mondes
 
@@ -235,7 +241,7 @@ par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et 
   (objets, sol, eau).
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
-  l'instance (`SV_VulkanInstanceID`), comme pour tous les maillages de `Mesh.slang`.
+  l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
 
 ## Interface (FluxUI)
 

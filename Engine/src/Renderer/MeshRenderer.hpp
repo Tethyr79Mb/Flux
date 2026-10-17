@@ -126,6 +126,11 @@ namespace Flux {
             // world à l'image précédente, relative à sa caméra (mouvement propre pour l'anticrénelage temporel) ; nulle
             // pour les tuiles de planète, immobiles.
             Math::Matrix4f previousWorld;
+            // De l'entité, combinés dans le shader à ceux du matériau (DrawParams) : un même appel dessine des entités
+            // de teintes différentes.
+            std::array<float, 4> tint;     // multiplie la couleur du matériau
+            std::array<float, 4> emissive; // ajouté à celui du matériau ; w : 1 si surface remplace métal et rugosité
+            std::array<float, 4> surface;  // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent)
         };
         // Période (m) des coordonnées des textures du sol : multiple de leurs tailles (GroundScale dans Mesh.slang).
         static constexpr double GroundPeriod = 1024.0;
@@ -153,6 +158,35 @@ namespace Flux {
             const InteriorComponent* interior;
             float distance; // de la caméra à la boîte : les plus proches d'abord s'il y en a trop
         };
+
+        // Une primitive de modèle, dessinée en un appel indirect pour toutes les entités du lot (leurs indices dans
+        // m_instances, que le shader lit à la place de l'indice d'instance) : commande `command` de m_modelCommands.
+        struct ModelBatch
+        {
+            const RHI::Pipeline* pipeline;
+            const GpuModel* model;
+            std::uint32_t primitive;
+            std::uint32_t command;
+        };
+        // Une entité à ranger dans un lot : même pipeline, même modèle et même primitive = même lot.
+        struct BatchEntry
+        {
+            const RHI::Pipeline* pipeline;
+            const GpuModel* model;
+            std::uint32_t primitive;
+            std::uint32_t draw;
+            float distance; // au bord de sa sphère
+        };
+        struct BatchGroup
+        {
+            std::uint32_t first; // dans m_batchEntries
+            std::uint32_t count;
+            float distance;      // du plus proche du lot
+        };
+        // Passes des modèles : opaques, transparents, puis une par cascade d'ombres.
+        static constexpr std::size_t OpaqueModelPass = 0;
+        static constexpr std::size_t TransparentModelPass = 1;
+        static constexpr std::size_t ModelPassCount = 2 + ShadowCascadeCount;
 
         // Primitive transparente d'une entité, dessinée après les opaques.
         struct TransparentDraw
@@ -206,9 +240,11 @@ namespace Flux {
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
         static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
+        void AddBatches(bool nearestFirst);
+        void AddBatch(const BatchEntry& entry, std::uint32_t count);
+        bool BuildModelBatches(std::uint32_t frameIndex);
         void BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, const RHI::Pipeline& pipeline) const;
-        void DrawPrimitive(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::uint32_t drawIndex,
-                           const ModelPrimitive& primitive, const RHI::Pipeline& pipeline, std::uint32_t cascade = 0) const;
+        void DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const;
         void DrawTiles(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
                        const RHI::Pipeline& pipeline) const;
 
@@ -233,6 +269,8 @@ namespace Flux {
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_frameBuffers;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_lightBuffers;
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_indirectBuffers; // m_tileCommands
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_instanceBuffers; // m_instances
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_modelCommandBuffers; // m_modelCommands
         std::array<std::unique_ptr<RHI::BindGroup>, RHI::FramesInFlight> m_frameGroups;
         // Texture cube du ciel liée au groupe de chaque image (celle de SkyLighting, refaite quand le ciel change).
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundEnvironment{};
@@ -251,7 +289,7 @@ namespace Flux {
         std::vector<Math::Matrix4f> m_previousWorld;
         std::vector<std::uint32_t> m_previousFrame;
         std::uint32_t m_preparedFrame = 0;
-        std::vector<std::uint32_t> m_opaque;        // dans m_draws, visibles, du plus proche au plus loin
+        std::vector<std::uint32_t> m_opaque;        // dans m_draws, visibles
         std::vector<TransparentDraw> m_transparent; // triés du plus loin au plus proche
         std::vector<Math::Matrix4f> m_jointMatrices;
         std::vector<PreparedLight> m_lights;
@@ -265,6 +303,12 @@ namespace Flux {
         std::vector<RHI::DrawIndexedCommand> m_tileCommands;
         std::vector<TileBatch> m_tileBatches;
         std::array<std::span<const TileBatch>, TilePassCount> m_tilePasses; // dans m_tileBatches
+        std::vector<BatchEntry> m_batchEntries; // de la passe en cours de rangement
+        std::vector<BatchGroup> m_batchGroups;
+        std::vector<std::uint32_t> m_instances; // indices dans m_draws, lot après lot
+        std::vector<RHI::DrawIndexedCommand> m_modelCommands;
+        std::vector<ModelBatch> m_modelBatches;
+        std::array<std::span<const ModelBatch>, ModelPassCount> m_modelPasses; // dans m_modelBatches
         std::vector<PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
         PoseEvaluator m_poseEvaluator;
         GroundTextures m_ground;
