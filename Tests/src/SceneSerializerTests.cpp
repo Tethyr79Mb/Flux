@@ -1,11 +1,13 @@
 // Tests de la sauvegarde : aller-retour exact, ordre des enfants, fichiers invalides refusés sans rien casser.
 #include "Check.hpp"
 
+#include "Flux/Core/GameModule.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 
 #include <cmath>
+#include <format>
 #include <string>
 
 using namespace Flux;
@@ -167,6 +169,25 @@ bool RunSceneSerializerTests() {
     const auto badMood = SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1,
         "entities": [{"id": "0000000000000001", "test": {"mood": "joyeux"}}]})");
     CHECK(!badMood && badMood.error().find("« angry »") != std::string::npos);
+
+    // Version du moteur notée à l'enregistrement. Fichier d'une version plus récente (ou champ inconnu : une autre
+    // branche) : refusé avec le message « non compatible », la scène en cours intacte. Plus ancienne ou absente : lue.
+    CHECK(saved.find(std::format("\"engine\": {}", GameModuleApiVersion)) != std::string::npos);
+    CHECK(SceneSerializer::LoadFromString(loaded, components, saved).has_value());
+    const auto newer = SceneSerializer::LoadFromString(loaded, components, std::format(R"({{"format": "flux.scene",
+        "version": 2, "engine": {}, "entities": []}})", GameModuleApiVersion + 1));
+    CHECK(!newer && newer.error().starts_with("Scène non chargée car non compatible avec la version actuelle"));
+    CHECK(newer.error().find(std::to_string(GameModuleApiVersion + 1)) != std::string::npos && SameScene(scene, loaded));
+    const auto unknownField = SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1,
+        "entities": [{"id": "0000000000000001", "test": {"colour": 1}}]})");
+    CHECK(!unknownField && unknownField.error().find("non compatible") != std::string::npos && SameScene(scene, loaded));
+    CHECK(unknownField.error().find("« colour »") != std::string::npos);
+    const auto newerFormat = SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 99,
+        "entities": []})");
+    CHECK(!newerFormat && newerFormat.error().find("non compatible") != std::string::npos);
+    CHECK(SceneSerializer::LoadFromString(loaded, components, std::format(R"({{"format": "flux.scene", "version": 2,
+        "engine": {}, "entities": []}})", GameModuleApiVersion - 1)).has_value());
+    CHECK(SceneSerializer::LoadFromString(loaded, components, saved).has_value()); // retour à la scène de départ
 
     // Valeurs hors limites (fichier abîmé ou modifié à la main) : ramenées dans les limites du champ.
     {

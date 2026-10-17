@@ -1,4 +1,5 @@
 #include "Flux/Scene/SceneSerializer.hpp"
+#include "Flux/Core/GameModule.hpp"
 
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -25,8 +26,39 @@ namespace Flux::SceneSerializer {
         using Json = nlohmann::ordered_json; // garde l'ordre des clés : fichiers stables et lisibles
 
         constexpr std::string_view FormatName = "flux.scene";
+
         constexpr std::string_view SnapshotFormatName = "flux.entity";
         constexpr std::string_view PrefabFormatName = "flux.prefab";
+
+        // Version du moteur qui a écrit le fichier : GameModuleApiVersion, augmentée à chaque PR qui change un
+        // composant. Un fichier plus récent que ce moteur peut avoir des composants ou des champs qu'il ne connaît pas :
+        // refusé plutôt qu'ouvert à moitié. Absente (fichiers d'avant son ajout) : plus ancien, lu et converti.
+        constexpr std::string_view EngineVersionKey = "engine";
+
+        // Fichier écrit par une autre version du moteur (plus récente, ou une autre branche) : message de refus commun
+        // (FormatIncompatible), quel que soit l'endroit où il est découvert (prefab d'un exemplaire compris).
+        struct IncompatibleError : std::runtime_error
+        {
+            using std::runtime_error::runtime_error;
+        };
+
+        std::string FormatIncompatible(std::string_view format, std::string_view detail) {
+            return std::format("{} non chargé{} car non compatible avec la version actuelle du moteur.\n\n{}",
+                               format == PrefabFormatName ? "Prefab" : "Scène", format == PrefabFormatName ? "" : "e", detail);
+        }
+
+        void CheckVersions(const Json& document) {
+            const int version = document.at("version").get<int>();
+            if (version < 1 || version > FormatVersion) {
+                throw IncompatibleError(std::format("Fichier au format {}, ce moteur lit jusqu'au format {}.", version, FormatVersion));
+            }
+            const auto found = document.find(EngineVersionKey);
+            if (found != document.end() && found->get<std::int64_t>() > static_cast<std::int64_t>(GameModuleApiVersion)) {
+                throw IncompatibleError(std::format("Fichier enregistré par la version {} du moteur, celui-ci est en version {} : "
+                                                    "mettre le moteur à jour pour l'ouvrir.",
+                                                    found->get<std::int64_t>(), GameModuleApiVersion));
+            }
+        }
 
         // JSON ne stocke que des doubles : un float 0.1f s'écrirait 0.10000000149011612.
         // On passe par l'écriture la plus courte qui redonne exactement ce float (« 0.1 »).
@@ -272,10 +304,7 @@ namespace Flux::SceneSerializer {
             if (document.value("format", std::string{}) != PrefabFormatName) {
                 throw std::runtime_error(std::format("ce n'est pas un prefab Flux (« format » différent de « {} »)", PrefabFormatName));
             }
-            const int version = document.at("version").get<int>();
-            if (version < 1 || version > FormatVersion) {
-                throw std::runtime_error(std::format("version {} non gérée (ce moteur lit jusqu'à la version {})", version, FormatVersion));
-            }
+            CheckVersions(document);
             const Json& list = document.at("entities");
             std::vector<EntityData> entities;
             entities.reserve(list.size());
@@ -539,7 +568,7 @@ namespace Flux::SceneSerializer {
                         continue;
                     }
                     if (!field) {
-                        throw std::runtime_error(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
+                        throw IncompatibleError(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
                     }
                     try {
                         ReadField(*field, fieldValue, field->access(component->instance.get()));
@@ -641,7 +670,7 @@ namespace Flux::SceneSerializer {
                         continue;
                     }
                     if (!field) {
-                        throw fail(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
+                        throw IncompatibleError(fail(std::format("« {} » n'a pas de champ « {} »", key, fieldKey)).what());
                     }
                     try {
                         ReadField(*field, fieldValue, field->access(component.instance.get()));
@@ -673,6 +702,8 @@ namespace Flux::SceneSerializer {
                 const auto overrides = list[i].find("overrides");
                 try {
                     ExpandInstance(components, *text, std::move(data), overrides != list[i].end() ? &*overrides : nullptr, entities);
+                } catch (const IncompatibleError& error) {
+                    throw IncompatibleError(std::format("prefab {} : {}", path, error.what()));
                 } catch (const std::exception& error) {
                     throw std::runtime_error(std::format("prefab {} : {}", path, error.what()));
                 }
@@ -751,6 +782,7 @@ namespace Flux::SceneSerializer {
         Json document;
         document["format"] = FormatName;
         document["version"] = FormatVersion;
+        document[EngineVersionKey] = GameModuleApiVersion;
         document["entities"] = std::move(entities);
         return CompactNumberArrays(document.dump(2)) + '\n';
     }
@@ -765,11 +797,12 @@ namespace Flux::SceneSerializer {
             if (format != FormatName && format != PrefabFormatName) {
                 return std::unexpected(std::format("ce n'est pas une scène Flux (« format » différent de « {} »)", FormatName));
             }
-            const int version = document.at("version").get<int>();
-            if (version < 1 || version > FormatVersion) {
-                return std::unexpected(std::format("version {} non gérée (ce moteur lit jusqu'à la version {})", version, FormatVersion));
+            try {
+                CheckVersions(document);
+                entities = ReadEntities(components, document.at("entities"), texts);
+            } catch (const IncompatibleError& error) {
+                return std::unexpected(FormatIncompatible(format, error.what()));
             }
-            entities = ReadEntities(components, document.at("entities"), texts);
         } catch (const std::exception& error) {
             return std::unexpected(std::string(error.what()));
         }
@@ -942,6 +975,7 @@ namespace Flux::SceneSerializer {
         Json document;
         document["format"] = PrefabFormatName;
         document["version"] = FormatVersion;
+        document[EngineVersionKey] = GameModuleApiVersion;
         document["entities"] = std::move(entities);
         return CompactNumberArrays(document.dump(2)) + '\n';
     }
@@ -974,6 +1008,8 @@ namespace Flux::SceneSerializer {
                 root.parent = scene.GetId(parent);
             }
             ExpandInstance(components, *text, std::move(root), nullptr, entities);
+        } catch (const IncompatibleError& error) {
+            return std::unexpected(FormatIncompatible(PrefabFormatName, std::format("{} : {}", path, error.what())));
         } catch (const std::exception& error) {
             return std::unexpected(std::format("prefab {} : {}", path, error.what()));
         }

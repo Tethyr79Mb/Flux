@@ -6,6 +6,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Core/Project.hpp"
 #include "Flux/Platform/Console.hpp"
+#include "Flux/Platform/Dialogs.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
@@ -71,6 +72,7 @@ namespace Flux {
 
             if (auto loaded = engine.LoadScene(project->GetStartupScenePath()); !loaded) {
                 Log::Error("Scène de démarrage : {}", loaded.error());
+                Platform::ShowError(engine.GetWindow(), "Scène de démarrage", loaded.error()); // le journal n'est pas visible
                 return 1;
             }
             result = engine.Run();
