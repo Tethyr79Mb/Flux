@@ -34,6 +34,7 @@ namespace FluxEditor {
         constexpr double PlaceDistance = 5.0; // mètres devant la caméra (ou le long du rayon de la souris)
         constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
         constexpr double FighterDistance = 32.0; // le chasseur fait 20 m de long et 15 m d'envergure
+        constexpr double StationDistance = 250.0; // la station fait 142 x 31 x 119 m
         constexpr double PlanetDistance = 3.0;   // rayons de la planète, de la caméra à son centre
         constexpr double SunDistance = 1.496e11; // mètres : de la Terre au Soleil, orbite d'une nouvelle planète
 
@@ -178,6 +179,167 @@ namespace FluxEditor {
             }
         }
 
+        // Station en maquette de cubes, dans son repère (le sol du hangar à y = 0, l'entrée vers -z) : un hangar de
+        // 140 x 30 x 100 m ouvert sur l'espace avec quatre quais, puis au fond un couloir qui dessert deux boutiques
+        // de marchands et une salle des terminaux. Gravité à bord, immobile. De quoi marcher et essayer l'amarrage
+        // avant le vrai modèle.
+        void AddStation(Scene& scene, Entity station) {
+            struct Box
+            {
+                const char* name;
+                Math::Vector3d min;
+                Math::Vector3d max;
+                Math::LinearColor color;
+                float emission = 0.0f;
+                bool solid = true; // marquages au sol et néons : seulement affichés
+            };
+            const auto grey = [](std::uint8_t level) { return Math::LinearColor::FromSrgb8(level, level, level + 8); };
+            const auto addBox = [&](const Box& box, Entity parent) {
+                const Entity entity = scene.CreateEntity(box.name, parent);
+                TransformComponent& transform = scene.Get<TransformComponent>(entity);
+                transform.position = (box.min + box.max) * 0.5;
+                const Math::Vector3d size = box.max - box.min;
+                transform.scale = {static_cast<float>(size.x), static_cast<float>(size.y), static_cast<float>(size.z)};
+                MeshRendererComponent& mesh = scene.Add<MeshRendererComponent>(entity, MeshType::Cube, box.color);
+                mesh.emission = box.emission;
+                if (box.solid) {
+                    scene.Add<ColliderComponent>(entity);
+                }
+                return entity;
+            };
+            const auto addLight = [&](const char* name, Math::Vector3d position, float intensity, float range) {
+                const Entity entity = scene.CreateEntity(name, station);
+                scene.Get<TransformComponent>(entity).position = position;
+                LightComponent& light = scene.Add<LightComponent>(entity);
+                light.color = {1.0f, 0.95f, 0.88f};
+                light.intensity = intensity;
+                light.range = range;
+            };
+            const auto addInterior = [&](const char* name, Math::Vector3d center, Math::Vector3f size, float intensity) {
+                const Entity entity = scene.CreateEntity(name, station);
+                scene.Get<TransformComponent>(entity).position = center;
+                InteriorComponent& interior = scene.Add<InteriorComponent>(entity);
+                interior.size = size;
+                interior.intensity = intensity;
+                interior.fade = 1.0f;
+            };
+
+            // Hangar : parois d'un mètre ; l'ouverture de l'avant (100 x 24 m) laisse passer un chasseur de 15 m
+            // d'envergure avec de la marge. Le mur du fond, plus mince, a une porte de 3 m vers le couloir.
+            const Entity hangar = scene.CreateEntity("Hangar", station);
+            for (const Box& box : {Box{"Sol", {-71.0, -1.0, -51.0}, {71.0, 0.0, 50.4}, grey(80)},
+                                   Box{"Plafond", {-71.0, 30.0, -51.0}, {71.0, 31.0, 51.0}, grey(110)},
+                                   Box{"Paroi gauche", {-71.0, 0.0, -51.0}, {-70.0, 30.0, 51.0}, grey(140)},
+                                   Box{"Paroi droite", {70.0, 0.0, -51.0}, {71.0, 30.0, 51.0}, grey(140)},
+                                   Box{"Entrée gauche", {-70.0, 0.0, -51.0}, {-50.0, 30.0, -50.0}, grey(130)},
+                                   Box{"Entrée droite", {50.0, 0.0, -51.0}, {70.0, 30.0, -50.0}, grey(130)},
+                                   Box{"Linteau de l'entrée", {-50.0, 24.0, -51.0}, {50.0, 30.0, -50.0}, grey(130)},
+                                   Box{"Fond gauche", {-70.0, 0.0, 50.0}, {-1.5, 30.0, 50.4}, grey(125)},
+                                   Box{"Fond droit", {1.5, 0.0, 50.0}, {70.0, 30.0, 50.4}, grey(125)},
+                                   Box{"Fond au-dessus de la porte", {-1.5, 3.0, 50.0}, {1.5, 30.0, 50.4}, grey(125)},
+                                   // Balises de l'entrée : elle se repère de loin.
+                                   Box{"Balise gauche", {-50.0, 0.0, -51.2}, {-49.6, 24.0, -50.8},
+                                       Math::LinearColor{0.2f, 0.6f, 1.0f}, 4.0f, false},
+                                   Box{"Balise droite", {49.6, 0.0, -51.2}, {50.0, 24.0, -50.8},
+                                       Math::LinearColor{0.2f, 0.6f, 1.0f}, 4.0f, false}}) {
+                addBox(box, hangar);
+            }
+
+            // Quatre quais de 24 x 28 m en ligne, au milieu du hangar. Chaque « Quai N » est le point d'amarrage :
+            // l'origine d'un chasseur posé (son plancher de cockpit, 2,3 m au-dessus de ses roues), le nez vers la
+            // sortie (-z), prêt à repartir. Le marquage au sol est seulement peint (pas de marche à franchir).
+            constexpr double DockX[] = {-51.0, -17.0, 17.0, 51.0};
+            constexpr double DockZ = 10.0;
+            constexpr double HalfWidth = 12.0;
+            constexpr double HalfLength = 14.0;
+            constexpr double Line = 0.4;
+            const Math::LinearColor yellow{1.0f, 0.75f, 0.1f};
+            for (int i = 0; i < 4; ++i) {
+                const double x = DockX[i];
+                const std::string name = "Quai " + std::to_string(i + 1);
+                const Entity dock = scene.CreateEntity(name, station);
+                scene.Get<TransformComponent>(dock).position = {x, 2.3, DockZ};
+                const Entity marks = scene.CreateEntity("Marquage du " + name, hangar);
+                const double x0 = x - HalfWidth, x1 = x + HalfWidth, z0 = DockZ - HalfLength, z1 = DockZ + HalfLength;
+                for (const Box& box : {Box{"Dalle", {x0, 0.0, z0}, {x1, 0.01, z1}, grey(60), 0.0f, false},
+                                       Box{"Bord avant", {x0, 0.0, z0}, {x1, 0.02, z0 + Line}, yellow, 1.5f, false},
+                                       Box{"Bord arrière", {x0, 0.0, z1 - Line}, {x1, 0.02, z1}, yellow, 1.5f, false},
+                                       Box{"Bord gauche", {x0, 0.0, z0}, {x0 + Line, 0.02, z1}, yellow, 1.5f, false},
+                                       Box{"Bord droit", {x1 - Line, 0.0, z0}, {x1, 0.02, z1}, yellow, 1.5f, false},
+                                       // Néon au plafond, au-dessus du quai.
+                                       Box{"Plafonnier", {x - 4.0, 29.7, DockZ - 4.0}, {x + 4.0, 30.0, DockZ + 4.0},
+                                           Math::LinearColor{1.0f, 0.95f, 0.88f}, 3.0f, false}}) {
+                    addBox(box, marks);
+                }
+                addLight(("Lumière du " + name).c_str(), {x, 26.0, DockZ}, 400.0f, 45.0f);
+            }
+            addLight("Lumière de l'entrée", {0.0, 20.0, -35.0}, 300.0f, 40.0f);
+            addLight("Lumière du fond", {0.0, 20.0, 35.0}, 80.0f, 35.0f);
+            addInterior("Intérieur du hangar", {0.0, 15.0, 0.0}, {140.0f, 30.0f, 100.0f}, 1.0f);
+
+            // Derrière le hangar : un couloir (z 50,4 à 54,4) puis trois pièces de 14 x 12,4 m, sous un même plafond
+            // de 3,5 m. Les vides entre les pièces restent fermés.
+            const Entity decks = scene.CreateEntity("Coursives", station);
+            constexpr double Height = 3.5;
+            constexpr double Rooms[] = {-29.0, 0.0, 29.0}; // centre de chaque pièce et de sa porte
+            for (const Box& box : {Box{"Sol", {-40.4, -1.0, 50.4}, {40.4, 0.0, 67.6}, grey(95)},
+                                   Box{"Plafond", {-40.4, Height, 50.4}, {40.4, Height + 0.4, 67.6}, grey(150)},
+                                   Box{"Paroi gauche", {-40.4, 0.0, 50.4}, {-40.0, Height, 67.6}, grey(160)},
+                                   Box{"Paroi droite", {40.0, 0.0, 50.4}, {40.4, Height, 67.6}, grey(160)},
+                                   Box{"Paroi du fond", {-40.0, 0.0, 67.2}, {40.0, Height, 67.6}, grey(160)},
+                                   // Mur côté pièces, portes de 2 x 2,5 m en face de chaque pièce.
+                                   Box{"Mur du couloir 1", {-40.0, 0.0, 54.4}, {-30.0, Height, 54.8}, grey(170)},
+                                   Box{"Mur du couloir 2", {-28.0, 0.0, 54.4}, {-1.0, Height, 54.8}, grey(170)},
+                                   Box{"Mur du couloir 3", {1.0, 0.0, 54.4}, {28.0, Height, 54.8}, grey(170)},
+                                   Box{"Mur du couloir 4", {30.0, 0.0, 54.4}, {40.0, Height, 54.8}, grey(170)},
+                                   Box{"Linteau 1", {-30.0, 2.5, 54.4}, {-28.0, Height, 54.8}, grey(170)},
+                                   Box{"Linteau 2", {-1.0, 2.5, 54.4}, {1.0, Height, 54.8}, grey(170)},
+                                   Box{"Linteau 3", {28.0, 2.5, 54.4}, {30.0, Height, 54.8}, grey(170)},
+                                   // Cloisons des pièces (7 m de part et d'autre de leur centre).
+                                   Box{"Cloison 1", {-36.4, 0.0, 54.8}, {-36.0, Height, 67.2}, grey(165)},
+                                   Box{"Cloison 2", {-22.0, 0.0, 54.8}, {-21.6, Height, 67.2}, grey(165)},
+                                   Box{"Cloison 3", {-7.4, 0.0, 54.8}, {-7.0, Height, 67.2}, grey(165)},
+                                   Box{"Cloison 4", {7.0, 0.0, 54.8}, {7.4, Height, 67.2}, grey(165)},
+                                   Box{"Cloison 5", {21.6, 0.0, 54.8}, {22.0, Height, 67.2}, grey(165)},
+                                   Box{"Cloison 6", {36.0, 0.0, 54.8}, {36.4, Height, 67.2}, grey(165)}}) {
+                addBox(box, decks);
+            }
+            for (const double x : {-25.0, 0.0, 25.0}) {
+                addLight("Lumière du couloir", {x, Height - 0.3, 52.4}, 8.0f, 14.0f);
+            }
+            addInterior("Intérieur du couloir", {0.0, 0.5 * Height, 52.4}, {80.0f, static_cast<float>(Height), 4.0f}, 1.0f);
+
+            // Boutiques : un comptoir, une étagère contre le mur du fond, et la place du marchand entre les deux.
+            const Math::LinearColor wood = Math::LinearColor::FromSrgb8(120, 85, 55);
+            for (int i = 0; i < 2; ++i) {
+                const double x = Rooms[i];
+                const std::string name = "Boutique " + std::to_string(i + 1);
+                const Entity shop = scene.CreateEntity(name, station);
+                for (const Box& box : {Box{"Comptoir", {x - 4.0, 0.0, 61.8}, {x + 4.0, 1.1, 62.6}, wood},
+                                       Box{"Étagère", {x - 6.0, 0.0, 66.6}, {x + 6.0, 2.5, 67.2}, wood},
+                                       Box{"Enseigne", {x - 2.0, 2.7, 67.1}, {x + 2.0, 3.2, 67.2},
+                                           Math::LinearColor{1.0f, 0.5f, 0.15f}, 3.0f, false}}) {
+                    addBox(box, shop);
+                }
+                const Entity merchant = scene.CreateEntity("Place du marchand", shop);
+                scene.Get<TransformComponent>(merchant).position = {x, 0.0, 64.5};
+                addLight(("Lumière de la " + name).c_str(), {x, Height - 0.3, 61.0}, 10.0f, 12.0f);
+                addInterior(("Intérieur de la " + name).c_str(), {x, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 1.0f);
+            }
+
+            // Salle des terminaux : quatre bornes contre le mur du fond, écran allumé.
+            const double terminals = Rooms[2];
+            const Entity room = scene.CreateEntity("Salle des terminaux", station);
+            for (int i = 0; i < 4; ++i) {
+                const double x = terminals - 4.5 + 3.0 * i;
+                const Entity terminal = scene.CreateEntity("Terminal " + std::to_string(i + 1), room);
+                addBox({"Pied", {x - 0.35, 0.0, 66.6}, {x + 0.35, 1.0, 67.2}, grey(70)}, terminal);
+                addBox({"Écran", {x - 0.45, 1.0, 66.75}, {x + 0.45, 1.6, 66.85}, Math::LinearColor{0.2f, 0.8f, 1.0f}, 2.5f}, terminal);
+            }
+            addLight("Lumière des terminaux", {terminals, Height - 0.3, 61.0}, 10.0f, 12.0f);
+            addInterior("Intérieur des terminaux", {terminals, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 1.0f);
+        }
+
         struct ItemInfo
         {
             const char* label;
@@ -205,7 +367,8 @@ namespace FluxEditor {
                                            {"Planète", "Planète", UI::Icon::Planet},
                                            {"Monde (gravité, air)", "Monde", UI::Icon::Planet},
                                            {"Soleil", "Soleil", UI::Icon::Light},
-                                           {"Prefab", "Prefab", UI::Icon::Prefab}};
+                                           {"Prefab", "Prefab", UI::Icon::Prefab},
+                                           {"Station (maquette)", "Station", UI::Icon::Ship}};
             return Infos[item];
         }
 
@@ -290,7 +453,7 @@ namespace FluxEditor {
             category("Formes", {Item::Empty, Item::Cube, Item::Model});
             category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior});
             category("Espace", {Item::Planet, Item::World});
-            category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter, Item::Target});
+            category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter, Item::Station, Item::Target});
             category("Interface", {Item::ScreenText, Item::ScreenImage, Item::Interface});
             category("Son", {Item::Sound});
             category("Logique", {Item::SceneChange});
@@ -487,6 +650,16 @@ namespace FluxEditor {
                 scene.Add<ShipComponent>(entity).turnRate = 90.0f;
                 scene.Add<HealthComponent>(entity, HealthComponent{.health = 500.0f});
                 AddFighter(scene, entity);
+            } else if (item == Item::Station) {
+                // Immobile : ni moteurs ni chute ; sa gravité tient les personnages sur ses ponts.
+                ShipComponent& ship = scene.Add<ShipComponent>(entity);
+                ship.maxSpeed = 0.0f;
+                ship.acceleration = 0.0f;
+                ship.turnRate = 0.0f;
+                ship.strafeSpeed = 0.0f;
+                ship.levelAssist = false;
+                ship.fallsWithoutPilot = false;
+                AddStation(scene, entity);
             } else if (item == Item::Sound) {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);
             } else if (item == Item::Interior) {
@@ -514,12 +687,22 @@ namespace FluxEditor {
             }
             // Devant la caméra, ou le long du rayon qui passe sous la souris ; dans le secteur de la caméra.
             const Camera& camera = engine.GetCamera();
-            const Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
+            Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
                                                   : Math::Vector3d(camera.GetForward());
             Math::WorldPosition position = camera.position;
+            if (item == Item::Station && !drop) {
+                // À l'horizontale, l'entrée du hangar face à la caméra et à sa hauteur : regardée d'en haut, la
+                // station s'enfoncerait dans le sol de la scène.
+                direction = Math::Vector3d(direction.x, 0.0, direction.z);
+                direction = Math::Length(direction) > 1.0e-6 ? Math::Normalize(direction) : Math::Vector3d(0.0, 0.0, -1.0);
+                position += Math::Vector3d(0.0, -12.0, 0.0);
+                scene.Get<TransformComponent>(entity).rotation = Math::Quaternionf::FromAxisAngle(
+                    {0.0f, 1.0f, 0.0f}, static_cast<float>(std::atan2(direction.x, direction.z)));
+            }
             // Un prefab de vaisseau est vu comme le chasseur : en entier.
             const bool bigPrefab = item == Item::Prefab && scene.TryGet<ShipComponent>(entity);
-            double distance = item == Item::Ship ? ShipDistance : item == Item::Fighter || bigPrefab ? FighterDistance : PlaceDistance;
+            double distance = item == Item::Ship ? ShipDistance : item == Item::Fighter || bigPrefab ? FighterDistance
+                                                                            : item == Item::Station ? StationDistance : PlaceDistance;
             if (item == Item::Planet) {
                 // Assez loin pour la voir en entier.
                 distance = PlanetDistance * static_cast<double>(scene.Get<PlanetComponent>(entity).radius);
@@ -539,10 +722,11 @@ namespace FluxEditor {
         }
 
         sceneEditor.Select(scene, entity);
-        // Avec ses enfants (maquette, chasseur, prefab) : annuler retire tout, rétablir remet tout.
+        // Avec ses enfants (maquette, chasseur, station, prefab) : annuler retire tout, rétablir remet tout.
         history.Push(std::string("Placer : ") + (item == Item::Prefab ? name : std::string(info.label)), scene.GetId(entity), {},
                      UndoHistory::Capture(engine, scene.GetId(entity),
-                                          item == Item::Ship || item == Item::Fighter || item == Item::Prefab));
+                                          item == Item::Ship || item == Item::Fighter || item == Item::Station ||
+                                              item == Item::Prefab));
         if (item == Item::Character) {
             sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
         }
