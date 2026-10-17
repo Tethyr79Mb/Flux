@@ -65,6 +65,22 @@ namespace Flux::Vk {
         vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
     }
 
+    void RhiBindGroup::SetTableTexture(std::uint32_t slot, std::uint32_t element, const RHI::Texture& texture,
+                                       const RHI::Sampler& sampler) {
+        const VkDescriptorImageInfo imageInfo{static_cast<const RhiSampler&>(sampler).GetHandle(),
+                                              static_cast<const RhiTexture&>(texture).GetImage().GetView(),
+                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_set;
+        write.dstBinding = slot;
+        write.dstArrayElement = element;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+    }
+
     namespace {
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,

@@ -19,8 +19,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pièces à la main.
 - ✅ Préparation au chargement : matériaux identiques réunis, une primitive par matériau, ombres en un appel par
   modèle, grands modèles découpés en blocs de 16 m écartés un par un (champ, cascades).
-- 🔨 Rendu piloté par le GPU : géométrie dans un seul buffer, textures dans un seul tableau, blocs écartés par un
-  compute shader (hors champ et cachés derrière d'autres, profondeur de l'image précédente), un appel par pipeline. Commencé le 2026-10-17.
+- 🔨 Rendu piloté par le GPU, commencé le 2026-10-17. Fait : géométrie de tous les modèles dans des pages partagées
+  (modèles animés à part), images et matériaux dans deux tables lues par indice, lots du même pipeline et de la même
+  page dessinés en un seul `DrawIndexedIndirect` (plusieurs commandes). Reste : blocs écartés par un compute shader
+  (hors champ, puis cachés derrière d'autres avec la profondeur de l'image précédente).
 - ⬜ Chargement en arrière-plan : lecture et décodage sur d'autres fils, envois au GPU sans `vkQueueWaitIdle`
   (aujourd'hui chaque envoi arrête le fil principal jusqu'à la fin du travail du GPU), puis file de transfert.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.

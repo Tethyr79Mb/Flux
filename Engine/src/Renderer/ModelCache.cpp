@@ -9,18 +9,41 @@
 
 namespace Flux {
     namespace {
-        // Matériaux de modèles chargés au plus : un groupe chacun (ses images).
+        // Cases des tables partagées par tous les modèles chargés : images (la 0 est l'image blanche) et matériaux (le
+        // 0 est le matériau blanc sans image).
+        constexpr std::uint32_t MaxImages = 4096;
         constexpr std::uint32_t MaxMaterials = 4096;
+        // Pages de géométrie : de quoi tenir la station et quelques vaisseaux dans une seule (32 + 16 Mo) ; les
+        // modèles animés à part (os et poids à côté de chaque sommet). Un modèle plus grand a sa propre page.
+        constexpr std::uint32_t PageVertices = 1u << 20;
+        constexpr std::uint32_t PageIndices = 4u << 20;
+        constexpr std::uint32_t AnimatedPageVertices = 1u << 18;
+        constexpr std::uint32_t AnimatedPageIndices = 1u << 20;
         // Intervalle entre deux vérifications de la date d'un fichier (relu s'il a changé) : assez court pour voir
         // une retouche aussitôt, assez long pour ne pas interroger le disque à chaque image.
         constexpr std::chrono::milliseconds CheckInterval{1000};
 
-        // Emplacements du groupe 0 (voir shaders/Mesh.slang).
-        constexpr std::uint32_t BaseColorSlot = 0;
-        constexpr std::uint32_t EmissiveSlot = 1;
-        constexpr std::uint32_t MetallicRoughnessSlot = 2;
-        constexpr std::uint32_t NormalSlot = 3;
-        constexpr std::uint32_t OcclusionSlot = 4;
+        // Doit correspondre à MaterialData dans shaders/Mesh.slang : une case de la table des matériaux.
+        struct MaterialData
+        {
+            Math::LinearColor color;    // linéaire : couleur de base
+            Math::LinearColor emissive; // linéaire : lumière propre (rgb), multipliée par l'image émissive
+            float metallic;             // x canal bleu de l'image métal-rugosité
+            float roughness;            // x canal vert
+            float normalScale;          // 0 : pas de carte de normales
+            float occlusionStrength;    // 0 : pas d'occlusion
+            float alphaCutoff;          // 0 : pas de seuil
+            // Cases de la table des images (0 : blanche) : couleur de base, émissive, métal-rugosité, normales,
+            // occlusion.
+            std::array<std::uint32_t, 5> images;
+            std::array<std::uint32_t, 2> padding;
+        };
+        static_assert(sizeof(MaterialData) == 80);
+
+        // Indices des images d'un matériau dans MaterialData::images.
+        constexpr std::size_t BaseColorImage = 0;
+        constexpr std::size_t NormalImage = 3;
+        constexpr std::size_t OcclusionImage = 4;
 
         // Cube unité centré ; chaque face a ses 4 sommets (normale propre, image entière).
         ModelData BuildCube() {
@@ -60,6 +83,44 @@ namespace Flux {
         }
     }
 
+    GpuModelResources& GpuModelResources::operator=(GpuModelResources&& other) noexcept {
+        if (this != &other) {
+            Release();
+            m_owner = std::exchange(other.m_owner, nullptr);
+            page = other.page;
+            firstVertex = other.firstVertex;
+            vertexCount = std::exchange(other.vertexCount, 0);
+            firstIndex = other.firstIndex;
+            indexCount = std::exchange(other.indexCount, 0);
+            firstImage = other.firstImage;
+            imageCount = std::exchange(other.imageCount, 0);
+            firstMaterial = other.firstMaterial;
+            materialCount = std::exchange(other.materialCount, 0);
+            images = std::move(other.images);
+        }
+        return *this;
+    }
+
+    void GpuModelResources::Release() {
+        if (m_owner) {
+            m_owner->Release(*this);
+            m_owner = nullptr;
+        }
+    }
+
+    ModelCache::~ModelCache() = default;
+
+    void ModelCache::Release(GpuModelResources& resources) {
+        GeometryPage& page = m_pages[resources.page];
+        page.vertexRanges.Free(resources.firstVertex, resources.vertexCount);
+        page.indexRanges.Free(resources.firstIndex, resources.indexCount);
+        // Les cases rendues gardent leur image jusqu'à ce qu'une autre la remplace : aucun matériau ne les lit plus.
+        m_imageSlots.Free(resources.firstImage, resources.imageCount);
+        m_materialSlots.Free(resources.firstMaterial, resources.materialCount);
+        resources.vertexCount = resources.indexCount = resources.imageCount = resources.materialCount = 0;
+        resources.images.clear();
+    }
+
     std::expected<std::unique_ptr<ModelCache>, std::string> ModelCache::Create(RHI::Device& device) {
         std::unique_ptr<ModelCache> cache(new ModelCache(device));
 
@@ -74,14 +135,21 @@ namespace Flux {
         constexpr auto binding = [](std::uint32_t slot) {
             return RHI::Binding{slot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
         };
-        constexpr std::array bindings{binding(BaseColorSlot), binding(EmissiveSlot), binding(MetallicRoughnessSlot),
-                                      binding(NormalSlot), binding(OcclusionSlot), binding(GroundColorSlot),
-                                      binding(GroundRoughnessSlot), binding(GroundNormalSlot)};
-        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 1 + MaxMaterials});
-        if (!layout) {
-            return std::unexpected(layout.error());
+        // Groupe blanc, et ceux des textures du sol (GroundTextures, l'ancien vit le temps d'en faire un nouveau).
+        constexpr std::array groundBindings{binding(GroundColorSlot), binding(GroundRoughnessSlot), binding(GroundNormalSlot)};
+        auto groundLayout = device.CreateBindGroupLayout({.bindings = groundBindings, .maxGroups = 4});
+        if (!groundLayout) {
+            return std::unexpected(groundLayout.error());
         }
-        cache->m_materialLayout = std::move(*layout);
+        cache->m_groundLayout = std::move(*groundLayout);
+        constexpr std::array sceneBindings{
+            RHI::Binding{ImageTableSlot, RHI::BindingType::TextureTable, RHI::ShaderStage::Fragment, MaxImages},
+            RHI::Binding{MaterialTableSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment}};
+        auto sceneLayout = device.CreateBindGroupLayout({.bindings = sceneBindings, .maxGroups = 1});
+        if (!sceneLayout) {
+            return std::unexpected(sceneLayout.error());
+        }
+        cache->m_sceneLayout = std::move(*sceneLayout);
 
         constexpr std::array<std::uint8_t, 4> white{255, 255, 255, 255};
         auto image = device.CreateTexture(RHI::Format::RGBA8Srgb, {1, 1}, white);
@@ -89,13 +157,32 @@ namespace Flux {
             return std::unexpected(image.error());
         }
         cache->m_whiteImage = std::move(*image);
-        cache->m_whiteGroup = device.CreateBindGroup(*cache->m_materialLayout);
+        cache->m_whiteGroup = device.CreateBindGroup(*cache->m_groundLayout);
         if (!cache->m_whiteGroup) {
             return std::unexpected("allocation du groupe de l'image blanche");
         }
-        for (const RHI::Binding& slot : bindings) {
+        for (const RHI::Binding& slot : groundBindings) {
             cache->m_whiteGroup->SetTexture(slot.slot, *cache->m_whiteImage, *cache->m_sampler);
         }
+
+        // Tables : l'image blanche et le matériau blanc en case 0, toujours remplies.
+        const MaterialData whiteMaterial{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, {}, {}};
+        std::vector<MaterialData> materials(MaxMaterials, whiteMaterial);
+        auto table = device.CreateBuffer({MaxMaterials * sizeof(MaterialData), RHI::BufferUsage::Storage}, materials.data());
+        if (!table) {
+            return std::unexpected(table.error());
+        }
+        cache->m_materialTable = std::move(*table);
+        cache->m_sceneGroup = device.CreateBindGroup(*cache->m_sceneLayout);
+        if (!cache->m_sceneGroup) {
+            return std::unexpected("allocation du groupe des tables de matériaux");
+        }
+        cache->m_sceneGroup->SetTableTexture(ImageTableSlot, 0, *cache->m_whiteImage, *cache->m_sampler);
+        cache->m_sceneGroup->SetBuffer(MaterialTableSlot, *cache->m_materialTable);
+        cache->m_imageSlots = RangeAllocator(MaxImages);
+        cache->m_materialSlots = RangeAllocator(MaxMaterials);
+        cache->m_imageSlots.Allocate(1);
+        cache->m_materialSlots.Allocate(1);
 
         auto cube = cache->Upload(BuildCube(), "cube");
         if (!cube) {
@@ -105,26 +192,81 @@ namespace Flux {
         return cache;
     }
 
-    // Sommets, indices, images et matériaux envoyés au GPU. Une image refusée par le GPU laisse son matériau blanc.
+    // Place les sommets et les indices du modèle dans une page de géométrie (une nouvelle si aucune n'a la place) et
+    // les y envoie.
+    bool ModelCache::PlaceGeometry(const ModelData& data, GpuModelResources& resources) {
+        const auto vertexCount = static_cast<std::uint32_t>(data.vertices.size());
+        const auto indexCount = static_cast<std::uint32_t>(data.indices.size());
+        const bool animated = data.IsAnimated();
+        std::optional<std::uint32_t> page;
+        std::optional<std::uint32_t> firstVertex;
+        std::optional<std::uint32_t> firstIndex;
+        for (std::uint32_t p = 0; p < m_pages.size() && !page; ++p) {
+            GeometryPage& candidate = m_pages[p];
+            if (candidate.animated != animated || candidate.vertexRanges.GetLargestFree() < vertexCount
+                || candidate.indexRanges.GetLargestFree() < indexCount) {
+                continue;
+            }
+            page = p;
+            firstVertex = candidate.vertexRanges.Allocate(vertexCount);
+            firstIndex = candidate.indexRanges.Allocate(indexCount);
+        }
+        if (!page) {
+            GeometryPage created;
+            created.animated = animated;
+            const std::uint32_t vertices = std::max(vertexCount, animated ? AnimatedPageVertices : PageVertices);
+            const std::uint32_t indices = std::max(indexCount, animated ? AnimatedPageIndices : PageIndices);
+            auto vertexBuffer = m_device.CreateBuffer({std::uint64_t{vertices} * sizeof(ModelVertex), RHI::BufferUsage::Vertex});
+            auto indexBuffer = m_device.CreateBuffer({std::uint64_t{indices} * sizeof(std::uint32_t), RHI::BufferUsage::Index});
+            if (!vertexBuffer || !indexBuffer) {
+                Log::Error("géométrie des modèles : {}", !vertexBuffer ? vertexBuffer.error() : indexBuffer.error());
+                return false;
+            }
+            created.vertices = std::move(*vertexBuffer);
+            created.indices = std::move(*indexBuffer);
+            if (animated) {
+                auto skin = m_device.CreateBuffer({std::uint64_t{vertices} * sizeof(ModelSkinVertex), RHI::BufferUsage::Vertex});
+                if (!skin) {
+                    Log::Error("géométrie des modèles : {}", skin.error());
+                    return false;
+                }
+                created.skin = std::move(*skin);
+            }
+            created.vertexRanges = RangeAllocator(vertices);
+            created.indexRanges = RangeAllocator(indices);
+            firstVertex = created.vertexRanges.Allocate(vertexCount);
+            firstIndex = created.indexRanges.Allocate(indexCount);
+            page = static_cast<std::uint32_t>(m_pages.size());
+            m_pages.push_back(std::move(created));
+        }
+        resources.page = *page;
+        resources.firstVertex = *firstVertex;
+        resources.vertexCount = vertexCount;
+        resources.firstIndex = *firstIndex;
+        resources.indexCount = indexCount;
+        GeometryPage& target = m_pages[*page];
+        bool sent = m_device.WriteBuffer(*target.vertices, std::uint64_t{*firstVertex} * sizeof(ModelVertex), data.vertices.data(),
+                                         data.vertices.size() * sizeof(ModelVertex))
+                 && m_device.WriteBuffer(*target.indices, std::uint64_t{*firstIndex} * sizeof(std::uint32_t), data.indices.data(),
+                                         data.indices.size() * sizeof(std::uint32_t));
+        if (animated) {
+            sent = sent && m_device.WriteBuffer(*target.skin, std::uint64_t{*firstVertex} * sizeof(ModelSkinVertex),
+                                                data.skinVertices.data(), data.skinVertices.size() * sizeof(ModelSkinVertex));
+        }
+        return sent;
+    }
+
+    // Sommets, indices, images et matériaux envoyés au GPU. Une image refusée par le GPU (ou plus de case libre) laisse
+    // son matériau blanc.
     std::expected<GpuModel, std::string> ModelCache::Upload(const ModelData& data, std::string_view name) {
         GpuModel model;
-        auto vertices = m_device.CreateBuffer({data.vertices.size() * sizeof(ModelVertex), RHI::BufferUsage::Vertex}, data.vertices.data());
-        if (!vertices) {
-            return std::unexpected(vertices.error());
+        model.resources = GpuModelResources(*this);
+        GpuModelResources& resources = model.resources;
+        if (!PlaceGeometry(data, resources)) {
+            return std::unexpected("envoi des sommets au GPU");
         }
-        model.vertices = std::move(*vertices);
-        auto indices = m_device.CreateBuffer({data.indices.size() * sizeof(uint32_t), RHI::BufferUsage::Index}, data.indices.data());
-        if (!indices) {
-            return std::unexpected(indices.error());
-        }
-        model.indices = std::move(*indices);
-        if (data.IsAnimated()) {
-            auto skin = m_device.CreateBuffer({data.skinVertices.size() * sizeof(ModelSkinVertex), RHI::BufferUsage::Vertex},
-                                              data.skinVertices.data());
-            if (!skin) {
-                return std::unexpected(skin.error());
-            }
-            model.skin = std::move(*skin);
+        model.animated = data.IsAnimated();
+        if (model.animated) {
             model.skeleton = data.skeleton;
         }
 
@@ -144,32 +286,56 @@ namespace Flux {
             mark(dataImages, source.normalImage);
             mark(dataImages, source.occlusionImage);
         }
-        std::vector<const RHI::Texture*> colorTextures(data.images.size(), nullptr);
-        std::vector<const RHI::Texture*> dataTextures(data.images.size(), nullptr);
-        const auto send = [&](std::size_t i, RHI::Format format) -> const RHI::Texture* {
+        const auto wanted = static_cast<std::uint32_t>(std::ranges::count(colorImages, true) + std::ranges::count(dataImages, true));
+        const std::optional<std::uint32_t> firstImage = m_imageSlots.Allocate(wanted);
+        if (wanted > 0 && !firstImage) {
+            Log::Warning("modèle {} : plus de {} images chargées, ses matériaux restent sans image", name, MaxImages);
+        } else {
+            resources.firstImage = firstImage.value_or(0);
+            resources.imageCount = wanted;
+        }
+        // Case de la table des images envoyée pour cet indice de ModelData::images ; 0 (blanche) si aucune.
+        std::vector<std::uint32_t> colorSlots(data.images.size(), 0);
+        std::vector<std::uint32_t> dataSlots(data.images.size(), 0);
+        const auto send = [&](std::size_t i, RHI::Format format) -> std::uint32_t {
+            if (resources.imageCount == 0) {
+                return 0;
+            }
             const ImageData& pixels = data.images[i];
             auto image = m_device.CreateTexture(format, {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
                                                 pixels.rgba, true);
             if (!image) {
                 Log::Warning("modèle {} : image {} : {}", name, i, image.error());
-                return nullptr;
+                return 0;
             }
-            model.images.push_back(std::move(*image));
-            return model.images.back().get();
+            const std::uint32_t slot = resources.firstImage + static_cast<std::uint32_t>(resources.images.size());
+            m_sceneGroup->SetTableTexture(ImageTableSlot, slot, **image, *m_sampler);
+            resources.images.push_back(std::move(*image));
+            return slot;
         };
         for (std::size_t i = 0; i < data.images.size(); ++i) {
             if (colorImages[i]) {
-                colorTextures[i] = send(i, RHI::Format::RGBA8Srgb);
+                colorSlots[i] = send(i, RHI::Format::RGBA8Srgb);
             }
             if (dataImages[i]) {
-                dataTextures[i] = send(i, RHI::Format::RGBA8Unorm);
+                dataSlots[i] = send(i, RHI::Format::RGBA8Unorm);
             }
         }
-        // Image envoyée au GPU pour cet indice de ModelData::images ; nullptr si aucune (ou refusée).
-        const auto imageFor = [](const std::vector<const RHI::Texture*>& textures, int index) -> const RHI::Texture* {
-            return index >= 0 && static_cast<std::size_t>(index) < textures.size() ? textures[static_cast<std::size_t>(index)] : nullptr;
+        const auto slotFor = [](const std::vector<std::uint32_t>& slots, int index) -> std::uint32_t {
+            return index >= 0 && static_cast<std::size_t>(index) < slots.size() ? slots[static_cast<std::size_t>(index)] : 0u;
         };
-        for (const ModelMaterial& source : data.materials) {
+
+        const auto materialCount = static_cast<std::uint32_t>(data.materials.size());
+        const std::optional<std::uint32_t> firstMaterial = m_materialSlots.Allocate(materialCount);
+        if (materialCount > 0 && !firstMaterial) {
+            Log::Warning("modèle {} : plus de {} matériaux chargés, il reste blanc", name, MaxMaterials);
+        } else {
+            resources.firstMaterial = firstMaterial.value_or(0);
+            resources.materialCount = materialCount;
+        }
+        std::vector<MaterialData> table;
+        for (std::uint32_t m = 0; m < data.materials.size(); ++m) {
+            const ModelMaterial& source = data.materials[m];
             GpuMaterial material;
             material.baseColor = source.baseColor;
             material.emissive = source.emissive;
@@ -178,28 +344,30 @@ namespace Flux {
             material.alphaCutoff = source.alphaCutoff;
             material.doubleSided = source.doubleSided;
             material.blend = source.blend;
-            const std::array<const RHI::Texture*, 5> images{
-                imageFor(colorTextures, source.baseColorImage), imageFor(colorTextures, source.emissiveImage),
-                imageFor(dataTextures, source.metallicRoughnessImage), imageFor(dataTextures, source.normalImage),
-                imageFor(dataTextures, source.occlusionImage)};
-            material.normalScale = images[NormalSlot] ? source.normalScale : 0.0f;
-            material.occlusionStrength = images[OcclusionSlot] ? source.occlusionStrength : 0.0f;
-            if (std::ranges::any_of(images, [](const RHI::Texture* image) { return image != nullptr; })) {
-                material.group = m_device.CreateBindGroup(*m_materialLayout);
-                if (material.group) {
-                    for (std::uint32_t slot = 0; slot < images.size(); ++slot) {
-                        material.group->SetTexture(slot, images[slot] ? *images[slot] : *m_whiteImage, *m_sampler);
-                    }
-                } else {
-                    material.normalScale = 0.0f;
-                    material.occlusionStrength = 0.0f;
-                    Log::Warning("plus de {} matériaux chargés, « {} » sans image", MaxMaterials, source.name);
-                }
+            const std::array<std::uint32_t, 5> images{
+                slotFor(colorSlots, source.baseColorImage), slotFor(colorSlots, source.emissiveImage),
+                slotFor(dataSlots, source.metallicRoughnessImage), slotFor(dataSlots, source.normalImage),
+                slotFor(dataSlots, source.occlusionImage)};
+            material.normalScale = images[NormalImage] != 0 ? source.normalScale : 0.0f;
+            material.occlusionStrength = images[OcclusionImage] != 0 ? source.occlusionStrength : 0.0f;
+            if (resources.materialCount > 0) {
+                material.index = resources.firstMaterial + m;
+                table.push_back({material.baseColor, material.emissive, material.metallic, material.roughness, material.normalScale,
+                                 material.occlusionStrength, material.alphaCutoff, images, {}});
             }
-            model.materials.push_back(std::move(material));
+            model.materials.push_back(material);
+        }
+        if (!table.empty() && !m_device.WriteBuffer(*m_materialTable, std::uint64_t{resources.firstMaterial} * sizeof(MaterialData),
+                                                    table.data(), table.size() * sizeof(MaterialData))) {
+            return std::unexpected("envoi des matériaux au GPU");
         }
         model.primitives = data.primitives;
         model.shadowPrimitives = data.shadowPrimitives;
+        for (std::vector<ModelPrimitive>* primitives : {&model.primitives, &model.shadowPrimitives}) {
+            for (ModelPrimitive& primitive : *primitives) {
+                primitive.firstIndex += resources.firstIndex;
+            }
+        }
         model.clusters = data.clusters;
         model.bounds = data.bounds;
         model.loaded = true;

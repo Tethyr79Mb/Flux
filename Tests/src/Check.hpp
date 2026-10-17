@@ -37,3 +37,4 @@ bool RunDockingAutopilotTests();
 bool RunMissionTests();
 bool RunWarpTests();
 bool RunCombatAITests();
+bool RunGeometryTests();

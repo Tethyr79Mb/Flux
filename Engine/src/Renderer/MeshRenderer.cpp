@@ -237,7 +237,8 @@ namespace Flux {
         const std::array planetAttributes{position, normal, uv, morphOffset, morphNormal};
         const std::array planetShadow{position, uv, morphOffset};
         const std::array oceanAttributes{position, morphOffset}; // l'eau fait sa normale et sa profondeur elle-même
-        const std::array<const RHI::BindGroupLayout*, 2> layouts{&m_models->GetMaterialLayout(), m_frameLayout.get()};
+        const std::array<const RHI::BindGroupLayout*, 3> layouts{&m_models->GetGroundLayout(), m_frameLayout.get(),
+                                                                 &m_models->GetSceneLayout()};
 
         struct Kind
         {
@@ -983,16 +984,22 @@ namespace Flux {
         if (!state.frameBound) {
             state.frameBound = true;
             commands.SetBindGroup(1, *m_frameGroups[frameIndex]);
+            commands.SetBindGroup(2, m_models->GetSceneGroup());
         }
     }
 
-    // Range les entités de m_batchEntries en lots (même pipeline, même modèle, même primitive), chacun un appel. Avec
-    // nearestFirst, les lots passent dans l'ordre de leur entité la plus proche et chaque lot de près à loin : ce qu'ils
-    // cachent échoue au test de profondeur avant d'être éclairé (coque d'un vaisseau autour de la caméra d'abord).
+    // Range les entités de m_batchEntries en commandes (même pipeline, même modèle, même primitive), puis les commandes
+    // en appels (même pipeline, même page de géométrie). Avec nearestFirst, les appels passent dans l'ordre de leur
+    // entité la plus proche, et dans chacun les commandes et leurs entités de près à loin : ce qu'elles cachent échoue
+    // au test de profondeur avant d'être éclairé (coque d'un vaisseau autour de la caméra d'abord).
     void MeshRenderer::AddBatches(bool nearestFirst) {
-        std::ranges::sort(m_batchEntries, [](const BatchEntry& a, const BatchEntry& b) {
+        const auto pageOf = [](const BatchEntry& entry) { return entry.model->resources.page; };
+        std::ranges::sort(m_batchEntries, [&pageOf](const BatchEntry& a, const BatchEntry& b) {
             if (a.pipeline != b.pipeline) {
                 return std::less<>{}(a.pipeline, b.pipeline);
+            }
+            if (pageOf(a) != pageOf(b)) {
+                return pageOf(a) < pageOf(b);
             }
             if (a.model != b.model) {
                 return std::less<>{}(a.model, b.model);
@@ -1000,35 +1007,56 @@ namespace Flux {
             return a.primitive != b.primitive ? std::less<>{}(a.primitive, b.primitive) : a.distance < b.distance;
         });
         m_batchGroups.clear();
+        m_batchBuckets.clear();
         for (std::uint32_t i = 0; i < m_batchEntries.size(); ++i) {
             const BatchEntry& entry = m_batchEntries[i];
-            const bool same = !m_batchGroups.empty() && [&] {
-                const BatchEntry& first = m_batchEntries[m_batchGroups.back().first];
-                return first.pipeline == entry.pipeline && first.model == entry.model && first.primitive == entry.primitive;
-            }();
-            if (!same) {
+            const BatchEntry* previous = m_batchGroups.empty() ? nullptr : &m_batchEntries[m_batchGroups.back().first];
+            if (!previous || previous->pipeline != entry.pipeline || previous->model != entry.model || previous->primitive != entry.primitive) {
+                if (!previous || previous->pipeline != entry.pipeline || pageOf(*previous) != pageOf(entry)) {
+                    m_batchBuckets.push_back({static_cast<std::uint32_t>(m_batchGroups.size()), 0, entry.distance});
+                }
                 m_batchGroups.push_back({i, 0, entry.distance});
+                ++m_batchBuckets.back().count;
             }
             ++m_batchGroups.back().count;
         }
         if (nearestFirst) {
-            std::ranges::sort(m_batchGroups, {}, &BatchGroup::distance);
-        }
-        for (const BatchGroup& group : m_batchGroups) {
-            for (std::uint32_t i = group.first; i < group.first + group.count; ++i) {
-                m_instances.push_back(m_batchEntries[i].draw);
+            std::ranges::sort(m_batchBuckets, {}, &BatchBucket::distance);
+            for (const BatchBucket& bucket : m_batchBuckets) {
+                const auto groups = std::span(m_batchGroups).subspan(bucket.first, bucket.count);
+                std::ranges::sort(groups, {}, &BatchGroup::distance);
             }
-            AddBatch(m_batchEntries[group.first], group.count);
+        }
+        for (const BatchBucket& bucket : m_batchBuckets) {
+            for (std::uint32_t g = bucket.first; g < bucket.first + bucket.count; ++g) {
+                const BatchGroup& group = m_batchGroups[g];
+                const BatchEntry& first = m_batchEntries[group.first];
+                for (std::uint32_t i = group.first; i < group.first + group.count; ++i) {
+                    m_instances.push_back({m_batchEntries[i].draw, first.model->materials[first.primitive->material].index});
+                }
+                AddCommand(first, group.count);
+                AddToBatch(*first.pipeline, pageOf(first), g != bucket.first);
+            }
         }
         m_batchEntries.clear();
     }
 
-    // Un lot pour les `count` dernières entités de m_instances.
-    void MeshRenderer::AddBatch(const BatchEntry& entry, std::uint32_t count) {
+    // Une commande pour les `count` dernières entités de m_instances.
+    void MeshRenderer::AddCommand(const BatchEntry& entry, std::uint32_t count) {
         const ModelPrimitive& primitive = *entry.primitive;
-        m_modelBatches.push_back({entry.pipeline, entry.model, entry.primitive, static_cast<std::uint32_t>(m_modelCommands.size())});
-        m_modelCommands.push_back({primitive.indexCount, count, primitive.firstIndex, 0,
+        m_modelCommands.push_back({primitive.indexCount, count, primitive.firstIndex,
+                                   static_cast<std::int32_t>(entry.model->resources.firstVertex),
                                    static_cast<std::uint32_t>(m_instances.size()) - count});
+    }
+
+    // La dernière commande rejoint le dernier appel (merge, même pipeline et même page), ou en commence un.
+    void MeshRenderer::AddToBatch(const RHI::Pipeline& pipeline, std::uint32_t page, bool merge) {
+        const auto command = static_cast<std::uint32_t>(m_modelCommands.size()) - 1;
+        if (merge && !m_modelBatches.empty() && m_modelBatches.back().pipeline == &pipeline && m_modelBatches.back().page == page) {
+            ++m_modelBatches.back().count;
+        } else {
+            m_modelBatches.push_back({&pipeline, page, command, 1});
+        }
     }
 
     // Lots de chaque passe des modèles, leurs entités (m_instances) et leurs commandes, envoyés au GPU. false si un
@@ -1061,19 +1089,27 @@ namespace Flux {
         }
         AddBatches(true);
 
-        // Transparents : dans leur ordre (de loin à près), une entité par lot. Double face : les faces arrière (le fond
-        // de l'objet) d'abord, puis les faces avant par-dessus ; exact pour une forme convexe (bulle de verrière, cube).
+        // Transparents : dans leur ordre (de loin à près), une commande par entité. Double face : les faces arrière
+        // (le fond de l'objet) d'abord, puis les faces avant par-dessus ; exact pour une forme convexe (bulle de
+        // verrière, cube).
         passStarts[TransparentModelPass] = m_modelBatches.size();
+        // Deux transparents qui se suivent avec le même pipeline et la même page partent dans le même appel : le GPU
+        // garde l'ordre des commandes d'un appel.
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = GetPipelines(draw);
             const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
-            if (draw.model->materials[primitive.material].doubleSided) {
-                m_instances.push_back(item.draw);
-                AddBatch({pipelines.transparentBack.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
+            const GpuMaterial& material = draw.model->materials[primitive.material];
+            const std::uint32_t page = draw.model->resources.page;
+            const bool first = m_modelBatches.size() == passStarts[TransparentModelPass];
+            if (material.doubleSided) {
+                m_instances.push_back({item.draw, material.index});
+                AddCommand({pipelines.transparentBack.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
+                AddToBatch(*pipelines.transparentBack, page, !first);
             }
-            m_instances.push_back(item.draw);
-            AddBatch({pipelines.transparent.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
+            m_instances.push_back({item.draw, material.index});
+            AddCommand({pipelines.transparent.get(), draw.model, &primitive, item.draw, 0.0f}, 1);
+            AddToBatch(*pipelines.transparent, page, !first || material.doubleSided);
         }
 
         // Ombres : toutes les entités qui en font une dans la cascade, même hors champ ou cachées (le personnage vu
@@ -1104,7 +1140,7 @@ namespace Flux {
         }
         passStarts[ModelPassCount] = m_modelBatches.size();
 
-        const std::uint64_t instanceBytes = m_instances.size() * sizeof(std::uint32_t);
+        const std::uint64_t instanceBytes = m_instances.size() * sizeof(Instance);
         const std::uint64_t commandBytes = m_modelCommands.size() * sizeof(RHI::DrawIndexedCommand);
         if (!GrowBuffer(m_instanceBuffers[frameIndex], frameIndex, InstanceSlot, instanceBytes)) {
             return false;
@@ -1130,28 +1166,26 @@ namespace Flux {
     }
 
     // Les lots d'une passe des modèles : un appel indirect chacun, les changements d'état seulement quand il le faut.
+    // Matériaux lus dans la table (groupe 2) : rien à relier d'un modèle ou d'un matériau à l'autre.
     void MeshRenderer::DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const {
         const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
         for (const ModelBatch& batch : m_modelPasses[pass]) {
-            const GpuModel& model = *batch.model;
-            if (&model != state.model) {
-                state.model = &model;
-                const std::array<const RHI::Buffer*, 2> vertexBuffers{model.vertices.get(), model.skin.get()};
-                commands.BindVertexBuffers(0, std::span(vertexBuffers).first(model.skin ? 2 : 1));
-                commands.BindIndexBuffer(*model.indices);
+            if (batch.page != state.page) {
+                state.page = batch.page;
+                const GeometryPage& page = m_models->GetPage(batch.page);
+                const std::array<const RHI::Buffer*, 2> vertexBuffers{page.vertices.get(), page.skin.get()};
+                commands.BindVertexBuffers(0, std::span(vertexBuffers).first(page.skin ? 2 : 1));
+                commands.BindIndexBuffer(*page.indices);
             }
             BindPipeline(commands, state, frameIndex, *batch.pipeline);
-            const GpuMaterial& material = model.materials[batch.primitive->material];
-            const RHI::BindGroup* group = material.group ? material.group.get() : &m_models->GetWhiteGroup();
-            if (group != state.group) {
-                state.group = group;
-                commands.SetBindGroup(0, *group);
+            if (state.group != &m_models->GetWhiteGroup()) {
+                state.group = &m_models->GetWhiteGroup();
+                commands.SetBindGroup(0, *state.group);
             }
-            const DrawParams params{material.baseColor, material.emissive, cascade, material.alphaCutoff,
-                                    pass == TransparentModelPass ? 1u : 0u, material.metallic, material.roughness,
-                                    material.normalScale, material.occlusionStrength, 0u, {}};
+            const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f,
+                                    pass == TransparentModelPass ? 1u : 0u, 1.0f, 1.0f, 0.0f, 0.0f, 0u, {}};
             commands.PushConstants(&params, sizeof(params));
-            commands.DrawIndexedIndirect(*m_modelCommandBuffers[frameIndex], batch.command * sizeof(RHI::DrawIndexedCommand), 1);
+            commands.DrawIndexedIndirect(*m_modelCommandBuffers[frameIndex], batch.first * sizeof(RHI::DrawIndexedCommand), batch.count);
         }
     }
 
@@ -1179,7 +1213,7 @@ namespace Flux {
             commands.BindVertexBuffers(0, vertexBuffers);
             commands.DrawIndexedIndirect(*m_indirectBuffers[frameIndex], batch.first * sizeof(RHI::DrawIndexedCommand), batch.count);
         }
-        state.model = nullptr; // les sommets liés ne sont plus ceux d'un modèle
+        state.page = BindState::NoPage; // les sommets liés ne sont plus ceux d'une page de modèles
     }
 
     void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {

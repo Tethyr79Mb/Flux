@@ -5,18 +5,22 @@
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Renderer/RHI/RHI.hpp"
+#include "Renderer/RangeAllocator.hpp"
 
 #include <chrono>
 #include <expected>
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 namespace Flux {
+    // Ce que le GPU sait d'un matériau est dans la table des matériaux (MaterialData dans shaders/Mesh.slang, case
+    // `index`) ; le CPU garde de quoi choisir le pipeline et la passe.
     struct GpuMaterial
     {
         Math::LinearColor baseColor{1.0f, 1.0f, 1.0f, 1.0f};
@@ -28,49 +32,98 @@ namespace Flux {
         float alphaCutoff = 0.0f;
         bool doubleSided = false;
         bool blend = false; // transparent : dessiné dans la passe triée
-        // Ses images (couleur de base, émissive, métal-rugosité, normales, occlusion ; blanche si absente) ; nullptr :
-        // aucune image, le groupe blanc.
-        std::unique_ptr<RHI::BindGroup> group;
+        std::uint32_t index = 0; // dans la table des matériaux (0 : blanc, sans image)
     };
 
-    // Modèle 3D envoyé au GPU (le cube du moteur, ou un fichier glTF), et de quoi voir si le fichier a changé.
+    class ModelCache;
+
+    // Places d'un modèle dans les tables partagées de ModelCache (sommets et indices d'une page de géométrie, cases
+    // de la table des images, de la table des matériaux), et ses images. Rendues à sa destruction : le GPU ne doit
+    // plus dessiner le modèle (ModelCache::Reload attend le GPU avant de remplacer un modèle).
+    class GpuModelResources {
+        public:
+        GpuModelResources() = default;
+        explicit GpuModelResources(ModelCache& owner) : m_owner(&owner) {}
+        ~GpuModelResources() { Release(); }
+        GpuModelResources(const GpuModelResources&) = delete;
+        GpuModelResources& operator=(const GpuModelResources&) = delete;
+        GpuModelResources(GpuModelResources&& other) noexcept { *this = std::move(other); }
+        GpuModelResources& operator=(GpuModelResources&& other) noexcept;
+
+        std::uint32_t page = 0;        // page de géométrie (ModelCache::GetPage)
+        std::uint32_t firstVertex = 0; // dans les sommets de la page (et les os, page de modèles animés)
+        std::uint32_t vertexCount = 0;
+        std::uint32_t firstIndex = 0;  // dans les indices de la page
+        std::uint32_t indexCount = 0;
+        std::uint32_t firstImage = 0;  // cases de la table des images
+        std::uint32_t imageCount = 0;
+        std::uint32_t firstMaterial = 0; // cases de la table des matériaux
+        std::uint32_t materialCount = 0;
+        std::vector<std::unique_ptr<RHI::Texture>> images;
+
+        private:
+        void Release();
+        ModelCache* m_owner = nullptr;
+    };
+
+    // Modèle 3D envoyé au GPU (le cube du moteur, ou un fichier glTF), et de quoi voir si le fichier a changé. Ses
+    // sommets et indices sont dans une page de géométrie partagée avec d'autres modèles : un seul appel indirect
+    // dessine des modèles différents (MeshRenderer).
     struct GpuModel
     {
-        std::unique_ptr<RHI::Buffer> vertices;
-        std::unique_ptr<RHI::Buffer> indices; // 32 bits
-        std::unique_ptr<RHI::Buffer> skin;    // ModelSkinVertex, modèle animé seulement
-        ModelSkeleton skeleton;               // gardé sur le CPU : les poses y sont calculées à chaque image
-        std::vector<std::unique_ptr<RHI::Texture>> images;
+        GpuModelResources resources;
+        ModelSkeleton skeleton; // gardé sur le CPU : les poses y sont calculées à chaque image
         std::vector<GpuMaterial> materials;
+        // firstIndex : dans les indices de la page ; indices relatifs au premier sommet du modèle (resources.firstVertex).
         std::vector<ModelPrimitive> primitives;
         std::vector<ModelPrimitive> shadowPrimitives; // ModelData::shadowPrimitives
         std::vector<Math::Box3f> clusters;            // ModelData::clusters ; vide : un seul bloc
         Math::Box3f bounds;
+        bool animated = false; // page de modèles animés : os et poids (ModelSkinVertex) à côté des sommets
         bool loaded = false;
         std::filesystem::file_time_type writeTime{};
         std::chrono::steady_clock::time_point checked{};
 
-        bool IsAnimated() const { return skin != nullptr; }
+        bool IsAnimated() const { return animated; }
+    };
+
+    // Page de géométrie : sommets, indices (32 bits) et, pour les modèles animés, os et poids de plusieurs modèles,
+    // chacun à sa place (GpuModelResources).
+    struct GeometryPage
+    {
+        std::unique_ptr<RHI::Buffer> vertices; // ModelVertex
+        std::unique_ptr<RHI::Buffer> indices;
+        std::unique_ptr<RHI::Buffer> skin;     // ModelSkinVertex, une par sommet ; page de modèles animés seulement
+        RangeAllocator vertexRanges;
+        RangeAllocator indexRanges;
+        bool animated = false;
     };
 
     // Modèles des fichiers glTF (et le cube du moteur) sur le GPU : chargés au premier appel, relus si le fichier
-    // change, avec leurs matériaux (leurs images, groupe 0 des shaders de maillage).
+    // change. Partagés par tous les modèles : les pages de géométrie, la table des images et celle des matériaux
+    // (groupe 2 des shaders de maillage, GetSceneGroup), lus par indice dans les shaders.
     class ModelCache {
         public:
         static std::expected<std::unique_ptr<ModelCache>, std::string> Create(RHI::Device& device);
+        ~ModelCache();
 
-        // Emplacements du groupe 0 où les tuiles de planète lisent les textures du sol (GroundTextures), après les
-        // cinq images d'un matériau glTF.
+        // Emplacements du groupe 0, où les tuiles de planète lisent les textures du sol (GroundTextures).
         static constexpr std::uint32_t GroundColorSlot = 5;
         static constexpr std::uint32_t GroundRoughnessSlot = 6;
         static constexpr std::uint32_t GroundNormalSlot = 7;
+        // Emplacements du groupe 2 (voir shaders/Mesh.slang).
+        static constexpr std::uint32_t ImageTableSlot = 0;
+        static constexpr std::uint32_t MaterialTableSlot = 1;
 
-        const RHI::BindGroupLayout& GetMaterialLayout() const { return *m_materialLayout; }
-        const RHI::Texture& GetWhiteImage() const { return *m_whiteImage; }
-        const RHI::Sampler& GetSampler() const { return *m_sampler; }
-        // Matériau sans image (tous les emplacements sur l'image blanche).
+        // Groupe 0 : textures du sol des planètes (GroundTextures) ; les modèles n'en lisent rien.
+        const RHI::BindGroupLayout& GetGroundLayout() const { return *m_groundLayout; }
+        // Groupe 0 sans textures du sol (images blanches).
         const RHI::BindGroup& GetWhiteGroup() const { return *m_whiteGroup; }
+        // Groupe 2 : tables des images et des matériaux de tous les modèles.
+        const RHI::BindGroupLayout& GetSceneLayout() const { return *m_sceneLayout; }
+        const RHI::BindGroup& GetSceneGroup() const { return *m_sceneGroup; }
         const GpuModel& GetCube() const { return m_cube; }
+        const GeometryPage& GetPage(std::uint32_t page) const { return m_pages[page]; }
 
         // Modèle du fichier, chargé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
         // s'il est illisible (message dans la console).
@@ -80,8 +133,11 @@ namespace Flux {
         const GpuModel* Find(const std::filesystem::path& assetsDirectory, std::string_view relativePath);
 
         private:
+        friend class GpuModelResources;
         explicit ModelCache(RHI::Device& device) : m_device(device) {}
         std::expected<GpuModel, std::string> Upload(const ModelData& data, std::string_view name);
+        bool PlaceGeometry(const ModelData& data, GpuModelResources& resources);
+        void Release(GpuModelResources& resources);
         void Reload(const std::filesystem::path& path, GpuModel& model);
         const GpuModel* Refresh(const std::filesystem::path& path, GpuModel& model, bool created);
 
@@ -97,11 +153,18 @@ namespace Flux {
         };
 
         RHI::Device& m_device;
-        // Dans cet ordre : les groupes (image blanche, matériaux des modèles) sont rendus avant leur layout.
+        // Dans cet ordre : les groupes sont rendus avant leur layout, et les modèles (qui rendent leurs places aux
+        // tables) avant les tables.
         std::unique_ptr<RHI::Sampler> m_sampler;
-        std::unique_ptr<RHI::BindGroupLayout> m_materialLayout;
-        std::unique_ptr<RHI::Texture> m_whiteImage; // 1 x 1
+        std::unique_ptr<RHI::BindGroupLayout> m_groundLayout;
+        std::unique_ptr<RHI::BindGroupLayout> m_sceneLayout;
+        std::unique_ptr<RHI::Texture> m_whiteImage; // 1 x 1, case 0 de la table des images
         std::unique_ptr<RHI::BindGroup> m_whiteGroup;
+        std::unique_ptr<RHI::Buffer> m_materialTable; // MaterialData, une case par matériau
+        std::unique_ptr<RHI::BindGroup> m_sceneGroup;
+        RangeAllocator m_imageSlots;
+        RangeAllocator m_materialSlots;
+        std::vector<GeometryPage> m_pages;
         GpuModel m_cube;
         // Par chemin (UTF-8, normalisé) ; les échecs aussi, pour ne pas relire à chaque image.
         std::unordered_map<std::string, GpuModel> m_models;

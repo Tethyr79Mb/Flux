@@ -46,6 +46,19 @@ namespace Flux::Vk {
             }
         }
 
+        // Tables de textures (RHI::BindingType::TextureTable) : toutes les images des matériaux dans un seul groupe,
+        // lues par indice ; et nombre de dessins d'un appel indirect lu dans un buffer (élimination sur le GPU).
+        // Vulkan 1.2, présents sur tous les GPU de bureau de Vulkan 1.3.
+        VkPhysicalDeviceVulkan12Features features12{};
+        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        features12.descriptorIndexing = VK_TRUE;
+        features12.runtimeDescriptorArray = VK_TRUE;
+        features12.descriptorBindingPartiallyBound = VK_TRUE;
+        features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        features12.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
+        features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        features12.drawIndirectCount = VK_TRUE;
+
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         features13.dynamicRendering = VK_TRUE;
@@ -63,6 +76,7 @@ namespace Flux::Vk {
         vkb::PhysicalDeviceSelector selector(device->m_instance);
         selector.set_minimum_version(1, 3)
                 .set_required_features(features)
+                .set_required_features_12(features12)
                 .set_required_features_13(features13)
                 .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
         if (headless) {

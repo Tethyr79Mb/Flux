@@ -104,16 +104,17 @@ struct DrawData
     float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent)
 };
 
-// Doit correspondre à DrawParams dans MeshRenderer.cpp : le matériau d'une primitive, commun à tout un lot d'entités.
+// Doit correspondre à DrawParams dans MeshRenderer.cpp : réglages de l'appel. Les modèles n'y lisent que cascade et
+// transparent (leur matériau est dans la table, MaterialData) ; le sol et l'eau des planètes, tout.
 struct DrawParams
 {
-    float4 color;             // linéaire : couleur de base du matériau
-    float4 emissive;          // linéaire : lumière propre du matériau (rgb), multipliée par l'image émissive
+    float4 color;             // linéaire : couleur de base
+    float4 emissive;          // linéaire : lumière propre (rgb)
     uint cascade;             // carte d'ombres en cours de dessin
     float alphaCutoff;        // 0 : pas de seuil
     uint transparent;         // 1 : l'alpha sort vers le mélange ; 0 : opaque (alpha 1)
-    float metallic;           // x canal bleu de metallicRoughnessTexture
-    float roughness;          // x canal vert
+    float metallic;
+    float roughness;
     float normalScale;        // 0 : pas de carte de normales
     float occlusionStrength;  // 0 : pas d'occlusion
     uint padding;
@@ -121,15 +122,28 @@ struct DrawParams
 
 [[vk::push_constant]] ConstantBuffer<DrawParams> params;
 
-// Groupe 0 : le matériau, blanc 1 x 1 sans image. Couleurs en sRGB (le GPU les ramène en linéaire à la lecture),
-// données (métal-rugosité, normales, occlusion) telles quelles.
-[[vk::binding(0, 0)]] Sampler2D baseColorTexture;
-[[vk::binding(1, 0)]] Sampler2D emissiveTexture;
-[[vk::binding(2, 0)]] Sampler2D metallicRoughnessTexture; // vert : rugosité, bleu : métal
-[[vk::binding(3, 0)]] Sampler2D normalTexture;            // repère tangent, comme glTF
-[[vk::binding(4, 0)]] Sampler2D occlusionTexture;         // rouge
-// Tuiles de planète avec textures du sol (GroundTextures.hpp) : une couche par matière (GroundLayer). Images blanches
-// pour les autres maillages, qui ne les lisent pas.
+// Doit correspondre à MaterialData dans ModelCache.cpp : une case de la table des matériaux de tous les modèles.
+struct MaterialData
+{
+    float4 color;             // linéaire : couleur de base du matériau
+    float4 emissive;          // linéaire : lumière propre du matériau (rgb), multipliée par l'image émissive
+    float metallic;           // x canal bleu de l'image métal-rugosité
+    float roughness;          // x canal vert
+    float normalScale;        // 0 : pas de carte de normales
+    float occlusionStrength;  // 0 : pas d'occlusion
+    float alphaCutoff;        // 0 : pas de seuil
+    // Cases de materialImages (0 : blanche) : couleur de base, émissive, métal-rugosité (vert : rugosité, bleu : métal),
+    // normales (repère tangent, comme glTF), occlusion (rouge).
+    uint baseColorImage;
+    uint emissiveImage;
+    uint metallicRoughnessImage;
+    uint normalImage;
+    uint occlusionImage;
+    uint2 padding;
+};
+
+// Groupe 0 : tuiles de planète avec textures du sol (GroundTextures.hpp), une couche par matière (GroundLayer). Images
+// blanches pour les autres maillages, qui ne les lisent pas.
 [[vk::binding(5, 0)]] Sampler2DArray groundColorTexture;
 [[vk::binding(6, 0)]] Sampler2DArray groundRoughnessTexture; // rouge : occlusion, vert : rugosité
 [[vk::binding(7, 0)]] Sampler2DArray groundNormalTexture;    // repère tangent (OpenGL : vert vers le haut)
@@ -145,9 +159,20 @@ struct DrawParams
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour (SkyRenderer), réduit à chaque niveau de mip : de plus en plus flou.
 [[vk::binding(5, 1)]] SamplerCube environmentMap;
-// Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i] (les appels des
-// tuiles de planète donnent directement l'indice dans draws).
-[[vk::binding(6, 1)]] StructuredBuffer<uint> instances;
+// Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i].x avec le
+// matériau instances[i].y (les appels des tuiles de planète donnent directement l'indice dans draws).
+[[vk::binding(6, 1)]] StructuredBuffer<uint2> instances;
+
+// Groupe 2 : tables de tous les modèles chargés (ModelCache). Images des matériaux, choisies par indice : couleurs en
+// sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
+[[vk::binding(0, 2)]] Sampler2D materialImages[];
+[[vk::binding(1, 2)]] StructuredBuffer<MaterialData> materials;
+
+// Un même appel dessine des matériaux différents : l'indice peut changer d'un pixel voisin à l'autre.
+float4 SampleMaterial(uint image, float2 uv)
+{
+    return materialImages[NonUniformResourceIndex(image)].Sample(uv);
+}
 
 struct VertexInput
 {
@@ -183,6 +208,7 @@ struct VertexOutput
     float3 normal   : NORMAL;
     float2 uv       : TEXCOORD;
     nointerpolation uint draw : DRAW; // dans draws
+    nointerpolation uint material : MATERIAL; // dans materials (modèles seulement)
     // Le point à l'image précédente (clip space, sans décalage), là où était l'entité et là où il serait resté
     // immobile : leur écart est le mouvement propre de l'entité (voir Motion). Nuls pour les tuiles de planète.
     float4 previousClip : PREVIOUS_CLIP;
@@ -221,6 +247,7 @@ VertexOutput Output(uint drawIndex, float3 position, float3 normal, float2 uv)
     const DrawData draw = draws[drawIndex];
     VertexOutput output;
     output.draw = drawIndex;
+    output.material = 0;
     output.worldPosition = Transform(draw.world, position).xyz;
     output.position = Transform(frame[0].viewProjection, output.worldPosition);
     output.normal = draw.normal[0].xyz * normal.x + draw.normal[1].xyz * normal.y + draw.normal[2].xyz * normal.z;
@@ -245,17 +272,22 @@ VertexOutput MovingOutput(uint drawIndex, float3 position, float3 normal, float2
 [shader("vertex")]
 VertexOutput vertexMain(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    return MovingOutput(instances[instance], input.position, input.normal, input.uv);
+    const uint2 entry = instances[instance];
+    VertexOutput output = MovingOutput(entry.x, input.position, input.normal, input.uv);
+    output.material = entry.y;
+    return output;
 }
 
 [shader("vertex")]
 VertexOutput vertexSkinned(SkinnedVertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    const uint draw = instances[instance];
+    const uint2 entry = instances[instance];
     float3 position;
     float3 normal;
-    Skin(input, asuint(draws[draw].normal[1].w), position, normal);
-    return MovingOutput(draw, position, normal, input.uv);
+    Skin(input, asuint(draws[entry.x].normal[1].w), position, normal);
+    VertexOutput output = MovingOutput(entry.x, position, normal, input.uv);
+    output.material = entry.y;
+    return output;
 }
 
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
@@ -500,10 +532,10 @@ float3 SceneLights(float3 worldPosition, Surface s)
 
 // Normale de la carte de normales, sans tangentes dans les sommets : le repère tangent est retrouvé au pixel par
 // les dérivées de la position et des UV (« cotangent frame » de Schüler). Marche aussi avec des UV en miroir.
-float3 PerturbNormal(float3 normal, float3 worldPosition, float2 uv)
+float3 PerturbNormal(MaterialData material, float3 normal, float3 worldPosition, float2 uv)
 {
-    float3 mapped = normalTexture.Sample(uv).xyz * 2.0 - 1.0;
-    mapped.xy *= params.normalScale;
+    float3 mapped = SampleMaterial(material.normalImage, uv).xyz * 2.0 - 1.0;
+    mapped.xy *= material.normalScale;
     const float3 dp1 = ddx(worldPosition);
     const float3 dp2 = ddy(worldPosition);
     const float2 duv1 = ddx(uv);
@@ -1235,33 +1267,34 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
 {
     const DrawData draw = draws[input.draw];
-    float4 base = baseColorTexture.Sample(input.uv) * params.color * draw.tint;
-    if (alphaTest && base.a < params.alphaCutoff) {
+    const MaterialData material = materials[input.material];
+    float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint;
+    if (alphaTest && base.a < material.alphaCutoff) {
         discard;
     }
     // Face arrière d'un matériau double face : éclairée comme vue de son côté.
     const float3 geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
     float3 normal = geometryNormal;
-    if (params.normalScale != 0.0) { // le même pour toute la primitive
-        normal = PerturbNormal(geometryNormal, input.worldPosition, input.uv);
+    if (material.normalScale != 0.0) { // le même pour toute la primitive
+        normal = PerturbNormal(material, geometryNormal, input.worldPosition, input.uv);
     }
-    const float4 metallicRoughness = metallicRoughnessTexture.Sample(input.uv);
+    const float4 metallicRoughness = SampleMaterial(material.metallicRoughnessImage, input.uv);
     // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
     const bool fixed = draw.emissive.w != 0.0;
-    const float metallic = saturate(fixed ? draw.surface.x : params.metallic * draw.surface.x * metallicRoughness.b);
+    const float metallic = saturate(fixed ? draw.surface.x : material.metallic * draw.surface.x * metallicRoughness.b);
     Surface surface;
     surface.normal = normal;
     surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
-    surface.roughness = saturate(fixed ? draw.surface.y : params.roughness * draw.surface.y * metallicRoughness.g);
-    const float occlusion = 1.0 + params.occlusionStrength * (occlusionTexture.Sample(input.uv).r - 1.0);
+    surface.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, inside);
-    const float3 emissive = params.emissive.rgb + draw.emissive.rgb;
+    const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
-        lit += emissive * emissiveTexture.Sample(input.uv).rgb;
+        lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
     }
     // Lumière de contour : d'autant plus forte que la surface est vue de profil (terme de Fresnel), avec le relief.
     // Éteinte dans les volumes intérieurs : les murs du cockpit et de la soute ne s'allument pas.
@@ -1278,6 +1311,7 @@ struct ShadowOutput
 {
     float4 position : SV_Position;
     float2 uv       : TEXCOORD;
+    nointerpolation uint material : MATERIAL;
 };
 
 ShadowOutput ShadowVertex(uint draw, float3 position, float2 uv)
@@ -1288,23 +1322,29 @@ ShadowOutput ShadowVertex(uint draw, float3 position, float2 uv)
     ShadowOutput output;
     output.position = Transform(m, Transform(draws[draw].world, position).xyz);
     output.uv = uv;
+    output.material = 0;
     return output;
 }
 
 [shader("vertex")]
 ShadowOutput vertexShadow(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    return ShadowVertex(instances[instance], input.position, input.uv);
+    const uint2 entry = instances[instance];
+    ShadowOutput output = ShadowVertex(entry.x, input.position, input.uv);
+    output.material = entry.y;
+    return output;
 }
 
 [shader("vertex")]
 ShadowOutput vertexShadowSkinned(SkinnedVertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    const uint draw = instances[instance];
+    const uint2 entry = instances[instance];
     float3 position;
     float3 normal;
-    Skin(input, asuint(draws[draw].normal[1].w), position, normal);
-    return ShadowVertex(draw, position, input.uv);
+    Skin(input, asuint(draws[entry.x].normal[1].w), position, normal);
+    ShadowOutput output = ShadowVertex(entry.x, position, input.uv);
+    output.material = entry.y;
+    return output;
 }
 
 [shader("vertex")]
@@ -1316,7 +1356,8 @@ ShadowOutput vertexShadowPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
 [shader("fragment")]
 void fragmentShadow(ShadowOutput input)
 {
-    if (params.alphaCutoff > 0.0 && baseColorTexture.Sample(input.uv).a * params.color.a < params.alphaCutoff) {
+    const MaterialData material = materials[input.material];
+    if (material.alphaCutoff > 0.0 && SampleMaterial(material.baseColorImage, input.uv).a * material.color.a < material.alphaCutoff) {
         discard;
     }
 }
