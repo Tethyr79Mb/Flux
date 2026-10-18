@@ -42,6 +42,9 @@ namespace FluxEditor {
         void Update(Flux::Engine& engine, UndoHistory& history, SceneDocument& document, ContentBrowser& files);
         // Vrai si un champ de l'inspecteur a modifié l'entité sélectionnée depuis le dernier appel.
         bool TakeModified() { return std::exchange(m_modified, false); }
+        // Champs d'un composant comme dans l'inspecteur, sans en-tête, pour une autre fenêtre (Monde). Vrai si l'un
+        // d'eux a changé.
+        bool DrawFields(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
 
         // Entité sélectionnée (Uuid vide si aucune) ; Select(NullEntity) désélectionne.
         Flux::Uuid GetSelection() const { return m_selection; }

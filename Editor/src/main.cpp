@@ -23,6 +23,7 @@
 #include "Panels/SceneViewport.hpp"
 #include "Panels/SettingsWindow.hpp"
 #include "Panels/TextTools.hpp"
+#include "Panels/WorldWindow.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -159,6 +160,7 @@ int main(int argc, char** argv) {
     FluxEditor::EditorLayout layout;
     FluxEditor::SettingsWindow settings;
     FluxEditor::TextTools textTools;
+    FluxEditor::WorldWindow world; // bouton « Monde » de la barre de menus
     FluxEditor::UndoHistory history;
     FluxEditor::PlacePanel placePanel;
     FluxEditor::InterfaceEditor interfaceEditor;
@@ -201,6 +203,10 @@ int main(int argc, char** argv) {
             }
             DrawEditMenu(e, history, sceneEditor, interfaceEditor);
             layout.DrawWindowMenu(ui);
+            if (ui.MenuBarButton("Monde", world.IsOpen(), Flux::UI::Icon::Planet)) {
+                world.Toggle();
+            }
+            ui.SetItemTooltip("Gravité, air et chute max de la scène");
             ui.EndMainMenuBar();
         }
         DrawToolBar(e, document, history, sceneEditor, interfaceEditor, playMode, settings, textTools);
@@ -231,6 +237,7 @@ int main(int argc, char** argv) {
         FluxEditor::DrawCameraPanel(e);
         console.Update(e);
         settings.Draw(e);
+        world.Draw(e, sceneEditor, history, playMode.IsPlaying());
 
         if (sceneEditor.TakeModified()) {
             history.NoteModified();

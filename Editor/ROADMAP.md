@@ -23,6 +23,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   une police... » la copie), sa taille et sa couleur ; sur le texte sélectionné (annulable), sinon pour le prochain.
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…
 - ✅ « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.
+- ✅ Bouton « Monde » de la barre de menus : fenêtre des réglages du monde de la scène (gravité, air, chute max), annulables ; l'objet Monde qui les garde n'est plus montré dans la scène ni dans Placer.
 - ✅ Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté.
 - 🔧 Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R ; Ctrl = pas de 15°). À améliorer : un seul objet sélectionné à la fois, gizmo dans les axes du monde.
 - 🔧 Annuler / refaire (Ctrl+Z, Ctrl+Y). À améliorer : un objet à la fois, l'étoile du titre reste après une annulation.
