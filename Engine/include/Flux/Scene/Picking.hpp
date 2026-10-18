@@ -57,6 +57,34 @@ namespace Flux {
     // transforms : ceux de Scene::ComputeRelativeTransforms, relatifs à l'origine du rayon.
     FLUX_API Entity PickEntity(std::span<const RelativeTransform> transforms, const Ray& ray, const MeshBoundsFunction& boundsOf);
 
+    // Encombrement d'un objet autour de son origine, dans les axes du monde.
+    struct Extent
+    {
+        Math::Vector3d min;
+        Math::Vector3d max;
+    };
+
+    // Encombrement des boîtes des maillages de parts (un objet et ses descendants : le bas d'un vaisseau, ce sont
+    // ses roues) autour de origin, dans le même espace relatif que leurs transformations ; nullopt si aucune n'a de
+    // boîte.
+    FLUX_API std::optional<Extent> ComputeExtent(std::span<const RelativeTransform> parts, const Math::Vector3d& origin,
+                                                 const MeshBoundsFunction& boundsOf);
+
+    // Boîte sur laquelle un objet peut être posé (son maillage, placé par transform).
+    struct GroundBox
+    {
+        RelativeTransform transform;
+        Math::Box3f box;
+    };
+
+    // Hauteur y où mettre l'origine d'un objet d'encombrement extent, placé en origin, pour que son bas touche ce
+    // qui est dessous : le dessus d'une boîte, ou le plan y = planeY s'il est donné. Cinq rayons verticaux (le
+    // centre et les coins de l'encombrement, un peu rentrés) partent de la hauteur from ; le plus haut point touché
+    // gagne. Une boîte d'où part un rayon ne compte pas pour lui : l'objet ne remonte pas sur le toit d'une pièce où
+    // il se trouve. nullopt : rien dessous.
+    FLUX_API std::optional<double> FindGroundHeight(std::span<const GroundBox> boxes, const Math::Vector3d& origin,
+                                                    const Extent& extent, double from, std::optional<double> planeY);
+
     // Paramètre t du point de la droite point + t * direction (unitaire) le plus proche du rayon ;
     // nullopt si la droite est presque parallèle au rayon (le point le plus proche file à l'infini).
     FLUX_API std::optional<double> ClosestPointOnLine(const Ray& ray, const Math::Vector3d& point,

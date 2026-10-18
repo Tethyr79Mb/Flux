@@ -104,5 +104,41 @@ bool RunPickingTests() {
     const auto t = ClosestPointOnLine(aim, {0.0, 0.0, -10.0}, {1.0, 0.0, 0.0});
     CHECK(t && Near(*t, 3.0));
     CHECK(!ClosestPointOnLine(center, {0.0, 0.0, -10.0}, {0.0, 0.0, 1.0})); // axe dans l'axe de visée
+
+    // Pose au sol : un objet de deux parts (un cube de 2 m à l'origine, une roue 1 m plus bas d'un demi-cube),
+    // encombrement autour de son origine.
+    Scene groundScene;
+    const Entity hull = groundScene.CreateEntity("Corps");
+    const Entity wheel = groundScene.CreateEntity("Roue", hull);
+    const Entity floor = groundScene.CreateEntity("Sol");
+    const Entity roof = groundScene.CreateEntity("Toit");
+    const std::vector<RelativeTransform> parts = {{hull, {0.0, 5.0, 0.0}, {}, {2.0f, 2.0f, 2.0f}},
+                                                  {wheel, {0.0, 3.5, 0.0}, {}, {1.0f, 1.0f, 1.0f}}};
+    const auto unitBox = [](Entity) { return std::optional<Math::Box3f>(Math::Box3f{}); };
+    const std::optional<Extent> extent = ComputeExtent(parts, {0.0, 5.0, 0.0}, unitBox);
+    CHECK(extent && Near(extent->min, {-1.0, -2.0, -1.0}) && Near(extent->max, {1.0, 1.0, 1.0}));
+    CHECK(!ComputeExtent(parts, {}, [](Entity) { return std::optional<Math::Box3f>(); })); // rien de dessiné
+
+    // Sol : dalle de 10 m dont le dessus est à y = 1. L'objet descend, la roue dessus : l'origine 2 m au-dessus.
+    std::vector<GroundBox> boxes = {{{floor, {0.0, 0.5, 0.0}, {}, {10.0f, 1.0f, 10.0f}}, Math::Box3f{}}};
+    std::optional<double> height = FindGroundHeight(boxes, {0.0, 5.0, 0.0}, *extent, 6.0, std::nullopt);
+    CHECK(height && Near(*height, 3.0));
+    // Enfoncé dans la dalle (haut au-dessus d'elle) : il remonte dessus.
+    height = FindGroundHeight(boxes, {0.0, 1.5, 0.0}, *extent, 2.5, std::nullopt);
+    CHECK(height && Near(*height, 3.0));
+    // Plus haut que le plan : la dalle gagne ; dalle hors de portée : le plan y = 0.
+    height = FindGroundHeight(boxes, {0.0, 5.0, 0.0}, *extent, 6.0, 0.0);
+    CHECK(height && Near(*height, 3.0));
+    height = FindGroundHeight(boxes, {30.0, 5.0, 0.0}, *extent, 6.0, 0.0);
+    CHECK(height && Near(*height, 2.0));
+    CHECK(!FindGroundHeight(boxes, {30.0, 5.0, 0.0}, *extent, 6.0, std::nullopt)); // rien dessous : reste en l'air
+    // Un toit dont part le rayon (l'objet est dans la pièce) ne compte pas ; un coin au-dessus d'un bloc plus haut
+    // que la dalle le fait monter sur lui.
+    boxes.push_back({{roof, {0.0, 6.0, 0.0}, {}, {20.0f, 2.0f, 20.0f}}, Math::Box3f{}});
+    height = FindGroundHeight(boxes, {0.0, 5.0, 0.0}, *extent, 6.0, std::nullopt);
+    CHECK(height && Near(*height, 3.0));
+    boxes.push_back({{roof, {0.9, 1.5, 0.9}, {}, {0.5f, 1.0f, 0.5f}}, Math::Box3f{}});
+    height = FindGroundHeight(boxes, {0.0, 5.0, 0.0}, *extent, 6.0, std::nullopt);
+    CHECK(height && Near(*height, 4.0));
     return true;
 }

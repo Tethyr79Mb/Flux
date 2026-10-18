@@ -56,6 +56,8 @@ namespace Flux::UI {
         Scale,     // petit carré dans un grand, flèche en diagonale : mettre à l'échelle
         Settings,  // roue dentée
         Up,        // flèche vers le haut : dossier parent
+        Grid,      // grille au sol, vue en perspective
+        DropToGround, // flèche vers le bas posée sur un trait de sol : poser au sol
         // Messages de la console : information, avertissement, erreur.
         Info,      // disque bleu, « i »
         Warning,   // triangle jaune, « ! »

@@ -135,7 +135,9 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 6. Bloom (`Post.slang`, méthode de Jimenez) : l'image anticrénelée réduite de moitié jusqu'à 6 fois (13 lectures,
    moyenne de Karis à la première), puis remontée en additionnant chaque niveau flou au niveau au-dessus ; sans seuil.
 7. Passe principale vers la fenêtre : la scène mélangée à son bloom (Paramètres > Graphiques, 4 % par défaut), puis
-   l'exposition et la courbe de tons ACES ; l'interface (overlay) par-dessus. Le fond d'une scène sans ciel est
+   l'exposition et la courbe de tons ACES ; dans l'éditeur, la grille au sol (`Grid.slang`, plan y = 0 : chaque pixel
+   suit son rayon jusqu'au plan et relit la profondeur de la scène pour se cacher derrière les objets) ; l'interface
+   (overlay) par-dessus. Le fond d'une scène sans ciel est
    effacé avec la couleur qui redonne exactement la couleur choisie après la courbe (`InverseToneMap`).
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent

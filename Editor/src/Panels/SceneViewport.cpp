@@ -1,5 +1,6 @@
 #include "Panels/SceneViewport.hpp"
 
+#include "Panels/GroundSnap.hpp"
 #include "Panels/Hardpoints.hpp"
 #include "Panels/SceneEditor.hpp"
 
@@ -18,6 +19,7 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace FluxEditor {
@@ -35,7 +37,6 @@ namespace FluxEditor {
         constexpr float CenterHalf = 7.0f;       // carré du centre : échelle des trois axes
         constexpr float RingPixels = 90.0f;      // rayon des anneaux de rotation à l'écran
         constexpr int RingSegments = 48;
-        constexpr double SnapRadians = std::numbers::pi / 12.0; // Ctrl pendant une rotation : pas de 15°
         constexpr float RadiansPerPixel = 0.5f * std::numbers::pi_v<float> / 180.0f; // 0,5° par pixel glissé
         constexpr float MinScale = 0.001f;       // comme l'inspecteur
         constexpr float MaxScale = 1.0e6f;
@@ -54,12 +55,43 @@ namespace FluxEditor {
         constexpr ToolbarButton ToolbarButtons[3] = {{SceneViewport::GizmoMode::Move, UI::Icon::Move, "Déplacer (W)"},
                                                      {SceneViewport::GizmoMode::Rotate, UI::Icon::Rotate, "Tourner (E)"},
                                                      {SceneViewport::GizmoMode::Scale, UI::Icon::Scale, "Échelle (R)"}};
+        // Après les trois modes, un peu à l'écart : afficher ou cacher la grille au sol ; puis l'aimantation de
+        // chaque mode (un bouton pour l'activer, un pour choisir son pas) ; enfin la pose au sol.
+        constexpr int GridButton = 3;
+        constexpr int FirstSnapButton = 4; // 4 et 5 : déplacement ; 6 et 7 : rotation ; 8 et 9 : échelle
+        constexpr int GroundButton = 10;
+        constexpr int ToolbarButtonCount = 11;
+        constexpr float ToolbarGroupGap = 10.0f;
+        constexpr float StepButtonWidth = 58.0f;
+        constexpr float StepRowHeight = 24.0f;
+
+        // Pas proposés pour chaque mode, comme dans Unreal : en mètres, en degrés, en facteur d'échelle.
+        struct SnapStep
+        {
+            double value;
+            const char* label;
+        };
+        constexpr SnapStep MoveSteps[] = {{0.01, "1 cm"}, {0.05, "5 cm"}, {0.1, "10 cm"}, {0.25, "25 cm"},
+                                          {0.5, "50 cm"}, {1.0, "1 m"}, {5.0, "5 m"}, {10.0, "10 m"}};
+        constexpr SnapStep RotateSteps[] = {{5.0, "5°"}, {10.0, "10°"}, {15.0, "15°"}, {22.5, "22,5°"},
+                                            {30.0, "30°"}, {45.0, "45°"}, {90.0, "90°"}};
+        constexpr SnapStep ScaleSteps[] = {{0.0625, "0,0625"}, {0.125, "0,125"}, {0.25, "0,25"},
+                                           {0.5, "0,5"}, {1.0, "1"}, {10.0, "10"}};
+        constexpr std::span<const SnapStep> SnapSteps[3] = {MoveSteps, RotateSteps, ScaleSteps};
+        constexpr const char* SnapLabels[3][2] = {{"Aimanter le déplacement à la grille", "Ne plus aimanter le déplacement"},
+                                                  {"Tourner par pas", "Ne plus tourner par pas"},
+                                                  {"Mettre à l'échelle par pas", "Ne plus mettre à l'échelle par pas"}};
+        constexpr const char* StepLabels[3] = {"Pas du déplacement", "Pas de la rotation", "Pas de l'échelle"};
         constexpr float ToolbarTextSize = 14.0f;
         constexpr float ToolbarButtonSize = 30.0f;
         constexpr float ToolbarIconSize = 18.0f;
         constexpr Vector2f ToolbarMargin{8.0f, 8.0f};
 
         float& Component(Math::Vector3f& v, int axis) {
+            return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
+        }
+
+        double& Component(Vector3d& v, int axis) {
             return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
         }
 
@@ -368,6 +400,8 @@ namespace FluxEditor {
             m_mode = GizmoMode::Rotate;
         } else if (input.WasLetterPressed('R')) {
             m_mode = GizmoMode::Scale;
+        } else if (input.WasLetterPressed('G')) {
+            m_grid = !m_grid;
         }
     }
 
@@ -396,54 +430,164 @@ namespace FluxEditor {
     }
 
     namespace {
-        // Rectangle du bouton index de la barre de modes.
+        // Rectangle du bouton index de la barre : les boutons d'un groupe se touchent, les groupes sont espacés.
         UI::Rect ToolbarRect(const UI::Rect& view, int index) {
-            const Vector2f min = view.min + ToolbarMargin + Vector2f{static_cast<float>(index) * (ToolbarButtonSize + 2.0f), 0.0f};
-            return {min, min + Vector2f{ToolbarButtonSize, ToolbarButtonSize}};
+            float x = 0.0f;
+            for (int i = 0; i < index; ++i) {
+                x += (i >= FirstSnapButton && i < GroundButton && (i - FirstSnapButton) % 2 == 1 ? StepButtonWidth
+                                                                                                 : ToolbarButtonSize) + 2.0f;
+                if (i + 1 == GridButton || i + 1 == FirstSnapButton || i + 1 == GroundButton) {
+                    x += ToolbarGroupGap;
+                }
+            }
+            const bool step = index >= FirstSnapButton && index < GroundButton && (index - FirstSnapButton) % 2 == 1;
+            const Vector2f min = view.min + ToolbarMargin + Vector2f{x, 0.0f};
+            return {min, min + Vector2f{step ? StepButtonWidth : ToolbarButtonSize, ToolbarButtonSize}};
+        }
+
+        // Ligne du pas `step` dans la liste ouverte sous le bouton de pas du mode `mode`.
+        UI::Rect StepRowRect(const UI::Rect& view, int mode, int step) {
+            const UI::Rect button = ToolbarRect(view, FirstSnapButton + 2 * mode + 1);
+            const Vector2f min{button.min.x, button.max.y + 6.0f + static_cast<float>(step) * StepRowHeight};
+            return {min, min + Vector2f{StepButtonWidth, StepRowHeight}};
+        }
+
+        bool Contains(const UI::Rect& rect, Vector2f point) {
+            return point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y;
         }
     }
 
     bool SceneViewport::UpdateToolbar(Engine& engine, const UI::Rect& view, bool mouseInView) {
         const Input& input = engine.GetWindow().GetInput();
         const Vector2f mouse = input.GetMousePosition();
+        const bool clicked = input.WasMouseButtonPressed(MouseButton::Left);
         m_hoveredButton = -1;
-        for (int i = 0; mouseInView && i < 3; ++i) {
-            const UI::Rect rect = ToolbarRect(view, i);
-            if (mouse.x >= rect.min.x && mouse.x < rect.max.x && mouse.y >= rect.min.y && mouse.y < rect.max.y) {
+        m_hoveredStep = -1;
+        if (m_openSnapList >= 0) {
+            // Liste des pas ouverte : un clic sur un pas le choisit, ailleurs il la ferme (et ne fait rien d'autre).
+            const int count = static_cast<int>(SnapSteps[m_openSnapList].size());
+            for (int i = 0; mouseInView && i < count; ++i) {
+                if (Contains(StepRowRect(view, m_openSnapList, i), mouse)) {
+                    m_hoveredStep = i;
+                }
+            }
+            if (clicked || input.WasKeyPressed(Key::Escape)) {
+                if (m_hoveredStep >= 0) {
+                    m_snaps[m_openSnapList] = {true, m_hoveredStep};
+                }
+                m_openSnapList = -1;
+                return clicked;
+            }
+            return false;
+        }
+        for (int i = 0; mouseInView && i < ToolbarButtonCount; ++i) {
+            if (Contains(ToolbarRect(view, i), mouse)) {
                 m_hoveredButton = i;
             }
         }
-        if (m_hoveredButton >= 0 && input.WasMouseButtonPressed(MouseButton::Left)) {
-            m_mode = ToolbarButtons[m_hoveredButton].mode;
-            return true;
+        if (m_hoveredButton < 0 || !clicked) {
+            return false;
         }
-        return false;
+        if (m_hoveredButton == GridButton) {
+            m_grid = !m_grid;
+        } else if (m_hoveredButton == GroundButton) {
+            m_dropToGround = !m_dropToGround;
+        } else if (m_hoveredButton >= FirstSnapButton) {
+            const int mode = (m_hoveredButton - FirstSnapButton) / 2;
+            if ((m_hoveredButton - FirstSnapButton) % 2 == 0) {
+                m_snaps[mode].enabled = !m_snaps[mode].enabled;
+            } else {
+                m_openSnapList = mode;
+            }
+        } else {
+            m_mode = ToolbarButtons[m_hoveredButton].mode;
+        }
+        return true;
     }
 
     void SceneViewport::DrawToolbar(Engine& engine, const UI::Rect& view) {
         UI::DrawList& list = engine.GetRenderer().GetOverlay();
         const UI::Style& style = engine.GetUi().GetStyle();
         list.SetClipRect(view.min, view.max);
-        // Les trois boutons dans une barre arrondie, posée sur la vue ; le mode en cours en couleur de sélection.
-        const UI::Rect first = ToolbarRect(view, 0);
-        const UI::Rect last = ToolbarRect(view, 2);
         const Vector2f inset{3.0f, 3.0f};
         Math::LinearColor back = style.panelBackground;
         back.a = 0.85f;
-        list.AddShadow(first.min - inset, last.max + inset, style.shadow, style.panelRounding, 8.0f);
-        list.AddRoundedRect(first.min - inset, last.max + inset, back, style.panelRounding);
-        for (int i = 0; i < 3; ++i) {
+        // Chaque groupe dans une barre arrondie, posée sur la vue ; ce qui est actif en couleur de sélection.
+        const std::pair<int, int> groups[] = {{0, 2}, {GridButton, GridButton}, {FirstSnapButton, GroundButton - 1},
+                                              {GroundButton, GroundButton}};
+        for (const auto& [first, last] : groups) {
+            const Vector2f min = ToolbarRect(view, first).min - inset;
+            const Vector2f max = ToolbarRect(view, last).max + inset;
+            list.AddShadow(min, max, style.shadow, style.panelRounding, 8.0f);
+            list.AddRoundedRect(min, max, back, style.panelRounding);
+        }
+        const float iconInset = std::round(0.5f * (ToolbarButtonSize - ToolbarIconSize));
+        for (int i = 0; i < ToolbarButtonCount; ++i) {
             const UI::Rect rect = ToolbarRect(view, i);
-            const bool current = ToolbarButtons[i].mode == m_mode;
-            if (current || i == m_hoveredButton) {
+            const int snap = i >= FirstSnapButton && i < GroundButton ? (i - FirstSnapButton) / 2 : -1;
+            const bool stepButton = snap >= 0 && (i - FirstSnapButton) % 2 == 1;
+            bool current = false;
+            UI::Icon icon = UI::Icon::None;
+            if (i == GridButton) {
+                current = m_grid;
+                icon = UI::Icon::Grid;
+            } else if (i == GroundButton) {
+                current = m_dropToGround;
+                icon = UI::Icon::DropToGround;
+            } else if (snap >= 0) {
+                current = !stepButton && m_snaps[snap].enabled;
+                icon = snap == 0 ? UI::Icon::Grid : snap == 1 ? UI::Icon::Rotate : UI::Icon::Scale;
+            } else {
+                current = ToolbarButtons[i].mode == m_mode;
+                icon = ToolbarButtons[i].icon;
+            }
+            if (current || i == m_hoveredButton || (stepButton && snap == m_openSnapList)) {
                 list.AddRoundedRect(rect.min, rect.max, current ? style.selection : style.buttonHovered, style.frameRounding);
             }
-            const float iconInset = std::round(0.5f * (ToolbarButtonSize - ToolbarIconSize));
-            UI::DrawIcon(list, ToolbarButtons[i].icon, rect.min + Vector2f{iconInset, iconInset}, ToolbarIconSize);
+            if (stepButton) {
+                // Le pas choisi, en clair ; grisé quand l'aimantation de ce mode est coupée.
+                const char* label = SnapSteps[snap][static_cast<std::size_t>(m_snaps[snap].step)].label;
+                const Vector2f size = list.MeasureText(label, ToolbarTextSize);
+                list.AddText({std::round(0.5f * (rect.min.x + rect.max.x - size.x)), std::round(0.5f * (rect.min.y + rect.max.y - size.y))},
+                             label, ToolbarTextSize, m_snaps[snap].enabled ? style.text : style.textDisabled);
+            } else {
+                UI::DrawIcon(list, icon, rect.min + Vector2f{iconInset, iconInset}, ToolbarIconSize);
+            }
         }
-        if (m_hoveredButton >= 0) {
+        const UI::Rect first = ToolbarRect(view, 0);
+        const UI::Rect last = ToolbarRect(view, ToolbarButtonCount - 1);
+        if (m_openSnapList >= 0) {
+            // Liste des pas sous son bouton, le pas en cours en couleur de sélection.
+            const std::span<const SnapStep> steps = SnapSteps[m_openSnapList];
+            const UI::Rect top = StepRowRect(view, m_openSnapList, 0);
+            const UI::Rect bottom = StepRowRect(view, m_openSnapList, static_cast<int>(steps.size()) - 1);
+            list.AddShadow(top.min - inset, bottom.max + inset, style.shadow, style.panelRounding, 8.0f);
+            list.AddRoundedRect(top.min - inset, bottom.max + inset, back, style.panelRounding);
+            for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
+                const UI::Rect row = StepRowRect(view, m_openSnapList, i);
+                if (i == m_snaps[m_openSnapList].step || i == m_hoveredStep) {
+                    list.AddRoundedRect(row.min, row.max, i == m_snaps[m_openSnapList].step ? style.selection : style.buttonHovered,
+                                        style.frameRounding);
+                }
+                const Vector2f size = list.MeasureText(steps[static_cast<std::size_t>(i)].label, ToolbarTextSize);
+                list.AddText({row.min.x + 8.0f, std::round(0.5f * (row.min.y + row.max.y - size.y))},
+                             steps[static_cast<std::size_t>(i)].label, ToolbarTextSize, style.text);
+            }
+        } else if (m_hoveredButton >= 0) {
             // Nom et raccourci du bouton survolé, à droite de la barre.
-            const char* label = ToolbarButtons[m_hoveredButton].label;
+            const char* label = nullptr;
+            if (m_hoveredButton == GridButton) {
+                label = m_grid ? "Cacher la grille (G)" : "Afficher la grille (G)";
+            } else if (m_hoveredButton == GroundButton) {
+                label = m_dropToGround ? "Ne plus poser au sol (Fin : poser la sélection)"
+                                       : "Poser au sol (Fin : poser la sélection)";
+            } else if (m_hoveredButton >= FirstSnapButton) {
+                const int snap = (m_hoveredButton - FirstSnapButton) / 2;
+                label = (m_hoveredButton - FirstSnapButton) % 2 == 1 ? StepLabels[snap]
+                                                                     : SnapLabels[snap][m_snaps[snap].enabled ? 1 : 0];
+            } else {
+                label = ToolbarButtons[m_hoveredButton].label;
+            }
             const Vector2f padding{8.0f, 4.0f};
             const Vector2f size = list.MeasureText(label, ToolbarTextSize) + padding * 2.0f;
             const Vector2f min{last.max.x + inset.x + 6.0f, std::round(0.5f * (first.min.y + first.max.y - size.y))};
@@ -451,6 +595,36 @@ namespace FluxEditor {
             list.AddText(min + padding, label, ToolbarTextSize, style.text);
         }
         list.ResetClipRect();
+    }
+
+    bool SceneViewport::IsSnapping(Engine& engine, GizmoMode mode) const {
+        return m_snaps[static_cast<std::size_t>(mode)].enabled != engine.GetWindow().GetInput().IsControlDown();
+    }
+
+    double SceneViewport::GetSnapStep(GizmoMode mode) const {
+        const Snap& snap = m_snaps[static_cast<std::size_t>(mode)];
+        return SnapSteps[static_cast<std::size_t>(mode)][static_cast<std::size_t>(snap.step)].value;
+    }
+
+    void SceneViewport::DropToGround(Engine& engine, Entity selected, const RelativeTransform& selectedTransform,
+                                     const RelativeTransform* parentTransform) {
+        if (!PrepareGround(engine, selected, engine.GetCamera().position, m_transforms, selectedTransform.position, m_ground)) {
+            return;
+        }
+        const std::optional<double> height = FindGround(m_ground, selectedTransform.position);
+        if (!height || *height == selectedTransform.position.y) {
+            return;
+        }
+        // Descente dans le monde, ramenée dans l'espace du parent (comme un déplacement au gizmo).
+        Vector3d move{0.0, *height - selectedTransform.position.y, 0.0};
+        if (parentTransform) {
+            const Vector3d scale(parentTransform->scale);
+            const Vector3d rotated = parentTransform->rotation.Conjugate().Rotate(move);
+            move = {scale.x != 0.0 ? rotated.x / scale.x : 0.0, scale.y != 0.0 ? rotated.y / scale.y : 0.0,
+                    scale.z != 0.0 ? rotated.z / scale.z : 0.0};
+        }
+        engine.GetScene().Get<TransformComponent>(selected).position += move;
+        m_modified = true;
     }
 
     void SceneViewport::UpdateDrag(Engine& engine, Entity selected, RelativeTransform& selectedTransform,
@@ -483,6 +657,20 @@ namespace FluxEditor {
                 if (const std::optional<double> t = ClosestPointOnLine(ray, startPoint, axis)) {
                     move = axis * (*t - m_drag.startParameter);
                 }
+                if (IsSnapping(engine, GizmoMode::Move)) {
+                    // Sur la grille du monde : la coordonnée de l'origine le long de l'axe, multiple du pas. Le
+                    // secteur (1e9 m) en est un multiple : seul le décalage dans le secteur de la caméra compte.
+                    const double step = GetSnapStep(GizmoMode::Move);
+                    Vector3d at = Vector3d(engine.GetCamera().position.offset) + startPoint + move;
+                    const double world = Component(at, m_drag.axis);
+                    Component(move, m_drag.axis) += std::round(world / step) * step - world;
+                }
+                if (m_drag.ground) {
+                    // À l'horizontale, posé sur ce qui est dessous (boîtes relevées au départ, relatives à startCamera).
+                    if (const std::optional<double> height = FindGround(m_ground, m_drag.startPoint + move)) {
+                        move.y = *height - m_drag.startPoint.y;
+                    }
+                }
                 // Déplacement dans le monde ramené dans l'espace du parent (sa rotation et son échelle).
                 Vector3d localMove = move;
                 if (parentTransform) {
@@ -505,8 +693,9 @@ namespace FluxEditor {
                 const Vector3d axis = Axes[m_drag.axis];
                 const bool facing = Math::Dot(axis, -startPoint) > 0.0;
                 double turned = facing ? -turnedOnScreen : turnedOnScreen;
-                if (input.IsControlDown()) {
-                    turned = std::round(turned / SnapRadians) * SnapRadians;
+                if (IsSnapping(engine, GizmoMode::Rotate)) {
+                    const double step = GetSnapStep(GizmoMode::Rotate) * std::numbers::pi / 180.0;
+                    turned = std::round(turned / step) * step;
                 }
                 m_drag.applied = static_cast<float>(turned);
                 // Rotation autour de l'axe du monde, ramenée dans l'espace du parent : local = P⁻¹ R P L.
@@ -528,6 +717,15 @@ namespace FluxEditor {
                     const Vector3d axis = m_drag.startRotation.Rotate(Axes[m_drag.axis]);
                     if (const std::optional<double> t = ClosestPointOnLine(ray, startPoint, axis)) {
                         Component(scale, m_drag.axis) *= static_cast<float>(*t / m_drag.startParameter);
+                    }
+                }
+                if (IsSnapping(engine, GizmoMode::Scale)) {
+                    // Les axes changés, chacun sur un multiple du pas, jamais moins d'un pas.
+                    const float step = static_cast<float>(GetSnapStep(GizmoMode::Scale));
+                    for (int axis = 0; axis < 3; ++axis) {
+                        if (m_drag.axis == 3 || axis == m_drag.axis) {
+                            Component(scale, axis) = std::max(step, std::round(Component(scale, axis) / step) * step);
+                        }
                     }
                 }
                 for (int axis = 0; axis < 3; ++axis) {
@@ -570,6 +768,8 @@ namespace FluxEditor {
         Scene& scene = engine.GetScene();
         const Camera& camera = engine.GetCamera();
         const Vector2f size = view.GetSize();
+        // La grille sert à placer les objets : pas en mode Jouer, où la vue montre le jeu tel quel.
+        engine.GetRenderer().SetGridVisible(m_grid && engine.GetGameState() == GameState::Stopped);
         if (size.x < 1.0f || size.y < 1.0f) {
             m_drag.axis = -1;
             m_screenDrag.active = false;
@@ -643,6 +843,11 @@ namespace FluxEditor {
             if (selected != NullEntity && !selectedIsScreen && WantsFocus(engine)) {
                 FocusOn(engine, scene, selected);
             }
+            // Fin : poser la sélection au sol, comme dans Unreal (mêmes conditions que F), bouton enfoncé ou non.
+            if (selectedTransform && !selectedIsScreen && !ui.WantsKeyboard() && !input.IsControlDown()
+                && !engine.GetCameraController().IsActive() && input.WasKeyPressed(Key::End)) {
+                DropToGround(engine, selected, *selectedTransform, parentTransform);
+            }
         }
         const bool toolbarClicked = m_drag.axis < 0 && !m_screenDrag.active && UpdateToolbar(engine, view, mouseInView);
 
@@ -702,6 +907,9 @@ namespace FluxEditor {
                     drag.startPoint = selectedTransform->position;
                     drag.startCamera = camera.position;
                     drag.startMouse = mouse;
+                    // Glissé à l'horizontale (x ou z), l'objet suit le sol ; le long de y, il monte ou descend librement.
+                    drag.ground = m_dropToGround && m_mode == GizmoMode::Move && (m_hoveredAxis == 0 || m_hoveredAxis == 2)
+                               && PrepareGround(engine, selected, camera.position, m_transforms, selectedTransform->position, m_ground);
                     grabbed = true;
                     if (m_mode == GizmoMode::Rotate) {
                         // Tangente à l'anneau au point saisi, dans le sens où l'angle de la souris autour du centre

@@ -86,6 +86,26 @@ namespace Flux {
         }
         post->m_temporal = std::move(*temporal);
 
+        constexpr RHI::Binding gridBinding{0, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
+        auto gridLayout = device.CreateBindGroupLayout({.bindings = {&gridBinding, 1}, .maxGroups = 1});
+        if (!gridLayout) {
+            return std::unexpected(gridLayout.error());
+        }
+        post->m_gridLayout = std::move(*gridLayout);
+        const RHI::BindGroupLayout* gridLayouts[] = {post->m_gridLayout.get()};
+        RHI::PipelineDesc gridDesc;
+        gridDesc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Grid.spv";
+        gridDesc.bindGroupLayouts = gridLayouts;
+        gridDesc.pushConstantsSize = sizeof(GridParams);
+        gridDesc.colorFormat = outputFormat;
+        gridDesc.depthFormat = depthFormat;
+        gridDesc.blend = RHI::BlendMode::Alpha;
+        auto grid = device.CreatePipeline(gridDesc);
+        if (!grid) {
+            return std::unexpected(grid.error());
+        }
+        post->m_grid = std::move(*grid);
+
         for (auto result : {create(post->m_downsampleFirst, "fragmentDownsampleFirst", SceneFormat, RHI::Format::Undefined),
                             create(post->m_downsample, "fragmentDownsample", SceneFormat, RHI::Format::Undefined),
                             create(post->m_upsample, "fragmentUpsample", SceneFormat, RHI::Format::Undefined),
@@ -112,6 +132,7 @@ namespace Flux {
         for (auto& group : m_temporalGroups) {
             group.reset();
         }
+        m_gridGroup.reset();
         for (auto& history : m_history) {
             history.reset();
         }
@@ -211,6 +232,11 @@ namespace Flux {
             m_temporalGroups[i]->SetTexture(DepthSlot, *m_depth, *m_pointSampler);
             m_temporalGroups[i]->SetTexture(MotionSlot, *m_motion, *m_pointSampler);
         }
+        m_gridGroup = m_device.CreateBindGroup(*m_gridLayout);
+        if (!m_gridGroup) {
+            return std::unexpected("création du groupe de la grille");
+        }
+        m_gridGroup->SetTexture(0, *m_depth, *m_pointSampler);
         return {};
     }
 
@@ -286,6 +312,15 @@ namespace Flux {
         commands.SetBindGroup(0, *m_compositeGroups[m_output]);
         const float levels = static_cast<float>(std::max(m_levels, 1u));
         const PostParams params{{}, {m_bloomDrawn ? strength : 0.0f, exposure, 1.0f / levels, 0.0f}};
+        commands.PushConstants(&params, sizeof(params));
+        commands.Draw(3, 0);
+    }
+
+    static_assert(sizeof(PostRenderer::GridParams) == 128, "les constantes poussées garanties partout");
+
+    void PostRenderer::DrawGrid(RHI::CommandList& commands, const GridParams& params) const {
+        commands.BindPipeline(*m_grid);
+        commands.SetBindGroup(0, *m_gridGroup);
         commands.PushConstants(&params, sizeof(params));
         commands.Draw(3, 0);
     }
