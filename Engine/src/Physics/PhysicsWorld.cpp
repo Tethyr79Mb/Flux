@@ -1290,7 +1290,14 @@ namespace Flux {
                 } else {
                     velocity = vertical;
                 }
-                velocity += gravity * StepSeconds + wanted; // la direction reste pilotable en l'air
+                // Sur une pente praticable, seule la part de la gravité qui plaque contre le sol compte : Jolt
+                // projette la vitesse sur la pente, et la gravité entière l'y faisait glisser à chaque pas.
+                JPH::Vec3 fall = gravity;
+                if (onGround && !body.IsSlopeTooSteep(body.GetGroundNormal())) {
+                    const JPH::Vec3 normal = body.GetGroundNormal();
+                    fall = normal * gravity.Dot(normal);
+                }
+                velocity += fall * StepSeconds + wanted; // la direction reste pilotable en l'air
                 body.SetLinearVelocity(velocity);
 
                 // Le personnage se tourne peu à peu vers où il marche, autour du haut de l'endroit.
