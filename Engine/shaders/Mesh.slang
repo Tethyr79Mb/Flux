@@ -144,9 +144,8 @@ struct MaterialData
 
 // Groupe 0 : tuiles de planète avec textures du sol (GroundTextures.hpp), une couche par matière (GroundLayer). Images
 // blanches pour les autres maillages, qui ne les lisent pas.
-[[vk::binding(5, 0)]] Sampler2DArray groundColorTexture;
-[[vk::binding(6, 0)]] Sampler2DArray groundRoughnessTexture; // rouge : occlusion, vert : rugosité
-[[vk::binding(7, 0)]] Sampler2DArray groundNormalTexture;    // repère tangent (OpenGL : vert vers le haut)
+[[vk::binding(5, 0)]] Sampler2DArray groundColorTexture;  // alpha : rugosité
+[[vk::binding(6, 0)]] Sampler2DArray groundNormalTexture; // rouge-vert : repère tangent (OpenGL : vert vers le haut), bleu : occlusion
 
 // Groupe 1 : l'image en cours.
 // Matrices des os de tous les modèles animés de l'image (monde du modèle x inverse de liaison), 4 colonnes par os.
@@ -811,14 +810,18 @@ void SampleGroundVariant(out float3 color, out float3 tangentNormal, out float2 
     const float3 at = float3(mul(rotation, uv) + GroundRandom(variant * 0xb5297a4dU + 71u), float(layer));
     const float2 rgx = mul(rotation, gx);
     const float2 rgy = mul(rotation, gy);
-    color = groundColorTexture.SampleGrad(at, rgx, rgy).rgb;
-    occlusionRoughness = groundRoughnessTexture.SampleGrad(at, rgx, rgy).rg;
-    tangentNormal = groundNormalTexture.SampleGrad(at, rgx, rgy).xyz * 2.0 - 1.0;
+    const float4 colorRoughness = groundColorTexture.SampleGrad(at, rgx, rgy);
+    const float3 normalOcclusion = groundNormalTexture.SampleGrad(at, rgx, rgy).xyz;
+    color = colorRoughness.rgb;
+    occlusionRoughness = float2(normalOcclusion.z, colorRoughness.a);
+    const float2 xy = normalOcclusion.xy * 2.0 - 1.0;
+    tangentNormal = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
     tangentNormal.xy = mul(tangentNormal.xy, rotation); // transposée : rotation inverse
 }
 
-// Une matière dans un plan de projection, sans répétition visible : les trois sommets du triangle du point (voir
-// GroundTriangleSide), une à trois lectures selon les poids.
+// Une matière dans un plan de projection, sans répétition visible : les sommets du triangle du point (voir
+// GroundTriangleSide), une ou deux lectures selon les poids. Le plus faible des trois est retiré des autres : il ne
+// compte jamais, et le passage d'un sommet à l'autre reste continu.
 void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2 occlusionRoughness, uint layer,
                           float2 uv, float2 gx, float2 gy, int period, float maxAngle)
 {
@@ -835,6 +838,7 @@ void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2
     const int2 v2 = base + (upper ? int2(1, 0) : int2(0, 1));
     float3 w = upper ? float3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y) : float3(1.0 - f.x - f.y, f.x, f.y);
     w = pow(max(w, 0.0), GroundBlendSharpness);
+    w = max(w - min(w.x, min(w.y, w.z)), 0.0) + 1.0e-6; // au centre exact, les trois
     w /= w.x + w.y + w.z;
 
     const int periodU = int(2.0 * float(period) / GroundTriangleSide + 0.5); // 2a + b sur une période en x
@@ -908,8 +912,9 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
 {
     GroundSample average;
     const float3 center = float3(0.5, 0.5, float(layer));
-    average.color = groundColorTexture.SampleLevel(center, 16.0).rgb;
-    average.occlusionRoughness = groundRoughnessTexture.SampleLevel(center, 16.0).rg;
+    const float4 colorRoughness = groundColorTexture.SampleLevel(center, 16.0);
+    average.color = colorRoughness.rgb;
+    average.occlusionRoughness = float2(groundNormalTexture.SampleLevel(center, 16.0).z, colorRoughness.a);
     average.normal = n;
     const float faded = smoothstep(GroundAverageStart, GroundAverageEnd, distance);
     if (faded >= 1.0) {
@@ -1053,8 +1058,10 @@ float4 PlanetColor(PlanetVertexOutput input)
         CoverGround(weights, GroundSoil, foot);
         CoverGround(weights, GroundRock, rock);
         CoverGround(weights, GroundSnow, snow);
-        // Projections : pesées par l'orientation (puissance 4 : transitions courtes), sans celles de profil.
+        // Projections : pesées par l'orientation (puissance 4 : transitions courtes), deux au plus (la plus faible
+        // est retirée des autres, comme les sommets du pavage), sans celles de profil.
         float3 blend = pow(abs(localNormal), float3(4.0));
+        blend = max(blend - min(blend.x, min(blend.y, blend.z)), 0.0) + 1.0e-6;
         blend /= blend.x + blend.y + blend.z;
         blend = saturate((blend - 0.05) / 0.95);
         blend /= blend.x + blend.y + blend.z;
@@ -1064,10 +1071,43 @@ float4 PlanetColor(PlanetVertexOutput input)
         float3 color = float3(0.0);
         float3 groundNormal = float3(0.0);
         float2 occlusionRoughness = float2(0.0);
-        float total = 0.0;
-        for (uint layer = 0; layer < GroundLayers; ++layer) {
+        // Les deux matières les plus présentes seulement, moins la troisième : elle passe devant la deuxième sans
+        // saut, et un pixel lit deux matières au plus au lieu de cinq.
+        // Poids gardés à part du tableau : pas d'accès au tableau par un indice variable (mémoire lente du GPU).
+        uint first = 0;
+        uint second = 1;
+        float firstWeight = weights[0];
+        float secondWeight = weights[1];
+        if (secondWeight > firstWeight) {
+            first = 1;
+            second = 0;
+            firstWeight = weights[1];
+            secondWeight = weights[0];
+        }
+        float third = 0.0;
+        [unroll]
+        for (uint layer = 2; layer < GroundLayers; ++layer) {
             const float weight = weights[layer];
-            if (weight > 0.02) {
+            if (weight > firstWeight) {
+                third = secondWeight;
+                second = first;
+                secondWeight = firstWeight;
+                first = layer;
+                firstWeight = weight;
+            } else if (weight > secondWeight) {
+                third = secondWeight;
+                second = layer;
+                secondWeight = weight;
+            } else {
+                third = max(third, weight);
+            }
+        }
+        float total = 0.0;
+        for (uint k = 0; k < 2; ++k) {
+            const uint layer = k == 0 ? first : second;
+            // La première toujours : trois matières à égalité ne laissent rien aux deux premières.
+            const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
+            if (k == 0 || weight > 0.02) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
                 sample.color *= GroundTint(planet, layer);
                 if (layer == GroundGrass) {

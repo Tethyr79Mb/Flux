@@ -136,7 +136,7 @@ namespace Flux {
             return RHI::Binding{slot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
         };
         // Groupe blanc, et ceux des textures du sol (GroundTextures, l'ancien vit le temps d'en faire un nouveau).
-        constexpr std::array groundBindings{binding(GroundColorSlot), binding(GroundRoughnessSlot), binding(GroundNormalSlot)};
+        constexpr std::array groundBindings{binding(GroundColorSlot), binding(GroundNormalSlot)};
         auto groundLayout = device.CreateBindGroupLayout({.bindings = groundBindings, .maxGroups = 4});
         if (!groundLayout) {
             return std::unexpected(groundLayout.error());
