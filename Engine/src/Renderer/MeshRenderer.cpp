@@ -420,6 +420,7 @@ namespace Flux {
     void MeshRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                                const TemporalView& temporal, const std::filesystem::path& assetsDirectory,
                                std::uint32_t frameIndex) {
+        m_models->Update();
         if (sky.environment && sky.environment != m_boundEnvironment[frameIndex]) {
             m_frameGroups[frameIndex]->SetTexture(EnvironmentSlot, *sky.environment, *sky.environmentSampler);
             m_boundEnvironment[frameIndex] = sky.environment;

@@ -19,7 +19,7 @@ namespace Flux {
             float mode; // 0 : atlas MSDF ; 1 : image
         };
 
-        // Images chargées au plus : un groupe chacune, réservés d'avance.
+        // Images et polices chargées au plus : un groupe chacune, réservés d'avance.
         constexpr std::uint32_t MaxTextures = 256;
         // Intervalle entre deux vérifications de la date d'un fichier d'image (rechargé s'il a changé) :
         // assez court pour voir une retouche aussitôt, assez long pour ne pas interroger le disque à chaque image.
@@ -70,6 +70,8 @@ namespace Flux {
         }
         atlasGroup->SetTexture(0, *overlay->m_atlas, *overlay->m_sampler);
         overlay->m_groups.push_back(std::move(atlasGroup)); // UI::FontTexture
+        overlay->m_params.push_back({{static_cast<float>(atlasSize.x), static_cast<float>(atlasSize.y)},
+                                     overlay->m_font->GetDistanceRange(), 0.0f});
 
         const RHI::VertexBufferLayout vertexBuffer{0, sizeof(UI::Vertex)};
         const std::array attributes{
@@ -109,6 +111,11 @@ namespace Flux {
 
     // Envoie l'image au GPU dans la texture (nouvelle ou déjà utilisée) ; name sert aux messages d'erreur.
     void OverlayRenderer::Store(const ImageData& pixels, Texture& texture, std::string_view name) {
+        // Avant la texture : une texture envoyée doit vivre jusqu'à la fin de la prochaine image.
+        if (texture.id == UI::FontTexture && m_groups.size() > MaxTextures) {
+            Log::Warning("plus de {} images chargées, {} ignorée", MaxTextures, name);
+            return;
+        }
         // SRGB : les couleurs d'une image sont en sRGB, le GPU les ramène en linéaire à la lecture.
         auto image = m_device.CreateTexture(RHI::Format::RGBA8Srgb,
                                             {static_cast<std::uint32_t>(pixels.size.x), static_cast<std::uint32_t>(pixels.size.y)},
@@ -118,16 +125,9 @@ namespace Flux {
             return;
         }
         if (texture.id == UI::FontTexture) {
-            if (m_groups.size() > MaxTextures) {
-                Log::Warning("plus de {} images chargées, {} ignorée", MaxTextures, name);
+            if (!AddGroup(texture.id, {}, name)) {
                 return;
             }
-            std::unique_ptr<RHI::BindGroup> group = m_device.CreateBindGroup(*m_layout);
-            if (!group) {
-                return;
-            }
-            texture.id = static_cast<UI::TextureId>(m_groups.size());
-            m_groups.push_back(std::move(group));
         } else {
             // Rechargement (fichier retouché) : les images en vol dessinent peut-être encore l'ancienne image,
             // et un groupe ne se modifie pas pendant qu'il sert. Rare : attendre le GPU suffit.
@@ -136,6 +136,68 @@ namespace Flux {
         texture.image = std::move(*image);
         texture.size = pixels.size;
         m_groups[texture.id]->SetTexture(0, *texture.image, *m_sampler);
+    }
+
+    RHI::BindGroup* OverlayRenderer::AddGroup(UI::TextureId& id, const GroupParams& params, std::string_view name) {
+        if (m_groups.size() > MaxTextures) {
+            Log::Warning("plus de {} images et polices chargées, {} ignorée", MaxTextures, name);
+            return nullptr;
+        }
+        std::unique_ptr<RHI::BindGroup> group = m_device.CreateBindGroup(*m_layout);
+        if (!group) {
+            return nullptr;
+        }
+        id = static_cast<UI::TextureId>(m_groups.size());
+        m_groups.push_back(std::move(group));
+        m_params.push_back(params);
+        return m_groups.back().get();
+    }
+
+    std::optional<UI::FontRef> OverlayRenderer::LoadFont(const std::filesystem::path& path) {
+        auto [found, created] = m_fonts.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
+        LoadedFont& loaded = found->second;
+        if (created) {
+            // L'atlas se construit sur le processeur (0,3 à 0,5 s) : sur un autre fil, pour ne pas figer l'image.
+            // Font::Load a sa propre bibliothèque FreeType, rien n'est partagé. Une seule tentative : un fichier qui
+            // manque n'est pas relu à chaque image.
+            loaded.pending = std::async(std::launch::async, [path] { return UI::Font::Load(path); });
+            ++m_fontsLoading;
+        }
+        if (loaded.pending.valid()) {
+            if (loaded.pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+                return std::nullopt;
+            }
+            --m_fontsLoading;
+            Install(loaded, loaded.pending.get(), Platform::ToUtf8(path));
+        }
+        if (loaded.id == UI::FontTexture) {
+            return std::nullopt;
+        }
+        return UI::FontRef{loaded.font.get(), loaded.id};
+    }
+
+    void OverlayRenderer::Install(LoadedFont& loaded, std::expected<std::unique_ptr<UI::Font>, std::string> font,
+                                  std::string_view name) {
+        if (!font) {
+            Log::Warning("police {}", font.error());
+            return;
+        }
+        const Math::Vector2i size = (*font)->GetAtlasSize();
+        auto atlas = m_device.CreateTexture(RHI::Format::RGBA8Unorm,
+                                            {static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y)},
+                                            (*font)->GetAtlasPixels());
+        if (!atlas) {
+            Log::Error("police {} : {}", name, atlas.error());
+            return;
+        }
+        RHI::BindGroup* group = AddGroup(loaded.id, {{static_cast<float>(size.x), static_cast<float>(size.y)},
+                                                     (*font)->GetDistanceRange(), 0.0f}, name);
+        if (!group) {
+            return;
+        }
+        group->SetTexture(0, **atlas, *m_sampler);
+        loaded.font = std::move(*font);
+        loaded.atlas = std::move(*atlas);
     }
 
     std::optional<UI::TextureInfo> OverlayRenderer::CreateTexture(const ImageData& image) {
@@ -197,13 +259,7 @@ namespace Flux {
         if (m_vertexCount == 0) {
             return;
         }
-        const Math::Vector2i atlasSize = m_font->GetAtlasSize();
-        OverlayParams params{
-            {static_cast<float>(extent.width), static_cast<float>(extent.height)},
-            {static_cast<float>(atlasSize.x), static_cast<float>(atlasSize.y)},
-            m_font->GetDistanceRange(),
-            0.0f,
-        };
+        OverlayParams params{{static_cast<float>(extent.width), static_cast<float>(extent.height)}, {0.0f, 0.0f}, 0.0f, 0.0f};
 
         // L'interface couvre toute la fenêtre, la scène seulement sa zone.
         commands.SetViewport({0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)});
@@ -221,7 +277,11 @@ namespace Flux {
             if (!anyBound || command.texture != bound) {
                 bound = command.texture;
                 anyBound = true;
-                params.mode = bound == UI::FontTexture ? 0.0f : 1.0f;
+                const GroupParams& group = m_params[bound];
+                params.atlasSize[0] = group.atlasSize.x;
+                params.atlasSize[1] = group.atlasSize.y;
+                params.distanceRange = group.distanceRange;
+                params.mode = group.mode;
                 commands.SetBindGroup(0, *m_groups[bound]);
                 commands.PushConstants(&params, sizeof(params));
             }

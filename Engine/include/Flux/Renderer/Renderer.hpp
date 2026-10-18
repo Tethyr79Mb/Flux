@@ -51,9 +51,11 @@ namespace Flux {
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
         std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
-        // encore décodées.
+        // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
         std::uint32_t planetPendingTiles = 0;
         bool groundTexturesLoading = false;
+        std::uint32_t modelsLoading = 0;
+        std::uint32_t fontsLoading = 0;
         // Entités (et blocs de grands modèles) de la passe principale testées par le GPU, et dont cachées derrière
         // d'autres (non dessinées), deux images plus tôt.
         std::uint32_t occlusionTested = 0;
@@ -123,6 +125,13 @@ namespace Flux {
         // Image déjà en mémoire (icône du système...) : une nouvelle texture à chaque appel, gardée jusqu'à la
         // fermeture ; l'appelant garde le résultat. Compte dans les 256 images. nullopt si l'image est invalide.
         std::optional<UI::TextureInfo> CreateTexture(const ImageData& image);
+        // Police (.ttf, .otf) pour DrawList::AddText, gardée jusqu'à la fermeture ; appeler à chaque frame est prévu.
+        // Le premier appel lance la construction de son atlas MSDF sur un autre fil (0,3 à 0,5 s par police) et
+        // retourne nullopt jusqu'à ce qu'il soit prêt : le texte s'affiche dans la police de l'interface en attendant
+        // (RenderTimings::fontsLoading le compte, l'écran de chargement l'attend). Pas relue si le fichier change.
+        // nullopt aussi si le fichier est absent ou illisible (message dans la console, une fois). Compte dans les
+        // 256 images.
+        std::optional<UI::FontRef> LoadFont(const std::filesystem::path& path);
 
         // Dossier des assets du projet : les modèles de la scène (ModelComponent) y sont cherchés. Vide (sans projet) :
         // aucun modèle dessiné, les cubes seulement.

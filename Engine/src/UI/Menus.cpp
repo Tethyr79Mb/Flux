@@ -328,6 +328,8 @@ namespace Flux::UI {
         const Vector2f min{ui.menuBarNextX, ui.barTop};
         const Vector2f max = min + size;
         ui.menuBarNextX = max.x + (tall ? 2.0f : style.itemSpacing);
+        ui.lastItemMin = min; // OpenPopupMenu ouvre sa liste sous le bouton
+        ui.lastItemMax = max;
         const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
         const bool pressed = interaction.held && interaction.hovered;
         const Vector2f inset{0.0f, tall ? 0.0f : 2.0f};
@@ -346,6 +348,39 @@ namespace Flux::UI {
         const float textY = min.y + std::round(0.5f * (ui.barItemHeight - ui.FrameHeight())) + style.framePadding.y;
         ui.panel->content.AddText({min.x + padding + iconSize + gap, textY}, visible, style.fontSize, style.text);
         return interaction.clicked;
+    }
+
+    bool Context::MenuBarColorButton(std::string_view label, LinearColor& color) {
+        Impl& ui = *m_impl;
+        if (!ui.panel || !ui.panel->overlay || ui.menuParent) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const bool tall = ui.barItemHeight > ui.FrameHeight() + 0.5f;
+        const float swatch = std::round(style.fontSize * (tall ? 1.15f : 0.9f));
+        const float padding = std::round(0.5f * (ui.barItemHeight - swatch));
+        const Vector2f min{ui.menuBarNextX, ui.barTop};
+        const Vector2f max = min + Vector2f{swatch + 2.0f * padding, ui.barItemHeight};
+        ui.menuBarNextX = max.x + (tall ? 2.0f : style.itemSpacing);
+        ui.lastItemMin = min;
+        ui.lastItemMax = max;
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+        if (interaction.hovered) {
+            ui.FrameRect(min, max, interaction.held ? style.buttonActive : style.frameHovered);
+        }
+        const Vector2f swatchMin{min.x + padding, min.y + padding};
+        const Vector2f swatchMax = swatchMin + Vector2f{swatch, swatch};
+        ui.panel->content.AddRect(swatchMin, swatchMax, {color.r, color.g, color.b, ui.disabledDepth > 0 ? 0.4f : 1.0f});
+        ui.panel->content.AddRectOutline(swatchMin, swatchMax, style.panelBorder);
+        // Fenêtre modale : la frame attend la réponse.
+        if (interaction.clicked && ui.colorPicker) {
+            LinearColor picked = color;
+            if (ui.colorPicker(picked) && !(picked == color)) {
+                color = picked;
+                return true;
+            }
+        }
+        return false;
     }
 
     void Context::MenuBarText(std::string_view text, Icon icon, bool disabled) {

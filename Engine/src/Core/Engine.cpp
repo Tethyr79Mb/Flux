@@ -102,6 +102,13 @@ namespace Flux {
             public:
             void Tick(Clock::time_point now) {
                 ++m_frames;
+                m_worstInWindow = std::max(m_worstInWindow, Milliseconds(now - m_lastTick));
+                m_lastTick = now;
+                if (now - m_worstStart >= std::chrono::seconds(5)) {
+                    m_previousWorst = m_worstInWindow;
+                    m_worstInWindow = 0.0;
+                    m_worstStart = now;
+                }
                 const std::chrono::duration<double> elapsed = now - m_windowStart;
                 if (elapsed.count() >= 0.5) {
                     m_fps = m_frames / elapsed.count();
@@ -126,9 +133,15 @@ namespace Flux {
             double GetFps() const { return m_fps; }
             double GetFrameMilliseconds() const { return m_frameMilliseconds; }
             double Get(Cost cost) const { return m_averages[cost]; }
+            // La plus longue image des 5 à 10 dernières secondes : un à-coup (chargement) que la moyenne cache.
+            double GetWorstMilliseconds() const { return std::max(m_previousWorst, m_worstInWindow); }
 
             private:
             Clock::time_point m_windowStart = Clock::now();
+            Clock::time_point m_lastTick = Clock::now();
+            Clock::time_point m_worstStart = Clock::now();
+            double m_worstInWindow = 0.0;
+            double m_previousWorst = 0.0;
             int m_frames = 0;
             double m_fps = 0.0;
             double m_frameMilliseconds = 0.0;
@@ -150,6 +163,7 @@ namespace Flux {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
                 renderer.RequestDetailedTimings();
                 ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
+                ui.LabelText("Pire image (10 s)", std::format("{:.1f} ms", stats.GetWorstMilliseconds()));
                 ui.LabelText("GPU", renderer.GetDeviceName());
                 bool vsync = renderer.IsVSyncEnabled();
                 if (ui.Checkbox("V-Sync", vsync)) {
@@ -187,6 +201,7 @@ namespace Flux {
                 ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
+                ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
                 ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
 
@@ -752,12 +767,13 @@ namespace Flux {
         constexpr double MinSeconds = 0.2;
         constexpr double MaxSeconds = 30.0;
         const RenderTimings& render = m_renderer->GetTimings();
-        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u);
+        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u)
+                                    + render.modelsLoading + render.fontsLoading;
         m_loadingMostPending = std::max(m_loadingMostPending, pending);
         m_loadingQuietFrames = pending == 0 ? m_loadingQuietFrames + 1 : 0;
         m_loadingSeconds += deltaSeconds;
         if (m_loadingSeconds >= MaxSeconds) {
-            Log::Warning("Chargement : scène montrée après {:.0f} s, {} tuiles encore attendues", MaxSeconds, pending);
+            Log::Warning("Chargement : scène montrée après {:.0f} s, {} tuiles ou modèles encore attendus", MaxSeconds, pending);
         } else if (m_loadingQuietFrames < QuietFrames || m_loadingSeconds < MinSeconds) {
             return;
         }
@@ -775,7 +791,8 @@ namespace Flux {
         list.AddText({center.x - extent.x * 0.5f, center.y - extent.y - 16.0f}, text, TextSize, {0.85f, 0.88f, 0.95f, 1.0f});
         // Avancement : la part des attentes déjà levées, puis les dernières images de vérification.
         const RenderTimings& render = m_renderer->GetTimings();
-        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u);
+        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u)
+                                    + render.modelsLoading + render.fontsLoading;
         const float done = m_loadingMostPending > 0
                                ? 1.0f - static_cast<float>(pending) / static_cast<float>(m_loadingMostPending)
                                : 1.0f;
@@ -1373,6 +1390,13 @@ namespace Flux {
         return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
     }
 
+    std::optional<UI::FontRef> Engine::LoadAssetFont(std::string_view relativePath) {
+        if (!m_project || relativePath.empty()) {
+            return std::nullopt;
+        }
+        return m_renderer->LoadFont(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+    }
+
     const Interface::Document* Engine::LoadInterface(std::string_view relativePath) {
         if (!m_project || relativePath.empty()) {
             return nullptr;
@@ -1382,7 +1406,8 @@ namespace Flux {
 
     ScreenUi::DrawOptions Engine::GetScreenUiOptions() {
         return {.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
-                .interfaces = [this](const ScreenUi::InterfaceRequest& request) { return DrawInterface(request); }};
+                .interfaces = [this](const ScreenUi::InterfaceRequest& request) { return DrawInterface(request); },
+                .fonts = [this](std::string_view path) { return LoadAssetFont(path); }};
     }
 
     std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterface(const ScreenUi::InterfaceRequest& request) {

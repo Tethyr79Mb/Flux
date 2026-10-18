@@ -5,6 +5,7 @@
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
+#include "Panels/FontList.hpp"
 #include "Panels/ContentBrowser.hpp"
 #include "Panels/Hardpoints.hpp"
 #include "Search.hpp"
@@ -115,6 +116,17 @@ namespace FluxEditor {
 
         // Groupe d'une racine (et icône de toute entité) : sa catégorie ; sinon le nom de son premier composant (ceux
         // du jeu) ; sinon « Objets vides ». rank ordonne les groupes : catégories, composants du jeu, objets vides.
+        // Objet Monde (gravité, air) : réglé par la fenêtre Monde, pas montré dans la scène. Un objet qui porte aussi
+        // des enfants reste visible, pour qu'on les retrouve.
+        bool IsWorldSettings(const Scene& scene, Entity entity) {
+            if (!scene.TryGet<WorldComponent>(entity)) {
+                return false;
+            }
+            bool children = false;
+            scene.ForEachChild(entity, [&](Entity) { children = true; });
+            return !children;
+        }
+
         struct Kind
         {
             int rank;
@@ -230,18 +242,21 @@ namespace FluxEditor {
     // Objets de la scène ouverte : les racines rangées par type, dans l'ordre de la scène à l'intérieur d'un groupe
     // (l'ordre d'affichage de l'interface à l'écran), chacune avec ses enfants en arbre.
     void SceneEditor::DrawObjects(UI::Context& ui, Engine& engine, Scene& scene) {
-        if (scene.GetEntityCount() == 0) {
-            ui.TextDisabled("Scène vide");
-            return;
-        }
         const ComponentRegistry& components = engine.GetComponents();
         std::map<std::pair<int, std::string>, std::pair<UI::Icon, std::vector<Entity>>> groups;
         scene.ForEachRoot([&](Entity root) {
+            if (IsWorldSettings(scene, root)) {
+                return;
+            }
             Kind kind = KindOf(scene, components, root);
             auto& group = groups[{kind.rank, std::move(kind.title)}];
             group.first = kind.icon;
             group.second.push_back(root);
         });
+        if (groups.empty()) {
+            ui.TextDisabled("Scène vide");
+            return;
+        }
         for (const auto& [key, group] : groups) {
             const struct
             {
@@ -287,7 +302,7 @@ namespace FluxEditor {
         bool any = false;
         const auto visit = [&](const auto& self, Entity entity, const std::string& path) -> void {
             const std::string name = DisplayName(scene, entity);
-            if (query.Matches(name)) {
+            if (query.Matches(name) && !IsWorldSettings(scene, entity)) {
                 any = true;
                 const Uuid id = scene.GetId(entity);
                 ui.PushId(id.value);
@@ -563,6 +578,19 @@ namespace FluxEditor {
         ui.PopId();
     }
 
+    bool SceneEditor::DrawFields(Engine& engine, const ComponentInfo& info, void* component) {
+        // Pas l'entité inspectée : rien à marquer comme différent d'un prefab.
+        SceneSerializer::PrefabOverrides overrides = std::exchange(m_overrides, {});
+        engine.GetUi().PushId(info.key);
+        bool changed = false;
+        for (const FieldInfo& field : info.fields) {
+            changed |= DrawField(engine, info, field, field.access(component));
+        }
+        engine.GetUi().PopId();
+        m_overrides = std::move(overrides);
+        return changed;
+    }
+
     bool SceneEditor::DrawField(Engine& engine, const ComponentInfo& info, const FieldInfo& field, void* value) {
         UI::Context& ui = engine.GetUi();
         const FieldOptions& o = field.options;
@@ -608,6 +636,9 @@ namespace FluxEditor {
                 auto& text = *static_cast<std::string*>(value);
                 if (field.asset == AssetType::Animation) {
                     return DrawAnimationChoice(engine, label, text);
+                }
+                if (field.asset == AssetType::Font) {
+                    return FontChoice(engine, label, text);
                 }
                 if (field.asset == AssetType::None) {
                     return ui.InputText(label, text);

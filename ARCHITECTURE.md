@@ -60,7 +60,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, version, panneau Moteur.
    Après une scène chargée en jeu, l'écran de chargement recouvre tout et le jeu attend (`Engine::IsLoading`) : la
    scène est quand même rendue, pour que les tuiles des planètes se calculent, jusqu'à ce que le rendu n'attende plus
-   ni tuile ni texture du sol pendant 10 images (`RenderTimings::planetPendingTiles`, `groundTexturesLoading`).
+   ni tuile, ni texture du sol, ni modèle pendant 10 images (`RenderTimings::planetPendingTiles`,
+   `groundTexturesLoading`, `modelsLoading`).
 6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces et changement de scène en fin d'image.
 
 ## Rendu
@@ -76,12 +77,19 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
-├─ ModelCache      modèles glTF chargés une fois (GpuModel), rangés au chargement (PrepareModel) ; géométrie dans
-│                  des pages partagées (GeometryPage, RangeAllocator), images et matériaux en tables (groupe 2)
+├─ ModelCache      modèles glTF chargés une fois (GpuModel), lus et rangés (PrepareModel) sur deux fils à part
+│                  (ModelLoader), envoyés au GPU un par image ; géométrie dans des pages partagées (GeometryPage,
+│                  RangeAllocator), images et matériaux en tables (groupe 2)
 ├─ OcclusionCulling entités cachées écartées par le GPU (Culling.slang, pyramide de profondeur)
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
+
+Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
+enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses
+commandes, et leurs buffers intermédiaires sont rendus quand le GPU a fini cette image. Chaque envoi commence par une
+barrière sur tout ce qui a été soumis avant (une image en vol peut lire la table des matériaux qu'il réécrit). Sans
+fenêtre (tests, calculs), ils sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
 
 Les modèles sont rangés au chargement (`PrepareModel`, `Assets/Model.cpp`) pour se dessiner en peu d'appels quelle
 que soit la façon dont ils ont été modélisés : matériaux identiques (tout sauf le nom) réunis, une primitive par
@@ -270,14 +278,18 @@ planète donne directement le sien comme indice d'instance.
 
 - Mode immédiat : `UI::Context` (panneaux ancrés, onglets, widgets, menus, arbres) produit une `UI::DrawList`
   dessinée par `OverlayRenderer`. Texte MSDF (police Arimo, atlas généré au démarrage), formes SDF.
+- Polices du projet (`ScreenTextComponent::font`) : `Renderer::LoadFont` construit l'atlas sur un autre fil
+  (`std::async`), puis lui donne sa texture et son groupe comme une image ; chaque texture garde ses constantes du
+  shader (taille d'atlas, étendue de distance, mode). `DrawList::AddText(FontRef...)` : le texte passe dans une
+  commande à part (un appel de dessin de plus par changement de police).
 - Interfaces du jeu : fichiers `.fluxui` (`Flux::Interface`, mode retenu) éditées dans l'éditeur, chargées par
   `InterfaceLibrary`, liées aux valeurs du jeu (`BindInterfaceValue`) et aux fonctions C++ du module.
 
 ## Éditeur
 
 - `main.cpp` crée le moteur sans panneau Moteur ni interface plein écran, puis branche sa propre mise à jour.
-- En haut : barre de menus puis barre d'outils (`BeginToolBar`, boutons à pictogramme et info-bulles) ; en bas, la
-  barre d'état. `GetMenuBarHeight` compte les deux barres du haut.
+- En haut : barre de menus puis barre d'outils (`BeginToolBar`, boutons à pictogramme et info-bulles, groupe Texte de
+  `TextTools` avec ses listes `OpenPopupMenu` et `MenuBarColorButton`) ; en bas, la barre d'état. `GetMenuBarHeight` compte les deux barres du haut.
 - `SceneEditor` regroupe les panneaux : Scènes (hiérarchie), Inspecteur, Placer, Contenu, Caméra, Console, Paramètres.
   L'inspecteur d'une pièce de prefab marque « » » les champs qui diffèrent du prefab (FluxUI : `"libellé###clé"`
   garde le même widget quand le texte visible change).

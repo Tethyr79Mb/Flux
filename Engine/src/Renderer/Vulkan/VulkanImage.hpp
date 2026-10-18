@@ -34,7 +34,7 @@ namespace Flux::Vk {
         // sans scintillement ; format filtrable en blit requis (RGBA8 UNORM ou SRGB : toujours le cas sur PC).
         // Cube : pixels contient les 6 faces à la suite (+X, -X, +Y, -Y, +Z, -Z), vue de type cube. Array : les
         // `layerCount` images à la suite.
-        static std::expected<Image, std::string> CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
+        static std::expected<Image, std::string> CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
                                                                std::span<const std::uint8_t> pixels, bool mipmaps = false,
                                                                ImageLayers kind = ImageLayers::Single,
                                                                std::uint32_t layerCount = 1);

@@ -80,7 +80,7 @@ namespace Flux::Vk {
         return image;
     }
 
-    std::expected<Image, std::string> Image::CreateTexture(const Device& device, VkFormat format, VkExtent2D extent,
+    std::expected<Image, std::string> Image::CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
                                                            std::span<const std::uint8_t> pixels, bool mipmaps, ImageLayers kind,
                                                            std::uint32_t layerCount) {
         const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
@@ -101,7 +101,8 @@ namespace Flux::Vk {
             return image;
         }
 
-        const bool copied = device.ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
+        const VkBuffer source = staging->GetHandle();
+        const bool copied = device.Upload([&](VkCommandBuffer commandBuffer) {
             VkImageMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -130,7 +131,7 @@ namespace Flux::Vk {
             VkBufferImageCopy region{};
             region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers}; // faces à la suite dans le buffer
             region.imageExtent = {extent.width, extent.height, 1};
-            vkCmdCopyBufferToImage(commandBuffer, staging->GetHandle(), image->m_image,
+            vkCmdCopyBufferToImage(commandBuffer, source, image->m_image,
                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
             // Chaque niveau est une réduction de moitié du précédent, qui passe ensuite en lecture.
@@ -159,7 +160,7 @@ namespace Flux::Vk {
             transition(levels - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        });
+        }, std::move(*staging));
         if (!copied) {
             return std::unexpected("envoi d'une texture au GPU");
         }

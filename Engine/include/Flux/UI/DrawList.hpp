@@ -45,6 +45,14 @@ namespace Flux::UI {
         Math::Vector2i size; // pixels
     };
 
+    // Police chargée pour la liste : la police et la texture de son atlas. Celle de l'interface est FontTexture ;
+    // les autres viennent de Renderer::LoadFont (textes de la scène dans une police du projet).
+    struct FontRef
+    {
+        const Font* font = nullptr;
+        TextureId texture = FontTexture;
+    };
+
     // Suite de sommets consécutifs qui utilisent la même texture : un appel de dessin chacune.
     struct DrawCommand
     {
@@ -93,6 +101,11 @@ namespace Flux::UI {
         // topLeft : coin haut-gauche de la première ligne ; '\n' passe à la ligne. Retourne la taille du texte.
         Math::Vector2f AddText(Math::Vector2f topLeft, std::string_view utf8, float pixelSize, Math::LinearColor color);
         Math::Vector2f MeasureText(std::string_view utf8, float pixelSize) const;
+        // Idem dans une autre police (font.font non nul). Son atlas est une autre texture : le texte coupe la
+        // commande en cours, un appel de dessin de plus par changement de police.
+        Math::Vector2f AddText(const FontRef& font, Math::Vector2f topLeft, std::string_view utf8, float pixelSize,
+                               Math::LinearColor color);
+        static Math::Vector2f MeasureText(const Font& font, std::string_view utf8, float pixelSize);
 
         std::span<const Vertex> GetVertices() const { return m_vertices; }
         std::span<const DrawCommand> GetCommands() const { return m_commands; }
@@ -101,7 +114,8 @@ namespace Flux::UI {
         private:
         // Parcourt le texte ; emit(glyphe, coin haut-gauche du glyphe) est appelé pour chaque glyphe visible.
         template <typename Emit>
-        Math::Vector2f LayoutText(Math::Vector2f topLeft, std::string_view utf8, float pixelSize, Emit&& emit) const;
+        static Math::Vector2f LayoutText(const Font& font, Math::Vector2f topLeft, std::string_view utf8, float pixelSize,
+                                         Emit&& emit);
 
         void AddQuad(Math::Vector2f min, Math::Vector2f max, Math::Vector2f uvMin, Math::Vector2f uvMax, Math::LinearColor color,
                      TextureId texture = FontTexture, const Shape& shape = {}, float feather = 1.0f);

@@ -26,8 +26,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   compteur au panneau Moteur). L'élimination hors champ reste sur le CPU (par entité et par bloc, peu coûteuse ; elle
   évite aussi de calculer la pose des personnages hors champ). Reste : ce qu'un mur découvre apparaît une image plus
   tard (seconde passe à faire), les ombres ne profitent pas du test.
-- ⬜ Chargement en arrière-plan : lecture et décodage sur d'autres fils, envois au GPU sans `vkQueueWaitIdle`
-  (aujourd'hui chaque envoi arrête le fil principal jusqu'à la fin du travail du GPU), puis file de transfert.
+- 🔨 Chargement en arrière-plan : modèles lus et décodés sur deux fils, envoyés au GPU un par image sans attendre le
+  GPU (partis avec l'image suivante). Restent : la copie des pixels vers la mémoire d'envoi se fait encore sur le fil
+  principal (quelques dizaines de ms pour un modèle aux images 4096), images à l'écran et ciel en panorama lus sur le fil
+  principal, rechargement d'un fichier retouché qui attend le GPU, file de transfert dédiée.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
 
@@ -72,6 +74,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Mode immédiat partagé éditeur/jeu, texte MSDF, formes SDF, thèmes. À améliorer : pas de DPI (mise à l'échelle 100 % seulement), police Latin-1.
 - ✅ Interfaces du jeu en fichiers `.fluxui` : fenêtres, boutons à actions, liaisons de valeurs, onglets, défilement.
 - ✅ Textes et images à l'écran, changement de scène.
+- 🔧 Polices du projet pour les textes à l'écran (`.ttf`, `.otf` du dossier `Polices/`), atlas MSDF construit sur un
+  autre fil au premier usage, attendu par l'écran de chargement. À améliorer : 0,3 à 0,5 s de processeur par police
+  à chaque lancement (pas de cache disque), Latin-1 seulement, pas relue si le fichier change, pas encore dans les
+  interfaces `.fluxui`.
 
 ### Outillage
 - ✅ Module du jeu en DLL rechargeable à chaud, API versionnée (`GameModuleApiVersion`).
@@ -111,7 +117,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
 - ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, volume, panneau Moteur).
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
-- ⬜ Écran de chargement : attendre aussi les modèles (chargés aujourd'hui d'un bloc à leur premier dessin), image ou interface `.fluxui` au choix.
+- 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Vêtements et équipement des personnages (demandé par Bruno le 2026-10-17) : aujourd'hui, seuls les vêtements

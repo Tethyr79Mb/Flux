@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <vector>
 
@@ -164,6 +165,10 @@ namespace Flux::Vk {
             vkDeviceWaitIdle(m_device.device);
         }
         if (m_immediatePool != VK_NULL_HANDLE) {
+            if (m_uploads.commands != VK_NULL_HANDLE) {
+                vkEndCommandBuffer(m_uploads.commands);
+            }
+            ReleaseUploads(m_uploads); // avant l'allocateur : ses buffers y sont pris
             vkDestroyCommandPool(m_device.device, m_immediatePool, nullptr);
         }
         if (m_allocator != VK_NULL_HANDLE) {
@@ -233,7 +238,25 @@ namespace Flux::Vk {
         Check(vkDeviceWaitIdle(m_device.device), "vkDeviceWaitIdle");
     }
 
-    bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) const {
+    namespace {
+        // Barrière globale : tout ce qui précède (étapes `from`) avant tout ce qui suit (étapes `to`).
+        void GlobalBarrier(VkCommandBuffer commands, VkPipelineStageFlags2 from, VkAccessFlags2 fromAccess,
+                           VkPipelineStageFlags2 to, VkAccessFlags2 toAccess) {
+            VkMemoryBarrier2 barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = from;
+            barrier.srcAccessMask = fromAccess;
+            barrier.dstStageMask = to;
+            barrier.dstAccessMask = toAccess;
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.memoryBarrierCount = 1;
+            dependency.pMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(commands, &dependency);
+        }
+    }
+
+    bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
         VkCommandBufferAllocateInfo allocateInfo{};
         allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocateInfo.commandPool = m_immediatePool;
@@ -251,18 +274,78 @@ namespace Flux::Vk {
         record(commandBuffer);
         bool success = Check(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 
+        UploadBatch uploads = TakeUploads();
         if (success) {
-            VkCommandBufferSubmitInfo commandInfo{};
-            commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-            commandInfo.commandBuffer = commandBuffer;
+            // Les envois en attente d'abord : ces commandes les lisent peut-être.
+            std::array<VkCommandBufferSubmitInfo, 2> commandInfos{};
+            std::uint32_t count = 0;
+            for (VkCommandBuffer commands : {uploads.commands, commandBuffer}) {
+                if (commands != VK_NULL_HANDLE) {
+                    commandInfos[count].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+                    commandInfos[count].commandBuffer = commands;
+                    ++count;
+                }
+            }
             VkSubmitInfo2 submitInfo{};
             submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-            submitInfo.commandBufferInfoCount = 1;
-            submitInfo.pCommandBufferInfos = &commandInfo;
+            submitInfo.commandBufferInfoCount = count;
+            submitInfo.pCommandBufferInfos = commandInfos.data();
             success = Check(vkQueueSubmit2(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "vkQueueSubmit2")
                    && Check(vkQueueWaitIdle(m_graphicsQueue), "vkQueueWaitIdle");
         }
+        if (!success) {
+            WaitIdle(); // rien ne doit plus lire les buffers rendus ci-dessous
+        }
+        ReleaseUploads(uploads);
         vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &commandBuffer);
         return success;
+    }
+
+    bool Device::Upload(const std::function<void(VkCommandBuffer)>& record, Buffer staging) {
+        if (m_uploads.commands == VK_NULL_HANDLE) {
+            VkCommandBufferAllocateInfo allocateInfo{};
+            allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocateInfo.commandPool = m_immediatePool;
+            allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocateInfo.commandBufferCount = 1;
+            if (!Check(vkAllocateCommandBuffers(m_device.device, &allocateInfo, &m_uploads.commands), "vkAllocateCommandBuffers")) {
+                m_uploads.commands = VK_NULL_HANDLE;
+                return false;
+            }
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(m_uploads.commands, &beginInfo);
+        }
+        // Une image soumise avant (ou un envoi précédent) lit ou écrit peut-être ce qui va être réécrit : table des
+        // matériaux, page de géométrie.
+        GlobalBarrier(m_uploads.commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+                      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
+        record(m_uploads.commands);
+        m_uploads.staging.push_back(std::move(staging));
+        if (!m_deferUploads) {
+            return ImmediateSubmit([](VkCommandBuffer) {});
+        }
+        return true;
+    }
+
+    Device::UploadBatch Device::TakeUploads() {
+        UploadBatch batch = std::move(m_uploads);
+        m_uploads = {};
+        if (batch.commands != VK_NULL_HANDLE) {
+            GlobalBarrier(batch.commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+            if (!Check(vkEndCommandBuffer(batch.commands), "vkEndCommandBuffer")) {
+                ReleaseUploads(batch); // jamais soumis : ses envois sont perdus (message dans la console)
+            }
+        }
+        return batch;
+    }
+
+    void Device::ReleaseUploads(UploadBatch& batch) {
+        if (batch.commands != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &batch.commands);
+        }
+        batch = {};
     }
 }
