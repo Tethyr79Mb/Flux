@@ -20,8 +20,8 @@ namespace Flux {
 
     // Images du sol des planètes, lues dans le dossier Textures/Sol des assets : pour chaque matière (roche, herbe,
     // terre, sable, neige), <nom>-couleur, <nom>-normales (OpenGL : vert vers le haut), <nom>-rugosite et, si elle
-    // existe, <nom>-occlusion (.png ou .jpg, toutes de la même taille, carrées). Regroupées en trois tableaux de
-    // textures (couleur ; normales ; occlusion en rouge et rugosité en vert), liés au groupe 0 des tuiles de planète
+    // existe, <nom>-occlusion (.png ou .jpg, toutes de la même taille, carrées). Regroupées en deux tableaux de
+    // textures (couleur et rugosité en alpha ; normales en rouge-vert et occlusion en bleu), liés au groupe 0 des tuiles de planète
     // (ModelCache::GroundColorSlot et suivants).
     // Sans ces images, les planètes gardent leurs couleurs unies.
     // Contre la répétition, chaque zone du sol lit l'image tournée au hasard. Le fichier matieres.json du même dossier
@@ -49,11 +49,11 @@ namespace Flux {
         // En degrés : sable et neige ±10°, le reste libre.
         static constexpr std::array<float, static_cast<std::size_t>(GroundLayer::Count)> DefaultMaxAngles{180.0f, 180.0f, 180.0f, 10.0f, 10.0f};
 
-        // Pixels des trois tableaux, décodés hors du fil principal.
+        // Pixels des deux tableaux, décodés hors du fil principal.
         struct Decoded
         {
             int size = 0;
-            std::array<std::vector<std::uint8_t>, 3> pixels;
+            std::array<std::vector<std::uint8_t>, 2> pixels;
             std::string error; // non vide : rien à afficher
         };
 
@@ -71,7 +71,7 @@ namespace Flux {
         std::shared_ptr<std::atomic<bool>> m_cancel; // celui du décodage en cours : arrête les images restantes
         // Dans cet ordre : le groupe est rendu avant les textures et le sampler qu'il référence.
         std::unique_ptr<RHI::Sampler> m_sampler;
-        std::array<std::unique_ptr<RHI::Texture>, 3> m_textures; // couleur, normales, occlusion-rugosité
+        std::array<std::unique_ptr<RHI::Texture>, 2> m_textures; // couleur et rugosité, normales et occlusion
         std::unique_ptr<RHI::BindGroup> m_group;
     };
 }

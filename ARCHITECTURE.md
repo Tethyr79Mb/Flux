@@ -263,7 +263,9 @@ planète donne directement le sien comme indice d'instance.
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
   tableaux (`GroundTextures`) plaquées en triplanaire, chaque projection en pavage hexagonal (rotation et décalage
   aléatoires par cellule, périodique sur `GroundPeriod` pour ne pas voir de raccord entre tuiles) ; couleurs unies si les textures manquent ou pendant leur
-  décodage (sur d'autres fils, seulement si la scène a une planète).
+  décodage (sur d'autres fils, seulement si la scène a une planète). Coût borné par pixel : 2 matières, 2 projections
+  et 2 cellules au plus (la plus faible des trois est retirée des autres, sans saut), 2 lectures par point (couleur +
+  rugosité en alpha ; normales en rouge-vert + occlusion en bleu).
 - Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
 - Nuages (`CloudsComponent`) : une couche épaisse entre deux sphères (base et sommet), sans maillage. Un triangle
   plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la

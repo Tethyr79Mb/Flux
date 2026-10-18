@@ -111,8 +111,7 @@ namespace Flux {
 
         // Emplacements du groupe 0, où les tuiles de planète lisent les textures du sol (GroundTextures).
         static constexpr std::uint32_t GroundColorSlot = 5;
-        static constexpr std::uint32_t GroundRoughnessSlot = 6;
-        static constexpr std::uint32_t GroundNormalSlot = 7;
+        static constexpr std::uint32_t GroundNormalSlot = 6;
         // Emplacements du groupe 2 (voir shaders/Mesh.slang).
         static constexpr std::uint32_t ImageTableSlot = 0;
         static constexpr std::uint32_t MaterialTableSlot = 1;

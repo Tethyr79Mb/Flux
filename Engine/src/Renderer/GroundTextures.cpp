@@ -88,27 +88,27 @@ namespace Flux {
             Channel channel;
         };
 
-        // Copie l'image décodée à sa place : sa couche du tableau de la couleur ou des normales, ou un canal du
-        // tableau occlusion-rugosité. Chaque image écrit des octets différents : plusieurs fils à la fois sans verrou.
+        // Copie l'image décodée à sa place, dans la couche de sa matière : la couleur dans rouge-vert-bleu du tableau
+        // de la couleur et la rugosité dans son alpha ; les normales dans rouge-vert du tableau des normales (le
+        // shader refait z) et l'occlusion dans son bleu. Deux lectures par point au lieu de trois. Chaque image écrit
+        // des octets différents : plusieurs fils à la fois sans verrou.
         void Place(const ImageData& image, const Job& job, GroundTextures::Decoded& decoded) {
             const std::size_t count = static_cast<std::size_t>(decoded.size) * decoded.size;
             const std::size_t first = job.layer * count * 4;
-            switch (job.channel) {
-                case Channel::Color:
-                case Channel::Normal: {
-                    std::vector<std::uint8_t>& pixels = decoded.pixels[job.channel == Channel::Color ? 0 : 1];
-                    std::copy(image.rgba.begin(), image.rgba.end(), pixels.begin() + static_cast<std::ptrdiff_t>(first));
-                    break;
-                }
-                case Channel::Roughness:
-                case Channel::Occlusion: {
-                    std::uint8_t* out = decoded.pixels[2].data() + first + (job.channel == Channel::Occlusion ? 0 : 1);
-                    const std::uint8_t* in = image.rgba.data();
-                    for (std::size_t i = 0; i < count; ++i) {
-                        out[i * 4] = in[i * 4];
+            const auto copy = [&](std::size_t target, std::size_t from, std::size_t channels) {
+                std::uint8_t* out = decoded.pixels[target].data() + first + from;
+                const std::uint8_t* in = image.rgba.data();
+                for (std::size_t i = 0; i < count; ++i) {
+                    for (std::size_t c = 0; c < channels; ++c) {
+                        out[i * 4 + c] = in[i * 4 + c];
                     }
-                    break;
                 }
+            };
+            switch (job.channel) {
+                case Channel::Color: copy(0, 0, 3); break;
+                case Channel::Roughness: copy(0, 3, 1); break; // niveaux de gris : le rouge suffit
+                case Channel::Normal: copy(1, 0, 2); break;
+                case Channel::Occlusion: copy(1, 2, 1); break;
             }
         }
 
@@ -140,12 +140,11 @@ namespace Flux {
             decoded.size = first->size.x;
             const std::size_t bytes = static_cast<std::size_t>(decoded.size) * decoded.size * 4 * LayerNames.size();
             decoded.pixels[0].resize(bytes);
-            decoded.pixels[1].resize(bytes);
             // Sans image d'occlusion : 255 (aucune).
-            decoded.pixels[2].resize(bytes);
+            decoded.pixels[1].resize(bytes);
             for (std::size_t i = 0; i < bytes; i += 4) {
-                decoded.pixels[2][i] = 255;
-                decoded.pixels[2][i + 3] = 255;
+                decoded.pixels[1][i + 2] = 255;
+                decoded.pixels[1][i + 3] = 255;
             }
             Place(*first, jobs.front(), decoded);
             first->rgba = {};
@@ -294,9 +293,9 @@ namespace Flux {
             return false;
         };
         const int size = decoded.size;
-        std::array<std::vector<std::uint8_t>, 3>& pixels = decoded.pixels;
+        std::array<std::vector<std::uint8_t>, 2>& pixels = decoded.pixels;
         const RHI::Extent extent{static_cast<std::uint32_t>(size), static_cast<std::uint32_t>(size)};
-        constexpr std::array formats{RHI::Format::RGBA8Srgb, RHI::Format::RGBA8Unorm, RHI::Format::RGBA8Unorm};
+        constexpr std::array formats{RHI::Format::RGBA8Srgb, RHI::Format::RGBA8Unorm}; // alpha d'une image sRGB : linéaire
         for (std::size_t i = 0; i < m_textures.size(); ++i) {
             auto texture = device.CreateTextureArray(formats[i], extent, static_cast<std::uint32_t>(LayerNames.size()), pixels[i], true);
             if (!texture) {
@@ -318,7 +317,6 @@ namespace Flux {
         }
         m_group->SetTexture(ModelCache::GroundColorSlot, *m_textures[0], *m_sampler);
         m_group->SetTexture(ModelCache::GroundNormalSlot, *m_textures[1], *m_sampler);
-        m_group->SetTexture(ModelCache::GroundRoughnessSlot, *m_textures[2], *m_sampler);
         Log::Info("Sol des planètes : {} matières en {}x{}", LayerNames.size(), size, size);
         return true;
     }
