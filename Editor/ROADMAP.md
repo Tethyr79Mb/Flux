@@ -24,7 +24,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…
 - ✅ « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.
 - ✅ Bouton « Monde » de la barre de menus : fenêtre des réglages du monde de la scène (gravité, air, chute max), annulables ; l'objet Monde qui les garde n'est plus montré dans la scène ni dans Placer.
-- ✅ Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté.
+- ✅ Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté, des nuages et des arbres (Végétation).
 - ✅ Grille au sol dans la vue 3D, comme Unreal et Godot : lignes du mètre, des 10 m et des 100 m qui s'effacent
   au loin, axes X (rouge) et Z (bleu), cachée derrière les objets ; bouton à côté des modes du gizmo et touche G,
   absente en mode Jouer. Limite : son état n'est pas gardé d'une session à l'autre.

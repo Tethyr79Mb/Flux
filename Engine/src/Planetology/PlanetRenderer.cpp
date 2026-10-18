@@ -73,7 +73,8 @@ namespace Flux::Planetology {
     }
 
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
-                                 const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles) {
+                                 const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
+                                 std::vector<Plain>* plains, std::uint32_t plainLevel) {
         if (!m_indices) {
             return;
         }
@@ -101,7 +102,7 @@ namespace Flux::Planetology {
         // Horizon : la caméra voit la sphère du sol le plus bas jusqu'à l'angle acos(rmin / d) depuis le point sous
         // elle, et un sommet (au plus haut) dépasse de acos(rmin / rmax) au-delà.
         const double horizon = distance > minRadius ? std::acos(minRadius / distance) + std::acos(minRadius / maxRadius) : -1.0;
-        Visit visit{state, camera, position, rotation, horizon, minRadius, inView, tiles};
+        Visit visit{state, camera, position, rotation, horizon, minRadius, inView, tiles, plains, plainLevel};
         // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
         bool rootsReady = true;
         for (std::uint8_t face = 0; face < 6; ++face) {
@@ -143,6 +144,9 @@ namespace Flux::Planetology {
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
         const Terrain& terrain = *visit.state.terrain;
+        if (visit.plains && key.level == visit.plainLevel) {
+            visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
+        }
         if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level)) {
             // Les enfants visibles doivent tous être prêts ; sinon cette tuile reste affichée et ils sont demandés.
             std::array<Node*, 4> children{};

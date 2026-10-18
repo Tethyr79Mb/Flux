@@ -64,6 +64,7 @@ flux_add_shaders(FluxShaders
         shaders/Sun.slang
         shaders/Temporal.slang
         shaders/Tracer.slang
+        shaders/Vegetation.slang
 )
 add_dependencies(FluxEngine FluxShaders)
 

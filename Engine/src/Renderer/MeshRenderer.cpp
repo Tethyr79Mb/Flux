@@ -100,8 +100,9 @@ namespace Flux {
             float roughness;
             float normalScale;
             float occlusionStrength;
-            std::uint32_t padding0;
-            std::array<float, 4> padding;
+            std::uint32_t material; // arbres (vertexTree) : GpuMaterial::index de la primitive
+            std::uint32_t draw;     // arbres : DrawData neutre
+            std::array<float, 3> padding;
         };
         static_assert(sizeof(DrawParams) == 80);
 
@@ -113,6 +114,7 @@ namespace Flux {
         constexpr std::uint32_t LightSlot = 4;
         constexpr std::uint32_t EnvironmentSlot = 5;
         constexpr std::uint32_t InstanceSlot = 6;
+        constexpr std::uint32_t TreeSlot = 7;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -165,6 +167,11 @@ namespace Flux {
             return std::unexpected(planets.error());
         }
         renderer->m_planets = std::move(*planets);
+        auto vegetation = Planetology::VegetationRenderer::Create(device);
+        if (!vegetation) {
+            return std::unexpected(vegetation.error());
+        }
+        renderer->m_vegetation = std::move(*vegetation);
         auto occlusion = OcclusionCulling::Create(device);
         if (!occlusion) {
             return std::unexpected(occlusion.error());
@@ -192,6 +199,7 @@ namespace Flux {
             RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
             RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{InstanceSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{TreeSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -211,6 +219,7 @@ namespace Flux {
                 return std::unexpected("création des buffers de l'image");
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
+            renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
         }
 
         if (auto pipelines = renderer->CreatePipelines(colorFormat, motionFormat, depthFormat); !pipelines) {
@@ -253,6 +262,7 @@ namespace Flux {
             const char* vertex;
             const char* shadowVertex;
             const char* fragment = "fragmentOpaque";
+            const char* maskedFragment = "fragmentMain"; // seuil d'alpha
             bool motion = true; // le fragment écrit le mouvement propre (SV_Target1)
             // Modèles : variantes double face et à seuil d'alpha (le sol et l'eau des planètes n'en ont pas).
             bool materials = false;
@@ -334,35 +344,41 @@ namespace Flux {
                 return result;
             }
             // Seuil d'alpha et transparents : le programme qui peut jeter des pixels.
-            desc.fragmentEntryPoint = "fragmentMain";
+            desc.fragmentEntryPoint = kind.maskedFragment;
             if (auto result = createMain(pipelines.masked, RHI::CullMode::Back, false); !result) {
                 return result;
             }
             if (auto result = createMain(pipelines.maskedDoubleSided, RHI::CullMode::None, false); !result) {
                 return result;
             }
+            desc.fragmentEntryPoint = "fragmentMain";
             if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true); !result) {
                 return result;
             }
             return createMain(pipelines.transparentBack, RHI::CullMode::Front, true);
         };
         if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow",
-                                               "fragmentOpaque", true, true});
+                                               "fragmentOpaque", "fragmentMain", true, true});
             !result) {
             return result;
         }
         if (auto result = createAll(m_skinned, {skinnedBuffers, skinnedAttributes, skinnedShadow, "vertexSkinned", "vertexShadowSkinned",
-                                                "fragmentOpaque", true, true});
+                                                "fragmentOpaque", "fragmentMain", true, true});
+            !result) {
+            return result;
+        }
+        if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
+                                             "fragmentOpaque", "fragmentTree", true, true});
             !result) {
             return result;
         }
         if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
-                                               "fragmentPlanet"});
+                                               "fragmentPlanet", "fragmentMain"});
             !result) {
             return result;
         }
         if (auto result = createAll(m_ocean, {planetBuffers, oceanAttributes, planetShadow, "vertexOcean", "vertexShadowPlanet",
-                                              "fragmentOcean", false});
+                                              "fragmentOcean", "fragmentMain", false});
             !result) {
             return result;
         }
@@ -447,10 +463,12 @@ namespace Flux {
         // Avant les entités : celles qui ne sont ni en vue ni dans une ombre sont écartées dès maintenant.
         m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
         m_planets->BeginFrame(frameIndex);
+        m_vegetation->BeginFrame(frameIndex);
+        m_vegetationComponent = nullptr;
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
                 AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity),
-                          scene.TryGet<CloudsComponent>(transform.entity), view);
+                          scene.TryGet<CloudsComponent>(transform.entity), scene.TryGet<VegetationComponent>(transform.entity), view);
             }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
@@ -571,6 +589,7 @@ namespace Flux {
         }
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         m_planets->EndFrame(frameIndex);
+        PrepareVegetation(camera, aspect, assetsDirectory, frameIndex);
         if (!m_boundEnvironment[frameIndex]) {
             ClearDraws(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
@@ -617,11 +636,20 @@ namespace Flux {
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
     void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
-                                 const CloudsComponent* clouds, const ViewCone& view) {
+                                 const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view) {
         m_planetTiles.clear();
+        m_plains.clear();
+        // Arbres sur la première planète qui en a. Le niveau des plaines vient de la forme connue de la planète : à la
+        // première image (ou quand elle change), pas d'arbres avant la suivante.
+        const Planetology::Terrain* known = m_planets->FindTerrain(transform.entity);
+        const bool trees = vegetation && !m_vegetationComponent && known;
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
-                           m_planetTiles);
+                           m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u);
+        if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
+            m_vegetationComponent = vegetation;
+            m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, transform.rotation, m_plains);
+        }
         const Math::Matrix4f rotation = transform.rotation.ToMatrix();
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
         const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
@@ -699,6 +727,30 @@ namespace Flux {
     }
 
     // Lumière de l'entité, si sa portée touche le champ de la caméra. Un spot éclaire vers le -z de l'entité.
+    // Arbres de la planète retenue par AddPlanet : leurs modèles et une entité neutre (lue par MeshColor), puis les
+    // plaines à semer et à trier par le GPU.
+    void MeshRenderer::PrepareVegetation(const Camera& camera, float aspect, const std::filesystem::path& assetsDirectory,
+                                         std::uint32_t frameIndex) {
+        Planetology::VegetationRenderer::Models models;
+        if (m_vegetationComponent && !assetsDirectory.empty()) {
+            const VegetationComponent& vegetation = *m_vegetationComponent;
+            models.near = vegetation.model.empty() ? nullptr : m_models->Find(assetsDirectory, vegetation.model);
+            models.middle = vegetation.lodModel.empty() ? models.near : m_models->Find(assetsDirectory, vegetation.lodModel);
+            models.far = vegetation.farModel.empty() ? models.middle : m_models->Find(assetsDirectory, vegetation.farModel);
+            // Modèles animés (os) : pas lus par vertexTree.
+            for (const GpuModel* model : {models.near, models.middle, models.far}) {
+                if (model && model->IsAnimated()) {
+                    models = {};
+                }
+            }
+        }
+        const float tanY = std::tan(0.5f * camera.verticalFov);
+        m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, models);
+        m_treeDraw = static_cast<std::uint32_t>(m_drawData.size());
+        m_drawData.push_back({Math::Matrix4f::Identity(), {{{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}}},
+                              {}, {}, Math::Matrix4f::Identity(), {1.0f, 1.0f, 1.0f, 1.0f}, {}, {1.0f, 1.0f, 0.0f, 0.0f}});
+    }
+
     void MeshRenderer::AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light) {
         const Math::Vector3f position(transform.position);
         if (light.range <= 0.0f || light.intensity <= 0.0f || !InView(camera, aspect, position, light.range)) {
@@ -1238,7 +1290,7 @@ namespace Flux {
                 commands.SetBindGroup(0, *state.group);
             }
             const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f,
-                                    pass == TransparentModelPass ? 1u : 0u, 1.0f, 1.0f, 0.0f, 0.0f, 0u, {}};
+                                    pass == TransparentModelPass ? 1u : 0u, 1.0f, 1.0f, 0.0f, 0.0f, 0u, 0u, {}};
             commands.PushConstants(&params, sizeof(params));
             commands.DrawIndexedIndirect(*m_modelCommandBuffers[frameIndex], batch.first * sizeof(RHI::DrawIndexedCommand), batch.count);
         }
@@ -1259,7 +1311,7 @@ namespace Flux {
         }
         const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
         const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, pass == OceanPass ? 1u : 0u,
-                                0.0f, 1.0f, 0.0f, 0.0f, 0u, {}};
+                                0.0f, 1.0f, 0.0f, 0.0f, 0u, 0u, {}};
         commands.PushConstants(&params, sizeof(params));
         const Planetology::PlanetTileCompute& tiles = m_planets->GetTiles();
         commands.BindIndexBuffer(*m_planets->GetIndices());
@@ -1271,8 +1323,35 @@ namespace Flux {
         state.page = BindState::NoPage; // les sommets liés ne sont plus ceux d'une page de modèles
     }
 
+    // Les arbres d'une liste : un appel indirect par primitive de son modèle, le nombre d'arbres écrit par le GPU.
+    void MeshRenderer::DrawTrees(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
+                                 Planetology::VegetationRenderer::List list, std::uint32_t cascade) const {
+        const bool shadow = list >= Planetology::VegetationRenderer::Shadow;
+        for (const Planetology::VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
+            const GpuModel& model = *draw.model;
+            const GpuMaterial& material = model.materials[model.primitives[draw.primitive].material];
+            if (model.resources.page != state.page) {
+                state.page = model.resources.page;
+                const GeometryPage& page = m_models->GetPage(model.resources.page);
+                const std::array<const RHI::Buffer*, 1> vertexBuffers{page.vertices.get()};
+                commands.BindVertexBuffers(0, vertexBuffers);
+                commands.BindIndexBuffer(*page.indices);
+            }
+            BindPipeline(commands, state, frameIndex, shadow ? ShadowPipeline(m_tree, material) : OpaquePipeline(m_tree, material));
+            if (state.group != &m_models->GetWhiteGroup()) {
+                state.group = &m_models->GetWhiteGroup();
+                commands.SetBindGroup(0, *state.group);
+            }
+            const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                    material.index, m_treeDraw, {}};
+            commands.PushConstants(&params, sizeof(params));
+            commands.DrawIndexedIndirect(m_vegetation->GetCommands(frameIndex), draw.command * sizeof(RHI::DrawIndexedCommand), 1);
+        }
+    }
+
     void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
         m_planets->Compute(commands, frameIndex);
+        m_vegetation->Compute(commands, frameIndex);
         m_occlusion->Record(commands, frameIndex);
     }
 
@@ -1293,6 +1372,7 @@ namespace Flux {
             commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
             DrawBatches(commands, state, frameIndex, 2 + c);
             DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
+            DrawTrees(commands, state, frameIndex, static_cast<Planetology::VegetationRenderer::List>(Planetology::VegetationRenderer::Shadow + c), c);
         }
         commands.EndRenderPass();
     }
@@ -1300,6 +1380,14 @@ namespace Flux {
     void MeshRenderer::DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
         DrawBatches(commands, state, frameIndex, OpaqueModelPass);
+    }
+
+    void MeshRenderer::DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        BindState state;
+        using Planetology::VegetationRenderer;
+        for (const VegetationRenderer::List list : {VegetationRenderer::Near, VegetationRenderer::Middle, VegetationRenderer::Far}) {
+            DrawTrees(commands, state, frameIndex, list, 0);
+        }
     }
 
     void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {

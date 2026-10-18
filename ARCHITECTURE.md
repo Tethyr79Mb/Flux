@@ -256,9 +256,10 @@ planète donne directement le sien comme indice d'instance.
 Tout ce qui concerne les planètes est réuni dans le domaine Planetology, espace de noms `Flux::Planetology` :
 `include/Flux/Planetology/` (`Planet.hpp` : relief, tuiles ; `Atmosphere.hpp`) et `src/Planetology/` (choix des tuiles
 `PlanetRenderer`, relief sur le GPU `PlanetTileCompute`, textures du sol `GroundTextures`, données de l'atmosphère pour
-le GPU `AtmosphereGpu`, sol physique `PlanetGround`). Restent ailleurs : les composants (`PlanetComponent`,
-`CloudsComponent` dans Scene, pour l'inspecteur et la sauvegarde), le dessin du sol, de l'océan et des nuages
-(`MeshRenderer` et `shaders/Mesh.slang`) et les shaders `PlanetTile.slang` et `Atmosphere.slang`.
+le GPU `AtmosphereGpu`, sol physique `PlanetGround`, arbres `VegetationRenderer`). Restent ailleurs : les composants
+(`PlanetComponent`, `CloudsComponent`, `VegetationComponent` dans Scene, pour l'inspecteur et la sauvegarde), le dessin
+du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.slang`) et les shaders `PlanetTile.slang`,
+`PlanetClimate.slang`, `Vegetation.slang` et `Atmosphere.slang`.
 
 - Cube-sphère : 6 faces en quadtree, tuiles de 33×33 avec jupes, morphing CDLOD entre niveaux.
 - Relief = une formule (`Terrain::GetHeight`), dupliquée dans `shaders/PlanetTile.slang` pour le GPU. Les deux
@@ -286,6 +287,18 @@ le GPU `AtmosphereGpu`, sol physique `PlanetGround`). Restent ailleurs : les com
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
+- Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont
+  les tuiles d'un niveau fixe (bord de 200 à 400 m) que `PlanetRenderer` visite en vue. Chacune est semée une fois
+  (`computeTrees` dans `PlanetTile.slang`, avec le même `Height` que le sol au détail le plus fin) : 64×64 places, le
+  hasard tiré de la place sur la face (mêmes arbres à chaque passage), gardées selon les forêts, la pente, l'altitude
+  et le climat du sol (`PlanetClimate.slang`, partagé avec `fragmentPlanet` : les arbres poussent sur l'herbe). 256
+  plaines restent semées en mémoire vidéo. À chaque image, `Vegetation.slang` range les arbres des plaines en vue en
+  listes (détaillé, simplifié, imposteur selon la distance ; ombres avec le modèle simplifié, une liste par cascade
+  touchée), puis écrit leurs nombres dans les commandes : un `DrawIndexedIndirect` par primitive de modèle et par liste.
+  `vertexTree` lit la place et la rotation de chaque arbre et le balance au vent ; `fragmentTree` ne retourne pas les
+  normales des feuilles (tournées vers l'extérieur de la couronne des deux côtés). Modèles : `assets/Modeles/Arbre`,
+  générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines s'arrêtent à 6 bords de tuile environ
+  de la caméra (1,2 à 2,4 km) : au-delà, pas d'arbre.
 
 ## Interface (FluxUI)
 

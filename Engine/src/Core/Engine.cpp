@@ -84,6 +84,7 @@ namespace Flux {
             GpuShadowsCost,   // GPU
             GpuSceneCost,
             GpuObjectsCost,   // GPU, compris dans la scène
+            GpuVegetationCost,
             GpuGroundCost,
             GpuSkyCost,
             GpuOceanCost,
@@ -190,6 +191,7 @@ namespace Flux {
                 ui.LabelText("GPU ombres", FormatCost(stats.Get(GpuShadowsCost)));
                 ui.LabelText("GPU scène", FormatCost(stats.Get(GpuSceneCost)));
                 ui.LabelText("  dont objets", FormatCost(stats.Get(GpuObjectsCost)));
+                ui.LabelText("  dont arbres", FormatCost(stats.Get(GpuVegetationCost)));
                 ui.LabelText("  dont sol", FormatCost(stats.Get(GpuGroundCost)));
                 ui.LabelText("  dont ciel", FormatCost(stats.Get(GpuSkyCost)));
                 ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
@@ -204,6 +206,9 @@ namespace Flux {
                 ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
                 ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
                 ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
+                ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
+                ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer)", render.shadowTrees, render.treePlains,
+                                                             render.pendingTreePlains));
 
                 // RAM utilisée : présente en RAM en ce moment, bibliothèques partagées comprises (le Gestionnaire des
                 // tâches montre la part privée, plus petite) ; réservée : promise au processus, même pas encore
@@ -414,6 +419,7 @@ namespace Flux {
             stats.Add(GpuShadowsCost, render.gpuShadows);
             stats.Add(GpuSceneCost, render.gpuScene);
             stats.Add(GpuObjectsCost, render.gpuObjects);
+            stats.Add(GpuVegetationCost, render.gpuVegetation);
             stats.Add(GpuGroundCost, render.gpuGround);
             stats.Add(GpuSkyCost, render.gpuSky);
             stats.Add(GpuOceanCost, render.gpuOcean);
@@ -768,7 +774,7 @@ namespace Flux {
         constexpr double MaxSeconds = 30.0;
         const RenderTimings& render = m_renderer->GetTimings();
         const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u)
-                                    + render.modelsLoading + render.fontsLoading;
+                                    + render.modelsLoading + render.fontsLoading + render.pendingTreePlains;
         m_loadingMostPending = std::max(m_loadingMostPending, pending);
         m_loadingQuietFrames = pending == 0 ? m_loadingQuietFrames + 1 : 0;
         m_loadingSeconds += deltaSeconds;
@@ -792,7 +798,7 @@ namespace Flux {
         // Avancement : la part des attentes déjà levées, puis les dernières images de vérification.
         const RenderTimings& render = m_renderer->GetTimings();
         const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u)
-                                    + render.modelsLoading + render.fontsLoading;
+                                    + render.modelsLoading + render.fontsLoading + render.pendingTreePlains;
         const float done = m_loadingMostPending > 0
                                ? 1.0f - static_cast<float>(pending) / static_cast<float>(m_loadingMostPending)
                                : 1.0f;

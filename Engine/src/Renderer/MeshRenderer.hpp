@@ -7,6 +7,7 @@
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/OcclusionCulling.hpp"
 #include "Planetology/PlanetRenderer.hpp"
+#include "Planetology/VegetationRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
@@ -54,6 +55,7 @@ namespace Flux {
             bool groundLoading = false; // textures du sol en cours de lecture
         };
         PlanetTileStats GetPlanetTileStats() const;
+        Planetology::VegetationRenderer::Stats GetVegetationStats() const { return m_vegetation->GetStats(); }
         // Réacteurs de l'image préparée (ThrusterRenderer), leur lumière déjà comptée parmi celles de la scène.
         std::span<const ThrusterDraw> GetThrusters() const { return m_thrusters; }
         // Voir Renderer::SetThrusterPreview.
@@ -78,6 +80,8 @@ namespace Flux {
         // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le
         // Renderer mesure chacun au GPU.
         void DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Arbres des planètes (VegetationRenderer), après les objets et avant le sol qu'ils cachent en partie.
+        void DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         // Nuages des planètes, après l'eau (ils sont devant elle ou cachés par le sol) et avant les autres transparents.
@@ -260,7 +264,9 @@ namespace Flux {
         const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
-                       const CloudsComponent* clouds, const ViewCone& view);
+                       const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view);
+        void PrepareVegetation(const Camera& camera, float aspect, const std::filesystem::path& assetsDirectory,
+                               std::uint32_t frameIndex);
         // Les nuages d'une planète (ses PlanetGpu::cloud*), dans FrameData.
         void AddClouds(Planetology::PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet, const CloudsComponent& clouds) const;
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
@@ -287,10 +293,13 @@ namespace Flux {
         void DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const;
         void DrawTiles(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
                        const RHI::Pipeline& pipeline) const;
+        void DrawTrees(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
+                       Planetology::VegetationRenderer::List list, std::uint32_t cascade) const;
 
         RHI::Device& m_device;
         std::unique_ptr<ModelCache> m_models;
         std::unique_ptr<Planetology::PlanetRenderer> m_planets;
+        std::unique_ptr<Planetology::VegetationRenderer> m_vegetation;
         std::unique_ptr<OcclusionCulling> m_occlusion;
         bool m_occlusionActive = false; // les entités de la passe principale de l'image sont testées
         Pipelines m_static;
@@ -298,6 +307,8 @@ namespace Flux {
         Pipelines m_skinned;
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
+        // Arbres des planètes : leur place et leur rotation lues dans les arbres retenus par VegetationRenderer.
+        Pipelines m_tree;
         // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).
         Pipelines m_ocean;
         // Nuages des planètes : un triangle plein écran (vertexClouds, fragmentClouds), sans sommets.
@@ -341,6 +352,9 @@ namespace Flux {
         std::vector<ThrusterDraw> m_thrusters;
         bool m_thrusterPreview = false;
         std::vector<Planetology::PlanetRenderer::Tile> m_planetTiles;
+        std::vector<Planetology::PlanetRenderer::Plain> m_plains;
+        const VegetationComponent* m_vegetationComponent = nullptr; // de la planète à arbres de l'image
+        std::uint32_t m_treeDraw = 0; // DrawData neutre des arbres (teinte blanche, sans contour)
         std::vector<TileDraw> m_tileDraws;
         std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData
         std::vector<RHI::DrawIndexedCommand> m_tileCommands;

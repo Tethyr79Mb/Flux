@@ -63,14 +63,29 @@ namespace Flux::Planetology {
             float morphScale;
             double lowest; // plus petite distance de ses sommets au centre de la planète (océan au-dessus ?)
         };
+        // Une tuile du niveau des plaines semées d'arbres (VegetationRenderer), en vue, qu'elle soit dessinée ou coupée
+        // en plus fines.
+        struct Plain
+        {
+            TileKey key;
+            Math::Vector3d origin; // point de référence de ses sommets (TileBounds::origin), relatif à la caméra
+            double distance;       // de la caméra à sa sphère englobante
+        };
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
 
         // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice.
         void BeginFrame(std::uint32_t frameIndex);
-        // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra.
+        // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra. Avec
+        // `plains`, y ajoute aussi les tuiles visitées du niveau `plainLevel`.
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
-                     const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles);
+                     const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
+                     std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0);
+        // Forme de la planète (après un Collect) ; nullptr si elle n'est pas dessinée.
+        const Terrain* FindTerrain(Entity entity) const {
+            const auto state = m_planets.find(entity);
+            return state != m_planets.end() ? state->second.terrain.get() : nullptr;
+        }
         // Fin de la préparation : choisit les tuiles demandées à calculer, oublie les planètes disparues et les
         // tuiles inutilisées en trop.
         void EndFrame(std::uint32_t frameIndex);
@@ -135,6 +150,8 @@ namespace Flux::Planetology {
             double minRadius;
             const ViewTest& inView;
             std::vector<Tile>& tiles;
+            std::vector<Plain>* plains;
+            std::uint32_t plainLevel;
         };
 
         Node& GetNode(PlanetState& state, TileKey key, const Node* parent = nullptr);

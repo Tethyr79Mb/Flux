@@ -28,7 +28,7 @@ namespace Flux {
         // d'avant : le GPU ne fait plus chevaucher deux étapes, d'où un surcoût et des temps d'étape un peu plus longs
         // qu'en vrai.
         enum Timestamp : std::uint32_t {
-            FrameStart, ShadowsDone, ObjectsDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, PyramidDone, TemporalDone,
+            FrameStart, ShadowsDone, ObjectsDone, VegetationDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, PyramidDone, TemporalDone,
             BloomDone, InterfaceDone,
             TimestampCount
         };
@@ -251,6 +251,16 @@ namespace Flux {
                 timings.groundTexturesLoading = tiles.groundLoading;
                 timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
                 timings.planetTileCapacity = Planetology::PlanetTileCompute::MaxPages * Planetology::PlanetTileCompute::TilesPerPage;
+                using Planetology::VegetationRenderer;
+                const VegetationRenderer::Stats vegetation = meshes->GetVegetationStats();
+                timings.trees = {vegetation.trees[VegetationRenderer::Near], vegetation.trees[VegetationRenderer::Middle],
+                                 vegetation.trees[VegetationRenderer::Far]};
+                timings.shadowTrees = 0;
+                for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
+                    timings.shadowTrees += vegetation.trees[VegetationRenderer::Shadow + c];
+                }
+                timings.treePlains = vegetation.plains;
+                timings.pendingTreePlains = vegetation.pending;
             }
 
             const Clock::time_point recordStart = Clock::now();
@@ -285,6 +295,9 @@ namespace Flux {
                 commands.BeginStep("objets opaques");
                 meshes->DrawOpaque(commands, frameIndex);
                 timestamp(ObjectsDone);
+                commands.BeginStep("arbres des planètes");
+                meshes->DrawVegetation(commands, frameIndex);
+                timestamp(VegetationDone);
                 commands.BeginStep("sol des planètes");
                 meshes->DrawGround(commands, frameIndex);
                 timestamp(GroundDone);
@@ -356,7 +369,8 @@ namespace Flux {
             timings.gpuShadows = between(FrameStart, ShadowsDone);
             timings.gpuScene = between(ShadowsDone, SceneDone);
             timings.gpuObjects = between(ShadowsDone, ObjectsDone);
-            timings.gpuGround = between(ObjectsDone, GroundDone);
+            timings.gpuVegetation = between(ObjectsDone, VegetationDone);
+            timings.gpuGround = between(VegetationDone, GroundDone);
             timings.gpuSky = between(GroundDone, SkyDone);
             timings.gpuOcean = between(SkyDone, OceanDone);
             timings.gpuClouds = between(OceanDone, CloudsDone);

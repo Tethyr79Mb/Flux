@@ -32,6 +32,7 @@ bool RunInputTests();
 bool RunPlanetTests();
 bool RunComputeTests();
 bool RunPlanetGpuTests();
+bool RunVegetationGpuTests();
 bool RunWeaponsTests();
 bool RunDockingAutopilotTests();
 bool RunMissionTests();
