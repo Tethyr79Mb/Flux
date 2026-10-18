@@ -48,6 +48,20 @@ namespace Flux {
         // Dans la passe principale, viewport sur la vue 3D : la scène et son bloom, avec la courbe de tons.
         void Composite(RHI::CommandList& commands, float strength, float exposure) const;
 
+        // Doit correspondre à GridParams dans shaders/Grid.slang.
+        struct GridParams
+        {
+            Math::Matrix4f inverseViewProjection; // clip sans décalage -> relatif à la caméra
+            std::array<float, 4> depthRow;        // lignes z et w de la projection (relatif à la caméra -> clip)
+            std::array<float, 4> wRow;
+            std::array<float, 4> camera;          // x, z : caméra modulo 1000 m ; y : hauteur au-dessus du plan
+            std::array<float, 4> axes;            // x, z : caméra (axes du monde) ; y : distance d'effacement
+        };
+        // Dans la passe principale, après Composite et avec le même viewport : la grille au sol de l'éditeur
+        // (shaders/Grid.slang), cachée derrière la scène par sa profondeur. Un triangle plein écran, une lecture de
+        // la profondeur par pixel.
+        void DrawGrid(RHI::CommandList& commands, const GridParams& params) const;
+
         // Couleur HDR qui donne `color` après la courbe de tons : le fond d'une scène sans ciel garde la couleur
         // choisie, quelle que soit la courbe.
         static Math::LinearColor InverseToneMap(Math::LinearColor color, float exposure);
@@ -86,6 +100,9 @@ namespace Flux {
         std::unique_ptr<RHI::Sampler> m_pointSampler; // profondeur et mouvement : lus tels quels
         std::unique_ptr<RHI::BindGroupLayout> m_temporalLayout;
         std::unique_ptr<RHI::Pipeline> m_temporal;
+        std::unique_ptr<RHI::BindGroupLayout> m_gridLayout;
+        std::unique_ptr<RHI::Pipeline> m_grid;
+        std::unique_ptr<RHI::BindGroup> m_gridGroup; // la profondeur de la scène
 
         RHI::Extent m_extent;
         std::unique_ptr<RHI::Texture> m_scene;

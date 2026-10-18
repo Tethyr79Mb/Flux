@@ -23,8 +23,8 @@ namespace FluxEditor {
     // vaisseau), contour de la sélection, et gizmo à glisser :
     // déplacement (une flèche par axe du monde), rotation (un anneau par axe du monde) ou échelle (un axe par axe de
     // l'objet, et le carré du centre pour les trois à la fois). Mode choisi par les boutons en haut à gauche de la
-    // vue ou les touches W, E, R. Les textes et images à l'écran de la scène y sont dessinés comme dans le jeu, et se
-    // déplacent en les glissant. Les lumières y sont montrées par une ampoule (sélection au clic) et, sélectionnées,
+    // vue ou les touches W, E, R ; à côté, la grille au sol s'affiche ou se cache (touche G). Les textes et images à
+    // l'écran de la scène y sont dessinés comme dans le jeu, et se déplacent en les glissant. Les lumières y sont montrées par une ampoule (sélection au clic) et, sélectionnées,
     // par leur portée.
     class SceneViewport {
         public:
@@ -61,7 +61,7 @@ namespace FluxEditor {
         void HandleShortcuts(Flux::Engine& engine);
         bool WantsFocus(Flux::Engine& engine) const;
         static void FocusOn(Flux::Engine& engine, const Flux::Scene& scene, Flux::Entity entity);
-        // Boutons de mode en haut à gauche de la vue ; retourne true si la souris en a cliqué un.
+        // Boutons de mode et de la grille en haut à gauche de la vue ; retourne true si la souris en a cliqué un.
         bool UpdateToolbar(Flux::Engine& engine, const Flux::UI::Rect& view, bool mouseInView);
         void DrawToolbar(Flux::Engine& engine, const Flux::UI::Rect& view);
         // Applique le glissement en cours à la transformation locale de l'entité.
@@ -84,6 +84,7 @@ namespace FluxEditor {
         void UpdateScreenDrag(Flux::Engine& engine, Flux::Entity selected, const Flux::UI::Rect& view);
 
         GizmoMode m_mode = GizmoMode::Move;
+        bool m_grid = true;       // grille au sol (bouton à droite des modes, touche G)
         int m_hoveredButton = -1;
         Drag m_drag;
         ScreenDrag m_screenDrag;

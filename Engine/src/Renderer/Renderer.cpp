@@ -72,6 +72,25 @@ namespace Flux {
             return inverseView * inverseProjection;
         }
 
+        // Constantes de la grille au sol (plan y = 0 du monde, secteur 0) vue de la caméra.
+        PostRenderer::GridParams MakeGridParams(const Camera& camera, float aspect, const Math::Matrix4f& viewProjection) {
+            // Le motif se répète tous les 100 m : la caméra modulo 1000 m garde la précision des float loin de l'origine.
+            const Math::Vector3d position = Math::Delta(Math::WorldPosition{}, camera.position);
+            const auto pattern = [](double value) { return static_cast<float>(std::fmod(value, 1000.0)); };
+            // Les axes ne se voient que près de l'origine : au-delà, leur position peut perdre en précision.
+            const auto axis = [](double value) { return static_cast<float>(std::clamp(value, -1.0e7, 1.0e7)); };
+            const float height = static_cast<float>(position.y);
+            const std::array<std::array<float, 4>, 4>& c = viewProjection.columns;
+            PostRenderer::GridParams params{};
+            params.inverseViewProjection = InverseViewProjection(camera, aspect);
+            params.depthRow = {c[0][2], c[1][2], c[2][2], c[3][2]};
+            params.wRow = {c[0][3], c[1][3], c[2][3], c[3][3]};
+            params.camera = {pattern(position.x), height, pattern(position.z), 0.0f};
+            // Plus la caméra est haute, plus loin la grille reste visible.
+            params.axes = {axis(position.x), std::max(150.0f, 40.0f * std::abs(height)), axis(position.z), 0.0f};
+            return params;
+        }
+
         using Clock = std::chrono::steady_clock;
         double Milliseconds(Clock::duration duration) {
             return std::chrono::duration<double, std::milli>(duration).count();
@@ -109,6 +128,7 @@ namespace Flux {
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
         Math::Vector2f sceneViewportMax;
         bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
+        bool grid = false;        // grille au sol de l'éditeur
         RenderTimings timings;
 
         explicit Impl(Window& w) : window(w) {}
@@ -305,6 +325,10 @@ namespace Flux {
                                       static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
                 commands.SetScissor(scene3d);
                 post->Composite(commands, bloom, exposure);
+                if (grid) {
+                    commands.BeginStep("grille");
+                    post->DrawGrid(commands, MakeGridParams(camera, aspect, viewProjection));
+                }
             }
             timestamp(BloomDone); // image finale comptée avec le bloom
             commands.BeginStep("interface");
@@ -449,6 +473,14 @@ namespace Flux {
 
     bool Renderer::IsTemporalAAEnabled() const {
         return m_impl->temporalAA;
+    }
+
+    void Renderer::SetGridVisible(bool visible) {
+        m_impl->grid = visible;
+    }
+
+    bool Renderer::IsGridVisible() const {
+        return m_impl->grid;
     }
 
     void Renderer::SetOcclusionCulling(bool enabled) {

@@ -54,6 +54,9 @@ namespace FluxEditor {
         constexpr ToolbarButton ToolbarButtons[3] = {{SceneViewport::GizmoMode::Move, UI::Icon::Move, "Déplacer (W)"},
                                                      {SceneViewport::GizmoMode::Rotate, UI::Icon::Rotate, "Tourner (E)"},
                                                      {SceneViewport::GizmoMode::Scale, UI::Icon::Scale, "Échelle (R)"}};
+        // Après les trois modes, un peu à l'écart : afficher ou cacher la grille au sol.
+        constexpr int GridButton = 3;
+        constexpr float ToolbarGroupGap = 10.0f;
         constexpr float ToolbarTextSize = 14.0f;
         constexpr float ToolbarButtonSize = 30.0f;
         constexpr float ToolbarIconSize = 18.0f;
@@ -368,6 +371,8 @@ namespace FluxEditor {
             m_mode = GizmoMode::Rotate;
         } else if (input.WasLetterPressed('R')) {
             m_mode = GizmoMode::Scale;
+        } else if (input.WasLetterPressed('G')) {
+            m_grid = !m_grid;
         }
     }
 
@@ -398,7 +403,9 @@ namespace FluxEditor {
     namespace {
         // Rectangle du bouton index de la barre de modes.
         UI::Rect ToolbarRect(const UI::Rect& view, int index) {
-            const Vector2f min = view.min + ToolbarMargin + Vector2f{static_cast<float>(index) * (ToolbarButtonSize + 2.0f), 0.0f};
+            const float gap = index >= GridButton ? ToolbarGroupGap : 0.0f;
+            const Vector2f min =
+                view.min + ToolbarMargin + Vector2f{static_cast<float>(index) * (ToolbarButtonSize + 2.0f) + gap, 0.0f};
             return {min, min + Vector2f{ToolbarButtonSize, ToolbarButtonSize}};
         }
     }
@@ -407,14 +414,18 @@ namespace FluxEditor {
         const Input& input = engine.GetWindow().GetInput();
         const Vector2f mouse = input.GetMousePosition();
         m_hoveredButton = -1;
-        for (int i = 0; mouseInView && i < 3; ++i) {
+        for (int i = 0; mouseInView && i <= GridButton; ++i) {
             const UI::Rect rect = ToolbarRect(view, i);
             if (mouse.x >= rect.min.x && mouse.x < rect.max.x && mouse.y >= rect.min.y && mouse.y < rect.max.y) {
                 m_hoveredButton = i;
             }
         }
         if (m_hoveredButton >= 0 && input.WasMouseButtonPressed(MouseButton::Left)) {
-            m_mode = ToolbarButtons[m_hoveredButton].mode;
+            if (m_hoveredButton == GridButton) {
+                m_grid = !m_grid;
+            } else {
+                m_mode = ToolbarButtons[m_hoveredButton].mode;
+            }
             return true;
         }
         return false;
@@ -430,23 +441,28 @@ namespace FluxEditor {
         const Vector2f inset{3.0f, 3.0f};
         Math::LinearColor back = style.panelBackground;
         back.a = 0.85f;
+        const UI::Rect grid = ToolbarRect(view, GridButton);
         list.AddShadow(first.min - inset, last.max + inset, style.shadow, style.panelRounding, 8.0f);
         list.AddRoundedRect(first.min - inset, last.max + inset, back, style.panelRounding);
-        for (int i = 0; i < 3; ++i) {
+        list.AddShadow(grid.min - inset, grid.max + inset, style.shadow, style.panelRounding, 8.0f);
+        list.AddRoundedRect(grid.min - inset, grid.max + inset, back, style.panelRounding);
+        for (int i = 0; i <= GridButton; ++i) {
             const UI::Rect rect = ToolbarRect(view, i);
-            const bool current = ToolbarButtons[i].mode == m_mode;
+            const bool current = i == GridButton ? m_grid : ToolbarButtons[i].mode == m_mode;
             if (current || i == m_hoveredButton) {
                 list.AddRoundedRect(rect.min, rect.max, current ? style.selection : style.buttonHovered, style.frameRounding);
             }
             const float iconInset = std::round(0.5f * (ToolbarButtonSize - ToolbarIconSize));
-            UI::DrawIcon(list, ToolbarButtons[i].icon, rect.min + Vector2f{iconInset, iconInset}, ToolbarIconSize);
+            UI::DrawIcon(list, i == GridButton ? UI::Icon::Grid : ToolbarButtons[i].icon,
+                         rect.min + Vector2f{iconInset, iconInset}, ToolbarIconSize);
         }
         if (m_hoveredButton >= 0) {
             // Nom et raccourci du bouton survolé, à droite de la barre.
-            const char* label = ToolbarButtons[m_hoveredButton].label;
+            const char* label = m_hoveredButton == GridButton ? (m_grid ? "Cacher la grille (G)" : "Afficher la grille (G)")
+                                                              : ToolbarButtons[m_hoveredButton].label;
             const Vector2f padding{8.0f, 4.0f};
             const Vector2f size = list.MeasureText(label, ToolbarTextSize) + padding * 2.0f;
-            const Vector2f min{last.max.x + inset.x + 6.0f, std::round(0.5f * (first.min.y + first.max.y - size.y))};
+            const Vector2f min{grid.max.x + inset.x + 6.0f, std::round(0.5f * (first.min.y + first.max.y - size.y))};
             list.AddRoundedRect(min, min + size, back, style.frameRounding);
             list.AddText(min + padding, label, ToolbarTextSize, style.text);
         }
@@ -570,6 +586,8 @@ namespace FluxEditor {
         Scene& scene = engine.GetScene();
         const Camera& camera = engine.GetCamera();
         const Vector2f size = view.GetSize();
+        // La grille sert à placer les objets : pas en mode Jouer, où la vue montre le jeu tel quel.
+        engine.GetRenderer().SetGridVisible(m_grid && engine.GetGameState() == GameState::Stopped);
         if (size.x < 1.0f || size.y < 1.0f) {
             m_drag.axis = -1;
             m_screenDrag.active = false;

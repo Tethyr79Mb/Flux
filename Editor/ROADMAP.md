@@ -22,6 +22,9 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…
 - ✅ « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.
 - ✅ Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté.
+- ✅ Grille au sol dans la vue 3D, comme Unreal et Godot : lignes du mètre, des 10 m et des 100 m qui s'effacent
+  au loin, axes X (rouge) et Z (bleu), cachée derrière les objets ; bouton à côté des modes du gizmo et touche G,
+  absente en mode Jouer. Limite : son état n'est pas gardé d'une session à l'autre.
 - 🔧 Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R ; Ctrl = pas de 15°). À améliorer : un seul objet sélectionné à la fois, gizmo dans les axes du monde.
 - 🔧 Annuler / refaire (Ctrl+Z, Ctrl+Y). À améliorer : un objet à la fois, l'étoile du titre reste après une annulation.
 - ✅ Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de

@@ -390,6 +390,21 @@ namespace Flux::UI {
                 ArrowHead(pen, {0.76f, 0.24f}, {0.7071f, -0.7071f}, 0.24f, color);
                 break;
             }
+            case Icon::Grid: {
+                // Un sol quadrillé qui fuit vers le haut : trois lignes vers le fond, quatre en travers.
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                for (int i = 0; i < 4; ++i) {
+                    const float t = static_cast<float>(i) / 3.0f;
+                    const float y = 0.18f + 0.72f * t * t; // plus serrées au loin
+                    const float half = 0.2f + 0.25f * (y - 0.18f) / 0.72f;
+                    pen.Line(0.5f - half, y, 0.5f + half, y, color, 0.07f);
+                }
+                for (int i = 0; i < 4; ++i) {
+                    const float s = static_cast<float>(i) / 3.0f - 0.5f;
+                    pen.Line(0.5f + 0.4f * s, 0.18f, 0.5f + 0.9f * s, 0.9f, color, 0.07f);
+                }
+                break;
+            }
             case Icon::Up: {
                 const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
                 pen.Line(0.5f, 0.3f, 0.5f, 0.88f, color, 0.12f);

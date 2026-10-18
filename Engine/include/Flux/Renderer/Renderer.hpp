@@ -104,6 +104,10 @@ namespace Flux {
         // Entités cachées derrière d'autres écartées par le GPU (activé par défaut), d'après la profondeur de l'image
         // précédente. Désactivable pour comparer.
         void SetOcclusionCulling(bool enabled);
+        // Grille au sol de l'éditeur (plan y = 0, lignes du mètre, des 10 m et des 100 m, axes X et Z en couleur),
+        // cachée derrière les objets ; désactivée par défaut, le jeu ne la montre pas.
+        void SetGridVisible(bool visible);
+        bool IsGridVisible() const;
         bool IsOcclusionCullingEnabled() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
