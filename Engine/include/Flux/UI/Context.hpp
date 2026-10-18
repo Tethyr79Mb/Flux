@@ -249,6 +249,9 @@ namespace Flux::UI {
         // highlighted : dessiné comme enfoncé (mode en cours). Vrai au clic.
         // icon : pictogramme devant le libellé (libellé vide : le pictogramme seul).
         bool MenuBarButton(std::string_view label, bool highlighted = false, Icon icon = Icon::None);
+        // Bouton couleur de la barre : un carré de la couleur (opaque) ; un clic ouvre le sélecteur de couleur
+        // (SetColorPicker), sans lui le bouton est inerte. Retourne true quand color change.
+        bool MenuBarColorButton(std::string_view label, Math::LinearColor& color);
         // Texte dans la barre (de menus ou d'état), avec un pictogramme devant s'il y en a un ; disabled : grisé.
         void MenuBarText(std::string_view text, Icon icon = Icon::None, bool disabled = false);
         // Position horizontale du prochain élément de la barre (pour centrer des boutons, par exemple).

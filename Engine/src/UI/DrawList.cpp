@@ -242,9 +242,10 @@ namespace Flux::UI {
     }
 
     template <typename Emit>
-    Math::Vector2f DrawList::LayoutText(Math::Vector2f topLeft, std::string_view utf8, float pixelSize, Emit&& emit) const {
-        const float lineHeight = m_font->GetLineHeight() * pixelSize;
-        const float baselineOffset = m_font->GetAscender() * pixelSize;
+    Math::Vector2f DrawList::LayoutText(const Font& font, Math::Vector2f topLeft, std::string_view utf8, float pixelSize,
+                                        Emit&& emit) {
+        const float lineHeight = font.GetLineHeight() * pixelSize;
+        const float baselineOffset = font.GetAscender() * pixelSize;
 
         Math::Vector2f pen{topLeft.x, topLeft.y + baselineOffset};
         float widest = 0.0f;
@@ -257,9 +258,9 @@ namespace Flux::UI {
                 ++lines;
                 continue;
             }
-            const Glyph* glyph = m_font->FindGlyph(codepoint);
+            const Glyph* glyph = font.FindGlyph(codepoint);
             if (!glyph) {
-                glyph = m_font->FindGlyph(ReplacementCharacter);
+                glyph = font.FindGlyph(ReplacementCharacter);
                 if (!glyph) {
                     continue;
                 }
@@ -274,14 +275,23 @@ namespace Flux::UI {
     }
 
     Math::Vector2f DrawList::AddText(Math::Vector2f topLeft, std::string_view utf8, float pixelSize, Math::LinearColor color) {
-        return LayoutText(topLeft, utf8, pixelSize, [&](const Glyph& glyph, Math::Vector2f pen) {
+        return AddText({m_font, FontTexture}, topLeft, utf8, pixelSize, color);
+    }
+
+    Math::Vector2f DrawList::AddText(const FontRef& font, Math::Vector2f topLeft, std::string_view utf8, float pixelSize,
+                                     Math::LinearColor color) {
+        return LayoutText(*font.font, topLeft, utf8, pixelSize, [&](const Glyph& glyph, Math::Vector2f pen) {
             const Math::Vector2f min{pen.x + glyph.planeMin.x * pixelSize, pen.y + glyph.planeMin.y * pixelSize};
             const Math::Vector2f max{pen.x + glyph.planeMax.x * pixelSize, pen.y + glyph.planeMax.y * pixelSize};
-            AddQuad(min, max, glyph.uvMin, glyph.uvMax, color);
+            AddQuad(min, max, glyph.uvMin, glyph.uvMax, color, font.texture);
         });
     }
 
     Math::Vector2f DrawList::MeasureText(std::string_view utf8, float pixelSize) const {
-        return LayoutText({}, utf8, pixelSize, [](const Glyph&, Math::Vector2f) {});
+        return MeasureText(*m_font, utf8, pixelSize);
+    }
+
+    Math::Vector2f DrawList::MeasureText(const Font& font, std::string_view utf8, float pixelSize) {
+        return LayoutText(font, {}, utf8, pixelSize, [](const Glyph&, Math::Vector2f) {});
     }
 }

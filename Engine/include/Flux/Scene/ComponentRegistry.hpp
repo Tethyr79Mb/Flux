@@ -45,6 +45,7 @@ namespace Flux {
         // Pas un fichier : le nom d'une animation du modèle 3D de l'entité (ModelComponent), choisi dans une liste.
         Animation,
         Prefab, // .prefab.json
+        Font, // .ttf, .otf (rangées dans Polices/), choisie dans une liste
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).

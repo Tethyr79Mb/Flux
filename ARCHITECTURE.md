@@ -276,14 +276,18 @@ planète donne directement le sien comme indice d'instance.
 
 - Mode immédiat : `UI::Context` (panneaux ancrés, onglets, widgets, menus, arbres) produit une `UI::DrawList`
   dessinée par `OverlayRenderer`. Texte MSDF (police Arimo, atlas généré au démarrage), formes SDF.
+- Polices du projet (`ScreenTextComponent::font`) : `Renderer::LoadFont` construit l'atlas sur un autre fil
+  (`std::async`), puis lui donne sa texture et son groupe comme une image ; chaque texture garde ses constantes du
+  shader (taille d'atlas, étendue de distance, mode). `DrawList::AddText(FontRef...)` : le texte passe dans une
+  commande à part (un appel de dessin de plus par changement de police).
 - Interfaces du jeu : fichiers `.fluxui` (`Flux::Interface`, mode retenu) éditées dans l'éditeur, chargées par
   `InterfaceLibrary`, liées aux valeurs du jeu (`BindInterfaceValue`) et aux fonctions C++ du module.
 
 ## Éditeur
 
 - `main.cpp` crée le moteur sans panneau Moteur ni interface plein écran, puis branche sa propre mise à jour.
-- En haut : barre de menus puis barre d'outils (`BeginToolBar`, boutons à pictogramme et info-bulles) ; en bas, la
-  barre d'état. `GetMenuBarHeight` compte les deux barres du haut.
+- En haut : barre de menus puis barre d'outils (`BeginToolBar`, boutons à pictogramme et info-bulles, groupe Texte de
+  `TextTools` avec ses listes `OpenPopupMenu` et `MenuBarColorButton`) ; en bas, la barre d'état. `GetMenuBarHeight` compte les deux barres du haut.
 - `SceneEditor` regroupe les panneaux : Scènes (hiérarchie), Inspecteur, Placer, Contenu, Caméra, Console, Paramètres.
   L'inspecteur d'une pièce de prefab marque « » » les champs qui diffèrent du prefab (FluxUI : `"libellé###clé"`
   garde le même widget quand le texte visible change).

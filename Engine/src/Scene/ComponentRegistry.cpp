@@ -257,6 +257,7 @@ namespace Flux {
             .Field("loop", "En boucle", &AnimatorComponent::loop);
         registry.Register<ScreenTextComponent>("screenText", "Texte à l'écran")
             .Field("text", "Texte", &ScreenTextComponent::text)
+            .Asset("font", "Police", &ScreenTextComponent::font, AssetType::Font)
             .Field("size", "Taille", &ScreenTextComponent::size, {.speed = 0.5, .min = 1.0, .max = 1000.0, .decimals = 0})
             .Field("color", "Couleur", &ScreenTextComponent::color)
             .Enum("anchor", "Ancre", &ScreenTextComponent::anchor, Anchors)

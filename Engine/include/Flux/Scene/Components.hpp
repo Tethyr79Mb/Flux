@@ -599,6 +599,9 @@ namespace Flux {
     struct ScreenTextComponent
     {
         std::string text = "Texte";
+        // Police du projet (.ttf, .otf), chemin relatif au dossier des assets (« Polices/Orbitron.ttf ») ; vide, ou
+        // fichier illisible : Arimo, la police de l'interface.
+        std::string font;
         float size = 64.0f;
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
         ScreenAnchor anchor = ScreenAnchor::Center; // aussi le point du texte placé sur l'ancre (centre sur centre...)

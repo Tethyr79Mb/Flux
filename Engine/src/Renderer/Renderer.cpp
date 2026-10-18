@@ -177,6 +177,7 @@ namespace Flux {
             const Clock::time_point prepareStart = Clock::now();
             ReadTimings();
             const std::uint32_t frameIndex = device->GetFrameIndex();
+            timings.fontsLoading = overlay->GetFontsLoading();
             if (!overlay->Upload(frameIndex)) {
                 return false;
             }
@@ -477,6 +478,10 @@ namespace Flux {
 
     std::optional<UI::TextureInfo> Renderer::CreateTexture(const ImageData& image) {
         return m_impl->overlay->CreateTexture(image);
+    }
+
+    std::optional<UI::FontRef> Renderer::LoadFont(const std::filesystem::path& path) {
+        return m_impl->overlay->LoadFont(path);
     }
 
     void Renderer::SetAssetsDirectory(const std::filesystem::path& directory) {
