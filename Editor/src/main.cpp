@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
         const Flux::UI::Rect view = interfaceEditor.DrawTabs(e, layout.Update(e));
         const bool editingInterface = interfaceEditor.IsActive();
         if (!editingInterface) {
-            placePanel.Update(e, sceneEditor, history, view, contentBrowser.GetPrefabs()); // « Placer » pose dans la vue 3D
+            placePanel.Update(e, sceneEditor, history, view, contentBrowser.GetPrefabs(), viewport.IsDroppingToGround()); // « Placer » pose dans la vue 3D
         }
         sceneEditor.Update(e, history, document, contentBrowser);
         if (!editingInterface) {

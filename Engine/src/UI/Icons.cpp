@@ -405,6 +405,15 @@ namespace Flux::UI {
                 }
                 break;
             }
+            case Icon::DropToGround: {
+                // Un cube qui descend vers le sol, la flèche entre les deux.
+                const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
+                pen.Rect(0.32f, 0.06f, 0.68f, 0.38f, color);
+                pen.Line(0.5f, 0.42f, 0.5f, 0.62f, color, 0.1f);
+                ArrowHead(pen, {0.5f, 0.8f}, {0.0f, 1.0f}, 0.24f, color);
+                pen.Line(0.08f, 0.9f, 0.92f, 0.9f, LinearColor::FromSrgb8(120, 200, 120), 0.09f);
+                break;
+            }
             case Icon::Up: {
                 const LinearColor color = LinearColor::FromSrgb8(176, 184, 198);
                 pen.Line(0.5f, 0.3f, 0.5f, 0.88f, color, 0.12f);

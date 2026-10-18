@@ -2,6 +2,7 @@
 
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
+#include "Panels/GroundSnap.hpp"
 #include "Panels/SceneEditor.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -442,7 +443,7 @@ namespace FluxEditor {
     }
 
     void PlacePanel::Update(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const UI::Rect& view,
-                            const std::vector<std::filesystem::path>& prefabs) {
+                            const std::vector<std::filesystem::path>& prefabs, bool dropToGround) {
         UI::Context& ui = engine.GetUi();
         const Input& input = engine.GetWindow().GetInput();
         const Vector2f mouse = input.GetMousePosition();
@@ -532,12 +533,12 @@ namespace FluxEditor {
         }
         // Relâché sur le bouton sans l'avoir quitté : un clic. Après un glissement, relâché sur le bouton : abandon.
         if (clicked && !m_dragging) {
-            Place(engine, sceneEditor, history, *clicked, std::nullopt, view);
+            Place(engine, sceneEditor, history, *clicked, std::nullopt, view, dropToGround);
         }
         if (m_dragging && m_held && !input.IsMouseButtonDown(MouseButton::Left)) {
             // Lâché dans la vue, pas sur un panneau : l'objet est posé là. Ailleurs, rien.
             if (Contains(view, mouse) && !ui.WantsMouse()) {
-                Place(engine, sceneEditor, history, *m_held, mouse, view);
+                Place(engine, sceneEditor, history, *m_held, mouse, view, dropToGround);
             }
             m_dragging = false;
             m_held.reset();
@@ -560,7 +561,7 @@ namespace FluxEditor {
     }
 
     void PlacePanel::Place(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
-                           std::optional<Vector2f> drop, const UI::Rect& view) {
+                           std::optional<Vector2f> drop, const UI::Rect& view, bool dropToGround) {
         history.Commit(engine); // un geste en cours est un pas à part, avant celui-ci
         Scene& scene = engine.GetScene();
         const Item item = choice.item;
@@ -751,6 +752,25 @@ namespace FluxEditor {
             scene.Get<TransformComponent>(entity).position = position.offset;
             if (position.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, position.sector);
+            }
+            if (dropToGround && item != Item::Planet) {
+                // Posé sur ce qui est dessous. Les rayons partent au moins de la hauteur de la caméra : un objet mis
+                // devant elle quand elle regarde le sol, donc sous lui, remonte dessus.
+                std::vector<RelativeTransform> transforms;
+                scene.ComputeRelativeTransforms(camera.position, transforms);
+                GroundProbe probe;
+                const Math::Vector3d at = Math::Delta(camera.position, position);
+                if (PrepareGround(engine, entity, camera.position, transforms, at, probe)) {
+                    if (const std::optional<double> height = FindGround(probe, at, 0.0)) {
+                        position += Math::Vector3d(0.0, *height - at.y, 0.0);
+                        scene.Get<TransformComponent>(entity).position = position.offset;
+                        if (position.sector != Math::Vector3i64{}) {
+                            scene.GetRegistry().emplace_or_replace<SectorComponent>(entity, position.sector);
+                        } else {
+                            scene.GetRegistry().remove<SectorComponent>(entity);
+                        }
+                    }
+                }
             }
             if (item == Item::Planet && scene.TryGet<OrbitComponent>(entity)) {
                 // Sur son orbite, loin de la caméra : la caméra va la voir.

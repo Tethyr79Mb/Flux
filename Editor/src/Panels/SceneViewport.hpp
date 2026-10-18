@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Panels/GroundSnap.hpp"
+
 #include <Flux/Core/Uuid.hpp>
 #include <Flux/Math/Quaternion.hpp>
 #include <Flux/Math/Vector3.hpp>
@@ -9,6 +11,7 @@
 #include <Flux/Scene/ScreenUi.hpp>
 #include <Flux/UI/Context.hpp>
 
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -23,7 +26,10 @@ namespace FluxEditor {
     // vaisseau), contour de la sélection, et gizmo à glisser :
     // déplacement (une flèche par axe du monde), rotation (un anneau par axe du monde) ou échelle (un axe par axe de
     // l'objet, et le carré du centre pour les trois à la fois). Mode choisi par les boutons en haut à gauche de la
-    // vue ou les touches W, E, R ; à côté, la grille au sol s'affiche ou se cache (touche G). Les textes et images à
+    // vue ou les touches W, E, R ; à côté, la grille au sol s'affiche ou se cache (touche G), puis l'aimantation comme
+    // dans Unreal (déplacement sur la grille, rotation et échelle par pas, chacune avec son pas ; Ctrl tenu l'inverse
+    // le temps d'un glissement) et la pose au sol (un objet déplacé à l'horizontale ou posé depuis Placer descend sur
+    // ce qui est dessous ; touche Fin : poser la sélection tout de suite). Les textes et images à
     // l'écran de la scène y sont dessinés comme dans le jeu, et se déplacent en les glissant. Les lumières y sont montrées par une ampoule (sélection au clic) et, sélectionnées,
     // par leur portée.
     class SceneViewport {
@@ -32,6 +38,8 @@ namespace FluxEditor {
 
         // view : rectangle de la vue 3D (retourné par EditorLayout::Update).
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, const Flux::UI::Rect& view);
+        // Bouton « Poser au sol » enfoncé : Placer y pose aussi les objets.
+        bool IsDroppingToGround() const { return m_dropToGround; }
         // Vrai si la scène a été modifiée (déplacement au gizmo, d'un texte ou d'une image) depuis le dernier appel.
         bool TakeModified() { return std::exchange(m_modified, false); }
         // Une flèche du gizmo, un texte ou une image est tenu : le déplacement n'est pas fini.
@@ -55,18 +63,33 @@ namespace FluxEditor {
             double startParameter = 0.0;              // point de l'axe saisi, en mètres depuis startPoint
             Flux::Math::Vector2f startMouse;
             Flux::Math::Vector2f tangent;             // rotation : sens du glissement qui fait tourner, à l'écran
-            float applied = 0.0f;                     // rotation : angle appliqué (par pas de 15° avec Ctrl)
+            float applied = 0.0f;                     // rotation : angle appliqué (par pas si l'aimantation est active)
+            bool ground = false;                      // déplacement horizontal posé au sol (m_ground préparé)
+        };
+
+        // Aimantation d'un mode du gizmo : active ou non, et l'indice de son pas (SnapSteps dans le .cpp).
+        struct Snap
+        {
+            bool enabled = true;
+            int step = 0;
         };
 
         void HandleShortcuts(Flux::Engine& engine);
         bool WantsFocus(Flux::Engine& engine) const;
         static void FocusOn(Flux::Engine& engine, const Flux::Scene& scene, Flux::Entity entity);
-        // Boutons de mode et de la grille en haut à gauche de la vue ; retourne true si la souris en a cliqué un.
+        // Boutons de mode, de la grille, de l'aimantation et de la pose au sol en haut à gauche de la vue (et la
+        // liste ouverte d'un pas) ; retourne true si la souris en a cliqué un.
         bool UpdateToolbar(Flux::Engine& engine, const Flux::UI::Rect& view, bool mouseInView);
         void DrawToolbar(Flux::Engine& engine, const Flux::UI::Rect& view);
         // Applique le glissement en cours à la transformation locale de l'entité.
         void UpdateDrag(Flux::Engine& engine, Flux::Entity selected, Flux::RelativeTransform& selectedTransform,
                         const Flux::RelativeTransform* parentTransform, const Flux::Ray& ray);
+        // Aimantation de ce mode pour ce glissement : celle des boutons, inversée tant que Ctrl est tenu.
+        bool IsSnapping(Flux::Engine& engine, GizmoMode mode) const;
+        double GetSnapStep(GizmoMode mode) const;
+        // Touche Fin : la sélection descend sur ce qui est dessous.
+        void DropToGround(Flux::Engine& engine, Flux::Entity selected, const Flux::RelativeTransform& selectedTransform,
+                          const Flux::RelativeTransform* parentTransform);
         // Arme lâchée au gizmo près d'un emport : s'y fixe s'il l'accepte (Hardpoints).
         void SnapToHardpoint(Flux::Scene& scene, Flux::Entity weapon);
 
@@ -85,7 +108,13 @@ namespace FluxEditor {
 
         GizmoMode m_mode = GizmoMode::Move;
         bool m_grid = true;       // grille au sol (bouton à droite des modes, touche G)
+        // Déplacement 10 cm, rotation 10°, échelle 0,25, comme les réglages de départ d'Unreal.
+        std::array<Snap, 3> m_snaps{{{true, 2}, {true, 1}, {true, 2}}};
+        bool m_dropToGround = true;
+        int m_openSnapList = -1; // mode dont la liste des pas est ouverte, -1 : aucune
         int m_hoveredButton = -1;
+        int m_hoveredStep = -1;  // pas survolé dans la liste ouverte
+        GroundProbe m_ground;    // boîtes de la scène au départ d'un déplacement posé au sol
         Drag m_drag;
         ScreenDrag m_screenDrag;
         int m_hoveredAxis = -1;

@@ -23,8 +23,10 @@ namespace FluxEditor {
     class PlacePanel {
         public:
         // view : rectangle de la vue 3D (retourné par EditorLayout::Update). prefabs : ContentBrowser::GetPrefabs.
+        // dropToGround : bouton « Poser au sol » de la vue (SceneViewport::IsDroppingToGround), l'objet posé descend
+        // sur ce qui est dessous.
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Flux::UI::Rect& view,
-                    const std::vector<std::filesystem::path>& prefabs);
+                    const std::vector<std::filesystem::path>& prefabs, bool dropToGround);
 
         private:
         enum class Item { Empty, Cube, Model, ScreenText, ScreenImage, SceneChange, Character, Ship, Fighter, Target, Light, Spot, Sky, Interior, Interface, Sound, Planet, World, Sun, Prefab, Station };
@@ -37,7 +39,7 @@ namespace FluxEditor {
 
         // drop : point de la vue où l'objet a été lâché ; sans lui, la place par défaut.
         static void Place(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
-                          std::optional<Flux::Math::Vector2f> drop, const Flux::UI::Rect& view);
+                          std::optional<Flux::Math::Vector2f> drop, const Flux::UI::Rect& view, bool dropToGround);
 
         std::optional<Choice> m_held; // bouton tenu
         std::string m_filter;         // recherche dans la liste

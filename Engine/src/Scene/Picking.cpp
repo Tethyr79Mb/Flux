@@ -119,6 +119,57 @@ namespace Flux {
         return best;
     }
 
+    std::optional<Extent> ComputeExtent(std::span<const RelativeTransform> parts, const Vector3d& origin,
+                                        const MeshBoundsFunction& boundsOf) {
+        std::optional<Extent> extent;
+        for (const RelativeTransform& part : parts) {
+            const std::optional<Math::Box3f> box = boundsOf(part.entity);
+            if (!box) {
+                continue;
+            }
+            const Vector3d scale(part.scale);
+            for (int corner = 0; corner < 8; ++corner) {
+                const Vector3d local((corner & 1) ? box->max.x : box->min.x, (corner & 2) ? box->max.y : box->min.y,
+                                     (corner & 4) ? box->max.z : box->min.z);
+                const Vector3d point =
+                    part.position - origin + part.rotation.Rotate(Vector3d(local.x * scale.x, local.y * scale.y, local.z * scale.z));
+                if (!extent) {
+                    extent = Extent{point, point};
+                }
+                extent->min = {std::min(extent->min.x, point.x), std::min(extent->min.y, point.y), std::min(extent->min.z, point.z)};
+                extent->max = {std::max(extent->max.x, point.x), std::max(extent->max.y, point.y), std::max(extent->max.z, point.z)};
+            }
+        }
+        return extent;
+    }
+
+    std::optional<double> FindGroundHeight(std::span<const GroundBox> boxes, const Vector3d& origin, const Extent& extent,
+                                           double from, std::optional<double> planeY) {
+        // Coins rentrés de 10 % : un cube posé contre un autre ne monte pas sur lui par son arête commune.
+        const double x0 = origin.x + extent.min.x + 0.1 * (extent.max.x - extent.min.x);
+        const double x1 = origin.x + extent.max.x - 0.1 * (extent.max.x - extent.min.x);
+        const double z0 = origin.z + extent.min.z + 0.1 * (extent.max.z - extent.min.z);
+        const double z1 = origin.z + extent.max.z - 0.1 * (extent.max.z - extent.min.z);
+        const Vector3d starts[5] = {{0.5 * (x0 + x1), from, 0.5 * (z0 + z1)}, {x0, from, z0}, {x1, from, z0}, {x0, from, z1}, {x1, from, z1}};
+        std::optional<double> ground;
+        if (planeY && *planeY <= from) {
+            ground = *planeY;
+        }
+        for (const Vector3d& start : starts) {
+            const Ray ray{start, {0.0, -1.0, 0.0}};
+            for (const GroundBox& box : boxes) {
+                const std::optional<double> distance = IntersectBox(ray, box.transform, box.box);
+                if (distance && *distance > 0.0 && (!ground || from - *distance > *ground)) {
+                    ground = from - *distance;
+                }
+            }
+        }
+        if (!ground) {
+            return std::nullopt;
+        }
+        return *ground - extent.min.y;
+    }
+
     std::optional<double> ClosestPointOnLine(const Ray& ray, const Vector3d& point, const Vector3d& direction) {
         // Minimise |ray.origin + s * ray.direction - point - t * direction|, les deux directions unitaires.
         const Vector3d w = ray.origin - point;

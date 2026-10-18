@@ -25,7 +25,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Grille au sol dans la vue 3D, comme Unreal et Godot : lignes du mètre, des 10 m et des 100 m qui s'effacent
   au loin, axes X (rouge) et Z (bleu), cachée derrière les objets ; bouton à côté des modes du gizmo et touche G,
   absente en mode Jouer. Limite : son état n'est pas gardé d'une session à l'autre.
-- 🔧 Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R ; Ctrl = pas de 15°). À améliorer : un seul objet sélectionné à la fois, gizmo dans les axes du monde.
+- 🔧 Vue 3D : sélection au clic (un vaisseau se sélectionne en entier), contour, gizmo déplacer / tourner / échelle (W, E, R). À améliorer : un seul objet sélectionné à la fois, gizmo dans les axes du monde.
 - 🔧 Annuler / refaire (Ctrl+Z, Ctrl+Y). À améliorer : un objet à la fois, l'étoile du titre reste après une annulation.
 - ✅ Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de
   lui, s'y fixe (enfant, à sa place exacte) ; refus expliqué si l'emport ne l'accepte pas (genre, taille, déjà occupé).
@@ -45,7 +45,8 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Dupliquer (Ctrl+D), copier / coller des objets de la scène.
 - ⬜ Sélection multiple (clic + Maj, rectangle) ; l'annulation devra suivre plusieurs objets.
 - ⬜ Gizmo dans les axes de l'objet (aujourd'hui : déplacement et rotation dans les axes du monde).
-- ⬜ Magnétisme : grille de déplacement, pas d'échelle.
+- ✅ Aimantation comme Unreal : déplacement sur la grille du monde (1 cm à 10 m), rotation par pas (5° à 90°), échelle par pas (0,0625 à 10), chacune activable avec son pas en haut de la vue ; Ctrl tenu l'inverse le temps d'un glissement.
+- 🔧 Poser au sol (bouton dans la vue, touche Fin) : un objet posé depuis Placer ou glissé à l'horizontale descend sur ce qui est dessous, ou sur le plan de la grille sans planète. À améliorer : le dessus d'un modèle est celui de sa boîte (pas de sa forme), le relief des planètes n'est pas suivi, réglages oubliés à la fermeture.
 - ⬜ Glisser un modèle ou un son du Contenu directement dans la vue 3D.
 
 ### Contenu
