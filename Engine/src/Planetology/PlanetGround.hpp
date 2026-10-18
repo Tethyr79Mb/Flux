@@ -2,7 +2,7 @@
 
 // Interne à la physique : le sol des planètes (PlanetComponent) dans le monde de la scène, et leur gravité.
 
-#include "Flux/Graphics/Planet.hpp"
+#include "Flux/Planetology/Planet.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/Scene/Components.hpp"
@@ -25,9 +25,11 @@ namespace JPH {
 
 namespace Flux {
     class Scene;
+}
 
+namespace Flux::Planetology {
     // Sol des planètes : seulement autour de ce qui peut le toucher (personnages, vaisseaux, objets simulés), en tuiles
-    // du niveau le plus fin, celles que la caméra voit de près (Planet::BuildTileSurface), en maillages Jolt immobiles.
+    // du niveau le plus fin, celles que la caméra voit de près (BuildTileSurface), en maillages Jolt immobiles.
     // Les tuiles sont faites sur un fil à part, sans arrêter le jeu ; celle juste sous un objet tout près du sol est
     // faite tout de suite s'il n'y en a pas encore (apparition, téléportation), pour qu'il ne passe jamais au travers.
     class PlanetGround {
@@ -73,7 +75,7 @@ namespace Flux {
         };
         struct PlanetState
         {
-            std::shared_ptr<const Planet::Terrain> terrain;
+            std::shared_ptr<const Terrain> terrain;
             std::uint64_t owner = 0;
             float radius = 0.0f;
             float relief = -1.0f;
@@ -89,10 +91,10 @@ namespace Flux {
         struct Worker;
 
         void RemoveTiles(JPH::PhysicsSystem& system, PlanetState& state);
-        void AddTile(JPH::PhysicsSystem& system, Entity entity, PlanetState& state, Planet::TileKey key, const Math::Vector3d& center,
+        void AddTile(JPH::PhysicsSystem& system, Entity entity, PlanetState& state, TileKey key, const Math::Vector3d& center,
                      const JPH::Shape& shape);
-        void Request(const PlanetState& state, const Probe& probe, std::vector<Planet::TileKey>& keys, bool& underMissing,
-                     Planet::TileKey& under) const;
+        void Request(const PlanetState& state, const Probe& probe, std::vector<TileKey>& keys, bool& underMissing,
+                     TileKey& under) const;
 
         JPH::ObjectLayer m_layer;
         std::unordered_map<Entity, PlanetState> m_planets;

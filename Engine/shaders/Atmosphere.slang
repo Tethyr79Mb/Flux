@@ -1,13 +1,13 @@
 // Atmosphère d'une planète : diffusion de Rayleigh (le bleu du ciel, le rouge du couchant) et de Mie (la brume
 // autour du soleil), une seule diffusion, en marchant le long du regard. Inclus par shaders/Sky.slang (le ciel) et
-// shaders/Mesh.slang (ce qu'on voit à travers). Exactement les calculs de Engine/src/Graphics/Atmosphere.cpp (toute
+// shaders/Mesh.slang (ce qu'on voit à travers). Exactement les calculs de Engine/src/Planetology/Atmosphere.cpp (toute
 // modification des deux côtés), sauf le décalage des pas, tiré au hasard par pixel (du bruit fin au lieu de bandes).
 
 static const uint AtmosphereAmbientSize = 16;
 static const float AtmospherePi = 3.14159265;
 static const float AtmosphereMieExtinction = 1.1;
 
-// Doit correspondre à AtmosphereGpu dans Renderer/AtmosphereGpu.hpp.
+// Doit correspondre à AtmosphereGpu dans Planetology/AtmosphereGpu.hpp.
 struct AtmosphereData
 {
     float4 center;   // xyz : centre de la planète relatif à la caméra ; w : rayon du sol (m)

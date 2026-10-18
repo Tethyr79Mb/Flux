@@ -35,7 +35,7 @@ namespace Flux {
     class Renderer;
     class Window;
 
-    namespace Planet {
+    namespace Planetology {
         class Terrain;
     }
 
@@ -239,7 +239,7 @@ namespace Flux {
         std::optional<std::string> m_requestedScene;
         std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
-        std::shared_ptr<const Planet::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
+        std::shared_ptr<const Planetology::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
         std::int32_t m_flightTerrainSeed = 0;
         // Vitesse réellement parcourue par le vaisseau piloté (DrawFlightInfo) : sa position à l'image d'avant et la
         // vitesse mesurée, lissée.

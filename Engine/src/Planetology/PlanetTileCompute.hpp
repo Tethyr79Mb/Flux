@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Flux/Export.hpp"
-#include "Flux/Graphics/Planet.hpp"
+#include "Flux/Planetology/Planet.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace Flux {
+namespace Flux::Planetology {
     // Tuiles des planètes calculées par le GPU (shaders/PlanetTile.slang) : chaque image, les tuiles ajoutées par Add
     // sont calculées par Record, avant les passes de dessin, dans leur case des pages de sommets. Leur sphère
     // englobante et leur point le plus bas reviennent au CPU quand le GPU a fini l'image (GetStats).
@@ -24,7 +24,7 @@ namespace Flux {
         public:
         // Tuiles calculées par image au plus : quelques dizaines de microsecondes de GPU en tout.
         static constexpr std::uint32_t MaxTilesPerFrame = 64;
-        // Cases par page : environ 17 Mo de sommets (ModelVertex et Planet::MorphVertex) par page.
+        // Cases par page : environ 17 Mo de sommets (ModelVertex et MorphVertex) par page.
         static constexpr std::uint32_t TilesPerPage = 256;
         // Pages au plus (8 192 tuiles, environ 550 Mo) : bien au-delà de ce que gardent quelques planètes.
         static constexpr std::uint32_t MaxPages = 32;
@@ -42,18 +42,18 @@ namespace Flux {
         std::uint32_t GetTileCount() const { return m_tileCount; }
         static std::uint32_t GetPage(std::uint32_t tile) { return tile / TilesPerPage; }
         // Premier sommet de la case dans sa page (vertexOffset d'un dessin).
-        static std::uint32_t GetFirstVertex(std::uint32_t tile) { return (tile % TilesPerPage) * Planet::TileVertexCount; }
+        static std::uint32_t GetFirstVertex(std::uint32_t tile) { return (tile % TilesPerPage) * TileVertexCount; }
         std::uint32_t GetPageCount() const { return static_cast<std::uint32_t>(m_pages.size()); }
-        // Sommets de la page (ModelVertex et Planet::MorphVertex), écrits par le GPU et lus comme sommets.
+        // Sommets de la page (ModelVertex et MorphVertex), écrits par le GPU et lus comme sommets.
         const RHI::Buffer& GetVertices(std::uint32_t page) const { return *m_pages[page].vertices; }
         const RHI::Buffer& GetMorph(std::uint32_t page) const { return *m_pages[page].morph; }
-        // Relit les sommets d'une case (mémoire Readback, le GPU passé) : Planet::TileVertexCount de chaque.
-        void ReadTile(std::uint32_t tile, ModelVertex* vertices, Planet::MorphVertex* morph) const;
+        // Relit les sommets d'une case (mémoire Readback, le GPU passé) : TileVertexCount de chaque.
+        void ReadTile(std::uint32_t tile, ModelVertex* vertices, MorphVertex* morph) const;
 
         struct Stats
         {
             float lowest; // plus petite distance d'un sommet au centre de la planète (forme de la parente comprise)
-            float radius; // sphère englobante autour de Planet::TileMesh::center, jupes et glissement compris
+            float radius; // sphère englobante autour de TileMesh::center, jupes et glissement compris
             float highest; // plus grande distance d'un sommet au centre de la planète (sans les jupes)
             float unused;
         };
@@ -61,7 +61,7 @@ namespace Flux {
         // le GPU passé (après Device::BeginFrame revenu sur cette image, ou Device::Submit).
         std::span<const Stats> GetStats(std::uint32_t frameIndex);
         // false si l'image a déjà MaxTilesPerFrame tuiles. La case ne doit plus être lue par le GPU (images en vol).
-        bool Add(std::uint32_t frameIndex, const Planet::Terrain& terrain, Planet::TileKey key, std::uint32_t tile);
+        bool Add(std::uint32_t frameIndex, const Terrain& terrain, TileKey key, std::uint32_t tile);
         // Calcule les tuiles ajoutées pour cette image, hors d'une passe ; lisibles par les commandes suivantes.
         void Record(RHI::CommandList& commands, std::uint32_t frameIndex);
 
@@ -76,7 +76,7 @@ namespace Flux {
         };
         struct Frame
         {
-            std::unique_ptr<RHI::Buffer> inputs; // Planet::TileGpuInputs, écrit par le CPU
+            std::unique_ptr<RHI::Buffer> inputs; // TileGpuInputs, écrit par le CPU
             std::unique_ptr<RHI::Buffer> stats;  // Stats, relu par le CPU
             std::unique_ptr<RHI::BindGroup> group;
             std::vector<std::uint32_t> tiles; // cases ajoutées, pas encore calculées
@@ -92,6 +92,6 @@ namespace Flux {
         std::array<Frame, RHI::FramesInFlight> m_frames;
         std::vector<Page> m_pages;
         std::uint32_t m_tileCount = 0; // cases créées
-        Planet::TileGpuInputs m_inputs; // 2,5 Ko : pas sur la pile
+        TileGpuInputs m_inputs; // 2,5 Ko : pas sur la pile
     };
 }

@@ -251,7 +251,14 @@ planète donne directement le sien comme indice d'instance.
   dépasser le virage du missile ni changer sa vitesse. Le nombre tiré (`fired`) n'est pas enregistré : la copie de la scène du mode Jouer
   repart pleine.
 
-## Planètes
+## Planètes (Planetology)
+
+Tout ce qui concerne les planètes est réuni dans le domaine Planetology, espace de noms `Flux::Planetology` :
+`include/Flux/Planetology/` (`Planet.hpp` : relief, tuiles ; `Atmosphere.hpp`) et `src/Planetology/` (choix des tuiles
+`PlanetRenderer`, relief sur le GPU `PlanetTileCompute`, textures du sol `GroundTextures`, données de l'atmosphère pour
+le GPU `AtmosphereGpu`, sol physique `PlanetGround`). Restent ailleurs : les composants (`PlanetComponent`,
+`CloudsComponent` dans Scene, pour l'inspecteur et la sauvegarde), le dessin du sol, de l'océan et des nuages
+(`MeshRenderer` et `shaders/Mesh.slang`) et les shaders `PlanetTile.slang` et `Atmosphere.slang`.
 
 - Cube-sphère : 6 faces en quadtree, tuiles de 33×33 avec jupes, morphing CDLOD entre niveaux.
 - Relief = une formule (`Terrain::GetHeight`), dupliquée dans `shaders/PlanetTile.slang` pour le GPU. Les deux

@@ -4,7 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Scene.hpp"
-#include "Renderer/AtmosphereGpu.hpp"
+#include "Planetology/AtmosphereGpu.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -33,7 +33,7 @@ namespace Flux {
         const RHI::Sampler* environmentSampler = nullptr;
         std::uint32_t environmentMips = 1;
         // Atmosphère de la planète la plus proche (aucune : mie[3] à 0).
-        AtmosphereGpu atmosphere;
+        Planetology::AtmosphereGpu atmosphere;
     };
 
     // Ciel de la scène (SkyComponent) : le fond, dessiné après les opaques là où rien ne l'a été, et la texture cube
@@ -82,12 +82,12 @@ namespace Flux {
         void UpdateEnvironment(const EnvironmentKey& key, std::uint32_t frameIndex);
 
         // Atmosphère de la planète la plus proche de la caméra, et sa lumière ambiante (refaite quand elle change).
-        AtmosphereGpu PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor);
+        Planetology::AtmosphereGpu PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor);
 
         RHI::Device& m_device;
-        std::optional<AtmosphereParameters> m_ambientParameters;
+        std::optional<Planetology::AtmosphereParameters> m_ambientParameters;
         Math::Vector3f m_ambientSunColor;
-        std::array<Math::Vector3f, AtmosphereAmbientSize> m_ambientTable{};
+        std::array<Math::Vector3f, Planetology::AtmosphereAmbientSize> m_ambientTable{};
         std::unique_ptr<RHI::Pipeline> m_pipeline;
         std::unique_ptr<RHI::Pipeline> m_sunPipeline; // shaders/Sun.slang, après le fond
         std::unique_ptr<RHI::BindGroupLayout> m_layout;

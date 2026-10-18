@@ -1,7 +1,7 @@
 // Physique (Jolt) : chute sur un sol, personnage qui marche et bute contre un mur, entités ajoutées et retirées.
 #include "Check.hpp"
 
-#include "Flux/Graphics/Planet.hpp"
+#include "Flux/Planetology/Planet.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -890,7 +890,7 @@ namespace {
         Scene scene;
         const Entity planet = scene.CreateEntity("Planète");
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planet::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1013,7 +1013,7 @@ namespace {
         const Entity planet = scene.CreateEntity("Planète");
         scene.Get<TransformComponent>(planet).position = center;
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planet::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1044,7 +1044,7 @@ namespace {
         Scene scene;
         const Entity planet = scene.CreateEntity("Planète");
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planet::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);

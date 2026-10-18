@@ -3,10 +3,10 @@
 #include "Flux/Animation/Animation.hpp"
 #include "Flux/Graphics/ShadowCascades.hpp"
 #include "Flux/Scene/Scene.hpp"
-#include "Renderer/GroundTextures.hpp"
+#include "Planetology/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/OcclusionCulling.hpp"
-#include "Renderer/PlanetRenderer.hpp"
+#include "Planetology/PlanetRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
@@ -262,7 +262,7 @@ namespace Flux {
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
                        const CloudsComponent* clouds, const ViewCone& view);
         // Les nuages d'une planète (ses PlanetGpu::cloud*), dans FrameData.
-        void AddClouds(PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet, const CloudsComponent& clouds) const;
+        void AddClouds(Planetology::PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet, const CloudsComponent& clouds) const;
         void AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light);
         void AddThruster(const Scene& scene, const Camera& camera, float aspect, const RelativeTransform& transform,
                          const ThrusterComponent& thruster);
@@ -290,7 +290,7 @@ namespace Flux {
 
         RHI::Device& m_device;
         std::unique_ptr<ModelCache> m_models;
-        std::unique_ptr<PlanetRenderer> m_planets;
+        std::unique_ptr<Planetology::PlanetRenderer> m_planets;
         std::unique_ptr<OcclusionCulling> m_occlusion;
         bool m_occlusionActive = false; // les entités de la passe principale de l'image sont testées
         Pipelines m_static;
@@ -340,7 +340,7 @@ namespace Flux {
         std::vector<PreparedInterior> m_interiors;
         std::vector<ThrusterDraw> m_thrusters;
         bool m_thrusterPreview = false;
-        std::vector<PlanetRenderer::Tile> m_planetTiles;
+        std::vector<Planetology::PlanetRenderer::Tile> m_planetTiles;
         std::vector<TileDraw> m_tileDraws;
         std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData
         std::vector<RHI::DrawIndexedCommand> m_tileCommands;
@@ -353,9 +353,9 @@ namespace Flux {
         std::vector<RHI::DrawIndexedCommand> m_modelCommands;
         std::vector<ModelBatch> m_modelBatches;
         std::array<std::span<const ModelBatch>, ModelPassCount> m_modelPasses; // dans m_modelBatches
-        std::vector<PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
+        std::vector<Planetology::PlanetGpu> m_planetData; // sol des planètes dessinées, MaxPlanets au plus
         PoseEvaluator m_poseEvaluator;
-        GroundTextures m_ground;
+        Planetology::GroundTextures m_ground;
         const RHI::BindGroup* m_groundGroup = nullptr; // celui de m_ground pour l'image en préparation
     };
 }

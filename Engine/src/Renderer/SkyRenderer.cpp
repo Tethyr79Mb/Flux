@@ -28,9 +28,9 @@ namespace Flux {
             std::array<float, 4> galaxyCenter; // w : éclat des étoiles
             std::array<float, 4> noiseOffset;  // w : luminosité
             std::array<std::uint32_t, 4> options; // x : graine ; y : panorama ; z : rayons du soleil (SunRays)
-            AtmosphereGpu atmosphere;
+            Planetology::AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(SkyData) == 192 + sizeof(AtmosphereGpu));
+        static_assert(sizeof(SkyData) == 192 + sizeof(Planetology::AtmosphereGpu));
 
         constexpr std::uint32_t DataSlot = 0;
         constexpr std::uint32_t PanoramaSlot = 1;
@@ -326,19 +326,19 @@ namespace Flux {
         return lighting;
     }
 
-    AtmosphereGpu SkyRenderer::PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor) {
+    Planetology::AtmosphereGpu SkyRenderer::PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor) {
         // La planète dont l'air est le plus proche (on est dedans, ou c'est celui qu'on approche). Au-delà de 100 000 km,
         // elle ne fait que quelques pixels : ignorée (et les floats du shader n'y suffiraient plus).
         constexpr double MaxDistance = 1.0e8;
-        AtmosphereGpu gpu;
-        std::optional<AtmosphereParameters> chosen;
+        Planetology::AtmosphereGpu gpu;
+        std::optional<Planetology::AtmosphereParameters> chosen;
         Math::Vector3d chosenCenter;
         double best = MaxDistance;
         for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
             if (scene.GetShip(entity) != NullEntity) {
                 continue; // une planète dans un vaisseau : un décor
             }
-            const AtmosphereParameters parameters = MakeAtmosphereParameters(planet);
+            const Planetology::AtmosphereParameters parameters = Planetology::MakeAtmosphereParameters(planet);
             if (parameters.top <= 0.0f) {
                 continue;
             }
@@ -353,10 +353,10 @@ namespace Flux {
         if (!chosen) {
             return gpu;
         }
-        const AtmosphereParameters& a = *chosen;
+        const Planetology::AtmosphereParameters& a = *chosen;
         // Lumière ambiante du ciel : quelques millisecondes, refaite seulement quand l'air ou le soleil changent.
         if (m_ambientParameters != a || m_ambientSunColor != sunColor) {
-            m_ambientTable = ComputeAtmosphereAmbient(a, sunColor);
+            m_ambientTable = Planetology::ComputeAtmosphereAmbient(a, sunColor);
             m_ambientParameters = a;
             m_ambientSunColor = sunColor;
         }

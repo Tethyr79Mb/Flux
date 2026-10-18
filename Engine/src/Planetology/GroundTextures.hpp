@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace Flux {
+namespace Flux::Planetology {
     // Matières du sol des planètes : une couche de chaque tableau de textures, dans cet ordre (fragmentPlanet dans
     // shaders/Mesh.slang).
     enum class GroundLayer : std::uint32_t { Rock, Grass, Soil, Sand, Snow, Count };

@@ -1,7 +1,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 
 #include "PhysicsContextImpl.hpp"
-#include "PlanetGround.hpp"
+#include "Planetology/PlanetGround.hpp"
 
 #include "Flux/Core/Log.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -252,8 +252,8 @@ namespace Flux {
         // décor ; nullptr : rien de solide, il passe partout.
         std::unordered_map<Entity, JPH::RefConst<JPH::Shape>> shipShapes;
         // Sol et gravité des planètes, dans le monde de la scène.
-        PlanetGround planetGround{Layers::NonMoving};
-        std::vector<PlanetGround::Probe> probes;
+        Planetology::PlanetGround planetGround{Layers::NonMoving};
+        std::vector<Planetology::PlanetGround::Probe> probes;
         // Réglages du monde (WorldComponent) : densité de l'air hors planètes, et freinage k de l'air (dv/dt = -k ·
         // densité · |v| · v), tiré de la vitesse de chute limite sur Terre (g = k · v²).
         float worldAir = 0.0f;
@@ -398,7 +398,7 @@ namespace Flux {
                 const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
                 probes.push_back({position, size + 20.0 + speed, speed});
                 // Rapide : le sol de là où il sera dans un quart, une demie et une seconde (le disque autour de lui est
-                // borné, voir PlanetGround::Request).
+                // borné, voir Planetology::PlanetGround::Request).
                 const Math::Vector3d velocity(scene.GetWorldRotation(entity).Rotate(ship.velocity));
                 for (const double ahead : {0.25, 0.5, 1.0}) {
                     if (speed * ahead > 100.0) {

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Flux/Graphics/Planet.hpp"
+#include "Flux/Planetology/Planet.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Scene/Components.hpp"
-#include "Renderer/PlanetTileCompute.hpp"
+#include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Flux {
+namespace Flux::Planetology {
     // Sol d'une planète tel que le lit fragmentPlanet (PlanetData dans shaders/Mesh.slang).
     struct PlanetGpu
     {
@@ -38,7 +38,7 @@ namespace Flux {
     static_assert(sizeof(PlanetGpu) == 224);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
-    // celles à dessiner, plus fines près de la caméra (Flux/Graphics/Planet.hpp). Les tuiles manquantes sont calculées
+    // celles à dessiner, plus fines près de la caméra (Flux/Planetology/Planet.hpp). Les tuiles manquantes sont calculées
     // par le GPU (PlanetTileCompute), les plus urgentes d'abord, au début de l'image suivante ; en attendant, leur
     // parente reste affichée (jamais de trou). Le CPU ne fait que choisir les tuiles et préparer quelques valeurs
     // par tuile.
@@ -98,7 +98,7 @@ namespace Flux {
         // de l'image suivante, avant tout dessin).
         struct Node
         {
-            Planet::TileBounds bounds;
+            TileBounds bounds;
             std::uint32_t tile = NoTile; // sa case dans les pages ; NoTile : pas encore calculée
             double lowest = 0.0;   // au plus bas possible tant que le GPU n'a pas rendu le sien
             double highest = 0.0;  // plus grande distance d'un sommet au centre de la planète, une fois mesurée
@@ -110,12 +110,12 @@ namespace Flux {
         };
         struct Request
         {
-            Planet::TileKey key;
+            TileKey key;
             double distance;
         };
         struct PlanetState
         {
-            std::shared_ptr<const Planet::Terrain> terrain;
+            std::shared_ptr<const Terrain> terrain;
             std::uint64_t owner = 0; // identifie cette planète et cette forme auprès du générateur
             float radius = 0.0f;
             float relief = -1.0f;
@@ -137,11 +137,11 @@ namespace Flux {
             std::vector<Tile>& tiles;
         };
 
-        Node& GetNode(PlanetState& state, Planet::TileKey key, const Node* parent = nullptr);
+        Node& GetNode(PlanetState& state, TileKey key, const Node* parent = nullptr);
         bool IsCulled(const Visit& visit, const Node& node) const;
-        void VisitNode(Visit& visit, Planet::TileKey key, Node& node);
+        void VisitNode(Visit& visit, TileKey key, Node& node);
         PlanetState* FindOwner(std::uint64_t owner);
-        bool Schedule(PlanetState& state, Planet::TileKey key, Node& node, std::uint32_t frameIndex);
+        bool Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex);
         void Retire(Node& node);
 
         RHI::Device& m_device;

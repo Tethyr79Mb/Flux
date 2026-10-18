@@ -1,4 +1,4 @@
-#include "Renderer/PlanetRenderer.hpp"
+#include "Planetology/PlanetRenderer.hpp"
 
 #include "Flux/Core/Log.hpp"
 
@@ -6,7 +6,7 @@
 #include <cmath>
 #include <utility>
 
-namespace Flux {
+namespace Flux::Planetology {
     namespace {
         // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 70 Ko de
         // sommets par tuile, soit environ 70 Mo de mémoire vidéo).
@@ -30,11 +30,11 @@ namespace Flux {
         for (std::size_t i = 0; i < std::min(stats.size(), computed.size()); ++i) {
             if (PlanetState* state = FindOwner(computed[i].owner)) {
                 if (const auto node = state->nodes.find(computed[i].key); node != state->nodes.end() && node->second.tile != NoTile) {
-                    const Planet::TileKey key = Planet::TileKey::Unpack(computed[i].key);
+                    const TileKey key = TileKey::Unpack(computed[i].key);
                     node->second.lowest = stats[i].lowest;
                     node->second.highest = stats[i].highest;
                     // Un mètre de marge : les mesures sont en float, la sphère passe par quelques points seulement.
-                    node->second.bounds = Planet::GetTileBounds(*state->terrain, key, node->second.lowest - 1.0, node->second.highest + 1.0);
+                    node->second.bounds = GetTileBounds(*state->terrain, key, node->second.lowest - 1.0, node->second.highest + 1.0);
                     node->second.tight = true;
                     node->second.measured = true;
                 }
@@ -42,7 +42,7 @@ namespace Flux {
         }
         m_computed[frameIndex].clear();
         if (!m_indices) {
-            const std::vector<std::uint32_t> indices = Planet::BuildTileIndices();
+            const std::vector<std::uint32_t> indices = BuildTileIndices();
             auto buffer = m_device.CreateBuffer({indices.size() * sizeof(std::uint32_t), RHI::BufferUsage::Index}, indices.data());
             if (!buffer) {
                 Log::Error("Planète : {}", buffer.error());
@@ -53,7 +53,7 @@ namespace Flux {
         }
     }
 
-    PlanetRenderer::Node& PlanetRenderer::GetNode(PlanetState& state, Planet::TileKey key, const Node* parent) {
+    PlanetRenderer::Node& PlanetRenderer::GetNode(PlanetState& state, TileKey key, const Node* parent) {
         auto [it, created] = state.nodes.try_emplace(key.Pack());
         Node& node = it->second;
         if (!created && (node.tight || !parent || !parent->measured)) {
@@ -62,12 +62,12 @@ namespace Flux {
         if (parent && parent->measured) {
             // Entre les hauteurs de la parente, plus ce que les octaves de l'enfant peuvent ajouter, plus une marge
             // pour le relief qui passe entre les sommets mesurés de la parente.
-            const Planet::Terrain& terrain = *state.terrain;
+            const Terrain& terrain = *state.terrain;
             const double margin = terrain.GetOmittedRelief(terrain.GetOctaves(key.level - 1u)) + 0.1 * (parent->highest - parent->lowest) + 1.0;
-            node.bounds = Planet::GetTileBounds(terrain, key, parent->lowest - margin, parent->highest + margin);
+            node.bounds = GetTileBounds(terrain, key, parent->lowest - margin, parent->highest + margin);
             node.tight = true;
         } else {
-            node.bounds = Planet::GetTileBounds(*state.terrain, key);
+            node.bounds = GetTileBounds(*state.terrain, key);
         }
         return node;
     }
@@ -84,7 +84,7 @@ namespace Flux {
                 Retire(node);
             }
             state.nodes.clear();
-            state.terrain = std::make_shared<const Planet::Terrain>(planet.radius, planet.relief, planet.seed);
+            state.terrain = std::make_shared<const Terrain>(planet.radius, planet.relief, planet.seed);
             state.owner = m_nextOwner++; // les tuiles de l'ancienne forme encore en cours seront ignorées
             state.radius = planet.radius;
             state.relief = planet.relief;
@@ -93,7 +93,7 @@ namespace Flux {
         state.lastUsed = m_frame;
         state.requests.clear();
 
-        const Planet::Terrain& terrain = *state.terrain;
+        const Terrain& terrain = *state.terrain;
         const Math::Vector3d camera = rotation.Conjugate().Rotate(-position);
         const double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief(), 1.0);
         const double maxRadius = terrain.GetRadius() + terrain.GetRelief();
@@ -116,13 +116,13 @@ namespace Flux {
             return;
         }
         for (std::uint8_t face = 0; face < 6; ++face) {
-            const Planet::TileKey key{face, 0, 0, 0};
+            const TileKey key{face, 0, 0, 0};
             VisitNode(visit, key, GetNode(state, key));
         }
     }
 
     bool PlanetRenderer::IsCulled(const Visit& visit, const Node& node) const {
-        const Planet::TileBounds& bounds = node.bounds;
+        const TileBounds& bounds = node.bounds;
         const double centerLength = Math::Length(bounds.center);
         if (visit.horizon >= 0.0 && centerLength > 0.0) {
             const double cosine = Math::Dot(visit.camera, bounds.center) / (Math::Length(visit.camera) * centerLength);
@@ -136,20 +136,20 @@ namespace Flux {
         return !visit.inView(Math::Vector3f(relative), static_cast<float>(bounds.radius));
     }
 
-    void PlanetRenderer::VisitNode(Visit& visit, Planet::TileKey key, Node& node) {
+    void PlanetRenderer::VisitNode(Visit& visit, TileKey key, Node& node) {
         node.lastUsed = m_frame;
         if (IsCulled(visit, node)) {
             return;
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
-        const Planet::Terrain& terrain = *visit.state.terrain;
-        if (key.level < terrain.GetMaxLevel() && distance < Planet::GetSplitDistance(terrain, key.level)) {
+        const Terrain& terrain = *visit.state.terrain;
+        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level)) {
             // Les enfants visibles doivent tous être prêts ; sinon cette tuile reste affichée et ils sont demandés.
             std::array<Node*, 4> children{};
             std::array<bool, 4> culled{};
             bool ready = true;
             for (std::uint32_t c = 0; c < 4; ++c) {
-                const Planet::TileKey childKey = key.Child(c);
+                const TileKey childKey = key.Child(c);
                 children[c] = &GetNode(visit.state, childKey, &node);
                 children[c]->lastUsed = m_frame;
                 culled[c] = IsCulled(visit, *children[c]);
@@ -174,9 +174,9 @@ namespace Flux {
             float morphStart = 1.0e30f;
             float morphScale = 0.0f;
             if (key.level > 0) {
-                const double end = Planet::GetSplitDistance(terrain, key.level - 1u);
-                morphStart = static_cast<float>(Planet::MorphStart * end);
-                morphScale = static_cast<float>(1.0 / ((1.0 - Planet::MorphStart) * end));
+                const double end = GetSplitDistance(terrain, key.level - 1u);
+                morphStart = static_cast<float>(MorphStart * end);
+                morphScale = static_cast<float>(1.0 / ((1.0 - MorphStart) * end));
             }
             visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
                                    visit.position + visit.rotation.Rotate(node.bounds.center), static_cast<float>(node.bounds.radius),
@@ -195,7 +195,7 @@ namespace Flux {
 
     // Tuile confiée au GPU, calculée au début de l'image suivante (PlanetRenderer::Compute) : sa case est prête pour
     // tout dessin qui suit. false si l'image est pleine.
-    bool PlanetRenderer::Schedule(PlanetState& state, Planet::TileKey key, Node& node, std::uint32_t frameIndex) {
+    bool PlanetRenderer::Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex) {
         // Une case libérée que le GPU ne lit plus, sinon une nouvelle.
         std::uint32_t tile = NoTile;
         const auto free = std::ranges::find_if(m_freeTiles, [this](const FreeTile& f) { return f.frame + RHI::FramesInFlight < m_frame; });
