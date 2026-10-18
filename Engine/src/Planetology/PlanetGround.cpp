@@ -1,4 +1,4 @@
-#include "PlanetGround.hpp"
+#include "Planetology/PlanetGround.hpp"
 
 #include "Flux/Scene/Scene.hpp"
 
@@ -17,7 +17,7 @@
 #include <thread>
 #include <unordered_set>
 
-namespace Flux {
+namespace Flux::Planetology {
     namespace {
         // Tuile plus demandée depuis tant de mises à jour (deux secondes à 60 images/s) : retirée.
         constexpr std::uint64_t KeepUpdates = 120;
@@ -34,9 +34,9 @@ namespace Flux {
         }
 
         // Maillage Jolt d'une tuile, sommets relatifs à `center` (repère de la planète). nullptr si Jolt le refuse.
-        JPH::RefConst<JPH::Shape> BuildShape(const Planet::Terrain& terrain, Planet::TileKey key, Math::Vector3d& center) {
+        JPH::RefConst<JPH::Shape> BuildShape(const Terrain& terrain, TileKey key, Math::Vector3d& center) {
             thread_local std::vector<Math::Vector3f> positions;
-            Planet::BuildTileSurface(terrain, key, center, positions);
+            BuildTileSurface(terrain, key, center, positions);
             JPH::VertexList vertices;
             vertices.reserve(positions.size());
             for (const Math::Vector3f& p : positions) {
@@ -44,13 +44,13 @@ namespace Flux {
             }
             // Comme BuildTileIndices (sans les jupes) : sens trigonométrique vu de dehors, la face que Jolt fait toucher.
             JPH::IndexedTriangleList triangles;
-            triangles.reserve(2 * Planet::TileQuads * Planet::TileQuads);
-            for (std::uint32_t j = 0; j < Planet::TileQuads; ++j) {
-                for (std::uint32_t i = 0; i < Planet::TileQuads; ++i) {
-                    const std::uint32_t a = j * Planet::TileSide + i;
+            triangles.reserve(2 * TileQuads * TileQuads);
+            for (std::uint32_t j = 0; j < TileQuads; ++j) {
+                for (std::uint32_t i = 0; i < TileQuads; ++i) {
+                    const std::uint32_t a = j * TileSide + i;
                     const std::uint32_t b = a + 1;
-                    const std::uint32_t c = a + Planet::TileSide + 1;
-                    const std::uint32_t d = a + Planet::TileSide;
+                    const std::uint32_t c = a + TileSide + 1;
+                    const std::uint32_t d = a + TileSide;
                     triangles.push_back(JPH::IndexedTriangle(a, b, c));
                     triangles.push_back(JPH::IndexedTriangle(a, c, d));
                 }
@@ -65,14 +65,14 @@ namespace Flux {
     struct PlanetGround::Worker {
         struct Job
         {
-            std::shared_ptr<const Planet::Terrain> terrain;
+            std::shared_ptr<const Terrain> terrain;
             std::uint64_t owner = 0;
-            Planet::TileKey key;
+            TileKey key;
         };
         struct Done
         {
             std::uint64_t owner = 0;
-            Planet::TileKey key;
+            TileKey key;
             Math::Vector3d center;
             JPH::RefConst<JPH::Shape> shape;
         };
@@ -132,7 +132,7 @@ namespace Flux {
         state.owner = m_nextOwner++; // les tuiles encore en cours seront ignorées
     }
 
-    void PlanetGround::AddTile(JPH::PhysicsSystem& system, Entity entity, PlanetState& state, Planet::TileKey key,
+    void PlanetGround::AddTile(JPH::PhysicsSystem& system, Entity entity, PlanetState& state, TileKey key,
                                const Math::Vector3d& center, const JPH::Shape& shape) {
         const auto found = state.tiles.find(key.Pack());
         if (found == state.tiles.end() || !found->second.body.IsInvalid()) {
@@ -146,10 +146,10 @@ namespace Flux {
         found->second.body = system.GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
     }
 
-    void PlanetGround::Request(const PlanetState& state, const Probe& probe, std::vector<Planet::TileKey>& keys, bool& underMissing,
-                               Planet::TileKey& under) const {
+    void PlanetGround::Request(const PlanetState& state, const Probe& probe, std::vector<TileKey>& keys, bool& underMissing,
+                               TileKey& under) const {
         underMissing = false;
-        const Planet::Terrain& terrain = *state.terrain;
+        const Terrain& terrain = *state.terrain;
         const Math::Vector3d local = state.rotation.Conjugate().Rotate(probe.position - state.position);
         const double distance = Math::Length(local);
         if (distance < 1.0e-3) {
@@ -162,7 +162,7 @@ namespace Flux {
         if (altitude > probe.reach) {
             return; // trop haut : rien à toucher avant longtemps
         }
-        under = Planet::FindTile(direction, level);
+        under = FindTile(direction, level);
         const auto found = state.tiles.find(under.Pack());
         // Tout près du sol et sans rien dessous : la tuile ne peut pas attendre le fil (il passerait au travers).
         underMissing = (found == state.tiles.end() || found->second.body.IsInvalid()) && altitude < 3.0 + 0.25 * probe.speed;
@@ -181,7 +181,7 @@ namespace Flux {
         const Math::Vector3d e2 = Math::Cross(direction, e1);
         const int steps = static_cast<int>(std::ceil(reach / spacing));
         // Des plus proches aux plus lointaines : la file du fil les fait dans cet ordre.
-        thread_local std::vector<std::pair<int, Planet::TileKey>> samples;
+        thread_local std::vector<std::pair<int, TileKey>> samples;
         samples.clear();
         for (int b = -steps; b <= steps; ++b) {
             for (int a = -steps; a <= steps; ++a) {
@@ -190,10 +190,10 @@ namespace Flux {
                     continue;
                 }
                 const Math::Vector3d point = direction * radius + e1 * (a * spacing) + e2 * (b * spacing);
-                samples.emplace_back(square, Planet::FindTile(Math::Normalize(point), level));
+                samples.emplace_back(square, FindTile(Math::Normalize(point), level));
             }
         }
-        std::ranges::sort(samples, {}, &std::pair<int, Planet::TileKey>::first);
+        std::ranges::sort(samples, {}, &std::pair<int, TileKey>::first);
         for (const auto& [square, key] : samples) {
             keys.push_back(key);
         }
@@ -212,7 +212,7 @@ namespace Flux {
             PlanetState& state = m_planets[entity];
             if (!state.terrain || planet.radius != state.radius || planet.relief != state.relief || planet.seed != state.seed) {
                 RemoveTiles(system, state);
-                state.terrain = std::make_shared<const Planet::Terrain>(planet.radius, planet.relief, planet.seed);
+                state.terrain = std::make_shared<const Terrain>(planet.radius, planet.relief, planet.seed);
                 state.radius = planet.radius;
                 state.relief = planet.relief;
                 state.seed = planet.seed;
@@ -253,7 +253,7 @@ namespace Flux {
         results.clear();
 
         // Tuiles voulues autour de chaque sonde ; celle sous une sonde au ras du sol, tout de suite.
-        thread_local std::vector<Planet::TileKey> keys;
+        thread_local std::vector<TileKey> keys;
         thread_local std::vector<Worker::Job> jobs;
         jobs.clear();
         thread_local std::unordered_set<std::uint64_t> queued;
@@ -262,9 +262,9 @@ namespace Flux {
             for (const Probe& probe : probes) {
                 keys.clear();
                 bool underMissing = false;
-                Planet::TileKey under;
+                TileKey under;
                 Request(state, probe, keys, underMissing, under);
-                for (const Planet::TileKey& key : keys) {
+                for (const TileKey& key : keys) {
                     Tile& tile = state.tiles[key.Pack()];
                     tile.lastUsed = m_update;
                     const bool now = wait || (underMissing && key == under);

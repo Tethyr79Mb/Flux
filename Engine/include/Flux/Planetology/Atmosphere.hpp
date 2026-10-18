@@ -7,7 +7,9 @@
 
 namespace Flux {
     struct PlanetComponent;
+}
 
+namespace Flux::Planetology {
     // Atmosphère d'une planète : diffusion de Rayleigh (le bleu du ciel, le rouge du couchant, par les molécules) et
     // de Mie (la brume blanchâtre autour du soleil, par les poussières), une seule diffusion, calculée en marchant le
     // long du regard. Les mêmes calculs dans shaders/Atmosphere.slang (ciel et ce qu'on voit à travers) : toute

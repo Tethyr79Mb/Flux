@@ -13,7 +13,7 @@
 // Tout est calculé en double dans le repère de la planète (centre à l'origine) ; une tuile garde ses sommets en float
 // relatifs à son centre, qui ne dépasse pas quelques kilomètres : précision au millimètre même loin du centre.
 // Recherche et choix : /mnt/project-files/Recherche/cube-sphere-planetes.md.
-namespace Flux::Planet {
+namespace Flux::Planetology {
     // Quadrillage d'une tuile (de côté), le même à tous les niveaux.
     constexpr std::uint32_t TileQuads = 32;
     constexpr std::uint32_t TileSide = TileQuads + 1;

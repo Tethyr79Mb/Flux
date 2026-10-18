@@ -39,7 +39,7 @@ namespace Flux {
     namespace {
         static_assert(sizeof(ModelVertex) == 32, "ModelVertex doit correspondre à VertexInput dans shaders/Mesh.slang");
         static_assert(sizeof(ModelSkinVertex) == 24, "ModelSkinVertex doit correspondre à SkinnedVertexInput dans shaders/Mesh.slang");
-        static_assert(sizeof(Planet::MorphVertex) == 24, "MorphVertex doit correspondre à PlanetVertexInput dans shaders/Mesh.slang");
+        static_assert(sizeof(Planetology::MorphVertex) == 24, "MorphVertex doit correspondre à PlanetVertexInput dans shaders/Mesh.slang");
 
         // Volumes intérieurs envoyés au GPU au plus (les plus proches de la caméra) : chaque pixel les parcourt.
         constexpr std::size_t MaxInteriors = 8;
@@ -80,10 +80,10 @@ namespace Flux {
             std::array<std::uint32_t, 4> lightCount; // x : lumières ; y : volumes intérieurs ; z : planètes ; w : TemporalView::noiseFrame
             std::array<float, 8> groundRotations; // GroundTextures::GetMaxAngles, une par GroundLayer
             std::array<InteriorData, MaxInteriors> interiors;
-            std::array<PlanetGpu, MaxPlanets> planets;
-            AtmosphereGpu atmosphere;
+            std::array<Planetology::PlanetGpu, MaxPlanets> planets;
+            Planetology::AtmosphereGpu atmosphere;
         };
-        static_assert(sizeof(FrameData) == 576 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(PlanetGpu) + sizeof(AtmosphereGpu)
+        static_assert(sizeof(FrameData) == 576 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu) + sizeof(Planetology::AtmosphereGpu)
                       && ShadowCascadeCount == 4);
 
 
@@ -160,7 +160,7 @@ namespace Flux {
             return std::unexpected(models.error());
         }
         renderer->m_models = std::move(*models);
-        auto planets = PlanetRenderer::Create(device);
+        auto planets = Planetology::PlanetRenderer::Create(device);
         if (!planets) {
             return std::unexpected(planets.error());
         }
@@ -225,14 +225,14 @@ namespace Flux {
         const std::array skinnedBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
                                         RHI::VertexBufferLayout{1, sizeof(ModelSkinVertex)}};
         const std::array planetBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
-                                       RHI::VertexBufferLayout{1, sizeof(Planet::MorphVertex)}};
+                                       RHI::VertexBufferLayout{1, sizeof(Planetology::MorphVertex)}};
         const RHI::VertexAttribute position{0, 0, RHI::Format::RGB32Float, offsetof(ModelVertex, position)};
         const RHI::VertexAttribute normal{1, 0, RHI::Format::RGB32Float, offsetof(ModelVertex, normal)};
         const RHI::VertexAttribute uv{2, 0, RHI::Format::RG32Float, offsetof(ModelVertex, uv)};
         const RHI::VertexAttribute joints{3, 1, RHI::Format::RGBA16Uint, offsetof(ModelSkinVertex, joints)};
         const RHI::VertexAttribute weights{4, 1, RHI::Format::RGBA32Float, offsetof(ModelSkinVertex, weights)};
-        const RHI::VertexAttribute morphOffset{5, 1, RHI::Format::RGB32Float, offsetof(Planet::MorphVertex, offset)};
-        const RHI::VertexAttribute morphNormal{6, 1, RHI::Format::RGB32Float, offsetof(Planet::MorphVertex, normal)};
+        const RHI::VertexAttribute morphOffset{5, 1, RHI::Format::RGB32Float, offsetof(Planetology::MorphVertex, offset)};
+        const RHI::VertexAttribute morphNormal{6, 1, RHI::Format::RGB32Float, offsetof(Planetology::MorphVertex, normal)};
         // Ombres : les normales ne sont pas lues (profondeur seule) ; les déclarer quand même fait avertir la
         // validation Vulkan (attribut non consommé, lu pour rien par le GPU).
         const std::array staticAttributes{position, normal, uv};
@@ -675,7 +675,7 @@ namespace Flux {
         if (ocean) {
             m_planetData[index].water[3] = static_cast<float>(seaRadius);
         }
-        for (const PlanetRenderer::Tile& tile : m_planetTiles) {
+        for (const Planetology::PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
             // Centre de la tuile dans le repère de la planète : où fragmentPlanet lit l'altitude et le bruit.
             const Math::Vector3f local(tile.local);
@@ -922,8 +922,8 @@ namespace Flux {
             return true;
         }
         std::ranges::sort(m_tileDraws, [](const TileDraw& a, const TileDraw& b) {
-            const std::uint32_t pageA = PlanetTileCompute::GetPage(a.tile);
-            const std::uint32_t pageB = PlanetTileCompute::GetPage(b.tile);
+            const std::uint32_t pageA = Planetology::PlanetTileCompute::GetPage(a.tile);
+            const std::uint32_t pageB = Planetology::PlanetTileCompute::GetPage(b.tile);
             return pageA != pageB ? pageA < pageB : a.distance < b.distance;
         });
         const std::uint32_t firstData = static_cast<std::uint32_t>(m_drawData.size());
@@ -938,12 +938,12 @@ namespace Flux {
                 if (!drawn) {
                     continue;
                 }
-                const std::uint32_t page = PlanetTileCompute::GetPage(draw.tile);
+                const std::uint32_t page = Planetology::PlanetTileCompute::GetPage(draw.tile);
                 if (m_tileBatches.size() == passStarts[pass] || m_tileBatches.back().page != page) {
                     m_tileBatches.push_back({page, static_cast<std::uint32_t>(m_tileCommands.size()), 0});
                 }
                 ++m_tileBatches.back().count;
-                m_tileCommands.push_back({indexCount, 1, 0, static_cast<std::int32_t>(PlanetTileCompute::GetFirstVertex(draw.tile)),
+                m_tileCommands.push_back({indexCount, 1, 0, static_cast<std::int32_t>(Planetology::PlanetTileCompute::GetFirstVertex(draw.tile)),
                                           firstData + draw.data});
             }
         }
@@ -967,7 +967,7 @@ namespace Flux {
         return true;
     }
 
-    void MeshRenderer::AddClouds(PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet,
+    void MeshRenderer::AddClouds(Planetology::PlanetGpu& data, const RelativeTransform& transform, const PlanetComponent& planet,
                                  const CloudsComponent& clouds) const {
         const float coverage = std::clamp(clouds.coverage, 0.0f, 1.0f);
         const float opacity = std::clamp(clouds.opacity, 0.0f, 1.0f);
@@ -1261,7 +1261,7 @@ namespace Flux {
         const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, pass == OceanPass ? 1u : 0u,
                                 0.0f, 1.0f, 0.0f, 0.0f, 0u, {}};
         commands.PushConstants(&params, sizeof(params));
-        const PlanetTileCompute& tiles = m_planets->GetTiles();
+        const Planetology::PlanetTileCompute& tiles = m_planets->GetTiles();
         commands.BindIndexBuffer(*m_planets->GetIndices());
         for (const TileBatch& batch : m_tilePasses[pass]) {
             const std::array<const RHI::Buffer*, 2> vertexBuffers{&tiles.GetVertices(batch.page), &tiles.GetMorph(batch.page)};

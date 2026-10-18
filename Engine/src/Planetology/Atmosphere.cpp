@@ -1,4 +1,4 @@
-#include "Flux/Graphics/Atmosphere.hpp"
+#include "Flux/Planetology/Atmosphere.hpp"
 
 #include "Flux/Scene/Components.hpp"
 
@@ -6,7 +6,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace Flux {
+namespace Flux::Planetology {
     namespace {
         // Terre : épaisseur optique verticale de l'air pour le bleu (diffusion de Rayleigh 33,1e-6 / m sur une hauteur
         // d'échelle de 8 km), et des poussières (Mie 21e-6 / m sur 1,2 km). Une planète garde ces épaisseurs (le même

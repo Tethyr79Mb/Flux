@@ -189,7 +189,7 @@ struct SkinnedVertexInput
     [[vk::location(4)]] float4 weights;  // somme 1
 };
 
-// Doit correspondre à MorphVertex dans Flux/Graphics/Planet.hpp : où le sommet d'une tuile de planète arrive
+// Doit correspondre à MorphVertex dans Flux/Planetology/Planet.hpp : où le sommet d'une tuile de planète arrive
 // quand la tuile prend la forme de sa parente.
 struct PlanetVertexInput
 {

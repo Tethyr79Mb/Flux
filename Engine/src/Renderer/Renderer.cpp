@@ -6,7 +6,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
-#include "Renderer/PlanetTileCompute.hpp"
+#include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/PostRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
@@ -250,7 +250,7 @@ namespace Flux {
                 timings.planetPendingTiles = tiles.pending;
                 timings.groundTexturesLoading = tiles.groundLoading;
                 timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
-                timings.planetTileCapacity = PlanetTileCompute::MaxPages * PlanetTileCompute::TilesPerPage;
+                timings.planetTileCapacity = Planetology::PlanetTileCompute::MaxPages * Planetology::PlanetTileCompute::TilesPerPage;
             }
 
             const Clock::time_point recordStart = Clock::now();

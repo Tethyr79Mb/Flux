@@ -1,8 +1,8 @@
 // Tuiles des planètes calculées par le GPU : un groupe de threads par tuile écrit ses sommets (ModelVertex) et leur
-// glissement vers la forme de la parente (MorphVertex), les mêmes que Planet::BuildTile sur le CPU, qui sert de
+// glissement vers la forme de la parente (MorphVertex), les mêmes que Planetology::BuildTile sur le CPU, qui sert de
 // référence (Tests/src/PlanetGpuTests.cpp vérifie qu'ils s'accordent). Le travail en double (directions, points de
-// départ du bruit) est fait par Planet::PrepareTileGpu : ici tout est en float, relatif au centre de la tuile.
-// Le relief (Height) doit rester le même que Terrain::GetHeight dans Engine/src/Graphics/Planet.cpp.
+// départ du bruit) est fait par Planetology::PrepareTileGpu : ici tout est en float, relatif au centre de la tuile.
+// Le relief (Height) doit rester le même que Terrain::GetHeight dans Engine/src/Planetology/Planet.cpp.
 
 static const uint TileQuads = 32;
 static const uint TileSide = TileQuads + 1;
@@ -12,7 +12,7 @@ static const uint Columns = TileSide + 4;
 static const uint OctaveCount = 45;
 static const uint GroupSize = 256;
 
-// Doit correspondre à Planet::TileGpuInputs.
+// Doit correspondre à Planetology::TileGpuInputs.
 struct TileInputs
 {
     float4 center; // xyz : direction du centre ; w : |v_c|

@@ -46,7 +46,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Flammes des réacteurs (composant « Réacteur ») : volume de gaz calculé au pixel, longueur et éclat selon la
   poussée du vaisseau, lumière autour ; à pleine poussée dans l'éditeur (jeu arrêté) pour les régler.
 
-### Planètes
+### Planètes (Planetology)
+- ✅ Code des planètes réuni dans le domaine Planetology (`Flux::Planetology`, dossiers `Planetology/`).
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU.
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
@@ -105,7 +106,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Champs d'astéroïdes et végétation (l'instancing des modèles est fait : reste à les générer et à les placer).
 - ⬜ Rendu vers texture : écrans du cockpit, interfaces dans le monde 3D.
 
-### Planètes
+### Planètes (Planetology)
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents. À améliorer : pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; sommets toujours un peu « bruit » de près.
 - ⬜ Végétation et rochers posés sur le sol (instancing).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.

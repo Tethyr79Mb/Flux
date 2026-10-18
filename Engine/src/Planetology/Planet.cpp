@@ -1,4 +1,4 @@
-#include "Flux/Graphics/Planet.hpp"
+#include "Flux/Planetology/Planet.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -6,7 +6,7 @@
 #include <numbers>
 #include <random>
 
-namespace Flux::Planet {
+namespace Flux::Planetology {
     namespace {
         // Repère de chaque face : sa normale et ses axes s et t, avec s x t = normale (sommets dans le sens
         // trigonométrique vu de dehors, comme le cube du moteur).

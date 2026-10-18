@@ -4,7 +4,7 @@
 #include "Flux/Audio/AudioSystem.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Core/Version.hpp"
-#include "Flux/Graphics/Planet.hpp"
+#include "Flux/Planetology/Planet.hpp"
 #include "Flux/Input/InputActions.hpp"
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
@@ -831,7 +831,7 @@ namespace Flux {
         }
         if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
             || m_flightTerrainSeed != nearest->seed) {
-            m_flightTerrain = std::make_shared<const Planet::Terrain>(nearest->radius, nearest->relief, nearest->seed);
+            m_flightTerrain = std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief, nearest->seed);
             m_flightTerrainSeed = nearest->seed;
         }
         flight.nearPlanet = true;

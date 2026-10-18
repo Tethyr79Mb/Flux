@@ -1,10 +1,10 @@
 // Tuiles des planètes calculées par le GPU (shaders/PlanetTile.slang) comparées à la référence en double du CPU
-// (Planet::BuildTile) : mêmes sommets, normales et glissements, à quelques millimètres près. Ignorés (réussis) sur
+// (Planetology::BuildTile) : mêmes sommets, normales et glissements, à quelques millimètres près. Ignorés (réussis) sur
 // une machine sans GPU Vulkan 1.3 (intégration continue).
 #include "Check.hpp"
 
-#include "Flux/Graphics/Planet.hpp"
-#include "Renderer/PlanetTileCompute.hpp"
+#include "Flux/Planetology/Planet.hpp"
+#include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
@@ -16,8 +16,8 @@ using namespace Flux;
 namespace {
     struct Case
     {
-        const Planet::Terrain* terrain;
-        Planet::TileKey key;
+        const Planetology::Terrain* terrain;
+        Planetology::TileKey key;
     };
 }
 
@@ -27,7 +27,7 @@ bool RunPlanetGpuTests() {
         std::printf("       GPU ignoré : %s\n", device.error().c_str());
         return true;
     }
-    auto compute = PlanetTileCompute::Create(**device, RHI::MemoryType::Readback);
+    auto compute = Planetology::PlanetTileCompute::Create(**device, RHI::MemoryType::Readback);
     if (!compute) {
         std::printf("ÉCHEC %s\n", compute.error().c_str());
         return false;
@@ -35,10 +35,10 @@ bool RunPlanetGpuTests() {
 
     // Une petite planète (celle des scènes de test) et une de la taille de la Terre ; à chacune une racine, une tuile
     // moyenne et une tuile du niveau le plus fin, ailleurs sur une autre face.
-    const Planet::Terrain small(60000.0, 800.0, 5);
-    const Planet::Terrain earth(6.37e6, 8000.0, 42);
+    const Planetology::Terrain small(60000.0, 800.0, 5);
+    const Planetology::Terrain earth(6.37e6, 8000.0, 42);
     std::vector<Case> cases;
-    for (const Planet::Terrain* terrain : {&small, &earth}) {
+    for (const Planetology::Terrain* terrain : {&small, &earth}) {
         const std::uint32_t max = terrain->GetMaxLevel();
         const std::uint32_t middle = max / 2;
         cases.push_back({terrain, {0, 0, 0, 0}});
@@ -58,8 +58,8 @@ bool RunPlanetGpuTests() {
                 peak = direction;
             }
         }
-        cases.push_back({terrain, Planet::FindTile(peak, middle)});
-        cases.push_back({terrain, Planet::FindTile(peak, max)});
+        cases.push_back({terrain, Planetology::FindTile(peak, middle)});
+        cases.push_back({terrain, Planetology::FindTile(peak, max)});
     }
 
     // Toutes dans la même page : chacune doit écrire dans sa case.
@@ -74,17 +74,17 @@ bool RunPlanetGpuTests() {
     const auto stats = (*compute)->GetStats(0);
     CHECK(stats.size() == cases.size());
 
-    std::vector<ModelVertex> vertices(Planet::TileVertexCount);
-    std::vector<Planet::MorphVertex> morph(Planet::TileVertexCount);
+    std::vector<ModelVertex> vertices(Planetology::TileVertexCount);
+    std::vector<Planetology::MorphVertex> morph(Planetology::TileVertexCount);
     for (std::size_t n = 0; n < cases.size(); ++n) {
         const Case& c = cases[n];
-        Planet::TileMesh mesh;
-        Planet::BuildTile(*c.terrain, c.key, mesh);
+        Planetology::TileMesh mesh;
+        Planetology::BuildTile(*c.terrain, c.key, mesh);
         (*compute)->ReadTile(tiles[n], vertices.data(), morph.data());
         // Erreur permise : le float de la position (sa taille), celui du relief, et le millimètre.
         const double tolerance = 0.005 + 1.0e-6 * mesh.radius + 4.0e-6 * c.terrain->GetRelief();
         double worst = 0.0;
-        for (std::uint32_t v = 0; v < Planet::TileVertexCount; ++v) {
+        for (std::uint32_t v = 0; v < Planetology::TileVertexCount; ++v) {
             const double error = Math::Length(Math::Vector3d(vertices[v].position) - Math::Vector3d(mesh.vertices[v].position));
             const double morphError = Math::Length(Math::Vector3d(morph[v].offset) - Math::Vector3d(mesh.morph[v].offset));
             worst = std::max({worst, error, morphError});

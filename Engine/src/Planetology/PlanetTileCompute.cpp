@@ -1,12 +1,12 @@
-#include "Renderer/PlanetTileCompute.hpp"
+#include "Planetology/PlanetTileCompute.hpp"
 
 #include "Flux/Platform/Filesystem.hpp"
 
-namespace Flux {
+namespace Flux::Planetology {
     namespace {
-        constexpr std::uint64_t VertexSize = Planet::TileVertexCount * sizeof(ModelVertex);
-        constexpr std::uint64_t MorphSize = Planet::TileVertexCount * sizeof(Planet::MorphVertex);
-        static_assert(sizeof(ModelVertex) == 8 * sizeof(float) && sizeof(Planet::MorphVertex) == 6 * sizeof(float),
+        constexpr std::uint64_t VertexSize = TileVertexCount * sizeof(ModelVertex);
+        constexpr std::uint64_t MorphSize = TileVertexCount * sizeof(MorphVertex);
+        static_assert(sizeof(ModelVertex) == 8 * sizeof(float) && sizeof(MorphVertex) == 6 * sizeof(float),
                       "ModelVertex et MorphVertex doivent correspondre à Write dans shaders/PlanetTile.slang");
 
         // Doit correspondre à Constants dans shaders/PlanetTile.slang.
@@ -38,7 +38,7 @@ namespace Flux {
         compute->m_pipeline = std::move(*pipeline);
 
         for (Frame& frame : compute->m_frames) {
-            auto inputs = device.CreateBuffer({MaxTilesPerFrame * sizeof(Planet::TileGpuInputs), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
+            auto inputs = device.CreateBuffer({MaxTilesPerFrame * sizeof(TileGpuInputs), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
             auto stats = device.CreateBuffer({MaxTilesPerFrame * sizeof(Stats), RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
             if (!inputs || !stats) {
                 return std::unexpected(!inputs ? inputs.error() : stats.error());
@@ -82,7 +82,7 @@ namespace Flux {
         return m_tileCount++;
     }
 
-    void PlanetTileCompute::ReadTile(std::uint32_t tile, ModelVertex* vertices, Planet::MorphVertex* morph) const {
+    void PlanetTileCompute::ReadTile(std::uint32_t tile, ModelVertex* vertices, MorphVertex* morph) const {
         const Page& page = m_pages[GetPage(tile)];
         const std::uint64_t slot = tile % TilesPerPage;
         page.vertices->Read(vertices, VertexSize, slot * VertexSize);
@@ -98,13 +98,13 @@ namespace Flux {
         return frame.readStats;
     }
 
-    bool PlanetTileCompute::Add(std::uint32_t frameIndex, const Planet::Terrain& terrain, Planet::TileKey key,
+    bool PlanetTileCompute::Add(std::uint32_t frameIndex, const Terrain& terrain, TileKey key,
                                 std::uint32_t tile) {
         Frame& frame = m_frames[frameIndex];
         if (frame.tiles.size() >= MaxTilesPerFrame) {
             return false;
         }
-        Planet::PrepareTileGpu(terrain, key, m_inputs);
+        PrepareTileGpu(terrain, key, m_inputs);
         frame.inputs->Write(&m_inputs, sizeof(m_inputs), frame.tiles.size() * sizeof(m_inputs));
         frame.tiles.push_back(tile);
         return true;

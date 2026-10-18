@@ -12,8 +12,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md`. Ce qui est fait et ce qui vient : 
 
 ## Organisation du dépôt
 - `Engine/` : FluxEngine.dll. En-têtes publics dans `include/Flux/<Domaine>/`, code dans `src/<Domaine>/`, shaders Slang
-  dans `shaders/`. Domaines : Animation, Assets, Audio, Core, Graphics, Input, Interface, Math, Physics, Platform,
-  Renderer (RHI + backend Vulkan), Scene, UI (FluxUI).
+  dans `shaders/`. Domaines : Animation, Assets, Audio, Core, Graphics, Input, Interface, Math, Physics, Planetology
+  (tout ce qui concerne les planètes), Platform, Renderer (RHI + backend Vulkan), Scene, UI (FluxUI).
 - `Editor/` : FluxEditor.exe (panneaux dans `src/Panels`, documents dans `src/Document`, éditeur d'interfaces dans
   `src/Interface`). Recharge à chaud la DLL du jeu.
 - `Game/Module/` : GameModule.dll (code du jeu, `FluxRegisterGame`) et le projet `Game.fluxproject` avec ses `assets/`.

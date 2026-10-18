@@ -1,4 +1,4 @@
-#include "Renderer/GroundTextures.hpp"
+#include "Planetology/GroundTextures.hpp"
 
 #include "Flux/Assets/Image.hpp"
 #include "Flux/Core/Log.hpp"
@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace Flux {
+namespace Flux::Planetology {
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(GroundLayer::Count)> LayerNames{
             "roche", "herbe", "terre", "sable", "neige"};
