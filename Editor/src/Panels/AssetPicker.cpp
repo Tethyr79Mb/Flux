@@ -37,6 +37,9 @@ namespace FluxEditor {
             if (type == AssetType::Sound) {
                 return {{"Sons", ".wav;.ogg;.mp3;.flac"}, "Choisir un son", "Sons"};
             }
+            if (type == AssetType::Font) {
+                return {{"Polices", ".ttf;.otf"}, "Choisir une police", "Polices"};
+            }
             if (type == AssetType::Prefab) {
                 return {{"Prefabs Flux", ".prefab.json"}, "Choisir un prefab", "Prefabs"};
             }

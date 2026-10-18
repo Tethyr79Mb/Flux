@@ -72,6 +72,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Mode immédiat partagé éditeur/jeu, texte MSDF, formes SDF, thèmes. À améliorer : pas de DPI (mise à l'échelle 100 % seulement), police Latin-1.
 - ✅ Interfaces du jeu en fichiers `.fluxui` : fenêtres, boutons à actions, liaisons de valeurs, onglets, défilement.
 - ✅ Textes et images à l'écran, changement de scène.
+- 🔧 Polices du projet pour les textes à l'écran (`.ttf`, `.otf` du dossier `Polices/`), atlas MSDF construit sur un
+  autre fil au premier usage, attendu par l'écran de chargement. À améliorer : 0,3 à 0,5 s de processeur par police
+  à chaque lancement (pas de cache disque), Latin-1 seulement, pas relue si le fichier change, pas encore dans les
+  interfaces `.fluxui`.
 
 ### Outillage
 - ✅ Module du jeu en DLL rechargeable à chaud, API versionnée (`GameModuleApiVersion`).

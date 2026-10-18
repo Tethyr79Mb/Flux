@@ -10,6 +10,9 @@
 #include "Flux/UI/DrawList.hpp"
 
 #include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <system_error>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -144,6 +147,46 @@ namespace {
         return true;
     }
 
+    // Texte dans une police du projet : son atlas (une autre texture) et ses mesures ; police absente : celle de la
+    // liste, le texte reste visible.
+    bool RunFontTests(const UI::Font& font, const UI::Font& other) {
+        UI::DrawList list(font);
+        Scene scene;
+        const Entity title = scene.CreateEntity("Titre");
+        scene.Add<ScreenTextComponent>(title, ScreenTextComponent{.text = "Été", .font = "Polices/Autre.ttf", .size = 64.0f});
+        constexpr UI::TextureId OtherTexture = 5;
+        std::vector<std::string> asked;
+        const ScreenUi::FontResolver fonts = [&](std::string_view path) -> std::optional<UI::FontRef> {
+            asked.emplace_back(path);
+            return path == "Polices/Autre.ttf" ? std::optional<UI::FontRef>(UI::FontRef{&other, OtherTexture}) : std::nullopt;
+        };
+        std::vector<ScreenUi::ItemRect> rects;
+        ScreenUi::Draw(scene, list, {0.0f, 0.0f}, {1920.0f, 1080.0f}, {.rects = &rects, .fonts = fonts});
+        CHECK(asked.size() == 1 && asked[0] == "Polices/Autre.ttf");
+        CHECK(list.GetCommands().size() == 1 && list.GetCommands()[0].texture == OtherTexture);
+        CHECK(rects.size() == 1 && Near(rects[0].max - rects[0].min, UI::DrawList::MeasureText(other, "Été", 64.0f)));
+
+        // Fichier introuvable : la police de la liste.
+        scene.Get<ScreenTextComponent>(title).font = "Polices/Absente.ttf";
+        list.Clear();
+        ScreenUi::Draw(scene, list, {0.0f, 0.0f}, {1920.0f, 1080.0f}, {.fonts = fonts});
+        CHECK(!list.GetCommands().empty() && list.GetCommands()[0].texture == UI::FontTexture);
+
+        // Sans police (Arimo) : le résolveur n'est pas appelé.
+        scene.Get<ScreenTextComponent>(title).font.clear();
+        asked.clear();
+        list.Clear();
+        ScreenUi::Draw(scene, list, {0.0f, 0.0f}, {1920.0f, 1080.0f}, {.fonts = fonts});
+        CHECK(asked.empty() && list.GetCommands()[0].texture == UI::FontTexture);
+
+        // Les rectangles qui suivent reviennent à l'atlas de l'interface : une commande par changement de texture.
+        list.Clear();
+        list.AddText({&other, OtherTexture}, {0.0f, 0.0f}, "A", 20.0f, {1.0f, 1.0f, 1.0f});
+        list.AddRect({0.0f, 0.0f}, {4.0f, 4.0f}, {1.0f, 1.0f, 1.0f});
+        CHECK(list.GetCommands().size() == 2 && list.GetCommands()[1].texture == UI::FontTexture);
+        return true;
+    }
+
     bool RunSaveTests() {
         ComponentRegistry components;
         RegisterEngineComponents(components);
@@ -164,6 +207,12 @@ namespace {
         CHECK(component && component->text == "Été" && component->size == 32.0f);
         CHECK(component->anchor == ScreenAnchor::BottomRight && component->offsetX == -12.0f && component->offsetY == 7.0f);
         CHECK(component->color == (Math::LinearColor{1.0f, 0.5f, 0.0f}));
+        CHECK(component->font.empty());
+        CHECK(components.Find("screenText")->FindField("font")->asset == AssetType::Font);
+        scene.Get<ScreenTextComponent>(entity).font = "Polices/Rajdhani-Bold.ttf";
+        Scene withFont;
+        CHECK(SceneSerializer::LoadFromString(withFont, components, SceneSerializer::SaveToString(scene, components)).has_value());
+        CHECK(withFont.Get<ScreenTextComponent>(withFont.FindByName("Titre")).font == "Polices/Rajdhani-Bold.ttf");
 
         // Image : chemin, remplissage et taille relus tels quels.
         const Entity logo = scene.CreateEntity("Logo");
@@ -189,5 +238,17 @@ bool RunScreenUiTests() {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunLayoutTests(**font) && RunImageLayoutTests(**font) && RunSaveTests();
+    // Une seconde police, lue dans un dossier au nom accentué (FreeType reçoit le fichier en mémoire, pas son chemin).
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / Platform::PathFromUtf8("flux-polices-été");
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    std::filesystem::copy_file(Platform::GetExecutableDirectory() / "assets" / "fonts" / "Arimo.ttf", folder / "Autre.ttf",
+                               std::filesystem::copy_options::overwrite_existing, error);
+    auto other = UI::Font::Load(folder / "Autre.ttf");
+    std::filesystem::remove_all(folder, error);
+    if (!other) {
+        std::printf("ÉCHEC : police au chemin accentué (%s)\n", other.error().c_str());
+        return false;
+    }
+    return RunLayoutTests(**font) && RunImageLayoutTests(**font) && RunFontTests(**font, **other) && RunSaveTests();
 }

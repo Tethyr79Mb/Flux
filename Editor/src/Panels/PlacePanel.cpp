@@ -390,7 +390,6 @@ namespace FluxEditor {
             constexpr ItemInfo Infos[] = {{"Objet vide", "Objet vide", UI::Icon::Empty},
                                            {"Cube", "Cube", UI::Icon::Cube},
                                            {"Modèle 3D...", "Modèle", UI::Icon::Model},
-                                           {"Texte à l'écran", "Texte", UI::Icon::Text},
                                            {"Image à l'écran", "Image", UI::Icon::Image},
                                            {"Changement de scène", "Changement de scène", UI::Icon::SceneChange},
                                            {"Personnage...", "Joueur", UI::Icon::Character},
@@ -493,7 +492,7 @@ namespace FluxEditor {
             category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior});
             category("Espace", {Item::Planet, Item::World});
             category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter, Item::Station, Item::Target});
-            category("Interface", {Item::ScreenText, Item::ScreenImage, Item::Interface});
+            category("Interface", {Item::ScreenImage, Item::Interface});
             category("Son", {Item::Sound});
             category("Logique", {Item::SceneChange});
             if (const Project* project = engine.GetProject(); project && !prefabs.empty()) {
@@ -638,14 +637,11 @@ namespace FluxEditor {
         if (item == Item::Interface) {
             // Toute la vue : rien à placer.
             scene.Add<InterfaceComponent>(entity).file = *interfaceFile;
-        } else if (item == Item::ScreenText || item == Item::ScreenImage) {
-            // Accroché au centre ; lâché dans la vue, décalé jusqu'au point de dépôt (en pixels de référence).
-            // Une image est créée sans fichier : cadre gris dans la vue, à choisir dans l'inspecteur (« ... »).
-            if (item == Item::ScreenText) {
-                scene.Add<ScreenTextComponent>(entity);
-            } else {
-                scene.Add<ScreenImageComponent>(entity);
-            }
+        } else if (item == Item::ScreenImage) {
+            // Accrochée au centre ; lâchée dans la vue, décalée jusqu'au point de dépôt (en pixels de référence).
+            // Créée sans fichier : cadre gris dans la vue, à choisir dans l'inspecteur (« ... »). Le texte se pose
+            // depuis la barre d'outils (TextTools), avec sa police, sa taille et sa couleur.
+            scene.Add<ScreenImageComponent>(entity);
             const float scale = ScreenUi::GetScale(view.min, view.max);
             if (const std::optional<ScreenUi::Offset> offset = ScreenUi::FindOffset(scene, entity); offset && drop && scale > 0.0f) {
                 const Vector2f moved = *drop - ScreenUi::AnchorPoint(ScreenAnchor::Center, view.min, view.max);

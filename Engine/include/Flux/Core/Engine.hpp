@@ -117,11 +117,13 @@ namespace Flux {
         // Image du projet (chemin relatif au dossier des assets, « textures/logo.png ») chargée pour l'overlay :
         // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
         std::optional<UI::TextureInfo> LoadAssetTexture(std::string_view relativePath);
+        // Police du projet (chemin relatif au dossier des assets, « Polices/Orbitron.ttf ») : voir Renderer::LoadFont.
+        std::optional<UI::FontRef> LoadAssetFont(std::string_view relativePath);
         // Interface du projet (fichier .fluxui, chemin relatif au dossier des assets), relue quand le fichier change :
         // l'éditeur d'interface enregistre, le jeu se met à jour. nullptr sans projet, ou si le fichier est absent ou
         // illisible (l'erreur va dans la console).
         const Interface::Document* LoadInterface(std::string_view relativePath);
-        // Réglages de ScreenUi::Draw pour la scène : images et interfaces du projet. Pendant le jeu, les interfaces
+        // Réglages de ScreenUi::Draw pour la scène : images, polices et interfaces du projet. Pendant le jeu, les interfaces
         // réagissent à la souris (cases, curseurs, boutons, fenêtres déplacées).
         ScreenUi::DrawOptions GetScreenUiOptions();
         // Vrai si la souris était sur une interface du jeu à l'image précédente : ses clics ne vont pas au jeu.

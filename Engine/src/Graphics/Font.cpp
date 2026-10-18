@@ -1,5 +1,7 @@
 #include "Flux/Graphics/Font.hpp"
 
+#include "Flux/Platform/Filesystem.hpp"
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_OUTLINE_H
@@ -114,9 +116,15 @@ namespace Flux::UI {
         if (FT_Init_FreeType(&library.handle) != 0) {
             return std::unexpected("initialisation de FreeType");
         }
+        // Lu en mémoire plutôt que par FT_New_Face : son chemin en char* ne passe pas les accents sous Windows.
+        // FreeType lit dans file tant que face existe : face, déclaré après, est détruit avant.
+        std::vector<std::uint8_t> file;
+        if (!Platform::ReadFileBytes(path, file) || file.empty()) {
+            return std::unexpected("police introuvable ou illisible : " + Platform::ToUtf8(path));
+        }
         FreeTypeFace face;
-        if (FT_New_Face(library.handle, path.string().c_str(), 0, &face.handle) != 0) {
-            return std::unexpected("police introuvable ou illisible : " + path.string());
+        if (FT_New_Memory_Face(library.handle, file.data(), static_cast<FT_Long>(file.size()), 0, &face.handle) != 0) {
+            return std::unexpected("police illisible : " + Platform::ToUtf8(path));
         }
 
         std::unique_ptr<Font> font(new Font());
@@ -167,7 +175,7 @@ namespace Flux::UI {
             pending.push_back(std::move(rendered));
         }
         if (pending.empty()) {
-            return std::unexpected("aucun glyphe exploitable dans " + path.string());
+            return std::unexpected("aucun glyphe exploitable dans " + Platform::ToUtf8(path));
         }
 
         // Empaquetage par étagères, du plus haut au plus bas, après le bloc plein.

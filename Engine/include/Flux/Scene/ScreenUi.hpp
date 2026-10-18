@@ -32,6 +32,9 @@ namespace Flux {
         // Texture d'une image de la scène (chemin tel qu'écrit dans le composant) : Engine::LoadAssetTexture.
         using TextureResolver = std::function<std::optional<UI::TextureInfo>(std::string_view imagePath)>;
 
+        // Police d'un texte de la scène (chemin tel qu'écrit dans le composant) : Engine::LoadAssetFont.
+        using FontResolver = std::function<std::optional<UI::FontRef>(std::string_view fontPath)>;
+
         // Interface d'une entité (InterfaceComponent) à dessiner dans la vue : Engine::DrawInterface. Retourne le
         // rectangle qu'elle occupe (pour la sélection), nullopt si rien n'est dessiné.
         struct InterfaceRequest
@@ -54,6 +57,7 @@ namespace Flux {
             std::vector<ItemRect>* rects = nullptr;
             // Éditeur : un cadre gris remplace une image sans fichier ou introuvable, pour la voir et la sélectionner.
             bool placeholders = false;
+            FontResolver fonts{}; // sans : les textes sont tous dans la police de la liste
         };
 
         // Dessine les éléments de la scène dans la vue min-max, dans l'ordre de la hiérarchie (le dernier par-dessus) ;

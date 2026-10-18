@@ -752,7 +752,8 @@ namespace Flux {
         constexpr double MinSeconds = 0.2;
         constexpr double MaxSeconds = 30.0;
         const RenderTimings& render = m_renderer->GetTimings();
-        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u);
+        const std::uint32_t pending =
+            render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u) + render.fontsLoading;
         m_loadingMostPending = std::max(m_loadingMostPending, pending);
         m_loadingQuietFrames = pending == 0 ? m_loadingQuietFrames + 1 : 0;
         m_loadingSeconds += deltaSeconds;
@@ -775,7 +776,8 @@ namespace Flux {
         list.AddText({center.x - extent.x * 0.5f, center.y - extent.y - 16.0f}, text, TextSize, {0.85f, 0.88f, 0.95f, 1.0f});
         // Avancement : la part des attentes déjà levées, puis les dernières images de vérification.
         const RenderTimings& render = m_renderer->GetTimings();
-        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u);
+        const std::uint32_t pending =
+            render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u) + render.fontsLoading;
         const float done = m_loadingMostPending > 0
                                ? 1.0f - static_cast<float>(pending) / static_cast<float>(m_loadingMostPending)
                                : 1.0f;
@@ -1373,6 +1375,13 @@ namespace Flux {
         return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
     }
 
+    std::optional<UI::FontRef> Engine::LoadAssetFont(std::string_view relativePath) {
+        if (!m_project || relativePath.empty()) {
+            return std::nullopt;
+        }
+        return m_renderer->LoadFont(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+    }
+
     const Interface::Document* Engine::LoadInterface(std::string_view relativePath) {
         if (!m_project || relativePath.empty()) {
             return nullptr;
@@ -1382,7 +1391,8 @@ namespace Flux {
 
     ScreenUi::DrawOptions Engine::GetScreenUiOptions() {
         return {.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
-                .interfaces = [this](const ScreenUi::InterfaceRequest& request) { return DrawInterface(request); }};
+                .interfaces = [this](const ScreenUi::InterfaceRequest& request) { return DrawInterface(request); },
+                .fonts = [this](std::string_view path) { return LoadAssetFont(path); }};
     }
 
     std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterface(const ScreenUi::InterfaceRequest& request) {

@@ -22,6 +22,7 @@
 #include "Panels/SceneEditor.hpp"
 #include "Panels/SceneViewport.hpp"
 #include "Panels/SettingsWindow.hpp"
+#include "Panels/TextTools.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -80,7 +81,7 @@ namespace {
     // au milieu, Paramètres à droite.
     void DrawToolBar(Flux::Engine& engine, FluxEditor::SceneDocument& document, FluxEditor::UndoHistory& history,
                      FluxEditor::SceneEditor& sceneEditor, FluxEditor::InterfaceEditor& interfaceEditor,
-                     FluxEditor::PlayMode& playMode, FluxEditor::SettingsWindow& settings) {
+                     FluxEditor::PlayMode& playMode, FluxEditor::SettingsWindow& settings, FluxEditor::TextTools& textTools) {
         Flux::UI::Context& ui = engine.GetUi();
         if (!ui.BeginToolBar()) {
             return;
@@ -104,6 +105,8 @@ namespace {
             }
             ui.SetItemTooltip(canRedo ? "Rétablir : " + history.GetRedoLabel() + " (Ctrl+Y)" : std::string("Rétablir (Ctrl+Y)"));
             ui.EndDisabled();
+            ui.ToolBarSeparator();
+            textTools.DrawToolBarItems(engine, sceneEditor, history, playMode.IsPlaying());
         }
         playMode.DrawToolbar(ui, engine);
         const float right = static_cast<float>(engine.GetWindow().GetSize().x) - ui.GetStyle().panelPadding * 0.5f;
@@ -155,6 +158,7 @@ int main(int argc, char** argv) {
     FluxEditor::PlayMode playMode;
     FluxEditor::EditorLayout layout;
     FluxEditor::SettingsWindow settings;
+    FluxEditor::TextTools textTools;
     FluxEditor::UndoHistory history;
     FluxEditor::PlacePanel placePanel;
     FluxEditor::InterfaceEditor interfaceEditor;
@@ -199,7 +203,7 @@ int main(int argc, char** argv) {
             layout.DrawWindowMenu(ui);
             ui.EndMainMenuBar();
         }
-        DrawToolBar(e, document, history, sceneEditor, interfaceEditor, playMode, settings);
+        DrawToolBar(e, document, history, sceneEditor, interfaceEditor, playMode, settings, textTools);
         console.DrawStatusBar(e, StatusDetails(e, document, sceneEditor, playMode.IsPlaying()));
         document.SetLocked(playMode.IsPlaying());
         if (document.TakeReplaced()) {

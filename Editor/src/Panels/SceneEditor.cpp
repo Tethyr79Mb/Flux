@@ -5,6 +5,7 @@
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
+#include "Panels/FontList.hpp"
 #include "Panels/ContentBrowser.hpp"
 #include "Panels/Hardpoints.hpp"
 #include "Search.hpp"
@@ -608,6 +609,9 @@ namespace FluxEditor {
                 auto& text = *static_cast<std::string*>(value);
                 if (field.asset == AssetType::Animation) {
                     return DrawAnimationChoice(engine, label, text);
+                }
+                if (field.asset == AssetType::Font) {
+                    return FontChoice(engine, label, text);
                 }
                 if (field.asset == AssetType::None) {
                     return ui.InputText(label, text);

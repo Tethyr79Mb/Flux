@@ -112,10 +112,16 @@ namespace Flux::ScreenUi {
             if (text.text.empty()) {
                 return;
             }
+            std::optional<UI::FontRef> font;
+            if (!text.font.empty() && context.options.fonts) {
+                font = context.options.fonts(text.font);
+            }
+            // Police absente ou illisible : celle de la liste, pour que le texte reste visible et sélectionnable.
+            const UI::FontRef used = font ? *font : UI::FontRef{&context.list.GetFont(), UI::FontTexture};
             const float pixelSize = text.size * context.scale;
-            const Vector2f size = context.list.MeasureText(text.text, pixelSize);
+            const Vector2f size = UI::DrawList::MeasureText(*used.font, text.text, pixelSize);
             const Vector2f topLeft = PlaceByAnchor(context, text.anchor, text.offsetX, text.offsetY, size);
-            context.list.AddText(topLeft, text.text, pixelSize, text.color);
+            context.list.AddText(used, topLeft, text.text, pixelSize, text.color);
             AddRect(context, entity, topLeft, topLeft + size);
         }
 
