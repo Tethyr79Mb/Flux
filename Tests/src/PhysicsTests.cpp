@@ -202,6 +202,28 @@ namespace {
 
     // Deux personnages : ni l'un ni l'autre ne décolle, qu'ils soient côte à côte, l'un dans l'autre, ou que le joueur
     // marche droit sur l'autre.
+    // Immobile sur une pente douce (10° et 30°), il ne glisse pas ; au-delà de la pente maximale (60°), il glisse.
+    bool RunSlopeTests() {
+        for (const float degrees : {10.0f, 30.0f, 60.0f}) {
+            Scene scene;
+            const Entity ramp = AddFloor(scene);
+            TransformComponent& rampTransform = scene.Get<TransformComponent>(ramp);
+            rampTransform.position = {0.0, 0.0, 0.0};
+            rampTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, degrees * std::numbers::pi_v<float> / 180.0f);
+            const Entity hero = scene.CreateEntity("Joueur");
+            scene.Get<TransformComponent>(hero).position = {0.0, 0.5, 0.0};
+            scene.Add<CharacterComponent>(hero);
+
+            PhysicsWorld world;
+            Run(world, scene, 1.0); // posé
+            const Math::Vector3d start = scene.Get<TransformComponent>(hero).position;
+            Run(world, scene, 3.0);
+            const double drift = Math::Length(scene.Get<TransformComponent>(hero).position - start);
+            CHECK(degrees > 50.0f ? drift > 1.0 : drift < 0.01);
+        }
+        return true;
+    }
+
     bool RunTwoCharactersTests() {
         for (const double gap : {1.0, 0.2, 0.0}) {
             Scene scene;
@@ -1139,7 +1161,7 @@ namespace {
 }
 
 bool RunPhysicsTests() {
-    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunTwoCharactersTests() && RunShipTests()
+    return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunSlopeTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
         && RunShipCollisionTests() && RunShipFallTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
         && RunFarPlanetTests() && RunWorldTests();
