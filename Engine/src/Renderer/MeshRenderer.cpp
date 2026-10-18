@@ -57,6 +57,9 @@ namespace Flux {
 
         // Planètes dessinées au plus dans une image (leur sol) : au-delà, les suivantes prennent la première.
         constexpr std::size_t MaxPlanets = 4;
+        // Cime des forêts vue de loin : couleur moyenne (linéaire) de l'imposteur de Modeles/Arbre/Arbre-loin.glb,
+        // assombrie par l'ombre entre les arbres. À revoir avec d'autres espèces.
+        constexpr Math::LinearColor ForestColor{0.036f, 0.064f, 0.011f, 1.0f};
 
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
@@ -368,7 +371,7 @@ namespace Flux {
             return result;
         }
         if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
-                                             "fragmentOpaque", "fragmentTree", true, true});
+                                             "fragmentTreeOpaque", "fragmentTree", true, true});
             !result) {
             return result;
         }
@@ -645,7 +648,8 @@ namespace Flux {
         const bool trees = vegetation && !m_vegetationComponent && known;
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
-                           m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u);
+                           m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
+                           trees ? static_cast<double>(vegetation->range) : 0.0);
         if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
             m_vegetationComponent = vegetation;
             m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, transform.rotation, m_plains);
@@ -691,6 +695,13 @@ namespace Flux {
                 const float intensity = rim->intensity * static_cast<float>(rimFade * rimFade * (3.0 - 2.0 * rimFade));
                 m_planetData[index].rim = {rim->color.r * intensity, rim->color.g * intensity, rim->color.b * intensity,
                                            std::max(rim->sharpness, 0.5f)};
+            }
+            if (vegetation && vegetation->density > 0.0f) {
+                // Les forêts sur le sol à partir des imposteurs, où les arbres s'espacent (voir computeCull).
+                const float slope = std::clamp(vegetation->maxSlope, 0.0f, 90.0f) * (std::numbers::pi_v<float> / 180.0f);
+                m_planetData[index].forest = {std::clamp(vegetation->cover, 0.0f, 1.0f), std::clamp(vegetation->density, 0.0f, 1.0f),
+                                              std::cos(slope), std::max(vegetation->farDistance, 1.0f)};
+                m_planetData[index].forestColor = {ForestColor.r, ForestColor.g, ForestColor.b, 0.0f};
             }
             if (clouds) {
                 AddClouds(m_planetData[index], transform, planet, *clouds);

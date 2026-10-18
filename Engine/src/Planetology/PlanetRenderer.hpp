@@ -34,8 +34,12 @@ namespace Flux::Planetology {
         std::array<float, 4> cloudRotation{0.0f, 0.0f, 0.0f, 1.0f};
         std::array<float, 4> cloudShape{};
         std::array<float, 4> cloudColor{};
+        // Forêts (VegetationComponent) : part couverte, densité (0 : aucune), cosinus de la pente maximale, distance
+        // où leur couleur commence sur le sol ; couleur linéaire de la cime.
+        std::array<float, 4> forest{};
+        std::array<float, 4> forestColor{};
     };
-    static_assert(sizeof(PlanetGpu) == 224);
+    static_assert(sizeof(PlanetGpu) == 256);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Planetology/Planet.hpp). Les tuiles manquantes sont calculées
@@ -77,10 +81,11 @@ namespace Flux::Planetology {
         // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice.
         void BeginFrame(std::uint32_t frameIndex);
         // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra. Avec
-        // `plains`, y ajoute aussi les tuiles visitées du niveau `plainLevel`.
+        // `plains`, y ajoute aussi les tuiles du niveau `plainLevel` en vue à moins de `plainRange` mètres : celles
+        // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre.
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
-                     std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0);
+                     std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0);
         // Forme de la planète (après un Collect) ; nullptr si elle n'est pas dessinée.
         const Terrain* FindTerrain(Entity entity) const {
             const auto state = m_planets.find(entity);
@@ -152,11 +157,14 @@ namespace Flux::Planetology {
             std::vector<Tile>& tiles;
             std::vector<Plain>* plains;
             std::uint32_t plainLevel;
+            double plainRange;
         };
 
         Node& GetNode(PlanetState& state, TileKey key, const Node* parent = nullptr);
-        bool IsCulled(const Visit& visit, const Node& node) const;
+        bool IsCulled(const Visit& visit, const TileBounds& bounds) const;
+        bool IsCulled(const Visit& visit, const Node& node) const { return IsCulled(visit, node.bounds); }
         void VisitNode(Visit& visit, TileKey key, Node& node);
+        void AddPlains(Visit& visit, TileKey key);
         PlanetState* FindOwner(std::uint64_t owner);
         bool Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex);
         void Retire(Node& node);

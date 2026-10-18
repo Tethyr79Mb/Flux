@@ -1,5 +1,6 @@
-// Climat des planètes, partagé par le sol (shaders/Mesh.slang, fragmentPlanet) et les arbres
-// (shaders/PlanetTile.slang, computeTrees) : les arbres poussent là où le sol est de l'herbe.
+// Climat et forêts des planètes, partagés par le sol (shaders/Mesh.slang, fragmentPlanet) et les arbres
+// (shaders/PlanetTile.slang, computeTrees) : les arbres poussent là où le sol est de l'herbe, et au-delà des arbres
+// le sol prend la couleur des forêts aux mêmes endroits.
 
 // Bruit de valeur 3D (de 0 à 1), lisse : hachage des coins entiers, interpolés.
 float PlanetHash(float3 p)
@@ -34,4 +35,22 @@ float2 ClimateAt(float radius, float relief, float3 climate, float waterRadius, 
     const float humidity = climate.z + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.9
                          + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.4 + coast * 0.3;
     return float2(temperature, humidity);
+}
+
+// Forêts : taches de 150 m à 1 km sur la sphère du rayon de la planète (flatPoint, m, repère de la planète), que le
+// relief ne déplace pas. cover : part du sol couverte. 1 en forêt, 0 ailleurs. blur (0 à 1) : vu de loin, les taches
+// plus petites que l'écart des points calculés (les sommets) s'effacent vers leur moyenne, au lieu de scintiller.
+float ForestAt(float3 flatPoint, float cover, float2 blur = float2(0.0))
+{
+    const float noise = 0.5 + (PlanetNoise(flatPoint * (1.0 / 600.0)) - 0.5) * 0.65 * (1.0 - blur.y)
+                      + (PlanetNoise(flatPoint * (1.0 / 150.0) + 7.0) - 0.5) * 0.35 * (1.0 - blur.x);
+    const float threshold = 0.8 - 0.6 * cover;
+    const float width = 0.03 + 0.3 * blur.y;
+    return smoothstep(threshold - width, threshold + width, noise);
+}
+
+// Climat où poussent les arbres (température °C, humidité) : celui de l'herbe, sans gel.
+float TreeClimate(float2 climate)
+{
+    return smoothstep(0.38, 0.55, climate.y) * smoothstep(0.0, 4.0, climate.x);
 }

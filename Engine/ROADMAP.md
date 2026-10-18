@@ -109,8 +109,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Planètes (Planetology)
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents. À améliorer : pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; sommets toujours un peu « bruit » de près.
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : forêts sur l'herbe des plaines, 3 niveaux de détail
-  (détaillé, simplifié qui fait aussi les ombres, imposteur), vent. À améliorer : une seule espèce ; rien au-delà de
-  1,2 à 2,4 km (taches de forêt dans la couleur du sol à faire) ; passage d'un niveau de détail à l'autre sans fondu ;
+  (détaillé, simplifié qui fait aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des
+  forêts sur le sol (visible de haut et de l'espace). À améliorer : une seule espèce (couleur des forêts fixe, prise
+  de son imposteur) ; passage d'un niveau de détail à l'autre sans fondu ;
   arbres hors du champ sans ombre ; pas de collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé
   sur le relief fin peut flotter ou s'enfoncer un peu sur le sol plus grossier.
 - ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).

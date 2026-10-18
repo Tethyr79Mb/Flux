@@ -192,7 +192,7 @@ namespace Flux::Planetology {
         m_farDistance = std::max(vegetation.farDistance, m_lodDistance);
         m_range = std::max(vegetation.range, 0.0f);
         for (const PlanetRenderer::Plain& plain : plains) {
-            if (plain.distance < m_range && m_visible.size() < MaxVisiblePlains) {
+            if (plain.distance < m_range) {
                 m_visible.push_back(plain);
             }
         }
@@ -248,7 +248,11 @@ namespace Flux::Planetology {
 
         // Plaines en vue : celles déjà semées sont triées ; les autres, semées d'abord les plus proches, quelques-unes
         // par image (elles sont triées dès cette image, après leur semis).
+        // Les plus proches seulement, s'il y en a trop.
         std::ranges::sort(m_visible, {}, &PlanetRenderer::Plain::distance);
+        if (m_visible.size() > MaxVisiblePlains) {
+            m_visible.resize(MaxVisiblePlains);
+        }
         m_cells.clear();
         m_jobs.clear();
         for (const PlanetRenderer::Plain& plain : m_visible) {

@@ -74,7 +74,7 @@ namespace Flux::Planetology {
 
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                                  const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
-                                 std::vector<Plain>* plains, std::uint32_t plainLevel) {
+                                 std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange) {
         if (!m_indices) {
             return;
         }
@@ -102,7 +102,7 @@ namespace Flux::Planetology {
         // Horizon : la caméra voit la sphère du sol le plus bas jusqu'à l'angle acos(rmin / d) depuis le point sous
         // elle, et un sommet (au plus haut) dépasse de acos(rmin / rmax) au-delà.
         const double horizon = distance > minRadius ? std::acos(minRadius / distance) + std::acos(minRadius / maxRadius) : -1.0;
-        Visit visit{state, camera, position, rotation, horizon, minRadius, inView, tiles, plains, plainLevel};
+        Visit visit{state, camera, position, rotation, horizon, minRadius, inView, tiles, plains, plainLevel, plainRange};
         // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
         bool rootsReady = true;
         for (std::uint8_t face = 0; face < 6; ++face) {
@@ -122,8 +122,7 @@ namespace Flux::Planetology {
         }
     }
 
-    bool PlanetRenderer::IsCulled(const Visit& visit, const Node& node) const {
-        const TileBounds& bounds = node.bounds;
+    bool PlanetRenderer::IsCulled(const Visit& visit, const TileBounds& bounds) const {
         const double centerLength = Math::Length(bounds.center);
         if (visit.horizon >= 0.0 && centerLength > 0.0) {
             const double cosine = Math::Dot(visit.camera, bounds.center) / (Math::Length(visit.camera) * centerLength);
@@ -144,7 +143,7 @@ namespace Flux::Planetology {
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
         const Terrain& terrain = *visit.state.terrain;
-        if (visit.plains && key.level == visit.plainLevel) {
+        if (visit.plains && key.level == visit.plainLevel && distance < visit.plainRange) {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
         if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level)) {
@@ -172,6 +171,11 @@ namespace Flux::Planetology {
                 return;
             }
         }
+        // Au plus 3 niveaux plus grossière (64 plaines) : plus haut, c'est une tuile dont les enfants ne sont pas
+        // encore prêts, pas le sol au loin.
+        if (visit.plains && key.level < visit.plainLevel && key.level + 3u >= visit.plainLevel && distance < visit.plainRange) {
+            AddPlains(visit, key);
+        }
         if (node.tile != NoTile) {
             // Glisse vers la forme parente jusqu'à la distance où la parente reprend la place (une voisine plus
             // grossière n'est jamais plus proche) : là, son bord est celui de la parente, sans fente.
@@ -185,6 +189,29 @@ namespace Flux::Planetology {
             visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
                                    visit.position + visit.rotation.Rotate(node.bounds.center), static_cast<float>(node.bounds.radius),
                                    morphStart, morphScale, node.lowest});
+        }
+    }
+
+    // Plaines sous une tuile dessinée plus grossière qu'elles (loin, ou vue de haut) : les arbres ne s'arrêtent pas
+    // là où le sol devient moins fin. Leurs bornes sont celles de tout le relief (pas de nœud, donc pas de mesure) :
+    // un peu plus de plaines retenues que nécessaire, que le tri des arbres écarte.
+    void PlanetRenderer::AddPlains(Visit& visit, TileKey key) {
+        const Terrain& terrain = *visit.state.terrain;
+        for (std::uint32_t c = 0; c < 4; ++c) {
+            const TileKey child = key.Child(c);
+            const TileBounds bounds = GetTileBounds(terrain, child);
+            if (IsCulled(visit, bounds)) {
+                continue;
+            }
+            const double distance = Math::Length(visit.camera - bounds.center) - bounds.radius;
+            if (distance >= visit.plainRange) {
+                continue;
+            }
+            if (child.level == visit.plainLevel) {
+                visit.plains->push_back({child, visit.position + visit.rotation.Rotate(bounds.origin), std::max(distance, 0.0)});
+            } else {
+                AddPlains(visit, child);
+            }
         }
     }
 

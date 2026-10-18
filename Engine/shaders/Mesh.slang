@@ -42,6 +42,11 @@ struct PlanetData
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
     float4 cloudShape;        // x : couverture ; y : opacité ; z : 1 / taille des formations (1/m) ; w : angle de dérive
     float4 cloudColor;        // rgb : couleur linéaire ; w : épaisseur de la couche (m)
+    // Forêts (VegetationComponent), vues comme une couleur du sol là où les arbres s'espacent puis s'arrêtent :
+    // x : part couverte ; y : densité (0 : pas de forêts) ; z : cosinus de la pente maximale ; w : distance où la
+    // couleur commence (m), entière au double.
+    float4 forest;
+    float4 forestColor;       // rgb : couleur linéaire de la cime des arbres
 };
 
 static const uint MaxPlanets = 4;
@@ -316,11 +321,22 @@ float3 TreePosition(float4 placement, float3 position, out float4 rotation, uint
     return placement.xyz + TreeRotate(rotation, position * placement.w);
 }
 
+// Arbres : l'air entre la caméra et le sommet est calculé par sommet (comme les tuiles de planète), pas par pixel :
+// le feuillage à seuil d'alpha se recouvre beaucoup, et ses 16 pas de marche dans l'air par pixel coûtaient plus que
+// tout le reste de l'arbre.
+struct TreeVertexOutput
+{
+    VertexOutput base;
+    float3 airTransmittance : AIR_TRANSMITTANCE;
+    float3 airScattered : AIR_SCATTERED;
+};
+
 [shader("vertex")]
-VertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstanceID)
+TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
     const float4 placement = treeInstances[instance * 2];
     float4 rotation;
+    TreeVertexOutput tree;
     VertexOutput output;
     output.draw = params.draw;
     output.material = params.material;
@@ -331,7 +347,9 @@ VertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstanceID)
     const FrameData f = frame[0];
     output.previousClip = Transform(f.previousViewProjection, output.worldPosition + f.cameraDelta.xyz);
     output.staticClip = output.previousClip;
-    return output;
+    tree.base = output;
+    tree.airScattered = AirTo(output.worldPosition, tree.airTransmittance);
+    return tree;
 }
 
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
@@ -351,6 +369,9 @@ struct PlanetVertexOutput
     float3 groundPosition : GROUND;
     // Sol : température (°C) et humidité (0 à 1) sans les taches de moins de 400 m (voir PlanetClimate).
     float2 climate : CLIMATE;
+    // Forêt (0 à 1) selon ses taches et le climat, sans la pente ni l'altitude (vues au pixel). Par sommet : ses
+    // taches font des centaines de mètres.
+    float forest : FOREST;
     // L'air entre la caméra et le sommet (voir AirTo) : calculé par sommet, pas par pixel. Il varie doucement avec la
     // distance, et les tuiles gardent à peu près la même taille à l'écran : la différence ne se voit pas, et le pixel
     // n'a plus ses 16 pas de marche dans l'air.
@@ -394,7 +415,16 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
     output.base = Output(draw, position, lerp(input.normal, input.morphNormal, morph), input.uv);
     output.planetPosition = draws[draw].rim.xyz + position;
     output.groundPosition = draws[draw].ground.xyz + position;
-    output.climate = PlanetClimate(frame[0].planets[asuint(draws[draw].rim.w)], output.planetPosition);
+    const PlanetData planet = frame[0].planets[asuint(draws[draw].rim.w)];
+    output.climate = PlanetClimate(planet, output.planetPosition);
+    output.forest = 0.0;
+    if (planet.forest.y > 0.0) {
+        // Les sommets s'espacent avec la distance (quelques pixels à l'écran) : les taches de 150 m puis de 600 m
+        // s'effacent avant de tomber entre deux sommets.
+        const float distance = length(output.base.worldPosition);
+        const float2 blur = saturate(float2(distance / 3000.0, distance / 12000.0) - 1.0);
+        output.forest = ForestAt(normalize(output.planetPosition) * planet.shape.x, planet.forest.x, blur) * TreeClimate(output.climate);
+    }
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.seaSky = float3(0.0);
     output.seaSkyThrough = float3(1.0);
@@ -1152,6 +1182,16 @@ float4 PlanetColor(PlanetVertexOutput input)
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
                                            temperature, foot, snow, surface.roughness);
     }
+    // Forêts au loin : la cime des arbres là où ils s'espacent (VegetationRenderer garde moins d'arbres au loin) puis
+    // s'arrêtent. Mêmes limites que computeTrees : pente, plage, neige, roche.
+    if (planet.forest.y > 0.0 && input.forest > 0.0) {
+        const float treeLine = planet.shape.z - 0.1 * relief;
+        const float canopy = input.forest * saturate(planet.forest.y * 1.5) * smoothstep(planet.forest.w, planet.forest.w * 2.0, distance)
+                           * smoothstep(planet.forest.z - 0.03, planet.forest.z + 0.03, flatness)
+                           * smoothstep(treeLine, treeLine - 0.02 * relief, altitude) * (1.0 - beach) * (1.0 - snow) * (1.0 - rock);
+        surface.diffuse = lerp(surface.diffuse, planet.forestColor.rgb, canopy);
+        surface.roughness = lerp(surface.roughness, 0.8, canopy);
+    }
     surface.normal = normal;
     float inside;
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
@@ -1211,6 +1251,7 @@ PlanetVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_Vulk
     output.base = Output(drawIndex, ground + up * depth, up, float2(depth, 0.0));
     output.planetPosition = up * planet.water.w;
     output.climate = float2(0.0); // l'eau n'en a pas besoin
+    output.forest = 0.0;
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.seaSky = float3(0.0);
     output.seaSkyThrough = float3(1.0);
@@ -1323,16 +1364,29 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
 // (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre.
 [shader("fragment")]
-SceneOutput fragmentTree(VertexOutput input)
+SceneOutput fragmentTree(TreeVertexOutput input)
 {
     SceneOutput output;
-    output.color = MeshColor(input, true, true);
-    output.motion = Motion(input);
+    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered);
+    output.motion = Motion(input.base);
     return output;
 }
 
-[ForceInline] // alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard
-float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
+// Écorce des arbres : opaque, sans seuil.
+[shader("fragment")]
+SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    SceneOutput output;
+    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered);
+    output.motion = Motion(input.base);
+    return output;
+}
+
+// alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
+// airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici.
+[ForceInline]
+float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airGiven = false,
+                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0))
 {
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
@@ -1370,7 +1424,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
     if (rim.w > 0.0 && inside < 1.0) {
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
-    lit = ThroughAir(lit, input.worldPosition);
+    lit = airGiven ? lit * airTransmittance + airScattered : ThroughAir(lit, input.worldPosition);
     return float4(Radiance(lit), params.transparent != 0 ? base.a : 1.0);
 }
 

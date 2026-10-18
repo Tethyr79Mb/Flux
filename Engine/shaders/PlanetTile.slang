@@ -484,10 +484,7 @@ void computeTrees(uint thread : SV_GroupIndex)
         const float3 delta = TreeDelta(u, v);
         // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas). Quelques arbres isolés
         // ailleurs. Le tri se fait avant le relief, cher.
-        const float3 flatPoint = (tile.center.xyz + delta) * radius;
-        const float forestNoise = PlanetNoise(flatPoint * (1.0 / 600.0)) * 0.65 + PlanetNoise(flatPoint * (1.0 / 150.0) + 7.0) * 0.35;
-        const float threshold = 0.8 - 0.6 * job.placement.y;
-        const float forest = max(smoothstep(threshold - 0.03, threshold + 0.03, forestNoise), 0.03);
+        const float forest = max(ForestAt((tile.center.xyz + delta) * radius, job.placement.y), 0.03);
         if (keep >= job.placement.x * forest) {
             continue;
         }
@@ -500,8 +497,7 @@ void computeTrees(uint thread : SV_GroupIndex)
         const float3 local = tile.center.xyz * tile.axisN.w + position;
         // Climat comme le sol (fragmentPlanet) : il faut de l'herbe, pas de gel.
         const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
-        const float grassy = smoothstep(0.38, 0.55, climate.y) * smoothstep(0.0, 4.0, climate.x);
-        if (keep >= job.placement.x * forest * grassy) {
+        if (keep >= job.placement.x * forest * TreeClimate(climate)) {
             continue;
         }
         // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
