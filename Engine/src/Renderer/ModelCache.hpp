@@ -4,6 +4,7 @@
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
+#include "Renderer/ModelLoader.hpp"
 #include "Renderer/RHI/RHI.hpp"
 #include "Renderer/RangeAllocator.hpp"
 
@@ -39,7 +40,7 @@ namespace Flux {
 
     // Places d'un modèle dans les tables partagées de ModelCache (sommets et indices d'une page de géométrie, cases
     // de la table des images, de la table des matériaux), et ses images. Rendues à sa destruction : le GPU ne doit
-    // plus dessiner le modèle (ModelCache::Reload attend le GPU avant de remplacer un modèle).
+    // plus dessiner le modèle (ModelCache::Install attend le GPU avant de remplacer un modèle).
     class GpuModelResources {
         public:
         GpuModelResources() = default;
@@ -81,6 +82,7 @@ namespace Flux {
         Math::Box3f bounds;
         bool animated = false; // page de modèles animés : os et poids (ModelSkinVertex) à côté des sommets
         bool loaded = false;
+        bool loading = false; // fichier en lecture (ModelLoader) ; l'ancienne version, s'il y en a une, reste dessinée
         std::filesystem::file_time_type writeTime{};
         std::chrono::steady_clock::time_point checked{};
 
@@ -99,8 +101,8 @@ namespace Flux {
         bool animated = false;
     };
 
-    // Modèles des fichiers glTF (et le cube du moteur) sur le GPU : chargés au premier appel, relus si le fichier
-    // change. Partagés par tous les modèles : les pages de géométrie, la table des images et celle des matériaux
+    // Modèles des fichiers glTF (et le cube du moteur) sur le GPU : demandés au premier appel, lus sur un autre fil
+    // (ModelLoader) puis envoyés au GPU par Update, relus de même si le fichier change. Partagés par tous les modèles : les pages de géométrie, la table des images et celle des matériaux
     // (groupe 2 des shaders de maillage, GetSceneGroup), lus par indice dans les shaders.
     class ModelCache {
         public:
@@ -125,8 +127,14 @@ namespace Flux {
         const GpuModel& GetCube() const { return m_cube; }
         const GeometryPage& GetPage(std::uint32_t page) const { return m_pages[page]; }
 
-        // Modèle du fichier, chargé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
-        // s'il est illisible (message dans la console).
+        // Envoie au GPU les modèles lus depuis l'image précédente (un par image : chacun copie ses sommets et ses images
+        // vers la mémoire vidéo). Une fois par image, avant Find.
+        void Update();
+        // Modèles demandés et pas encore envoyés au GPU.
+        std::size_t GetLoadingCount() const { return m_loader.GetPending() + m_ready.size(); }
+
+        // Modèle du fichier, demandé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
+        // tant qu'il n'est pas arrivé, ou s'il est illisible (message dans la console).
         const GpuModel* Find(const std::filesystem::path& path);
         // Même chose par chemin relatif au dossier des assets, sans allocation une fois le modèle connu : appelée pour
         // chaque objet à chaque image.
@@ -138,8 +146,8 @@ namespace Flux {
         std::expected<GpuModel, std::string> Upload(const ModelData& data, std::string_view name);
         bool PlaceGeometry(const ModelData& data, GpuModelResources& resources);
         void Release(GpuModelResources& resources);
-        void Reload(const std::filesystem::path& path, GpuModel& model);
-        const GpuModel* Refresh(const std::filesystem::path& path, GpuModel& model, bool created);
+        void Install(ModelLoader::Result& result);
+        const GpuModel* Refresh(const std::string& key, const std::filesystem::path& path, GpuModel& model, bool created);
 
         struct StringHash
         {
@@ -149,7 +157,8 @@ namespace Flux {
         struct KnownPath
         {
             std::filesystem::path path; // complet, pour relire le fichier
-            GpuModel* model;            // dans m_models (les éléments d'un unordered_map ne bougent pas)
+            const std::string* key;     // et le modèle, dans m_models (les éléments d'un unordered_map ne bougent pas)
+            GpuModel* model;
         };
 
         RHI::Device& m_device;
@@ -171,5 +180,7 @@ namespace Flux {
         // Chemins relatifs déjà vus, pour le dossier m_knownDirectory.
         std::filesystem::path m_knownDirectory;
         std::unordered_map<std::string, KnownPath, StringHash, std::equal_to<>> m_known;
+        std::vector<ModelLoader::Result> m_ready; // lus, en attente d'envoi (Update)
+        ModelLoader m_loader; // en dernier : ses fils s'arrêtent avant que le reste disparaisse
     };
 }

@@ -229,6 +229,7 @@ namespace Flux {
                 timings.planetStoredTiles = tiles.stored;
                 timings.planetPendingTiles = tiles.pending;
                 timings.groundTexturesLoading = tiles.groundLoading;
+                timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
                 timings.planetTileCapacity = PlanetTileCompute::MaxPages * PlanetTileCompute::TilesPerPage;
             }
 

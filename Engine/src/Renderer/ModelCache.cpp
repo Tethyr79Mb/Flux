@@ -374,21 +374,38 @@ namespace Flux {
         return model;
     }
 
-    // Lit le fichier et remplace le modèle ; en cas d'échec, l'ancienne version (s'il y en a une) reste.
-    void ModelCache::Reload(const std::filesystem::path& path, GpuModel& model) {
-        const std::string name = Platform::ToUtf8(path.filename());
-        auto data = LoadModelFile(path);
-        if (!data) {
-            Log::Error("modèle {}", data.error());
+    void ModelCache::Update() {
+        m_loader.TakeFinished(m_ready);
+        if (m_ready.empty()) {
             return;
         }
-        for (const std::string& warning : data->warnings) {
+        Install(m_ready.front());
+        m_ready.erase(m_ready.begin()); // quelques modèles au plus
+    }
+
+    // Remplace le modèle par ce qui a été lu ; en cas d'échec, l'ancienne version (s'il y en a une) reste.
+    void ModelCache::Install(ModelLoader::Result& result) {
+        const auto found = m_models.find(result.key);
+        if (found == m_models.end()) {
+            return;
+        }
+        GpuModel& model = found->second;
+        model.loading = false;
+        const std::string name = Platform::ToUtf8(Platform::PathFromUtf8(result.key).filename());
+        if (!result.data) {
+            Log::Error("modèle {}", result.data.error());
+            return;
+        }
+        for (const std::string& warning : result.data->warnings) {
             Log::Warning("modèle {} : {}", name, warning);
         }
-        // Rechargement (fichier retouché) : les images en vol dessinent peut-être encore l'ancienne version.
-        // Rare : attendre le GPU suffit, et les envois ci-dessous l'attendent de toute façon.
-        m_device.WaitIdle();
-        auto uploaded = Upload(*data, name);
+        if (model.loaded) {
+            // Rechargement (fichier retouché) : les images en vol dessinent peut-être encore l'ancienne version, qui
+            // rend ses places aux tables. Rare : attendre le GPU suffit. Un premier chargement n'attend rien : ses
+            // cases sont neuves, et ses envois partent avec la prochaine image.
+            m_device.WaitIdle();
+        }
+        auto uploaded = Upload(*result.data, name);
         if (!uploaded) {
             Log::Error("modèle {} : {}", name, uploaded.error());
             return;
@@ -402,7 +419,7 @@ namespace Flux {
 
     const GpuModel* ModelCache::Find(const std::filesystem::path& path) {
         auto [found, created] = m_models.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
-        return Refresh(path, found->second, created);
+        return Refresh(found->first, path, found->second, created);
     }
 
     const GpuModel* ModelCache::Find(const std::filesystem::path& assetsDirectory, std::string_view relativePath) {
@@ -411,26 +428,28 @@ namespace Flux {
             m_known.clear();
         }
         if (const auto known = m_known.find(relativePath); known != m_known.end()) {
-            return Refresh(known->second.path, *known->second.model, false);
+            return Refresh(*known->second.key, known->second.path, *known->second.model, false);
         }
         std::filesystem::path path = assetsDirectory / Platform::PathFromUtf8(relativePath);
         auto [found, created] = m_models.try_emplace(Platform::ToGenericUtf8(path.lexically_normal()));
         GpuModel& model = found->second;
-        const auto known = m_known.emplace(std::string(relativePath), KnownPath{std::move(path), &model}).first;
-        return Refresh(known->second.path, model, created);
+        const auto known = m_known.emplace(std::string(relativePath), KnownPath{std::move(path), &found->first, &model}).first;
+        return Refresh(found->first, known->second.path, model, created);
     }
 
-    // Charge le modèle à sa création, puis le relit si le fichier a changé (vérifié au plus une fois par CheckInterval).
-    const GpuModel* ModelCache::Refresh(const std::filesystem::path& path, GpuModel& model, bool created) {
+    // Demande le modèle à sa création, puis le redemande si le fichier a changé (vérifié au plus une fois par
+    // CheckInterval, et pas pendant une lecture : le changement est vu à la vérification suivante).
+    const GpuModel* ModelCache::Refresh(const std::string& key, const std::filesystem::path& path, GpuModel& model, bool created) {
         const auto now = std::chrono::steady_clock::now();
-        if (created || now - model.checked >= CheckInterval) {
+        if (created || (!model.loading && now - model.checked >= CheckInterval)) {
             model.checked = now;
             std::error_code error;
             const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, error);
             // Fichier absent : essayé une fois (pour le signaler), puis de nouveau quand il apparaît.
             if (created || (!error && writeTime != model.writeTime)) {
                 model.writeTime = error ? std::filesystem::file_time_type{} : writeTime;
-                Reload(path, model);
+                model.loading = true;
+                m_loader.Request(key, path);
             }
         }
         return model.loaded ? &model : nullptr;

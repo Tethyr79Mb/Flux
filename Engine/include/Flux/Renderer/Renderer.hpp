@@ -51,9 +51,10 @@ namespace Flux {
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
         std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
-        // encore décodées, polices dont l'atlas se construit.
+        // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
         std::uint32_t planetPendingTiles = 0;
         bool groundTexturesLoading = false;
+        std::uint32_t modelsLoading = 0;
         std::uint32_t fontsLoading = 0;
         // Entités (et blocs de grands modèles) de la passe principale testées par le GPU, et dont cachées derrière
         // d'autres (non dessinées), deux images plus tôt.

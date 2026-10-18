@@ -60,7 +60,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, version, panneau Moteur.
    Après une scène chargée en jeu, l'écran de chargement recouvre tout et le jeu attend (`Engine::IsLoading`) : la
    scène est quand même rendue, pour que les tuiles des planètes se calculent, jusqu'à ce que le rendu n'attende plus
-   ni tuile ni texture du sol pendant 10 images (`RenderTimings::planetPendingTiles`, `groundTexturesLoading`).
+   ni tuile, ni texture du sol, ni modèle pendant 10 images (`RenderTimings::planetPendingTiles`,
+   `groundTexturesLoading`, `modelsLoading`).
 6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces et changement de scène en fin d'image.
 
 ## Rendu
@@ -76,12 +77,19 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
-├─ ModelCache      modèles glTF chargés une fois (GpuModel), rangés au chargement (PrepareModel) ; géométrie dans
-│                  des pages partagées (GeometryPage, RangeAllocator), images et matériaux en tables (groupe 2)
+├─ ModelCache      modèles glTF chargés une fois (GpuModel), lus et rangés (PrepareModel) sur deux fils à part
+│                  (ModelLoader), envoyés au GPU un par image ; géométrie dans des pages partagées (GeometryPage,
+│                  RangeAllocator), images et matériaux en tables (groupe 2)
 ├─ OcclusionCulling entités cachées écartées par le GPU (Culling.slang, pyramide de profondeur)
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
+
+Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
+enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses
+commandes, et leurs buffers intermédiaires sont rendus quand le GPU a fini cette image. Chaque envoi commence par une
+barrière sur tout ce qui a été soumis avant (une image en vol peut lire la table des matériaux qu'il réécrit). Sans
+fenêtre (tests, calculs), ils sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
 
 Les modèles sont rangés au chargement (`PrepareModel`, `Assets/Model.cpp`) pour se dessiner en peu d'appels quelle
 que soit la façon dont ils ont été modélisés : matériaux identiques (tout sauf le nom) réunis, une primitive par
