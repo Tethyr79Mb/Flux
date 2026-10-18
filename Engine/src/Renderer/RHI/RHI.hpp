@@ -369,10 +369,14 @@ namespace Flux::RHI {
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).
         virtual void WaitIdle() = 0;
 
-        // GpuOnly : `data` (size octets) y est copié, et la copie attendue. Upload : `data` peut être nul.
+        // Envois vers la mémoire vidéo (CreateBuffer avec données, WriteBuffer d'un buffer GpuOnly, textures) : avec une
+        // fenêtre, soumis avec la prochaine image (avant ses commandes, après tout ce qui a été soumis avant) sans
+        // attendre le GPU ; sans fenêtre, attendus tout de suite. Une ressource envoyée doit vivre au moins jusqu'à la
+        // fin de la prochaine image.
+        // GpuOnly : `data` (size octets) y est copié. Upload : `data` peut être nul.
         virtual std::expected<std::unique_ptr<Buffer>, std::string> CreateBuffer(const BufferDesc& desc, const void* data = nullptr) = 0;
-        // Remplit une partie d'un buffer : GpuOnly par une copie attendue (le GPU ne doit pas lire cette partie pendant
-        // ce temps), Upload directement. false si la copie échoue.
+        // Remplit une partie d'un buffer : GpuOnly par une copie (voir plus haut), Upload directement. false si la copie
+        // ne peut être préparée.
         virtual bool WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) = 0;
         // Texture échantillonnée remplie de pixels (4 octets chacun) ; mipmaps : réductions successives calculées
         // par le GPU, pour une texture vue de loin sans scintillement.

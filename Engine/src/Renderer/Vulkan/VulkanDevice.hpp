@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Renderer/Vulkan/Vulkan.hpp"
+#include "Renderer/Vulkan/VulkanBuffer.hpp"
 
 #include <VkBootstrap.h>
 
@@ -8,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace Flux::Vk {
     // Instance, surface, device, files et allocateur : tout ce qui vit aussi longtemps que le renderer.
@@ -43,9 +45,27 @@ namespace Flux::Vk {
 
         void WaitIdle() const;
 
-        // Enregistre des commandes, les soumet sur la file graphique et attend leur fin.
-        // Réservé au chargement (textures, buffers statiques) : bloque le CPU.
-        bool ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) const;
+        // Enregistre des commandes, les soumet sur la file graphique et attend leur fin (après les envois en attente,
+        // soumis avec elles). Bloque le CPU : calculs dont on attend le résultat, tests.
+        bool ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record);
+
+        // Envois vers la mémoire vidéo (copies, mipmaps) : enregistrés à la suite dans un command buffer soumis avec la
+        // prochaine image (TakeUploads), sans attendre le GPU. `staging` (buffer source) est gardé jusqu'à la fin de
+        // cette image. Sans envois différés (SetDeferredUploads, pas de fenêtre), soumis et attendus tout de suite.
+        // Chaque envoi attend tout ce qui a été soumis ou envoyé avant (une image en vol peut lire ce qui est réécrit),
+        // et le command buffer se termine en rendant ses écritures visibles à tout ce qui suit.
+        bool Upload(const std::function<void(VkCommandBuffer)>& record, Buffer staging);
+        void SetDeferredUploads(bool deferred) { m_deferUploads = deferred; }
+
+        // Envois enregistrés depuis le dernier appel, à soumettre avant les commandes de l'image ; à rendre par
+        // ReleaseUploads une fois l'image finie par le GPU.
+        struct UploadBatch
+        {
+            VkCommandBuffer commands = VK_NULL_HANDLE; // terminé ; VK_NULL_HANDLE : aucun envoi
+            std::vector<Buffer> staging;
+        };
+        UploadBatch TakeUploads();
+        void ReleaseUploads(UploadBatch& batch);
 
         private:
         Device() = default;
@@ -62,6 +82,8 @@ namespace Flux::Vk {
         VkQueue m_presentQueue = VK_NULL_HANDLE;
 
         VkCommandPool m_immediatePool = VK_NULL_HANDLE;
+        UploadBatch m_uploads; // en cours d'enregistrement
+        bool m_deferUploads = false;
         bool m_anisotropy = false;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;

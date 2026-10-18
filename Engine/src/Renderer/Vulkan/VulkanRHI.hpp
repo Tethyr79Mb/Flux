@@ -227,6 +227,7 @@ namespace Flux::Vk {
             std::uint32_t stepCount = 0;
             std::uint32_t serial = 0; // numéro de cette image, écrit par le GPU au début et à la fin de chaque étape
             bool submitted = false;
+            Vk::Device::UploadBatch uploads; // soumis avec l'image, rendus quand le GPU l'a finie
         };
 
         // Relit les heures de l'image dont le GPU vient de finir (après l'attente de sa barrière).

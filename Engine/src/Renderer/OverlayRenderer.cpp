@@ -109,6 +109,11 @@ namespace Flux {
 
     // Envoie l'image au GPU dans la texture (nouvelle ou déjà utilisée) ; name sert aux messages d'erreur.
     void OverlayRenderer::Store(const ImageData& pixels, Texture& texture, std::string_view name) {
+        // Avant la texture : une texture envoyée doit vivre jusqu'à la fin de la prochaine image.
+        if (texture.id == UI::FontTexture && m_groups.size() > MaxTextures) {
+            Log::Warning("plus de {} images chargées, {} ignorée", MaxTextures, name);
+            return;
+        }
         // SRGB : les couleurs d'une image sont en sRGB, le GPU les ramène en linéaire à la lecture.
         auto image = m_device.CreateTexture(RHI::Format::RGBA8Srgb,
                                             {static_cast<std::uint32_t>(pixels.size.x), static_cast<std::uint32_t>(pixels.size.y)},
@@ -118,10 +123,6 @@ namespace Flux {
             return;
         }
         if (texture.id == UI::FontTexture) {
-            if (m_groups.size() > MaxTextures) {
-                Log::Warning("plus de {} images chargées, {} ignorée", MaxTextures, name);
-                return;
-            }
             std::unique_ptr<RHI::BindGroup> group = m_device.CreateBindGroup(*m_layout);
             if (!group) {
                 return;
