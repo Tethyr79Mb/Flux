@@ -3,6 +3,10 @@
 // référence (Tests/src/PlanetGpuTests.cpp vérifie qu'ils s'accordent). Le travail en double (directions, points de
 // départ du bruit) est fait par Planetology::PrepareTileGpu : ici tout est en float, relatif au centre de la tuile.
 // Le relief (Height) doit rester le même que Terrain::GetHeight dans Engine/src/Planetology/Planet.cpp.
+// Arbres (computeTrees) : un groupe par plaine de VegetationRenderer sème ses arbres sur ce même relief, au détail le
+// plus fin (celui du sol vu de près).
+
+#include "PlanetClimate.slang"
 
 static const uint TileQuads = 32;
 static const uint TileSide = TileQuads + 1;
@@ -386,5 +390,136 @@ void computeMain(uint thread : SV_GroupIndex)
     }
     if (thread == 0) {
         stats[constants.job] = float4(lowestShared[0], radiusShared[0], highestShared[0], 0.0);
+    }
+}
+
+// --- Arbres (VegetationRenderer) ---
+
+// Places possibles d'arbres par côté d'une plaine (une tuile de PlanetRenderer, de niveau VegetationRenderer::CellLevel) :
+// deux par maille de la grille, chacune décalée au hasard dans sa case.
+static const uint TreeGrid = 64;
+
+// Doit correspondre à VegetationRenderer::TreeJob : une plaine à semer.
+struct TreeJob
+{
+    uint4 cell;      // face, niveau, x, y de la tuile (le hasard en dépend : mêmes arbres à chaque fois)
+    uint4 options;   // x : case de la plaine (premier arbre : x * TreeGrid²) ; y : graine
+    float4 placement; // x : densité ; y : part couverte de forêts ; z : cosinus de la pente maximale
+    float4 scale;    // x, y : tailles extrêmes
+    float4 shape;    // x : rayon ; y : relief ; z : altitude de la neige ; w : haut de la plage (m)
+    float4 climate;  // xyz : températures à l'équateur, aux pôles, humidité ; w : rayon de l'océan (0 : aucun)
+};
+
+[[vk::binding(2, 0)]] StructuredBuffer<TreeJob> treeJobs;
+// Deux float4 par arbre : position relative au point de référence de la tuile, taille ; direction du haut (repère de la
+// planète), angle autour du haut (radians).
+[[vk::binding(3, 0)]] RWStructuredBuffer<float4> trees;
+[[vk::binding(4, 0)]] RWStructuredBuffer<uint> treeCounts; // un par case
+
+groupshared uint treeCount;
+
+uint TreeHash(uint x)
+{
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+float TreeRandom(inout uint state)
+{
+    state = TreeHash(state + 0x9e3779b9u);
+    return float(state >> 8) * (1.0 / 16777216.0);
+}
+
+// Delta entre deux colonnes et deux lignes (u, v : position dans la grille de la tuile, de 0 à TileQuads) : a et b
+// (tangentes) sont presque linéaires sur une maille, l'erreur est sous le micron.
+float3 TreeDelta(float u, float v)
+{
+    const uint ci = min(uint(u), TileQuads - 1);
+    const uint cj = min(uint(v), TileQuads - 1);
+    const float4 column = lerp(tile.columns[ci + 2], tile.columns[ci + 3], u - float(ci));
+    const float4 row = lerp(tile.columns[cj + 2], tile.columns[cj + 3], v - float(cj));
+    const float3 dv = tile.axisS.xyz * column.x + tile.axisT.xyz * row.z;
+    const float growth = column.x * column.y + row.z * row.w;
+    const float lc = tile.center.w;
+    const float l = sqrt(lc * lc + growth);
+    const float3 vc = tile.center.xyz * lc;
+    return dv / l - vc * (growth / (l * lc * (l + lc)));
+}
+
+[shader("compute")]
+[numthreads(GroupSize, 1, 1)]
+void computeTrees(uint thread : SV_GroupIndex)
+{
+    const TreeJob job = treeJobs[constants.job];
+    for (uint p = thread; p < 128; p += GroupSize) {
+        const uint word = tile.permutation[p / 4][p % 4];
+        permutation[4 * p + 0] = word & 255u;
+        permutation[4 * p + 1] = (word >> 8) & 255u;
+        permutation[4 * p + 2] = (word >> 16) & 255u;
+        permutation[4 * p + 3] = word >> 24;
+    }
+    if (thread == 0) {
+        treeCount = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    const float radius = job.shape.x;
+    const float relief = max(job.shape.y, 1.0);
+    const uint octaves = tile.options.x;
+    const uint first = job.options.x * TreeGrid * TreeGrid;
+    const float step = float(TileQuads) / float(TreeGrid);
+    for (uint c = thread; c < TreeGrid * TreeGrid; c += GroupSize) {
+        const uint gi = c % TreeGrid;
+        const uint gj = c / TreeGrid;
+        // Hasard tiré de la place sur la face (et de la graine), pas de la case : mêmes arbres à chaque visite.
+        uint state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(job.cell.z * TreeGrid + gi)
+                                                       ^ TreeHash(job.cell.w * TreeGrid + gj) * 0x85ebca6bu));
+        const float u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
+        const float v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
+        const float keep = TreeRandom(state);
+        const float3 delta = TreeDelta(u, v);
+        // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas). Quelques arbres isolés
+        // ailleurs. Le tri se fait avant le relief, cher.
+        const float3 flatPoint = (tile.center.xyz + delta) * radius;
+        const float forestNoise = PlanetNoise(flatPoint * (1.0 / 600.0)) * 0.65 + PlanetNoise(flatPoint * (1.0 / 150.0) + 7.0) * 0.35;
+        const float threshold = 0.8 - 0.6 * job.placement.y;
+        const float forest = max(smoothstep(threshold - 0.03, threshold + 0.03, forestNoise), 0.03);
+        if (keep >= job.placement.x * forest) {
+            continue;
+        }
+        const float height = Height(delta, octaves);
+        // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
+        if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
+            continue;
+        }
+        const float3 position = Local(delta, height);
+        const float3 local = tile.center.xyz * tile.axisN.w + position;
+        // Climat comme le sol (fragmentPlanet) : il faut de l'herbe, pas de gel.
+        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
+        const float grassy = smoothstep(0.38, 0.55, climate.y) * smoothstep(0.0, 4.0, climate.x);
+        if (keep >= job.placement.x * forest * grassy) {
+            continue;
+        }
+        // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
+        const float e = 0.25;
+        const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
+        const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
+        const float3 up = normalize(local);
+        if (abs(dot(normalize(cross(du, dv)), up)) < job.placement.z) {
+            continue;
+        }
+        uint slot;
+        InterlockedAdd(treeCount, 1u, slot);
+        const float scale = lerp(job.scale.x, job.scale.y, TreeRandom(state));
+        trees[(first + slot) * 2 + 0] = float4(position, scale);
+        trees[(first + slot) * 2 + 1] = float4(up, TreeRandom(state) * 6.2831853);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (thread == 0) {
+        treeCounts[job.options.x] = treeCount;
     }
 }

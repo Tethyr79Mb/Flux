@@ -173,6 +173,18 @@ namespace Flux {
             .Field("size", "Taille des formations (m)", &CloudsComponent::size, {.speed = 100.0, .min = 100.0, .max = 1.0e7, .decimals = 0})
             .Field("speed", "Vitesse (m/s)", &CloudsComponent::speed, {.speed = 0.1, .min = -1000.0, .max = 1000.0, .decimals = 1})
             .Field("color", "Couleur", &CloudsComponent::color, {.alpha = false});
+        registry.Register<VegetationComponent>("vegetation", "Végétation")
+            .Asset("model", "Arbre de près", &VegetationComponent::model, AssetType::Model)
+            .Asset("lodModel", "Arbre simplifié", &VegetationComponent::lodModel, AssetType::Model)
+            .Asset("farModel", "Arbre lointain", &VegetationComponent::farModel, AssetType::Model)
+            .Field("density", "Densité des forêts", &VegetationComponent::density, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("cover", "Part couverte de forêts", &VegetationComponent::cover, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("maxSlope", "Pente maximale (°)", &VegetationComponent::maxSlope, {.speed = 0.1, .min = 0.0, .max = 90.0, .decimals = 1})
+            .Field("minScale", "Taille minimale (x)", &VegetationComponent::minScale, {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2})
+            .Field("maxScale", "Taille maximale (x)", &VegetationComponent::maxScale, {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2})
+            .Field("lodDistance", "Simplifié au-delà de (m)", &VegetationComponent::lodDistance, {.speed = 1.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
+            .Field("farDistance", "Lointain au-delà de (m)", &VegetationComponent::farDistance, {.speed = 1.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
+            .Field("range", "Visibles jusqu'à (m)", &VegetationComponent::range, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0});
         registry.Register<InteriorComponent>("interior", "Intérieur")
             .Field("size", "Taille (m)", &InteriorComponent::size, {.speed = 0.01, .min = 0.0, .max = 1.0e4})
             .Field("ambient", "Lumière ambiante", &InteriorComponent::ambient, {.alpha = false})

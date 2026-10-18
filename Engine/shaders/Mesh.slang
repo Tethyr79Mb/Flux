@@ -13,6 +13,7 @@
 // la surface (shaders/Atmosphere.slang).
 
 #include "Atmosphere.slang"
+#include "PlanetClimate.slang"
 
 // Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
 struct InteriorData
@@ -117,7 +118,10 @@ struct DrawParams
     float roughness;
     float normalScale;        // 0 : pas de carte de normales
     float occlusionStrength;  // 0 : pas d'occlusion
-    uint padding;
+    // Arbres des planètes (vertexTree) : matériau de la primitive, et entité neutre (teinte blanche, sans contour) dont
+    // MeshColor lit les réglages.
+    uint material;
+    uint draw;
 };
 
 [[vk::push_constant]] ConstantBuffer<DrawParams> params;
@@ -161,6 +165,9 @@ struct MaterialData
 // Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i].x avec le
 // matériau instances[i].y (les appels des tuiles de planète donnent directement l'indice dans draws).
 [[vk::binding(6, 1)]] StructuredBuffer<uint2> instances;
+// Arbres des planètes retenus pour l'image (shaders/Vegetation.slang) : deux float4 chacun, position relative à la
+// caméra et taille, puis rotation (quaternion).
+[[vk::binding(7, 1)]] StructuredBuffer<float4> treeInstances;
 
 // Groupe 2 : tables de tous les modèles chargés (ModelCache). Images des matériaux, choisies par indice : couleurs en
 // sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
@@ -289,6 +296,44 @@ VertexOutput vertexSkinned(SkinnedVertexInput input, uint instance : SV_VulkanIn
     return output;
 }
 
+// Sommet d'un arbre des planètes (VegetationRenderer) : tourné et agrandi selon son arbre, et balancé par le vent
+// d'autant plus qu'il est haut (rien au pied du tronc). Les arbres sont immobiles : leur mouvement propre est nul.
+float3 TreeRotate(float4 q, float3 v)
+{
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
+
+float3 TreePosition(float4 placement, float3 position, out float4 rotation, uint instance)
+{
+    rotation = treeInstances[instance * 2 + 1];
+    // Phase propre à chaque arbre (sa taille est tirée au hasard) : la forêt ne bat pas en mesure.
+    const float phase = frac(placement.w * 97.31) * 6.2831853;
+    const float time = frame[0].cameraForward.w;
+    const float bend = max(position.y, 0.0) * 0.08;
+    const float2 sway = float2(sin(time * 1.1 + phase), sin(time * 0.9 + phase * 1.7)) * 0.12
+                      + float2(sin(time * 2.7 + phase * 2.3), sin(time * 3.1 + phase)) * 0.03;
+    position.xz += sway * (bend * bend);
+    return placement.xyz + TreeRotate(rotation, position * placement.w);
+}
+
+[shader("vertex")]
+VertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const float4 placement = treeInstances[instance * 2];
+    float4 rotation;
+    VertexOutput output;
+    output.draw = params.draw;
+    output.material = params.material;
+    output.worldPosition = TreePosition(placement, input.position, rotation, instance);
+    output.position = Transform(frame[0].viewProjection, output.worldPosition);
+    output.normal = TreeRotate(rotation, input.normal);
+    output.uv = input.uv;
+    const FrameData f = frame[0];
+    output.previousClip = Transform(f.previousViewProjection, output.worldPosition + f.cameraDelta.xyz);
+    output.staticClip = output.previousClip;
+    return output;
+}
+
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
 // le relais (calculé sur le sommet de la tuile, pour que deux tuiles voisines glissent pareil au même endroit).
 float PlanetMorph(uint drawIndex, float3 position)
@@ -337,17 +382,7 @@ float3 PlanetRim(PlanetData planet, float3 worldUp, float3 toEye)
 
 float2 PlanetClimate(PlanetData planet, float3 local)
 {
-    const float radius = planet.shape.x;
-    const float relief = max(planet.shape.y, 1.0);
-    const float distance = length(local);
-    const float altitude = distance - radius;
-    const float latitude = abs(local.y) / max(distance, 1.0);
-    const float temperature = lerp(planet.climate.x, planet.climate.y, (latitude * latitude) * (latitude * latitude))
-                            - 0.0065 * max(altitude, 0.0) + (PlanetNoise(local * (100.0 / radius)) - 0.5) * 8.0;
-    const float coast = planet.water.w > 0.0 ? smoothstep(0.02 * relief, 0.0, distance - planet.water.w) : 0.0;
-    const float humidity = planet.climate.z + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.9
-                         + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.4 + coast * 0.3;
-    return float2(temperature, humidity);
+    return ClimateAt(planet.shape.x, planet.shape.y, planet.climate.xyz, planet.water.w, local);
 }
 
 [shader("vertex")]
@@ -607,24 +642,6 @@ float3 ThroughAir(float3 lit, float3 worldPosition)
     float3 transmittance;
     const float3 scattered = AirTo(worldPosition, transmittance);
     return lit * transmittance + scattered;
-}
-
-// Bruit de valeur 3D (de 0 à 1), lisse : hachage des coins entiers, interpolés.
-float PlanetHash(float3 p)
-{
-    p = frac(p * 0.3183099 + 0.1) * 17.0;
-    return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
-
-float PlanetNoise(float3 x)
-{
-    const float3 i = floor(x);
-    float3 t = frac(x);
-    t = t * t * (3.0 - 2.0 * t);
-    return lerp(lerp(lerp(PlanetHash(i), PlanetHash(i + float3(1, 0, 0)), t.x),
-                     lerp(PlanetHash(i + float3(0, 1, 0)), PlanetHash(i + float3(1, 1, 0)), t.x), t.y),
-                lerp(lerp(PlanetHash(i + float3(0, 0, 1)), PlanetHash(i + float3(1, 0, 1)), t.x),
-                     lerp(PlanetHash(i + float3(0, 1, 1)), PlanetHash(i + float3(1, 1, 1)), t.x), t.y), t.z);
 }
 
 // --- Nuages des planètes (CloudsComponent) : une couche épaisse entre deux sphères autour du centre de la planète. ---
@@ -1303,6 +1320,17 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
     return output;
 }
 
+// Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
+// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre.
+[shader("fragment")]
+SceneOutput fragmentTree(VertexOutput input)
+{
+    SceneOutput output;
+    output.color = MeshColor(input, true, true);
+    output.motion = Motion(input);
+    return output;
+}
+
 [ForceInline] // alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
 {
@@ -1384,6 +1412,20 @@ ShadowOutput vertexShadowSkinned(SkinnedVertexInput input, uint instance : SV_Vu
     Skin(input, asuint(draws[entry.x].normal[1].w), position, normal);
     ShadowOutput output = ShadowVertex(entry.x, position, input.uv);
     output.material = entry.y;
+    return output;
+}
+
+[shader("vertex")]
+ShadowOutput vertexTreeShadow(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const FrameData f = frame[0];
+    const uint c = params.cascade;
+    float4 m[4] = {f.cascades[c * 4 + 0], f.cascades[c * 4 + 1], f.cascades[c * 4 + 2], f.cascades[c * 4 + 3]};
+    float4 rotation;
+    ShadowOutput output;
+    output.position = Transform(m, TreePosition(treeInstances[instance * 2], input.position, rotation, instance));
+    output.uv = input.uv;
+    output.material = params.material;
     return output;
 }
 

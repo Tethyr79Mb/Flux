@@ -8,6 +8,8 @@
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
 
+#include <array>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -35,8 +37,9 @@ namespace Flux {
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
         double present = 0.0;  // CPU : appel de présentation
         double gpuShadows = -1.0;   // GPU : carte d'ombres
-        double gpuScene = -1.0;     // GPU : maillages de la scène, somme des six suivants
+        double gpuScene = -1.0;     // GPU : maillages de la scène, somme des sept suivants
         double gpuObjects = -1.0;   // GPU : entités opaques
+        double gpuVegetation = -1.0; // GPU : arbres des planètes
         double gpuGround = -1.0;    // GPU : sol des planètes
         double gpuSky = -1.0;       // GPU : fond du ciel
         double gpuOcean = -1.0;     // GPU : océans
@@ -50,6 +53,12 @@ namespace Flux {
         std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
         std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
+        // Arbres des planètes deux images plus tôt : dessinés (détaillés, simplifiés, lointains) et dans les ombres ;
+        // plaines triées à la dernière image, et en vue pas encore semées.
+        std::array<std::uint32_t, 3> trees{};
+        std::uint32_t shadowTrees = 0;
+        std::uint32_t treePlains = 0;
+        std::uint32_t pendingTreePlains = 0;
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
         // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
         std::uint32_t planetPendingTiles = 0;

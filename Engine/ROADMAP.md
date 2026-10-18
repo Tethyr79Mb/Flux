@@ -103,12 +103,17 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Particules sur le GPU : armes, explosions, étincelles, fumée (et poussière sous les réacteurs au sol).
 - 🔧 Anticrénelage temporel (TAA) : sous-pixels de Halton, reprojection par la profondeur, mouvement propre des objets (vaisseau, cockpit), voisinage en YCoCg ; grain des nuages qui change à chaque image et s'efface. Limites : le mouvement des os d'un personnage animé n'est pas compté (le voisinage rattrape), le mouvement des nuages non plus.
 - ⬜ Ombres des lumières intérieures.
-- ⬜ Champs d'astéroïdes et végétation (l'instancing des modèles est fait : reste à les générer et à les placer).
+- ⬜ Champs d'astéroïdes (l'instancing des modèles est fait : reste à les générer et à les placer, comme les arbres).
 - ⬜ Rendu vers texture : écrans du cockpit, interfaces dans le monde 3D.
 
 ### Planètes (Planetology)
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents. À améliorer : pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; sommets toujours un peu « bruit » de près.
-- ⬜ Végétation et rochers posés sur le sol (instancing).
+- 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : forêts sur l'herbe des plaines, 3 niveaux de détail
+  (détaillé, simplifié qui fait aussi les ombres, imposteur), vent. À améliorer : une seule espèce ; rien au-delà de
+  1,2 à 2,4 km (taches de forêt dans la couleur du sol à faire) ; passage d'un niveau de détail à l'autre sans fondu ;
+  arbres hors du champ sans ombre ; pas de collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé
+  sur le relief fin peut flotter ou s'enfoncer un peu sur le sol plus grossier.
+- ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume près de la caméra (8 pas), en colonne au loin et vu de l'espace, avec son ombre. À améliorer : voir la ligne suivante.
 - ⬜ Nuages : plus de pas quand on vole dedans, reprojection d'une image à l'autre, formes par type (cumulus, stratus).
