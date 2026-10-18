@@ -45,6 +45,21 @@ bool RunPlanetGpuTests() {
         cases.push_back({terrain, {3, static_cast<std::uint8_t>(middle), (1u << middle) / 3u, (1u << middle) / 2u}});
         cases.push_back({terrain, {4, static_cast<std::uint8_t>(max), (1u << max) / 3u, (1u << max) / 5u}});
         cases.push_back({terrain, {5, static_cast<std::uint8_t>(max), (1u << max) - 1u, 7u}});
+        // Au plus haut d'un échantillon de directions : dans une chaîne de montagnes, où les crêtes, l'érosion et la
+        // déformation comptent toutes.
+        Math::Vector3d peak{0.0, 1.0, 0.0};
+        double highest = -1.0e30;
+        for (int k = 0; k < 2000; ++k) {
+            const double z = 1.0 - 2.0 * (k + 0.5) / 2000.0;
+            const double r = std::sqrt(1.0 - z * z);
+            const Math::Vector3d direction{r * std::cos(2.39996 * k), z, r * std::sin(2.39996 * k)};
+            if (const double height = terrain->GetHeight(direction, 8); height > highest) {
+                highest = height;
+                peak = direction;
+            }
+        }
+        cases.push_back({terrain, Planet::FindTile(peak, middle)});
+        cases.push_back({terrain, Planet::FindTile(peak, max)});
     }
 
     // Toutes dans la même page : chacune doit écrire dans sa case.
