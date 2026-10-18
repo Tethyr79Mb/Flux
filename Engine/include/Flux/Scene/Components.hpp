@@ -257,20 +257,21 @@ namespace Flux {
     // toujours aux mêmes endroits (Planetology/VegetationRenderer.hpp). Seulement là où pousserait l'herbe du sol : pente
     // douce, assez humide, ni plage, ni neige, ni gel ; en forêts (cover : part de ces plaines couverte) plutôt
     // qu'éparpillés. Trois modèles du même arbre : détaillé de près, simplifié au-delà de lodDistance (il fait aussi les
-    // ombres), imposteur (quelques plans) au-delà de farDistance, jusqu'à range. Pas de collision.
+    // ombres), imposteur (quelques plans) au-delà de farDistance, de plus en plus espacés, jusqu'à range ; plus loin,
+    // la couleur des forêts sur le sol. Pas de collision.
     struct VegetationComponent
     {
         std::string model = "Modeles/Arbre/Arbre.glb";
         std::string lodModel = "Modeles/Arbre/Arbre-lod1.glb";
         std::string farModel = "Modeles/Arbre/Arbre-loin.glb";
-        float density = 0.6f;     // part des places possibles occupée dans une forêt (une tous les 5,7 m au plus)
+        float density = 0.4f;     // part des places possibles occupée dans une forêt (une tous les 5,7 m au plus)
         float cover = 0.5f;       // part des plaines couverte de forêts
         float maxSlope = 25.0f;   // degrés : au-delà, pas d'arbre
         float minScale = 0.7f;    // taille de chaque arbre, tirée entre les deux (x le modèle)
         float maxScale = 1.3f;
         float lodDistance = 60.0f; // m
         float farDistance = 300.0f;
-        float range = 2000.0f;    // m, au plus la distance où se voient les plaines semées (voir VegetationRenderer)
+        float range = 3000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)
     };
 
     // Nuages d'une planète (sur l'entité de son PlanetComponent) : une couche de `thickness` mètres d'épaisseur à

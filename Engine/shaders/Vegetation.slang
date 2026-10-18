@@ -91,6 +91,18 @@ bool InCascade(float3 p, float radius, uint c)
     return abs(x.x) <= 1.0 + side && abs(x.y) <= 1.0 + side && x.z >= -depth && x.z <= 1.0 + depth;
 }
 
+// Nombre de 0 à 1 tiré de la place d'un arbre.
+float Random(float3 p)
+{
+    uint x = asuint(p.x) * 0x9e3779b1u ^ asuint(p.y) * 0x85ebca6bu ^ asuint(p.z) * 0xc2b2ae35u;
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return float(x >> 8) * (1.0 / 16777216.0);
+}
+
 uint FirstInstance(uint list) { return frame.firstInstances[list / 4][list % 4]; }
 uint Capacity(uint list) { return frame.capacities[list / 4][list % 4]; }
 
@@ -131,7 +143,19 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             continue;
         }
         if (InView(center, radius)) {
-            Append(distance < distances.x ? 0 : distance < distances.y ? 1 : 2, position, scale, rotation);
+            if (distance < distances.y) {
+                Append(distance < distances.x ? 0 : 1, position, scale, rotation);
+            } else {
+                // Au loin, un arbre couvre de moins en moins de pixels et il y en a de plus en plus : passé deux fois
+                // la distance des imposteurs, une part d'eux seulement (inverse de la distance), toujours les mêmes
+                // (hasard tiré de leur place), un peu plus grands pour couvrir autant. La couleur des forêts sur le
+                // sol (fragmentPlanet) comble le reste. Près de la portée, ils rapetissent jusqu'à disparaître.
+                const float keep = saturate(2.0 * distances.y / distance);
+                if (Random(placed.xyz) < keep) {
+                    const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
+                    Append(2, position, scale * min(rsqrt(keep), 1.6) * shrink, rotation);
+                }
+            }
         }
         // Ombres : le modèle simplifié, dans chaque cascade qu'il touche.
         if (distance - radius < shadowEnd) {

@@ -297,8 +297,11 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   touchée), puis écrit leurs nombres dans les commandes : un `DrawIndexedIndirect` par primitive de modèle et par liste.
   `vertexTree` lit la place et la rotation de chaque arbre et le balance au vent ; `fragmentTree` ne retourne pas les
   normales des feuilles (tournées vers l'extérieur de la couronne des deux côtés). Modèles : `assets/Modeles/Arbre`,
-  générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines s'arrêtent à 6 bords de tuile environ
-  de la caméra (1,2 à 2,4 km) : au-delà, pas d'arbre.
+  générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à la portée du composant
+  (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
+  Au loin, les imposteurs s'espacent (une part inverse de la distance, un peu agrandis) et rapetissent près de la
+  portée ; `fragmentPlanet` peint la cime des forêts sur le sol (mêmes taches et climat, `ForestAt`, calculés par
+  sommet) à partir de la distance des imposteurs. L'air des arbres est calculé par sommet (`TreeVertexOutput`).
 
 ## Interface (FluxUI)
 
