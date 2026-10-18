@@ -9,7 +9,7 @@ static const uint TileSide = TileQuads + 1;
 static const uint Wide = TileSide + 2;          // grille avec une rangée de plus autour (normales du bord)
 static const uint Coarse = TileQuads / 2 + 3;   // sommets de la parente, de -2 à TileQuads + 2, de deux en deux
 static const uint Columns = TileSide + 4;
-static const uint OctaveCount = 40;
+static const uint OctaveCount = 45;
 static const uint GroupSize = 256;
 
 // Doit correspondre à Planet::TileGpuInputs.
@@ -50,54 +50,91 @@ groupshared float lowestShared[GroupSize];
 groupshared float radiusShared[GroupSize];
 groupshared float highestShared[GroupSize];
 
-// Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, crêtes.
+// Réglages du relief, comme dans Planet.cpp.
+static const float DetailPlains = 0.012;
+static const float DetailHills = 0.03;
+static const float DetailMountains = 0.065;
+static const float ChainStart = 0.84;
+static const float ChainEnd = 0.97;
+static const float ChainBase = 0.25;
+static const float RidgeContrast = 0.95;
+static const float RidgeRounding = 0.06;
+static const float MountainWeight = 0.85;
+static const float HillWeight = 0.15;
+static const float WarpLarge = 0.06;
+static const float WarpSmall = 0.012;
+
+// Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, crêtes, érosion et
+// octaves dont la pente compte.
 struct Layer
 {
     uint first;
     uint last;
     float gain;
     bool ridged;
+    float erosion;
+    uint erodedOctaves;
 };
-static const Layer Layers[6] = {
-    { 0, 5, 0.5, false },   // continents
-    { 1, 4, 0.5, false },   // zones de montagnes
-    { 2, 5, 0.5, false },   // zones de collines
-    { 2, 10, 0.5, true },   // montagnes (crêtes)
-    { 4, 9, 0.5, false },   // collines
-    { 6, 22, 0.58, false }, // détail
+static const Layer Layers[8] = {
+    { 0, 5, 0.5, false, 0.0, 0 },   // continents
+    { 1, 3, 0.5, false, 0.0, 0 },   // zones des chaînes de montagnes
+    { 2, 5, 0.5, false, 0.0, 0 },   // zones de collines
+    { 2, 10, 0.5, true, 2.5, 8 },   // montagnes (crêtes)
+    { 4, 9, 0.5, false, 4.0, 5 },   // collines
+    { 6, 22, 0.58, false, 3.0, 6 }, // détail
+    { 0, 3, 0.5, false, 0.0, 0 },   // grande déformation
+    { 3, 6, 0.5, false, 0.0, 0 },   // petite déformation
 };
 
 float Fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+float FadeSlope(float t) { return 30.0 * t * t * (t * (t - 2.0) + 1.0); }
 
-float Gradient(uint hash, float x, float y, float z)
+// Vecteur du gradient de Perlin choisi par hash (GradientVector dans Planet.cpp).
+float3 GradientVector(uint hash)
 {
     const uint h = hash & 15u;
-    const float u = h < 8 ? x : y;
-    const float v = h < 4 ? y : (h == 12 || h == 14 ? x : z);
-    return ((h & 1u) != 0 ? -u : u) + ((h & 2u) != 0 ? -v : v);
+    const float su = (h & 1u) != 0 ? -1.0 : 1.0;
+    const float sv = (h & 2u) != 0 ? -1.0 : 1.0;
+    float3 g = float3(0.0, 0.0, 0.0);
+    if (h < 8) { g.x += su; } else { g.y += su; }
+    if (h < 4) { g.y += sv; } else if (h == 12 || h == 14) { g.x += sv; } else { g.z += sv; }
+    return g;
 }
 
-// Bruit de Perlin au point cell + q (cell : maille du réseau modulo 256 ; q : position, petite, depuis cette maille).
-float Noise(int3 cell, float3 q)
+// Bruit de Perlin au point cell + q (cell : maille du réseau modulo 256 ; q : position, petite, depuis cette maille) :
+// x la valeur, yzw sa pente (Terrain::Noise).
+float4 Noise(int3 cell, float3 q)
 {
     const float3 floored = floor(q);
     const int3 c = (cell + int3(floored)) & 255;
     const float3 f = q - floored;
-    const float u = Fade(f.x);
-    const float v = Fade(f.y);
-    const float w = Fade(f.z);
+    const float3 u = float3(Fade(f.x), Fade(f.y), Fade(f.z));
+    const float3 du = float3(FadeSlope(f.x), FadeSlope(f.y), FadeSlope(f.z));
     const uint A = permutation[c.x] + uint(c.y);
     const uint AA = permutation[A] + uint(c.z);
     const uint AB = permutation[A + 1] + uint(c.z);
     const uint B = permutation[c.x + 1] + uint(c.y);
     const uint BA = permutation[B] + uint(c.z);
     const uint BB = permutation[B + 1] + uint(c.z);
-    const float x = f.x, y = f.y, z = f.z;
-    return lerp(lerp(lerp(Gradient(permutation[AA], x, y, z), Gradient(permutation[BA], x - 1, y, z), u),
-                     lerp(Gradient(permutation[AB], x, y - 1, z), Gradient(permutation[BB], x - 1, y - 1, z), u), v),
-                lerp(lerp(Gradient(permutation[AA + 1], x, y, z - 1), Gradient(permutation[BA + 1], x - 1, y, z - 1), u),
-                     lerp(Gradient(permutation[AB + 1], x, y - 1, z - 1), Gradient(permutation[BB + 1], x - 1, y - 1, z - 1), u), v),
-                w);
+    const float3 ga = GradientVector(permutation[AA]), gb = GradientVector(permutation[BA]);
+    const float3 gc = GradientVector(permutation[AB]), gd = GradientVector(permutation[BB]);
+    const float3 ge = GradientVector(permutation[AA + 1]), gf = GradientVector(permutation[BA + 1]);
+    const float3 gg = GradientVector(permutation[AB + 1]), gh = GradientVector(permutation[BB + 1]);
+    const float va = dot(ga, f), vb = dot(gb, f - float3(1, 0, 0)), vc = dot(gc, f - float3(0, 1, 0));
+    const float vd = dot(gd, f - float3(1, 1, 0)), ve = dot(ge, f - float3(0, 0, 1)), vf = dot(gf, f - float3(1, 0, 1));
+    const float vg = dot(gg, f - float3(0, 1, 1)), vh = dot(gh, f - float3(1, 1, 1));
+    const float k1 = vb - va, k2 = vc - va, k3 = ve - va;
+    const float k4 = va - vb - vc + vd, k5 = va - vc - ve + vg, k6 = va - vb - ve + vf;
+    const float k7 = -va + vb + vc - vd + ve - vf - vg + vh;
+    const float value = va + u.x * k1 + u.y * k2 + u.z * k3 + u.x * u.y * k4 + u.y * u.z * k5 + u.z * u.x * k6
+                      + u.x * u.y * u.z * k7;
+    float3 gradient = ga + (gb - ga) * u.x + (gc - ga) * u.y + (ge - ga) * u.z + (ga - gb - gc + gd) * (u.x * u.y)
+                    + (ga - gc - ge + gg) * (u.y * u.z) + (ga - gb - ge + gf) * (u.z * u.x)
+                    + (-ga + gb + gc - gd + ge - gf - gg + gh) * (u.x * u.y * u.z);
+    gradient += float3(du.x * (k1 + u.y * k4 + u.z * k6 + u.y * u.z * k7),
+                       du.y * (k2 + u.z * k5 + u.x * k4 + u.z * u.x * k7),
+                       du.z * (k3 + u.x * k6 + u.y * k5 + u.x * u.y * k7));
+    return float4(value, gradient);
 }
 
 uint FirstOctaveIndex(uint layer)
@@ -107,23 +144,55 @@ uint FirstOctaveIndex(uint layer)
     return index;
 }
 
-// Terrain::Fbm : `delta` = direction - direction du centre de la tuile.
-float Fbm(float3 delta, uint layer, uint octaves)
+float3 Tangent(float3 v, float3 direction) { return v - direction * dot(v, direction); }
+
+// Terrain::Fbm : `point` = direction (déformée ou non) - direction du centre de la tuile.
+float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeScale)
 {
     const Layer L = Layers[layer];
     const float total = (1.0 - pow(L.gain, float(L.last - L.first))) / (1.0 - L.gain);
     const uint last = min(L.last, octaves);
     const uint base = FirstOctaveIndex(layer);
     float sum = 0.0;
-    float amplitude = 1.0;
+    float amplitude = 1.0 / total;
+    float3 slope = float3(0.0, 0.0, 0.0);
     for (uint k = L.first; k < last; ++k) {
         const uint o = base + k - L.first;
         const float4 fraction = tile.fractions[o];
-        const float n = Noise(tile.cells[o].xyz, fraction.xyz + delta * fraction.w);
-        sum += amplitude * (L.ridged ? (1.0 - abs(n)) * (1.0 - abs(n)) : n);
+        const float4 n = Noise(tile.cells[o].xyz, fraction.xyz + point * fraction.w);
+        float value = n.x;
+        float ridgeSlope = 1.0;
+        if (L.ridged) {
+            const float rounded = sqrt(n.x * n.x + RidgeRounding * RidgeRounding);
+            const float ridge = 1.0 - rounded;
+            value = ridge * ridge * ridge;
+            ridgeSlope = -3.0 * ridge * ridge * n.x / rounded;
+        }
+        if (k - L.first < L.erodedOctaves) {
+            slope += Tangent(n.yzw, direction) * (fraction.w * ridgeSlope * amplitude);
+        }
+        const float steep = slopeScale * length(slope);
+        sum += amplitude * value / (1.0 + L.erosion * steep * steep);
         amplitude *= L.gain;
     }
-    return sum / total;
+    return sum;
+}
+
+// Terrain::Warp : toutes les octaves de la couche, en radians.
+float3 Warp(float3 delta, float3 direction, uint layer, float amount)
+{
+    const Layer L = Layers[layer];
+    const float total = (1.0 - pow(L.gain, float(L.last - L.first))) / (1.0 - L.gain);
+    const uint base = FirstOctaveIndex(layer);
+    float3 warp = float3(0.0, 0.0, 0.0);
+    float amplitude = amount / total;
+    for (uint k = L.first; k < L.last; ++k) {
+        const uint o = base + k - L.first;
+        const float4 fraction = tile.fractions[o];
+        warp += Tangent(Noise(tile.cells[o].xyz, fraction.xyz + delta * fraction.w).yzw, direction) * amplitude;
+        amplitude *= L.gain;
+    }
+    return warp;
 }
 
 // Terrain::GetHeight.
@@ -131,16 +200,21 @@ float Height(float3 delta, uint octaves)
 {
     const float relief = tile.axisS.w;
     if (relief <= 0.0) { return 0.0; }
-    const float continents = Fbm(delta, 0, octaves);
+    const float toSlope = relief / tile.axisN.w;
+    const float3 direction = normalize(tile.center.xyz + delta);
+    const float3 large = delta + Warp(delta, direction, 6, WarpLarge);
+    const float3 small = large + Warp(delta, direction, 7, WarpSmall);
+    const float continents = Fbm(large, direction, 0, octaves, 0.0);
     const float land = smoothstep(-0.26, 0.06, continents);
-    const float mountainZone = smoothstep(0.08, 0.36, Fbm(delta, 1, octaves)) * land;
-    const float hillZone = smoothstep(0.05, 0.4, Fbm(delta, 2, octaves));
-    const float mountains = mountainZone > 0.0 ? Fbm(delta, 3, octaves) : 0.0;
-    const float hills = hillZone > 0.0 ? Fbm(delta, 4, octaves) : 0.0;
-    const float roughness = 0.012 + 0.03 * hillZone + 0.065 * mountainZone;
-    const float detail = Fbm(delta, 5, octaves);
-    const float height = -0.4 + 0.45 * land + 0.15 * continents + 0.85 * mountainZone * mountains
-                       + 0.15 * hillZone * hills + roughness * detail;
+    const float hillZone = smoothstep(0.05, 0.4, Fbm(large, direction, 2, octaves, 0.0));
+    const float chains = 1.0 - abs(Fbm(large, direction, 1, octaves, 0.0));
+    const float mountainZone = smoothstep(ChainStart, ChainEnd, chains) * smoothstep(0.0, 0.2, continents);
+    const float mountains = mountainZone > 0.0 ? Fbm(small, direction, 3, octaves, toSlope * MountainWeight * mountainZone) : 0.0;
+    const float hills = hillZone > 0.0 ? Fbm(small, direction, 4, octaves, toSlope * HillWeight * hillZone) : 0.0;
+    const float roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
+    const float detail = Fbm(delta, direction, 5, octaves, toSlope * roughness);
+    const float height = -0.4 + 0.45 * land + 0.15 * continents + MountainWeight * mountainZone * (ChainBase + RidgeContrast * mountains)
+                       + HillWeight * hillZone * hills + roughness * detail;
     return relief * clamp(height, -1.0, 1.0);
 }
 

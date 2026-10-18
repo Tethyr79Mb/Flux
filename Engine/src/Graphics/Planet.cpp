@@ -41,6 +41,32 @@ namespace Flux::Planet {
         constexpr double DetailPlains = 0.012;
         constexpr double DetailHills = 0.03;
         constexpr double DetailMountains = 0.065;
+        // Largeur des chaînes de montagnes : là où 1 - |bruit de zone| dépasse ChainStart, pleines au-delà de ChainEnd.
+        constexpr double ChainStart = 0.84;
+        constexpr double ChainEnd = 0.97;
+        // Part de la hauteur d'une chaîne donnée par sa bande elle-même (un dos continu le long de la chaîne), le reste
+        // par les crêtes : sans elle, les sommets seraient des pics isolés.
+        constexpr double ChainBase = 0.25;
+        constexpr double RidgeContrast = 0.95; // les crêtes, de 0 à 1 environ, au-dessus de la bande
+        // Arrondi du sommet des crêtes (en unités du bruit).
+        constexpr double RidgeRounding = 0.06;
+        // Part du relief des montagnes et des collines dans leur zone.
+        constexpr double MountainWeight = 0.85;
+        constexpr double HillWeight = 0.15;
+
+        // Érosion : chaque octave est atténuée là où la couche est déjà en pente (1 / (1 + force x pente²), la pente
+        // en mètres par mètre). Les versants restent lisses et creusés de ravines, le détail se garde pour les crêtes
+        // et les replats, comme un relief usé par l'eau (méthode d'Inigo Quilez). Seule une octave plus grande ou la
+        // même compte : une tuile sans les octaves fines garde le même terrain que ses enfants, au détail près.
+        constexpr double ErosionMountains = 2.5;
+        constexpr double ErosionHills = 4.0;
+        constexpr double ErosionDetail = 3.0;
+        // Déformation du domaine : le point où se lit une couche est poussé (en radians, sur la sphère) le long de la
+        // pente d'un bruit lent. Côtes découpées, chaînes de montagnes allongées et tordues au lieu de taches rondes.
+        // La grande déformation touche les continents et les zones, la petite s'y ajoute pour les montagnes et les
+        // collines ; le détail fin n'est pas déformé.
+        constexpr double WarpLarge = 0.06;
+        constexpr double WarpSmall = 0.012;
 
         // Couches du relief (voir GetHeight), dans l'ordre de TileGpuInputs::cells et de shaders/PlanetTile.slang.
         struct Layer
@@ -50,15 +76,23 @@ namespace Flux::Planet {
             double gain;
             Math::Vector3d offset; // sépare les couches (sinon elles suivraient les mêmes formes)
             bool ridged;
+            double erosion;        // force de l'érosion, 0 : aucune
+            // Octaves dont la pente compte pour l'érosion (les suivantes sont atténuées selon la pente déjà connue) : la
+            // pente coûte autant que le bruit, et les octaves fines du détail sont les plus nombreuses.
+            std::uint32_t erodedOctaves;
         };
-        enum LayerIndex { Continents, MountainZone, HillZone, Mountains, Hills, Detail };
-        constexpr std::array<Layer, 6> Layers{{
-            {0, 5, 0.5, {0.0, 0.0, 0.0}, false},
-            {1, 4, 0.5, {31.7, -12.3, 7.1}, false},
-            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false},
-            {2, 2 + MaxRidgeOctaves, 0.5, {17.3, -41.7, 8.9}, true},
-            {4, 9, 0.5, {5.3, 23.9, -33.1}, false},
-            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false},
+        enum LayerIndex { Continents, MountainZone, HillZone, Mountains, Hills, Detail, WarpLargeField, WarpSmallField };
+        constexpr std::array<Layer, 8> Layers{{
+            {0, 5, 0.5, {0.0, 0.0, 0.0}, false, 0.0, 0},
+            {1, 3, 0.5, {31.7, -12.3, 7.1}, false, 0.0, 0},
+            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false, 0.0, 0},
+            {2, 2 + MaxRidgeOctaves, 0.5, {17.3, -41.7, 8.9}, true, ErosionMountains, MaxRidgeOctaves},
+            {4, 9, 0.5, {5.3, 23.9, -33.1}, false, ErosionHills, 5},
+            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false, ErosionDetail, 6},
+            // Déformations : toutes leurs octaves, quel que soit le niveau de la tuile (sinon le terrain glisserait
+            // d'un niveau à l'autre).
+            {0, 3, 0.5, {-37.9, 13.3, 21.7}, false, 0.0, 0},
+            {3, 6, 0.5, {11.1, -29.3, -45.7}, false, 0.0, 0},
         }};
         static_assert([] {
             std::uint32_t count = 0;
@@ -67,6 +101,11 @@ namespace Flux::Planet {
             }
             return count;
         }() == TileGpuInputs::Octaves);
+
+        // Partie d'un vecteur tangente à la sphère en direction (unitaire).
+        Math::Vector3d Tangent(const Math::Vector3d& v, const Math::Vector3d& direction) {
+            return v - direction * Math::Dot(v, direction);
+        }
 
         double SmoothStep(double edge0, double edge1, double x) {
             const double t = std::clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -77,15 +116,20 @@ namespace Flux::Planet {
             return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
         }
 
-        double Gradient(std::uint8_t hash, double x, double y, double z) {
-            const std::uint8_t h = hash & 15u;
-            const double u = h < 8 ? x : y;
-            const double v = h < 4 ? y : (h == 12 || h == 14 ? x : z);
-            return ((h & 1u) ? -u : u) + ((h & 2u) ? -v : v);
+        // Dérivée de Fade.
+        double FadeSlope(double t) {
+            return 30.0 * t * t * (t * (t - 2.0) + 1.0);
         }
 
-        double Lerp(double a, double b, double t) {
-            return a + (b - a) * t;
+        // Vecteur du gradient de Perlin choisi par hash : Gradient(hash, x, y, z) = Dot(GradientVector(hash), (x, y, z)).
+        Math::Vector3d GradientVector(std::uint8_t hash) {
+            const std::uint8_t h = hash & 15u;
+            const double su = (h & 1u) ? -1.0 : 1.0;
+            const double sv = (h & 2u) ? -1.0 : 1.0;
+            Math::Vector3d g{};
+            (h < 8 ? g.x : g.y) += su;
+            (h < 4 ? g.y : (h == 12 || h == 14 ? g.x : g.z)) += sv;
+            return g;
         }
 
         // Coordonnée de la grille de toute la face (de 0 à TileQuads x 2^niveau) en s ou t de -1 à 1 : calculée depuis
@@ -162,19 +206,18 @@ namespace Flux::Planet {
         return static_cast<std::uint32_t>(std::clamp(octaves, 1.0, static_cast<double>(MaxOctaves)));
     }
 
-    double Terrain::Noise(const Math::Vector3d& p) const {
+    Terrain::Sample Terrain::Noise(const Math::Vector3d& p, bool withGradient) const {
+        // Bruit de Perlin et sa pente exacte (dérivée de la courbe d'atténuation Fade comprise) : le mélange trilinéaire
+        // des valeurs aux 8 coins, écrit en polynôme de u, v, w pour se dériver.
         const double fx = std::floor(p.x);
         const double fy = std::floor(p.y);
         const double fz = std::floor(p.z);
         const auto X = static_cast<std::uint32_t>(static_cast<std::int64_t>(fx) & 255);
         const auto Y = static_cast<std::uint32_t>(static_cast<std::int64_t>(fy) & 255);
         const auto Z = static_cast<std::uint32_t>(static_cast<std::int64_t>(fz) & 255);
-        const double x = p.x - fx;
-        const double y = p.y - fy;
-        const double z = p.z - fz;
-        const double u = Fade(x);
-        const double v = Fade(y);
-        const double w = Fade(z);
+        const Math::Vector3d f{p.x - fx, p.y - fy, p.z - fz};
+        const Math::Vector3d u{Fade(f.x), Fade(f.y), Fade(f.z)};
+        const Math::Vector3d du{FadeSlope(f.x), FadeSlope(f.y), FadeSlope(f.z)};
         const auto& P = m_permutation;
         const std::uint32_t A = P[X] + Y;
         const std::uint32_t AA = P[A] + Z;
@@ -182,56 +225,118 @@ namespace Flux::Planet {
         const std::uint32_t B = P[X + 1] + Y;
         const std::uint32_t BA = P[B] + Z;
         const std::uint32_t BB = P[B + 1] + Z;
-        return Lerp(Lerp(Lerp(Gradient(P[AA], x, y, z), Gradient(P[BA], x - 1, y, z), u),
-                         Lerp(Gradient(P[AB], x, y - 1, z), Gradient(P[BB], x - 1, y - 1, z), u), v),
-                    Lerp(Lerp(Gradient(P[AA + 1], x, y, z - 1), Gradient(P[BA + 1], x - 1, y, z - 1), u),
-                         Lerp(Gradient(P[AB + 1], x, y - 1, z - 1), Gradient(P[BB + 1], x - 1, y - 1, z - 1), u), v),
-                    w);
+        // Coins a (0,0,0), b (1,0,0), c (0,1,0), d (1,1,0), e (0,0,1), f (1,0,1), g (0,1,1), h (1,1,1).
+        const Math::Vector3d ga = GradientVector(P[AA]), gb = GradientVector(P[BA]), gc = GradientVector(P[AB]),
+                             gd = GradientVector(P[BB]), ge = GradientVector(P[AA + 1]), gf = GradientVector(P[BA + 1]),
+                             gg = GradientVector(P[AB + 1]), gh = GradientVector(P[BB + 1]);
+        const double va = Math::Dot(ga, f), vb = Math::Dot(gb, f - Math::Vector3d{1, 0, 0}),
+                     vc = Math::Dot(gc, f - Math::Vector3d{0, 1, 0}), vd = Math::Dot(gd, f - Math::Vector3d{1, 1, 0}),
+                     ve = Math::Dot(ge, f - Math::Vector3d{0, 0, 1}), vf = Math::Dot(gf, f - Math::Vector3d{1, 0, 1}),
+                     vg = Math::Dot(gg, f - Math::Vector3d{0, 1, 1}), vh = Math::Dot(gh, f - Math::Vector3d{1, 1, 1});
+        const double k1 = vb - va, k2 = vc - va, k3 = ve - va;
+        const double k4 = va - vb - vc + vd, k5 = va - vc - ve + vg, k6 = va - vb - ve + vf;
+        const double k7 = -va + vb + vc - vd + ve - vf - vg + vh;
+        Sample sample;
+        sample.value = va + u.x * k1 + u.y * k2 + u.z * k3 + u.x * u.y * k4 + u.y * u.z * k5 + u.z * u.x * k6
+                     + u.x * u.y * u.z * k7;
+        if (!withGradient) {
+            sample.gradient = {};
+            return sample;
+        }
+        sample.gradient = ga + (gb - ga) * u.x + (gc - ga) * u.y + (ge - ga) * u.z + (ga - gb - gc + gd) * (u.x * u.y)
+                        + (ga - gc - ge + gg) * (u.y * u.z) + (ga - gb - ge + gf) * (u.z * u.x)
+                        + (-ga + gb + gc - gd + ge - gf - gg + gh) * (u.x * u.y * u.z);
+        sample.gradient += Math::Vector3d{du.x * (k1 + u.y * k4 + u.z * k6 + u.y * u.z * k7),
+                                          du.y * (k2 + u.z * k5 + u.x * k4 + u.z * u.x * k7),
+                                          du.z * (k3 + u.x * k6 + u.y * k5 + u.x * u.y * k7)};
+        return sample;
     }
 
-    // Somme des octaves [first, min(last, octaves)) d'une couche (octave k : fréquence BaseFrequency x 2^k), chacune
-    // `gain` fois plus basse que la précédente, divisée par la somme des amplitudes de toutes ses octaves [first,
-    // last) : de -1 à 1 environ (le plus souvent entre -0,5 et 0,5), à la même échelle quel que soit le nombre
-    // d'octaves d'une tuile.
-    double Terrain::Fbm(const Math::Vector3d& direction, std::uint32_t layerIndex, std::uint32_t octaves) const {
+    // Somme des octaves [first, min(last, octaves)) d'une couche lue au point `point` (la direction, déformée ou non),
+    // octave k à la fréquence BaseFrequency x 2^k, chacune `gain` fois plus basse que la précédente, divisée par la
+    // somme des amplitudes de toutes ses octaves [first, last) : de -1 à 1 environ (le plus souvent entre -0,5 et
+    // 0,5), à la même échelle quel que soit le nombre d'octaves d'une tuile. slopeScale : mètres par unité de la
+    // couche, divisés par le rayon (pente réelle de l'érosion).
+    double Terrain::Fbm(const Math::Vector3d& point, const Math::Vector3d& direction, std::uint32_t layerIndex,
+                        std::uint32_t octaves, double slopeScale) const {
         const Layer& layer = Layers[layerIndex];
         const double gain = layer.gain;
-        const bool ridged = layer.ridged;
         const double total = (1.0 - std::pow(gain, static_cast<double>(layer.last - layer.first))) / (1.0 - gain);
         const std::uint32_t last = std::min(layer.last, octaves);
         double sum = 0.0;
-        double amplitude = 1.0;
-        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first))) + layer.offset;
+        double amplitude = 1.0 / total;
+        double frequency = BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first));
+        Math::Vector3d p = point * frequency + layer.offset;
+        Math::Vector3d slope{}; // pente de la couche (par radian), octaves déjà sommées et celle-ci
         for (std::uint32_t k = layer.first; k < last; ++k) {
-            const double n = Noise(p);
-            // Crêtes : 1 - |bruit| fait une arête vive là où le bruit passe par 0, au carré pour des vallées larges.
-            sum += amplitude * (ridged ? (1.0 - std::abs(n)) * (1.0 - std::abs(n)) : n);
+            const bool eroded = k - layer.first < layer.erodedOctaves;
+            const Sample n = Noise(p, eroded);
+            double value = n.value;
+            double ridgeSlope = 1.0; // dérivée de la valeur gardée par rapport au bruit
+            if (layer.ridged) {
+                // Crêtes : 1 - |bruit| fait une arête là où le bruit passe par 0, au cube pour des vallées larges. |x|
+                // arrondi (racine de x² + ε²) : une arête vive au mètre près ferait un trait à l'ombrage.
+                const double rounded = std::sqrt(n.value * n.value + RidgeRounding * RidgeRounding);
+                const double ridge = 1.0 - rounded;
+                value = ridge * ridge * ridge;
+                ridgeSlope = -3.0 * ridge * ridge * n.value / rounded;
+            }
+            if (eroded) {
+                slope += Tangent(n.gradient, direction) * (frequency * ridgeSlope * amplitude);
+            }
+            const double steep = slopeScale * Math::Length(slope);
+            sum += amplitude * value / (1.0 + layer.erosion * steep * steep);
             amplitude *= gain;
+            frequency *= 2.0;
             p *= 2.0;
         }
-        return sum / total;
+        return sum;
+    }
+
+    Math::Vector3d Terrain::Warp(const Math::Vector3d& direction, std::uint32_t layerIndex, double amount) const {
+        // Pente d'un bruit lent, tangente à la sphère, en radians : un champ de déplacement sans à-coup.
+        const Layer& layer = Layers[layerIndex];
+        const double total = (1.0 - std::pow(layer.gain, static_cast<double>(layer.last - layer.first))) / (1.0 - layer.gain);
+        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first))) + layer.offset;
+        Math::Vector3d warp{};
+        double amplitude = amount / total;
+        for (std::uint32_t k = layer.first; k < layer.last; ++k) {
+            warp += Tangent(Noise(p, true).gradient, direction) * amplitude;
+            amplitude *= layer.gain;
+            p *= 2.0;
+        }
+        return warp;
     }
 
     double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves) const {
         if (m_relief <= 0.0) {
             return 0.0;
         }
+        const double toSlope = m_relief / m_radius; // une unité de hauteur (fraction du relief) par radian, en m/m
+        // Points déformés : grandes formes, puis montagnes et collines.
+        const Math::Vector3d large = direction + Warp(direction, WarpLargeField, WarpLarge);
+        const Math::Vector3d small = large + Warp(direction, WarpSmallField, WarpSmall);
         // Couches, des plus grandes aux plus fines (octave 0 : environ un quart du tour de la planète) :
         // - continents : terres et bassins ;
-        const double continents = Fbm(direction, Continents, octaves);
+        const double continents = Fbm(large, direction, Continents, octaves, 0.0);
         const double land = SmoothStep(-0.26, 0.06, continents);
-        // - où sont les montagnes (des chaînes sur les terres, pas partout) et les collines ;
-        const double mountainZone = SmoothStep(0.08, 0.36, Fbm(direction, MountainZone, octaves)) * land;
-        const double hillZone = SmoothStep(0.05, 0.4, Fbm(direction, HillZone, octaves));
-        // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les crêtes) ;
-        const double mountains = mountainZone > 0.0 ? Fbm(direction, Mountains, octaves) : 0.0;
-        const double hills = hillZone > 0.0 ? Fbm(direction, Hills, octaves) : 0.0;
+        // - les collines, et les montagnes en chaînes : des bandes le long des lignes où un bruit lent passe par zéro
+        //   (tordues par la déformation), au cœur des continents ; le reste est de la plaine ;
+        const double hillZone = SmoothStep(0.05, 0.4, Fbm(large, direction, HillZone, octaves, 0.0));
+        const double chains = 1.0 - std::abs(Fbm(large, direction, MountainZone, octaves, 0.0));
+        const double mountainZone = SmoothStep(ChainStart, ChainEnd, chains) * SmoothStep(0.0, 0.2, continents);
+        // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les crêtes), érodés
+        //   selon leur vraie pente ;
+        const double mountains =
+            mountainZone > 0.0 ? Fbm(small, direction, Mountains, octaves, toSlope * MountainWeight * mountainZone) : 0.0;
+        const double hills = hillZone > 0.0 ? Fbm(small, direction, Hills, octaves, toSlope * HillWeight * hillZone) : 0.0;
         // - le détail fin (bosses, rochers), qui baisse moins vite (DetailGain) : faible dans les plaines.
         const double roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
-        const double detail = Fbm(direction, Detail, octaves);
+        const double detail = Fbm(direction, direction, Detail, octaves, toSlope * roughness);
         // Bassins vers -0,4, plaines vers 0,05 à 0,1, montagnes jusqu'au relief.
-        const double height = -0.4 + 0.45 * land + 0.15 * continents + 0.85 * mountainZone * mountains
-                            + 0.15 * hillZone * hills + roughness * detail;
+        const double height = -0.4 + 0.45 * land + 0.15 * continents
+                            + MountainWeight * mountainZone * (ChainBase + RidgeContrast * mountains)
+                            + HillWeight * hillZone * hills + roughness * detail;
         return m_relief * std::clamp(height, -1.0, 1.0);
     }
 
@@ -249,7 +354,7 @@ namespace Flux::Planet {
         const auto layerTail = [&](LayerIndex index) {
             return tail(Layers[index].first, Layers[index].last, Layers[index].gain);
         };
-        const double omitted = 0.6 * layerTail(Continents) + 0.85 * layerTail(Mountains) + 0.15 * layerTail(Hills)
+        const double omitted = 0.6 * layerTail(Continents) + MountainWeight * RidgeContrast * layerTail(Mountains) + HillWeight * layerTail(Hills)
                              + (DetailPlains + DetailHills + DetailMountains) * layerTail(Detail);
         return m_relief * omitted;
     }

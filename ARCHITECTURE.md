@@ -255,7 +255,11 @@ planète donne directement le sien comme indice d'instance.
 
 - Cube-sphère : 6 faces en quadtree, tuiles de 33×33 avec jupes, morphing CDLOD entre niveaux.
 - Relief = une formule (`Terrain::GetHeight`), dupliquée dans `shaders/PlanetTile.slang` pour le GPU. Les deux
-  versions doivent rester égales (`PlanetGpuTests`). Pas de terrain stocké ni creusable.
+  versions doivent rester égales (`PlanetGpuTests`). Pas de terrain stocké ni creusable. Couches de bruit de Perlin
+  avec leur pente exacte : continents, zones de collines, chaînes de montagnes (bandes où un bruit lent passe par
+  zéro), crêtes, collines, détail. Les couches sont lues à un point déformé par la pente d'un bruit lent (côtes et
+  chaînes tordues), et chaque octave est atténuée selon la pente réelle déjà sommée de sa couche (érosion analytique).
+  Une octave ne dépend que des octaves plus grandes : une tuile grossière garde la forme de ses enfants.
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
   tableaux (`GroundTextures`) plaquées en triplanaire, chaque projection en pavage hexagonal (rotation et décalage
   aléatoires par cellule, périodique sur `GroundPeriod` pour ne pas voir de raccord entre tuiles) ; couleurs unies si les textures manquent ou pendant leur
