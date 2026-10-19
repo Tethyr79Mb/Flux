@@ -632,7 +632,7 @@ namespace {
         CHECK(!flight.travel && flight.cruiseSpeed == 0.0f);
         frames(3.0, {.up = up});
         CHECK(flight.travelLevel == 0.0f);
-        // Seulement dans l'espace : dans l'air, Tab ne l'allume pas.
+        // Pas dans l'air épais : Tab ne l'allume pas.
         frames(Frame, {.travel = true, .up = up, .air = 0.5f});
         CHECK(!flight.travel);
 
@@ -651,10 +651,16 @@ namespace {
         CHECK(!flight.travel && Math::Length(flight.velocity) > 5000.0f);
         frames(30.0, {.up = up});
         CHECK(Math::Length(flight.velocity) < 2050.0f);
+        // Dans l'air : entier en haute atmosphère (0,01), bridé de moitié à mi-chemin (0,135 : x5,5 au lieu de x10),
+        // coupé dans l'air épais (0,5), où l'excès fond vite.
         CHECK(enterTravel());
         frames(3.0, {.up = up, .air = 0.01f});
+        CHECK(flight.travel && flight.travelLevel == 1.0f && Math::Length(flight.velocity) > 9000.0f);
+        frames(Frame, {.up = up, .air = 0.135f});
+        CHECK(flight.travel && std::abs(flight.cruiseSpeed - 5500.0f) < 1.0f);
+        frames(3.0, {.up = up, .air = 0.5f});
         CHECK(!flight.travel && flight.travelLevel == 0.0f && Math::Length(flight.velocity) < 5000.0f);
-        frames(5.0, {.up = up, .air = 0.01f});
+        frames(5.0, {.up = up, .air = 0.5f});
         CHECK(Math::Length(flight.velocity) < 2050.0f);
 
         // S ralentit trois fois plus fort que Z n'accélère : de 1 000 à 0 m/s en un peu plus de 33 s (10 m/s²).

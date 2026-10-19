@@ -483,7 +483,8 @@ namespace Flux {
         float boost = 2.0f;
         // Mode voyage (Tab : allumer, éteindre) : monte en régime en travelSpoolTime secondes jusqu'à travelFactor fois
         // sa vitesse max et son accélération ; il vire alors plus lentement (le tiers) et sa vitesse suit son nez.
-        // Seulement dans l'espace : l'atmosphère d'une planète, le frein ou un atterrissage le coupent.
+        // Dans l'espace et la haute atmosphère, de plus en plus bridé à mesure que l'air s'épaissit ; l'air épais (vers
+        // 6 km d'altitude sur Terre), le frein ou un atterrissage le coupent.
         float travelFactor = 10.0f;
         float travelSpoolTime = 3.0f;
         // Warp (J, vers la destination visée) : pour les grandes distances, jusqu'à warpSpeed km/s ; 0 : pas de warp

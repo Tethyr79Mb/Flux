@@ -23,6 +23,10 @@ namespace Flux::Ships {
         constexpr float SpaceSlowdownTime = 5.0f;    // fonte de la vitesse du voyage après son arrêt (constante de temps, s)
         constexpr float AirSlowdownTime = 1.5f;
         constexpr float ThrottleRate = 2.5f;         // poussée des moteurs (flammes) : de coupés à fond en 0,4 s
+        // Mode voyage dans l'air (densité, 1 : au sol sur Terre) : entier en dessous de TravelAirStart (haute
+        // atmosphère), de moins en moins rapide jusqu'à TravelAirEnd (environ 6 km d'altitude sur Terre), où il se coupe.
+        constexpr float TravelAirStart = 0.02f;
+        constexpr float TravelAirEnd = 0.25f;
 
         void Pilot(ShipComponent& ship, const Math::Quaternionf& rotation, double deltaSeconds, const ShipInput& input) {
             const float delta = static_cast<float>(deltaSeconds);
@@ -36,13 +40,17 @@ namespace Flux::Ships {
             if (input.travel) {
                 ship.travel = !ship.travel;
             }
-            // Seulement dans l'espace : il ne s'allume pas dans une atmosphère et s'y coupe en y entrant.
-            if (input.brake || ship.grounded || input.air > 0.0f) {
+            // Dans l'espace et la haute atmosphère : bridé à mesure que l'air s'épaissit, il s'y coupe dans l'air épais
+            // (et ne s'y allume pas). Traverser l'atmosphère d'une grande planète ne se fait plus à la vitesse du vol
+            // au ras du sol.
+            if (input.brake || ship.grounded || input.air >= TravelAirEnd) {
                 ship.travel = false;
             }
             const float spool = ship.travelSpoolTime > 0.0f ? delta / ship.travelSpoolTime : 1.0f;
             approach(ship.travelLevel, ship.travel ? 1.0f : 0.0f, spool);
-            const float travel = 1.0f + (std::max(ship.travelFactor, 1.0f) - 1.0f) * ship.travelLevel;
+            const float thick = std::clamp((input.air - TravelAirStart) / (TravelAirEnd - TravelAirStart), 0.0f, 1.0f);
+            const float thin = 1.0f - thick * thick * (3.0f - 2.0f * thick);
+            const float travel = 1.0f + (std::max(ship.travelFactor, 1.0f) - 1.0f) * ship.travelLevel * thin;
 
             // Rotation voulue : le mouvement de la souris pendant cette image et le roulis, bornés à la vitesse de
             // rotation (le tiers en mode voyage) ; la vitesse de rotation y va progressivement.
@@ -162,12 +170,13 @@ namespace Flux::Ships {
                 ship.velocity = ship.velocity * (limit / speed);
             }
             // Vers une planète, il ne s'approche de sa limite pas plus vite que sa distance en ApproachTime secondes :
-            // il ralentit à mesure qu'il arrive et y entre à vitesse normale. Le long de la planète, rien ne change.
+            // il ralentit à mesure qu'il arrive et y entre à sa vitesse normale ; dans l'air, c'est le mode voyage bridé
+            // par la densité qui borne. Le long de la planète, rien ne change.
             if (Math::Length(input.planetUp) > 0.5f) {
                 constexpr float ApproachTime = 3.0f;
                 const Math::Vector3f up = rotation.Conjugate().Rotate(input.planetUp);
                 const float closing = -Math::Dot(ship.velocity, up);
-                const float allowed = std::max(normalSpeed, std::max(input.planetDistance, 0.0f) / ApproachTime);
+                const float allowed = std::max(air > 0.0f ? normalSpeed * travel : normalSpeed, std::max(input.planetDistance, 0.0f) / ApproachTime);
                 if (closing > allowed) {
                     ship.velocity = ship.velocity + up * (closing - allowed);
                 }
