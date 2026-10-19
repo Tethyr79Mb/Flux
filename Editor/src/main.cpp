@@ -5,6 +5,7 @@
 #include <Flux/Platform/Dialogs.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
+#include <Flux/Platform/SplashScreen.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/Scene.hpp>
 
@@ -150,6 +151,9 @@ namespace {
 
 int main(int argc, char** argv) {
     Flux::Platform::UseUtf8Console();
+    // Logo pendant le démarrage (Vulkan, module du jeu, première scène), fermé avant la première image.
+    Flux::Platform::SplashScreen splash;
+    splash.Show(Flux::Platform::GetExecutableDirectory() / "assets" / "logo" / "FluxEngine.png");
 
     // Déclarés avant le moteur, donc détruits après lui : les fonctions qui les référencent ne leur survivent pas.
     FluxEditor::SceneDocument document;
@@ -263,6 +267,7 @@ int main(int argc, char** argv) {
     if (project) {
         engine.SetProject(*project);
     } else {
+        splash.Close(); // toujours au-dessus : il cacherait le message
         Flux::Platform::ShowError(engine.GetWindow(), "Projet", project.error());
     }
 
@@ -278,6 +283,7 @@ int main(int argc, char** argv) {
         document.Load(engine, project->GetStartupScenePath());
     }
 
+    splash.Close();
     const int exitCode = engine.Run();
     layout.Save(engine);
     return exitCode;

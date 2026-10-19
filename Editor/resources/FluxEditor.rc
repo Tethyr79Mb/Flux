@@ -1,0 +1,3 @@
+// Icone de FluxEditor.exe (explorateur, barre des taches) ; Win32Window la reprend pour la fenetre (identifiant 1).
+// Image refaite par /mnt/project-files/Logo/logo.py depuis le logo de Bruno.
+1 ICON "FluxEditor.ico"

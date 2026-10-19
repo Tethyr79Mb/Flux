@@ -2,6 +2,11 @@ add_executable(FluxEditor)
 flux_add_sources(FluxEditor src)
 # Les fichiers de l'éditeur s'incluent depuis src/ : "Panels/SceneEditor.hpp", "Document/UndoHistory.hpp".
 target_include_directories(FluxEditor PRIVATE src)
+# Icône du programme (logo FluxEngine) : ressource Windows compilée par rc.exe (windres avec MinGW).
+if(WIN32)
+    enable_language(RC)
+    target_sources(FluxEditor PRIVATE resources/FluxEditor.rc)
+endif()
 target_link_libraries(FluxEditor PRIVATE Flux::Engine nlohmann_json::nlohmann_json) # JSON : réglages de l'éditeur
 
 # L'éditeur ne lie pas le jeu : il charge sa DLL à l'exécution pour pouvoir la recharger.

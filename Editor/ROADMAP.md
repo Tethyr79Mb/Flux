@@ -15,6 +15,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Paramètres : graphiques (GPU, version de Vulkan, V-Sync, anticrénelage, bloom et son intensité), interface, son, touches.
 - ✅ Console.
 - ✅ Version de l'éditeur dans le titre.
+- ✅ Logo FluxEngine : icône du programme et de sa fenêtre (losange seul), écran d'accueil pendant le démarrage, en-tête du README.
 
 ### Scène
 - ✅ Onglet « Scènes » : scènes en vignettes rangées en dossiers, objets regroupés par type avec icônes, glisser-déposer pour l'ordre et la hiérarchie.
