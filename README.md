@@ -14,8 +14,10 @@ piloter un vaisseau depuis le cockpit, se poser sur des planètes sans chargemen
 
 ## Configuration requise
 
-Windows 10 ou 11 64 bits et une carte graphique compatible **Vulkan 1.3** avec un pilote à jour. L'éditeur et le jeu
-refusent de démarrer sans elle et disent pourquoi.
+- Windows 10 ou 11 64 bits.
+- Carte graphique : **NVIDIA GTX 1060 ou AMD RX 5700** au minimum, compatible **Vulkan 1.3**, avec un pilote à jour.
+  L'éditeur et le jeu refusent de démarrer sans Vulkan 1.3 et disent pourquoi. Les cartes plus récentes profitent de
+  ce qu'elles savent faire en plus (détecté au démarrage).
 
 ## Compiler
 
