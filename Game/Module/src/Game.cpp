@@ -1,3 +1,5 @@
+#include "Missions.hpp"
+
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
 #include <Flux/Core/Log.hpp>
@@ -84,6 +86,7 @@ FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
         .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
         .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
     engine.SetGameUpdate(Update);
+    Game::RegisterMissions(engine);
     engine.GetInputActions().Add("Saut d'une année-lumière", "Démo", Key::T);
     // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
     engine.RegisterInterfaceFunction("Exemple", [](Engine&) { Log::Info("bouton d'interface : fonction Exemple appelée"); });
@@ -97,6 +100,7 @@ FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {
     // Rien du jeu ne doit survivre au déchargement de la DLL : ni son code (Update), ni ses entités.
     // La scène et les composants enregistrés sont vidés ensuite par le moteur (GameModule::Unregister).
     engine.SetGameUpdate(nullptr);
+    Game::UnregisterMissions(engine);
     engine.UnregisterInterfaceFunction("Exemple");
     engine.UnbindInterfaceValue("Vitesse de la démo");
     engine.GetInputActions().Remove("Saut d'une année-lumière");

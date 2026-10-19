@@ -26,7 +26,10 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 
 - **FluxEngine.dll** exporte seulement ce qui porte `FLUX_API`. Vulkan, Jolt, FreeType, miniaudio et stb restent privés :
   aucun en-tête public ne les expose. EnTT est public (le jeu manipule la scène directement).
-- **GameModule.dll** enregistre ses composants, ses fonctions d'interface et sa mise à jour. L'éditeur charge une copie
+- **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
+  (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `Hud` pour l'écran, `Reset` à
+  chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
+  comme `Missions::SpawnEnemies`), le jeu leur déroulement : les missions y sont (`Game/Module/src/Missions.cpp`). L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
 - **Game.exe** n'a qu'un `main` d'une ligne : `Flux::GameStartup` (`Core/GameStartup.hpp`) lit le projet et les
@@ -47,6 +50,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 2. FluxUI commence l'image (`UI::Context::BeginFrame`) ; la caméra suit le joueur ou vole librement (éditeur).
 3. Si le jeu tourne et que la scène est prête (`UpdateGameSystems`) :
    - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
+   - systèmes du jeu à l'étape `Interaction` (ils peuvent prendre la touche Interagir : `ConsumeInteraction`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes, moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
@@ -57,7 +61,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
    (`Orbits::Update` : objets placés autour du Soleil, aussi quand le jeu est arrêté).
-5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, version, panneau Moteur.
+5. Interface à l'écran : textes, images, interfaces `.fluxui`, affichage de pilotage, systèmes du jeu à l'étape `Hud`,
+   version, panneau Moteur.
    Après une scène chargée en jeu, l'écran de chargement recouvre tout et le jeu attend (`Engine::IsLoading`) : la
    scène est quand même rendue, pour que les tuiles des planètes se calculent, jusqu'à ce que le rendu n'attende plus
    ni tuile, ni texture du sol, ni modèle pendant 10 images (`RenderTimings::planetPendingTiles`,
@@ -212,10 +217,11 @@ planète donne directement le sien comme indice d'instance.
   (`Steering.hpp`) ; `Fire` (après la physique) appelle `Weapons::Update` avec la cible verrouillée, une erreur de
   visée (`WeaponInput::aimOffset`) et des missiles espacés (`WeaponInput::missiles`). Cible : le vaisseau du joueur.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
-  (`Engine::UpdateMissions`, `EngineMissions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
+  (systèmes du jeu, `Game/Module/src/Missions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
   `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou drones
-  cubes armés), avec des points de vie et une IA de combat s'ils n'en ont pas. Le moteur garde une mission en cours (`m_mission`), finie quand
-  plus aucun ennemi n'existe ; elle n'est pas enregistrée et s'efface au chargement d'une scène.
+  cubes armés), avec des points de vie et une IA de combat s'ils n'en ont pas. Le jeu garde la mission en cours, finie quand
+  plus aucun ennemi n'existe, et la donne au warp comme objectif (`Engine::SetWarpObjective`) ; elle n'est pas
+  enregistrée et s'efface au chargement d'une scène (étape `Reset`).
 - Personnages : `CharacterVirtual` (capsule), gravité de la planète ou du vaisseau.
 - Gravité et air hors planètes et vaisseaux : `WorldComponent` (« Monde », un par scène, comme les World Settings
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la

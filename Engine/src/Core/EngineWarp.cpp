@@ -4,14 +4,14 @@
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Ships.hpp"
-#include "HudText.hpp"
+#include "Flux/UI/HudText.hpp"
 
 #include <format>
 
 namespace Flux {
     std::string Engine::GetDestinationName(const Warp::Destination& destination) const {
         if (destination.entity == NullEntity) {
-            return m_mission ? "Mission : " + m_mission->title : std::string("Mission");
+            return m_warpObjectiveName.empty() ? std::string("Objectif") : m_warpObjectiveName;
         }
         const auto* name = m_scene.IsValid(destination.entity) ? m_scene.TryGet<NameComponent>(destination.entity) : nullptr;
         return name ? name->name : std::string("Destination");
@@ -24,8 +24,8 @@ namespace Flux {
             return;
         }
         Warp::FindDestinations(m_scene, ship, m_warpDestinations);
-        if (m_mission) {
-            m_warpDestinations.push_back({NullEntity, m_mission->area, Warp::StationExit});
+        if (m_warpObjective) {
+            m_warpDestinations.push_back({NullEntity, *m_warpObjective, Warp::StationExit});
         }
         ShipComponent& component = m_scene.Get<ShipComponent>(ship);
         // Arrivé, ou arrêté par une planète sur le chemin.

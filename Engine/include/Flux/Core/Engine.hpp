@@ -200,6 +200,26 @@ namespace Flux {
 
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
+        // Systèmes du jeu (missions...) : fonctions du module de jeu appelées pendant le jeu à une étape précise de
+        // l'image, dans l'ordre d'ajout. Le moteur garde les briques (composants, Missions::SpawnEnemies...), le jeu
+        // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
+        enum class GameStage {
+            Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
+            Hud,         // indications à l'écran, après la scène et les infos de vol (jeu en cours, joueur présent)
+            Reset,       // scène chargée ou jeu arrêté : oublier ce qui tenait à l'ancienne scène (deltaSeconds = 0)
+        };
+        // Remplace le système du même nom.
+        void AddGameSystem(GameStage stage, std::string name, UpdateFunction function);
+        void RemoveGameSystem(std::string_view name);
+        void ClearGameSystems();
+        // Personnage du joueur pendant le jeu, NullEntity sinon.
+        Entity GetPlayer() const { return GetFollowedPlayer(); }
+        // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
+        // elle est alors prise (les sièges ne la voient plus).
+        bool ConsumeInteraction();
+        // Objectif du jeu (une mission) proposé comme destination du warp, sous ce nom ; nullopt le retire. Effacé
+        // avec la scène.
+        void SetWarpObjective(std::string name, std::optional<Math::WorldPosition> position);
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
@@ -219,6 +239,16 @@ namespace Flux {
         SceneSerializer::PrefabReader m_prefabReader;
         Scene m_scene;
         UpdateFunction m_gameUpdate;
+        struct GameSystem
+        {
+            GameStage stage;
+            std::string name;
+            UpdateFunction function;
+        };
+        std::vector<GameSystem> m_gameSystems;
+        bool m_interactionPending = false; // Interagir enfoncée à cette image, pas encore prise
+        std::string m_warpObjectiveName;
+        std::optional<Math::WorldPosition> m_warpObjective;
         GameState m_gameState = GameState::Running;
         UpdateFunction m_editorUpdate;
         CloseFunction m_closeRequestHandler;
@@ -300,18 +330,6 @@ namespace Flux {
         std::vector<Warp::Destination> m_warpDestinations;
         int m_warpAim = -1;
         std::string m_warpName;
-        // Mission acceptée auprès d'un donneur (Missions), une seule à la fois : ses ennemis encore à détruire.
-        struct ActiveMission
-        {
-            Entity giver = NullEntity;
-            std::string title;
-            std::vector<Entity> enemies;
-            Math::WorldPosition area; // où ils sont apparus : destination du warp
-        };
-        std::optional<ActiveMission> m_mission;
-        Entity m_missionWindow = NullEntity; // donneur dont la fenêtre est ouverte
-        std::string m_missionMessage;        // « Mission accomplie », en haut de l'écran
-        double m_missionMessageSeconds = 0.0;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
@@ -370,11 +388,9 @@ namespace Flux {
         void DrawWarpInfo(Entity player, Math::Vector2f screen);
         std::string GetDestinationName(const Warp::Destination& destination) const;
         void ShowFlightMessage(std::string message);
-        // Missions (EngineMissions.cpp) : parler au donneur (consomme F), suivre les ennemis ; fenêtre et indications.
-        void UpdateMissions(Entity player, bool& interact);
-        void DrawMissionWindow(Entity player, Math::Vector2f screen);
-        void DrawMissionInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
-        void ResetMissions();
+        void RunGameSystems(GameStage stage, double deltaSeconds);
+        // Scène chargée ou jeu arrêté : destinations du warp et objectif oubliés, systèmes du jeu prévenus.
+        void ResetGameState();
         void BeginLoading();
         // Après le rendu : le chargement est fini quand plus rien n'est attendu pendant quelques images.
         void UpdateLoading(double deltaSeconds);

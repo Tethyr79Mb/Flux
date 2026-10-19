@@ -493,8 +493,9 @@ namespace Flux {
                 const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
                 DrawFlightInfo(player, screen, deltaSeconds);
                 DrawWarpInfo(player, screen);
-                DrawMissionInfo(player, screen, deltaSeconds);
-                DrawMissionWindow(player, screen);
+                if (m_gameState == GameState::Running) {
+                    RunGameSystems(GameStage::Hud, deltaSeconds);
+                }
             }
             if (m_drawScreenUi) {
                 // Version dans le coin bas droit : dit quelle compilation tourne sur une capture d'écran.
@@ -559,12 +560,11 @@ namespace Flux {
         // Personnage du joueur, par rapport à la caméra ; assis, les mêmes actions pilotent le vaisseau (poste de
         // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, F par défaut).
         CharacterInput character;
-        SeatInput seatInput{.interact = WasActionPressed("Interagir")};
-        if (!seated) {
-            UpdateMissions(player, seatInput.interact); // F près d'un donneur de missions : lui parler, pas s'asseoir
-        } else {
-            m_missionWindow = NullEntity;
-        }
+        // Systèmes du jeu d'abord : F près d'un donneur de missions sert à lui parler, pas à s'asseoir.
+        m_interactionPending = WasActionPressed("Interagir");
+        RunGameSystems(GameStage::Interaction, deltaSeconds);
+        SeatInput seatInput{.interact = m_interactionPending};
+        m_interactionPending = false;
         ShipInput shipInput;
         if (seated) {
             shipInput.thrust = axis("Avancer", "Reculer");
@@ -723,7 +723,7 @@ namespace Flux {
         m_impacts.clear();
         m_lockTarget = NullEntity;
         m_activeGroups = 0;
-        ResetMissions();
+        ResetGameState();
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
             BeginLoading();
@@ -744,7 +744,7 @@ namespace Flux {
             m_impacts.clear();
             m_lockTarget = NullEntity;
             m_activeGroups = 0;
-            ResetMissions();
+            ResetGameState();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceActions.clear();
@@ -1368,6 +1368,47 @@ namespace Flux {
 
     void Engine::SetGameUpdate(UpdateFunction update) {
         m_gameUpdate = std::move(update);
+    }
+
+    void Engine::AddGameSystem(GameStage stage, std::string name, UpdateFunction function) {
+        RemoveGameSystem(name);
+        m_gameSystems.push_back({stage, std::move(name), std::move(function)});
+    }
+
+    void Engine::RemoveGameSystem(std::string_view name) {
+        std::erase_if(m_gameSystems, [&](const GameSystem& system) { return system.name == name; });
+    }
+
+    void Engine::ClearGameSystems() {
+        m_gameSystems.clear();
+    }
+
+    void Engine::RunGameSystems(GameStage stage, double deltaSeconds) {
+        // Par indice : un système peut en ajouter ou en retirer un autre.
+        for (std::size_t i = 0; i < m_gameSystems.size(); ++i) {
+            if (m_gameSystems[i].stage == stage && m_gameSystems[i].function) {
+                const UpdateFunction function = m_gameSystems[i].function;
+                function(*this, deltaSeconds);
+            }
+        }
+    }
+
+    bool Engine::ConsumeInteraction() {
+        return std::exchange(m_interactionPending, false);
+    }
+
+    void Engine::SetWarpObjective(std::string name, std::optional<Math::WorldPosition> position) {
+        m_warpObjectiveName = position ? std::move(name) : std::string{};
+        m_warpObjective = position;
+    }
+
+    void Engine::ResetGameState() {
+        m_warpDestinations.clear();
+        m_warpAim = -1;
+        m_warpName.clear();
+        m_warpObjective.reset();
+        m_warpObjectiveName.clear();
+        RunGameSystems(GameStage::Reset, 0.0);
     }
 
     void Engine::SetEditorUpdate(UpdateFunction update) {
