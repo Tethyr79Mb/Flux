@@ -64,7 +64,9 @@ namespace Flux::Planetology {
     class FLUX_API Terrain {
         public:
         Terrain() : Terrain(1000.0, 0.0, 1) {}
-        Terrain(double radius, double relief, std::int32_t seed);
+        // mountainWidth : largeur des montagnes en mètres (longueur d'onde des grandes crêtes), 0 : à l'échelle du rayon
+        // (environ un rayon).
+        Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0);
 
         double GetRadius() const { return m_radius; }
         double GetRelief() const { return m_relief; }
@@ -79,6 +81,10 @@ namespace Flux::Planetology {
         double GetOmittedRelief(std::uint32_t octaves) const;
         // Table de permutation du bruit (tirée de la graine).
         const std::array<std::uint8_t, 512>& GetPermutation() const { return m_permutation; }
+        // Fréquence en plus des couches qui suivent la largeur des montagnes (1 : aucune), et le nombre d'octaves
+        // qu'elle décale (log2 arrondi au-dessus).
+        double GetScale() const { return m_scale; }
+        std::uint32_t GetScaleShift() const { return m_shift; }
 
         private:
         // Bruit de Perlin et, si demandée, sa pente (par rapport à p ; nulle sinon).
@@ -96,6 +102,8 @@ namespace Flux::Planetology {
         double m_radius;
         double m_relief;
         std::uint32_t m_maxLevel;
+        double m_scale = 1.0;
+        std::uint32_t m_shift = 0;
         std::array<std::uint8_t, 512> m_permutation{};
     };
 
@@ -159,7 +167,7 @@ namespace Flux::Planetology {
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
-        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau
+        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : GetScaleShift
         // Colonne i (x : a - a_c, y : a + a_c, a = tan(s.π/4)) et ligne i (z : b - b_c, w : b + b_c), décalage i - 2.
         std::array<std::array<float, 4>, Columns> columns{};
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)

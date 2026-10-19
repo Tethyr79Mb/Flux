@@ -2,8 +2,8 @@
 
 Moteur de jeu 3D spatial (FluxEngine), son éditeur (FluxEditor) et le jeu **Ars Solaris** qui les utilise. Gameplay
 visé : piloter un vaisseau depuis le cockpit, se poser sur des planètes sans chargement, marcher à bord et en sortir.
-Vue technique d'ensemble : `ARCHITECTURE.md`. Ce qui est fait et ce qui vient : `Engine/ROADMAP.md` et
-`Editor/ROADMAP.md`. Les trois sont à tenir à jour à chaque PR qui les concerne.
+Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOGY.md`. Ce qui est fait et ce qui vient : `Engine/ROADMAP.md` et
+`Editor/ROADMAP.md`. Tous sont à tenir à jour à chaque PR qui les concerne.
 
 ## Langue
 - Tout en français : commentaires, messages de commit, descriptions de PR, textes de l'interface, journaux.

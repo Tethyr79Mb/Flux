@@ -7,6 +7,7 @@
 #include "Flux/Scene/Components.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -114,9 +115,11 @@ bool RunPlanetTests() {
     }
 
     // Forme du terrain : des plaines larges où l'on peut se poser (pas de bruit partout), des montagnes rares et
-    // hautes, et les creux sous le niveau zéro.
-    {
-        const Planetology::Terrain world(60000.0, 800.0, 1);
+    // hautes, et les creux sous le niveau zéro. Sur une petite lune, et sur une planète de 200 km aux montagnes de 50 km
+    // où les massifs prennent plus de place, mais où les basses terres restent plates (le détail qui suivait la
+    // largeur des montagnes n'y laissait aucune plaine).
+    for (const auto& [radius, relief, width] : {std::array{60000.0, 800.0, 0.0}, std::array{200000.0, 3000.0, 50000.0}}) {
+        const Planetology::Terrain world(radius, relief, 1, width);
         const std::uint32_t octaves = world.GetOctaves(world.GetMaxLevel());
         // Pentes au pas d'un sommet (1,5 m) autour d'un point, en degrés.
         const auto medianSlope = [&](const Math::Vector3d& center) {
@@ -148,27 +151,33 @@ bool RunPlanetTests() {
         int high = 0;
         int plains = 0;
         int land = 0;
+        int lowland = 0; // terres sous 15 % du relief
+        int flatLowland = 0;
         std::uniform_real_distribution<double> any(-1.0, 1.0);
         for (int i = 0; i < 300; ++i) {
             const Math::Vector3d d = Math::Normalize(Math::Vector3d{any(random), any(random), any(random)});
             const double h = world.GetHeight(d, octaves);
-            if (h < -100.0) {
+            if (h < -0.125 * relief) {
                 ++low;
             }
-            if (h > 400.0) {
+            if (h > 0.5 * relief) {
                 ++high;
             }
             if (h > 0.0) {
                 ++land;
                 // Une terre sur deux au moins est une plaine (moins de 5 degrés au pas d'un sommet) : on s'y pose.
-                if (medianSlope(d * (world.GetRadius() + h)) < 5.0) {
-                    ++plains;
+                const bool flat = medianSlope(d * (world.GetRadius() + h)) < 5.0;
+                plains += flat ? 1 : 0;
+                if (h < 0.15 * relief) {
+                    ++lowland;
+                    flatLowland += flat ? 1 : 0;
                 }
             }
         }
         CHECK(low > 30 && high >= 1);    // des creux, et quelques sommets
         CHECK(high < 60);                // les montagnes restent rares
-        CHECK(land > 60 && plains * 2 > land);
+        CHECK(land > 60 && flatLowland * 2 > lowland);
+        CHECK(width > 0.0 || plains * 2 > land);
     }
 
     // Glissement vers la parente : chaque sommet arrive sur la forme de sa parente (sur un de ses sommets, ou au

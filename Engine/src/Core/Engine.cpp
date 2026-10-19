@@ -836,9 +836,10 @@ namespace Flux {
             return flight;
         }
         if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
-            || m_flightTerrainSeed != nearest->seed) {
-            m_flightTerrain = std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief, nearest->seed);
+            || m_flightTerrainSeed != nearest->seed || m_flightTerrainWidth != nearest->mountainWidth) {
+            m_flightTerrain = std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief, nearest->seed, nearest->mountainWidth);
             m_flightTerrainSeed = nearest->seed;
+            m_flightTerrainWidth = nearest->mountainWidth;
         }
         flight.nearPlanet = true;
         flight.up = Math::Normalize(offset);

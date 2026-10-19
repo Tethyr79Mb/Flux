@@ -62,7 +62,7 @@ bool RunVegetationGpuTests() {
     vegetation.density = 1.0f;
     vegetation.cover = 1.0f;
     vegetation.maxSlope = 90.0f;
-    const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed);
+    const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
     const std::uint32_t level = VegetationRenderer::GetPlainLevel(terrain);
     CHECK(level > 0 && level < terrain.GetMaxLevel());
     const std::vector<Planetology::TileKey> keys{Planetology::FindTile(Math::Normalize(Math::Vector3d{0.3, 0.8, -0.5}), level),

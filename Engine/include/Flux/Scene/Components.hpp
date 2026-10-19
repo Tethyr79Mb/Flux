@@ -210,6 +210,9 @@ namespace Flux {
     {
         float radius = 60000.0f; // m, au niveau zéro du relief
         float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
+        // m, écart entre les grandes crêtes : les montagnes, les collines et le détail gardent cette taille quel que soit
+        // le rayon (sinon ils grandiraient avec lui). Une planète trop petite pour elles les garde à sa mesure.
+        float mountainWidth = 50000.0f;
         std::int32_t seed = 1;
         // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), plage
         // de sable jusqu'à beachHeight mètres au-dessus du niveau de la mer (elle suit la mer), neige au-dessus de

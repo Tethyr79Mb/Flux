@@ -130,6 +130,7 @@ namespace Flux {
         registry.Register<PlanetComponent>("planet", "Planète")
             .Field("radius", "Rayon (m)", &PlanetComponent::radius, {.speed = 100.0, .min = 100.0, .max = 1.0e7, .decimals = 0})
             .Field("relief", "Relief (m)", &PlanetComponent::relief, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
+            .Field("mountainWidth", "Largeur des montagnes (m)", &PlanetComponent::mountainWidth, {.speed = 100.0, .min = 1000.0, .max = 1.0e6, .decimals = 0})
             .Field("seed", "Graine", &PlanetComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
             .Field("color", "Couleur de la roche", &PlanetComponent::color, {.alpha = false})
             .Field("roughness", "Rugosité de la roche", &PlanetComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
