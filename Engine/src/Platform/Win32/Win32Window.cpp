@@ -166,6 +166,14 @@ namespace Flux {
                 windowClass.lpfnWndProc = Proc;
                 windowClass.hInstance = GetModuleHandleW(nullptr);
                 windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+                // Icône 1 des ressources du programme (FluxEditor.rc) : barre de titre et Alt+Tab. Sans elle, celle de
+                // Windows.
+                const auto icon = [&](int metricX, int metricY) {
+                    return static_cast<HICON>(LoadImageW(windowClass.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                                         GetSystemMetrics(metricX), GetSystemMetrics(metricY), LR_DEFAULTCOLOR));
+                };
+                windowClass.hIcon = icon(SM_CXICON, SM_CYICON);
+                windowClass.hIconSm = icon(SM_CXSMICON, SM_CYSMICON);
                 windowClass.lpszClassName = WindowClassName;
                 return RegisterClassExW(&windowClass) != 0;
             }();
