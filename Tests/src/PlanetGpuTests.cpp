@@ -33,12 +33,15 @@ bool RunPlanetGpuTests() {
         return false;
     }
 
-    // Une petite planète (celle des scènes de test) et une de la taille de la Terre ; à chacune une racine, une tuile
-    // moyenne et une tuile du niveau le plus fin, ailleurs sur une autre face.
+    // Une petite planète (celle des scènes de test), une grande aux montagnes de 20 km (couches décalées de 4 octaves)
+    // et une de la taille de la Terre (décalées de 9) ; à chacune une racine, une tuile moyenne et une tuile du niveau
+    // le plus fin, ailleurs sur une autre face.
     const Planetology::Terrain small(60000.0, 800.0, 5);
-    const Planetology::Terrain earth(6.37e6, 8000.0, 42);
+    const Planetology::Terrain large(200000.0, 4500.0, 7, 20000.0);
+    const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0);
+    CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
     std::vector<Case> cases;
-    for (const Planetology::Terrain* terrain : {&small, &earth}) {
+    for (const Planetology::Terrain* terrain : {&small, &large, &earth}) {
         const std::uint32_t max = terrain->GetMaxLevel();
         const std::uint32_t middle = max / 2;
         cases.push_back({terrain, {0, 0, 0, 0}});

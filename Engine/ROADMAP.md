@@ -107,7 +107,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Rendu vers texture : écrans du cockpit, interfaces dans le monde 3D.
 
 ### Planètes (Planetology)
-- 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents. À améliorer : pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; sommets toujours un peu « bruit » de près.
+- 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents, largeur des montagnes en mètres quel que soit le rayon (réglage « Largeur des montagnes »). À améliorer : la raideur dépend du rapport relief / largeur (trop de relief = aiguilles) ; pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; sommets toujours un peu « bruit » de près.
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : forêts sur l'herbe des plaines, 3 niveaux de détail
   (détaillé, simplifié qui fait aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des
   forêts sur le sol (visible de haut et de l'espace). À améliorer : une seule espèce (couleur des forêts fixe, prise

@@ -241,6 +241,7 @@ namespace Flux {
         std::unique_ptr<PhysicsWorld> m_physics;
         std::shared_ptr<const Planetology::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
         std::int32_t m_flightTerrainSeed = 0;
+        float m_flightTerrainWidth = 0.0f;
         // Vitesse réellement parcourue par le vaisseau piloté (DrawFlightInfo) : sa position à l'image d'avant et la
         // vitesse mesurée, lissée.
         Entity m_flightShip = NullEntity;

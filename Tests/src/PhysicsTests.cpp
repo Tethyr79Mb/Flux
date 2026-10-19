@@ -912,7 +912,7 @@ namespace {
         Scene scene;
         const Entity planet = scene.CreateEntity("Planète");
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1035,7 +1035,7 @@ namespace {
         const Entity planet = scene.CreateEntity("Planète");
         scene.Get<TransformComponent>(planet).position = center;
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1066,7 +1066,7 @@ namespace {
         Scene scene;
         const Entity planet = scene.CreateEntity("Planète");
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed);
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
