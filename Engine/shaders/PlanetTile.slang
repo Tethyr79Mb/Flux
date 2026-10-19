@@ -69,7 +69,7 @@ static const float WarpLarge = 0.06;
 static const float WarpSmall = 0.012;
 
 // Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, crêtes, à la largeur des
-// montagnes, érosion et octaves dont la pente compte.
+// montagnes, octaves perdues plus tôt, érosion et octaves dont la pente compte.
 struct Layer
 {
     uint first;
@@ -77,18 +77,19 @@ struct Layer
     float gain;
     bool ridged;
     bool scaled;
+    bool shifted;
     float erosion;
     uint erodedOctaves;
 };
 static const Layer Layers[8] = {
-    { 0, 5, 0.5, false, false, 0.0, 0 },   // continents
-    { 1, 3, 0.5, false, false, 0.0, 0 },   // zones des chaînes de montagnes
-    { 2, 5, 0.5, false, false, 0.0, 0 },   // zones de collines
-    { 2, 10, 0.5, true, true, 2.5, 8 },   // montagnes (crêtes)
-    { 4, 9, 0.5, false, true, 4.0, 5 },   // collines
-    { 6, 22, 0.58, false, true, 3.0, 6 }, // détail
-    { 0, 3, 0.5, false, false, 0.0, 0 },   // grande déformation
-    { 3, 6, 0.5, false, false, 0.0, 0 },   // petite déformation
+    { 0, 5, 0.5, false, false, false, 0.0, 0 },   // continents
+    { 1, 3, 0.5, false, true, false, 0.0, 0 },   // zones des chaînes de montagnes
+    { 2, 5, 0.5, false, true, false, 0.0, 0 },   // zones de collines
+    { 2, 10, 0.5, true, true, true, 2.5, 8 },   // montagnes (crêtes)
+    { 4, 9, 0.5, false, true, true, 4.0, 5 },   // collines
+    { 6, 22, 0.58, false, true, true, 3.0, 6 }, // détail
+    { 0, 3, 0.5, false, false, false, 0.0, 0 },   // grande déformation
+    { 3, 6, 0.5, false, false, false, 0.0, 0 },   // petite déformation
 };
 
 float Fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
@@ -157,7 +158,7 @@ float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeS
     const Layer L = Layers[layer];
     const float total = (1.0 - pow(L.gain, float(L.last - L.first))) / (1.0 - L.gain);
     // Fréquences déjà multipliées dans fractions.w ; la couche perd ses octaves options.w niveaux plus tôt.
-    const uint shift = L.scaled ? tile.options.w : 0;
+    const uint shift = L.shifted ? tile.options.w : 0;
     const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(layer);
     float sum = 0.0;
