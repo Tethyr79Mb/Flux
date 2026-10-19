@@ -48,7 +48,7 @@ bool RunPlanetGpuTests() {
         cases.push_back({terrain, {3, static_cast<std::uint8_t>(middle), (1u << middle) / 3u, (1u << middle) / 2u}});
         cases.push_back({terrain, {4, static_cast<std::uint8_t>(max), (1u << max) / 3u, (1u << max) / 5u}});
         cases.push_back({terrain, {5, static_cast<std::uint8_t>(max), (1u << max) - 1u, 7u}});
-        // Au plus haut d'un échantillon de directions : dans une chaîne de montagnes, où les crêtes, l'érosion et la
+        // Au plus haut d'un échantillon de directions : dans une chaîne de montagnes, où les sommets, les ravines et la
         // déformation comptent toutes.
         Math::Vector3d peak{0.0, 1.0, 0.0};
         double highest = -1.0e30;

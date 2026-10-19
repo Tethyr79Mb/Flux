@@ -277,12 +277,14 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 - Relief = une formule (`Terrain::GetHeight`), dupliquée dans `shaders/PlanetTile.slang` pour le GPU. Les deux
   versions doivent rester égales (`PlanetGpuTests`). Pas de terrain stocké ni creusable. Couches de bruit de Perlin
   avec leur pente exacte : continents, zones de collines, chaînes de montagnes (bandes où un bruit lent passe par
-  zéro), massifs, ravines, collines, détail. Les couches sont lues à un point déformé par la pente d'un bruit lent
-  (côtes et chaînes tordues). Les ravines (`Terrain::Gullies`, bruit d'érosion sur un réseau 3D de 27 cellules par
-  octave) suivent la pente du massif et se ramifient ; sur les collines et le détail, chaque octave est atténuée selon
+  zéro), sommets, ravines, collines, détail. Les couches sont lues à un point déformé par la pente d'un bruit lent
+  (côtes et chaînes tordues). Les sommets (`Terrain::Peaks`) sont placés un par maille d'un réseau 3D (27 mailles
+  lues), chacun avec son profil et des versants de pentes différentes, unis par un maximum doux, leur pente calculée
+  exactement. Les ravines (`Terrain::Gullies`, bruit d'érosion sur un réseau 3D de 27 cellules par octave) suivent la
+  pente des sommets et se ramifient ; sur les collines et le détail, chaque octave est atténuée selon
   la pente réelle déjà sommée de sa couche (érosion analytique).
   Une octave ne dépend que des octaves plus grandes : une tuile grossière garde la forme de ses enfants.
-  Massifs, ravines et collines suivent la largeur des montagnes en mètres (`PlanetComponent::mountainWidth`), pas le
+  Sommets, ravines et collines suivent la largeur des montagnes en mètres (`PlanetComponent::mountainWidth`), pas le
   rayon : leurs fréquences sont multipliées par `Terrain::GetScale` et elles perdent leurs octaves `GetScaleShift`
   niveaux plus tôt (log2 arrondi au-dessus, le même entier pour le CPU et le GPU). Continents, zones, détail et
   déformations restent à l'échelle de la planète (détail plus fin = plaines trop raides pour se poser).

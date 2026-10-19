@@ -23,7 +23,8 @@ Ordre conseillé des réglages, du plus grand au plus fin :
 1. **Rayon.** Il fixe la courbure vue de l'espace et la distance de l'horizon. 60 km fait une petite lune, 200 km est
    la taille des planètes de Star Citizen, 6 370 km celle de la Terre. Le coût de rendu change peu, grâce à l'arbre
    de tuiles.
-2. **Largeur des montagnes.** C'est l'écart entre les grands massifs, en mètres (50 km par défaut). Elle ne dépend pas
+2. **Largeur des montagnes.** Elle fixe l'écart entre deux grands sommets voisins, environ un sixième de la largeur (8 km
+   pour 50 km par défaut). Elle ne dépend pas
    du rayon : une grande planète a plus de chaînes, pas des chaînes plus larges. Sur une planète trop petite pour
    cette largeur, les montagnes restent à la taille que permet le rayon.
 3. **Relief.** C'est la hauteur des plus hauts sommets au-dessus du niveau zéro (et la profondeur des creux). **La
@@ -74,9 +75,9 @@ de la précédente et une amplitude plus faible (gain).
 | Couche | Rôle | Octaves | Taille |
 |---|---|---|---|
 | Continents | terres et bassins | 0 à 4 | planète |
-| Zone de montagnes | où passent les massifs | 1 à 2 | planète |
+| Zone de montagnes | où passent les chaînes | 1 à 2 | planète |
 | Zone de collines | où sont les collines | 2 à 4 | planète |
-| Massifs | pentes et sommets des montagnes | 2 à 6 | largeur des montagnes |
+| Sommets | grands sommets, puis sommets secondaires (deux réseaux) | 2 à 3 | largeur des montagnes |
 | Collines | bosses moyennes | 4 à 8 | largeur des montagnes |
 | Détail | rochers, bosses fines (gain 0,58) | 6 à 21 | planète |
 | Grande déformation | tord continents et zones | 0 à 2 | planète |
@@ -85,9 +86,9 @@ de la précédente et une amplitude plus faible (gain).
 
 Une tuile ne calcule que les octaves plus grandes que deux fois l'écart de ses sommets (`Terrain::GetOctaves`). Les
 plus fines ne se verraient pas et coûteraient cher. Une octave ne dépend que des plus grandes, si bien qu'une tuile
-grossière garde la forme de ses enfants. Les couches « à la largeur des montagnes » (massifs, ravines et collines) ont une fréquence multipliée par
+grossière garde la forme de ses enfants. Les couches « à la largeur des montagnes » (sommets, ravines et collines) ont une fréquence multipliée par
 `Terrain::GetScale` et perdent leurs octaves `GetScaleShift` niveaux plus tôt. Les zones restent à l'échelle de la
-planète : chaque chaîne est large et porte plusieurs massifs de la largeur des montagnes.
+planète : chaque chaîne est large et porte de nombreux sommets.
 
 ### La formule, pas à pas (`Terrain::GetHeight`)
 
@@ -96,7 +97,7 @@ planète : chaque chaîne est large et porte plusieurs massifs de la largeur des
 2. **Continents.** `land` vaut 0 en mer et 1 sur terre, avec une transition douce.
 3. **Zones.** Les chaînes de montagnes sont des bandes là où un bruit lent passe par zéro (`1 - |bruit|` au-dessus de
    0,75, pleine au-delà de 0,95), au cœur des continents. Les collines occupent une autre zone. Le reste est de la plaine.
-4. **Montagnes et collines,** calculées seulement dans leur zone : une plaine ne paie ni les massifs ni les ravines.
+4. **Montagnes et collines,** calculées seulement dans leur zone : une plaine ne paie ni les sommets ni les ravines.
 5. **Détail fin.** Presque rien en plaine (1,2 % du relief), plus en collines (3 %) et en montagne (6,5 %).
 6. **Somme.** Bassins vers -0,4, plaines vers 0,05 à 0,1, sommets jusqu'à 1, le tout multiplié par le relief.
 
@@ -104,15 +105,23 @@ planète : chaque chaîne est large et porte plusieurs massifs de la largeur des
 
 Une chaîne de montagnes est faite de trois choses :
 
-- **Un dos continu** le long de la bande : 12 % de sa hauteur (`ChainBase`). Sans lui, les sommets seraient des pics
-  isolés dans la plaine.
-- **Des massifs** : un bruit ordinaire (pas « ridged »), étiré (`MassifContrast`) puis mis au carré. Le carré creuse
-  les bas et garde les hauts : des sommets de hauteurs variées, des pieds larges et doux. Lu sur le point de la grande
-  déformation seulement : la petite, plus fine que les massifs, les étirait en traînées.
+- **Un dos continu** le long de la bande : 20 % de sa hauteur (`ChainBase`). Les vallées entre les sommets sont
+  donc des vallées d'altitude, et les sommets ne sortent pas d'une plaine.
+- **Des sommets** (`Terrain::Peaks`). Une montagne est un pic à une certaine hauteur, avec des versants tout autour,
+  de pentes différentes (définition de Bruno). Chaque maille d'un réseau 3D (environ largeur des montagnes / 2π)
+  porte au plus un sommet (`PeakChance`), décalé au hasard. Seules comptent les mailles dont le sommet tombe près de la
+  sphère (`PeakSlabInner`, `PeakSlabOuter`), pour que les sommets soient aussi serrés partout. Chaque sommet tire sa
+  hauteur (`PeakLowest` à 1) et le rayon de son pied (`PeakRadius`). Le pied s'éloigne ou se rapproche selon la
+  direction : un côté plus doux que l'autre (`PeakAsymmetry`), une forme allongée (`PeakElongation`) et quatre
+  contreforts, des arêtes qui descendent du sommet (`PeakSpurs`, `PeakSpurSharpness`). Le profil d'un versant,
+  concave en bas et à la pointe arrondie (`PeakShape`, `PeakTop`, `PeakTip`), va du sommet au pied. Les sommets voisins
+  s'unissent par un maximum doux (`PeakBlend`) : un col arrondi entre eux. Un second réseau, deux fois plus fin, ajoute
+  des sommets secondaires plus bas (`PeakSecondary`). La pente des sommets est calculée exactement, pour les ravines.
+  Le pied reste à moins d'une maille : les 27 mailles autour du point suffisent.
 - **Des ravines** (`Terrain::Gullies`, bruit d'érosion de Clay John et Fewes). Dans chaque cellule d'un réseau 3D, une
   onde `cos` varie le long de la perpendiculaire à la pente : elle fait des sillons dans le sens de la pente. Les 27
   cellules voisines se mélangent par un poids gaussien autour d'un point décalé au hasard. Chaque octave suit la pente
-  totale, celle du massif plus celle des ravines déjà posées (`GullyBranch`) : les petites ravines partent des
+  totale, celle des sommets plus celle des ravines déjà posées (`GullyBranch`) : les petites ravines partent des
   grandes, en arbre. Rien sous 4,5° de pente (`GullyStartSlope`), plein vers 19° (`GullyFullSlope`) : les plaines
   restent lisses, et les sommets et cols, où la pente n'a pas de direction, ne tournent pas en tourbillons.
 
@@ -125,7 +134,10 @@ Les réglages sont des constantes en tête de `Planet.cpp`, recopiées dans `Pla
 |---|---|
 | `ChainStart`, `ChainEnd` | largeur des bandes de chaînes (plus bas : chaînes plus larges) |
 | `ChainBase` | hauteur du dos de la chaîne (trop haut : un plateau) |
-| `MassifHeight`, `MassifContrast` | hauteur des massifs au-dessus du dos, et écart entre bas et sommets |
+| `PeakHeight`, `PeakLowest`, `PeakSecondary` | hauteur des sommets au-dessus du dos, du plus bas, des secondaires |
+| `PeakChance`, `PeakRadius` | nombre de sommets, largeur de leur pied (plus large : versants plus doux) |
+| `PeakAsymmetry`, `PeakElongation`, `PeakSpurs` | différences de pente autour d'un sommet, contreforts |
+| `PeakShape`, `PeakTop`, `PeakTip` | profil d'un versant (concavité, sommet arrondi ou pointu) |
 | `GullyAmplitude`, `GullyGain` | profondeur des ravines (première octave, puis d'une octave à la suivante) |
 | `GullyStartSlope`, `GullyFullSlope` | pentes où les ravines commencent et sont pleines |
 | `GullyBranch` | ramification des ravines (plus haut : plus de branches, mais plus de bruit) |
@@ -148,9 +160,15 @@ Défauts déjà rencontrés :
 - **Des racines au lieu de montagnes** (2026-10-19, vu par Bruno au sol et d'orbite). Les crêtes `1 - |bruit|`
   suivent les lignes où le bruit de Perlin passe par zéro : des boucles fines, toutes de la même hauteur, avec du plat
   entre elles. Ni le « ridged multifractal » de Musgrave ni d'autres puissances n'y changeaient rien. Remplacées par
-  les massifs et les ravines.
+  des massifs (bruit au carré) et des ravines.
 - **Des sillons parallèles** (en réglant les ravines). Une maille du réseau fait la longueur d'onde divisée par 2π :
   des ravines commencées à l'octave 5 faisaient 1 km au lieu de 6, en peigne. Elles commencent à l'octave 3.
+- **Un réseau de crêtes reliées** (2026-10-19, vu par Bruno sur la version massifs et ravines). Les massifs, faits
+  d'un bruit, n'avaient ni vrais sommets ni vallées : des crêtes reliées entre elles dans tous les sens. Remplacés par
+  des sommets placés un par un (`Terrain::Peaks`), comparés en rendu Blender à l'image de Star Citizen de Bruno.
+- **Des marches entre CPU et GPU** (en portant les sommets). Le plafond dur de l'allongement du pied et la pointe du
+  sommet cassaient la pente : les ravines qui la suivent sautaient d'un côté à l'autre, et le float du GPU ne tombait
+  pas du même côté que le double du CPU. Minimum doux (`PeakStretchSoftness`) et pointe arrondie (`PeakTip`).
 - **Des aiguilles.** Le rapport relief / largeur était trop grand. Il faut baisser le relief ou élargir les montagnes.
 
 ## 4. Démarche pour améliorer le relief
@@ -185,9 +203,10 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
 - ✅ 3. Déformation du domaine : côtes découpées, chaînes allongées.
 - 🔧 Largeur des montagnes en mètres, indépendante du rayon. Limites : quelques sommets un peu plats, et les tuiles
   lointaines ne sont pas plus fines alors que le terrain est plus raide.
-- 🔧 4. Vraies montagnes : massifs aux sommets variés et ravines en arbre (bruit d'érosion) au lieu des crêtes en
-  boucles. Limites : les ravines fines font encore quelques boucles vues de près ; le relief d'un point coûte
-  environ 4 fois plus sur le CPU en montagne (collision des tuiles proches).
+- 🔧 4. Vraies montagnes : sommets placés un par un, aux versants de pentes différentes et aux contreforts, vallées
+  d'altitude entre eux, ravines en arbre (bruit d'érosion). Limites : contreforts encore réguliers (quatre par
+  sommet, en étoile vus de dessus) ; pas de rochers posés sur les versants ; le relief d'un point coûte environ 4 fois
+  plus sur le CPU en montagne qu'avant le bruit d'érosion (collision des tuiles proches).
 - ⬜ 5. Plateaux, terrasses et falaises (mesas, canyons). Une falaise restera une pente raide, pas un mur vertical.
 - ⬜ 6. Vallées et rivières par formule. Crédibles de loin, sans garantir que l'eau descende toujours.
 - ⬜ 7. Cratères, pour les lunes et les planètes sans air.
