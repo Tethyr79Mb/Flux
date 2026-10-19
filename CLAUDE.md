@@ -55,8 +55,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md`. Ce qui est fait et ce qui vient : 
 - Feuilles de route (`Engine/ROADMAP.md`, `Editor/ROADMAP.md`) : chaque objectif porte son état (demande de Bruno) :
   ✅ atteint, 🔧 à améliorer (fait, limites dites sur la ligne), 🔨 commencé, ⬜ à faire. Mettre à jour à chaque PR.
 - Commentaires : dire pourquoi, pas répéter le code ; garder la densité du code voisin.
-- Structure modulaire orientée objet (demande de Bruno) : un module = une responsabilité, rangé dans son domaine ;
-  les services du moteur sont des classes qui possèdent leurs ressources (RAII), avec leur détail caché (pimpl ou
+- Structure modulaire, orientée objet suivant le besoin (décision de Bruno du 2026-10-19) : un module = une
+  responsabilité, rangé dans son domaine ; les services du moteur sont des classes qui possèdent leurs ressources (RAII), avec leur détail caché (pimpl ou
   classe privée) et une interface courte. Exception voulue, l'ECS : les composants restent des données simples
   (pas de méthodes virtuelles ni d'héritage), la logique va dans des systèmes (`Weapons::Update`…). Le gameplay va
   dans le module du jeu, le moteur ne garde que les briques réutilisables.
