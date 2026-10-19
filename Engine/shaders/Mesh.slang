@@ -361,9 +361,31 @@ float PlanetMorph(uint drawIndex, float3 position)
     return saturate((distance - draw.normal[0].w) * draw.normal[2].w);
 }
 
+// Ce que les tuiles de planète gardent de VertexOutput : ni matériau ni points de l'image précédente (le sol ne
+// bouge pas, son mouvement est nul), qui seraient des sorties inutilisées par fragmentPlanet et fragmentOcean.
+struct PlanetSurface
+{
+    float4 position : SV_Position;
+    float3 worldPosition : POSITION; // relatif à la caméra
+    float3 normal   : NORMAL;
+    float2 uv       : TEXCOORD;
+    nointerpolation uint draw : DRAW; // dans draws
+};
+
+PlanetSurface ToPlanetSurface(VertexOutput full)
+{
+    PlanetSurface surface;
+    surface.position = full.position;
+    surface.worldPosition = full.worldPosition;
+    surface.normal = full.normal;
+    surface.uv = full.uv;
+    surface.draw = full.draw;
+    return surface;
+}
+
 struct PlanetVertexOutput
 {
-    VertexOutput base;
+    PlanetSurface base;
     float3 planetPosition : PLANET; // dans le repère de la planète (son centre à l'origine)
     // Le même modulo GroundPeriod : coordonnées des textures du sol, précises même loin du centre de la planète.
     float3 groundPosition : GROUND;
@@ -412,7 +434,7 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
     const float morph = PlanetMorph(draw, input.position);
     const float3 position = input.position + input.morphOffset * morph;
     PlanetVertexOutput output;
-    output.base = Output(draw, position, lerp(input.normal, input.morphNormal, morph), input.uv);
+    output.base = ToPlanetSurface(Output(draw, position, lerp(input.normal, input.morphNormal, morph), input.uv));
     output.planetPosition = draws[draw].rim.xyz + position;
     output.groundPosition = draws[draw].ground.xyz + position;
     const PlanetData planet = frame[0].planets[asuint(draws[draw].rim.w)];
@@ -1041,7 +1063,7 @@ SceneOutput fragmentPlanet(PlanetVertexOutput input)
 
 float4 PlanetColor(PlanetVertexOutput input)
 {
-    const VertexOutput v = input.base;
+    const PlanetSurface v = input.base;
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float3 local = input.planetPosition;
@@ -1202,7 +1224,7 @@ float4 PlanetColor(PlanetVertexOutput input)
 
 // Sol sans images : couleurs unies de la planète, avec un grain de bruit (couleur et petit relief) de près. Renvoie la
 // couleur diffuse ; `normal` reçoit le petit relief.
-float3 UntexturedGround(VertexOutput v, PlanetData planet, float3 local, inout float3 normal, float distance, float macro,
+float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout float3 normal, float distance, float macro,
                         float rock, float beach, float grassy, float desert, float patches, float temperature, float foot,
                         float snow, out float roughness)
 {
@@ -1248,7 +1270,7 @@ PlanetVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_Vulk
     const float3 up = normalize(local);
     const float depth = planet.water.w - length(local);
     PlanetVertexOutput output;
-    output.base = Output(drawIndex, ground + up * depth, up, float2(depth, 0.0));
+    output.base = ToPlanetSurface(Output(drawIndex, ground + up * depth, up, float2(depth, 0.0)));
     output.planetPosition = up * planet.water.w;
     output.climate = float2(0.0); // l'eau n'en a pas besoin
     output.forest = 0.0;
@@ -1282,7 +1304,7 @@ float3 WaveSlope(float3 x)
 [shader("fragment")]
 float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
 {
-    const VertexOutput v = input.base;
+    const PlanetSurface v = input.base;
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float depth = v.uv.x;
