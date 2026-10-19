@@ -30,7 +30,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `BeforePhysics` et
   `AfterPhysics` autour de la physique, `Hud` pour l'écran, `Reset` à
   chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
-  comme `Missions::SpawnEnemies`), le jeu leur déroulement : les missions y sont (`Game/Module/src/Missions.cpp`). L'éditeur charge une copie
+  comme `Missions::SpawnEnemies`, `Weapons::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`),
+  cible de l'IA de combat (`Combat.cpp`), commandes des armes du joueur (`PlayerWeapons.cpp`). L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
 - **Game.exe** n'a qu'un `main` d'une ligne : `Flux::GameStartup` (`Core/GameStartup.hpp`) lit le projet et les
@@ -55,9 +56,10 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes, moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
-   - armes, après la physique (le vaisseau est à sa place de l'image) : les projectiles avancent et touchent
-     (`Weapons::GuideMissiles`, `UpdateProjectiles`, `ApplyHits`), puis les armes du vaisseau piloté visent et tirent
-     (`Weapons::Update`) ;
+   - projectiles, après la physique (les vaisseaux sont à leur place de l'image) : ils avancent et touchent
+     (`Weapons::GuideMissiles`, `UpdateProjectiles`, `ApplyHits`) ;
+   - systèmes du jeu à l'étape `AfterPhysics` : armes du joueur puis des ennemis (`Weapons::Update`,
+     `CombatAI::Fire`), qui ajoutent leurs tirs à `Engine::GetProjectiles` ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
@@ -236,7 +238,9 @@ planète donne directement le sien comme indice d'instance.
 - Un emport (`HardpointComponent`) est une entité du vaisseau ; l'arme (`WeaponComponent`) est son enfant direct. Une
   arme d'un autre genre ou plus grande que l'emport ne tire pas (`Weapons::Fits`).
 - Tir par groupes : chaque arme a un groupe (`WeaponComponent::group`). Les actions « Groupe d'armes 1 » à « 10 »
-  (touches 1 à 0) verrouillent la cible visée et activent ou arrêtent le groupe (`Engine::m_activeGroups`) ; les
+  (touches 1 à 0, déclarées par le jeu, `Game/Module/src/PlayerWeapons.cpp`) verrouillent la cible visée et activent
+  ou arrêtent le groupe ; le jeu dessine le verrou et ajoute « Tir auto » et les missiles aux infos de vol
+  (`Engine::SetFlightInfoExtra`) ; les
   canons d'un groupe actif tirent seuls dès que la cible est à leur portée, un lance-missiles lance un missile puis
   son groupe s'arrête (`Weapons::Update` retourne le groupe). Perdre la cible arrête tout.
 - Visée : la cible verrouillée, en avance (sa vitesse moins celle du vaisseau, sur le temps de vol des obus) ; sans
