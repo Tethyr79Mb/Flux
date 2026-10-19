@@ -35,6 +35,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -240,6 +242,9 @@ namespace Flux {
         bool anchored = false;
         Math::WorldPosition anchor; // origine du monde de la scène
         std::vector<RelativeTransform> transforms;
+        // Place de chaque entité dans `transforms`, par numéro d'entité (sans sa version) : FindTransform sert pour
+        // chaque corps à chaque pas, une recherche dans toute la liste coûtait corps x entités.
+        std::vector<std::uint32_t> transformIndex;
         double accumulator = 0.0;
         double time = 0.0; // simulé, en secondes
         // Dernier passage de chaque personnage d'un monde à l'autre : pas de nouveau passage juste après (au bas de
@@ -308,8 +313,25 @@ namespace Flux {
 
         // Transformation d'une entité par rapport à l'ancre, d'après la liste calculée pour cette mise à jour.
         const RelativeTransform* FindTransform(Entity entity) const {
-            const auto found = std::ranges::find(transforms, entity, &RelativeTransform::entity);
-            return found == transforms.end() ? nullptr : &*found;
+            const auto index = static_cast<std::size_t>(entt::to_entity(entity));
+            if (entity == NullEntity || index >= transformIndex.size()) {
+                return nullptr;
+            }
+            const std::uint32_t slot = transformIndex[index];
+            return slot < transforms.size() && transforms[slot].entity == entity ? &transforms[slot] : nullptr;
+        }
+
+        void ComputeTransforms(const Scene& scene) {
+            scene.ComputeRelativeTransforms(anchor, transforms);
+            // Cases anciennes laissées telles quelles : FindTransform vérifie l'entité (une case périmée, ou une entité
+            // recréée sous le même numéro, ne répond pas).
+            for (std::uint32_t slot = 0; slot < transforms.size(); ++slot) {
+                const auto index = static_cast<std::size_t>(entt::to_entity(transforms[slot].entity));
+                if (index >= transformIndex.size()) {
+                    transformIndex.resize(index + 1, std::numeric_limits<std::uint32_t>::max());
+                }
+                transformIndex[index] = slot;
+            }
         }
 
         static float DragFor(float terminalSpeed) {
@@ -1380,7 +1402,7 @@ namespace Flux {
                     return;
                 }
             }
-            scene.ComputeRelativeTransforms(anchor, transforms);
+            ComputeTransforms(scene);
             Synchronize(scene);
             for (const Entity entity : scene.GetRegistry().view<const ShipComponent>()) {
                 if (scene.GetParent(entity) == NullEntity) {
@@ -1401,7 +1423,7 @@ namespace Flux {
             }
             Recenter(scene);
             MoveShips(scene, deltaSeconds);
-            scene.ComputeRelativeTransforms(anchor, transforms);
+            ComputeTransforms(scene);
             Synchronize(scene);
             CollectProbes(scene);
             planetGround.Update(scene, anchor, probes, *grids.front()->system, false);
