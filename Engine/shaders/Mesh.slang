@@ -362,13 +362,13 @@ float PlanetMorph(uint drawIndex, float3 position)
 }
 
 // Ce que les tuiles de planète gardent de VertexOutput : ni matériau ni points de l'image précédente (le sol ne
-// bouge pas, son mouvement est nul), qui seraient des sorties inutilisées par fragmentPlanet et fragmentOcean.
+// bouge pas, son mouvement est nul), ni coordonnées de texture, qui seraient des sorties inutilisées par
+// fragmentPlanet (la validation de Vulkan les signale).
 struct PlanetSurface
 {
     float4 position : SV_Position;
     float3 worldPosition : POSITION; // relatif à la caméra
     float3 normal   : NORMAL;
-    float2 uv       : TEXCOORD;
     nointerpolation uint draw : DRAW; // dans draws
 };
 
@@ -378,6 +378,24 @@ PlanetSurface ToPlanetSurface(VertexOutput full)
     surface.position = full.position;
     surface.worldPosition = full.worldPosition;
     surface.normal = full.normal;
+    surface.draw = full.draw;
+    return surface;
+}
+
+// Pour l'océan : la profondeur de l'eau (uv.x) au lieu de la normale, que fragmentOcean recalcule.
+struct OceanSurface
+{
+    float4 position : SV_Position;
+    float3 worldPosition : POSITION; // relatif à la caméra
+    float2 uv       : TEXCOORD;
+    nointerpolation uint draw : DRAW; // dans draws
+};
+
+OceanSurface ToOceanSurface(VertexOutput full)
+{
+    OceanSurface surface;
+    surface.position = full.position;
+    surface.worldPosition = full.worldPosition;
     surface.uv = full.uv;
     surface.draw = full.draw;
     return surface;
@@ -399,8 +417,18 @@ struct PlanetVertexOutput
     // n'a plus ses 16 pas de marche dans l'air.
     float3 airTransmittance : AIR_TRANSMITTANCE;
     float3 airScattered : AIR_SCATTERED;
-    // Océan : le ciel de l'atmosphère que reflète une mer plate (sans les vaguelettes), et la part du ciel de l'espace
-    // qui le traverse. Par sommet, comme l'air.
+};
+
+// Ce que l'océan garde des tuiles de planète : ni normale, ni position du sol, ni climat, ni forêt, que fragmentOcean
+// ne lit pas (des sorties inutilisées, signalées par la validation de Vulkan).
+struct OceanVertexOutput
+{
+    OceanSurface base;
+    float3 planetPosition : PLANET;
+    float3 airTransmittance : AIR_TRANSMITTANCE;
+    float3 airScattered : AIR_SCATTERED;
+    // Le ciel de l'atmosphère que reflète une mer plate (sans les vaguelettes), et la part du ciel de l'espace qui le
+    // traverse. Par sommet, comme l'air.
     float3 seaSky : SEA_SKY;
     float3 seaSkyThrough : SEA_SKY_THROUGH;
 };
@@ -434,7 +462,7 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
     const float morph = PlanetMorph(draw, input.position);
     const float3 position = input.position + input.morphOffset * morph;
     PlanetVertexOutput output;
-    output.base = ToPlanetSurface(Output(draw, position, lerp(input.normal, input.morphNormal, morph), input.uv));
+    output.base = ToPlanetSurface(Output(draw, position, lerp(input.normal, input.morphNormal, morph), float2(0.0)));
     output.planetPosition = draws[draw].rim.xyz + position;
     output.groundPosition = draws[draw].ground.xyz + position;
     const PlanetData planet = frame[0].planets[asuint(draws[draw].rim.w)];
@@ -448,8 +476,6 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
         output.forest = ForestAt(normalize(output.planetPosition) * planet.shape.x, planet.forest.x, blur) * TreeClimate(output.climate);
     }
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
-    output.seaSky = float3(0.0);
-    output.seaSkyThrough = float3(1.0);
     return output;
 }
 
@@ -1260,7 +1286,7 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
 // Océan : les tuiles de la planète posées sur la sphère du niveau de la mer, le long de la verticale de chaque
 // sommet. uv.x : profondeur de l'eau au sommet (négative sur la terre ferme, que le sol cache de toute façon).
 [shader("vertex")]
-PlanetVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_VulkanInstanceID)
+OceanVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_VulkanInstanceID)
 {
     const DrawData draw = draws[drawIndex];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
@@ -1269,11 +1295,9 @@ PlanetVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_Vulk
     const float3 local = draw.rim.xyz + ground;
     const float3 up = normalize(local);
     const float depth = planet.water.w - length(local);
-    PlanetVertexOutput output;
-    output.base = ToPlanetSurface(Output(drawIndex, ground + up * depth, up, float2(depth, 0.0)));
+    OceanVertexOutput output;
+    output.base = ToOceanSurface(Output(drawIndex, ground + up * depth, up, float2(depth, 0.0)));
     output.planetPosition = up * planet.water.w;
-    output.climate = float2(0.0); // l'eau n'en a pas besoin
-    output.forest = 0.0;
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.seaSky = float3(0.0);
     output.seaSkyThrough = float3(1.0);
@@ -1302,9 +1326,9 @@ float3 WaveSlope(float3 x)
 // large ; là où elle est peu profonde, transparente (on voit le fond). Vaguelettes de près (pente d'un bruit qui
 // glisse avec le temps), effacées au loin où elles scintilleraient.
 [shader("fragment")]
-float4 fragmentOcean(PlanetVertexOutput input) : SV_Target
+float4 fragmentOcean(OceanVertexOutput input) : SV_Target
 {
-    const PlanetSurface v = input.base;
+    const OceanSurface v = input.base;
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float depth = v.uv.x;

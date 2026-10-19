@@ -251,7 +251,7 @@ namespace Flux {
         const std::array staticShadow{position, uv};
         const std::array skinnedAttributes{position, normal, uv, joints, weights};
         const std::array skinnedShadow{position, uv, joints, weights};
-        const std::array planetAttributes{position, normal, uv, morphOffset, morphNormal};
+        const std::array planetAttributes{position, normal, morphOffset, morphNormal}; // uv : seulement pour l'ombre
         const std::array planetShadow{position, uv, morphOffset};
         const std::array oceanAttributes{position, morphOffset}; // l'eau fait sa normale et sa profondeur elle-même
         const std::array<const RHI::BindGroupLayout*, 3> layouts{&m_models->GetGroundLayout(), m_frameLayout.get(),
