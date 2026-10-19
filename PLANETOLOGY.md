@@ -74,19 +74,19 @@ de la précédente et une amplitude plus faible (gain).
 | Couche | Rôle | Octaves | Taille |
 |---|---|---|---|
 | Continents | terres et bassins | 0 à 4 | planète |
-| Zone de montagnes | où passent les chaînes | 1 à 2 | largeur des montagnes |
-| Zone de collines | où sont les collines | 2 à 4 | largeur des montagnes |
+| Zone de montagnes | où passent les massifs | 1 à 2 | planète |
+| Zone de collines | où sont les collines | 2 à 4 | planète |
 | Montagnes | crêtes | 2 à 9 | largeur des montagnes |
 | Collines | bosses moyennes | 4 à 8 | largeur des montagnes |
-| Détail | rochers, bosses fines (gain 0,58) | 6 à 21 | largeur des montagnes |
+| Détail | rochers, bosses fines (gain 0,58) | 6 à 21 | planète |
 | Grande déformation | tord continents et zones | 0 à 2 | planète |
 | Petite déformation | tord montagnes et collines | 3 à 5 | planète |
 
 Une tuile ne calcule que les octaves plus grandes que deux fois l'écart de ses sommets (`Terrain::GetOctaves`). Les
 plus fines ne se verraient pas et coûteraient cher. Une octave ne dépend que des plus grandes, si bien qu'une tuile
-grossière garde la forme de ses enfants. Les couches « à la largeur des montagnes » ont une fréquence multipliée par
-`Terrain::GetScale`. Elles perdent leurs octaves `GetScaleShift` niveaux plus tôt, sauf les zones, qui gardent toutes
-les leurs : sans octave, une zone vaudrait « en pleine chaîne » partout.
+grossière garde la forme de ses enfants. Les couches « à la largeur des montagnes » (montagnes et collines) ont une fréquence multipliée par
+`Terrain::GetScale` et perdent leurs octaves `GetScaleShift` niveaux plus tôt. Les zones restent à l'échelle de la
+planète : chaque massif est large et porte plusieurs rangs de crêtes de la largeur des montagnes.
 
 ### La formule, pas à pas (`Terrain::GetHeight`)
 
@@ -94,7 +94,7 @@ les leurs : sans octave, une zone vaudrait « en pleine chaîne » partout.
    s'allongent et serpentent, au lieu de faire des taches rondes.
 2. **Continents.** `land` vaut 0 en mer et 1 sur terre, avec une transition douce.
 3. **Zones.** Les chaînes de montagnes sont des bandes là où un bruit lent passe par zéro (`1 - |bruit|` au-dessus de
-   0,84), au cœur des continents. Les collines occupent une autre zone. Le reste est de la plaine.
+   0,75, pleine au-delà de 0,95), au cœur des continents. Les collines occupent une autre zone. Le reste est de la plaine.
 4. **Montagnes et collines,** calculées seulement dans leur zone : une plaine ne paie pas les crêtes.
 5. **Détail fin.** Presque rien en plaine (1,2 % du relief), plus en collines (3 %) et en montagne (6,5 %).
 6. **Somme.** Bassins vers -0,4, plaines vers 0,05 à 0,1, sommets jusqu'à 1, le tout multiplié par le relief.
@@ -103,7 +103,7 @@ les leurs : sans octave, une zone vaudrait « en pleine chaîne » partout.
 
 Une chaîne de montagnes est faite de trois choses :
 
-- **Un dos continu** le long de la bande : 25 % de sa hauteur (`ChainBase`). Sans lui, les sommets seraient des pics
+- **Un dos continu** le long de la bande : 12 % de sa hauteur (`ChainBase`). Sans lui, les sommets seraient des pics
   isolés dans la plaine.
 - **Des crêtes** : du bruit « ridged » `(1 - |bruit|)³`. Il fait une arête là où le bruit passe par zéro, et le cube
   élargit les vallées. L'arête est arrondie (`RidgeRounding`), sinon une arête vive au mètre près ferait un trait à
@@ -129,6 +129,15 @@ Défauts déjà rencontrés :
 - **Un mur avec des pics** (2026-10-19). Les zones restaient à l'échelle de la planète alors que les montagnes
   rapetissaient : chaque chaîne devenait un plateau de 1500 m aux bords raides, couvert de petits pics. Corrigé en
   mettant les zones à la largeur des montagnes.
+- **Des racines d'arbre vues d'orbite** (2026-10-19, juste après). Les zones à la largeur des montagnes faisaient de
+  minces bandes sinueuses. Corrigé en remettant les zones à l'échelle de la planète, mais plus larges et aux bords plus
+  doux (`ChainStart` 0,75, `ChainEnd` 0,95), avec un dos plus bas (`ChainBase` 0,12) pour éviter le plateau.
+- **Des plaines où l'on ne peut pas se poser** (2026-10-19). Le détail fin suivait aussi la largeur des montagnes :
+  plus fin à la même hauteur, il était quatre fois plus raide, et aucune plaine ne restait sous 5° de pente. Le détail
+  est revenu à l'échelle de la planète ; `PlanetTests` vérifie qu'une terre sur deux reste une plaine.
+- **Un réseau de traits courbes** sur les massifs (reste à faire). Les crêtes `1 - |bruit|` suivent les lignes où le
+  bruit de Perlin passe par zéro, qui forment des boucles. Les vraies chaînes ont une crête principale et des
+  contreforts qui en partent (forme en arbre). C'est l'objet de l'étape 4.
 - **Des aiguilles.** Le rapport relief / largeur était trop grand. Il faut baisser le relief ou élargir les montagnes.
 
 ## 4. Démarche pour améliorer le relief

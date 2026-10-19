@@ -42,11 +42,11 @@ namespace Flux::Planetology {
         constexpr double DetailHills = 0.03;
         constexpr double DetailMountains = 0.065;
         // Largeur des chaînes de montagnes : là où 1 - |bruit de zone| dépasse ChainStart, pleines au-delà de ChainEnd.
-        constexpr double ChainStart = 0.84;
-        constexpr double ChainEnd = 0.97;
+        constexpr double ChainStart = 0.75;
+        constexpr double ChainEnd = 0.95;
         // Part de la hauteur d'une chaîne donnée par sa bande elle-même (un dos continu le long de la chaîne), le reste
-        // par les crêtes : sans elle, les sommets seraient des pics isolés.
-        constexpr double ChainBase = 0.25;
+        // par les crêtes : sans elle, les sommets seraient des pics isolés ; trop haute, un plateau à bords raides.
+        constexpr double ChainBase = 0.12;
         constexpr double RidgeContrast = 0.95; // les crêtes, de 0 à 1 environ, au-dessus de la bande
         // Arrondi du sommet des crêtes (en unités du bruit).
         constexpr double RidgeRounding = 0.06;
@@ -76,13 +76,14 @@ namespace Flux::Planetology {
             double gain;
             Math::Vector3d offset; // sépare les couches (sinon elles suivraient les mêmes formes)
             bool ridged;
-            // Suit la largeur des montagnes (Terrain::m_scale) plutôt que le rayon : montagnes, collines, détail et
-            // leurs zones gardent leur taille en mètres sur une grande planète (zones à l'échelle de la planète : une
-            // chaîne y devenait un large plateau à bords raides, couvert de petits pics). Les continents et les
-            // déformations restent à l'échelle de la planète.
+            // Suit la largeur des montagnes (Terrain::m_scale) plutôt que le rayon : montagnes et collines gardent
+            // leur taille en mètres sur une grande planète. Le détail reste à l'échelle de la planète : plus fin de
+            // m_scale à la même hauteur, il rendait toutes les plaines trop raides pour se poser. Les zones, les
+            // continents et les déformations aussi : des zones à la largeur des montagnes faisaient de minces bandes
+            // sinueuses, des « racines » vues d'orbite. Une zone large et aux bords doux (ChainStart, ChainEnd, et
+            // ChainBase bas pour ne pas faire de plateau) porte plusieurs rangs de crêtes, comme un vrai massif.
             bool scaled;
-            // Perd ses octaves Terrain::m_shift niveaux plus tôt (couches à l'échelle des montagnes). Pas les zones :
-            // sans octave, une zone vaudrait partout « en pleine chaîne » ; elles gardent celles d'avant.
+            // Perd ses octaves Terrain::m_shift niveaux plus tôt (couches à l'échelle des montagnes).
             bool shifted;
             double erosion;        // force de l'érosion, 0 : aucune
             // Octaves dont la pente compte pour l'érosion (les suivantes sont atténuées selon la pente déjà connue) : la
@@ -92,11 +93,11 @@ namespace Flux::Planetology {
         enum LayerIndex { Continents, MountainZone, HillZone, Mountains, Hills, Detail, WarpLargeField, WarpSmallField };
         constexpr std::array<Layer, 8> Layers{{
             {0, 5, 0.5, {0.0, 0.0, 0.0}, false, false, false, 0.0, 0},
-            {1, 3, 0.5, {31.7, -12.3, 7.1}, false, true, false, 0.0, 0},
-            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false, true, false, 0.0, 0},
+            {1, 3, 0.5, {31.7, -12.3, 7.1}, false, false, false, 0.0, 0},
+            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false, false, false, 0.0, 0},
             {2, 2 + MaxRidgeOctaves, 0.5, {17.3, -41.7, 8.9}, true, true, true, ErosionMountains, MaxRidgeOctaves},
             {4, 9, 0.5, {5.3, 23.9, -33.1}, false, true, true, ErosionHills, 5},
-            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false, true, true, ErosionDetail, 6},
+            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false, false, false, ErosionDetail, 6},
             // Déformations : toutes leurs octaves, quel que soit le niveau de la tuile (sinon le terrain glisserait
             // d'un niveau à l'autre).
             {0, 3, 0.5, {-37.9, 13.3, 21.7}, false, false, false, 0.0, 0},

@@ -58,9 +58,9 @@ groupshared float highestShared[GroupSize];
 static const float DetailPlains = 0.012;
 static const float DetailHills = 0.03;
 static const float DetailMountains = 0.065;
-static const float ChainStart = 0.84;
-static const float ChainEnd = 0.97;
-static const float ChainBase = 0.25;
+static const float ChainStart = 0.75;
+static const float ChainEnd = 0.95;
+static const float ChainBase = 0.12;
 static const float RidgeContrast = 0.95;
 static const float RidgeRounding = 0.06;
 static const float MountainWeight = 0.85;
@@ -83,11 +83,11 @@ struct Layer
 };
 static const Layer Layers[8] = {
     { 0, 5, 0.5, false, false, false, 0.0, 0 },   // continents
-    { 1, 3, 0.5, false, true, false, 0.0, 0 },   // zones des chaînes de montagnes
-    { 2, 5, 0.5, false, true, false, 0.0, 0 },   // zones de collines
+    { 1, 3, 0.5, false, false, false, 0.0, 0 },   // zones des chaînes de montagnes
+    { 2, 5, 0.5, false, false, false, 0.0, 0 },   // zones de collines
     { 2, 10, 0.5, true, true, true, 2.5, 8 },   // montagnes (crêtes)
     { 4, 9, 0.5, false, true, true, 4.0, 5 },   // collines
-    { 6, 22, 0.58, false, true, true, 3.0, 6 }, // détail
+    { 6, 22, 0.58, false, false, false, 3.0, 6 }, // détail
     { 0, 3, 0.5, false, false, false, 0.0, 0 },   // grande déformation
     { 3, 6, 0.5, false, false, false, 0.0, 0 },   // petite déformation
 };

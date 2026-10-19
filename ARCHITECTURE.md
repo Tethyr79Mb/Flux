@@ -268,10 +268,10 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   zéro), crêtes, collines, détail. Les couches sont lues à un point déformé par la pente d'un bruit lent (côtes et
   chaînes tordues), et chaque octave est atténuée selon la pente réelle déjà sommée de sa couche (érosion analytique).
   Une octave ne dépend que des octaves plus grandes : une tuile grossière garde la forme de ses enfants.
-  Montagnes, collines et détail suivent la largeur des montagnes en mètres (`PlanetComponent::mountainWidth`), pas le
+  Montagnes et collines suivent la largeur des montagnes en mètres (`PlanetComponent::mountainWidth`), pas le
   rayon : leurs fréquences sont multipliées par `Terrain::GetScale` et elles perdent leurs octaves `GetScaleShift`
-  niveaux plus tôt (log2 arrondi au-dessus, le même entier pour le CPU et le GPU). Continents, zones et déformations
-  restent à l'échelle de la planète.
+  niveaux plus tôt (log2 arrondi au-dessus, le même entier pour le CPU et le GPU). Continents, zones, détail et
+  déformations restent à l'échelle de la planète (détail plus fin = plaines trop raides pour se poser).
 - Sol choisi au pixel dans `Mesh.slang` : climat (température, humidité), pentes, plages, neige ; 5 textures en
   tableaux (`GroundTextures`) plaquées en triplanaire, chaque projection en pavage hexagonal (rotation et décalage
   aléatoires par cellule, périodique sur `GroundPeriod` pour ne pas voir de raccord entre tuiles) ; couleurs unies si les textures manquent ou pendant leur
