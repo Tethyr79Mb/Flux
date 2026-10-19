@@ -123,7 +123,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ 2 ou 3 textures par matière, pour varier davantage le sol de près.
 
 ### Gameplay
-- 🔨 Gameplay hors du moteur (Bruno, 2026-10-19 : « pour les missions, le jeu pourrait s'en charger » ; audit : `/mnt/project-files/Recherche/audit-moteur-2026-10-19.md`). Fait : systèmes du jeu enregistrables à une étape de l'image (`Engine::AddGameSystem` : Interaction, Hud, Reset), missions dans GameModule.dll. Reste : étapes avant et après la physique, puis armes, IA de combat, warp et quais ; `MissionGiverComponent` reste dans le moteur (l'éditeur le pose depuis Placer).
+- 🔨 Gameplay hors du moteur (Bruno, 2026-10-19 : « pour les missions, le jeu pourrait s'en charger » ; audit : `/mnt/project-files/Recherche/audit-moteur-2026-10-19.md`). Fait : systèmes du jeu enregistrables à une étape de l'image (`Engine::AddGameSystem` : Interaction, BeforePhysics, AfterPhysics, Hud, Reset) ; missions et choix de la cible de l'IA de combat dans GameModule.dll. Reste : commandes des armes du joueur (verrou, groupes), warp et quais ; `MissionGiverComponent` reste dans le moteur (l'éditeur le pose depuis Placer).
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
 - ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, volume, panneau Moteur).

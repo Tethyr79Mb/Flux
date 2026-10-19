@@ -205,6 +205,8 @@ namespace Flux {
         // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
         enum class GameStage {
             Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
+            BeforePhysics, // après le vol des vaisseaux, le pilote automatique et le warp : mener des vaisseaux
+            AfterPhysics,  // après les armes du joueur, avant l'animation : tout est à sa place de l'image
             Hud,         // indications à l'écran, après la scène et les infos de vol (jeu en cours, joueur présent)
             Reset,       // scène chargée ou jeu arrêté : oublier ce qui tenait à l'ancienne scène (deltaSeconds = 0)
         };
@@ -214,6 +216,9 @@ namespace Flux {
         void ClearGameSystems();
         // Personnage du joueur pendant le jeu, NullEntity sinon.
         Entity GetPlayer() const { return GetFollowedPlayer(); }
+        // Projectiles en vol : ceux que le jeu y ajoute (Weapons::Update, CombatAI::Fire) avancent, touchent et sont
+        // dessinés par le moteur.
+        std::vector<Projectile>& GetProjectiles() { return m_projectiles; }
         // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
         // elle est alors prise (les sièges ne la voient plus).
         bool ConsumeInteraction();

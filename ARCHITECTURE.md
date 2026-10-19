@@ -27,7 +27,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **FluxEngine.dll** exporte seulement ce qui porte `FLUX_API`. Vulkan, Jolt, FreeType, miniaudio et stb restent privés :
   aucun en-tête public ne les expose. EnTT est public (le jeu manipule la scène directement).
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
-  (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `Hud` pour l'écran, `Reset` à
+  (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `BeforePhysics` et
+  `AfterPhysics` autour de la physique, `Hud` pour l'écran, `Reset` à
   chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
   comme `Missions::SpawnEnemies`), le jeu leur déroulement : les missions y sont (`Game/Module/src/Missions.cpp`). L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
@@ -215,7 +216,8 @@ planète donne directement le sien comme indice d'instance.
   (vise en avance, ralentit à `preferredRange`), rupture de côté quand il passe trop près ou, prudent, quand il est
   touché, fuite sous `fleeHealth`. `Steer` (avant la physique) règle vitesse et rotation comme le pilote automatique
   (`Steering.hpp`) ; `Fire` (après la physique) appelle `Weapons::Update` avec la cible verrouillée, une erreur de
-  visée (`WeaponInput::aimOffset`) et des missiles espacés (`WeaponInput::missiles`). Cible : le vaisseau du joueur.
+  visée (`WeaponInput::aimOffset`) et des missiles espacés (`WeaponInput::missiles`). Le jeu les appelle
+  (`Game/Module/src/Combat.cpp`, étapes `BeforePhysics` et `AfterPhysics`) avec pour cible le vaisseau du joueur.
 - Missions : un PNJ porte `MissionGiverComponent` (« Donneur de missions ») ; F à sa portée ouvre sa fenêtre
   (systèmes du jeu, `Game/Module/src/Missions.cpp`). Une seule sorte : détruire un groupe d'ennemis, que
   `Missions::SpawnEnemies` fait apparaître à la racine, à `distance` devant la station (prefab du donneur, ou drones
