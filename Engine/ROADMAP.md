@@ -105,6 +105,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Ombres des lumières intérieures.
 - ⬜ Champs d'astéroïdes (l'instancing des modèles est fait : reste à les générer et à les placer, comme les arbres).
 - ⬜ Rendu vers texture : écrans du cockpit, interfaces dans le monde 3D.
+- ⬜ Fonctions selon le GPU (décision de Bruno du 2026-10-19) : le moteur détecte au démarrage ce que la carte sait faire au-delà de Vulkan 1.3 et s'en sert, sinon il garde le chemin de base. Premier candidat : mesh shaders pour le sol des planètes (RTX 20, RX 6000, Arc et plus récentes), seulement si la mesure en Release montre que la géométrie pèse dans le temps GPU du sol. Le chemin de base reste CDLOD + dessin indirect, qui tourne sur une GTX 1060 ou une RX 5700 (minimum de Star Citizen).
 
 ### Planètes (Planetology)
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents. À améliorer : pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; sommets toujours un peu « bruit » de près.
