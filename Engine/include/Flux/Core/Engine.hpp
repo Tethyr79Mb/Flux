@@ -206,7 +206,7 @@ namespace Flux {
         enum class GameStage {
             Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
             BeforePhysics, // après le vol des vaisseaux, le pilote automatique et le warp : mener des vaisseaux
-            AfterPhysics,  // après les armes du joueur, avant l'animation : tout est à sa place de l'image
+            AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Hud,         // indications à l'écran, après la scène et les infos de vol (jeu en cours, joueur présent)
             Reset,       // scène chargée ou jeu arrêté : oublier ce qui tenait à l'ancienne scène (deltaSeconds = 0)
         };
@@ -225,6 +225,9 @@ namespace Flux {
         // Objectif du jeu (une mission) proposé comme destination du warp, sous ce nom ; nullopt le retire. Effacé
         // avec la scène.
         void SetWarpObjective(std::string name, std::optional<Math::WorldPosition> position);
+        // Lignes du jeu (armes actives, missiles...) ajoutées sous les infos de vol du vaisseau piloté ; vide : aucune.
+        // Gardées jusqu'au prochain appel, effacées avec la scène.
+        void SetFlightInfoExtra(std::string_view text);
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
@@ -254,6 +257,7 @@ namespace Flux {
         bool m_interactionPending = false; // Interagir enfoncée à cette image, pas encore prise
         std::string m_warpObjectiveName;
         std::optional<Math::WorldPosition> m_warpObjective;
+        std::string m_flightInfoExtra; // lignes du jeu sous les infos de vol (SetFlightInfoExtra)
         GameState m_gameState = GameState::Running;
         UpdateFunction m_editorUpdate;
         CloseFunction m_closeRequestHandler;
@@ -325,8 +329,6 @@ namespace Flux {
         std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
         std::vector<Impact> m_impacts;
         std::vector<std::string> m_destroyedNames;
-        Entity m_lockTarget = NullEntity; // cible verrouillée par les armes du vaisseau piloté (DrawFlightInfo)
-        std::uint16_t m_activeGroups = 0;  // groupes d'armes en tir automatique (bit 0 : touche 1)
         // Message bref sous les infos de vol (pilote automatique lancé, aucun quai à portée), et son temps restant.
         std::string m_flightMessage;
         double m_flightMessageSeconds = 0.0;

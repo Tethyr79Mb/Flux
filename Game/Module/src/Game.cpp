@@ -1,5 +1,6 @@
 #include "Combat.hpp"
 #include "Missions.hpp"
+#include "PlayerWeapons.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
@@ -88,6 +89,7 @@ FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
         .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
     engine.SetGameUpdate(Update);
     Game::RegisterMissions(engine);
+    Game::RegisterPlayerWeapons(engine); // avant les ennemis : même ordre de tir qu'avant
     Game::RegisterCombat(engine);
     engine.GetInputActions().Add("Saut d'une année-lumière", "Démo", Key::T);
     // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
@@ -104,6 +106,7 @@ FLUX_GAME_MODULE_EXPORT void FluxUnregisterGame(Flux::Engine& engine) {
     engine.SetGameUpdate(nullptr);
     Game::UnregisterMissions(engine);
     Game::UnregisterCombat(engine);
+    Game::UnregisterPlayerWeapons(engine);
     engine.UnregisterInterfaceFunction("Exemple");
     engine.UnbindInterfaceValue("Vitesse de la démo");
     engine.GetInputActions().Remove("Saut d'une année-lumière");
