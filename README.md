@@ -12,6 +12,11 @@ piloter un vaisseau depuis le cockpit, se poser sur des planètes sans chargemen
 - Planètes entières calculées par le GPU (relief, sol, océan, nuages, arbres), physique Jolt (un monde par vaisseau).
 - Interface maison FluxUI, partagée par l'éditeur et le jeu.
 
+## Configuration requise
+
+Windows 10 ou 11 64 bits et une carte graphique compatible **Vulkan 1.3** avec un pilote à jour. L'éditeur et le jeu
+refusent de démarrer sans elle et disent pourquoi.
+
 ## Compiler
 
 Windows avec Visual Studio (MSVC) et le SDK Vulkan (qui fournit `slangc`). Ouvrir le dossier dans Visual Studio,

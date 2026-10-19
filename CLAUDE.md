@@ -32,7 +32,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md`. Ce qui est fait et ce qui vient : 
 - Juger les performances en Release seulement, jamais en Debug.
 
 ## Choix d'architecture (décidés, ne pas remettre en cause sans le demander)
-- Vulkan derrière une couche RHI (`Renderer/RHI`) ; C++23 ; volk, vk-bootstrap, VMA ; shaders Slang.
+- Vulkan 1.3 minimum (décision de Bruno du 2026-10-19), derrière une couche RHI (`Renderer/RHI`) ; C++23 ;
+  volk, vk-bootstrap, VMA ; shaders Slang.
 - Mondes géants : secteurs `int64` (1e9 m) + positions `double`, rendu relatif à la caméra, reverse-Z infini.
 - Scène EnTT. Chaque composant s'enregistre une fois dans `ComponentRegistry.cpp` : inspecteur et sauvegarde JSON en
   sont générés. Un champ retiré passe par `.RemovedField`, un champ remplacé par un autre de sens différent par
