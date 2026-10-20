@@ -329,19 +329,26 @@ struct TreeVertexOutput
     VertexOutput base;
     float3 airTransmittance : AIR_TRANSMITTANCE;
     float3 airScattered : AIR_SCATTERED;
+    float clouds : CLOUDS; // ombre des nuages (CloudShadow), par sommet comme pour le sol
 };
+
+// Position à l'écran d'un sommet d'arbre : la même suite de calculs pour la pré-passe de profondeur (vertexTreeDepth)
+// et l'éclairage (vertexTree), qui ne garde que les pixels de même profondeur.
+float4 TreeClipPosition(float3 position, uint instance, out float3 worldPosition, out float4 rotation)
+{
+    worldPosition = TreePosition(treeInstances[instance * 2], position, rotation, instance);
+    return Transform(frame[0].viewProjection, worldPosition);
+}
 
 [shader("vertex")]
 TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    const float4 placement = treeInstances[instance * 2];
     float4 rotation;
     TreeVertexOutput tree;
     VertexOutput output;
     output.draw = params.draw;
     output.material = params.material;
-    output.worldPosition = TreePosition(placement, input.position, rotation, instance);
-    output.position = Transform(frame[0].viewProjection, output.worldPosition);
+    output.position = TreeClipPosition(input.position, instance, output.worldPosition, rotation);
     output.normal = TreeRotate(rotation, input.normal);
     output.uv = input.uv;
     const FrameData f = frame[0];
@@ -349,7 +356,23 @@ TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstance
     output.staticClip = output.previousClip;
     tree.base = output;
     tree.airScattered = AirTo(output.worldPosition, tree.airTransmittance);
+    tree.clouds = CloudShadow(output.worldPosition);
     return tree;
+}
+
+// Pré-passe du feuillage : profondeur seule, pixels sous le seuil d'alpha jetés (fragmentShadow). Le feuillage se
+// recouvre beaucoup, et avec son seuil d'alpha le GPU ne peut pas écarter d'avance les pixels cachés : chaque couche
+// était éclairée en entier. Après elle, fragmentTree n'éclaire que la feuille visible (même profondeur), une fois.
+[shader("vertex")]
+ShadowOutput vertexTreeDepth(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    float3 worldPosition;
+    float4 rotation;
+    ShadowOutput output;
+    output.position = TreeClipPosition(input.position, instance, worldPosition, rotation);
+    output.uv = input.uv;
+    output.material = params.material;
+    return output;
 }
 
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
@@ -1449,12 +1472,13 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 }
 
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
-// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre.
+// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre. Sans seuil
+// d'alpha : la pré-passe (vertexTreeDepth) a déjà jeté les pixels transparents, seuls les visibles arrivent ici.
 [shader("fragment")]
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered);
+    output.color = MeshColor(input.base, true, false, true, input.airTransmittance, input.airScattered, input.clouds);
     output.motion = Motion(input.base);
     return output;
 }
@@ -1464,16 +1488,17 @@ SceneOutput fragmentTree(TreeVertexOutput input)
 SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered);
+    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds);
     output.motion = Motion(input.base);
     return output;
 }
 
 // alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
-// airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici.
+// airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
+// calculée (par sommet), négative pour la calculer ici.
 [ForceInline]
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airGiven = false,
-                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0))
+                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0)
 {
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
@@ -1500,7 +1525,8 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
-    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, CloudShadow(input.worldPosition), inside);
+    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;

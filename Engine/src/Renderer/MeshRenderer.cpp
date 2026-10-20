@@ -271,6 +271,9 @@ namespace Flux {
             bool materials = false;
             // Programme de pixel presque vide pour la mesure (Pipelines::geometryOnly), ou aucun.
             const char* geometryFragment = nullptr;
+            // Seuil d'alpha avec pré-passe de profondeur (Pipelines::depthMasked, ce programme de sommets) : les
+            // pipelines à seuil n'éclairent ensuite que les pixels de même profondeur, sans rien jeter.
+            const char* depthVertex = nullptr;
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -355,12 +358,49 @@ namespace Flux {
             if (auto result = createMain(pipelines.opaqueDoubleSided, RHI::CullMode::None, false); !result) {
                 return result;
             }
-            // Seuil d'alpha et transparents : le programme qui peut jeter des pixels.
+            if (kind.depthVertex) {
+                // Pré-passe : profondeur seule, pixels sous le seuil jetés ; mêmes attributs que les ombres.
+                desc.vertexEntryPoint = kind.depthVertex;
+                desc.vertexAttributes = kind.shadowAttributes;
+                desc.fragmentEntryPoint = "fragmentShadow";
+                desc.writeColor = false;
+                desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
+                desc.depthWrite = true;
+                desc.blend = RHI::BlendMode::Opaque;
+                desc.cullMode = RHI::CullMode::Back;
+                if (auto result = create(pipelines.depthMasked, desc); !result) {
+                    return result;
+                }
+                desc.cullMode = RHI::CullMode::None;
+                if (auto result = create(pipelines.depthMaskedDoubleSided, desc); !result) {
+                    return result;
+                }
+                desc.vertexEntryPoint = kind.vertex;
+                desc.vertexAttributes = kind.attributes;
+                desc.writeColor = true;
+            }
+            // Seuil d'alpha et transparents : le programme qui peut jeter des pixels. Après une pré-passe : la
+            // profondeur est déjà écrite, seuls les pixels qu'elle a gardés (de même profondeur) sont éclairés.
             desc.fragmentEntryPoint = kind.maskedFragment;
-            if (auto result = createMain(pipelines.masked, RHI::CullMode::Back, false); !result) {
+            const auto createMasked = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode) {
+                if (!kind.depthVertex) {
+                    return createMain(pipeline, cullMode, false);
+                }
+                desc.cullMode = cullMode;
+                desc.depthWrite = false;
+                // Plus proche ou égal plutôt qu'égal : rien ne garantit au bit près la même profondeur depuis deux
+                // programmes de sommets, et un pixel un peu plus proche serait sinon perdu (trou dans les feuilles).
+                desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
+                desc.blend = RHI::BlendMode::Opaque;
+                desc.writeSecondColor = kind.motion;
+                auto result = create(pipeline, desc);
+                desc.depthCompare = RHI::CompareOp::Greater;
+                return result;
+            };
+            if (auto result = createMasked(pipelines.masked, RHI::CullMode::Back); !result) {
                 return result;
             }
-            if (auto result = createMain(pipelines.maskedDoubleSided, RHI::CullMode::None, false); !result) {
+            if (auto result = createMasked(pipelines.maskedDoubleSided, RHI::CullMode::None); !result) {
                 return result;
             }
             desc.fragmentEntryPoint = "fragmentMain";
@@ -380,7 +420,7 @@ namespace Flux {
             return result;
         }
         if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
-                                             "fragmentTreeOpaque", "fragmentTree", true, true});
+                                             "fragmentTreeOpaque", "fragmentTree", true, true, nullptr, "vertexTreeDepth"});
             !result) {
             return result;
         }
@@ -1351,7 +1391,7 @@ namespace Flux {
 
     // Les arbres d'une liste : un appel indirect par primitive de son modèle, le nombre d'arbres écrit par le GPU.
     void MeshRenderer::DrawTrees(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
-                                 Planetology::VegetationRenderer::List list, std::uint32_t cascade) const {
+                                 Planetology::VegetationRenderer::List list, std::uint32_t cascade, bool depthOnly) const {
         const bool shadow = list >= Planetology::VegetationRenderer::Shadow;
         for (const Planetology::VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
             const GpuModel& model = *draw.model;
@@ -1363,7 +1403,14 @@ namespace Flux {
                 commands.BindVertexBuffers(0, vertexBuffers);
                 commands.BindIndexBuffer(*page.indices);
             }
-            BindPipeline(commands, state, frameIndex, shadow ? ShadowPipeline(m_tree, material) : OpaquePipeline(m_tree, material));
+            const bool masked = material.alphaCutoff > 0.0f;
+            if (depthOnly && !masked) {
+                continue; // pré-passe : le seuil d'alpha seul (l'écorce, opaque, ne jette rien)
+            }
+            const RHI::Pipeline& pipeline = shadow      ? ShadowPipeline(m_tree, material)
+                                          : depthOnly   ? *(material.doubleSided ? m_tree.depthMaskedDoubleSided : m_tree.depthMasked)
+                                                        : OpaquePipeline(m_tree, material);
+            BindPipeline(commands, state, frameIndex, pipeline);
             if (state.group != &m_models->GetWhiteGroup()) {
                 state.group = &m_models->GetWhiteGroup();
                 commands.SetBindGroup(0, *state.group);
@@ -1411,7 +1458,12 @@ namespace Flux {
     void MeshRenderer::DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
         using Planetology::VegetationRenderer;
-        for (const VegetationRenderer::List list : {VegetationRenderer::Near, VegetationRenderer::Middle, VegetationRenderer::Far}) {
+        constexpr std::array lists{VegetationRenderer::Near, VegetationRenderer::Middle, VegetationRenderer::Far};
+        // Profondeur du feuillage d'abord (voir vertexTreeDepth), puis l'éclairage, qui ne garde que la feuille visible.
+        for (const VegetationRenderer::List list : lists) {
+            DrawTrees(commands, state, frameIndex, list, 0, true);
+        }
+        for (const VegetationRenderer::List list : lists) {
             DrawTrees(commands, state, frameIndex, list, 0);
         }
     }

@@ -320,7 +320,10 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   listes (détaillé, simplifié, imposteur selon la distance ; ombres avec le modèle simplifié, une liste par cascade
   touchée), puis écrit leurs nombres dans les commandes : un `DrawIndexedIndirect` par primitive de modèle et par liste.
   `vertexTree` lit la place et la rotation de chaque arbre et le balance au vent ; `fragmentTree` ne retourne pas les
-  normales des feuilles (tournées vers l'extérieur de la couronne des deux côtés). Modèles : `assets/Modeles/Arbre`,
+  normales des feuilles (tournées vers l'extérieur de la couronne des deux côtés). Le feuillage (seuil d'alpha) passe
+  d'abord en pré-passe de profondeur (`vertexTreeDepth` + `fragmentShadow`, couleur non écrite), puis `fragmentTree`
+  l'éclaire sans rien jeter, profondeur « plus proche ou égale » : chaque pixel n'est éclairé qu'une fois au lieu d'une
+  fois par couche de feuilles. L'air et l'ombre des nuages sont calculés par sommet. Modèles : `assets/Modeles/Arbre`,
   générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à la portée du composant
   (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
   Au loin, les imposteurs s'espacent (une part inverse de la distance, un peu agrandis) et rapetissent près de la
