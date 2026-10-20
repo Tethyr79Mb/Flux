@@ -40,6 +40,8 @@ namespace Flux::Vk {
         bool HasAnisotropy() const { return m_anisotropy; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
         bool HasBufferMarkers() const { return m_bufferMarkers; }
+        // VK_EXT_debug_utils activée : repères nommés dans les listes de commandes (sinon ses fonctions sont interdites).
+        bool HasDebugLabels() const { return m_debugLabels; }
         // Après la perte du device : la description de la panne par le pilote (VK_EXT_device_fault), vide sans elle.
         std::string DescribeFault() const;
 
@@ -87,5 +89,6 @@ namespace Flux::Vk {
         bool m_anisotropy = false;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;
+        bool m_debugLabels = false;
     };
 }

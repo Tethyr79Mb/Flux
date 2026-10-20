@@ -42,6 +42,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour. À améliorer : reflets flous, ciel seulement (pas la scène).
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur ; scène détaillée : objets, sol, ciel, océan, nuages, transparents) et de la mémoire (RAM du processus, mémoire vidéo).
 - ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
+- ✅ Étapes de l'image nommées pour les outils de mesure (Radeon GPU Profiler, Nsight, RenderDoc), en Debug comme en Release (VK_EXT_debug_utils si présente).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
 - ✅ Flammes des réacteurs (composant « Réacteur ») : volume de gaz calculé au pixel, longueur et éclat selon la
   poussée du vaisseau, lumière autour ; à pleine poussée dans l'éditeur (jeu arrêté) pour les régler.
