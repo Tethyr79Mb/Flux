@@ -31,8 +31,6 @@ namespace Flux::Planetology {
         constexpr double BaseFrequency = 1.5;
         // Octaves au plus (la plus fine fait quelques mètres sur une planète comme la Terre).
         constexpr std::uint32_t MaxOctaves = 22;
-        // Octaves des crêtes des montagnes (elles s'arrêtent plus tôt : elles coûtent autant que le reste).
-        constexpr std::uint32_t MaxRidgeOctaves = 8;
         // Relief de détail (bosses, rochers) à partir de l'octave 6 (environ 4 km de longueur d'onde sur une planète
         // de 60 km), x 0,65 par octave (contre 0,5 pour les grandes formes) : le sol reste accidenté de près. Son
         // amplitude (fraction du relief) dépend de l'endroit : presque rien en plaine, plus en collines et en montagne.
@@ -45,20 +43,61 @@ namespace Flux::Planetology {
         constexpr double ChainStart = 0.75;
         constexpr double ChainEnd = 0.95;
         // Part de la hauteur d'une chaîne donnée par sa bande elle-même (un dos continu le long de la chaîne), le reste
-        // par les crêtes : sans elle, les sommets seraient des pics isolés ; trop haute, un plateau à bords raides.
-        constexpr double ChainBase = 0.12;
-        constexpr double RidgeContrast = 0.95; // les crêtes, de 0 à 1 environ, au-dessus de la bande
-        // Arrondi du sommet des crêtes (en unités du bruit).
-        constexpr double RidgeRounding = 0.06;
+        // par les sommets : sans elle, les montagnes seraient des pics isolés dans la plaine.
+        constexpr double ChainBase = 0.2;
+        constexpr double PeakHeight = 0.85; // les sommets, de 0 à 1, au-dessus de la bande
+        // Sommets (Terrain::Peaks) : au plus un par maille d'un réseau 3D (maille d'environ largeur des montagnes / 2π),
+        // présent avec la chance PeakChance (sur 256), décalé au hasard dans sa maille. Seules comptent les mailles dont
+        // le sommet tombe près de la sphère (à moins de PeakSlabInner maille, effacé à PeakSlabOuter) : une couche
+        // d'une maille d'épaisseur, donc des sommets aussi serrés partout.
+        constexpr std::uint32_t PeakChance = 218;
+        // Sommets secondaires (réseau deux fois plus fin) : leur hauteur, en part de celle des grands.
+        constexpr double PeakSecondary = 0.45;
+        constexpr double PeakSlabInner = 0.35;
+        constexpr double PeakSlabOuter = 0.5;
+        // Hauteur d'un sommet : de PeakLowest à 1 (plus souvent bas que haut). Rayon de son pied (en mailles) :
+        // PeakRadius pour le plus haut, 60 % pour le plus bas, ± 20 % au hasard. Il reste sous une maille avec ses
+        // versants allongés (voir PeakSpurs) : les 3 x 3 x 3 mailles autour du point suffisent.
+        constexpr double PeakLowest = 0.35;
+        constexpr double PeakRadius = 0.75;
+        // Profil d'un versant, t de 0 (sommet) à 1 (pied) : (1 - t)^PeakShape x (1 + PeakTop x PeakShape x t), concave en
+        // bas comme une vraie montagne, au sommet arrondi (PeakTop 1 : plat ; 0 : pointu).
+        constexpr double PeakShape = 1.6;
+        constexpr double PeakTop = 0.5;
+        constexpr double PeakTip = 0.05;
+        // Le pied s'éloigne ou se rapproche selon la direction autour du sommet : un côté plus doux que l'autre
+        // (PeakAsymmetry), une montagne allongée (PeakElongation), et PeakSpurCount contreforts (arêtes qui descendent
+        // du sommet, d'autant plus fines que PeakSpurSharpness est haut).
+        constexpr double PeakAsymmetry = 0.2;
+        constexpr double PeakElongation = 0.1;
+        constexpr double PeakSpurs = 0.25;
+        constexpr double PeakSpurSharpness = 6.0;
+        constexpr std::uint32_t PeakSpurCount = 4;
+        constexpr double PeakStretchSoftness = 0.2; // largeur du minimum doux qui borne l'allongement
+        // Union douce des sommets voisins (k x log(somme des exp(h / k))) : un col arrondi entre eux, pas une arête vive.
+        constexpr double PeakBlend = 0.04;
+        // Ravines (Terrain::Gullies) : amplitude de la première octave (fraction du relief) ; pentes (m/m) où elles
+        // commencent et où elles sont pleines. Rien sur le plat : les plaines restent lisses pour se poser, et les
+        // sommets et cols, où la pente n'a pas de direction nette, ne tournent pas en tourbillons.
+        constexpr double GullyAmplitude = 0.09;
+        constexpr double GullyStartSlope = 0.08;
+        constexpr double GullyFullSlope = 0.35;
+        constexpr double GullyGain = 0.5; // amplitude d'une octave à la suivante
+        // Les ravines déjà posées comptent ce nombre de fois dans la pente que suivent les suivantes : plus haut, elles
+        // bifurquent davantage (des branches plutôt que des sillons parallèles).
+        constexpr double GullyBranch = 1.5;
+        // Décalage des points des cellules (fraction de cellule) et netteté de leur poids (exp(-netteté x d²)) : avec
+        // 0,25 et 4, les cellules hors du voisinage 3 x 3 x 3 pèsent moins de 0,2 % (pas de marche visible).
+        constexpr double GullyJitter = 0.5;
+        constexpr double GullySharpness = 4.0;
         // Part du relief des montagnes et des collines dans leur zone.
         constexpr double MountainWeight = 0.85;
         constexpr double HillWeight = 0.15;
 
         // Érosion : chaque octave est atténuée là où la couche est déjà en pente (1 / (1 + force x pente²), la pente
-        // en mètres par mètre). Les versants restent lisses et creusés de ravines, le détail se garde pour les crêtes
+        // en mètres par mètre). Les versants restent lisses et creusés de ravines, le détail se garde pour les sommets
         // et les replats, comme un relief usé par l'eau (méthode d'Inigo Quilez). Seule une octave plus grande ou la
         // même compte : une tuile sans les octaves fines garde le même terrain que ses enfants, au détail près.
-        constexpr double ErosionMountains = 2.5;
         constexpr double ErosionHills = 4.0;
         constexpr double ErosionDetail = 3.0;
         // Déformation du domaine : le point où se lit une couche est poussé (en radians, sur la sphère) le long de la
@@ -75,13 +114,12 @@ namespace Flux::Planetology {
             std::uint32_t last;
             double gain;
             Math::Vector3d offset; // sépare les couches (sinon elles suivraient les mêmes formes)
-            bool ridged;
             // Suit la largeur des montagnes (Terrain::m_scale) plutôt que le rayon : montagnes et collines gardent
             // leur taille en mètres sur une grande planète. Le détail reste à l'échelle de la planète : plus fin de
             // m_scale à la même hauteur, il rendait toutes les plaines trop raides pour se poser. Les zones, les
             // continents et les déformations aussi : des zones à la largeur des montagnes faisaient de minces bandes
             // sinueuses, des « racines » vues d'orbite. Une zone large et aux bords doux (ChainStart, ChainEnd, et
-            // ChainBase bas pour ne pas faire de plateau) porte plusieurs rangs de crêtes, comme un vrai massif.
+            // ChainBase bas pour ne pas faire de plateau) porte plusieurs sommets, comme un vrai massif.
             bool scaled;
             // Perd ses octaves Terrain::m_shift niveaux plus tôt (couches à l'échelle des montagnes).
             bool shifted;
@@ -90,18 +128,22 @@ namespace Flux::Planetology {
             // pente coûte autant que le bruit, et les octaves fines du détail sont les plus nombreuses.
             std::uint32_t erodedOctaves;
         };
-        enum LayerIndex { Continents, MountainZone, HillZone, Mountains, Hills, Detail, WarpLargeField, WarpSmallField };
-        constexpr std::array<Layer, 8> Layers{{
-            {0, 5, 0.5, {0.0, 0.0, 0.0}, false, false, false, 0.0, 0},
-            {1, 3, 0.5, {31.7, -12.3, 7.1}, false, false, false, 0.0, 0},
-            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false, false, false, 0.0, 0},
-            {2, 2 + MaxRidgeOctaves, 0.5, {17.3, -41.7, 8.9}, true, true, true, ErosionMountains, MaxRidgeOctaves},
-            {4, 9, 0.5, {5.3, 23.9, -33.1}, false, true, true, ErosionHills, 5},
-            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false, false, false, ErosionDetail, 6},
+        enum LayerIndex { Continents, MountainZone, HillZone, PeakField, Hills, Detail, WarpLargeField, WarpSmallField, GullyField };
+        constexpr std::array<Layer, 9> Layers{{
+            {0, 5, 0.5, {0.0, 0.0, 0.0}, false, false, 0.0, 0},
+            {1, 3, 0.5, {31.7, -12.3, 7.1}, false, false, 0.0, 0},
+            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false, false, 0.0, 0},
+            // Sommets : deux réseaux, les grands sommets puis les sommets secondaires (voir Terrain::Peaks).
+            {2, 4, 0.5, {17.3, -41.7, 8.9}, true, true, 0.0, 0},
+            {4, 9, 0.5, {5.3, 23.9, -33.1}, true, true, ErosionHills, 5},
+            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false, false, ErosionDetail, 6},
             // Déformations : toutes leurs octaves, quel que soit le niveau de la tuile (sinon le terrain glisserait
             // d'un niveau à l'autre).
-            {0, 3, 0.5, {-37.9, 13.3, 21.7}, false, false, false, 0.0, 0},
-            {3, 6, 0.5, {11.1, -29.3, -45.7}, false, false, false, 0.0, 0},
+            {0, 3, 0.5, {-37.9, 13.3, 21.7}, false, false, 0.0, 0},
+            {3, 6, 0.5, {11.1, -29.3, -45.7}, false, false, 0.0, 0},
+            // Ravines : cellules de 1/12 de la largeur des montagnes (une maille du réseau = longueur d'onde / 2π) et plus
+            // fines (voir Terrain::Gullies).
+            {3, 7, 0.5, {-2.9, 37.1, 15.3}, true, true, 0.0, 0},
         }};
         static_assert([] {
             std::uint32_t count = 0;
@@ -186,9 +228,9 @@ namespace Flux::Planetology {
 
     Terrain::Terrain(double radius, double relief, std::int32_t seed, double mountainWidth)
         : m_radius(std::max(radius, 1.0)), m_relief(std::max(relief, 0.0)) {
-        // Largeur des montagnes : la longueur d'onde de la première octave des crêtes, qui fait sinon environ un rayon.
+        // Largeur des montagnes : la longueur d'onde du réseau des sommets (2π mailles), qui fait sinon environ un rayon.
         // Seulement plus fines : sur une petite planète, elles gardent la taille que permet son rayon.
-        const double natural = m_radius * 2.0 * std::numbers::pi / (BaseFrequency * std::ldexp(1.0, static_cast<int>(Layers[Mountains].first)));
+        const double natural = m_radius * 2.0 * std::numbers::pi / (BaseFrequency * std::ldexp(1.0, static_cast<int>(Layers[PeakField].first)));
         m_scale = mountainWidth > 0.0 ? std::clamp(natural / mountainWidth, 1.0, 65536.0) : 1.0;
         m_shift = static_cast<std::uint32_t>(std::ceil(std::log2(m_scale) - 1e-9));
         // Environ 1,5 m entre deux sommets au niveau le plus fin.
@@ -289,22 +331,157 @@ namespace Flux::Planetology {
         for (std::uint32_t k = layer.first; k < last; ++k) {
             const bool eroded = k - layer.first < layer.erodedOctaves;
             const Sample n = Noise(p, eroded);
-            double value = n.value;
-            double ridgeSlope = 1.0; // dérivée de la valeur gardée par rapport au bruit
-            if (layer.ridged) {
-                // Crêtes : 1 - |bruit| fait une arête là où le bruit passe par 0, au cube pour des vallées larges. |x|
-                // arrondi (racine de x² + ε²) : une arête vive au mètre près ferait un trait à l'ombrage.
-                const double rounded = std::sqrt(n.value * n.value + RidgeRounding * RidgeRounding);
-                const double ridge = 1.0 - rounded;
-                value = ridge * ridge * ridge;
-                ridgeSlope = -3.0 * ridge * ridge * n.value / rounded;
-            }
+            const double value = n.value;
             if (eroded) {
-                slope += Tangent(n.gradient, direction) * (frequency * ridgeSlope * amplitude);
+                slope += Tangent(n.gradient, direction) * (frequency * amplitude);
             }
             const double steep = slopeScale * Math::Length(slope);
             sum += amplitude * value / (1.0 + layer.erosion * steep * steep);
             amplitude *= gain;
+            frequency *= 2.0;
+            p *= 2.0;
+        }
+        return sum;
+    }
+
+    double Terrain::Peaks(const Math::Vector3d& point, const Math::Vector3d& direction, std::uint32_t octaves,
+                          Math::Vector3d& slope) const {
+        slope = {};
+        const Layer& layer = Layers[PeakField];
+        // Une tuile trop grossière perd un réseau dont l'écart entre sommets ne tient plus entre ses sommets à elle.
+        const std::uint32_t last = std::min(layer.last, octaves > m_shift ? octaves - m_shift : 0u);
+        const auto& P = m_permutation;
+        double sum = 0.0;     // somme des exp(h / PeakBlend) - 1 : 0 loin de tout sommet
+        Math::Vector3d gradient{}; // somme des exp(h / PeakBlend) x pente de h, par radian
+        double frequency = BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * m_scale;
+        double scale = 1.0; // hauteur des sommets du réseau
+        Math::Vector3d p = point * frequency + layer.offset;
+        for (std::uint32_t k = layer.first; k < last; ++k, frequency *= 2.0, p *= 2.0, scale *= PeakSecondary) {
+            const Math::Vector3d base{std::floor(p.x), std::floor(p.y), std::floor(p.z)};
+            const Math::Vector3d f = p - base;
+            const auto cx = static_cast<std::int64_t>(base.x), cy = static_cast<std::int64_t>(base.y), cz = static_cast<std::int64_t>(base.z);
+            for (int i = -1; i <= 1; ++i) {
+                for (int j = -1; j <= 1; ++j) {
+                    for (int l = -1; l <= 1; ++l) {
+                        const std::uint32_t h = P[P[P[(cx + i) & 255] + ((cy + j) & 255)] + ((cz + l) & 255)];
+                        if (P[h + 3] >= PeakChance) {
+                            continue;
+                        }
+                        const auto random = [&](std::uint32_t index) { return P[h + index] / 255.0; };
+                        const auto vector = [&](std::uint32_t index) {
+                            return Math::Vector3d{random(index), random(index + 1), random(index + 2)} - Math::Vector3d{0.5, 0.5, 0.5};
+                        };
+                        // Du sommet au point : sa part le long de la verticale décide si le sommet est dans la couche,
+                        // le reste (tangent) donne la distance et la direction autour du sommet.
+                        const Math::Vector3d e = f - Math::Vector3d{double(i), double(j), double(l)} - vector(0) * 0.7 - Math::Vector3d{0.5, 0.5, 0.5};
+                        const double radial = Math::Dot(e, direction);
+                        const double slab = SmoothStep(PeakSlabOuter, PeakSlabInner, std::abs(radial));
+                        const Math::Vector3d flat = e - direction * radial;
+                        const double r2 = Math::Dot(flat, flat);
+                        if (slab <= 0.0 || r2 >= 1.0) {
+                            continue;
+                        }
+                        const double raw = random(4);
+                        const double height = (PeakLowest + (1.0 - PeakLowest) * raw) * slab * scale;
+                        const double radius = PeakRadius * (0.6 + 0.4 * raw) * (0.8 + 0.4 * random(5));
+                        const double r = std::sqrt(r2);
+                        Math::Vector3d slopeOf{}; // pente de t (par maille)
+                        double t = 0.0;
+                        if (r > 1e-9) {
+                            const Math::Vector3d u = flat / r;
+                            // Allongement du pied selon la direction u, et sa dérivée par rapport à u (stretchSlope).
+                            const Math::Vector3d a1 = vector(6);
+                            const Math::Vector3d a2 = vector(9);
+                            const double along2 = Math::Dot(u, a2);
+                            double stretch = 1.0 + 2.0 * PeakAsymmetry * Math::Dot(u, a1) + PeakElongation * (4.0 * along2 * along2 - 0.5)
+                                           - 0.4 * PeakSpurs;
+                            Math::Vector3d stretchSlope = a1 * (2.0 * PeakAsymmetry) + a2 * (8.0 * PeakElongation * along2);
+                            for (std::uint32_t n = 0; n < PeakSpurCount; ++n) {
+                                const Math::Vector3d spur = vector(12 + 3 * n);
+                                const double length = Math::Length(spur);
+                                const double c = length > 0.0 ? Math::Dot(u, spur) / length : 0.0;
+                                if (c > 0.0) {
+                                    const double lobe = std::pow(c, PeakSpurSharpness - 1.0);
+                                    stretch += PeakSpurs * lobe * c;
+                                    stretchSlope += spur * (PeakSpurs * PeakSpurSharpness * lobe / length);
+                                }
+                            }
+                            // Le pied reste à moins d'une maille (voir PeakRadius) : minimum doux avec 1 / radius, sans
+                            // cassure de la pente (les ravines la suivent, elles sauteraient).
+                            const double gap = stretch - 1.0 / radius;
+                            const double root = std::sqrt(gap * gap + PeakStretchSoftness * PeakStretchSoftness);
+                            const double clamped = 0.5 * (stretch + 1.0 / radius - root);
+                            t = r / (radius * clamped);
+                            if (t >= 1.0) {
+                                continue;
+                            }
+                            // Pente de l'allongement : sa dérivée par rapport à u, ramenée au plan tangent, divisée par r.
+                            const Math::Vector3d g = stretchSlope - u * Math::Dot(u, stretchSlope) - direction * Math::Dot(direction, stretchSlope);
+                            slopeOf = u / (radius * clamped) - g * (0.5 * (1.0 - gap / root) * t / (clamped * r));
+                        }
+                        // Pointe arrondie sur PeakTip (en part du rayon) : sans elle, la pente changerait d'un coup de sens au
+                        // sommet, et les ravines qui la suivent y feraient une marche.
+                        const double tip = std::sqrt(t * t + PeakTip * PeakTip);
+                        const double norm = std::sqrt(1.0 + PeakTip * PeakTip) - PeakTip;
+                        const double rounded = (tip - PeakTip) / norm;
+                        slopeOf *= t / (tip * norm);
+                        const double rest = 1.0 - rounded;
+                        const double lower = std::pow(rest, PeakShape - 1.0);
+                        const double shape = lower * rest * (1.0 + PeakTop * PeakShape * rounded);
+                        const double shapeSlope = PeakShape * lower * (rest * PeakTop - (1.0 + PeakTop * PeakShape * rounded));
+                        const double weight = std::exp(height * shape / PeakBlend);
+                        sum += weight - 1.0;
+                        gradient += slopeOf * (height * shapeSlope * weight * frequency);
+                    }
+                }
+            }
+        }
+        slope = gradient / (1.0 + sum);
+        return PeakBlend * std::log1p(sum);
+    }
+
+    double Terrain::Gullies(const Math::Vector3d& point, const Math::Vector3d& direction, std::uint32_t octaves,
+                            Math::Vector3d slope, double amount) const {
+        // Bruit d'érosion (méthode de Clay John et Fewes) : dans chaque cellule d'un réseau 3D, des ondes cos le long
+        // de la perpendiculaire à la pente, donc des sillons dans le sens de la pente ; les cellules voisines se
+        // mélangent par un poids gaussien autour d'un point décalé au hasard. Chaque octave suit la pente totale (le
+        // massif et les ravines déjà posées) : les petites ravines partent des grandes, en arbre.
+        const Layer& layer = Layers[GullyField];
+        const std::uint32_t last = std::min(layer.last, octaves > m_shift ? octaves - m_shift : 0u);
+        const auto& P = m_permutation;
+        double sum = 0.0;
+        double amplitude = GullyAmplitude * amount;
+        double frequency = BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * m_scale;
+        Math::Vector3d p = point * frequency + layer.offset;
+        for (std::uint32_t k = layer.first; k < last; ++k) {
+            const double steep = Math::Length(slope);
+            const double fade = std::clamp((steep - GullyStartSlope) / (GullyFullSlope - GullyStartSlope), 0.0, 1.0);
+            if (fade > 0.0) {
+                const Math::Vector3d along = Math::Cross(direction, slope) / steep; // unitaire, tangent, perpendiculaire à la pente
+                const Math::Vector3d nearest{std::floor(p.x + 0.5), std::floor(p.y + 0.5), std::floor(p.z + 0.5)};
+                const Math::Vector3d f = p - nearest;
+                const auto cx = static_cast<std::int64_t>(nearest.x), cy = static_cast<std::int64_t>(nearest.y),
+                           cz = static_cast<std::int64_t>(nearest.z);
+                double value = 0.0, change = 0.0, weights = 0.0;
+                for (int i = -1; i <= 1; ++i) {
+                    for (int j = -1; j <= 1; ++j) {
+                        for (int l = -1; l <= 1; ++l) {
+                            const std::uint32_t h = P[P[P[(cx + i) & 255] + ((cy + j) & 255)] + ((cz + l) & 255)];
+                            const Math::Vector3d jitter{P[h] / 255.0 - 0.5, P[h + 1] / 255.0 - 0.5, P[h + 2] / 255.0 - 0.5};
+                            const Math::Vector3d d = f - Math::Vector3d{double(i), double(j), double(l)} - jitter * GullyJitter;
+                            const double w = std::exp(-GullySharpness * Math::Dot(d, d));
+                            const double phase = 2.0 * std::numbers::pi * Math::Dot(d, along);
+                            value += std::cos(phase) * w;
+                            change -= std::sin(phase) * w;
+                            weights += w;
+                        }
+                    }
+                }
+                sum += amplitude * fade * value / weights;
+                // Pente des ravines (m/m) : dérivée de la phase le long de `along`, cellules par radian / rayon.
+                slope += along * (GullyBranch * m_relief * amplitude * fade * change / weights * 2.0 * std::numbers::pi * frequency / m_radius);
+            }
+            amplitude *= GullyGain;
             frequency *= 2.0;
             p *= 2.0;
         }
@@ -343,17 +520,24 @@ namespace Flux::Planetology {
         const double hillZone = SmoothStep(0.05, 0.4, Fbm(large, direction, HillZone, octaves, 0.0));
         const double chains = 1.0 - std::abs(Fbm(large, direction, MountainZone, octaves, 0.0));
         const double mountainZone = SmoothStep(ChainStart, ChainEnd, chains) * SmoothStep(0.0, 0.2, continents);
-        // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les crêtes), érodés
+        // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les sommets), érodés
         //   selon leur vraie pente ;
-        const double mountains =
-            mountainZone > 0.0 ? Fbm(small, direction, Mountains, octaves, toSlope * MountainWeight * mountainZone) : 0.0;
+        //   les sommets, leurs versants creusés de ravines ;
+        double peaks = 0.0;
+        double gullies = 0.0;
+        if (mountainZone > 0.0) {
+            Math::Vector3d slope; // par radian
+            peaks = Peaks(small, direction, octaves, slope);
+            const double weight = MountainWeight * mountainZone * PeakHeight;
+            gullies = Gullies(large, direction, octaves, slope * (toSlope * weight), mountainZone);
+        }
         const double hills = hillZone > 0.0 ? Fbm(small, direction, Hills, octaves, toSlope * HillWeight * hillZone) : 0.0;
         // - le détail fin (bosses, rochers), qui baisse moins vite (DetailGain) : faible dans les plaines.
         const double roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
         const double detail = Fbm(direction, direction, Detail, octaves, toSlope * roughness);
         // Bassins vers -0,4, plaines vers 0,05 à 0,1, montagnes jusqu'au relief.
         const double height = -0.4 + 0.45 * land + 0.15 * continents
-                            + MountainWeight * mountainZone * (ChainBase + RidgeContrast * mountains)
+                            + MountainWeight * mountainZone * (ChainBase + PeakHeight * peaks) + gullies
                             + HillWeight * hillZone * hills + roughness * detail;
         return m_relief * std::clamp(height, -1.0, 1.0);
     }
@@ -374,7 +558,8 @@ namespace Flux::Planetology {
             const std::uint32_t shift = layer.shifted ? m_shift : 0u;
             return tail(layer.first, layer.last, layer.gain, octaves > shift ? octaves - shift : 0u);
         };
-        const double omitted = 0.6 * layerTail(Continents) + MountainWeight * RidgeContrast * layerTail(Mountains) + HillWeight * layerTail(Hills)
+        const double omitted = 0.6 * layerTail(Continents) + MountainWeight * PeakHeight * layerTail(PeakField) + HillWeight * layerTail(Hills)
+                             + 2.0 * GullyAmplitude * layerTail(GullyField)
                              + (DetailPlains + DetailHills + DetailMountains) * layerTail(Detail);
         return m_relief * omitted;
     }

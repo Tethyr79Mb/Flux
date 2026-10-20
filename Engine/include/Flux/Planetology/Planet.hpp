@@ -64,7 +64,7 @@ namespace Flux::Planetology {
     class FLUX_API Terrain {
         public:
         Terrain() : Terrain(1000.0, 0.0, 1) {}
-        // mountainWidth : largeur des montagnes en mètres (longueur d'onde des grandes crêtes), 0 : à l'échelle du rayon
+        // mountainWidth : largeur des montagnes en mètres (deux sommets voisins sont à environ largeur / 6), 0 : à l'échelle du rayon
         // (environ un rayon).
         Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0);
 
@@ -96,6 +96,12 @@ namespace Flux::Planetology {
         Sample Noise(const Math::Vector3d& p, bool withGradient) const;
         double Fbm(const Math::Vector3d& point, const Math::Vector3d& direction, std::uint32_t layer, std::uint32_t octaves,
                    double slopeScale) const;
+        // Sommets des montagnes autour de `point` : leur hauteur (0 à 1) et sa pente `slope` (par radian, tangente).
+        double Peaks(const Math::Vector3d& point, const Math::Vector3d& direction, std::uint32_t octaves, Math::Vector3d& slope) const;
+        // Ravines sur une pente `slope` (m/m, tangente), d'amplitude `amount` (zone de montagne, 0 à 1) : fraction du
+        // relief à ajouter.
+        double Gullies(const Math::Vector3d& point, const Math::Vector3d& direction, std::uint32_t octaves,
+                       Math::Vector3d slope, double amount) const;
         // Déplacement (radians, tangent à la sphère) du point où se lisent les couches déformées.
         Math::Vector3d Warp(const Math::Vector3d& direction, std::uint32_t layer, double amount) const;
 
@@ -161,7 +167,7 @@ namespace Flux::Planetology {
     struct TileGpuInputs
     {
         static constexpr std::uint32_t Columns = TileSide + 4; // décalages -2 à TileQuads + 2 de la grille de la face
-        static constexpr std::uint32_t Octaves = 45;            // somme des octaves de chaque couche du relief
+        static constexpr std::uint32_t Octaves = 43;            // somme des octaves de chaque couche du relief
 
         std::array<float, 4> center{}; // xyz : d_c ; w : |v_c| (v_c = normale + a_c.s + b_c.t, avant normalisation)
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
