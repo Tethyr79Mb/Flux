@@ -674,6 +674,9 @@ float3 Radiance(float3 color)
 
 // Lumière renvoyée vers l'œil par une surface : soleil (ombres, rougi par l'air), ambiante du ciel ou du volume
 // intérieur, lumières de la scène. inside : poids du volume intérieur où elle se trouve.
+// Albédo moyen du sol des planètes, pour la lumière qu'il renvoie (herbe, roche et terre autour de 0,15 à 0,3).
+static const float GroundBounceAlbedo = 0.2;
+
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, out float inside)
 {
     const FrameData f = frame[0];
@@ -693,8 +696,16 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
         const float3 local = worldPosition - f.atmosphere.center.xyz;
         sunColor *= AtmosphereSunTransmittance(f.atmosphere, local, toSun);
-        const float3 skyLight = AtmosphereAmbient(f.atmosphere, local, surface.normal, toSun) * ((1.0 - inside) * occlusion);
-        ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight;
+        // Le tableau du ciel donne une luminance moyenne ; la lumière du soleil de Shade est un éclairement (sans le
+        // 1 / π de Lambert) : x π pour les mettre à la même échelle. Sans lui, le côté à l'ombre était trois fois trop
+        // sombre, noir à contre-jour.
+        const float3 skyLight = AtmosphereAmbient(f.atmosphere, local, surface.normal, toSun) * (Pi * (1.0 - inside) * occlusion);
+        // Lumière renvoyée par le sol (soleil et ciel sur un sol d'albédo GroundBounceAlbedo), reçue par les faces
+        // tournées vers le bas : le dessous du menton, d'une aile, n'est plus noir.
+        const float3 up = normalize(local);
+        const float3 groundLit = sunColor * saturate(dot(up, toSun)) + AtmosphereAmbient(f.atmosphere, local, up, toSun) * Pi;
+        const float3 bounce = groundLit * (GroundBounceAlbedo * (0.5 - 0.5 * dot(surface.normal, up)) * (1.0 - inside) * occlusion);
+        ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight + surface.diffuse * bounce;
     }
     return Shade(surface, toSun, sunColor * sun) + ambient + SceneLights(worldPosition, surface);
 }
