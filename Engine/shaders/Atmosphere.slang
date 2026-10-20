@@ -150,8 +150,9 @@ float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, 
 }
 
 // Part de la lumière du ciel de l'espace (texture du ciel) qui éclaire encore un point dans l'air de la planète :
-// toute de jour, peu la nuit (la nuit tombe du côté opposé au soleil, avec un crépuscule), toute au-dessus de l'air.
-// Sans elle, le côté nuit restait à moitié éclairé par la nébuleuse.
+// rien de jour (le ciel bleu de l'atmosphère le cache, AtmosphereAmbient éclaire à sa place), peu la nuit (la nuit
+// tombe du côté opposé au soleil, avec un crépuscule), toute au-dessus de l'air. De jour, la nébuleuse teintait en
+// violet le personnage et les vaisseaux posés.
 static const float AtmosphereNightSkyLight = 0.12;
 
 float AtmosphereNightSky(AtmosphereData a, float3 position, float3 toSun)
@@ -159,7 +160,7 @@ float AtmosphereNightSky(AtmosphereData a, float3 position, float3 toSun)
     const float distance = length(position);
     const float day = smoothstep(-0.2, 0.05, dot(position / max(distance, 1.0), toSun));
     const float inAir = saturate((a.mie.w - distance) / max(a.mie.w - a.center.w, 1.0));
-    return lerp(1.0, lerp(AtmosphereNightSkyLight, 1.0, day), inAir);
+    return lerp(1.0, lerp(AtmosphereNightSkyLight, 0.0, day), inAir);
 }
 
 // Lumière du ciel reçue en `position` (relatif au centre) par une surface de normale `normal` : le tableau lu selon
