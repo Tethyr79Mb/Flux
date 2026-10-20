@@ -269,6 +269,8 @@ namespace Flux {
             bool motion = true; // le fragment écrit le mouvement propre (SV_Target1)
             // Modèles : variantes double face et à seuil d'alpha (le sol et l'eau des planètes n'en ont pas).
             bool materials = false;
+            // Programme de pixel presque vide pour la mesure (Pipelines::geometryOnly), ou aucun.
+            const char* geometryFragment = nullptr;
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -340,6 +342,13 @@ namespace Flux {
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
                 return result;
             }
+            if (kind.geometryFragment) {
+                desc.fragmentEntryPoint = kind.geometryFragment;
+                if (auto result = createMain(pipelines.geometryOnly, RHI::CullMode::Back, false); !result) {
+                    return result;
+                }
+                desc.fragmentEntryPoint = kind.fragment;
+            }
             if (!kind.materials) {
                 return createMain(pipelines.transparent, RHI::CullMode::Back, true);
             }
@@ -376,7 +385,7 @@ namespace Flux {
             return result;
         }
         if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
-                                               "fragmentPlanet", "fragmentMain"});
+                                               "fragmentPlanet", "fragmentMain", true, false, "fragmentPlanetGeometry"});
             !result) {
             return result;
         }
@@ -984,10 +993,16 @@ namespace Flux {
         if (m_tileDraws.empty() || !indices) {
             return true;
         }
-        std::ranges::sort(m_tileDraws, [](const TileDraw& a, const TileDraw& b) {
+        // De près à loin par bandes de distance (chacune deux fois plus loin que la précédente), puis par page : un
+        // appel par page et par bande. Trié par page d'abord, une tuile proche d'une autre page passait après des
+        // tuiles lointaines, et le GPU éclairait pour rien les pixels qu'elle cache ensuite.
+        const auto band = [](float distance) { return distance <= 16.0f ? 0 : std::ilogb(distance * (1.0f / 16.0f)) + 1; };
+        std::ranges::sort(m_tileDraws, [&band](const TileDraw& a, const TileDraw& b) {
+            const int bandA = band(a.distance);
+            const int bandB = band(b.distance);
             const std::uint32_t pageA = Planetology::PlanetTileCompute::GetPage(a.tile);
             const std::uint32_t pageB = Planetology::PlanetTileCompute::GetPage(b.tile);
-            return pageA != pageB ? pageA < pageB : a.distance < b.distance;
+            return bandA != bandB ? bandA < bandB : pageA != pageB ? pageA < pageB : a.distance < b.distance;
         });
         const std::uint32_t firstData = static_cast<std::uint32_t>(m_drawData.size());
         const std::uint32_t indexCount = m_planets->GetIndexCount();
@@ -1403,7 +1418,7 @@ namespace Flux {
 
     void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
-        DrawTiles(commands, state, frameIndex, GroundPass, *m_planet.opaque);
+        DrawTiles(commands, state, frameIndex, GroundPass, m_groundGeometryOnly ? *m_planet.geometryOnly : *m_planet.opaque);
     }
 
     void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {

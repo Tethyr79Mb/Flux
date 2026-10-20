@@ -417,6 +417,9 @@ struct PlanetVertexOutput
     // n'a plus ses 16 pas de marche dans l'air.
     float3 airTransmittance : AIR_TRANSMITTANCE;
     float3 airScattered : AIR_SCATTERED;
+    // Ombre des nuages (voir CloudShadow), par sommet comme l'air : ses taches font des centaines de mètres, et au pixel
+    // elle coûtait jusqu'à cinq bruits.
+    float clouds : CLOUDS;
 };
 
 // Ce que l'océan garde des tuiles de planète : ni normale, ni position du sol, ni climat, ni forêt, que fragmentOcean
@@ -476,6 +479,7 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
         output.forest = ForestAt(normalize(output.planetPosition) * planet.shape.x, planet.forest.x, blur) * TreeClimate(output.climate);
     }
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
+    output.clouds = CloudShadow(output.base.worldPosition);
     return output;
 }
 
@@ -674,13 +678,13 @@ float3 Radiance(float3 color)
 
 // Lumière renvoyée vers l'œil par une surface : soleil (ombres, rougi par l'air), ambiante du ciel ou du volume
 // intérieur, lumières de la scène. inside : poids du volume intérieur où elle se trouve.
-float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, out float inside)
+float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside)
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
     // Ombre lue avec la vraie face (le relief de la carte ne déplace pas les ombres).
     const float sunFacing = dot(geometryNormal, toSun);
-    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * CloudShadow(worldPosition) : 0.0;
+    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
@@ -867,6 +871,9 @@ static const float GroundPeriod = 1024.0; // même valeur que MeshRenderer::Grou
 static const float GroundTriangleSide = 4.0 / 7.0;
 static const float GroundTriangleHeight = 0.5;
 static const float GroundBlendSharpness = 4.0;
+// Poids sous lequel un sommet du pavage, ou la deuxième matière, n'est pas lu (les autres sont remis à 1) : sous 5 %,
+// on ne voit pas sa part, et chaque lecture évitée en épargne deux (couleur et normale).
+static const float GroundMinimumWeight = 0.05;
 
 struct GroundSample
 {
@@ -943,7 +950,7 @@ void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2
     occlusionRoughness = float2(0.0);
     [unroll]
     for (int i = 0; i < 3; ++i) {
-        if (w[i] > 0.01) {
+        if (w[i] > GroundMinimumWeight) {
             const int2 v = i == 0 ? v0 : i == 1 ? v1 : v2;
             const int u = ((2 * v.x + v.y) % periodU + periodU) % periodU;
             const int b = (v.y % periodB + periodB) % periodB;
@@ -956,7 +963,8 @@ void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2
             occlusionRoughness += surface * w[i];
         }
     }
-    const float kept = (w.x > 0.01 ? w.x : 0.0) + (w.y > 0.01 ? w.y : 0.0) + (w.z > 0.01 ? w.z : 0.0);
+    const float kept = (w.x > GroundMinimumWeight ? w.x : 0.0) + (w.y > GroundMinimumWeight ? w.y : 0.0)
+                     + (w.z > GroundMinimumWeight ? w.z : 0.0);
     color /= kept;
     tangentNormal /= kept;
     occlusionRoughness /= kept;
@@ -1003,7 +1011,8 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
 static const float GroundAverageStart = 600.0;
 static const float GroundAverageEnd = 2000.0;
 
-GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, float3 n, float3 blend, float distance)
+// Couleur moyenne d'une matière (plus petit mip), lue seulement là où elle sert (au-delà de GroundAverageStart).
+GroundSample GroundAverage(uint layer, float3 n)
 {
     GroundSample average;
     const float3 center = float3(0.5, 0.5, float(layer));
@@ -1011,9 +1020,14 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
     average.color = colorRoughness.rgb;
     average.occlusionRoughness = float2(groundNormalTexture.SampleLevel(center, 16.0).z, colorRoughness.a);
     average.normal = n;
+    return average;
+}
+
+GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, float3 n, float3 blend, float distance)
+{
     const float faded = smoothstep(GroundAverageStart, GroundAverageEnd, distance);
     if (faded >= 1.0) {
-        return average;
+        return GroundAverage(layer, n);
     }
     const float far = smoothstep(60.0, 150.0, distance);
     GroundSample result = SampleGround(layer, p, dpdx, dpdy, n, blend, far < 1.0 ? GroundNearScale : GroundFarScale);
@@ -1024,6 +1038,7 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
         result.occlusionRoughness = lerp(result.occlusionRoughness, other.occlusionRoughness, far);
     }
     if (faded > 0.0) {
+        const GroundSample average = GroundAverage(layer, n);
         result.color = lerp(result.color, average.color, faded);
         result.normal = lerp(result.normal, average.normal, faded);
         result.occlusionRoughness = lerp(result.occlusionRoughness, average.occlusionRoughness, faded);
@@ -1083,6 +1098,21 @@ SceneOutput fragmentPlanet(PlanetVertexOutput input)
 {
     SceneOutput output;
     output.color = PlanetColor(input);
+    output.motion = float2(0.0);
+    return output;
+}
+
+// Mesure (panneau Moteur, « Sol sans pixels ») : le sol dessiné avec un pixel presque gratuit. Le temps qui reste est
+// celui des sommets et des triangles ; l'écart avec le vrai sol, celui des pixels. Chaque entrée est lue (pour un
+// coût nul) : une sortie du programme de sommets que personne ne lit est signalée par la validation de Vulkan.
+[shader("fragment")]
+SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
+{
+    const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition + input.airTransmittance
+                             + input.airScattered, float3(1.0))
+                       + input.climate.x + input.climate.y + input.forest + input.clouds + float(input.base.draw);
+    SceneOutput output;
+    output.color = float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0);
     output.motion = float2(0.0);
     return output;
 }
@@ -1202,7 +1232,7 @@ float4 PlanetColor(PlanetVertexOutput input)
             const uint layer = k == 0 ? first : second;
             // La première toujours : trois matières à égalité ne laissent rien aux deux premières.
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
-            if (k == 0 || weight > 0.02) {
+            if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
                 sample.color *= GroundTint(planet, layer);
                 if (layer == GroundGrass) {
@@ -1242,7 +1272,7 @@ float4 PlanetColor(PlanetVertexOutput input)
     }
     surface.normal = normal;
     float inside;
-    const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
+    const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, input.clouds, inside);
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
     const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
     return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), 1.0);
@@ -1459,7 +1489,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
-    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, inside);
+    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, CloudShadow(input.worldPosition), inside);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;

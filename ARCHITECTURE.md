@@ -292,8 +292,9 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   tableaux (`GroundTextures`) plaquées en triplanaire, chaque projection en pavage hexagonal (rotation et décalage
   aléatoires par cellule, périodique sur `GroundPeriod` pour ne pas voir de raccord entre tuiles) ; couleurs unies si les textures manquent ou pendant leur
   décodage (sur d'autres fils, seulement si la scène a une planète). Coût borné par pixel : 2 matières, 2 projections
-  et 2 cellules au plus (la plus faible des trois est retirée des autres, sans saut), 2 lectures par point (couleur +
-  rugosité en alpha ; normales en rouge-vert + occlusion en bleu).
+  et 2 cellules au plus (la plus faible des trois est retirée des autres, sans saut ; sous 5 % de poids, une cellule
+  ou la deuxième matière n'est pas lue), 2 lectures par point (couleur + rugosité en alpha ; normales en rouge-vert +
+  occlusion en bleu), couleur moyenne lue seulement au-delà de 600 m.
 - Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
 - Nuages (`CloudsComponent`) : une couche épaisse entre deux sphères (base et sommet), sans maillage. Un triangle
   plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la
@@ -303,9 +304,12 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   couche (`SV_DepthLessEqual`, le triangle posé à cette distance) : testée contre la scène sans être enregistrée, et
   les pixels cachés par le relief sont écartés avant le shader. La couverture s'arrête de lire ses octaves dès
   qu'elles ne peuvent plus donner de nuage. Leur ombre (`CloudShadow`) multiplie le soleil de tout ce qui est éclairé
-  (objets, sol, eau).
+  (objets, sol, eau) ; calculée par sommet pour le sol (ses taches font des centaines de mètres), au pixel ailleurs.
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
-  d'ombres) dessine une page en un seul `DrawIndexedIndirect`. L'indice de la tuile dans les `DrawData` est celui de
+  d'ombres) dessine ses tuiles par bandes de distance (chacune deux fois plus loin que la précédente), puis par page :
+  un `DrawIndexedIndirect` par page et par bande, de près à loin, pour que le relief proche cache le lointain avant
+  son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol sans pixels ») pour séparer leur coût
+  de celui des sommets. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
 - Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont
   les tuiles d'un niveau fixe (bord de 200 à 400 m) que `PlanetRenderer` visite en vue. Chacune est semée une fois

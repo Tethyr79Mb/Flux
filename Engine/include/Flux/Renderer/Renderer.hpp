@@ -120,6 +120,10 @@ namespace Flux {
         void SetGridVisible(bool visible);
         bool IsGridVisible() const;
         bool IsOcclusionCullingEnabled() const;
+        // Mesure (désactivée par défaut) : le sol des planètes dessiné sans le calcul de ses pixels, gris. L'écart de
+        // « dont sol » dans le panneau Moteur donne le coût des pixels ; le reste, celui des sommets et des triangles.
+        void SetGroundGeometryOnly(bool enabled);
+        bool IsGroundGeometryOnly() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 
