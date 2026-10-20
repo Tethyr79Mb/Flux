@@ -367,6 +367,12 @@ namespace Flux {
                 desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
                 desc.depthWrite = true;
                 desc.blend = RHI::BlendMode::Opaque;
+                // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
+                // profondeur depuis deux programmes de sommets, et la feuille éclairée ensuite, trouvée un peu plus
+                // loin, était perdue par endroits (feuilles qui clignotent). Quelques unités de précision, plus selon
+                // la pente (feuilles vues de profil) : invisible entre deux feuilles.
+                desc.depthBiasConstant = -16.0f;
+                desc.depthBiasSlope = -1.0f;
                 desc.cullMode = RHI::CullMode::Back;
                 if (auto result = create(pipelines.depthMasked, desc); !result) {
                     return result;
@@ -375,6 +381,8 @@ namespace Flux {
                 if (auto result = create(pipelines.depthMaskedDoubleSided, desc); !result) {
                     return result;
                 }
+                desc.depthBiasConstant = 0.0f;
+                desc.depthBiasSlope = 0.0f;
                 desc.vertexEntryPoint = kind.vertex;
                 desc.vertexAttributes = kind.attributes;
                 desc.writeColor = true;
@@ -388,8 +396,7 @@ namespace Flux {
                 }
                 desc.cullMode = cullMode;
                 desc.depthWrite = false;
-                // Plus proche ou égal plutôt qu'égal : rien ne garantit au bit près la même profondeur depuis deux
-                // programmes de sommets, et un pixel un peu plus proche serait sinon perdu (trou dans les feuilles).
+                // Plus proche ou égal à la profondeur de la pré-passe, écrite un peu plus loin exprès (voir plus haut).
                 desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
                 desc.blend = RHI::BlendMode::Opaque;
                 desc.writeSecondColor = kind.motion;
