@@ -17,6 +17,7 @@
 #include <fstream>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace Flux;
@@ -197,6 +198,23 @@ namespace {
         // Environ 0,9 s en l'air (4,5 m/s vers le haut, gravité 9,81), puis de nouveau au sol.
         CHECK(longestAir > 0.7f && longestAir < 1.1f && scene.Get<CharacterComponent>(hero).airTime == 0.0f);
         CHECK(std::abs(scene.Get<TransformComponent>(hero).position.y) < 0.05);
+
+        // Même saut quelle que soit la cadence : à 300 images/s, l'appui tombe le plus souvent sur une image sans pas
+        // de physique (il était perdu), d'où les cinq places de l'appui parmi les images d'un pas ; à 20 images/s, trois
+        // pas par image (il ne doit pas compter trois fois).
+        for (const auto [frameSeconds, phase] : {std::pair{1.0 / 300.0, 0}, std::pair{1.0 / 300.0, 1}, std::pair{1.0 / 300.0, 2},
+                                                 std::pair{1.0 / 300.0, 3}, std::pair{1.0 / 300.0, 4}, std::pair{1.0 / 20.0, 0}}) {
+            for (int frame = 0; frame < 150 + phase; ++frame) {
+                world.Update(scene, frameSeconds, {});
+            }
+            world.Update(scene, frameSeconds, jump);
+            double top = 0.0;
+            for (double t = 0.0; t < 1.5; t += frameSeconds) {
+                world.Update(scene, frameSeconds, {});
+                top = std::max(top, scene.Get<TransformComponent>(hero).position.y);
+            }
+            CHECK(top > 0.8 && top < 1.3);
+        }
         return true;
     }
 
