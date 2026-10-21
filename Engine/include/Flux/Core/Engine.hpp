@@ -217,7 +217,15 @@ namespace Flux {
         // Remplace le système du même nom.
         void AddGameSystem(GameStage stage, std::string name, UpdateFunction function);
         void RemoveGameSystem(std::string_view name);
+        // Retire aussi les données de sauvegarde (AddGameSaveData).
         void ClearGameSystems();
+        // Sauvegarde rapide : l'état propre d'un système du jeu (mission en cours...), que la scène ne garde pas. save
+        // le donne en texte (son format ; vide : rien à garder), load le reçoit au chargement, après la scène et
+        // l'étape Reset (ses entités sont là, retrouvées par Scene::FindById). Remplace celles du même nom.
+        using SaveFunction = std::function<std::string(Engine& engine)>;
+        using LoadFunction = std::function<void(Engine& engine, std::string_view data)>;
+        void AddGameSaveData(std::string name, SaveFunction save, LoadFunction load);
+        void RemoveGameSaveData(std::string_view name);
         // Personnage du joueur pendant le jeu, NullEntity sinon.
         Entity GetPlayer() const { return GetFollowedPlayer(); }
         // Projectiles en vol : ceux que le jeu y ajoute (Weapons::Update, CombatAI::Fire) avancent, touchent et sont
@@ -258,6 +266,13 @@ namespace Flux {
             UpdateFunction function;
         };
         std::vector<GameSystem> m_gameSystems;
+        struct GameSaveData
+        {
+            std::string name;
+            SaveFunction save;
+            LoadFunction load;
+        };
+        std::vector<GameSaveData> m_gameSaveData;
         bool m_interactionPending = false; // Interagir enfoncée à cette image, pas encore prise
         std::string m_warpObjectiveName;
         std::optional<Math::WorldPosition> m_warpObjective;

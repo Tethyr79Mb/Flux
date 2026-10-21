@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <format>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -232,21 +233,69 @@ namespace Game {
             DrawWindow(engine, player, screen);
         }
 
+        // Sauvegarde rapide : le donneur puis les ennemis du groupe (encore en vie), par identifiant. Titre et zone
+        // sont relus sur le donneur.
+        std::string Save(Engine& engine) {
+            if (!g_mission) {
+                return {};
+            }
+            const Scene& scene = engine.GetScene();
+            if (!scene.IsValid(g_mission->giver)) {
+                return {};
+            }
+            std::string text = scene.GetId(g_mission->giver).ToString();
+            for (const Entity enemy : g_mission->enemies) {
+                if (scene.IsValid(enemy)) {
+                    text += ' ';
+                    text += scene.GetId(enemy).ToString();
+                }
+            }
+            return text;
+        }
+
+        void Load(Engine& engine, std::string_view data) {
+            Scene& scene = engine.GetScene();
+            std::istringstream words{std::string(data)};
+            std::string word;
+            if (!(words >> word)) {
+                return;
+            }
+            const std::optional<Uuid> giverId = Uuid::Parse(word);
+            const Entity giver = giverId ? scene.FindById(*giverId) : NullEntity;
+            const auto* component = giver != NullEntity ? scene.TryGet<MissionGiverComponent>(giver) : nullptr;
+            if (!component) {
+                Log::Warning("sauvegarde : donneur de la mission introuvable, mission oubliée");
+                return;
+            }
+            ActiveMission mission{giver, component->title, {}, Missions::GetTargetArea(scene, giver)};
+            while (words >> word) {
+                if (const std::optional<Uuid> id = Uuid::Parse(word)) {
+                    if (const Entity enemy = scene.FindById(*id); enemy != NullEntity) {
+                        mission.enemies.push_back(enemy);
+                    }
+                }
+            }
+            SetMission(engine, std::move(mission)); // sans ennemi restant : accomplie à la prochaine image
+        }
+
         constexpr const char* InteractSystem = "Missions : parler";
         constexpr const char* HudSystem = "Missions : affichage";
         constexpr const char* ResetSystem = "Missions : oubli";
+        constexpr const char* SaveData = "missions";
     }
 
     void RegisterMissions(Engine& engine) {
         engine.AddGameSystem(Engine::GameStage::Interaction, InteractSystem, Interact);
         engine.AddGameSystem(Engine::GameStage::Hud, HudSystem, DrawHud);
         engine.AddGameSystem(Engine::GameStage::Reset, ResetSystem, Reset);
+        engine.AddGameSaveData(SaveData, Save, Load);
     }
 
     void UnregisterMissions(Engine& engine) {
         engine.RemoveGameSystem(InteractSystem);
         engine.RemoveGameSystem(HudSystem);
         engine.RemoveGameSystem(ResetSystem);
+        engine.RemoveGameSaveData(SaveData);
         g_mission.reset();
         g_window = NullEntity;
     }

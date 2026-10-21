@@ -72,7 +72,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, assiette qui suit la courbure de la planète (aide à plat), mode voyage (ralenti à l'approche d'une planète, permis en haute atmosphère et bridé à mesure que l'air s'épaissit, vitesse rendue à sa sortie), sièges, atterrissage stabilisé.
 - 🔧 Animation squelettique (fondus, repos/marche/course/chute/s'asseoir). À améliorer : pas d'accès aux os pour le gameplay, pas d'événements d'animation.
 - ✅ Son 3D (miniaudio), actions d'entrée réassignables (Touches.json).
-- 🔧 Sauvegarde rapide (F8 enregistre la partie, F9 la recharge, F7 l'efface ; reprise au lancement du jeu et à Jouer dans l'éditeur) : toute la scène en cours, vitesses des vaisseaux et siège du joueur compris. À améliorer : un seul emplacement, pas d'état des systèmes du jeu (mission en cours), ni du pilote automatique ou du warp en cours.
+- 🔧 Sauvegarde rapide (F8 enregistre la partie, F9 la recharge, F7 l'efface ; reprise au lancement du jeu et à Jouer dans l'éditeur) : toute la scène en cours, vitesses des vaisseaux et siège du joueur compris. Les systèmes du jeu y ajoutent leur état (`Engine::AddGameSaveData`) : la mission en cours est gardée. À améliorer : un seul emplacement, ni le pilote automatique ni le warp en cours.
 - ✅ Composant « Monde » (comme les World Settings d'Unreal) : gravité et air hors planètes, freinage par l'air des objets et des personnages (aussi dans l'atmosphère des planètes).
 
 ### Interface (FluxUI)
@@ -166,7 +166,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   il reste bloqué contre un obstacle sur son chemin), éviter les autres vaisseaux.
 - 🔧 Missions : un PNJ de la station (Placer > Station, boutique 1) donne une mission « détruire un groupe
   d'ennemis » (F pour parler, Accepter / Refuser / Abandonner) ; groupe à 500 km par défaut, marqueur et distance à
-  l'écran, « Mission accomplie » quand tout est détruit. À améliorer : pas de récompense ni de sauvegarde (voir plus bas).
+  l'écran, « Mission accomplie » quand tout est détruit. À améliorer : pas de récompense (voir plus bas) ; mission en cours gardée par la sauvegarde rapide.
 - ✅ Warp pour les grandes distances (J vers la destination visée : station, planète, objectif de mission ; le mode
   voyage, Tab, reste un déplacement accéléré).
 - ⬜ Rétrofusées vers l'avant (demande de Bruno) : freinage net, flammes visibles à l'avant, et dérive en virage
@@ -175,7 +175,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   du vaisseau. Missions sans prefab : drones cubes armés. À améliorer : pas de factions ni de formations (voir plus bas).
 - ⬜ IA : factions (qui attaque qui), escortes, formations, appels de renforts ; arbres de comportement si besoin.
 - ⬜ Mort du joueur : son vaisseau ne peut pas être détruit aujourd'hui (Weapons::ApplyHits le protège).
-- ⬜ Missions : récompenses, autres sortes, sauvegarde de la mission en cours.
+- ⬜ Missions : récompenses, autres sortes (sur les planètes et dans l'espace).
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.
 - ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).
