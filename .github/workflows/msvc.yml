@@ -66,7 +66,11 @@ jobs:
           $loader = Get-ChildItem "$root\runtime" -Recurse -Filter "vulkan-1.dll" | Where-Object { $_.DirectoryName -match 'x64' } | Select-Object -First 1
           if (-not $loader) { Write-Error "vulkan-1.dll introuvable"; exit 1 }
           $loader.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
-          "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # Le chargeur ignore VK_DRIVER_FILES dans un processus administrateur (c'est le cas sur GitHub) : le pilote est
+          # inscrit dans le registre, comme le ferait son installateur.
+          $drivers = "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers"
+          if (-not (Test-Path $drivers)) { New-Item -Path $drivers -Force | Out-Null }
+          New-ItemProperty -Path $drivers -Name $icd.FullName -PropertyType DWord -Value 0 -Force | Out-Null
           "FLUX_TESTS_GPU=1" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "lavapipe : $($archive.Name) ; chargeur : $($loader.FullName)"
 
