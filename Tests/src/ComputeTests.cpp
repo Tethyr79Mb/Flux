@@ -1,5 +1,5 @@
 // Tests des compute shaders du RHI : un calcul envoyé au GPU sans fenêtre, puis relu par le CPU. Ignorés (réussis)
-// sur une machine sans GPU Vulkan 1.3 (intégration continue).
+// sur une machine sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
 #include "Check.hpp"
 
 #include "Renderer/RHI/RHI.hpp"
@@ -13,8 +13,7 @@ using namespace Flux;
 bool RunComputeTests() {
     auto device = RHI::Device::CreateHeadless();
     if (!device) {
-        std::printf("       compute ignoré : %s\n", device.error().c_str());
-        return true;
+        return GpuMissing("compute", device.error().c_str());
     }
 
     constexpr std::uint32_t Count = 1000; // pas un multiple de 64 : le dernier groupe déborde

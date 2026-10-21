@@ -1,4 +1,4 @@
-# Compile le projet avec MSVC (Visual Studio) sur une machine Windows de GitHub et lance FluxTests,
+# Compile le projet avec MSVC (Visual Studio) sur une machine Windows de GitHub et lance FluxTests (GPU logiciel compris),
 # pour chaque PR et chaque envoi sur master : les erreurs propres à MSVC sont vues avant de tester.
 # (Pas à chaque envoi sur une branche : celles d'une PR seraient compilées deux fois.)
 name: MSVC
@@ -46,6 +46,29 @@ jobs:
 
       - name: Compiler
         run: cmake --build --preset ${{ matrix.preset }}
+
+      # GPU logiciel (lavapipe de Mesa, compilé pour Windows par mesa-dist-win) et chargeur Vulkan de LunarG : les tests
+      # GPU (compute, tuiles de planète, arbres) tournent au lieu d'être ignorés. FLUX_TESTS_GPU=1 les fait échouer si
+      # le GPU manque, pour qu'une panne de cette étape ne passe pas pour un succès.
+      - name: GPU logiciel
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = "$env:RUNNER_TEMP\gpu"
+          gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-msvc.7z" --dir $root
+          $archive = Get-ChildItem "$root\mesa3d-*-release-msvc.7z" | Select-Object -First 1
+          7z x $archive.FullName "-o$root\mesa" | Out-Null
+          $icd = Get-ChildItem "$root\mesa\x64" -Filter "lvp_icd*.json" | Select-Object -First 1
+          if (-not $icd) { Write-Error "lavapipe introuvable dans $($archive.Name)"; exit 1 }
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime-components.zip" -OutFile "$root\runtime.zip"
+          Expand-Archive "$root\runtime.zip" -DestinationPath "$root\runtime"
+          $loader = Get-ChildItem "$root\runtime" -Recurse -Filter "vulkan-1.dll" | Where-Object { $_.DirectoryName -match 'x64' } | Select-Object -First 1
+          if (-not $loader) { Write-Error "vulkan-1.dll introuvable"; exit 1 }
+          $loader.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
+          "VK_DRIVER_FILES=$($icd.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "FLUX_TESTS_GPU=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "lavapipe : $($archive.Name) ; chargeur : $($loader.FullName)"
 
       - name: Tests
         run: ctest --test-dir out/build/${{ matrix.preset }} --output-on-failure

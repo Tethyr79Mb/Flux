@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <cstdlib>
 
 // Mini-cadre de test : chaque groupe est une fonction bool, CHECK sort du groupe au premier échec.
 #define CHECK(condition)                                                                    \
@@ -10,6 +11,21 @@
             return false;                                                                   \
         }                                                                                   \
     } while (0)
+
+// Groupe qui demande un GPU, sur une machine qui n'en a pas : ignoré (réussi), sauf si FLUX_TESTS_GPU vaut 1 (la CI,
+// qui installe un GPU logiciel) : là, un GPU absent par erreur fait échouer au lieu de passer inaperçu.
+inline bool GpuMissing(const char* group, const char* error) {
+#ifdef _MSC_VER
+#pragma warning(suppress : 4996) // getenv : lu avant tout fil
+#endif
+    const char* required = std::getenv("FLUX_TESTS_GPU");
+    if (required && required[0] == '1') {
+        std::printf("ÉCHEC %s : GPU exigé (FLUX_TESTS_GPU), aucun trouvé : %s\n", group, error);
+        return false;
+    }
+    std::printf("       %s ignoré : %s\n", group, error);
+    return true;
+}
 
 bool RunSceneTests();
 bool RunSceneSerializerTests();

@@ -1,6 +1,6 @@
 // Tuiles des planètes calculées par le GPU (shaders/PlanetTile.slang) comparées à la référence en double du CPU
-// (Planetology::BuildTile) : mêmes sommets, normales et glissements, à quelques millimètres près. Ignorés (réussis) sur
-// une machine sans GPU Vulkan 1.3 (intégration continue).
+// (Planetology::BuildTile) : mêmes sommets, normales et glissements, à quelques centimètres près. Ignorés (réussis) sur
+// une machine sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur le GPU logiciel lavapipe).
 #include "Check.hpp"
 
 #include "Flux/Planetology/Planet.hpp"
@@ -24,8 +24,7 @@ namespace {
 bool RunPlanetGpuTests() {
     auto device = RHI::Device::CreateHeadless();
     if (!device) {
-        std::printf("       GPU ignoré : %s\n", device.error().c_str());
-        return true;
+        return GpuMissing("GPU", device.error().c_str());
     }
     auto compute = Planetology::PlanetTileCompute::Create(**device, RHI::MemoryType::Readback);
     if (!compute) {

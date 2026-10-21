@@ -1,6 +1,6 @@
 // Arbres semés par le GPU (computeTrees dans shaders/PlanetTile.slang) : posés sur le relief de la référence du CPU
 // (Terrain::GetHeight au détail le plus fin), droits, aux mêmes places d'une fois à l'autre, et absents là où la pente
-// les refuse. Ignorés (réussis) sur une machine sans GPU Vulkan 1.3 (intégration continue).
+// les refuse. Ignorés (réussis) sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
 #include "Check.hpp"
 
 #include "Flux/Planetology/Planet.hpp"
@@ -44,8 +44,7 @@ namespace {
 bool RunVegetationGpuTests() {
     auto device = RHI::Device::CreateHeadless();
     if (!device) {
-        std::printf("       GPU ignoré : %s\n", device.error().c_str());
-        return true;
+        return GpuMissing("GPU", device.error().c_str());
     }
 
     // Partout chaud et humide, ni mer ni neige à portée : seules la densité, les forêts et la pente décident.
