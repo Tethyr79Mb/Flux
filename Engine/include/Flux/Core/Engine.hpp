@@ -177,6 +177,10 @@ namespace Flux {
         // Charge tout de suite la scène du fichier (scène de démarrage du jeu) ; pendant le jeu, son monde physique
         // est préparé aussitôt (voir PhysicsWorld::Prepare). En cas d'échec, la scène actuelle reste.
         std::expected<void, std::string> LoadScene(const std::filesystem::path& path);
+        // Sauvegarde rapide (F8) : reprise à la fin de l'image si elle existe (lancement du jeu, Jouer dans
+        // l'éditeur), joueur remis sur son siège ; false sans sauvegarde. Effacée par DeleteQuickSave (F7).
+        bool ResumeQuickSave();
+        void DeleteQuickSave();
 
         // Monde physique du jeu en cours, préparé au lancement du jeu et à chaque changement de scène ; nullptr à
         // l'arrêt. Tous partagent le contexte physique du moteur, créé avec lui. Voir PhysicsWorld, PhysicsContext.
@@ -276,6 +280,13 @@ namespace Flux {
         std::uint32_t m_loadingMostPending = 0;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
+        // Sauvegarde et chargement rapides (F8 / F9) : demandés pendant l'image, faits à la fin (RunQuickSave).
+        bool m_quickSaveRequested = false;
+        bool m_quickLoadRequested = false;
+        bool m_quickLoadResumes = false; // demandé par ResumeQuickSave : son propre message
+        // Message court en haut de l'écran (« Partie sauvegardée ») et le temps qu'il reste affiché (s).
+        std::string m_notice;
+        double m_noticeSeconds = 0.0;
         std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
         std::shared_ptr<const Planetology::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
@@ -367,6 +378,12 @@ namespace Flux {
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
+        void RunQuickSave();
+        void QuickSave();
+        // Recharge la sauvegarde rapide, joueur remis sur son siège s'il y était.
+        void QuickLoad(bool resumes);
+        void ShowNotice(std::string text);
+        void DrawNotice(Math::Vector2f screen, double deltaSeconds);
         // Nouveau monde physique pour la scène actuelle, corps déjà créés.
         void StartPhysics();
         void RunInterfaceActions();

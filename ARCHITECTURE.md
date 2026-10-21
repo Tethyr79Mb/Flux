@@ -70,7 +70,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    scène est quand même rendue, pour que les tuiles des planètes se calculent, jusqu'à ce que le rendu n'attende plus
    ni tuile, ni texture du sol, ni modèle pendant 10 images (`RenderTimings::planetPendingTiles`,
    `groundTexturesLoading`, `modelsLoading`).
-6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces et changement de scène en fin d'image.
+6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces, changement de scène et sauvegarde rapide (F8 / F9,
+   `Engine::RunQuickSave`) en fin d'image.
 
 ## Rendu
 
@@ -368,6 +369,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 | `*.fluxui` | interface du jeu (`flux.ui` v1) |
 | `Game.fluxproject` | projet : nom, assets, scène de démarrage |
 | `Touches.json` | touches réassignées (à côté de l'exe) |
+| `Sauvegardes/rapide.scene.json`, `rapide.joueur.json` | sauvegarde rapide (à côté de l'exe) : la scène en cours, ouvrable dans l'éditeur, et le siège du joueur ; reprise au lancement du jeu et à Jouer dans l'éditeur (`Engine::ResumeQuickSave`), effacée par F7 |
 | `FluxEditor.layout.v3.json`, `FluxEditor.settings.json` | disposition et réglages de l'éditeur |
 
 ## Compilation
