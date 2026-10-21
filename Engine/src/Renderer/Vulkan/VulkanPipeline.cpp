@@ -147,8 +147,9 @@ namespace Flux::Vk {
         depthStencil.depthCompareOp = desc.depthCompare;
 
         VkPipelineColorBlendAttachmentState blendAttachment{};
-        blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-                                       | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        blendAttachment.colorWriteMask = !desc.writeColor ? 0
+                                       : VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT
+                                             | VK_COLOR_COMPONENT_A_BIT;
         if (desc.alphaBlend) {
             blendAttachment.blendEnable = VK_TRUE;
             blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;

@@ -275,6 +275,10 @@ namespace Flux {
         float lodDistance = 60.0f; // m
         float farDistance = 300.0f;
         float range = 3000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)
+        // Éclairage du feuillage (shaders/Mesh.slang, ShadeFoliage) : de combien la lumière du soleil déborde sur les
+        // feuilles tournées de l'autre côté (0 : pas du tout), et la part qui traverse une feuille vue à contre-jour.
+        float leafWrap = 0.3f;
+        float leafTransmission = 0.4f;
     };
 
     // Nuages d'une planète (sur l'entité de son PlanetComponent) : une couche de `thickness` mètres d'épaisseur à

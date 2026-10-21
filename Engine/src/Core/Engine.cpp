@@ -173,17 +173,14 @@ namespace Flux {
                 ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
                 ui.LabelText("Pire image (10 s)", std::format("{:.1f} ms", stats.GetWorstMilliseconds()));
                 ui.LabelText("GPU", renderer.GetDeviceName());
-                bool vsync = renderer.IsVSyncEnabled();
-                if (ui.Checkbox("V-Sync", vsync)) {
-                    renderer.SetVSync(vsync);
-                }
-                bool temporal = renderer.IsTemporalAAEnabled();
-                if (ui.Checkbox("Anticrénelage (TAA)", temporal)) {
-                    renderer.SetTemporalAA(temporal);
-                }
+                // V-Sync et anticrénelage : dans Fichier > Paramètres (le panneau garde la mesure).
                 bool occlusion = renderer.IsOcclusionCullingEnabled();
                 if (ui.Checkbox("Objets cachés écartés", occlusion)) {
                     renderer.SetOcclusionCulling(occlusion);
+                }
+                bool geometryOnly = renderer.IsGroundGeometryOnly();
+                if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
+                    renderer.SetGroundGeometryOnly(geometryOnly);
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
 

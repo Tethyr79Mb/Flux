@@ -269,6 +269,11 @@ namespace Flux {
             bool motion = true; // le fragment écrit le mouvement propre (SV_Target1)
             // Modèles : variantes double face et à seuil d'alpha (le sol et l'eau des planètes n'en ont pas).
             bool materials = false;
+            // Programme de pixel presque vide pour la mesure (Pipelines::geometryOnly), ou aucun.
+            const char* geometryFragment = nullptr;
+            // Seuil d'alpha avec pré-passe de profondeur (Pipelines::depthMasked, ce programme de sommets) : les
+            // pipelines à seuil n'éclairent ensuite que les pixels de même profondeur, sans l'écrire.
+            const char* depthVertex = nullptr;
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -340,18 +345,70 @@ namespace Flux {
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
                 return result;
             }
+            if (kind.geometryFragment) {
+                desc.fragmentEntryPoint = kind.geometryFragment;
+                if (auto result = createMain(pipelines.geometryOnly, RHI::CullMode::Back, false); !result) {
+                    return result;
+                }
+                desc.fragmentEntryPoint = kind.fragment;
+            }
             if (!kind.materials) {
                 return createMain(pipelines.transparent, RHI::CullMode::Back, true);
             }
             if (auto result = createMain(pipelines.opaqueDoubleSided, RHI::CullMode::None, false); !result) {
                 return result;
             }
-            // Seuil d'alpha et transparents : le programme qui peut jeter des pixels.
+            if (kind.depthVertex) {
+                // Pré-passe : profondeur seule, pixels sous le seuil jetés ; mêmes attributs que les ombres.
+                desc.vertexEntryPoint = kind.depthVertex;
+                desc.vertexAttributes = kind.shadowAttributes;
+                desc.fragmentEntryPoint = "fragmentShadow";
+                desc.writeColor = false;
+                desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
+                desc.depthWrite = true;
+                desc.blend = RHI::BlendMode::Opaque;
+                // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
+                // profondeur depuis deux programmes de sommets, et la feuille éclairée ensuite, trouvée un peu plus
+                // loin, était perdue par endroits (feuilles qui clignotent). Quelques unités de précision, plus selon
+                // la pente (feuilles vues de profil) : invisible entre deux feuilles.
+                desc.depthBiasConstant = -16.0f;
+                desc.depthBiasSlope = -1.0f;
+                desc.cullMode = RHI::CullMode::Back;
+                if (auto result = create(pipelines.depthMasked, desc); !result) {
+                    return result;
+                }
+                desc.cullMode = RHI::CullMode::None;
+                if (auto result = create(pipelines.depthMaskedDoubleSided, desc); !result) {
+                    return result;
+                }
+                desc.depthBiasConstant = 0.0f;
+                desc.depthBiasSlope = 0.0f;
+                desc.vertexEntryPoint = kind.vertex;
+                desc.vertexAttributes = kind.attributes;
+                desc.writeColor = true;
+            }
+            // Seuil d'alpha et transparents : le programme qui peut jeter des pixels. Après une pré-passe : la
+            // profondeur est déjà écrite ; sans l'écrire à nouveau, les pixels cachés sont écartés avant le programme
+            // malgré son seuil.
             desc.fragmentEntryPoint = kind.maskedFragment;
-            if (auto result = createMain(pipelines.masked, RHI::CullMode::Back, false); !result) {
+            const auto createMasked = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode) {
+                if (!kind.depthVertex) {
+                    return createMain(pipeline, cullMode, false);
+                }
+                desc.cullMode = cullMode;
+                desc.depthWrite = false;
+                // Plus proche ou égal à la profondeur de la pré-passe, écrite un peu plus loin exprès (voir plus haut).
+                desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
+                desc.blend = RHI::BlendMode::Opaque;
+                desc.writeSecondColor = kind.motion;
+                auto result = create(pipeline, desc);
+                desc.depthCompare = RHI::CompareOp::Greater;
+                return result;
+            };
+            if (auto result = createMasked(pipelines.masked, RHI::CullMode::Back); !result) {
                 return result;
             }
-            if (auto result = createMain(pipelines.maskedDoubleSided, RHI::CullMode::None, false); !result) {
+            if (auto result = createMasked(pipelines.maskedDoubleSided, RHI::CullMode::None); !result) {
                 return result;
             }
             desc.fragmentEntryPoint = "fragmentMain";
@@ -371,12 +428,12 @@ namespace Flux {
             return result;
         }
         if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
-                                             "fragmentTreeOpaque", "fragmentTree", true, true});
+                                             "fragmentTreeOpaque", "fragmentTree", true, true, nullptr, "vertexTreeDepth"});
             !result) {
             return result;
         }
         if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
-                                               "fragmentPlanet", "fragmentMain"});
+                                               "fragmentPlanet", "fragmentMain", true, false, "fragmentPlanetGeometry"});
             !result) {
             return result;
         }
@@ -757,9 +814,12 @@ namespace Flux {
         }
         const float tanY = std::tan(0.5f * camera.verticalFov);
         m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, models);
+        // surface.zw : éclairage du feuillage (ShadeFoliage), du composant.
+        const VegetationComponent leaves = m_vegetationComponent ? *m_vegetationComponent : VegetationComponent{};
         m_treeDraw = static_cast<std::uint32_t>(m_drawData.size());
         m_drawData.push_back({Math::Matrix4f::Identity(), {{{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}}},
-                              {}, {}, Math::Matrix4f::Identity(), {1.0f, 1.0f, 1.0f, 1.0f}, {}, {1.0f, 1.0f, 0.0f, 0.0f}});
+                              {}, {}, Math::Matrix4f::Identity(), {1.0f, 1.0f, 1.0f, 1.0f}, {},
+                              {1.0f, 1.0f, std::clamp(leaves.leafWrap, 0.0f, 1.0f), std::clamp(leaves.leafTransmission, 0.0f, 1.0f)}});
     }
 
     void MeshRenderer::AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light) {
@@ -984,10 +1044,16 @@ namespace Flux {
         if (m_tileDraws.empty() || !indices) {
             return true;
         }
-        std::ranges::sort(m_tileDraws, [](const TileDraw& a, const TileDraw& b) {
+        // De près à loin par bandes de distance (chacune deux fois plus loin que la précédente), puis par page : un
+        // appel par page et par bande. Trié par page d'abord, une tuile proche d'une autre page passait après des
+        // tuiles lointaines, et le GPU éclairait pour rien les pixels qu'elle cache ensuite.
+        const auto band = [](float distance) { return distance <= 16.0f ? 0 : std::ilogb(distance * (1.0f / 16.0f)) + 1; };
+        std::ranges::sort(m_tileDraws, [&band](const TileDraw& a, const TileDraw& b) {
+            const int bandA = band(a.distance);
+            const int bandB = band(b.distance);
             const std::uint32_t pageA = Planetology::PlanetTileCompute::GetPage(a.tile);
             const std::uint32_t pageB = Planetology::PlanetTileCompute::GetPage(b.tile);
-            return pageA != pageB ? pageA < pageB : a.distance < b.distance;
+            return bandA != bandB ? bandA < bandB : pageA != pageB ? pageA < pageB : a.distance < b.distance;
         });
         const std::uint32_t firstData = static_cast<std::uint32_t>(m_drawData.size());
         const std::uint32_t indexCount = m_planets->GetIndexCount();
@@ -1336,7 +1402,7 @@ namespace Flux {
 
     // Les arbres d'une liste : un appel indirect par primitive de son modèle, le nombre d'arbres écrit par le GPU.
     void MeshRenderer::DrawTrees(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
-                                 Planetology::VegetationRenderer::List list, std::uint32_t cascade) const {
+                                 Planetology::VegetationRenderer::List list, std::uint32_t cascade, bool depthOnly) const {
         const bool shadow = list >= Planetology::VegetationRenderer::Shadow;
         for (const Planetology::VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
             const GpuModel& model = *draw.model;
@@ -1348,7 +1414,14 @@ namespace Flux {
                 commands.BindVertexBuffers(0, vertexBuffers);
                 commands.BindIndexBuffer(*page.indices);
             }
-            BindPipeline(commands, state, frameIndex, shadow ? ShadowPipeline(m_tree, material) : OpaquePipeline(m_tree, material));
+            const bool masked = material.alphaCutoff > 0.0f;
+            if (depthOnly && !masked) {
+                continue; // pré-passe : le seuil d'alpha seul (l'écorce, opaque, ne jette rien)
+            }
+            const RHI::Pipeline& pipeline = shadow      ? ShadowPipeline(m_tree, material)
+                                          : depthOnly   ? *(material.doubleSided ? m_tree.depthMaskedDoubleSided : m_tree.depthMasked)
+                                                        : OpaquePipeline(m_tree, material);
+            BindPipeline(commands, state, frameIndex, pipeline);
             if (state.group != &m_models->GetWhiteGroup()) {
                 state.group = &m_models->GetWhiteGroup();
                 commands.SetBindGroup(0, *state.group);
@@ -1396,14 +1469,19 @@ namespace Flux {
     void MeshRenderer::DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
         using Planetology::VegetationRenderer;
-        for (const VegetationRenderer::List list : {VegetationRenderer::Near, VegetationRenderer::Middle, VegetationRenderer::Far}) {
+        constexpr std::array lists{VegetationRenderer::Near, VegetationRenderer::Middle, VegetationRenderer::Far};
+        // Profondeur du feuillage d'abord (voir vertexTreeDepth), puis l'éclairage, qui ne garde que la feuille visible.
+        for (const VegetationRenderer::List list : lists) {
+            DrawTrees(commands, state, frameIndex, list, 0, true);
+        }
+        for (const VegetationRenderer::List list : lists) {
             DrawTrees(commands, state, frameIndex, list, 0);
         }
     }
 
     void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
-        DrawTiles(commands, state, frameIndex, GroundPass, *m_planet.opaque);
+        DrawTiles(commands, state, frameIndex, GroundPass, m_groundGeometryOnly ? *m_planet.geometryOnly : *m_planet.opaque);
     }
 
     void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {
