@@ -72,6 +72,9 @@ namespace Flux {
         void SetOcclusionCulling(bool enabled) { m_occlusion->SetEnabled(enabled); }
         bool IsOcclusionCullingEnabled() const { return m_occlusion->IsEnabled(); }
         OcclusionCulling::Stats GetOcclusionStats() const { return m_occlusion->GetStats(); }
+        // Mesure : le sol des planètes sans le calcul de ses pixels (voir fragmentPlanetGeometry).
+        void SetGroundGeometryOnly(bool enabled) { m_groundGeometryOnly = enabled; }
+        bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image (la carte est
         // effacée puis rendue lisible par Draw).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
@@ -247,6 +250,10 @@ namespace Flux {
             std::unique_ptr<RHI::Pipeline> maskedDoubleSided;  // seuil d'alpha, faces arrière gardées
             std::unique_ptr<RHI::Pipeline> transparent;        // mélange alpha, profondeur lue mais pas écrite
             std::unique_ptr<RHI::Pipeline> transparentBack;    // idem, faces arrière seules (double face : avant les faces avant)
+            std::unique_ptr<RHI::Pipeline> geometryOnly;       // sol des planètes : pixel presque vide, pour la mesure
+            // Arbres : pré-passe de profondeur du seuil d'alpha (masked n'éclaire ensuite que la même profondeur).
+            std::unique_ptr<RHI::Pipeline> depthMasked;        // faces arrière éliminées
+            std::unique_ptr<RHI::Pipeline> depthMaskedDoubleSided;
         };
 
         // Relie ce qui change d'un appel à l'autre (pipeline, sommets, groupes), seulement quand il le faut.
@@ -294,7 +301,7 @@ namespace Flux {
         void DrawTiles(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
                        const RHI::Pipeline& pipeline) const;
         void DrawTrees(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
-                       Planetology::VegetationRenderer::List list, std::uint32_t cascade) const;
+                       Planetology::VegetationRenderer::List list, std::uint32_t cascade, bool depthOnly = false) const;
 
         RHI::Device& m_device;
         std::unique_ptr<ModelCache> m_models;
@@ -307,6 +314,7 @@ namespace Flux {
         Pipelines m_skinned;
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
+        bool m_groundGeometryOnly = false;
         // Arbres des planètes : leur place et leur rotation lues dans les arbres retenus par VegetationRenderer.
         Pipelines m_tree;
         // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).

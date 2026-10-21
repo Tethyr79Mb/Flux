@@ -107,7 +107,7 @@ struct DrawData
     // entités de teintes différentes.
     float4 tint;              // multiplie la couleur du matériau
     float4 emissive;          // ajouté à celui du matériau ; w : 1 si surface remplace métal et rugosité
-    float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent)
+    float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent) ; arbres : zw, ShadeFoliage
 };
 
 // Doit correspondre à DrawParams dans MeshRenderer.cpp : réglages de l'appel. Les modèles n'y lisent que cascade et
@@ -329,19 +329,26 @@ struct TreeVertexOutput
     VertexOutput base;
     float3 airTransmittance : AIR_TRANSMITTANCE;
     float3 airScattered : AIR_SCATTERED;
+    float clouds : CLOUDS; // ombre des nuages (CloudShadow), par sommet comme pour le sol
 };
+
+// Position à l'écran d'un sommet d'arbre : la même suite de calculs pour la pré-passe de profondeur (vertexTreeDepth)
+// et l'éclairage (vertexTree), qui ne garde que les pixels de même profondeur.
+float4 TreeClipPosition(float3 position, uint instance, out float3 worldPosition, out float4 rotation)
+{
+    worldPosition = TreePosition(treeInstances[instance * 2], position, rotation, instance);
+    return Transform(frame[0].viewProjection, worldPosition);
+}
 
 [shader("vertex")]
 TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
-    const float4 placement = treeInstances[instance * 2];
     float4 rotation;
     TreeVertexOutput tree;
     VertexOutput output;
     output.draw = params.draw;
     output.material = params.material;
-    output.worldPosition = TreePosition(placement, input.position, rotation, instance);
-    output.position = Transform(frame[0].viewProjection, output.worldPosition);
+    output.position = TreeClipPosition(input.position, instance, output.worldPosition, rotation);
     output.normal = TreeRotate(rotation, input.normal);
     output.uv = input.uv;
     const FrameData f = frame[0];
@@ -349,7 +356,23 @@ TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstance
     output.staticClip = output.previousClip;
     tree.base = output;
     tree.airScattered = AirTo(output.worldPosition, tree.airTransmittance);
+    tree.clouds = CloudShadow(output.worldPosition);
     return tree;
+}
+
+// Pré-passe du feuillage : profondeur seule, pixels sous le seuil d'alpha jetés (fragmentShadow). Le feuillage se
+// recouvre beaucoup, et avec son seuil d'alpha le GPU ne peut pas écarter d'avance les pixels cachés : chaque couche
+// était éclairée en entier. Après elle, fragmentTree n'éclaire que la feuille visible (même profondeur), une fois.
+[shader("vertex")]
+ShadowOutput vertexTreeDepth(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    float3 worldPosition;
+    float4 rotation;
+    ShadowOutput output;
+    output.position = TreeClipPosition(input.position, instance, worldPosition, rotation);
+    output.uv = input.uv;
+    output.material = params.material;
+    return output;
 }
 
 // Glissement du sommet vers la forme parente : 0 près de la caméra, 1 au-delà de la distance où la parente prend
@@ -417,6 +440,9 @@ struct PlanetVertexOutput
     // n'a plus ses 16 pas de marche dans l'air.
     float3 airTransmittance : AIR_TRANSMITTANCE;
     float3 airScattered : AIR_SCATTERED;
+    // Ombre des nuages (voir CloudShadow), par sommet comme l'air : ses taches font des centaines de mètres, et au pixel
+    // elle coûtait jusqu'à cinq bruits.
+    float clouds : CLOUDS;
 };
 
 // Ce que l'océan garde des tuiles de planète : ni normale, ni position du sol, ni climat, ni forêt, que fragmentOcean
@@ -476,6 +502,7 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
         output.forest = ForestAt(normalize(output.planetPosition) * planet.shape.x, planet.forest.x, blur) * TreeClimate(output.climate);
     }
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
+    output.clouds = CloudShadow(output.base.worldPosition);
     return output;
 }
 
@@ -559,6 +586,21 @@ float3 Shade(Surface s, float3 toLight, float3 light)
     const float3 fresnel = s.f0 + (1.0 - s.f0) * pow(1.0 - vh, 5.0);
     const float3 specular = fresnel * (distribution * visibility * Pi);
     return (s.diffuse * (1.0 - fresnel) + specular) * light * nl;
+}
+
+
+// Feuillage : ses normales sont celles de la couronne, pas des feuilles. Le reflet de Cook-Torrance n'y a pas de
+// sens, et à contre-jour (lumière derrière la carte, vue rasante) son Fresnel tend vers 1 : les feuilles viraient au
+// blanc. Diffus seulement, et la face à l'ombre reçoit la lumière qui traverse, de la couleur de la feuille.
+// leaves (VegetationComponent) : x, éclairage enveloppant (la lumière déborde au-delà de la face éclairée : les
+// feuilles sont inclinées dans tous les sens autour de la normale de la couronne, qui n'est qu'une moyenne) ; y, part
+// du soleil qui traverse une feuille vue à contre-jour (feuilles réelles : 10 à 30 %, plus ici car la couronne en
+// couches renvoie aussi la lumière entre ses feuilles).
+float3 ShadeFoliage(Surface s, float3 toLight, float3 light, float2 leaves)
+{
+    const float nl = dot(s.normal, toLight);
+    const float front = saturate((nl + leaves.x) / (1.0 + leaves.x));
+    return s.diffuse * light * max(front, -nl * leaves.y);
 }
 
 // Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
@@ -677,13 +719,19 @@ float3 Radiance(float3 color)
 // Albédo moyen du sol des planètes, pour la lumière qu'il renvoie (herbe, roche et terre autour de 0,15 à 0,3).
 static const float GroundBounceAlbedo = 0.2;
 
-float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, out float inside)
+// foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
+float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
+                    bool foliage = false, float2 leaves = float2(0.0))
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
     // Ombre lue avec la vraie face (le relief de la carte ne déplace pas les ombres).
-    const float sunFacing = dot(geometryNormal, toSun);
-    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * CloudShadow(worldPosition) : 0.0;
+    float sunFacing = dot(geometryNormal, toSun);
+    if (foliage && sunFacing < 0.0) {
+        geometryNormal = -geometryNormal; // décalage de la lecture vers le soleil, comme pour la face éclairée
+        sunFacing = -sunFacing;
+    }
+    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
@@ -707,7 +755,8 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         const float3 bounce = groundLit * (GroundBounceAlbedo * (0.5 - 0.5 * dot(surface.normal, up)) * (1.0 - inside) * occlusion);
         ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight + surface.diffuse * bounce;
     }
-    return Shade(surface, toSun, sunColor * sun) + ambient + SceneLights(worldPosition, surface);
+    const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
+    return direct + ambient + SceneLights(worldPosition, surface);
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
@@ -878,6 +927,9 @@ static const float GroundPeriod = 1024.0; // même valeur que MeshRenderer::Grou
 static const float GroundTriangleSide = 4.0 / 7.0;
 static const float GroundTriangleHeight = 0.5;
 static const float GroundBlendSharpness = 4.0;
+// Poids sous lequel un sommet du pavage, ou la deuxième matière, n'est pas lu (les autres sont remis à 1) : sous 5 %,
+// on ne voit pas sa part, et chaque lecture évitée en épargne deux (couleur et normale).
+static const float GroundMinimumWeight = 0.05;
 
 struct GroundSample
 {
@@ -954,7 +1006,7 @@ void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2
     occlusionRoughness = float2(0.0);
     [unroll]
     for (int i = 0; i < 3; ++i) {
-        if (w[i] > 0.01) {
+        if (w[i] > GroundMinimumWeight) {
             const int2 v = i == 0 ? v0 : i == 1 ? v1 : v2;
             const int u = ((2 * v.x + v.y) % periodU + periodU) % periodU;
             const int b = (v.y % periodB + periodB) % periodB;
@@ -967,7 +1019,8 @@ void SampleGroundNoRepeat(out float3 color, out float3 tangentNormal, out float2
             occlusionRoughness += surface * w[i];
         }
     }
-    const float kept = (w.x > 0.01 ? w.x : 0.0) + (w.y > 0.01 ? w.y : 0.0) + (w.z > 0.01 ? w.z : 0.0);
+    const float kept = (w.x > GroundMinimumWeight ? w.x : 0.0) + (w.y > GroundMinimumWeight ? w.y : 0.0)
+                     + (w.z > GroundMinimumWeight ? w.z : 0.0);
     color /= kept;
     tangentNormal /= kept;
     occlusionRoughness /= kept;
@@ -1014,7 +1067,8 @@ GroundSample SampleGround(uint layer, float3 p, float3 dpdx, float3 dpdy, float3
 static const float GroundAverageStart = 600.0;
 static const float GroundAverageEnd = 2000.0;
 
-GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, float3 n, float3 blend, float distance)
+// Couleur moyenne d'une matière (plus petit mip), lue seulement là où elle sert (au-delà de GroundAverageStart).
+GroundSample GroundAverage(uint layer, float3 n)
 {
     GroundSample average;
     const float3 center = float3(0.5, 0.5, float(layer));
@@ -1022,9 +1076,14 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
     average.color = colorRoughness.rgb;
     average.occlusionRoughness = float2(groundNormalTexture.SampleLevel(center, 16.0).z, colorRoughness.a);
     average.normal = n;
+    return average;
+}
+
+GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, float3 n, float3 blend, float distance)
+{
     const float faded = smoothstep(GroundAverageStart, GroundAverageEnd, distance);
     if (faded >= 1.0) {
-        return average;
+        return GroundAverage(layer, n);
     }
     const float far = smoothstep(60.0, 150.0, distance);
     GroundSample result = SampleGround(layer, p, dpdx, dpdy, n, blend, far < 1.0 ? GroundNearScale : GroundFarScale);
@@ -1035,6 +1094,7 @@ GroundSample SampleGroundScales(uint layer, float3 p, float3 dpdx, float3 dpdy, 
         result.occlusionRoughness = lerp(result.occlusionRoughness, other.occlusionRoughness, far);
     }
     if (faded > 0.0) {
+        const GroundSample average = GroundAverage(layer, n);
         result.color = lerp(result.color, average.color, faded);
         result.normal = lerp(result.normal, average.normal, faded);
         result.occlusionRoughness = lerp(result.occlusionRoughness, average.occlusionRoughness, faded);
@@ -1094,6 +1154,21 @@ SceneOutput fragmentPlanet(PlanetVertexOutput input)
 {
     SceneOutput output;
     output.color = PlanetColor(input);
+    output.motion = float2(0.0);
+    return output;
+}
+
+// Mesure (panneau Moteur, « Sol sans pixels ») : le sol dessiné avec un pixel presque gratuit. Le temps qui reste est
+// celui des sommets et des triangles ; l'écart avec le vrai sol, celui des pixels. Chaque entrée est lue (pour un
+// coût nul) : une sortie du programme de sommets que personne ne lit est signalée par la validation de Vulkan.
+[shader("fragment")]
+SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
+{
+    const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition + input.airTransmittance
+                             + input.airScattered, float3(1.0))
+                       + input.climate.x + input.climate.y + input.forest + input.clouds + float(input.base.draw);
+    SceneOutput output;
+    output.color = float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0);
     output.motion = float2(0.0);
     return output;
 }
@@ -1213,7 +1288,7 @@ float4 PlanetColor(PlanetVertexOutput input)
             const uint layer = k == 0 ? first : second;
             // La première toujours : trois matières à égalité ne laissent rien aux deux premières.
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
-            if (k == 0 || weight > 0.02) {
+            if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
                 sample.color *= GroundTint(planet, layer);
                 if (layer == GroundGrass) {
@@ -1253,7 +1328,7 @@ float4 PlanetColor(PlanetVertexOutput input)
     }
     surface.normal = normal;
     float inside;
-    const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, inside);
+    const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, input.clouds, inside);
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
     const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
     return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), 1.0);
@@ -1419,12 +1494,15 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 }
 
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
-// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre.
+// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre. Après la
+// pré-passe (vertexTreeDepth), les feuilles cachées sont écartées avant ce programme (profondeur testée sans être
+// écrite : le seuil d'alpha ne l'empêche pas). Le seuil reste nécessaire : là où la carte est transparente, la
+// profondeur est celle de ce qui est derrière, plus loin, et la carte entière serait dessinée.
 [shader("fragment")]
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered);
+    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true);
     output.motion = Motion(input.base);
     return output;
 }
@@ -1434,16 +1512,18 @@ SceneOutput fragmentTree(TreeVertexOutput input)
 SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered);
+    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds);
     output.motion = Motion(input.base);
     return output;
 }
 
 // alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
-// airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici.
+// airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
+// calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage).
 [ForceInline]
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airGiven = false,
-                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0))
+                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0,
+                 bool foliage = false)
 {
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
@@ -1467,10 +1547,14 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
     surface.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    if (foliage) {
+        surface.roughness = max(surface.roughness, 0.7); // reflet du ciel flou : vu rasant, il blanchissait aussi
+    }
     const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
-    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, inside);
+    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;

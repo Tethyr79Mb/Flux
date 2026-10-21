@@ -507,6 +507,14 @@ namespace Flux {
         return m_impl->meshes->IsOcclusionCullingEnabled();
     }
 
+    void Renderer::SetGroundGeometryOnly(bool enabled) {
+        m_impl->meshes->SetGroundGeometryOnly(enabled);
+    }
+
+    bool Renderer::IsGroundGeometryOnly() const {
+        return m_impl->meshes->IsGroundGeometryOnly();
+    }
+
     std::string_view Renderer::GetPresentModeName() const {
         switch (m_impl->device->GetPresentMode()) {
             case RHI::PresentMode::Fifo: return "FIFO (synchronisé)";

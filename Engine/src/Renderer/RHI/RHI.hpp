@@ -206,6 +206,9 @@ namespace Flux::RHI {
         // writeSecondColor ; sinon laissée telle quelle (le shader n'a pas à l'écrire).
         Format secondColorFormat = Format::Undefined;
         bool writeSecondColor = false;
+        // false : la couleur n'est pas écrite, seulement la profondeur (pré-passe de profondeur dans une passe avec
+        // couleur).
+        bool writeColor = true;
         // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.
         Format depthFormat = Format::Undefined;
         bool depthTest = false;
