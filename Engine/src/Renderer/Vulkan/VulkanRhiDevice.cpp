@@ -98,6 +98,7 @@ namespace Flux::Vk {
             rhi->m_device->SetDeferredUploads(true);
         }
         rhi->m_timestampPeriod = rhi->m_device->GetTimestampPeriod();
+        rhi->m_commandList.SetDebugLabels(rhi->m_device->HasDebugLabels());
         // Repères du diagnostic de plantage : facultatifs, l'image se dessine sans.
         if (nativeWindowHandle && rhi->m_device->HasBufferMarkers()) {
             auto markers = Vk::Buffer::Create(rhi->m_device->GetAllocator(),

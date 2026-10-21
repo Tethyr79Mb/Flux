@@ -26,12 +26,22 @@ namespace Flux::Vk {
         // Actives seulement si le SDK Vulkan est installé ; sinon on continue sans.
         instanceBuilder.request_validation_layers(true)
                        .use_default_debug_messenger();
+#else
+        // Noms des étapes (BeginStep) visibles dans Radeon GPU Profiler, Nsight ou RenderDoc, même en Release.
+        if (const auto system = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
+            system && system->is_extension_available(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+            instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            device->m_debugLabels = true;
+        }
 #endif
         auto instance = instanceBuilder.build();
         if (!instance) {
             return std::unexpected(std::format("création de l'instance Vulkan : {}", instance.error().message()));
         }
         device->m_instance = instance.value();
+#ifndef NDEBUG
+        device->m_debugLabels = device->m_instance.debug_messenger != VK_NULL_HANDLE; // le messager exige l'extension
+#endif
         volkLoadInstance(device->m_instance.instance);
 
         // Sans fenêtre (calculs, tests) : pas de surface ni de file de présentation.

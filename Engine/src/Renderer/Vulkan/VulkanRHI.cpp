@@ -120,6 +120,7 @@ namespace Flux::Vk {
         m_writtenTimestamps = 0;
         m_markers = {};
         m_openStep = RHI::MaxSteps;
+        m_labelOpen = false;
         if (m_queryPool != VK_NULL_HANDLE) {
             vkCmdResetQueryPool(m_commandBuffer, m_queryPool, 0, RHI::MaxTimestamps);
         }
@@ -139,6 +140,17 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::BeginStep(const char* name) {
+        // Aussi en repère nommé pour les outils de mesure (Radeon GPU Profiler...) quand VK_EXT_debug_utils est là.
+        if (m_debugLabels) {
+            if (m_labelOpen) {
+                vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
+            }
+            VkDebugUtilsLabelEXT label{};
+            label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+            label.pLabelName = name;
+            vkCmdBeginDebugUtilsLabelEXT(m_commandBuffer, &label);
+            m_labelOpen = true;
+        }
         if (m_markers.buffer == VK_NULL_HANDLE) {
             return;
         }
@@ -154,6 +166,10 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::EndStep() {
+        if (m_labelOpen) {
+            vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
+            m_labelOpen = false;
+        }
         if (m_openStep >= RHI::MaxSteps) {
             return;
         }

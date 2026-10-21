@@ -139,6 +139,8 @@ namespace Flux::Vk {
         void BeginStep(const char* name) override;
         // Repères de l'image qui commence (après Begin) ; sans appel, BeginStep ne fait rien.
         void SetStepMarkers(const StepMarkers& markers);
+        // VK_EXT_debug_utils activée (Device::HasDebugLabels) : chaque étape devient aussi un repère nommé.
+        void SetDebugLabels(bool enabled) { m_debugLabels = enabled; }
         // Note la fin de l'étape en cours, s'il y en a une (fin de l'image).
         void EndStep();
         // Cases écrites pendant l'image (bit i : case i).
@@ -165,6 +167,8 @@ namespace Flux::Vk {
         std::uint32_t m_writtenTimestamps = 0;
         StepMarkers m_markers;
         std::uint32_t m_openStep = RHI::MaxSteps; // MaxSteps : aucune
+        bool m_debugLabels = false;
+        bool m_labelOpen = false;                 // repère VK_EXT_debug_utils ouvert par BeginStep
     };
 
     class RhiDevice final : public RHI::Device {

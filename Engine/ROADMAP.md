@@ -44,6 +44,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Feuillage des arbres sans éclairage caché : pré-passe de profondeur (seuil d'alpha), puis éclairage de la seule feuille visible ; ombre des nuages par sommet (mesuré au profiler : 40 % de l'image avant). Feuilles sans reflet du soleil (blanches à contre-jour avant), lumière enveloppante et traversante réglables dans Végétation.
 - 🔧 Sol des planètes allégé : tuiles de près à loin (par bandes de distance), ombre des nuages par sommet, lectures sous 5 % de poids et couleur moyenne de près évitées. À améliorer : coût des pixels encore à mesurer chez Bruno, puis mesh shaders si la géométrie pèse.
 - ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
+- ✅ Étapes de l'image nommées pour les outils de mesure (Radeon GPU Profiler, Nsight, RenderDoc), en Debug comme en Release (VK_EXT_debug_utils si présente).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
 - ✅ Flammes des réacteurs (composant « Réacteur ») : volume de gaz calculé au pixel, longueur et éclat selon la
   poussée du vaisseau, lumière autour ; à pleine poussée dans l'éditeur (jeu arrêté) pour les régler.
