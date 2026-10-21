@@ -588,6 +588,18 @@ float3 Shade(Surface s, float3 toLight, float3 light)
     return (s.diffuse * (1.0 - fresnel) + specular) * light * nl;
 }
 
+// Part du soleil qui traverse une feuille et ressort, diffuse, de l'autre côté (feuilles réelles : 10 à 30 %).
+static const float FoliageTransmission = 0.3;
+
+// Feuillage : ses normales sont celles de la couronne, pas des feuilles. Le reflet de Cook-Torrance n'y a pas de
+// sens, et à contre-jour (lumière derrière la carte, vue rasante) son Fresnel tend vers 1 : les feuilles viraient au
+// blanc. Diffus seulement, et la face à l'ombre reçoit la lumière qui traverse, de la couleur de la feuille.
+float3 ShadeFoliage(Surface s, float3 toLight, float3 light)
+{
+    const float nl = dot(s.normal, toLight);
+    return s.diffuse * light * (nl > 0.0 ? nl : -nl * FoliageTransmission);
+}
+
 // Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
 // du côté vers lequel la surface est tournée) ; le reflet la lit dans la direction réfléchie, d'autant plus floue
 // que la surface est rugueuse. La part du reflet vient de l'approximation de Karis (pré-intégration de la BRDF).
@@ -704,12 +716,18 @@ float3 Radiance(float3 color)
 // Albédo moyen du sol des planètes, pour la lumière qu'il renvoie (herbe, roche et terre autour de 0,15 à 0,3).
 static const float GroundBounceAlbedo = 0.2;
 
-float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside)
+// foliage : éclairée par ShadeFoliage, et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
+float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
+                    bool foliage = false)
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
     // Ombre lue avec la vraie face (le relief de la carte ne déplace pas les ombres).
-    const float sunFacing = dot(geometryNormal, toSun);
+    float sunFacing = dot(geometryNormal, toSun);
+    if (foliage && sunFacing < 0.0) {
+        geometryNormal = -geometryNormal; // décalage de la lecture vers le soleil, comme pour la face éclairée
+        sunFacing = -sunFacing;
+    }
     const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
@@ -734,7 +752,8 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         const float3 bounce = groundLit * (GroundBounceAlbedo * (0.5 - 0.5 * dot(surface.normal, up)) * (1.0 - inside) * occlusion);
         ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight + surface.diffuse * bounce;
     }
-    return Shade(surface, toSun, sunColor * sun) + ambient + SceneLights(worldPosition, surface);
+    const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun) : Shade(surface, toSun, sunColor * sun);
+    return direct + ambient + SceneLights(worldPosition, surface);
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
@@ -1480,7 +1499,7 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds);
+    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true);
     output.motion = Motion(input.base);
     return output;
 }
@@ -1497,10 +1516,11 @@ SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsF
 
 // alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
 // airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
-// calculée (par sommet), négative pour la calculer ici.
+// calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage).
 [ForceInline]
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airGiven = false,
-                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0)
+                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0,
+                 bool foliage = false)
 {
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
@@ -1524,11 +1544,14 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
     surface.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    if (foliage) {
+        surface.roughness = max(surface.roughness, 0.7); // reflet du ciel flou : vu rasant, il blanchissait aussi
+    }
     const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
-                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside);
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;

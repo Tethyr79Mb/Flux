@@ -325,7 +325,9 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   plus loin : deux programmes de sommets ne la donnent pas au bit près), puis `fragmentTree` l'éclaire en « plus
   proche ou égal » sans écrire la profondeur : les feuilles cachées sont écartées avant le programme, malgré son seuil
   d'alpha (gardé, sinon les parties transparentes des cartes seraient dessinées). Chaque pixel n'est éclairé qu'une
-  fois au lieu d'une fois par couche de feuilles. L'air et l'ombre des nuages sont calculés par sommet. Modèles :
+  fois au lieu d'une fois par couche de feuilles. Les feuilles sont éclairées sans reflet du soleil
+  (`ShadeFoliage` : à contre-jour, le Fresnel rasant les blanchissait), et leur face à l'ombre reçoit 30 % du soleil
+  qui les traverse. L'air et l'ombre des nuages sont calculés par sommet. Modèles :
   `assets/Modeles/Arbre`, générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à
   la portée du composant (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
   Au loin, les imposteurs s'espacent (une part inverse de la distance, un peu agrandis) et rapetissent près de la
