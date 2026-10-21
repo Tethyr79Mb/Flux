@@ -1472,13 +1472,15 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 }
 
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
-// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre. Sans seuil
-// d'alpha : la pré-passe (vertexTreeDepth) a déjà jeté les pixels transparents, seuls les visibles arrivent ici.
+// (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre. Après la
+// pré-passe (vertexTreeDepth), les feuilles cachées sont écartées avant ce programme (profondeur testée sans être
+// écrite : le seuil d'alpha ne l'empêche pas). Le seuil reste nécessaire : là où la carte est transparente, la
+// profondeur est celle de ce qui est derrière, plus loin, et la carte entière serait dessinée.
 [shader("fragment")]
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, true, false, true, input.airTransmittance, input.airScattered, input.clouds);
+    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds);
     output.motion = Motion(input.base);
     return output;
 }

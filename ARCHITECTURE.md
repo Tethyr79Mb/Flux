@@ -321,12 +321,13 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   touchée), puis écrit leurs nombres dans les commandes : un `DrawIndexedIndirect` par primitive de modèle et par liste.
   `vertexTree` lit la place et la rotation de chaque arbre et le balance au vent ; `fragmentTree` ne retourne pas les
   normales des feuilles (tournées vers l'extérieur de la couronne des deux côtés). Le feuillage (seuil d'alpha) passe
-  d'abord en pré-passe de profondeur (`vertexTreeDepth` + `fragmentShadow`, couleur non écrite), puis `fragmentTree`
-  l'éclaire sans rien jeter, profondeur « plus proche ou égale » à celle de la pré-passe (écrite un peu plus loin,
-  décalage de profondeur, car deux programmes de sommets ne donnent pas la même profondeur au bit près) : chaque pixel n'est éclairé qu'une fois au lieu d'une
-  fois par couche de feuilles. L'air et l'ombre des nuages sont calculés par sommet. Modèles : `assets/Modeles/Arbre`,
-  générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à la portée du composant
-  (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
+  d'abord en pré-passe de profondeur (`vertexTreeDepth` + `fragmentShadow`, couleur non écrite, profondeur un peu
+  plus loin : deux programmes de sommets ne la donnent pas au bit près), puis `fragmentTree` l'éclaire en « plus
+  proche ou égal » sans écrire la profondeur : les feuilles cachées sont écartées avant le programme, malgré son seuil
+  d'alpha (gardé, sinon les parties transparentes des cartes seraient dessinées). Chaque pixel n'est éclairé qu'une
+  fois au lieu d'une fois par couche de feuilles. L'air et l'ombre des nuages sont calculés par sommet. Modèles :
+  `assets/Modeles/Arbre`, générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à
+  la portée du composant (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
   Au loin, les imposteurs s'espacent (une part inverse de la distance, un peu agrandis) et rapetissent près de la
   portée ; `fragmentPlanet` peint la cime des forêts sur le sol (mêmes taches et climat, `ForestAt`, calculés par
   sommet) à partir de la distance des imposteurs. L'air des arbres est calculé par sommet (`TreeVertexOutput`).

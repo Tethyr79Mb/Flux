@@ -272,7 +272,7 @@ namespace Flux {
             // Programme de pixel presque vide pour la mesure (Pipelines::geometryOnly), ou aucun.
             const char* geometryFragment = nullptr;
             // Seuil d'alpha avec pré-passe de profondeur (Pipelines::depthMasked, ce programme de sommets) : les
-            // pipelines à seuil n'éclairent ensuite que les pixels de même profondeur, sans rien jeter.
+            // pipelines à seuil n'éclairent ensuite que les pixels de même profondeur, sans l'écrire.
             const char* depthVertex = nullptr;
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
@@ -388,7 +388,8 @@ namespace Flux {
                 desc.writeColor = true;
             }
             // Seuil d'alpha et transparents : le programme qui peut jeter des pixels. Après une pré-passe : la
-            // profondeur est déjà écrite, seuls les pixels qu'elle a gardés (de même profondeur) sont éclairés.
+            // profondeur est déjà écrite ; sans l'écrire à nouveau, les pixels cachés sont écartés avant le programme
+            // malgré son seuil.
             desc.fragmentEntryPoint = kind.maskedFragment;
             const auto createMasked = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode) {
                 if (!kind.depthVertex) {
