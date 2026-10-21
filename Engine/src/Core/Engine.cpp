@@ -30,6 +30,8 @@
 #include "Flux/UI/DrawList.hpp"
 #include "Interface/InterfaceLibrary.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -50,6 +52,18 @@ namespace Flux {
         std::filesystem::path InputActionsFile() {
             return Platform::GetExecutableDirectory() / "Touches.json";
         }
+        // Sauvegarde rapide : une seule, à côté de l'exécutable. La scène est un fichier de scène ordinaire (on peut
+        // l'ouvrir dans l'éditeur) ; à côté, ce qu'elle ne garde pas : le siège où est assis le joueur.
+        std::filesystem::path QuickSaveDirectory() {
+            return Platform::GetExecutableDirectory() / "Sauvegardes";
+        }
+        std::filesystem::path QuickSaveSceneFile() {
+            return QuickSaveDirectory() / "rapide.scene.json";
+        }
+        std::filesystem::path QuickSavePlayerFile() {
+            return QuickSaveDirectory() / "rapide.joueur.json";
+        }
+        constexpr double NoticeSeconds = 2.5;
         using Clock = std::chrono::steady_clock;
 
         // Caméra qui suit le personnage : un peu moins que la verticale, au-dessus comme en dessous.
@@ -299,6 +313,9 @@ namespace Flux {
         actions.Add("Pilote automatique", "Vaisseau", Key::L);
         // Vers la destination que vise le nez (station, planète, objectif de mission) ; en warp : le couper.
         actions.Add("Warp", "Vaisseau", Key::J);
+        // F5 / F6 servent déjà à l'éditeur (jouer, pause).
+        actions.Add("Sauvegarde rapide", "Partie", Key::F8);
+        actions.Add("Chargement rapide", "Partie", Key::F9);
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
         m_impacts.reserve(ReservedProjectiles);
@@ -492,6 +509,9 @@ namespace Flux {
                 list.AddText({static_cast<float>(size.x) - extent.x - 8.0f, static_cast<float>(size.y) - extent.y - 6.0f}, version,
                              VersionSize, {1.0f, 1.0f, 1.0f, 0.45f});
             }
+            if (m_noticeSeconds > 0.0 && m_drawScreenUi) {
+                DrawNotice({static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds);
+            }
             if (m_loading) {
                 DrawLoadingScreen({static_cast<float>(size.x), static_cast<float>(size.y)}); // par-dessus la scène
             }
@@ -511,6 +531,7 @@ namespace Flux {
             UpdateLoading(deltaSeconds);
             RunInterfaceActions(); // avant le changement de scène : une fonction peut en demander un
             LoadRequestedScene();
+            RunQuickSave(); // après le changement de scène : F9 l'emporte sur une scène demandée à la même image
         }
         return 0;
     }
@@ -531,6 +552,10 @@ namespace Flux {
                                 && !m_ui->WantsKeyboard());
         if (std::optional<std::string> next = SceneChange::Update(m_scene, deltaSeconds, confirmed)) {
             RequestScene(std::move(*next));
+        }
+        if (!m_loading) { // pendant le chargement, la scène n'est pas encore celle que voit le joueur
+            m_quickSaveRequested |= WasActionPressed("Sauvegarde rapide");
+            m_quickLoadRequested |= WasActionPressed("Chargement rapide");
         }
 
         if (!m_physics) {
@@ -1128,6 +1153,102 @@ namespace Flux {
             return;
         }
         m_audio->StopAll(); // ses sons aussi ; ceux de la nouvelle partent à la prochaine image
+    }
+
+    void Engine::RunQuickSave() {
+        const bool save = std::exchange(m_quickSaveRequested, false);
+        const bool load = std::exchange(m_quickLoadRequested, false);
+        if (m_gameState == GameState::Stopped) {
+            return; // jeu arrêté dans l'éditeur à la même image : la scène éditée est déjà restaurée
+        }
+        if (save) {
+            QuickSave();
+        }
+        if (load) {
+            QuickLoad();
+        }
+    }
+
+    void Engine::QuickSave() {
+        std::error_code error;
+        std::filesystem::create_directories(QuickSaveDirectory(), error);
+        if (auto saved = SceneSerializer::Save(m_scene, m_components, QuickSaveSceneFile(), GetPrefabReader()); !saved) {
+            Log::Error("sauvegarde rapide : {}", saved.error());
+            ShowNotice("Sauvegarde impossible : " + saved.error());
+            return;
+        }
+        // Assis, il le reste au chargement (en vol, sinon il tomberait de son siège). Un siège en train de s'asseoir
+        // ou de se lever compte comme assis : l'étape est courte.
+        nlohmann::json player = nlohmann::json::object();
+        const Entity entity = m_physics ? m_physics->GetPlayer() : NullEntity;
+        if (const auto* character = m_scene.IsValid(entity) ? m_scene.TryGet<CharacterComponent>(entity) : nullptr;
+            character && character->seat != NullEntity && m_scene.IsValid(character->seat)) {
+            player["seat"] = m_scene.GetId(character->seat).ToString();
+        }
+        if (auto saved = SceneSerializer::WriteFile(QuickSavePlayerFile(), player.dump(2)); !saved) {
+            Log::Error("sauvegarde rapide : {}", saved.error());
+            ShowNotice("Sauvegarde impossible : " + saved.error());
+            return;
+        }
+        Log::Info("partie sauvegardée dans {}", Platform::ToGenericUtf8(QuickSaveSceneFile()));
+        ShowNotice("Partie sauvegardée");
+    }
+
+    void Engine::QuickLoad() {
+        std::error_code error;
+        if (!std::filesystem::exists(QuickSaveSceneFile(), error)) {
+            ShowNotice("Aucune sauvegarde rapide");
+            return;
+        }
+        if (auto loaded = LoadScene(QuickSaveSceneFile()); !loaded) {
+            Log::Error("chargement rapide : {}", loaded.error());
+            ShowNotice("Chargement impossible : " + loaded.error());
+            return; // la partie continue sur la scène en cours (LoadScene ne l'a pas touchée)
+        }
+        m_audio->StopAll();
+        m_followShown = -1.0f; // caméra replacée d'un coup derrière le personnage
+
+        // Fichier du joueur absent ou illisible : il est debout là où il était, rien de plus.
+        nlohmann::json player;
+        if (std::ifstream file(QuickSavePlayerFile(), std::ios::binary); file) {
+            player = nlohmann::json::parse(file, nullptr, false);
+        }
+        const Entity entity = m_physics ? m_physics->GetPlayer() : NullEntity;
+        auto* character = m_scene.IsValid(entity) ? m_scene.TryGet<CharacterComponent>(entity) : nullptr;
+        if (character && player.is_object() && player.contains("seat") && player["seat"].is_string()) {
+            const std::optional<Uuid> id = Uuid::Parse(player["seat"].get<std::string>());
+            const Entity seat = id ? m_scene.FindById(*id) : NullEntity;
+            if (const auto* component = seat != NullEntity ? m_scene.TryGet<SeatComponent>(seat) : nullptr) {
+                character->seat = seat;
+                character->seatState = SeatState::Seated;
+                character->seatTime = 0.0f;
+                // Aux commandes : il garde la vitesse enregistrée au lieu de freiner (comme en s'asseyant).
+                if (const Entity ship = component->pilot ? m_scene.GetShip(seat) : NullEntity; ship != NullEntity) {
+                    ShipComponent& shipComponent = m_scene.Get<ShipComponent>(ship);
+                    shipComponent.cruiseSpeed = -shipComponent.velocity.z;
+                }
+            }
+        }
+        ShowNotice("Partie chargée");
+    }
+
+    void Engine::ShowNotice(std::string text) {
+        m_notice = std::move(text);
+        m_noticeSeconds = NoticeSeconds;
+    }
+
+    void Engine::DrawNotice(Math::Vector2f screen, double deltaSeconds) {
+        if (!m_loading) {
+            m_noticeSeconds -= deltaSeconds; // l'écran de chargement le cache : il attend la fin pour décompter
+        }
+        // En haut au centre, au-dessus de tout ; s'efface dans la dernière demi-seconde.
+        constexpr float NoticeSize = 22.0f;
+        const float alpha = static_cast<float>(std::clamp(m_noticeSeconds / 0.5, 0.0, 1.0));
+        UI::DrawList& list = m_renderer->GetOverlay();
+        const Math::Vector2f extent = list.MeasureText(m_notice, NoticeSize);
+        const Math::Vector2f position{(screen.x - extent.x) * 0.5f, screen.y * 0.08f};
+        list.AddText({position.x + 1.5f, position.y + 1.5f}, m_notice, NoticeSize, {0.0f, 0.0f, 0.0f, 0.6f * alpha});
+        list.AddText(position, m_notice, NoticeSize, {1.0f, 1.0f, 1.0f, alpha});
     }
 
     void Engine::RunInterfaceActions() {

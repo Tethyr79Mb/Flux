@@ -70,6 +70,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Vaisseaux : pilotage 6 axes avec inertie, vol atmosphérique, assiette qui suit la courbure de la planète (aide à plat), mode voyage (ralenti à l'approche d'une planète, permis en haute atmosphère et bridé à mesure que l'air s'épaissit, vitesse rendue à sa sortie), sièges, atterrissage stabilisé.
 - 🔧 Animation squelettique (fondus, repos/marche/course/chute/s'asseoir). À améliorer : pas d'accès aux os pour le gameplay, pas d'événements d'animation.
 - ✅ Son 3D (miniaudio), actions d'entrée réassignables (Touches.json).
+- 🔧 Sauvegarde rapide (F8 enregistre la partie, F9 la recharge, dans le jeu et en mode Jouer de l'éditeur) : toute la scène en cours, vitesses des vaisseaux et siège du joueur compris. À améliorer : un seul emplacement, pas d'état des systèmes du jeu (mission en cours), ni du pilote automatique ou du warp en cours.
 - ✅ Composant « Monde » (comme les World Settings d'Unreal) : gravité et air hors planètes, freinage par l'air des objets et des personnages (aussi dans l'atmosphère des planètes).
 
 ### Interface (FluxUI)

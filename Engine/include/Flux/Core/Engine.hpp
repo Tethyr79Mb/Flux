@@ -276,6 +276,12 @@ namespace Flux {
         std::uint32_t m_loadingMostPending = 0;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
+        // Sauvegarde et chargement rapides (F8 / F9) : demandés pendant l'image, faits à la fin (RunQuickSave).
+        bool m_quickSaveRequested = false;
+        bool m_quickLoadRequested = false;
+        // Message court en haut de l'écran (« Partie sauvegardée ») et le temps qu'il reste affiché (s).
+        std::string m_notice;
+        double m_noticeSeconds = 0.0;
         std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
         std::shared_ptr<const Planetology::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
@@ -367,6 +373,12 @@ namespace Flux {
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
+        void RunQuickSave();
+        void QuickSave();
+        // Recharge la sauvegarde rapide, joueur remis sur son siège s'il y était.
+        void QuickLoad();
+        void ShowNotice(std::string text);
+        void DrawNotice(Math::Vector2f screen, double deltaSeconds);
         // Nouveau monde physique pour la scène actuelle, corps déjà créés.
         void StartPhysics();
         void RunInterfaceActions();
