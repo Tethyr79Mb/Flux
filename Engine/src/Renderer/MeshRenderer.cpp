@@ -814,9 +814,12 @@ namespace Flux {
         }
         const float tanY = std::tan(0.5f * camera.verticalFov);
         m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, models);
+        // surface.zw : éclairage du feuillage (ShadeFoliage), du composant.
+        const VegetationComponent leaves = m_vegetationComponent ? *m_vegetationComponent : VegetationComponent{};
         m_treeDraw = static_cast<std::uint32_t>(m_drawData.size());
         m_drawData.push_back({Math::Matrix4f::Identity(), {{{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}}},
-                              {}, {}, Math::Matrix4f::Identity(), {1.0f, 1.0f, 1.0f, 1.0f}, {}, {1.0f, 1.0f, 0.0f, 0.0f}});
+                              {}, {}, Math::Matrix4f::Identity(), {1.0f, 1.0f, 1.0f, 1.0f}, {},
+                              {1.0f, 1.0f, std::clamp(leaves.leafWrap, 0.0f, 1.0f), std::clamp(leaves.leafTransmission, 0.0f, 1.0f)}});
     }
 
     void MeshRenderer::AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light) {

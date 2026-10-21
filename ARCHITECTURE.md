@@ -327,7 +327,9 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   d'alpha (gardé, sinon les parties transparentes des cartes seraient dessinées). Chaque pixel n'est éclairé qu'une
   fois au lieu d'une fois par couche de feuilles. Les feuilles sont éclairées sans reflet du soleil
   (`ShadeFoliage` : à contre-jour, le Fresnel rasant les blanchissait), un éclairage enveloppant (la lumière déborde un
-  peu sur la face à l'ombre), et cette face reçoit 40 % du soleil qui les traverse. L'air et l'ombre des nuages sont calculés par sommet. Modèles :
+  peu sur la face à l'ombre), et cette face reçoit une part du soleil qui les traverse
+  (« Lumière enveloppante » 0,3 et « Lumière traversante » 0,4 du composant Végétation, passées par la `DrawData` neutre
+  des arbres, `surface.zw`). L'air et l'ombre des nuages sont calculés par sommet. Modèles :
   `assets/Modeles/Arbre`, générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à
   la portée du composant (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
   Au loin, les imposteurs s'espacent (une part inverse de la distance, un peu agrandis) et rapetissent près de la

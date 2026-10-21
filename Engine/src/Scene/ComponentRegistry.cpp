@@ -185,7 +185,9 @@ namespace Flux {
             .Field("maxScale", "Taille maximale (x)", &VegetationComponent::maxScale, {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2})
             .Field("lodDistance", "Simplifié au-delà de (m)", &VegetationComponent::lodDistance, {.speed = 1.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
             .Field("farDistance", "Lointain au-delà de (m)", &VegetationComponent::farDistance, {.speed = 1.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
-            .Field("range", "Visibles jusqu'à (m)", &VegetationComponent::range, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0});
+            .Field("range", "Visibles jusqu'à (m)", &VegetationComponent::range, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
+            .Field("leafWrap", "Lumière enveloppante", &VegetationComponent::leafWrap, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("leafTransmission", "Lumière traversante", &VegetationComponent::leafTransmission, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<InteriorComponent>("interior", "Intérieur")
             .Field("size", "Taille (m)", &InteriorComponent::size, {.speed = 0.01, .min = 0.0, .max = 1.0e4})
             .Field("ambient", "Lumière ambiante", &InteriorComponent::ambient, {.alpha = false})

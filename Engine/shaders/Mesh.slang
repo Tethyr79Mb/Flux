@@ -107,7 +107,7 @@ struct DrawData
     // entités de teintes différentes.
     float4 tint;              // multiplie la couleur du matériau
     float4 emissive;          // ajouté à celui du matériau ; w : 1 si surface remplace métal et rugosité
-    float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent)
+    float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent) ; arbres : zw, ShadeFoliage
 };
 
 // Doit correspondre à DrawParams dans MeshRenderer.cpp : réglages de l'appel. Les modèles n'y lisent que cascade et
@@ -588,21 +588,19 @@ float3 Shade(Surface s, float3 toLight, float3 light)
     return (s.diffuse * (1.0 - fresnel) + specular) * light * nl;
 }
 
-// Part du soleil qui traverse une feuille et ressort, diffuse, de l'autre côté (feuilles réelles : 10 à 30 %, un peu
-// plus ici : la couronne en couches renvoie aussi la lumière entre ses feuilles).
-static const float FoliageTransmission = 0.4;
-// Éclairage enveloppant : la lumière du soleil déborde au-delà de la face éclairée (feuilles inclinées dans tous les
-// sens autour de la normale de la couronne, qui n'est qu'une moyenne).
-static const float FoliageWrap = 0.3;
 
 // Feuillage : ses normales sont celles de la couronne, pas des feuilles. Le reflet de Cook-Torrance n'y a pas de
 // sens, et à contre-jour (lumière derrière la carte, vue rasante) son Fresnel tend vers 1 : les feuilles viraient au
 // blanc. Diffus seulement, et la face à l'ombre reçoit la lumière qui traverse, de la couleur de la feuille.
-float3 ShadeFoliage(Surface s, float3 toLight, float3 light)
+// leaves (VegetationComponent) : x, éclairage enveloppant (la lumière déborde au-delà de la face éclairée : les
+// feuilles sont inclinées dans tous les sens autour de la normale de la couronne, qui n'est qu'une moyenne) ; y, part
+// du soleil qui traverse une feuille vue à contre-jour (feuilles réelles : 10 à 30 %, plus ici car la couronne en
+// couches renvoie aussi la lumière entre ses feuilles).
+float3 ShadeFoliage(Surface s, float3 toLight, float3 light, float2 leaves)
 {
     const float nl = dot(s.normal, toLight);
-    const float front = saturate((nl + FoliageWrap) / (1.0 + FoliageWrap));
-    return s.diffuse * light * max(front, -nl * FoliageTransmission);
+    const float front = saturate((nl + leaves.x) / (1.0 + leaves.x));
+    return s.diffuse * light * max(front, -nl * leaves.y);
 }
 
 // Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
@@ -721,9 +719,9 @@ float3 Radiance(float3 color)
 // Albédo moyen du sol des planètes, pour la lumière qu'il renvoie (herbe, roche et terre autour de 0,15 à 0,3).
 static const float GroundBounceAlbedo = 0.2;
 
-// foliage : éclairée par ShadeFoliage, et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
+// foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
-                    bool foliage = false)
+                    bool foliage = false, float2 leaves = float2(0.0))
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
@@ -757,7 +755,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         const float3 bounce = groundLit * (GroundBounceAlbedo * (0.5 - 0.5 * dot(surface.normal, up)) * (1.0 - inside) * occlusion);
         ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight + surface.diffuse * bounce;
     }
-    const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun) : Shade(surface, toSun, sunColor * sun);
+    const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
     return direct + ambient + SceneLights(worldPosition, surface);
 }
 
@@ -1556,7 +1554,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
-                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage);
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
