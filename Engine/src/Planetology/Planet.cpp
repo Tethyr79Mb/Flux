@@ -734,6 +734,7 @@ namespace Flux::Planetology {
                                          - DirectionFromFace(key.face, GridToFace(x0, key.level), GridToFace(y0, key.level))) * R;
         const double depth = SkirtDepth(terrain, octaves, edge);
         inputs.center = float4(dc, lc);
+        inputs.centerLow = float4(dc - Math::Vector3d(inputs.center[0], inputs.center[1], inputs.center[2]), 0.0);
         inputs.axisN = float4(f.normal, R);
         inputs.axisS = float4(f.s, terrain.GetRelief());
         inputs.axisT = float4(f.t, depth);
@@ -754,6 +755,9 @@ namespace Flux::Planetology {
                                         static_cast<std::int32_t>(static_cast<std::int64_t>(cell.y) & 255),
                                         static_cast<std::int32_t>(static_cast<std::int64_t>(cell.z) & 255), 0};
                 inputs.fractions[octave] = float4(p - cell, BaseFrequency * std::ldexp(1.0, static_cast<int>(k)) * scale);
+                const auto& high = inputs.fractions[octave];
+                inputs.fractionsLow[octave] = float4(p - cell - Math::Vector3d(high[0], high[1], high[2]),
+                                                     BaseFrequency * std::ldexp(1.0, static_cast<int>(k)) * scale - high[3]);
                 p *= 2.0;
             }
         }

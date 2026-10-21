@@ -94,6 +94,11 @@ namespace Flux::Vk {
         VkPhysicalDeviceFeatures anisotropy{};
         anisotropy.samplerAnisotropy = VK_TRUE;
         device->m_anisotropy = device->m_physicalDevice.enable_features_if_present(anisotropy);
+        // Doubles dans les shaders : la déformation du relief des grandes planètes (PlanetTile64.slang). GTX 1060 et
+        // RX 5700 les ont ; sans eux, les tuiles restent en float.
+        VkPhysicalDeviceFeatures float64{};
+        float64.shaderFloat64 = VK_TRUE;
+        device->m_float64 = device->m_physicalDevice.enable_features_if_present(float64);
         // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
         device->m_bufferMarkers = device->m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
         if (device->m_physicalDevice.is_extension_present(VK_EXT_DEVICE_FAULT_EXTENSION_NAME)) {

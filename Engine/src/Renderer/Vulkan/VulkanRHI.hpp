@@ -175,6 +175,7 @@ namespace Flux::Vk {
 
         std::string_view GetName() const override { return m_device->GetName(); }
         std::string_view GetApiVersion() const override { return m_device->GetApiVersion(); }
+        bool HasFloat64() const override { return m_device->HasFloat64(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override { m_device->WaitIdle(); }
 

@@ -276,7 +276,8 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 
 - Cube-sphère : 6 faces en quadtree, tuiles de 33×33 avec jupes, morphing CDLOD entre niveaux.
 - Relief = une formule (`Terrain::GetHeight`), dupliquée dans `shaders/PlanetTile.slang` pour le GPU. Les deux
-  versions doivent rester égales (`PlanetGpuTests`). Pas de terrain stocké ni creusable. Couches de bruit de Perlin
+  versions doivent rester égales (`PlanetGpuTests`) ; la déformation y est en double quand le GPU le permet
+  (`PlanetTile64.slang`, voir `PLANETOLOGY.md`). Pas de terrain stocké ni creusable. Couches de bruit de Perlin
   avec leur pente exacte : continents, zones de collines, chaînes de montagnes (bandes où un bruit lent passe par
   zéro), sommets, ravines, collines, détail. Les couches sont lues à un point déformé par la pente d'un bruit lent
   (côtes et chaînes tordues). Les sommets (`Terrain::Peaks`) sont placés un par maille d'un réseau 3D (27 mailles
