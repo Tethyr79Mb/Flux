@@ -284,6 +284,8 @@ namespace Flux {
         void Pose(const GpuModel& model, const AnimatorComponent* animator);
         void Upload(const Camera& camera, float aspect, const SkyLighting& sky, const TemporalView& temporal, std::uint32_t frameIndex);
         static bool IsTransparent(const MeshDraw& draw, const GpuMaterial& material);
+        // Choisit les cascades à redessiner ; les autres gardent leur carte de l'image d'avant, recalée sur la caméra.
+        void ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun);
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
@@ -340,6 +342,19 @@ namespace Flux {
         std::unique_ptr<RHI::Texture> m_shadowMap;
         std::unique_ptr<RHI::Sampler> m_shadowSampler;
         std::array<ShadowCascade, ShadowCascadeCount> m_cascades{};
+        // Les deux cascades lointaines sont refaites à tour de rôle, une image sur deux : celle qui attend garde sa
+        // carte (passe à profondeur gardée), sa matrice suit la caméra (MoveShadowCascade). Telles que dessinées, avec
+        // la caméra et le soleil d'alors.
+        struct DrawnCascade
+        {
+            bool valid = false;
+            ShadowCascade cascade;
+            Math::WorldPosition eye;
+            Math::Vector3f toSun;
+        };
+        std::array<DrawnCascade, ShadowCascadeCount> m_drawnCascades{};
+        std::array<bool, ShadowCascadeCount> m_drawCascade{}; // dessinée à cette image
+        bool m_keepShadows = false;                            // au moins une gardée : la carte n'est pas effacée
 
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une image à l'autre.
         std::vector<RelativeTransform> m_relativeTransforms;

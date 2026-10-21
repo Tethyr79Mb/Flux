@@ -34,4 +34,9 @@ namespace Flux {
                                                                                  const Math::Vector3f& toSun,
                                                                                  std::uint32_t resolution,
                                                                                  float casterDistance = 300.0f);
+
+    // La même cascade (même carte) vue d'une caméra déplacée de `cameraOffset` (nouvelle position - ancienne, en
+    // mètres) : sa matrice prend les positions relatives à la nouvelle caméra. Sert à garder la carte d'une image
+    // précédente.
+    FLUX_API ShadowCascade MoveShadowCascade(const ShadowCascade& cascade, const Math::Vector3f& cameraOffset);
 }

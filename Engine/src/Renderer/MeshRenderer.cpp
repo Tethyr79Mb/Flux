@@ -522,6 +522,7 @@ namespace Flux {
         const ViewCone view(camera, aspect);
         // Avant les entités : celles qui ne sont ni en vue ni dans une ombre sont écartées dès maintenant.
         m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
+        ChooseShadowCascades(camera, sky.toSun);
         m_planets->BeginFrame(frameIndex);
         m_vegetation->BeginFrame(frameIndex);
         m_vegetationComponent = nullptr;
@@ -979,6 +980,29 @@ namespace Flux {
         std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
+    }
+
+    // Les cascades proches à chaque image ; les lointaines (FirstAlternateCascade et suivantes) une image sur deux, à
+    // tour de rôle : l'ombre au-delà de 20 m suit à 30 images/s, sans perte de finesse, pour la moitié de leur coût
+    // (les arbres surtout). Refaites tout de suite si le soleil a tourné ou si la caméra a sauté (téléportation,
+    // changement de scène) : la carte gardée ne couvrirait plus la vue.
+    void MeshRenderer::ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun) {
+        constexpr std::size_t FirstAlternateCascade = 2;
+        m_keepShadows = false;
+        for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
+            DrawnCascade& drawn = m_drawnCascades[c];
+            const Math::Vector3d moved = Math::Delta(drawn.eye, camera.position);
+            const bool keep = c >= FirstAlternateCascade && drawn.valid && drawn.toSun == toSun
+                           && Math::Length(moved) < 0.1 * static_cast<double>(drawn.cascade.radius)
+                           && m_preparedFrame % 2 != c % 2;
+            m_drawCascade[c] = !keep;
+            if (keep) {
+                m_cascades[c] = MoveShadowCascade(drawn.cascade, Math::Vector3f(moved));
+                m_keepShadows = true;
+            } else {
+                drawn = {true, m_cascades[c], camera.position, toSun};
+            }
+        }
     }
 
     // L'entité peut faire de l'ombre dans la cascade : sa sphère touche le volume vu par la carte (le carré couvert,
@@ -1445,15 +1469,23 @@ namespace Flux {
     }
 
     void MeshRenderer::DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
-        commands.BeginRenderPass({.clearColor = {}, .depth = m_shadowMap.get(), .clearDepth = 1.0f, .color = false});
+        // Une cascade gardée (ChooseShadowCascades) : la carte n'est pas effacée, seulement les cascades redessinées.
+        commands.BeginRenderPass({.clearColor = {}, .depth = m_shadowMap.get(), .clearDepth = 1.0f, .color = false,
+                                  .loadDepth = m_keepShadows});
         BindState state;
         for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
+            if (!m_drawCascade[c]) {
+                continue;
+            }
             // Cascade c : colonne c % 2, ligne c / 2 de la carte.
             const std::int32_t x = static_cast<std::int32_t>((c % 2) * ShadowCascadeResolution);
             const std::int32_t y = static_cast<std::int32_t>((c / 2) * ShadowCascadeResolution);
             constexpr auto size = static_cast<float>(ShadowCascadeResolution);
             commands.SetViewport({static_cast<float>(x), static_cast<float>(y), size, size});
             commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
+            if (m_keepShadows) {
+                commands.ClearDepth({x, y, ShadowCascadeResolution, ShadowCascadeResolution}, 1.0f);
+            }
             DrawBatches(commands, state, frameIndex, 2 + c);
             DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
             DrawTrees(commands, state, frameIndex, static_cast<Planetology::VegetationRenderer::List>(Planetology::VegetationRenderer::Shadow + c), c);

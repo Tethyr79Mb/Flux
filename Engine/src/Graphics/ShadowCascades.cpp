@@ -63,4 +63,15 @@ namespace Flux {
         }
         return cascades;
     }
+
+    ShadowCascade MoveShadowCascade(const ShadowCascade& cascade, const Math::Vector3f& cameraOffset) {
+        // Un point fixe du monde est décalé de -cameraOffset par rapport à la nouvelle caméra : la translation compense.
+        ShadowCascade moved = cascade;
+        moved.center = cascade.center - cameraOffset;
+        auto& c = moved.lightViewProjection.columns;
+        for (int row = 0; row < 3; ++row) {
+            c[3][row] += c[0][row] * cameraOffset.x + c[1][row] * cameraOffset.y + c[2][row] * cameraOffset.z;
+        }
+        return moved;
+    }
 }

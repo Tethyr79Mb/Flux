@@ -290,6 +290,9 @@ namespace Flux::RHI {
         const Texture* secondColorTarget = nullptr;
         // Tampon de profondeur gardé et lisible par les shaders après la passe (CreateRenderTarget sampled).
         bool keepDepth = false;
+        // Sans couleur seulement : la profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a
+        // déjà remplie) ; CommandList::ClearDepth efface les parties à redessiner.
+        bool loadDepth = false;
     };
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
@@ -300,6 +303,8 @@ namespace Flux::RHI {
         virtual void EndRenderPass() = 0;
         virtual void SetViewport(const Viewport& viewport) = 0;
         virtual void SetScissor(const Rect& rect) = 0;
+        // Dans une passe : remplit `rect` de la profondeur `depth` (passe à profondeur gardée, RenderPassDesc::loadDepth).
+        virtual void ClearDepth(const Rect& rect, float depth) = 0;
         virtual void BindPipeline(const Pipeline& pipeline) = 0;
         // Pipeline lié avant : ses layouts disent où vont les groupes. Un groupe reste lié d'un pipeline à un autre
         // si les deux déclarent les mêmes layouts jusqu'à cet indice.
