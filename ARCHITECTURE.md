@@ -296,7 +296,13 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   et 2 cellules au plus (la plus faible des trois est retirée des autres, sans saut ; sous 5 % de poids, une cellule
   ou la deuxième matière n'est pas lue), 2 lectures par point (couleur + rugosité en alpha ; normales en rouge-vert +
   occlusion en bleu), couleur moyenne lue seulement au-delà de 600 m.
-- Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Atmosphère et océan (tuiles sous le niveau de la mer redessinées en surface d'eau). Caméra dans l'air, deux tables
+  de l'air sont refaites en début d'image (`SkyRenderer::Bake`, `skyTableFragment` et `airTableFragment` dans
+  `Sky.slang`) : le ciel vu de la caméra (256 x 128, resserré près de l'horizon) et l'air jusqu'à ce qu'elle voit
+  (64 x 64 regards sur le champ élargi, 64 distances). Elles gardent les sommes avant les fonctions de phase,
+  appliquées à la lecture : le halo du soleil reste net. Le ciel, et l'air du sol, de l'eau, des arbres (par sommet),
+  des modèles et des nuages (par pixel), y lisent au lieu de marcher le long du regard ; vu de l'espace, ou pour un
+  point hors de la table (derrière la caméra), la marche d'avant.
 - Nuages (`CloudsComponent`) : une couche épaisse entre deux sphères (base et sommet), sans maillage. Un triangle
   plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la
   caméra, il marche en 8 pas dans le volume (forme en cumulus, érosion, lumière du soleil traversée vers le haut) ;

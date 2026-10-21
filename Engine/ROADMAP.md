@@ -95,6 +95,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
+- 🔧 Ciel et air lus dans deux tables refaites à chaque image quand la caméra est dans l'air (Hillaire 2020), au lieu
+  de 16 à 24 pas par sommet et par pixel ; écart mesuré sous 1,5 % de la marche d'avant. Limites : vu de l'espace,
+  marche d'avant (l'air n'y couvre qu'un anneau) ; une seule diffusion (pas de diffusion multiple).
 - ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.

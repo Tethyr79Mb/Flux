@@ -118,6 +118,8 @@ namespace Flux {
         constexpr std::uint32_t EnvironmentSlot = 5;
         constexpr std::uint32_t InstanceSlot = 6;
         constexpr std::uint32_t TreeSlot = 7;
+        constexpr std::uint32_t AirRayleighSlot = 8;
+        constexpr std::uint32_t AirMieSlot = 9;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -203,6 +205,8 @@ namespace Flux {
             RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{InstanceSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TreeSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{AirRayleighSlot, RHI::BindingType::Texture, both}, // lue par sommet (sol, eau, arbres) et par pixel
+            RHI::Binding{AirMieSlot, RHI::BindingType::Texture, both},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -500,6 +504,11 @@ namespace Flux {
         if (sky.environment && sky.environment != m_boundEnvironment[frameIndex]) {
             m_frameGroups[frameIndex]->SetTexture(EnvironmentSlot, *sky.environment, *sky.environmentSampler);
             m_boundEnvironment[frameIndex] = sky.environment;
+        }
+        if (sky.airRayleigh != m_boundAir[frameIndex]) {
+            m_frameGroups[frameIndex]->SetTexture(AirRayleighSlot, *sky.airRayleigh, *sky.airSampler);
+            m_frameGroups[frameIndex]->SetTexture(AirMieSlot, *sky.airMie, *sky.airSampler);
+            m_boundAir[frameIndex] = sky.airRayleigh;
         }
         // La soustraction des positions se fait en double (secteurs compris) : le GPU ne voit que de petits nombres.
         scene.ComputeRelativeTransforms(camera.position, m_relativeTransforms);

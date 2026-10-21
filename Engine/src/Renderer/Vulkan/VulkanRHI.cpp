@@ -82,6 +82,10 @@ namespace Flux::Vk {
     }
 
     namespace {
+        // Shaders qui lisent une texture remplie par une passe (BeginTexturePass) : par pixel, et par sommet (table de
+        // l'air lue par les sommets du sol).
+        constexpr VkPipelineStageFlags2 TexturePassReaders = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
                              VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
@@ -231,7 +235,7 @@ namespace Flux::Vk {
         m_colorTarget = &target;
         m_colorLayer = desc.colorLayer;
         TransitionImage(m_commandBuffer, target.GetImage().GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, TexturePassReaders, VK_ACCESS_2_NONE,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                         VK_IMAGE_ASPECT_COLOR_BIT, desc.colorLayer);
         VkRenderingAttachmentInfo colorAttachment{};
@@ -247,7 +251,7 @@ namespace Flux::Vk {
             const auto& second = static_cast<const RhiTexture&>(*desc.secondColorTarget);
             m_secondTarget = &second;
             TransitionImage(m_commandBuffer, second.GetImage().GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, TexturePassReaders, VK_ACCESS_2_NONE,
                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT, 0);
             colorAttachments[1] = colorAttachment;
@@ -314,13 +318,13 @@ namespace Flux::Vk {
         if (const RhiTexture* second = std::exchange(m_secondTarget, nullptr)) {
             TransitionImage(m_commandBuffer, second->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, TexturePassReaders,
                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0);
         }
         if (const RhiTexture* target = std::exchange(m_colorTarget, nullptr)) {
             TransitionImage(m_commandBuffer, target->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, TexturePassReaders,
                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, m_colorLayer);
         }
     }

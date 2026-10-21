@@ -35,6 +35,14 @@ namespace Flux {
         constexpr std::uint32_t DataSlot = 0;
         constexpr std::uint32_t PanoramaSlot = 1;
         constexpr std::uint32_t BackgroundSlot = 2;
+        constexpr std::uint32_t SkyRayleighSlot = 3;
+        constexpr std::uint32_t SkyMieSlot = 4;
+
+        // Tailles des tables de l'air : AtmosphereSkySize, puis AtmosphereAirSize x AtmosphereAirTiles dans
+        // shaders/Atmosphere.slang. AirNear : AtmosphereAirNear.
+        constexpr RHI::Extent SkyTableSize{256, 128};
+        constexpr RHI::Extent AirTableSize{64 * 8, 64 * 8};
+        constexpr double AirNear = 1000.0;
 
         // Texture cube du fond généré : environ un texel par pixel en 1080p (champ de 70°). 16 bits flottants par
         // canal : la nébuleuse peut dépasser 1 avant la luminosité, sans bandes dans les dégradés sombres. 48 Mo.
@@ -96,11 +104,22 @@ namespace Flux {
         }
         sky->m_blackCube = std::move(*blackCube);
         sky->m_background = std::move(*background);
+        // 16 bits flottants : sommes et épaisseurs (en hauteurs d'échelle) tiennent sans perte visible.
+        for (auto* table : {&sky->m_skyRayleigh, &sky->m_skyMie, &sky->m_airRayleigh, &sky->m_airMie}) {
+            const bool skyTable = table == &sky->m_skyRayleigh || table == &sky->m_skyMie;
+            auto texture = device.CreateRenderTarget(RHI::Format::RGBA16Float, skyTable ? SkyTableSize : AirTableSize, true);
+            if (!texture) {
+                return std::unexpected(texture.error());
+            }
+            *table = std::move(*texture);
+        }
 
         constexpr std::array bindings{
             RHI::Binding{DataSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
             RHI::Binding{PanoramaSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{BackgroundSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{SkyRayleighSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{SkyMieSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -119,6 +138,8 @@ namespace Flux {
             sky->m_boundPanorama[f] = sky->m_black.get();
             sky->m_groups[f]->SetTexture(BackgroundSlot, *sky->m_blackCube, *sky->m_cubeSampler);
             sky->m_boundBackground[f] = sky->m_blackCube.get();
+            sky->m_groups[f]->SetTexture(SkyRayleighSlot, *sky->m_skyRayleigh, *sky->m_cubeSampler);
+            sky->m_groups[f]->SetTexture(SkyMieSlot, *sky->m_skyMie, *sky->m_cubeSampler);
         }
 
         // Derrière tout : seulement là où la profondeur est restée celle de l'effacement (0, l'infini en reverse-Z).
@@ -160,6 +181,23 @@ namespace Flux {
             return std::unexpected(bakePipeline.error());
         }
         sky->m_bakePipeline = std::move(*bakePipeline);
+
+        // Tables de l'air : deux textures écrites à la fois.
+        RHI::PipelineDesc tableDesc;
+        tableDesc.shaderPath = desc.shaderPath;
+        tableDesc.bindGroupLayouts = layouts;
+        tableDesc.colorFormat = RHI::Format::RGBA16Float;
+        tableDesc.secondColorFormat = RHI::Format::RGBA16Float;
+        tableDesc.writeSecondColor = true;
+        tableDesc.fragmentEntryPoint = "skyTableFragment";
+        auto skyTablePipeline = device.CreatePipeline(tableDesc);
+        tableDesc.fragmentEntryPoint = "airTableFragment";
+        auto airTablePipeline = device.CreatePipeline(tableDesc);
+        if (!skyTablePipeline || !airTablePipeline) {
+            return std::unexpected(!skyTablePipeline ? skyTablePipeline.error() : airTablePipeline.error());
+        }
+        sky->m_skyTablePipeline = std::move(*skyTablePipeline);
+        sky->m_airTablePipeline = std::move(*airTablePipeline);
         return sky;
     }
 
@@ -296,7 +334,11 @@ namespace Flux {
         lighting.atmosphere = PrepareAtmosphere(scene, camera, lighting.sunColor);
         data.atmosphere = lighting.atmosphere;
         m_visible = component != nullptr || lighting.atmosphere.mie[3] > 0.0f;
-        if (m_visible) {
+        m_tablesWanted = lighting.atmosphere.scale[1] > 0.0f;
+        lighting.airRayleigh = m_airRayleigh.get();
+        lighting.airMie = m_airMie.get();
+        lighting.airSampler = m_cubeSampler.get();
+        if (m_visible || m_tablesWanted || !m_tablesFilled) {
             m_buffers[frameIndex]->Write(&data, sizeof(data));
         }
 
@@ -363,7 +405,12 @@ namespace Flux {
         gpu.center = {static_cast<float>(chosenCenter.x), static_cast<float>(chosenCenter.y), static_cast<float>(chosenCenter.z), a.radius};
         gpu.rayleigh = ToArray(a.rayleigh, a.rayleighFalloff);
         gpu.mie = {a.mie, a.mieFalloff, a.mieAnisotropy, a.top};
-        gpu.scale = {a.intensity, 0.0f, 0.0f, 0.0f};
+        // Tables de l'air seulement dans l'air : vu de l'espace, il ne couvre qu'un anneau trop fin pour elles.
+        const double top = static_cast<double>(a.top);
+        const double ground = static_cast<double>(a.radius);
+        const bool inAir = Math::Length(chosenCenter) < top;
+        const double longest = 2.0 * std::sqrt(std::max(top * top - ground * ground, 1.0)); // le long du sol, d'un bord à l'autre
+        gpu.scale = {a.intensity, inAir ? 1.0f : 0.0f, 0.0f, static_cast<float>(std::log1p(longest / AirNear))};
         for (std::size_t i = 0; i < m_ambientTable.size(); ++i) {
             gpu.ambient[i] = ToArray(m_ambientTable[i]);
         }
@@ -371,6 +418,22 @@ namespace Flux {
     }
 
     void SkyRenderer::Bake(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        // Remplies une fois même hors de l'air : les shaders les déclarent, elles doivent être lisibles.
+        if (m_tablesWanted || !m_tablesFilled) {
+            const auto table = [&](const RHI::Pipeline& pipeline, RHI::Texture& rayleigh, RHI::Texture& mie) {
+                const RHI::Extent size = rayleigh.GetExtent();
+                commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .secondColorTarget = &mie});
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
+                commands.SetScissor({0, 0, size.width, size.height});
+                commands.BindPipeline(pipeline);
+                commands.SetBindGroup(0, *m_groups[frameIndex]);
+                commands.Draw(3, 0);
+                commands.EndRenderPass();
+            };
+            table(*m_skyTablePipeline, *m_skyRayleigh, *m_skyMie);
+            table(*m_airTablePipeline, *m_airRayleigh, *m_airMie);
+            m_tablesFilled = true;
+        }
         if (!std::exchange(m_bakePending, false)) {
             return;
         }
