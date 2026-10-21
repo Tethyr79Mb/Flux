@@ -87,7 +87,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 
 ### Outillage
 - ✅ Module du jeu en DLL rechargeable à chaud, API versionnée (`GameModuleApiVersion`).
-- ✅ Tests (FluxTests), CI MSVC Debug + Release.
+- ✅ Tests (FluxTests), CI MSVC Debug + Release, tests GPU sur GPU logiciel (lavapipe).
 - ✅ Debug utilisable : Jolt optimisé en Debug, préréglage « Release + débogage », petits mondes physiques sans fils.
 - ✅ Version affichée dans le jeu : numéro + commit Git.
 
