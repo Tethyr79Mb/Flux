@@ -588,8 +588,12 @@ float3 Shade(Surface s, float3 toLight, float3 light)
     return (s.diffuse * (1.0 - fresnel) + specular) * light * nl;
 }
 
-// Part du soleil qui traverse une feuille et ressort, diffuse, de l'autre côté (feuilles réelles : 10 à 30 %).
-static const float FoliageTransmission = 0.3;
+// Part du soleil qui traverse une feuille et ressort, diffuse, de l'autre côté (feuilles réelles : 10 à 30 %, un peu
+// plus ici : la couronne en couches renvoie aussi la lumière entre ses feuilles).
+static const float FoliageTransmission = 0.4;
+// Éclairage enveloppant : la lumière du soleil déborde au-delà de la face éclairée (feuilles inclinées dans tous les
+// sens autour de la normale de la couronne, qui n'est qu'une moyenne).
+static const float FoliageWrap = 0.3;
 
 // Feuillage : ses normales sont celles de la couronne, pas des feuilles. Le reflet de Cook-Torrance n'y a pas de
 // sens, et à contre-jour (lumière derrière la carte, vue rasante) son Fresnel tend vers 1 : les feuilles viraient au
@@ -597,7 +601,8 @@ static const float FoliageTransmission = 0.3;
 float3 ShadeFoliage(Surface s, float3 toLight, float3 light)
 {
     const float nl = dot(s.normal, toLight);
-    return s.diffuse * light * (nl > 0.0 ? nl : -nl * FoliageTransmission);
+    const float front = saturate((nl + FoliageWrap) / (1.0 + FoliageWrap));
+    return s.diffuse * light * max(front, -nl * FoliageTransmission);
 }
 
 // Lumière ambiante et reflets, venus du ciel : la lumière diffuse est la texture du ciel très réduite (une moyenne
