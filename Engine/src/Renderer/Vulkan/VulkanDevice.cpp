@@ -18,9 +18,13 @@ namespace Flux::Vk {
         // Le constructeur est privé : pas de std::make_unique.
         std::unique_ptr<Device> device(new Device());
 
+        // Sans fenêtre (calculs, tests) : pas de surface ni de file de présentation, ni les extensions de fenêtre de
+        // l'instance (lavapipe sous Windows, le GPU logiciel de la CI, n'a pas VK_KHR_win32_surface).
+        const bool headless = nativeWindowHandle == nullptr;
         vkb::InstanceBuilder instanceBuilder(vkGetInstanceProcAddr);
         instanceBuilder.set_app_name("Flux")
                        .set_engine_name("FluxEngine")
+                       .set_headless(headless)
                        .require_api_version(1, 3, 0);
 #ifndef NDEBUG
         // Actives seulement si le SDK Vulkan est installé ; sinon on continue sans.
@@ -34,8 +38,6 @@ namespace Flux::Vk {
         device->m_instance = instance.value();
         volkLoadInstance(device->m_instance.instance);
 
-        // Sans fenêtre (calculs, tests) : pas de surface ni de file de présentation.
-        const bool headless = nativeWindowHandle == nullptr;
         if (!headless) {
             VkWin32SurfaceCreateInfoKHR surfaceInfo{};
             surfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
