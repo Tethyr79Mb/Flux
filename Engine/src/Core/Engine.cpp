@@ -53,7 +53,8 @@ namespace Flux {
             return Platform::GetExecutableDirectory() / "Touches.json";
         }
         // Sauvegarde rapide : une seule, à côté de l'exécutable. La scène est un fichier de scène ordinaire (on peut
-        // l'ouvrir dans l'éditeur) ; à côté, ce qu'elle ne garde pas : le siège où est assis le joueur.
+        // l'ouvrir dans l'éditeur) ; à côté, ce qu'elle ne garde pas : le siège où est assis le joueur
+        // et l'état des systèmes du jeu (AddGameSaveData).
         std::filesystem::path QuickSaveDirectory() {
             return Platform::GetExecutableDirectory() / "Sauvegardes";
         }
@@ -1205,6 +1206,15 @@ namespace Flux {
             character && character->seat != NullEntity && m_scene.IsValid(character->seat)) {
             player["seat"] = m_scene.GetId(character->seat).ToString();
         }
+        nlohmann::json systems = nlohmann::json::object();
+        for (const GameSaveData& data : m_gameSaveData) {
+            if (std::string text = data.save ? data.save(*this) : std::string{}; !text.empty()) {
+                systems[data.name] = std::move(text);
+            }
+        }
+        if (!systems.empty()) {
+            player["systems"] = std::move(systems);
+        }
         if (auto saved = SceneSerializer::WriteFile(QuickSavePlayerFile(), player.dump(2)); !saved) {
             Log::Error("sauvegarde rapide : {}", saved.error());
             ShowNotice("Sauvegarde impossible : " + saved.error());
@@ -1248,6 +1258,16 @@ namespace Flux {
                 if (const Entity ship = component->pilot ? m_scene.GetShip(seat) : NullEntity; ship != NullEntity) {
                     ShipComponent& shipComponent = m_scene.Get<ShipComponent>(ship);
                     shipComponent.cruiseSpeed = -shipComponent.velocity.z;
+                }
+            }
+        }
+        // Systèmes du jeu : chacun reprend son état (une copie : un load peut en ajouter ou en retirer un autre).
+        if (player.is_object() && player.contains("systems") && player["systems"].is_object()) {
+            const std::vector<GameSaveData> handlers = m_gameSaveData;
+            for (const GameSaveData& data : handlers) {
+                if (const auto found = player["systems"].find(data.name); found != player["systems"].end() && found->is_string()
+                                                                         && data.load) {
+                    data.load(*this, found->get_ref<const std::string&>());
                 }
             }
         }
@@ -1440,6 +1460,16 @@ namespace Flux {
 
     void Engine::ClearGameSystems() {
         m_gameSystems.clear();
+        m_gameSaveData.clear();
+    }
+
+    void Engine::AddGameSaveData(std::string name, SaveFunction save, LoadFunction load) {
+        RemoveGameSaveData(name);
+        m_gameSaveData.push_back({std::move(name), std::move(save), std::move(load)});
+    }
+
+    void Engine::RemoveGameSaveData(std::string_view name) {
+        std::erase_if(m_gameSaveData, [&](const GameSaveData& data) { return data.name == name; });
     }
 
     void Engine::RunGameSystems(GameStage stage, double deltaSeconds) {
