@@ -121,6 +121,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   de son imposteur) ; passage d'un niveau de détail à l'autre sans fondu ;
   arbres hors du champ sans ombre ; pas de collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé
   sur le relief fin peut flotter ou s'enfoncer un peu sur le sol plus grossier.
+- ⬜ Canyons (demande de Bruno du 2026-10-21) : gorges creusées dans le relief, parois raides en strates, fond plat ou
+  sinueux, sur les planètes sèches comme le long des rivières. À faire dans `Terrain::GetHeight` et `Height`
+  (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
 - ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume près de la caméra (8 pas), en colonne au loin et vu de l'espace, avec son ombre. À améliorer : voir la ligne suivante.
