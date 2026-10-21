@@ -313,6 +313,8 @@ namespace Flux {
         // F5 / F6 servent déjà à l'éditeur (jouer, pause).
         actions.Add("Sauvegarde rapide", "Partie", Key::F8);
         actions.Add("Chargement rapide", "Partie", Key::F9);
+        // Repartir du début au prochain lancement (la sauvegarde est sinon reprise, voir ResumeQuickSave).
+        actions.Add("Effacer la sauvegarde", "Partie", Key::F7);
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
         m_impacts.reserve(ReservedProjectiles);
@@ -553,6 +555,9 @@ namespace Flux {
         if (!m_loading) { // pendant le chargement, la scène n'est pas encore celle que voit le joueur
             m_quickSaveRequested |= WasActionPressed("Sauvegarde rapide");
             m_quickLoadRequested |= WasActionPressed("Chargement rapide");
+            if (WasActionPressed("Effacer la sauvegarde")) {
+                DeleteQuickSave();
+            }
         }
 
         if (!m_physics) {
@@ -1152,9 +1157,27 @@ namespace Flux {
         m_audio->StopAll(); // ses sons aussi ; ceux de la nouvelle partent à la prochaine image
     }
 
+    bool Engine::ResumeQuickSave() {
+        std::error_code error;
+        if (!std::filesystem::exists(QuickSaveSceneFile(), error)) {
+            return false;
+        }
+        m_quickLoadRequested = true; // à la fin de la première image, comme F9
+        m_quickLoadResumes = true;
+        return true;
+    }
+
+    void Engine::DeleteQuickSave() {
+        std::error_code error;
+        const bool removed = std::filesystem::remove(QuickSaveSceneFile(), error);
+        std::filesystem::remove(QuickSavePlayerFile(), error);
+        ShowNotice(removed ? "Sauvegarde effacée : le prochain lancement repart du début" : "Aucune sauvegarde rapide");
+    }
+
     void Engine::RunQuickSave() {
         const bool save = std::exchange(m_quickSaveRequested, false);
         const bool load = std::exchange(m_quickLoadRequested, false);
+        const bool resumes = std::exchange(m_quickLoadResumes, false);
         if (m_gameState == GameState::Stopped) {
             return; // jeu arrêté dans l'éditeur à la même image : la scène éditée est déjà restaurée
         }
@@ -1162,7 +1185,7 @@ namespace Flux {
             QuickSave();
         }
         if (load) {
-            QuickLoad();
+            QuickLoad(resumes);
         }
     }
 
@@ -1191,7 +1214,7 @@ namespace Flux {
         ShowNotice("Partie sauvegardée");
     }
 
-    void Engine::QuickLoad() {
+    void Engine::QuickLoad(bool resumes) {
         std::error_code error;
         if (!std::filesystem::exists(QuickSaveSceneFile(), error)) {
             ShowNotice("Aucune sauvegarde rapide");
@@ -1199,8 +1222,10 @@ namespace Flux {
         }
         if (auto loaded = LoadScene(QuickSaveSceneFile()); !loaded) {
             Log::Error("chargement rapide : {}", loaded.error());
-            ShowNotice("Chargement impossible : " + loaded.error());
-            return; // la partie continue sur la scène en cours (LoadScene ne l'a pas touchée)
+            // Sauvegarde d'une version du moteur qui ne la lit plus, par exemple : la partie continue sur la scène
+            // en cours (LoadScene ne l'a pas touchée).
+            ShowNotice("Sauvegarde non chargée : " + loaded.error());
+            return;
         }
         m_audio->StopAll();
         m_followShown = -1.0f; // caméra replacée d'un coup derrière le personnage
@@ -1226,7 +1251,7 @@ namespace Flux {
                 }
             }
         }
-        ShowNotice("Partie chargée");
+        ShowNotice(resumes ? "Partie reprise (F7 : effacer la sauvegarde)" : "Partie chargée");
     }
 
     void Engine::ShowNotice(std::string text) {

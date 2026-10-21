@@ -51,6 +51,8 @@ namespace FluxEditor {
         m_savedCamera = engine.GetCamera();
         m_playing = true;
         engine.SetGameState(GameState::Running);
+        // Comme le jeu : une partie sauvegardée (F8) reprend où elle était ; la scène éditée revient à l'arrêt.
+        engine.ResumeQuickSave();
         Log::Info("jeu lancé");
     }
 

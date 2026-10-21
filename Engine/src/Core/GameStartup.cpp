@@ -75,6 +75,8 @@ namespace Flux {
                 Platform::ShowError(engine.GetWindow(), "Scène de démarrage", loaded.error()); // le journal n'est pas visible
                 return 1;
             }
+            // Partie sauvegardée (F8) : reprise là où elle était, la scène de démarrage reste si elle est illisible.
+            engine.ResumeQuickSave();
             result = engine.Run();
         }
 
