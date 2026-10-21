@@ -78,7 +78,7 @@ namespace Flux::Planetology {
         const std::filesystem::path shaders = Platform::GetExecutableDirectory() / "shaders";
         const std::array<const RHI::BindGroupLayout*, 1> sowLayouts{renderer->m_sowLayout.get()};
         const std::array<const RHI::BindGroupLayout*, 1> cullLayouts{renderer->m_cullLayout.get()};
-        auto sow = device.CreateComputePipeline({shaders / "PlanetTile.spv", "computeTrees", sowLayouts, sizeof(SowConstants)});
+        auto sow = device.CreateComputePipeline({shaders / (device.HasFloat64() ? "PlanetTile64.spv" : "PlanetTile.spv"), "computeTrees", sowLayouts, sizeof(SowConstants)});
         auto cull = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeCull", cullLayouts, 0});
         auto finalize = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeFinalize", cullLayouts, 0});
         if (!sow || !cull || !finalize) {

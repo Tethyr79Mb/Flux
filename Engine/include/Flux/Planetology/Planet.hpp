@@ -170,6 +170,7 @@ namespace Flux::Planetology {
         static constexpr std::uint32_t Octaves = 43;            // somme des octaves de chaque couche du relief
 
         std::array<float, 4> center{}; // xyz : d_c ; w : |v_c| (v_c = normale + a_c.s + b_c.t, avant normalisation)
+        std::array<float, 4> centerLow{}; // xyz : d_c - center.xyz (le reste du double, pour la variante en double)
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
@@ -178,9 +179,10 @@ namespace Flux::Planetology {
         std::array<std::array<float, 4>, Columns> columns{};
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)
         std::array<std::array<float, 4>, Octaves> fractions{};    // xyz : position dans la maille ; w : fréquence
+        std::array<std::array<float, 4>, Octaves> fractionsLow{}; // reste de fractions (fractions + fractionsLow)
         std::array<std::uint32_t, 128> permutation{};             // 512 octets, 4 par entier
     };
-    static_assert(sizeof(TileGpuInputs) == 80 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
+    static_assert(sizeof(TileGpuInputs) == 96 + 16 * (TileGpuInputs::Columns + 3 * TileGpuInputs::Octaves) + 512);
     FLUX_API void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs);
 
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni
