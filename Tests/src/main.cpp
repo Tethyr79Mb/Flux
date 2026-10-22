@@ -15,6 +15,7 @@ int main() {
         {"réglages du jeu", RunGameSettingsTests},
         {"sélection dans la vue 3D", RunPickingTests},
         {"images et textures", RunImageTests},
+        {"textures compressées (BC7)", RunTextureCompressionTests},
         {"textes et images à l'écran", RunScreenUiTests},
         {"interfaces (.fluxui)", RunInterfaceTests},
         {"changement de scène", RunSceneChangeTests},

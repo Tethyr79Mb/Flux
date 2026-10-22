@@ -304,6 +304,17 @@ namespace Flux::Vk {
         return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
     }
 
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTextureArrayLevels(RHI::Format format, RHI::Extent extent,
+                                                                                                 std::uint32_t layers, std::uint32_t levels,
+                                                                                                 std::span<const std::uint8_t> pixels) {
+        auto image = Image::CreateTextureLevels(*m_device, ToVulkan(format), {extent.width, extent.height}, pixels, levels,
+                                                ImageLayers::Array, layers);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
+    }
+
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,
                                                                                             bool sampled) {
         const bool depth = format == RHI::Format::D32Float;

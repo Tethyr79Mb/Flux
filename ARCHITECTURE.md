@@ -24,7 +24,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
           └──────────────────────────┘
 ```
 
-- **FluxEngine.dll** exporte seulement ce qui porte `FLUX_API`. Vulkan, Jolt, FreeType, miniaudio et stb restent privés :
+- **FluxEngine.dll** exporte seulement ce qui porte `FLUX_API`. Vulkan, Jolt, FreeType, miniaudio, stb et bc7enc restent privés :
   aucun en-tête public ne les expose. EnTT est public (le jeu manipule la scène directement).
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
   (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `BeforePhysics` et
@@ -296,8 +296,8 @@ planète donne directement le sien comme indice d'instance.
 
 Tout ce qui concerne les planètes est réuni dans le domaine Planetology, espace de noms `Flux::Planetology` :
 `include/Flux/Planetology/` (`Planet.hpp` : relief, tuiles ; `Atmosphere.hpp`) et `src/Planetology/` (choix des tuiles
-`PlanetRenderer`, relief sur le GPU `PlanetTileCompute`, textures du sol `GroundTextures`, données de l'atmosphère pour
-le GPU `AtmosphereGpu`, sol physique `PlanetGround`, arbres `VegetationRenderer`). Restent ailleurs : les composants
+`PlanetRenderer`, relief sur le GPU `PlanetTileCompute`, textures du sol `GroundTextures` (compressées en BC7 sur le
+CPU par `Assets/TextureCompression`, gardées dans `bin/Cache`), données de l'atmosphère pour le GPU `AtmosphereGpu`, sol physique `PlanetGround`, arbres `VegetationRenderer`). Restent ailleurs : les composants
 (`PlanetComponent`, `CloudsComponent`, `VegetationComponent` dans Scene, pour l'inspecteur et la sauvegarde), le dessin
 du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.slang`) et les shaders `PlanetTile.slang`,
 `PlanetClimate.slang`, `Vegetation.slang` et `Atmosphere.slang`.

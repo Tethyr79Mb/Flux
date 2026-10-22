@@ -30,6 +30,9 @@ namespace Flux::Planetology {
     // fichier ou sans une matière : DefaultMaxAngles.
     // Les images sont décodées sur d'autres fils (une vingtaine de JPEG de 2048² : plusieurs secondes sur un seul) :
     // ni le démarrage ni le jeu ne les attendent, les planètes gardent leurs couleurs unies jusque-là.
+    // Si le GPU lit les formats BC, les deux tableaux sont compressés en BC7 sur ces mêmes fils, avec leurs mips
+    // calculés sur le CPU : 1 octet par pixel au lieu de 4, soit 4 fois moins de mémoire vidéo et de lectures pour
+    // chaque pixel du sol (le poste le plus lourd du sol, mesuré avec « Sol sans pixels »).
     class GroundTextures {
         public:
         GroundTextures() = default;
@@ -49,10 +52,12 @@ namespace Flux::Planetology {
         // En degrés : sable et neige ±10°, le reste libre.
         static constexpr std::array<float, static_cast<std::size_t>(GroundLayer::Count)> DefaultMaxAngles{180.0f, 180.0f, 180.0f, 10.0f, 10.0f};
 
-        // Pixels des deux tableaux, décodés hors du fil principal.
+        // Pixels des deux tableaux, décodés hors du fil principal : RGBA8 au niveau 0 seul (mips faits par le GPU), ou
+        // BC7 avec tous leurs niveaux (niveau 0 de toutes les couches, puis niveau 1...).
         struct Decoded
         {
             int size = 0;
+            bool compressed = false;
             std::array<std::vector<std::uint8_t>, 2> pixels;
             std::string error; // non vide : rien à afficher
         };

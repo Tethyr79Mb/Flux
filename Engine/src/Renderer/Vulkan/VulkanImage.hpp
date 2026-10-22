@@ -38,6 +38,12 @@ namespace Flux::Vk {
                                                                std::span<const std::uint8_t> pixels, bool mipmaps = false,
                                                                ImageLayers kind = ImageLayers::Single,
                                                                std::uint32_t layerCount = 1);
+        // De même avec ses `levels` niveaux de mip déjà calculés, à la suite dans pixels (chaque niveau : toutes les
+        // couches) : formats compressés, que le GPU ne sait pas réduire. Taille de chaque niveau déduite du format.
+        static std::expected<Image, std::string> CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
+                                                                     std::span<const std::uint8_t> pixels, std::uint32_t levels,
+                                                                     ImageLayers kind = ImageLayers::Single,
+                                                                     std::uint32_t layerCount = 1);
 
         Image() = default;
         ~Image();
