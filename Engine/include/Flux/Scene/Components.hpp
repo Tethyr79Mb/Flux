@@ -220,9 +220,9 @@ namespace Flux {
         // de la planète) et en altitude (6,5 °C par km) ; l'humidité (bruit à grande échelle, plus forte près de la
         // mer) va de déserts (sable) à prairies (herbe) en passant par la terre nue ; le froid jaunit l'herbe
         // (toundra) puis la couvre de neige.
-        // Avec les images du dossier Textures/Sol des assets (roche, herbe, terre, sable, neige), chaque matière est une
-        // texture plaquée sur le relief et les couleurs ci-dessous ne servent plus (les teintes, si) ; sans elles,
-        // couleurs unies.
+        // Avec les images du dossier Textures/Sol des assets (un sous-dossier par matière : roche, herbe, terre, sable,
+        // neige), chaque matière est une texture plaquée sur le relief et les couleurs ci-dessous ne servent plus (les
+        // teintes, si) ; sans elles, couleurs unies.
         // Sans zones : roche partout (une lune).
         Math::LinearColor color{0.42f, 0.38f, 0.33f};
         float roughness = 0.9f;

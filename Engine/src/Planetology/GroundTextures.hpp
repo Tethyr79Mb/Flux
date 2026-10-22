@@ -18,9 +18,9 @@ namespace Flux::Planetology {
     // shaders/Mesh.slang).
     enum class GroundLayer : std::uint32_t { Rock, Grass, Soil, Sand, Snow, Count };
 
-    // Images du sol des planètes, lues dans le dossier Textures/Sol des assets : pour chaque matière (roche, herbe,
-    // terre, sable, neige), <nom>-couleur, <nom>-normales (OpenGL : vert vers le haut), <nom>-rugosite et, si elle
-    // existe, <nom>-occlusion (.png ou .jpg, toutes de la même taille, carrées). Regroupées en deux tableaux de
+    // Images du sol des planètes, lues dans le dossier Textures/Sol des assets, un sous-dossier par matière (roche,
+    // herbe, terre, sable, neige) : <nom>/<nom>-couleur, <nom>-normales (OpenGL : vert vers le haut), <nom>-rugosite
+    // et, si elle existe, <nom>-occlusion (.png ou .jpg, toutes de la même taille, carrées). Regroupées en deux tableaux de
     // textures (couleur et rugosité en alpha ; normales en rouge-vert et occlusion en bleu), liés au groupe 0 des tuiles de planète
     // (ModelCache::GroundColorSlot et suivants).
     // Sans ces images, les planètes gardent leurs couleurs unies.
