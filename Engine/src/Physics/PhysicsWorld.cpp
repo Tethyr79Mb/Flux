@@ -247,6 +247,9 @@ namespace Flux {
         std::vector<std::uint32_t> transformIndex;
         double accumulator = 0.0;
         double time = 0.0; // simulé, en secondes
+        // Saut demandé pendant une image sans pas de physique (plus de 60 images/s) : gardé pour le pas suivant, sinon
+        // l'appui serait perdu avant d'être vu.
+        bool pendingJump = false;
         // Dernier passage de chaque personnage d'un monde à l'autre : pas de nouveau passage juste après (au bas de
         // la rampe, il toucherait les deux sols à la fois).
         std::unordered_map<Entity, double> transfers;
@@ -1428,6 +1431,7 @@ namespace Flux {
             CollectProbes(scene);
             planetGround.Update(scene, anchor, probes, *grids.front()->system, false);
 
+            pendingJump = pendingJump || input.jump;
             accumulator = std::min(accumulator + deltaSeconds, static_cast<double>(StepSeconds * MaxStepsPerUpdate));
             const int steps = static_cast<int>(accumulator / StepSeconds);
             if (steps == 0) {
@@ -1436,8 +1440,12 @@ namespace Flux {
             accumulator -= steps * static_cast<double>(StepSeconds);
             MoveHulls(scene, steps);
             for (int step = 0; step < steps; ++step) {
+                // Le saut au premier pas seulement : plusieurs pas dans une image (moins de 60 images/s) le
+                // donneraient plusieurs fois, le personnage touchant encore le sol au deuxième.
+                CharacterInput stepInput = input;
+                stepInput.jump = step == 0 && pendingJump;
                 for (const std::unique_ptr<Grid>& grid : grids) {
-                    UpdateCharacters(*grid, scene, input);
+                    UpdateCharacters(*grid, scene, stepInput);
                     ApplyOutsideForces(*grid);
                     JPH::JobSystem* jobs = grid->system->GetNumActiveBodies(JPH::EBodyType::RigidBody) < ParallelBodyCount
                                                ? static_cast<JPH::JobSystem*>(shared.serialJobs.get())
@@ -1445,6 +1453,7 @@ namespace Flux {
                     grid->system->Update(StepSeconds, 1, shared.tempAllocator.get(), jobs);
                 }
             }
+            pendingJump = false;
             time += steps * static_cast<double>(StepSeconds);
             for (const std::unique_ptr<Grid>& grid : grids) {
                 WriteBack(scene, *grid);

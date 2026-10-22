@@ -383,7 +383,7 @@ namespace FluxEditor {
     void SceneEditor::DrawInspector(Engine& engine, Scene& scene, Entity selected) {
         UI::Context& ui = engine.GetUi();
         const float screenWidth = static_cast<float>(engine.GetWindow().GetSize().x);
-        // Position sans ancrage (l'éditeur l'ancre à droite) : entre la vue et le panneau « Démo » du jeu.
+        // Position sans ancrage (l'éditeur l'ancre à droite) : à droite de la vue.
         ui.SetNextPanelIcon(UI::Icon::Inspector);
         if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screenWidth - 752.0f), 8.0f}, 368.0f)) {
             m_overrides = {};
