@@ -149,6 +149,10 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32, profondeur seule sans programme de pixel (sauf seuil
    d'alpha) ; un objet fermé à une face n'y dessine que ses faces tournées vers le soleil, et un objet de moins de
    1,5 texel de rayon n'est pas dessiné dans la cascade.
+   La carte d'une cascade couvre une sphère autour de sa tranche, derrière la caméra compris : `ShadowReceivers` n'y
+   garde que les obstacles dont l'ombre, prolongée à l'opposé du soleil (300 m, `ShadowCasterDistance` ; pour un arbre,
+   deux fois sa cime divisée par la hauteur du soleil), peut tomber dans la tranche du champ (champ un peu élargi pour
+   les cascades gardées). Même test pour les objets, les tuiles et, sur le GPU, les arbres (`Vegetation.slang`).
    Les cascades 0 et 1 sont redessinées à chaque image, les deux lointaines une image sur deux, à tour de rôle
    (`MeshRenderer::ChooseShadowCascades`) : la carte gardée n'est pas effacée (`RenderPassDesc::loadDepth`, puis
    `CommandList::ClearDepth` sur les seules cascades redessinées) et sa matrice est recalée sur la caméra

@@ -587,6 +587,7 @@ namespace Flux {
         const ViewCone view(camera, aspect);
         // Avant les entités : celles qui ne sont ni en vue ni dans une ombre sont écartées dès maintenant.
         m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
+        m_shadowReceivers = ShadowReceivers(camera, aspect, sky.toSun);
         ChooseShadowCascades(camera, sky.toSun);
         m_planets->BeginFrame(frameIndex);
         m_vegetation->BeginFrame(frameIndex);
@@ -879,7 +880,7 @@ namespace Flux {
             }
         }
         const float tanY = std::tan(0.5f * camera.verticalFov);
-        m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, models);
+        m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, m_shadowReceivers, models);
         // surface.zw : éclairage du feuillage (ShadeFoliage), du composant.
         const VegetationComponent leaves = m_vegetationComponent ? *m_vegetationComponent : VegetationComponent{};
         m_treeDraw = static_cast<std::uint32_t>(m_drawData.size());
@@ -1099,11 +1100,13 @@ namespace Flux {
         return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
     }
 
-    // L'entité fait une ombre visible dans la cascade : dans son volume, et pas plus petite que quelques texels (au
-    // loin, un objet de quelques centimètres ne ferait qu'un point flou de la carte : il n'y est pas dessiné).
+    // L'entité fait une ombre visible dans la cascade : dans son volume, son ombre peut tomber dans la tranche vue, et
+    // pas plus petite que quelques texels (au loin, un objet de quelques centimètres ne ferait qu'un point flou de la
+    // carte : il n'y est pas dessiné).
     bool MeshRenderer::CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const {
         constexpr float MinTexels = 1.5f; // rayon, en texels de la carte
-        return radius >= MinTexels * m_cascades[cascade].texelSize && InCascade(center, radius, cascade);
+        return radius >= MinTexels * m_cascades[cascade].texelSize && InCascade(center, radius, cascade)
+            && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, cascade);
     }
 
     const MeshRenderer::ClusterDraw* MeshRenderer::FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const {
@@ -1167,7 +1170,8 @@ namespace Flux {
             for (const TileDraw& draw : m_tileDraws) {
                 const bool drawn = pass == GroundPass ? true
                                  : pass == OceanPass  ? draw.ocean
-                                                      : InCascade(draw.center, draw.radius, pass - 2);
+                                                      : InCascade(draw.center, draw.radius, pass - 2)
+                                                            && m_shadowReceivers.Reaches(draw.center, draw.radius, ShadowCasterDistance, pass - 2);
                 if (!drawn) {
                     continue;
                 }
