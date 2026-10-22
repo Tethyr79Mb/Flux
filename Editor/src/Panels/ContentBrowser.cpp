@@ -211,7 +211,7 @@ namespace FluxEditor {
         UI::Context& ui = engine.GetUi();
         const Input& input = engine.GetWindow().GetInput();
         const Math::Vector2i screen = engine.GetWindow().GetSize();
-        // Position sans ancrage (l'éditeur l'ancre en bas) : à droite, sous le panneau « Démo » du jeu.
+        // Position sans ancrage (l'éditeur l'ancre en bas) : à droite.
         const float top = 150.0f + ui.GetMenuBarHeight();
         ui.SetNextPanelIcon(UI::Icon::Content);
         if (ui.BeginPanel("Contenu", {std::max(316.0f, static_cast<float>(screen.x) - 368.0f), top}, 360.0f,

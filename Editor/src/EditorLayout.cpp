@@ -56,7 +56,7 @@ namespace FluxEditor {
     }
 
     // Placer et Scènes en onglets à gauche, inspecteur à droite, contenu, caméra et console en bas, la vue 3D au centre.
-    // Les panneaux du jeu (« Démo ») et les Paramètres flottent dans la vue.
+    // Les panneaux du jeu et les Paramètres flottent dans la vue.
     void EditorLayout::BuildDefault(UI::Context& ui) {
         const UI::DockId root = ui.ClearDockLayout();
         const auto [left, rest] = ui.SplitDock(root, UI::DockSide::Left, 0.2f);
