@@ -188,54 +188,75 @@ namespace Flux {
                              FlyCameraController* controller) {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
                 renderer.RequestDetailedTimings();
+                // Toujours visible : la cadence et qui la mène. Lecture : si « Attente écran » domine alors que le GPU
+                // travaille peu, la cadence vient de l'extérieur (V-Sync, pilote) ; si le GPU est long, c'est le
+                // dessin ; sinon, le CPU. Le détail est replié en sections, pour tenir dans l'écran.
                 ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
                 ui.LabelText("Pire image (10 s)", std::format("{:.1f} ms", stats.GetWorstMilliseconds()));
-                ui.LabelText("GPU", renderer.GetDeviceName());
-                // V-Sync et anticrénelage : dans Fichier > Paramètres (le panneau garde la mesure).
-                bool occlusion = renderer.IsOcclusionCullingEnabled();
-                if (ui.Checkbox("Objets cachés écartés", occlusion)) {
-                    renderer.SetOcclusionCulling(occlusion);
-                }
-                bool geometryOnly = renderer.IsGroundGeometryOnly();
-                if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
-                    renderer.SetGroundGeometryOnly(geometryOnly);
-                }
-                ui.LabelText("Présentation", renderer.GetPresentModeName());
+                ui.LabelText("CPU màj + rendu", std::format("{:.2f} + {:.2f} ms (jeu {:.2f})", stats.Get(UpdateCost),
+                                                            stats.Get(PrepareCost) + stats.Get(RecordCost), stats.Get(GameCost)));
+                ui.LabelText("Attente", std::format("GPU {:.2f}, écran {:.2f} ms", stats.Get(WaitGpuCost), stats.Get(WaitImageCost)));
 
-                // Lecture : si « Attente » domine alors que le GPU travaille peu, la cadence vient de l'extérieur
-                // (V-Sync, pilote) ; si le GPU est long, c'est le dessin ; sinon, le CPU.
-                ui.Separator();
-                ui.LabelText("CPU mise à jour", FormatCost(stats.Get(UpdateCost)));
-                ui.LabelText("  dont jeu", FormatCost(stats.Get(GameCost)));
-                ui.LabelText("CPU rendu", FormatCost(stats.Get(PrepareCost)) + " + " + FormatCost(stats.Get(RecordCost)));
-                ui.LabelText("Attente GPU", FormatCost(stats.Get(WaitGpuCost)));
-                ui.LabelText("Attente écran", FormatCost(stats.Get(WaitImageCost)));
-                // Une ligne par passe du graphe de rendu, puis ses étapes.
+                // Une ligne par passe du graphe de rendu ; ses étapes à part, repliées (une vingtaine de lignes).
+                double gpuTotal = 0.0;
                 for (const FrameStats::Row& row : stats.GetGpu()) {
-                    ui.LabelText(row.step ? std::format("  dont {}", row.name) : std::format("GPU {}", row.name), FormatCost(row.average));
+                    gpuTotal += !row.step && row.average > 0.0 ? row.average : 0.0;
                 }
-                const RenderTimings& render = renderer.GetTimings();
-                ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
-                ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
-                ui.LabelText("Tuiles de planète", std::format("{} dont {} eau", render.planetTiles, render.planetOceanTiles));
-                ui.LabelText("  en mémoire", std::format("{} / {}", render.planetStoredTiles, render.planetTileCapacity));
-                ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
-                ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer)", render.shadowTrees, render.treePlains,
-                                                             render.pendingTreePlains));
+                ui.LabelText("GPU", FormatCost(gpuTotal));
+                if (ui.CollapsingHeader("Temps du GPU")) {
+                    for (const FrameStats::Row& row : stats.GetGpu()) {
+                        if (!row.step) {
+                            ui.LabelText(row.name, FormatCost(row.average));
+                        }
+                    }
+                }
+                if (ui.CollapsingHeader("Étapes du GPU", false)) {
+                    // Les passes d'une seule étape n'ont rien à détailler.
+                    const auto rows = stats.GetGpu();
+                    for (std::size_t i = 0; i < rows.size(); ++i) {
+                        const bool hasSteps = i + 1 < rows.size() && rows[i + 1].step;
+                        if (rows[i].step || hasSteps) {
+                            ui.LabelText(rows[i].step ? std::format("  {}", rows[i].name) : std::string(rows[i].name),
+                                         FormatCost(rows[i].average));
+                        }
+                    }
+                }
+
+                if (ui.CollapsingHeader("Scène", false)) {
+                    // V-Sync et anticrénelage : dans Fichier > Paramètres (le panneau garde la mesure).
+                    bool occlusion = renderer.IsOcclusionCullingEnabled();
+                    if (ui.Checkbox("Objets cachés écartés", occlusion)) {
+                        renderer.SetOcclusionCulling(occlusion);
+                    }
+                    bool geometryOnly = renderer.IsGroundGeometryOnly();
+                    if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
+                        renderer.SetGroundGeometryOnly(geometryOnly);
+                    }
+                    const RenderTimings& render = renderer.GetTimings();
+                    ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
+                    if (render.modelsLoading > 0) {
+                        ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
+                    }
+                    ui.LabelText("Tuiles de planète", std::format("{} ({} eau), {}/{} gardées", render.planetTiles,
+                                                                  render.planetOceanTiles, render.planetStoredTiles,
+                                                                  render.planetTileCapacity));
+                    ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
+                    ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer)", render.shadowTrees, render.treePlains,
+                                                                 render.pendingTreePlains));
+                }
 
                 // RAM utilisée : présente en RAM en ce moment, bibliothèques partagées comprises (le Gestionnaire des
                 // tâches montre la part privée, plus petite) ; réservée : promise au processus, même pas encore
                 // touchée (pilote compris). GPU : ce que le rendu a demandé au pilote, en mémoire vidéo et en RAM.
-                ui.Separator();
-                const Platform::ProcessMemory memory = Platform::GetProcessMemory();
-                const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
-                ui.LabelText("RAM utilisée", FormatMegabytes(memory.workingSet));
-                ui.LabelText("RAM réservée", FormatMegabytes(memory.privateBytes));
-                ui.LabelText("Mémoire vidéo", FormatMegabytes(gpuDevice));
-                ui.LabelText("GPU en RAM", FormatMegabytes(gpuHost));
+                if (ui.CollapsingHeader("Mémoire", false)) {
+                    const Platform::ProcessMemory memory = Platform::GetProcessMemory();
+                    const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
+                    ui.LabelText("RAM", std::format("{} (réservée {})", FormatMegabytes(memory.workingSet),
+                                                    FormatMegabytes(memory.privateBytes)));
+                    ui.LabelText("Mémoire vidéo", std::format("{} (+ {} en RAM)", FormatMegabytes(gpuDevice), FormatMegabytes(gpuHost)));
+                }
 
-                if (controller) {
-                    ui.Separator();
+                if (controller && ui.CollapsingHeader("Caméra", false)) {
                     controller->DrawFields(ui, camera);
                 }
             }
