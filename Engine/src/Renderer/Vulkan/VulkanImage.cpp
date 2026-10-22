@@ -7,6 +7,7 @@
 #include <bit>
 #include <format>
 #include <utility>
+#include <vector>
 
 namespace Flux::Vk {
     std::expected<Image, std::string> Image::Allocate(const Device& device, VkFormat format, VkExtent2D extent,
@@ -160,6 +161,88 @@ namespace Flux::Vk {
             transition(levels - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        }, std::move(*staging));
+        if (!copied) {
+            return std::unexpected("envoi d'une texture au GPU");
+        }
+        return image;
+    }
+
+    namespace {
+        // Octets d'un niveau d'une couche : blocs de 4 x 4 pour les formats compressés, pixels sinon.
+        std::uint64_t LevelBytes(VkFormat format, std::uint32_t width, std::uint32_t height) {
+            switch (format) {
+                case VK_FORMAT_BC7_UNORM_BLOCK:
+                case VK_FORMAT_BC7_SRGB_BLOCK:
+                    return std::uint64_t{(width + 3) / 4} * ((height + 3) / 4) * 16;
+                case VK_FORMAT_R8G8B8A8_UNORM:
+                case VK_FORMAT_R8G8B8A8_SRGB:
+                    return std::uint64_t{width} * height * 4;
+                default:
+                    return 0;
+            }
+        }
+    }
+
+    std::expected<Image, std::string> Image::CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
+                                                                 std::span<const std::uint8_t> pixels, std::uint32_t levels,
+                                                                 ImageLayers kind, std::uint32_t layerCount) {
+        const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
+        std::vector<VkBufferImageCopy> regions(levels);
+        std::uint64_t offset = 0;
+        for (std::uint32_t level = 0; level < levels; ++level) {
+            const std::uint32_t width = std::max(extent.width >> level, 1u);
+            const std::uint32_t height = std::max(extent.height >> level, 1u);
+            const std::uint64_t bytes = LevelBytes(format, width, height);
+            if (bytes == 0) {
+                return std::unexpected("format de texture non pris en charge pour des mips donnés");
+            }
+            regions[level].bufferOffset = offset;
+            regions[level].imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
+            regions[level].imageExtent = {width, height, 1};
+            offset += bytes * layers;
+        }
+        if (offset != pixels.size()) {
+            return std::unexpected(std::format("texture : {} octets donnés, {} attendus pour {} niveaux", pixels.size(), offset, levels));
+        }
+        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Staging);
+        if (!staging) {
+            return std::unexpected(staging.error());
+        }
+        staging->Write(pixels.data(), pixels.size());
+        auto image = Allocate(device, format, extent, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                              VK_IMAGE_ASPECT_COLOR_BIT, levels, kind, layerCount);
+        if (!image) {
+            return image;
+        }
+        const VkBuffer source = staging->GetHandle();
+        const bool copied = device.Upload([&](VkCommandBuffer commandBuffer) {
+            VkImageMemoryBarrier2 barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image->m_image;
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.imageMemoryBarrierCount = 1;
+            dependency.pImageMemoryBarriers = &barrier;
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+            barrier.srcAccessMask = VK_ACCESS_2_NONE;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            vkCmdPipelineBarrier2(commandBuffer, &dependency);
+            vkCmdCopyBufferToImage(commandBuffer, source, image->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   static_cast<std::uint32_t>(regions.size()), regions.data());
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            vkCmdPipelineBarrier2(commandBuffer, &dependency);
         }, std::move(*staging));
         if (!copied) {
             return std::unexpected("envoi d'une texture au GPU");

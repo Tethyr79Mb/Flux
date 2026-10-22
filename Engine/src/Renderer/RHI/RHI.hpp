@@ -69,6 +69,10 @@ namespace Flux::RHI {
         RGBA16Uint,
         RGBA16Float, // couleur au-delà de 1 (lumières, ciel) sans perte
         RG16Float,   // deux valeurs signées (déplacement des pixels d'une image à l'autre)
+        // Compressés par blocs de 4 x 4 pixels, 16 octets chacun (1 octet par pixel au lieu de 4) : textures lues
+        // souvent (sol des planètes). Device::HasTextureCompressionBC.
+        BC7Unorm,
+        BC7Srgb,
     };
 
     enum class BufferUsage : std::uint8_t {
@@ -401,6 +405,8 @@ namespace Flux::RHI {
         virtual MemoryUsage GetMemoryUsage() const = 0;
         // Doubles permis dans les shaders (shaderFloat64) : facultatif, les tuiles de planète s'en servent quand il y est.
         virtual bool HasFloat64() const = 0;
+        // Formats compressés BC (textureCompressionBC) : tous les GPU de bureau, facultatif quand même.
+        virtual bool HasTextureCompressionBC() const = 0;
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).
         virtual void WaitIdle() = 0;
 
@@ -429,6 +435,13 @@ namespace Flux::RHI {
                                                                                         std::uint32_t layers,
                                                                                         std::span<const std::uint8_t> pixels,
                                                                                         bool mipmaps = false) = 0;
+        // Le même tableau avec ses `levels` niveaux de mip déjà calculés (formats compressés : le GPU ne sait pas les
+        // réduire). pixels : niveau 0 de toutes les couches, puis niveau 1, etc. ; chaque niveau moitié du précédent,
+        // arrondi en dessous, jusqu'à 1.
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTextureArrayLevels(Format format, Extent extent,
+                                                                                              std::uint32_t layers,
+                                                                                              std::uint32_t levels,
+                                                                                              std::span<const std::uint8_t> pixels) = 0;
         // Cible de rendu vierge : tampon de profondeur, ou couleur (RenderPassDesc::colorTarget). sampled : lue
         // ensuite par les shaders (carte d'ombres, image de la scène avant le bloom).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,

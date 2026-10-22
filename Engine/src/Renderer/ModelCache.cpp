@@ -157,12 +157,19 @@ namespace Flux {
             return std::unexpected(image.error());
         }
         cache->m_whiteImage = std::move(*image);
+        // Le groupe blanc tient la place des textures du sol tant qu'elles chargent : un tableau d'une couche, comme le
+        // lit le shader (Sampler2DArray ; une vue 2D simple y est une erreur de validation).
+        auto whiteArray = device.CreateTextureArray(RHI::Format::RGBA8Srgb, {1, 1}, 1, white);
+        if (!whiteArray) {
+            return std::unexpected(whiteArray.error());
+        }
+        cache->m_whiteArray = std::move(*whiteArray);
         cache->m_whiteGroup = device.CreateBindGroup(*cache->m_groundLayout);
         if (!cache->m_whiteGroup) {
             return std::unexpected("allocation du groupe de l'image blanche");
         }
         for (const RHI::Binding& slot : groundBindings) {
-            cache->m_whiteGroup->SetTexture(slot.slot, *cache->m_whiteImage, *cache->m_sampler);
+            cache->m_whiteGroup->SetTexture(slot.slot, *cache->m_whiteArray, *cache->m_sampler);
         }
 
         // Tables : l'image blanche et le matériau blanc en case 0, toujours remplies.

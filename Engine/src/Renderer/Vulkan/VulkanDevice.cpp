@@ -106,6 +106,10 @@ namespace Flux::Vk {
         VkPhysicalDeviceFeatures anisotropy{};
         anisotropy.samplerAnisotropy = VK_TRUE;
         device->m_anisotropy = device->m_physicalDevice.enable_features_if_present(anisotropy);
+        // Textures compressées BC (sol des planètes) : tous les GPU de bureau ; sans elles, le sol reste en RGBA8.
+        VkPhysicalDeviceFeatures compression{};
+        compression.textureCompressionBC = VK_TRUE;
+        device->m_textureCompressionBC = device->m_physicalDevice.enable_features_if_present(compression);
         // Doubles dans les shaders : la déformation du relief des grandes planètes (PlanetTile64.slang). GTX 1060 et
         // RX 5700 les ont ; sans eux, les tuiles restent en float.
         VkPhysicalDeviceFeatures float64{};

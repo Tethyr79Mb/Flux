@@ -183,6 +183,7 @@ namespace Flux::Vk {
         std::string_view GetName() const override { return m_device->GetName(); }
         std::string_view GetApiVersion() const override { return m_device->GetApiVersion(); }
         bool HasFloat64() const override { return m_device->HasFloat64(); }
+        bool HasTextureCompressionBC() const override { return m_device->HasTextureCompressionBC(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override { m_device->WaitIdle(); }
 
@@ -195,6 +196,9 @@ namespace Flux::Vk {
                                                                                     std::uint32_t layers,
                                                                                     std::span<const std::uint8_t> pixels,
                                                                                     bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTextureArrayLevels(RHI::Format format, RHI::Extent extent,
+                                                                                         std::uint32_t layers, std::uint32_t levels,
+                                                                                         std::span<const std::uint8_t> pixels) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeTexture(RHI::Format format, std::uint32_t size,
                                                                                     std::span<const std::uint8_t> pixels,
                                                                                     bool mipmaps) override;

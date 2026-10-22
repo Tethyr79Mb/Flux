@@ -127,9 +127,17 @@ FetchContent_Declare(miniaudio
         SOURCE_SUBDIR flux-telechargement-seul
         SYSTEM)
 
+# Compression des textures en BC7 (sol des planètes) : bc7enc de Rich Geldreich (MIT ou domaine public), un fichier.
+# Pas de version publiée : commit figé. Son CMakeLists (programme d'essai) est ignoré, comme celui de miniaudio.
+FetchContent_Declare(bc7enc
+        GIT_REPOSITORY https://github.com/richgel999/bc7enc.git
+        GIT_TAG f66c2e489b07138f2673a2fb3d27c1aa1d565c48
+        SOURCE_SUBDIR flux-telechargement-seul
+        SYSTEM)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf miniaudio)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf miniaudio bc7enc)
 
 # Jolt optimisé même en Debug : sans optimisation, la physique (coque du vaisseau contre le sol, personnages) prend
 # plusieurs fois le temps d'une image et le Debug devient inutilisable. On ne débogue jamais l'intérieur de Jolt.
@@ -147,7 +155,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "${FLUX_CXX_FLAGS_DEBUG}")
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
-# Ce qui tourne au démarrage (atlas de la police : FreeType et msdfgen ; décodage des images : stb_image) est compilé
+# Ce qui tourne au démarrage (atlas de la police : FreeType et msdfgen ; décodage des images : stb_image ; compression
+# des textures du sol : bc7enc) est compilé
 # optimisé même en Debug : sinon une vingtaine de secondes de plus à chaque lancement. On ne les suit pas pas à pas.
 # Les options d'un dossier valent pour ses cibles : changées le temps d'ajouter ces dossiers, puis remises.
 set(FLUX_SAVED_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
@@ -161,6 +170,7 @@ else()
 endif()
 FetchContent_MakeAvailable(freetype msdfgen)
 add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/stb ${CMAKE_BINARY_DIR}/stb_image_impl)
+add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/bc7enc ${CMAKE_BINARY_DIR}/bc7enc_impl)
 set(CMAKE_C_FLAGS_DEBUG "${FLUX_SAVED_C_FLAGS_DEBUG}")
 set(CMAKE_CXX_FLAGS_DEBUG "${FLUX_SAVED_CXX_FLAGS_DEBUG}")
 
