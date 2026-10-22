@@ -54,15 +54,17 @@ namespace Flux::Animator {
                     animator.previous = std::move(animator.playing);
                     animator.previousTime = animator.time;
                     animator.previousOnce = animator.playingOnce;
+                    animator.previousRate = animator.rate;
                     animator.fade = 0.0f;
                 }
                 animator.playing = *wanted;
                 animator.playingOnce = once;
                 animator.time = 0.0;
             }
+            animator.rate = rate;
             animator.time += deltaSeconds * rate;
             if (animator.fade < 1.0f) {
-                animator.previousTime += deltaSeconds * animator.speed;
+                animator.previousTime += deltaSeconds * animator.previousRate;
                 animator.fade = std::min(1.0f, animator.fade + static_cast<float>(deltaSeconds) / FadeSeconds);
             }
         }

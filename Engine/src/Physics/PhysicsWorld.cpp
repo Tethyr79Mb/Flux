@@ -195,6 +195,7 @@ namespace Flux {
         struct Character {
             JPH::Ref<JPH::CharacterVirtual> character; // son z : la direction du regard (le modèle regarde vers +z en glTF)
             float groundSpeed = 0.0f; // vitesse horizontale au dernier pas, pour les animations
+            JPH::Vec3 walk = JPH::Vec3::sZero(); // vitesse de marche, qui rejoint la commande selon l'accélération
             float airTime = 0.0f;     // secondes sans toucher un sol où tenir debout (saut, chute, pente trop raide)
             Entity seat = NullEntity; // siège où il était posé au dernier pas
         };
@@ -253,6 +254,9 @@ namespace Flux {
         // Dernier passage de chaque personnage d'un monde à l'autre : pas de nouveau passage juste après (au bas de
         // la rampe, il toucherait les deux sols à la fois).
         std::unordered_map<Entity, double> transfers;
+        // Vitesse de marche d'un personnage qui change de monde, dans le repère du nouveau : son corps y est recréé à
+        // la synchronisation suivante, et il s'arrêterait net en passant la rampe.
+        std::unordered_map<Entity, JPH::Vec3> carriedWalk;
         Entity player = NullEntity;
         bool warnedChild = false;
         bool warnedMeshSimulated = false;
@@ -954,6 +958,9 @@ namespace Flux {
             const JPH::Vec3 forward = ToJolt(transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f}));
             character.character = new JPH::CharacterVirtual(settings, position, Facing(forward, UpFrom(GravityAt(grid, position))),
                                                             static_cast<JPH::uint64>(entt::to_integral(entity)), grid.system.get());
+            if (const auto carried = carriedWalk.find(entity); carried != carriedWalk.end()) {
+                character.walk = carried->second;
+            }
             grid.characters.emplace(entity, std::move(character));
         }
 
@@ -1056,6 +1063,7 @@ namespace Flux {
                     CreateBody(scene, *grid, entity, collider, grid->InFrame(*transform));
                 }
             }
+            carriedWalk.clear();
             SynchronizeMirrors(scene);
         }
 
@@ -1230,6 +1238,7 @@ namespace Flux {
                 // Debout dans le nouveau repère, même cap dans le monde (les repères du monde sont l'identité).
                 const Math::Quaternionf rotation = target->frameRotation.Conjugate() * from->frameRotation * FromJolt(body.GetRotation());
                 const JPH::RVec3 feet(ToJolt(position));
+                carriedWalk[entity] = ToJolt(target->frameRotation.Conjugate().Rotate(from->frameRotation.Rotate(FromJolt(character.walk))));
                 scene.SetParent(entity, target->frame);
                 Write(scene, *target, entity, feet, Upright(ToJoltRotation(rotation), UpFrom(GravityAt(*target, feet))));
                 transfers[entity] = time;
@@ -1266,6 +1275,7 @@ namespace Flux {
             body.SetLinearVelocity(JPH::Vec3::sZero());
             character.groundSpeed = 0.0f;
             character.airTime = 0.0f;
+            character.walk = JPH::Vec3::sZero();
             character.seat = seat;
             return true;
         }
@@ -1298,6 +1308,15 @@ namespace Flux {
                     wanted *= input.run ? component.runSpeed : component.walkSpeed;
                     jump = input.jump;
                 }
+                // La marche rejoint la commande à l'accélération voulue, pour démarrer comme pour s'arrêter : les pas
+                // de l'animation suivent groundSpeed, ils restent ainsi en accord avec le chemin parcouru. Ramenée
+                // dans le plan du sol, dont le haut tourne sur une planète.
+                JPH::Vec3 walk = character.walk - up * character.walk.Dot(up);
+                const JPH::Vec3 change = wanted - walk;
+                const float reach = std::max(component.acceleration, 0.5f) * StepSeconds;
+                const float distance = change.Length();
+                walk = distance > reach ? walk + change * (reach / distance) : wanted;
+                character.walk = walk;
 
                 // Comme l'exemple CharacterVirtual de Jolt : au sol, on part de la vitesse du sol (plateforme qui
                 // bouge) et on peut sauter ; en l'air, la vitesse verticale continue et la gravité s'ajoute.
@@ -1322,7 +1341,7 @@ namespace Flux {
                     const JPH::Vec3 normal = body.GetGroundNormal();
                     fall = normal * gravity.Dot(normal);
                 }
-                velocity += fall * StepSeconds + wanted; // la direction reste pilotable en l'air
+                velocity += fall * StepSeconds + walk; // la direction reste pilotable en l'air
                 body.SetLinearVelocity(velocity);
 
                 // Le personnage se tourne peu à peu vers où il marche, autour du haut de l'endroit.

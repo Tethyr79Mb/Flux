@@ -428,6 +428,9 @@ namespace Flux {
         float walkSpeed = 2.0f;  // m/s
         float runSpeed = 5.0f;
         float jumpSpeed = 4.5f;  // m/s vers le haut au départ du saut (environ 1 m de haut)
+        // m/s², pour démarrer et s'arrêter : sans elle, un appui bref le déplace à pleine vitesse pendant que
+        // l'animation n'a pas eu le temps de passer à la marche (il glisse).
+        float acceleration = 10.0f;
         bool player = true;      // dirigé par le joueur ; sinon, immobile (soumis à la gravité seulement)
         float groundSpeed = 0.0f; // vitesse horizontale mesurée pendant le jeu, m/s ; 0 en l'air (non enregistrée)
         float airTime = 0.0f;     // secondes passées en l'air (saut, chute) pendant le jeu ; 0 au sol (non enregistrée)
@@ -602,9 +605,11 @@ namespace Flux {
         // Lecture en cours (non enregistrée) : animation jouée et son instant, animation qui s'efface, fondu.
         std::string playing{};
         double time = 0.0;
+        double rate = 0.0;        // vitesse de lecture à la dernière image (celle du personnage)
         bool playingOnce = false; // jouée une fois (s'asseoir, se lever), même si loop
         std::string previous{};
         double previousTime = 0.0;
+        double previousRate = 0.0; // gardée pendant le fondu : la marche qui s'efface ralentit avec le personnage
         bool previousOnce = false;
         float fade = 1.0f; // part de playing dans la pose, de 0 à 1
     };

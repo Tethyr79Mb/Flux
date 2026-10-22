@@ -217,6 +217,14 @@ namespace {
         character.groundSpeed = 4.0f;
         Animator::Update(scene, 1.0);
         CHECK(animator.playing == "Course");
+        // À l'arrêt, la course qui s'efface garde sa vitesse de lecture (4 / 5), pas celle de l'animateur.
+        character.groundSpeed = 0.0f;
+        Animator::Update(scene, 0.1);
+        const double fading = animator.previousTime;
+        Animator::Update(scene, 0.1);
+        CHECK(animator.previous == "Course" && std::abs(animator.previousTime - fading - 0.08) < 1.0e-6);
+        character.groundSpeed = 4.0f;
+        Animator::Update(scene, 1.0);
         // Sans animation de repos, la marche se fige à l'arrêt.
         scene.Get<AnimatorComponent>(hero).idleAnimation.clear();
         scene.Get<AnimatorComponent>(hero).runAnimation.clear();
