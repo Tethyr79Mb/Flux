@@ -37,13 +37,18 @@ namespace Flux::Planetology {
             return radians;
         }
 
-        // L'image <nom>-<suffixe> en .png ou .jpg, chemin vide si aucune.
+        // L'image <nom>-<suffixe> en .png ou .jpg, dans le sous-dossier de sa matière (<nom>/), sinon à la racine du
+        // dossier (rangement d'avant, encore accepté) ; chemin vide si aucune.
         std::filesystem::path FindImage(const std::filesystem::path& directory, std::string_view name, std::string_view suffix) {
-            for (const std::string_view extension : {".png", ".jpg", ".jpeg"}) {
-                std::filesystem::path path = directory / Platform::PathFromUtf8(std::string(name) + "-" + std::string(suffix) + std::string(extension));
-                std::error_code error;
-                if (std::filesystem::is_regular_file(path, error)) {
-                    return path;
+            const std::filesystem::path file = Platform::PathFromUtf8(std::string(name) + "-" + std::string(suffix));
+            for (const std::filesystem::path& folder : {directory / Platform::PathFromUtf8(std::string(name)), directory}) {
+                for (const std::string_view extension : {".png", ".jpg", ".jpeg"}) {
+                    std::filesystem::path path = folder / file;
+                    path += extension;
+                    std::error_code error;
+                    if (std::filesystem::is_regular_file(path, error)) {
+                        return path;
+                    }
                 }
             }
             return {};
@@ -165,7 +170,7 @@ namespace Flux::Planetology {
         }
 
         // Cache des textures compressées (bin/Cache/sol-bc7.bin) : la compression prend plusieurs secondes, elle n'est
-        // refaite que si une image change. Clé : nom, taille et date de chaque image, et ce qui change le résultat.
+        // refaite que si une image change. Clé : chemin, taille et date de chaque image, et ce qui change le résultat.
         constexpr std::uint64_t CacheMagic = 0x3743424C4F535846; // « FXSOLBC7 »
         constexpr std::uint32_t CacheVersion = 1; // à changer avec la compression, les mips ou la disposition
 
@@ -186,10 +191,9 @@ namespace Flux::Planetology {
                 }
             };
             add(&MaxSize, sizeof(MaxSize));
-            const std::string directory = jobs.empty() ? std::string() : Platform::ToUtf8(jobs.front().path.parent_path());
-            add(directory.data(), directory.size());
             for (const Job& job : jobs) {
-                const std::string name = Platform::ToUtf8(job.path.filename());
+                // Chemin entier : une image déplacée d'un dossier à l'autre refait le cache.
+                const std::string name = Platform::ToUtf8(job.path);
                 add(name.data(), name.size());
                 std::error_code error;
                 const std::uint64_t bytes = std::filesystem::file_size(job.path, error);
