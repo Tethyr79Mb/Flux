@@ -47,8 +47,20 @@ namespace Flux::Planetology {
         // Sommets de la page (ModelVertex et MorphVertex), écrits par le GPU et lus comme sommets.
         const RHI::Buffer& GetVertices(std::uint32_t page) const { return *m_pages[page].vertices; }
         const RHI::Buffer& GetMorph(std::uint32_t page) const { return *m_pages[page].morph; }
+        // Boîte de chaque paquet des tuiles de la page (Meshlet), pour les mesh shaders du sol.
+        const RHI::Buffer& GetMeshlets(std::uint32_t page) const { return *m_pages[page].meshlets; }
+        // Boîte englobante d'un paquet de TileMeshletQuads x TileMeshletQuads mailles d'une tuile (TileMeshletCount par
+        // tuile, rangés ligne par ligne), relative au même centre que ses sommets : les deux formes du glissement et
+        // ses jupes comprises.
+        struct Meshlet
+        {
+            std::array<float, 4> low;  // xyz ; w : inutilisé
+            std::array<float, 4> high;
+        };
         // Relit les sommets d'une case (mémoire Readback, le GPU passé) : TileVertexCount de chaque.
         void ReadTile(std::uint32_t tile, ModelVertex* vertices, MorphVertex* morph) const;
+        // De même, ses TileMeshletCount paquets.
+        void ReadMeshlets(std::uint32_t tile, Meshlet* meshlets) const;
 
         struct Stats
         {
@@ -72,7 +84,8 @@ namespace Flux::Planetology {
         {
             std::unique_ptr<RHI::Buffer> vertices;
             std::unique_ptr<RHI::Buffer> morph;
-            std::unique_ptr<RHI::BindGroup> group; // les deux, écrits par le compute shader
+            std::unique_ptr<RHI::Buffer> meshlets;
+            std::unique_ptr<RHI::BindGroup> group; // les trois, écrits par le compute shader
         };
         struct Frame
         {

@@ -14,6 +14,9 @@ namespace Flux::Vk {
         std::filesystem::path shaderPath;
         const char* vertexEntryPoint = "vertexMain";
         const char* fragmentEntryPoint = "fragmentMain";
+        // Mesh shaders : étape de maillage (et de tâche, facultative) à la place des sommets, sans entrée de sommets.
+        const char* taskEntryPoint = nullptr;
+        const char* meshEntryPoint = nullptr;
 
         std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> vertexAttributes;

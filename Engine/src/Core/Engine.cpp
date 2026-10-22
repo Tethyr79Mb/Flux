@@ -240,6 +240,7 @@ namespace Flux {
                     ui.LabelText("Tuiles de planète", std::format("{} ({} eau), {}/{} gardées", render.planetTiles,
                                                                   render.planetOceanTiles, render.planetStoredTiles,
                                                                   render.planetTileCapacity));
+                    ui.LabelText("Sol dessiné par", render.groundMeshShaders ? "mesh shaders" : "sommets");
                     ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
                     ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer)", render.shadowTrees, render.treePlains,
                                                                  render.pendingTreePlains));

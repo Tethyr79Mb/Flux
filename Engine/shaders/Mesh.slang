@@ -79,6 +79,11 @@ struct FrameData
     InteriorData interiors[MaxInteriors];
     PlanetData planets[MaxPlanets];
     AtmosphereData atmosphere;
+    // Pyramide de profondeur de l'image précédente (OcclusionCulling), où les paquets du sol cachés sont écartés
+    // (shaders/PlanetMesh.slang) : x, y taille de la profondeur source ; z niveaux ; w 1 si elle est lisible, 0 sinon
+    // (pas de test). Premier texel de chaque niveau.
+    uint4 pyramidSize;
+    uint4 pyramidOffsets[4];
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -486,8 +491,9 @@ float2 PlanetClimate(PlanetData planet, float3 local)
     return ClimateAt(planet.shape.x, planet.shape.y, planet.climate.xyz, planet.water.w, local);
 }
 
-[shader("vertex")]
-PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanInstanceID)
+// Sommet d'une tuile de planète, glissé vers la forme parente selon sa distance : vertexPlanet, ou meshPlanet
+// (shaders/PlanetMesh.slang) qui lit ses sommets lui-même.
+PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
 {
     const float morph = PlanetMorph(draw, input.position);
     const float3 position = input.position + input.morphOffset * morph;
@@ -508,6 +514,12 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.clouds = CloudShadow(output.base.worldPosition);
     return output;
+}
+
+[shader("vertex")]
+PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanInstanceID)
+{
+    return PlanetVertex(draw, input);
 }
 
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé).

@@ -85,8 +85,13 @@ namespace Flux {
             std::array<InteriorData, MaxInteriors> interiors;
             std::array<Planetology::PlanetGpu, MaxPlanets> planets;
             Planetology::AtmosphereGpu atmosphere;
+            // Pyramide de profondeur lue par les mesh shaders du sol (OcclusionCulling::GetSourcePyramid) : x, y taille
+            // de la source ; z niveaux ; w 1 si elle sert ; premier texel de chaque niveau.
+            std::array<std::uint32_t, 4> pyramidSize;
+            std::array<std::uint32_t, 16> pyramidOffsets;
         };
-        static_assert(sizeof(FrameData) == 576 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu) + sizeof(Planetology::AtmosphereGpu)
+        static_assert(sizeof(FrameData) == 576 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
+                                               + sizeof(Planetology::AtmosphereGpu) + 80
                       && ShadowCascadeCount == 4);
 
 
@@ -120,6 +125,8 @@ namespace Flux {
         constexpr std::uint32_t TreeSlot = 7;
         constexpr std::uint32_t AirRayleighSlot = 8;
         constexpr std::uint32_t AirMieSlot = 9;
+        constexpr std::uint32_t TilePyramidSlot = 10; // mesh shaders du sol seulement (shaders/PlanetMesh.slang)
+        constexpr std::uint32_t TileCommandSlot = 11;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -207,6 +214,8 @@ namespace Flux {
             RHI::Binding{TreeSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{AirRayleighSlot, RHI::BindingType::Texture, both}, // lue par sommet (sol, eau, arbres) et par pixel
             RHI::Binding{AirMieSlot, RHI::BindingType::Texture, both},
+            RHI::Binding{TilePyramidSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{TileCommandSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -227,6 +236,17 @@ namespace Flux {
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
+        }
+        if (device.HasMeshShaders()) {
+            // Page de tuiles lue par les mesh shaders du sol : sommets, forme parente, boîtes des paquets.
+            constexpr std::array pageBindings{RHI::Binding{0, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+                                              RHI::Binding{1, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+                                              RHI::Binding{2, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex}};
+            auto pageLayout = device.CreateBindGroupLayout({.bindings = pageBindings, .maxGroups = Planetology::PlanetTileCompute::MaxPages});
+            if (!pageLayout) {
+                return std::unexpected(pageLayout.error());
+            }
+            renderer->m_tileMeshLayout = std::move(*pageLayout);
         }
 
         if (auto pipelines = renderer->CreatePipelines(colorFormat, motionFormat, depthFormat); !pipelines) {
@@ -445,6 +465,38 @@ namespace Flux {
                                               "fragmentOcean", "fragmentMain", false});
             !result) {
             return result;
+        }
+        // Sol en mesh shaders, si le GPU les a : comme m_planet.opaque et geometryOnly, plus le groupe 3. En cas d'échec
+        // (pilote), le sol reste sur le chemin des sommets.
+        if (m_tileMeshLayout) {
+            const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_tileMeshLayout.get()};
+            RHI::PipelineDesc mesh;
+            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "PlanetMesh.spv";
+            mesh.taskEntryPoint = "taskPlanet";
+            mesh.meshEntryPoint = "meshPlanet";
+            mesh.fragmentEntryPoint = "fragmentPlanet";
+            mesh.bindGroupLayouts = meshLayouts;
+            mesh.pushConstantsSize = sizeof(DrawParams);
+            mesh.colorFormat = colorFormat;
+            mesh.secondColorFormat = motionFormat;
+            mesh.writeSecondColor = true;
+            mesh.depthFormat = depthFormat;
+            mesh.depthTest = true;
+            mesh.depthWrite = true;
+            mesh.depthCompare = RHI::CompareOp::Greater;
+            mesh.cullMode = RHI::CullMode::Back;
+            auto created = create(m_planetMesh, mesh);
+            if (created) {
+                mesh.fragmentEntryPoint = "fragmentPlanetGeometry";
+                created = create(m_planetMeshGeometry, mesh);
+            }
+            if (created) {
+                Log::Info("Sol des planètes : mesh shaders");
+            } else {
+                Log::Warning("Sol des planètes : mesh shaders indisponibles ({}), chemin des sommets", created.error());
+                m_planetMesh.reset();
+                m_planetMeshGeometry.reset();
+            }
         }
         // Nuages : la profondeur du point touché est écrite par le shader (SV_Depth) et testée contre celle de la
         // scène, sans être enregistrée : le sol, les montagnes et les vaisseaux devant eux les cachent.
@@ -988,6 +1040,21 @@ namespace Flux {
         std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
         std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
+        if (m_planetMesh) {
+            // Paquets du sol cachés : testés dans la pyramide de l'image précédente quand les entités le sont aussi ;
+            // sans elle, un buffer quelconque reste lié (jamais lu, pyramidSize.w à 0).
+            const OcclusionCulling::SourcePyramid pyramid = m_occlusion->GetSourcePyramid();
+            const bool tested = m_occlusionActive && pyramid.buffer;
+            if (tested) {
+                frame.pyramidSize = {pyramid.size.width, pyramid.size.height, pyramid.levels, 1u};
+                frame.pyramidOffsets = pyramid.offsets;
+            }
+            const RHI::Buffer* bound = tested ? pyramid.buffer : m_frameBuffers[frameIndex].get();
+            if (m_boundPyramid[frameIndex] != bound) {
+                m_boundPyramid[frameIndex] = bound;
+                m_frameGroups[frameIndex]->SetBuffer(TilePyramidSlot, *bound);
+            }
+        }
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
     }
 
@@ -1052,7 +1119,8 @@ namespace Flux {
         PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()),
                               .stored = m_planets->GetStoredTileCount(),
                               .pending = m_planets->GetPendingTileCount(),
-                              .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading()};
+                              .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading(),
+                              .meshShaders = m_planetMesh != nullptr};
         for (const TileDraw& draw : m_tileDraws) {
             stats.ocean += draw.ocean ? 1u : 0u;
         }
@@ -1113,15 +1181,37 @@ namespace Flux {
         std::unique_ptr<RHI::Buffer>& buffer = m_indirectBuffers[frameIndex];
         const std::uint64_t bytes = m_tileCommands.size() * sizeof(RHI::DrawIndexedCommand);
         if (!buffer || buffer->GetSize() < bytes) {
-            auto grown = m_device.CreateBuffer({std::max(std::bit_ceil(bytes), MinIndirectBufferSize), RHI::BufferUsage::Indirect,
-                                                RHI::MemoryType::Upload});
+            // Storage : les mesh shaders du sol lisent les mêmes commandes (taskPlanet).
+            auto grown = m_device.CreateBuffer({std::max(std::bit_ceil(bytes), MinIndirectBufferSize),
+                                                RHI::BufferUsage::Indirect | RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
             if (!grown) {
                 Log::Error("{}", grown.error());
                 return false;
             }
             buffer = std::move(*grown);
+            m_frameGroups[frameIndex]->SetBuffer(TileCommandSlot, *buffer);
         }
         buffer->Write(m_tileCommands.data(), bytes);
+        // Groupe de chaque page lue par les mesh shaders (ses buffers ne changent jamais).
+        if (m_planetMesh) {
+            const Planetology::PlanetTileCompute& tiles = m_planets->GetTiles();
+            for (const TileBatch& batch : m_tileBatches) {
+                if (batch.page >= m_tileMeshGroups.size()) {
+                    m_tileMeshGroups.resize(batch.page + 1);
+                }
+                std::unique_ptr<RHI::BindGroup>& group = m_tileMeshGroups[batch.page];
+                if (!group) {
+                    group = m_device.CreateBindGroup(*m_tileMeshLayout);
+                    if (!group) {
+                        Log::Error("Sol des planètes : groupe de la page {} impossible", batch.page);
+                        return false;
+                    }
+                    group->SetBuffer(0, tiles.GetVertices(batch.page));
+                    group->SetBuffer(1, tiles.GetMorph(batch.page));
+                    group->SetBuffer(2, tiles.GetMeshlets(batch.page));
+                }
+            }
+        }
         for (std::size_t pass = 0; pass < TilePassCount; ++pass) {
             m_tilePasses[pass] = std::span(m_tileBatches).subspan(passStarts[pass], passStarts[pass + 1] - passStarts[pass]);
         }
@@ -1421,6 +1511,17 @@ namespace Flux {
         const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
         const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, pass == OceanPass ? 1u : 0u,
                                 0.0f, 1.0f, 0.0f, 0.0f, 0u, 0u, {}};
+        if (&pipeline == m_planetMesh.get() || &pipeline == m_planetMeshGeometry.get()) {
+            // Mesh shaders : une tâche par commande du lot, qui lit la commande elle-même (params.draw : la première).
+            DrawParams meshParams = params;
+            for (const TileBatch& batch : m_tilePasses[pass]) {
+                meshParams.draw = batch.first;
+                commands.PushConstants(&meshParams, sizeof(meshParams));
+                commands.SetBindGroup(3, *m_tileMeshGroups[batch.page]);
+                commands.DrawMeshTasks(batch.count);
+            }
+            return;
+        }
         commands.PushConstants(&params, sizeof(params));
         const Planetology::PlanetTileCompute& tiles = m_planets->GetTiles();
         commands.BindIndexBuffer(*m_planets->GetIndices());
@@ -1521,7 +1622,10 @@ namespace Flux {
 
     void MeshRenderer::DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
-        DrawTiles(commands, state, frameIndex, GroundPass, m_groundGeometryOnly ? *m_planet.geometryOnly : *m_planet.opaque);
+        // Mesh shaders quand le GPU les a (pipelines créés), sinon les sommets.
+        const RHI::Pipeline& pipeline = m_planetMesh ? (m_groundGeometryOnly ? *m_planetMeshGeometry : *m_planetMesh)
+                                                     : (m_groundGeometryOnly ? *m_planet.geometryOnly : *m_planet.opaque);
+        DrawTiles(commands, state, frameIndex, GroundPass, pipeline);
     }
 
     void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {
