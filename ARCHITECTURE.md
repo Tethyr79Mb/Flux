@@ -352,7 +352,9 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   pas sur une carte sans). Le calcul des tuiles écrit aussi la boîte de chacun des 16 paquets de 8×8 carrés (jupes
   comprises, les deux formes du morphing). Une tâche par commande de dessin indirect (lue dans le même buffer) garde
   les paquets dans le champ et non cachés par la pyramide de profondeur de l'image précédente, puis un mesh shader de
-  128 threads refait sommets et triangles du paquet avec la même fonction que le vertex shader (`PlanetVertex`).
+  128 threads refait sommets et triangles du paquet avec la même fonction que le vertex shader (`PlanetVertex`). Si le
+  pilote préfère des groupes plus petits (`maxPreferredMeshWorkGroupInvocations` sous 128), `PlanetMeshSmall.slang`
+  dessine chaque paquet en deux moitiés de 8×4 à 64 threads.
   `ShaderStage::Vertex` couvre alors aussi tâche et maillage, pour que les layouts restent les mêmes sur les deux
   chemins.
 - Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont

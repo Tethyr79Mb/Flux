@@ -10,6 +10,9 @@
 // déplacement de la caméra pour que cela reste rare.
 // Compilé à part de Mesh.slang (qu'il inclut) : un module qui déclare les mesh shaders ne se charge pas sur un GPU qui
 // ne les a pas.
+// Deux tailles de groupe, choisies au démarrage selon ce que préfère le pilote (maxPreferredMeshWorkGroupInvocations) :
+// 128 threads, un groupe par paquet ; 64 threads (PlanetMeshSmall.slang, FLUX_MESH_SMALL), chaque paquet en deux
+// moitiés de 8 x 4 mailles, testées ensemble avec la boîte du paquet.
 
 #include "Mesh.slang"
 
@@ -19,10 +22,22 @@ static const uint TileQuarterIndices = 6 * (TileQuads / 2) * (TileQuads / 2) + 2
 static const uint MeshletQuads = 8; // TileMeshletQuads
 static const uint MeshletSide = TileQuads / MeshletQuads;
 static const uint MeshletCount = MeshletSide * MeshletSide;
-static const uint MeshletVertices = (MeshletQuads + 1) * (MeshletQuads + 1);
-static const uint MaxVertices = MeshletVertices + 2 * (MeshletQuads + 1);          // un coin : deux bouts de jupe
-static const uint MaxTriangles = 2 * MeshletQuads * MeshletQuads + 2 * 2 * MeshletQuads;
+#ifdef FLUX_MESH_SMALL
+static const uint PieceRows = 2; // morceaux dessinés par paquet, l'un au-dessus de l'autre
+static const uint MeshGroupSize = 64;
+#else
+static const uint PieceRows = 1;
 static const uint MeshGroupSize = 128;
+#endif
+static const uint PieceQuadsX = MeshletQuads;
+static const uint PieceQuadsY = MeshletQuads / PieceRows;
+static const uint PieceSideX = PieceQuadsX + 1;
+static const uint PieceSideY = PieceQuadsY + 1;
+static const uint PieceVertices = PieceSideX * PieceSideY;
+static const uint PieceTriangles = 2 * PieceQuadsX * PieceQuadsY;
+// Un coin : un bout de jupe en largeur et un en hauteur.
+static const uint MaxVertices = PieceVertices + PieceSideX + PieceSideY;
+static const uint MaxTriangles = PieceTriangles + 2 * PieceQuadsX + 2 * PieceQuadsY;
 
 // Doit correspondre à Planetology::PlanetTileCompute::Meshlet.
 struct Meshlet
@@ -44,7 +59,7 @@ struct TilePayload
 {
     uint draw;        // DrawData de la tuile
     uint firstVertex; // dans la page
-    uint meshlets[MeshletCount]; // paquets à dessiner (0 à MeshletCount - 1)
+    uint pieces[MeshletCount * PieceRows]; // morceaux à dessiner : paquet * PieceRows + rangée
 };
 
 groupshared TilePayload payload;
@@ -162,8 +177,10 @@ void taskPlanet(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     }
     if (visible) {
         uint slot;
-        InterlockedAdd(visibleCount, 1u, slot);
-        payload.meshlets[slot] = thread;
+        InterlockedAdd(visibleCount, PieceRows, slot);
+        for (uint row = 0; row < PieceRows; ++row) {
+            payload.pieces[slot + row] = thread * PieceRows + row;
+        }
     }
     GroupMemoryBarrierWithGroupSync();
     DispatchMesh(visibleCount, 1, 1, payload);
@@ -183,28 +200,35 @@ PlanetVertexInput ReadTileVertex(uint firstVertex, uint index)
     return input;
 }
 
-// Bords de la tuile que touche le paquet (mx, my), dans l'ordre des jupes : bas, droite, haut, gauche.
-bool OnEdge(uint edge, uint mx, uint my)
+// Le morceau (origine en mailles dans la tuile) touche ce bord de la tuile, dans l'ordre des jupes : bas, droite, haut,
+// gauche.
+bool OnEdge(uint edge, uint2 origin)
 {
-    return edge == 0 ? my == 0 : edge == 1 ? mx == MeshletSide - 1 : edge == 2 ? my == MeshletSide - 1 : mx == 0;
+    return edge == 0 ? origin.y == 0 : edge == 1 ? origin.x + PieceQuadsX == TileQuads
+         : edge == 2 ? origin.y + PieceQuadsY == TileQuads : origin.x == 0;
 }
 
-// Sommet k (0 à MeshletQuads) du bout de jupe du paquet sur ce bord : son indice dans la tuile. Les jupes suivent le
-// bord dans le sens trigonométrique (bas : s croissant, droite : t croissant, haut : s décroissant, gauche : t
-// décroissant), comme BuildTile.
-uint SkirtVertex(uint edge, uint mx, uint my, uint k)
+// Mailles du morceau le long de ce bord.
+uint EdgeQuads(uint edge)
 {
-    const uint along = edge == 0 ? mx * MeshletQuads : edge == 1 ? my * MeshletQuads
-                     : edge == 2 ? (MeshletSide - 1 - mx) * MeshletQuads : (MeshletSide - 1 - my) * MeshletQuads;
+    return (edge & 1u) == 0 ? PieceQuadsX : PieceQuadsY;
+}
+
+// Sommet k (0 à EdgeQuads) du bout de jupe du morceau sur ce bord : son indice dans la tuile. Les jupes suivent le bord
+// dans le sens trigonométrique (bas : s croissant, droite : t croissant, haut : s décroissant, gauche : t décroissant),
+// comme BuildTile.
+uint SkirtVertex(uint edge, uint2 origin, uint k)
+{
+    const uint along = edge == 0 ? origin.x : edge == 1 ? origin.y
+                     : edge == 2 ? TileQuads - origin.x - PieceQuadsX : TileQuads - origin.y - PieceQuadsY;
     return TileSide * TileSide + edge * TileSide + along + k;
 }
 
-// Le sommet de la grille du paquet sous le sommet k de sa jupe sur ce bord (indice dans le paquet).
+// Le sommet de la grille du morceau sous le sommet k de sa jupe sur ce bord (indice dans le morceau).
 uint SkirtTop(uint edge, uint k)
 {
-    const uint side = MeshletQuads + 1;
-    return edge == 0 ? k : edge == 1 ? k * side + MeshletQuads : edge == 2 ? MeshletQuads * side + (MeshletQuads - k)
-                                                                          : (MeshletQuads - k) * side;
+    return edge == 0 ? k : edge == 1 ? k * PieceSideX + PieceQuadsX
+         : edge == 2 ? PieceQuadsY * PieceSideX + (PieceQuadsX - k) : (PieceQuadsY - k) * PieceSideX;
 }
 
 [shader("mesh")]
@@ -213,45 +237,50 @@ uint SkirtTop(uint edge, uint k)
 void meshPlanet(uint thread : SV_GroupIndex, uint3 group : SV_GroupID, in payload TilePayload tile,
                 OutputVertices<PlanetVertexOutput, MaxVertices> vertices, OutputIndices<uint3, MaxTriangles> triangles)
 {
-    const uint meshlet = tile.meshlets[group.x];
-    const uint mx = meshlet % MeshletSide;
-    const uint my = meshlet / MeshletSide;
-    const uint side = MeshletQuads + 1;
-    // Bouts de jupe du paquet, rangés après sa grille dans l'ordre des bords.
+    const uint piece = tile.pieces[group.x];
+    const uint meshlet = piece / PieceRows;
+    const uint2 origin = uint2((meshlet % MeshletSide) * MeshletQuads,
+                               (meshlet / MeshletSide) * MeshletQuads + (piece % PieceRows) * PieceQuadsY);
+    // Bouts de jupe du morceau, rangés après sa grille dans l'ordre des bords (au plus deux : un coin).
     uint skirtEdges[2] = { 0, 0 };
     uint skirtCount = 0;
     for (uint edge = 0; edge < 4; ++edge) {
-        if (OnEdge(edge, mx, my)) {
+        if (OnEdge(edge, origin)) {
             skirtEdges[skirtCount++] = edge;
         }
     }
-    const uint vertexCount = MeshletVertices + skirtCount * side;
-    const uint triangleCount = 2 * MeshletQuads * MeshletQuads + skirtCount * 2 * MeshletQuads;
+    const uint firstQuads = skirtCount > 0 ? EdgeQuads(skirtEdges[0]) : 0;
+    const uint secondQuads = skirtCount > 1 ? EdgeQuads(skirtEdges[1]) : 0;
+    const uint secondSkirt = PieceVertices + (skirtCount > 0 ? firstQuads + 1 : 0);
+    const uint vertexCount = secondSkirt + (skirtCount > 1 ? secondQuads + 1 : 0);
+    const uint triangleCount = PieceTriangles + 2 * (firstQuads + secondQuads);
     SetMeshOutputCounts(vertexCount, triangleCount);
 
     for (uint v = thread; v < vertexCount; v += MeshGroupSize) {
         uint index;
-        if (v < MeshletVertices) {
-            index = (my * MeshletQuads + v / side) * TileSide + mx * MeshletQuads + v % side;
+        if (v < PieceVertices) {
+            index = (origin.y + v / PieceSideX) * TileSide + origin.x + v % PieceSideX;
+        } else if (v < secondSkirt) {
+            index = SkirtVertex(skirtEdges[0], origin, v - PieceVertices);
         } else {
-            const uint s = (v - MeshletVertices) / side;
-            index = SkirtVertex(skirtEdges[s], mx, my, (v - MeshletVertices) % side);
+            index = SkirtVertex(skirtEdges[1], origin, v - secondSkirt);
         }
         vertices[v] = PlanetVertex(tile.draw, ReadTileVertex(tile.firstVertex, index));
     }
     // Comme BuildTileIndices : (a, b, c) puis (a, c, d) par maille ; par bout de jupe, (bord, jupe, bord suivant) puis
     // (bord suivant, jupe, jupe suivante).
     for (uint t = thread; t < triangleCount; t += MeshGroupSize) {
-        if (t < 2 * MeshletQuads * MeshletQuads) {
+        if (t < PieceTriangles) {
             const uint quad = t / 2;
-            const uint a = (quad / MeshletQuads) * side + quad % MeshletQuads;
-            triangles[t] = (t & 1u) == 0 ? uint3(a, a + 1, a + side + 1) : uint3(a, a + side + 1, a + side);
+            const uint a = (quad / PieceQuadsX) * PieceSideX + quad % PieceQuadsX;
+            triangles[t] = (t & 1u) == 0 ? uint3(a, a + 1, a + PieceSideX + 1) : uint3(a, a + PieceSideX + 1, a + PieceSideX);
         } else {
-            const uint skirt = t - 2 * MeshletQuads * MeshletQuads;
-            const uint s = skirt / (2 * MeshletQuads);
-            const uint k = (skirt % (2 * MeshletQuads)) / 2;
+            uint skirt = t - PieceTriangles;
+            const uint s = skirt < 2 * firstQuads ? 0u : 1u;
+            skirt -= s * 2 * firstQuads;
+            const uint k = skirt / 2;
             const uint edge = skirtEdges[s];
-            const uint low = MeshletVertices + s * side + k;
+            const uint low = (s == 0 ? PieceVertices : secondSkirt) + k;
             triangles[t] = (skirt & 1u) == 0 ? uint3(SkirtTop(edge, k), low, SkirtTop(edge, k + 1))
                                              : uint3(SkirtTop(edge, k + 1), low, low + 1);
         }

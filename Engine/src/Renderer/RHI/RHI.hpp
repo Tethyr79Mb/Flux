@@ -411,6 +411,8 @@ namespace Flux::RHI {
         virtual bool HasFloat64() const = 0;
         // Mesh shaders (étapes de tâche et de maillage) : facultatifs, le sol des planètes s'en sert quand ils y sont.
         virtual bool HasMeshShaders() const = 0;
+        // Nombre de threads par groupe de maillage que le pilote préfère (0 sans mesh shaders).
+        virtual std::uint32_t GetMeshPreferredThreads() const = 0;
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).
         virtual void WaitIdle() = 0;
 

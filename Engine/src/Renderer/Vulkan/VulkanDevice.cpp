@@ -129,6 +129,16 @@ namespace Flux::Vk {
             device->m_meshShaders = device->m_physicalDevice.enable_extension_features_if_present(mesh)
                                     && device->m_physicalDevice.enable_extension_if_present(VK_EXT_MESH_SHADER_EXTENSION_NAME);
         }
+        if (device->m_meshShaders) {
+            // Taille de groupe que le pilote préfère (NVIDIA plus petite qu'AMD) : choisit la variante des paquets du sol.
+            VkPhysicalDeviceMeshShaderPropertiesEXT meshProperties{};
+            meshProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+            VkPhysicalDeviceProperties2 properties{};
+            properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            properties.pNext = &meshProperties;
+            vkGetPhysicalDeviceProperties2(device->m_physicalDevice.physical_device, &properties);
+            device->m_meshPreferredThreads = meshProperties.maxPreferredMeshWorkGroupInvocations;
+        }
         // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
         device->m_bufferMarkers = device->m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
         if (device->m_physicalDevice.is_extension_present(VK_EXT_DEVICE_FAULT_EXTENSION_NAME)) {

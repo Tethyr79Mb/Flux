@@ -5,6 +5,7 @@
 
 #include <VkBootstrap.h>
 
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -42,6 +43,8 @@ namespace Flux::Vk {
         bool HasFloat64() const { return m_float64; }
         // VK_EXT_mesh_shader activée (étapes de tâche et de maillage) : sol des planètes en mesh shaders.
         bool HasMeshShaders() const { return m_meshShaders; }
+        // maxPreferredMeshWorkGroupInvocations (0 sans mesh shaders).
+        std::uint32_t GetMeshPreferredThreads() const { return m_meshPreferredThreads; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
         bool HasBufferMarkers() const { return m_bufferMarkers; }
         // VK_EXT_debug_utils activée : repères nommés dans les listes de commandes (sinon ses fonctions sont interdites).
@@ -93,6 +96,7 @@ namespace Flux::Vk {
         bool m_anisotropy = false;
         bool m_float64 = false;
         bool m_meshShaders = false;
+        std::uint32_t m_meshPreferredThreads = 0;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;
         bool m_debugLabels = false;

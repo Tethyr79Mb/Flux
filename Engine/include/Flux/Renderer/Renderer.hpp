@@ -52,7 +52,8 @@ namespace Flux {
         std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
         std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
-        bool groundMeshShaders = false;       // le sol passe par les mesh shaders (choisi au démarrage selon le GPU)
+        // Threads par groupe des mesh shaders du sol, 0 : par les sommets (choisi au démarrage selon le GPU).
+        std::uint32_t groundMeshThreads = 0;
         // Arbres des planètes deux images plus tôt : dessinés (détaillés, simplifiés, lointains) et dans les ombres ;
         // plaines triées à la dernière image, et en vue pas encore semées.
         std::array<std::uint32_t, 3> trees{};

@@ -471,7 +471,10 @@ namespace Flux {
         if (m_tileMeshLayout) {
             const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_tileMeshLayout.get()};
             RHI::PipelineDesc mesh;
-            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "PlanetMesh.spv";
+            // Groupes de 128 threads, ou de 64 si le pilote préfère moins (NVIDIA) : PlanetMeshSmall.slang.
+            m_planetMeshThreads = m_device.GetMeshPreferredThreads() >= 128 ? 128u : 64u;
+            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders"
+                            / (m_planetMeshThreads == 128 ? "PlanetMesh.spv" : "PlanetMeshSmall.spv");
             mesh.taskEntryPoint = "taskPlanet";
             mesh.meshEntryPoint = "meshPlanet";
             mesh.fragmentEntryPoint = "fragmentPlanet";
@@ -491,7 +494,8 @@ namespace Flux {
                 created = create(m_planetMeshGeometry, mesh);
             }
             if (created) {
-                Log::Info("Sol des planètes : mesh shaders");
+                Log::Info("Sol des planètes : mesh shaders, groupes de {} threads (le pilote en préfère {})", m_planetMeshThreads,
+                          m_device.GetMeshPreferredThreads());
             } else {
                 Log::Warning("Sol des planètes : mesh shaders indisponibles ({}), chemin des sommets", created.error());
                 m_planetMesh.reset();
@@ -1120,7 +1124,7 @@ namespace Flux {
                               .stored = m_planets->GetStoredTileCount(),
                               .pending = m_planets->GetPendingTileCount(),
                               .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading(),
-                              .meshShaders = m_planetMesh != nullptr};
+                              .meshThreads = m_planetMesh ? m_planetMeshThreads : 0u};
         for (const TileDraw& draw : m_tileDraws) {
             stats.ocean += draw.ocean ? 1u : 0u;
         }
