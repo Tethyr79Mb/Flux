@@ -71,16 +71,16 @@ namespace Flux {
     }
 
     MeasureRecorder::Stat& MeasureRecorder::GpuStat(std::size_t index, const RenderPassTiming& pass) {
-        // La liste des passes ne change pas d'une image à l'autre (sauf réglage changé en cours) : même place.
-        if (index < m_gpu.size() && m_gpu[index].name == pass.name) {
-            return m_gpu[index];
+        // Par place, pas par nom : une étape peut porter le nom d'une passe (« scène » de l'image finale). La liste
+        // ne change pas d'une image à l'autre ; si un réglage la change en cours de relevé, la ligne repart de zéro.
+        const int depth = pass.step ? 1 : 0;
+        if (index >= m_gpu.size()) {
+            return m_gpu.emplace_back(Stat{pass.name, depth});
         }
-        for (Stat& stat : m_gpu) {
-            if (stat.name == pass.name) {
-                return stat;
-            }
+        if (m_gpu[index].name != pass.name || m_gpu[index].depth != depth) {
+            m_gpu[index] = {pass.name, depth};
         }
-        return m_gpu.emplace_back(Stat{pass.name, pass.step ? 1 : 0});
+        return m_gpu[index];
     }
 
     bool MeasureRecorder::Add(double frameMilliseconds, const std::array<double, CpuCount>& cpu, const RenderTimings& render) {
