@@ -172,7 +172,17 @@ namespace {
         // Retombé sur le sol : les pieds à y = 0.
         CHECK(std::abs(scene.Get<TransformComponent>(hero).position.y) < 0.05);
 
-        // Marche vers +x (2 m/s pendant 0,5 s), puis court jusqu'au mur : il s'arrête contre (rayon 0,3 m).
+        // Appui bref (0,1 s) : à 10 m/s², il n'atteint que 1 m/s, puis freine aussi vite : 10 cm parcourus.
+        Run(world, scene, 0.1, Walk(1.0f));
+        const float tapped = scene.Get<CharacterComponent>(hero).groundSpeed;
+        CHECK(tapped > 0.8f && tapped < 1.2f);
+        Run(world, scene, 0.3);
+        CHECK(scene.Get<CharacterComponent>(hero).groundSpeed < 0.01f);
+        const double tap = scene.Get<TransformComponent>(hero).position.x;
+        CHECK(tap > 0.07 && tap < 0.13);
+
+        // Marche vers +x (2 m/s, atteints en 0,2 s, pendant 0,5 s), puis court jusqu'au mur : il s'arrête contre
+        // (rayon 0,3 m).
         Run(world, scene, 0.5, Walk(1.0f));
         const double walked = scene.Get<TransformComponent>(hero).position.x;
         CHECK(walked > 0.8 && walked < 1.1);
