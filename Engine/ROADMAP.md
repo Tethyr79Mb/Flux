@@ -63,7 +63,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Teinte de chaque texture du sol (herbe verdie par défaut : son image se confondait de loin avec la roche).
 - ✅ Plage réglée en mètres au-dessus de la mer (elle suit le niveau de la mer).
 - ✅ Sol sans répétition visible : pavage hexagonal (rotation et décalage aléatoires par cellule, mélange des 3 cellules voisines).
-- 🔧 Sol moins cher à dessiner : 2 matières, 2 projections et 2 cellules au plus par pixel, 2 textures au lieu de 3. Reste : au-delà de 2 km, couleur moyenne de la matière (le relief ne se lit plus de haut), pas de compression BC des textures.
+- 🔧 Sol moins cher à dessiner : 2 matières, 2 projections et 2 cellules au plus par pixel, 2 textures au lieu de 3. Textures compressées en BC7 (bc7enc) quand le GPU lit les formats BC : 4 fois moins de mémoire vidéo et de lectures par pixel ; compressées au premier chargement (quelques secondes, sur d'autres fils), puis relues dans `bin/Cache/sol-bc7.bin` tant que les images ne changent pas. Reste : au-delà de 2 km, couleur moyenne de la matière (le relief ne se lit plus de haut) ; la compression devrait se faire à la compilation avec les qualités de texture (1K, 2K, 4K), pas sur la machine du joueur.
 - 🔧 Rotation du sol bornée par matière (`Textures/Sol/matieres.json`) : sable et neige ±10° (rides dans le même sens), roche, herbe et terre libres. À améliorer : à la jonction de deux axes de projection, la direction des rides change un peu.
 - ✅ Sol vu de haut : texture fondue vers sa couleur moyenne entre 600 m et 2 km (plus de motif régulier de points sombres, moins de lectures au loin).
 

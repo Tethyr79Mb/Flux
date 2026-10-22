@@ -167,6 +167,7 @@ namespace Flux {
         std::unique_ptr<RHI::BindGroupLayout> m_groundLayout;
         std::unique_ptr<RHI::BindGroupLayout> m_sceneLayout;
         std::unique_ptr<RHI::Texture> m_whiteImage; // 1 x 1, case 0 de la table des images
+        std::unique_ptr<RHI::Texture> m_whiteArray; // la même en tableau d'une couche : groupe blanc du sol
         std::unique_ptr<RHI::BindGroup> m_whiteGroup;
         std::unique_ptr<RHI::Buffer> m_materialTable; // MaterialData, une case par matériau
         std::unique_ptr<RHI::BindGroup> m_sceneGroup;

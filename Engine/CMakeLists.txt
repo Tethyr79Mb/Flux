@@ -30,7 +30,7 @@ target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap G
 # FreeType et msdfgen servent à générer l'atlas de police ; eux aussi restent privés.
 target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
 # Lecture des images PNG et JPEG (textures de l'interface).
-target_link_libraries(FluxEngine PRIVATE stb_image stb_image_impl)
+target_link_libraries(FluxEngine PRIVATE stb_image stb_image_impl bc7enc)
 # Lecture des modèles 3D glTF.
 target_link_libraries(FluxEngine PRIVATE cgltf_header)
 # Physique (Jolt), privée : ses types n'apparaissent dans aucun en-tête public.

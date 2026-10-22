@@ -38,6 +38,7 @@ bool RunPickingTests();
 bool RunScreenUiTests();
 bool RunInterfaceTests();
 bool RunImageTests();
+bool RunTextureCompressionTests();
 bool RunSceneChangeTests();
 bool RunModelTests();
 bool RunPhysicsTests();

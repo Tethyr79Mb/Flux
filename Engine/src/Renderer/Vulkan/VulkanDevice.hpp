@@ -40,6 +40,8 @@ namespace Flux::Vk {
         bool HasAnisotropy() const { return m_anisotropy; }
         // shaderFloat64 activé : variante en double des tuiles de planète.
         bool HasFloat64() const { return m_float64; }
+        // textureCompressionBC activé : formats BC7 (sol des planètes).
+        bool HasTextureCompressionBC() const { return m_textureCompressionBC; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
         bool HasBufferMarkers() const { return m_bufferMarkers; }
         // VK_EXT_debug_utils activée : repères nommés dans les listes de commandes (sinon ses fonctions sont interdites).
@@ -90,6 +92,7 @@ namespace Flux::Vk {
         bool m_deferUploads = false;
         bool m_anisotropy = false;
         bool m_float64 = false;
+        bool m_textureCompressionBC = false;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;
         bool m_debugLabels = false;
