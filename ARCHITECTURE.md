@@ -96,12 +96,19 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 ```
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan, nuages,
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan, nuages,
 transparents), pyramide de profondeur, anticrénelage, bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
 gardé de l'image précédente ou rempli par le CPU). Le panneau Moteur affiche une ligne par passe et par étape, sans
-liste à tenir à part. Les barrières restent faites par les passes et le RHI (étape 2 du render graph, voir
-`Engine/ROADMAP.md`).
+liste à tenir à part.
+
+Barrières des textures : chaque texture du RHI retient son dernier usage (rien, cible de couleur, cible de profondeur,
+lue par les shaders) ; `CommandList::UseTextures` passe à un nouvel usage en une barrière pour tout le lot. Le graphe
+l'appelle avant chaque passe pour les textures déclarées (`AddTexture`) : lues, ou écrites (couleur ou profondeur selon
+le format), contenu jeté pour une texture de l'image. `BeginRenderPass`/`EndRenderPass` ne changent plus aucun layout,
+sauf celui de l'image de la swapchain. Les textures internes d'une passe (niveaux du bloom, historique effacé à la
+première image) sont préparées par la passe elle-même avec `UseTextures`. Les buffers gardent la barrière globale de
+calcul (`ComputeBarrier`).
 
 Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
 enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses

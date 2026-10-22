@@ -30,7 +30,12 @@ namespace Flux {
     }
 
     RenderGraph::ResourceId RenderGraph::AddResource(const char* name, Lifetime lifetime) {
-        m_resources.push_back({name, lifetime});
+        m_resources.push_back({name, lifetime, {}});
+        return static_cast<ResourceId>(m_resources.size() - 1);
+    }
+
+    RenderGraph::ResourceId RenderGraph::AddTexture(const char* name, Lifetime lifetime, TextureSource texture) {
+        m_resources.push_back({name, lifetime, std::move(texture)});
         return static_cast<ResourceId>(m_resources.size() - 1);
     }
 
@@ -47,7 +52,9 @@ namespace Flux {
         }
         m_stepCount = 0;
         m_timings.clear();
+        std::size_t uses = 0;
         for (const Pass& pass : m_passes) {
+            uses = std::max(uses, pass.reads.size() + pass.writes.size());
             if (pass.steps.empty()) {
                 return std::unexpected(std::format("graphe de rendu : la passe « {} » n'a aucune étape", pass.name));
             }
@@ -64,6 +71,10 @@ namespace Flux {
                 if (resource >= m_resources.size()) {
                     return std::unexpected(std::format("graphe de rendu : la passe « {} » écrit une ressource inconnue", pass.name));
                 }
+                if (m_resources[resource].texture && std::ranges::contains(pass.reads, resource)) {
+                    return std::unexpected(std::format("graphe de rendu : la passe « {} » lit et écrit la texture « {} »",
+                                                       pass.name, m_resources[resource].name));
+                }
                 if (m_resources[resource].lifetime == Lifetime::External) {
                     return std::unexpected(std::format("graphe de rendu : la passe « {} » écrit « {} », remplie hors du graphe",
                                                        pass.name, m_resources[resource].name));
@@ -78,19 +89,23 @@ namespace Flux {
                 }
             }
         }
+        m_uses.reserve(uses);
         if (GetTimestampCount() > RHI::MaxTimestamps) {
             return std::unexpected(std::format("graphe de rendu : {} étapes, au plus {} mesurables", m_stepCount, RHI::MaxTimestamps - 1));
         }
         return {};
     }
 
-    void RenderGraph::Execute(RHI::CommandList& commands, bool timestamps) const {
+    void RenderGraph::Execute(RHI::CommandList& commands, bool timestamps) {
         std::uint32_t slot = 0;
         if (timestamps) {
             commands.WriteTimestamp(slot);
         }
         for (const Pass& pass : m_passes) {
             const bool active = !pass.condition || pass.condition();
+            if (active) {
+                PrepareTextures(commands, pass);
+            }
             if (active && pass.begin) {
                 pass.begin(commands);
             }
@@ -106,6 +121,25 @@ namespace Flux {
             if (active && pass.begin) {
                 commands.EndRenderPass();
             }
+        }
+    }
+
+    void RenderGraph::PrepareTextures(RHI::CommandList& commands, const Pass& pass) {
+        m_uses.clear(); // capacité gardée : pas d'allocation
+        for (const ResourceId resource : pass.reads) {
+            if (const RHI::Texture* texture = m_resources[resource].texture ? m_resources[resource].texture() : nullptr) {
+                m_uses.push_back({texture, RHI::TextureAccess::Sampled, false});
+            }
+        }
+        for (const ResourceId resource : pass.writes) {
+            if (const RHI::Texture* texture = m_resources[resource].texture ? m_resources[resource].texture() : nullptr) {
+                const bool depth = texture->GetFormat() == RHI::Format::D32Float;
+                m_uses.push_back({texture, depth ? RHI::TextureAccess::DepthTarget : RHI::TextureAccess::ColorTarget,
+                                  m_resources[resource].lifetime == Lifetime::Frame});
+            }
+        }
+        if (!m_uses.empty()) {
+            commands.UseTextures(m_uses);
         }
     }
 

@@ -203,7 +203,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
   - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
-  - ⬜ 2. Barrières calculées par le graphe (plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`).
+  - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
   - ⬜ 3. Textures de travail créées, redimensionnées et partagées par le graphe (HDR, mouvement, bloom, profondeur).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Pas de calcul asynchrone (seconde file) tant que les mesures ne le demandent pas.

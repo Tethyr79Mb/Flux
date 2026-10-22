@@ -75,9 +75,10 @@ namespace Flux {
         // Mesure : le sol des planètes sans le calcul de ses pixels (voir fragmentPlanetGeometry).
         void SetGroundGeometryOnly(bool enabled) { m_groundGeometryOnly = enabled; }
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
-        // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image (la carte est
-        // effacée puis rendue lisible par Draw).
+        // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
+        // cible (le graphe de rendu la rend ensuite lisible pour la scène).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        const RHI::Texture& GetShadowMap() const { return *m_shadowMap; }
         // Passe principale, dans cet ordre (le fond du ciel entre le sol et l'eau). Le sol après les entités : ce
         // qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres transparents : vue
         // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le

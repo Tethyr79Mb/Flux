@@ -417,26 +417,24 @@ namespace Flux {
         return gpu;
     }
 
-    void SkyRenderer::Bake(RHI::CommandList& commands, std::uint32_t frameIndex) {
-        // Remplies une fois même hors de l'air : les shaders les déclarent, elles doivent être lisibles.
-        if (m_tablesWanted || !m_tablesFilled) {
-            const auto table = [&](const RHI::Pipeline& pipeline, RHI::Texture& rayleigh, RHI::Texture& mie) {
-                const RHI::Extent size = rayleigh.GetExtent();
-                commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .secondColorTarget = &mie});
-                commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
-                commands.SetScissor({0, 0, size.width, size.height});
-                commands.BindPipeline(pipeline);
-                commands.SetBindGroup(0, *m_groups[frameIndex]);
-                commands.Draw(3, 0);
-                commands.EndRenderPass();
-            };
-            table(*m_skyTablePipeline, *m_skyRayleigh, *m_skyMie);
-            table(*m_airTablePipeline, *m_airRayleigh, *m_airMie);
-            m_tablesFilled = true;
-        }
-        if (!std::exchange(m_bakePending, false)) {
-            return;
-        }
+    void SkyRenderer::BakeTables(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        const auto table = [&](const RHI::Pipeline& pipeline, RHI::Texture& rayleigh, RHI::Texture& mie) {
+            const RHI::Extent size = rayleigh.GetExtent();
+            commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .secondColorTarget = &mie});
+            commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
+            commands.SetScissor({0, 0, size.width, size.height});
+            commands.BindPipeline(pipeline);
+            commands.SetBindGroup(0, *m_groups[frameIndex]);
+            commands.Draw(3, 0);
+            commands.EndRenderPass();
+        };
+        table(*m_skyTablePipeline, *m_skyRayleigh, *m_skyMie);
+        table(*m_airTablePipeline, *m_airRayleigh, *m_airMie);
+        m_tablesFilled = true;
+    }
+
+    void SkyRenderer::BakeBackground(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        m_bakePending = false;
         // Les réglages viennent des données de l'image (écrites par Prepare), comme pour le dessin du fond.
         constexpr float size = static_cast<float>(BackgroundSize);
         for (std::uint32_t face = 0; face < 6; ++face) {
