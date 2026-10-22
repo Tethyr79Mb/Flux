@@ -5,6 +5,7 @@
 
 #include <VkBootstrap.h>
 
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -40,6 +41,10 @@ namespace Flux::Vk {
         bool HasAnisotropy() const { return m_anisotropy; }
         // shaderFloat64 activé : variante en double des tuiles de planète.
         bool HasFloat64() const { return m_float64; }
+        // VK_EXT_mesh_shader activée (étapes de tâche et de maillage) : sol des planètes en mesh shaders.
+        bool HasMeshShaders() const { return m_meshShaders; }
+        // maxPreferredMeshWorkGroupInvocations (0 sans mesh shaders).
+        std::uint32_t GetMeshPreferredThreads() const { return m_meshPreferredThreads; }
         // textureCompressionBC activé : formats BC7 (sol des planètes).
         bool HasTextureCompressionBC() const { return m_textureCompressionBC; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
@@ -92,6 +97,8 @@ namespace Flux::Vk {
         bool m_deferUploads = false;
         bool m_anisotropy = false;
         bool m_float64 = false;
+        bool m_meshShaders = false;
+        std::uint32_t m_meshPreferredThreads = 0;
         bool m_textureCompressionBC = false;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;

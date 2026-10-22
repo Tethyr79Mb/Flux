@@ -20,6 +20,11 @@ namespace Flux::Planetology {
     // Sommets d'une tuile : la grille, puis une jupe (copie de chaque sommet du bord, descendue sous le terrain) qui
     // cache les fentes avec une voisine d'un autre niveau.
     constexpr std::uint32_t TileVertexCount = TileSide * TileSide + 4 * TileSide;
+    // Paquets d'une tuile pour les mesh shaders (shaders/PlanetMesh.slang) : 4 x 4 carrés de 8 x 8 mailles, chacun
+    // avec ses bouts de jupe ; un quart de tuile (TileKey::Child) en couvre 2 x 2.
+    constexpr std::uint32_t TileMeshletQuads = 8;
+    constexpr std::uint32_t TileMeshletSide = TileQuads / TileMeshletQuads;
+    constexpr std::uint32_t TileMeshletCount = TileMeshletSide * TileMeshletSide;
     // Niveau le plus fin possible (au-delà, les coordonnées de la grille ne tiennent plus sur 32 bits).
     constexpr std::uint32_t MaxLevel = 24;
     // Une tuile est coupée en 4 quand la caméra est à moins de LodSplitFactor fois la longueur de son bord (voir

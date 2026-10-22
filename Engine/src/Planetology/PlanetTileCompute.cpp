@@ -6,6 +6,7 @@ namespace Flux::Planetology {
     namespace {
         constexpr std::uint64_t VertexSize = TileVertexCount * sizeof(ModelVertex);
         constexpr std::uint64_t MorphSize = TileVertexCount * sizeof(MorphVertex);
+        constexpr std::uint64_t MeshletSize = TileMeshletCount * sizeof(PlanetTileCompute::Meshlet);
         static_assert(sizeof(ModelVertex) == 8 * sizeof(float) && sizeof(MorphVertex) == 6 * sizeof(float),
                       "ModelVertex et MorphVertex doivent correspondre à Write dans shaders/PlanetTile.slang");
 
@@ -22,8 +23,11 @@ namespace Flux::Planetology {
         std::unique_ptr<PlanetTileCompute> compute(new PlanetTileCompute(device, memory));
         constexpr std::array frameBindings{RHI::Binding{0, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute},
                                            RHI::Binding{1, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute}};
+        constexpr std::array pageBindings{RHI::Binding{0, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute},
+                                          RHI::Binding{1, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute},
+                                          RHI::Binding{2, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute}};
         auto frameLayout = device.CreateBindGroupLayout({frameBindings, RHI::FramesInFlight});
-        auto pageLayout = device.CreateBindGroupLayout({frameBindings, MaxPages});
+        auto pageLayout = device.CreateBindGroupLayout({pageBindings, MaxPages});
         if (!frameLayout || !pageLayout) {
             return std::unexpected(!frameLayout ? frameLayout.error() : pageLayout.error());
         }
@@ -69,15 +73,17 @@ namespace Flux::Planetology {
             const RHI::BufferUsage usage = RHI::BufferUsage::Vertex | RHI::BufferUsage::Storage;
             auto vertices = m_device.CreateBuffer({TilesPerPage * VertexSize, usage, m_memory});
             auto morph = m_device.CreateBuffer({TilesPerPage * MorphSize, usage, m_memory});
-            if (!vertices || !morph) {
-                return std::unexpected(!vertices ? vertices.error() : morph.error());
+            auto meshlets = m_device.CreateBuffer({TilesPerPage * MeshletSize, RHI::BufferUsage::Storage, m_memory});
+            if (!vertices || !morph || !meshlets) {
+                return std::unexpected(!vertices ? vertices.error() : !morph ? morph.error() : meshlets.error());
             }
-            Page page{std::move(*vertices), std::move(*morph), m_device.CreateBindGroup(*m_pageLayout)};
+            Page page{std::move(*vertices), std::move(*morph), std::move(*meshlets), m_device.CreateBindGroup(*m_pageLayout)};
             if (!page.group) {
                 return std::unexpected("trop de pages de tuiles de planète");
             }
             page.group->SetBuffer(0, *page.vertices);
             page.group->SetBuffer(1, *page.morph);
+            page.group->SetBuffer(2, *page.meshlets);
             m_pages.push_back(std::move(page));
         }
         return m_tileCount++;
@@ -88,6 +94,10 @@ namespace Flux::Planetology {
         const std::uint64_t slot = tile % TilesPerPage;
         page.vertices->Read(vertices, VertexSize, slot * VertexSize);
         page.morph->Read(morph, MorphSize, slot * MorphSize);
+    }
+
+    void PlanetTileCompute::ReadMeshlets(std::uint32_t tile, Meshlet* meshlets) const {
+        m_pages[GetPage(tile)].meshlets->Read(meshlets, MeshletSize, (tile % TilesPerPage) * MeshletSize);
     }
 
     std::span<const PlanetTileCompute::Stats> PlanetTileCompute::GetStats(std::uint32_t frameIndex) {

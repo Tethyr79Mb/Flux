@@ -63,6 +63,20 @@ namespace Flux {
         // Entités testées et cachées à la dernière image dont le GPU a fini (deux images plus tôt).
         Stats GetStats() const { return m_stats; }
 
+        // Pyramide faite par l'image précédente, lue par l'image en préparation (après un Begin qui a rendu true) :
+        // aussi par les mesh shaders du sol (shaders/PlanetMesh.slang).
+        struct SourcePyramid
+        {
+            const RHI::Buffer* buffer = nullptr;
+            RHI::Extent size;                     // de la profondeur source
+            std::uint32_t levels = 0;
+            std::array<std::uint32_t, 16> offsets{}; // premier texel de chaque niveau
+        };
+        SourcePyramid GetSourcePyramid() const {
+            const Pyramid& source = m_pyramids[m_source];
+            return {source.buffer.get(), source.size, source.levels, source.offsets};
+        }
+
         private:
         // Une pyramide par image en vol : celle d'une image est lue par la suivante pendant que la sienne se fait.
         struct Pyramid

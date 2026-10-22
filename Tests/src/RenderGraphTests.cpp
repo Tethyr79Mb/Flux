@@ -53,6 +53,7 @@ namespace {
         void Draw(std::uint32_t, std::uint32_t) override {}
         void DrawIndexed(std::uint32_t, std::uint32_t, std::uint32_t) override {}
         void DrawIndexedIndirect(const RHI::Buffer&, std::uint64_t, std::uint32_t) override {}
+        void DrawMeshTasks(std::uint32_t) override {}
         void Dispatch(std::uint32_t, std::uint32_t, std::uint32_t) override {}
         void ComputeBarrier() override {}
         void WriteTimestamp(std::uint32_t slot) override { log.push_back("heure " + std::to_string(slot)); }

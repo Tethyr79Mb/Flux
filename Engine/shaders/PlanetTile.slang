@@ -19,6 +19,10 @@ static const uint Coarse = TileQuads / 2 + 3;   // sommets de la parente, de -2 
 static const uint Columns = TileSide + 4;
 static const uint OctaveCount = 43;
 static const uint GroupSize = 256;
+static const uint VertexCount = TileSide * TileSide + 4 * TileSide; // TileVertexCount
+static const uint MeshletQuads = 8;                                 // TileMeshletQuads
+static const uint MeshletSide = TileQuads / MeshletQuads;
+static const uint MeshletCount = MeshletSide * MeshletSide;
 
 #ifdef FLUX_FLOAT64
 typealias Precise = double;
@@ -59,6 +63,8 @@ struct Constants
 // Page de tuiles : la tuile écrit à partir de constants.firstVertex.
 [[vk::binding(0, 1)]] RWStructuredBuffer<float> vertices; // ModelVertex : position, normale, uv (8 floats)
 [[vk::binding(1, 1)]] RWStructuredBuffer<float> morph;    // MorphVertex : décalage, normale (6 floats)
+// Boîte de chaque paquet des mesh shaders (PlanetTileCompute::Meshlet : bas, haut) : MeshletCount par tuile.
+[[vk::binding(2, 1)]] RWStructuredBuffer<float4> meshlets;
 [[vk::push_constant]] ConstantBuffer<Constants> constants;
 // Lue directement dans le buffer (une copie locale de 2,5 Ko déborderait des registres).
 #define tile inputs[constants.job]
@@ -69,6 +75,8 @@ groupshared float coarseHeights[Coarse * Coarse];
 groupshared float lowestShared[GroupSize];
 groupshared float radiusShared[GroupSize];
 groupshared float highestShared[GroupSize];
+// Boîtes des paquets en construction : bas xyz puis haut xyz de chacun, en OrderedFloat (min et max atomiques).
+groupshared uint meshletBounds[MeshletCount * 6];
 
 // Réglages du relief, comme dans Planet.cpp.
 static const float DetailPlains = 0.012;
@@ -514,6 +522,37 @@ void Write(uint index, float3 position, float3 normal, float3 morphOffset, float
     morph[m + 5] = morphNormal.z;
 }
 
+// Un float en entier qui garde l'ordre (les négatifs inversés) : InterlockedMin et InterlockedMax s'y appliquent.
+uint OrderedFloat(float value)
+{
+    const uint bits = asuint(value);
+    return (bits & 0x80000000u) != 0 ? ~bits : bits | 0x80000000u;
+}
+
+float FromOrdered(uint bits)
+{
+    return asfloat((bits & 0x80000000u) != 0 ? bits & 0x7FFFFFFFu : ~bits);
+}
+
+// Le point (sommet, jupe ou forme parente) entre dans la boîte des paquets qui touchent le point (i, j) de la grille :
+// jusqu'à quatre sur le bord de deux paquets.
+void AddToMeshlets(uint i, uint j, float3 position)
+{
+    const uint2 last = min(uint2(i, j) / MeshletQuads, MeshletSide - 1);
+    const uint2 first = uint2(i % MeshletQuads == 0 && i > 0 ? i / MeshletQuads - 1 : last.x,
+                              j % MeshletQuads == 0 && j > 0 ? j / MeshletQuads - 1 : last.y);
+    for (uint my = first.y; my <= last.y; ++my) {
+        for (uint mx = first.x; mx <= last.x; ++mx) {
+            const uint at = (my * MeshletSide + mx) * 6;
+            for (uint axis = 0; axis < 3; ++axis) {
+                const uint value = OrderedFloat(position[axis]);
+                InterlockedMin(meshletBounds[at + axis], value);
+                InterlockedMax(meshletBounds[at + 3 + axis], value);
+            }
+        }
+    }
+}
+
 // Distance au centre de la planète d'un point relatif au centre de la tuile.
 float FromPlanetCenter(float3 local)
 {
@@ -530,6 +569,9 @@ void computeMain(uint thread : SV_GroupIndex)
         permutation[4 * p + 1] = (word >> 8) & 255u;
         permutation[4 * p + 2] = (word >> 16) & 255u;
         permutation[4 * p + 3] = word >> 24;
+    }
+    for (uint b = thread; b < MeshletCount * 6; b += GroupSize) {
+        meshletBounds[b] = b % 6 < 3 ? 0xFFFFFFFFu : 0u;
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -555,6 +597,8 @@ void computeMain(uint thread : SV_GroupIndex)
         const TileVertex vertex = BuildVertex(v % TileSide, v / TileSide);
         Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal);
         const float3 target = vertex.position + vertex.morphOffset;
+        AddToMeshlets(v % TileSide, v / TileSide, vertex.position);
+        AddToMeshlets(v % TileSide, v / TileSide, target);
         const float fromCenter = FromPlanetCenter(vertex.position);
         const float targetFromCenter = FromPlanetCenter(target);
         lowest = min(lowest, min(fromCenter, targetFromCenter));
@@ -573,6 +617,8 @@ void computeMain(uint thread : SV_GroupIndex)
         const float3 position = vertex.position - direction * tile.axisT.w;
         Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal);
         radius = max(radius, length(position + vertex.morphOffset));
+        AddToMeshlets(at.x, at.y, position);
+        AddToMeshlets(at.x, at.y, position + vertex.morphOffset);
     }
 
     lowestShared[thread] = lowest;
@@ -589,6 +635,15 @@ void computeMain(uint thread : SV_GroupIndex)
     }
     if (thread == 0) {
         stats[constants.job] = float4(lowestShared[0], radiusShared[0], highestShared[0], 0.0);
+    }
+    // Les boîtes sont complètes : la réduction ci-dessus a passé des barrières depuis le dernier AddToMeshlets.
+    if (thread < MeshletCount) {
+        const uint at = thread * 6;
+        const uint slot = (constants.firstVertex / VertexCount * MeshletCount + thread) * 2;
+        meshlets[slot] = float4(FromOrdered(meshletBounds[at]), FromOrdered(meshletBounds[at + 1]),
+                                FromOrdered(meshletBounds[at + 2]), 0.0);
+        meshlets[slot + 1] = float4(FromOrdered(meshletBounds[at + 3]), FromOrdered(meshletBounds[at + 4]),
+                                    FromOrdered(meshletBounds[at + 5]), 0.0);
     }
 }
 

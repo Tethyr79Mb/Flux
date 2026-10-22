@@ -189,9 +189,14 @@ namespace Flux::Vk {
             bool write;
         };
 
+        // Étapes de tâche et de maillage, à attendre quand les mesh shaders sont activés (elles n'existent pas sinon).
+        VkPipelineStageFlags2 MeshStages(bool meshShaders) {
+            return meshShaders ? VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT : 0;
+        }
+
         // Où et comment chaque usage touche une texture. Lue : par tous les shaders qui le peuvent (le sol lit des
         // tables par sommet, la pyramide la profondeur en calcul) ; plus précis ne gagnerait presque rien.
-        AccessInfo Describe(RHI::TextureAccess access) {
+        AccessInfo Describe(RHI::TextureAccess access, bool meshShaders) {
             switch (access) {
                 case RHI::TextureAccess::None: return {VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, false};
                 case RHI::TextureAccess::ColorTarget:
@@ -204,7 +209,7 @@ namespace Flux::Vk {
                 case RHI::TextureAccess::Sampled:
                     return {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                             VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                                | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | MeshStages(meshShaders),
                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, false};
             }
             return {VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, false};
@@ -229,8 +234,8 @@ namespace Flux::Vk {
         };
         for (const RHI::TextureUse& use : uses) {
             const auto& texture = static_cast<const RhiTexture&>(*use.texture);
-            const AccessInfo before = Describe(texture.GetAccess());
-            const AccessInfo after = Describe(use.access);
+            const AccessInfo before = Describe(texture.GetAccess(), m_meshShaders);
+            const AccessInfo after = Describe(use.access, m_meshShaders);
             // Lue puis relue : rien à attendre. Écrite : toujours attendre ce qui précède, même déjà cible (la même
             // texture sert à chaque image, la précédente écrit peut-être encore).
             if (texture.GetAccess() == use.access && !after.write) {
@@ -431,6 +436,10 @@ namespace Flux::Vk {
                                  sizeof(RHI::DrawIndexedCommand));
     }
 
+    void RhiCommandList::DrawMeshTasks(std::uint32_t groups) {
+        vkCmdDrawMeshTasksEXT(m_commandBuffer, groups, 1, 1);
+    }
+
     void RhiCommandList::Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) {
         vkCmdDispatch(m_commandBuffer, groupsX, groupsY, groupsZ);
     }
@@ -440,11 +449,13 @@ namespace Flux::Vk {
     void RhiCommandList::ComputeBarrier() {
         VkMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        // Les étapes de tâche et de maillage aussi : un calcul qui réécrit ce qu'elles lisaient (pyramide de
+        // profondeur) attend leurs lectures.
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | MeshStages(m_meshShaders);
         barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
         barrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT
                              | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                             | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+                             | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_HOST_BIT | MeshStages(m_meshShaders);
         barrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
                               | VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT
                               | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_HOST_READ_BIT;

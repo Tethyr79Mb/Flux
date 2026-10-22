@@ -9,6 +9,8 @@
 #include "Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdio>
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -94,6 +96,50 @@ namespace {
     };
 }
 
+namespace {
+// Les boîtes des paquets des mesh shaders (PlanetMesh.slang) contiennent chacun de leurs sommets, dans les deux formes
+// du glissement, jupes comprises : sinon un morceau de sol visible serait écarté.
+bool CheckMeshlets(const Planetology::PlanetTileCompute& compute, std::uint32_t tile, const std::vector<ModelVertex>& vertices,
+                   const std::vector<Planetology::MorphVertex>& morph) {
+    using namespace Planetology;
+    std::array<PlanetTileCompute::Meshlet, TileMeshletCount> meshlets{};
+    compute.ReadMeshlets(tile, meshlets.data());
+    const auto inside = [&](const PlanetTileCompute::Meshlet& box, std::uint32_t v) {
+        for (const Math::Vector3f p : {vertices[v].position, vertices[v].position + morph[v].offset}) {
+            for (int axis = 0; axis < 3; ++axis) {
+                const float value = axis == 0 ? p.x : axis == 1 ? p.y : p.z;
+                const float margin = 1.0e-4f * (1.0f + std::abs(value));
+                if (value < box.low[axis] - margin || value > box.high[axis] + margin) {
+                    std::printf("ÉCHEC sommet %u hors de la boîte de son paquet\n", v);
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    for (std::uint32_t my = 0; my < TileMeshletSide; ++my) {
+        for (std::uint32_t mx = 0; mx < TileMeshletSide; ++mx) {
+            const PlanetTileCompute::Meshlet& box = meshlets[my * TileMeshletSide + mx];
+            for (std::uint32_t j = my * TileMeshletQuads; j <= (my + 1) * TileMeshletQuads; ++j) {
+                for (std::uint32_t i = mx * TileMeshletQuads; i <= (mx + 1) * TileMeshletQuads; ++i) {
+                    if (!inside(box, j * TileSide + i)) {
+                        return false;
+                    }
+                    // Jupes, dans l'ordre de BuildTile : bas, droite, haut, gauche.
+                    const std::uint32_t skirts = TileSide * TileSide;
+                    if ((j == 0 && !inside(box, skirts + i)) || (i == TileQuads && !inside(box, skirts + TileSide + j))
+                        || (j == TileQuads && !inside(box, skirts + 2 * TileSide + (TileQuads - i)))
+                        || (i == 0 && !inside(box, skirts + 3 * TileSide + (TileQuads - j)))) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+}
+
 bool RunPlanetGpuTests() {
     auto device = RHI::Device::CreateHeadless();
     if (!device) {
@@ -173,6 +219,7 @@ bool RunPlanetGpuTests() {
         }
         CHECK(std::abs(stats[n].lowest - mesh.lowest) < 2.0 * tolerance + 1.0e-6 * mesh.lowest);
         CHECK(std::abs(stats[n].radius - mesh.radius) < 2.0 * tolerance);
+        CHECK(CheckMeshlets(**compute, tiles[n], vertices, morph));
     }
     return CheckTurningCamera(**device);
 }
