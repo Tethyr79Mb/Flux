@@ -41,8 +41,10 @@
 #include <fstream>
 #include <iterator>
 #include <numbers>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace Flux {
     namespace {
@@ -89,19 +91,6 @@ namespace Flux {
             RecordCost,       // CPU : commandes de dessin
             WaitGpuCost,      // CPU arrêté : attente du GPU
             WaitImageCost,    // CPU arrêté : attente d'une image libre et présentation (V-Sync, plafond)
-            GpuShadowsCost,   // GPU
-            GpuSceneCost,
-            GpuObjectsCost,   // GPU, compris dans la scène
-            GpuVegetationCost,
-            GpuGroundCost,
-            GpuSkyCost,
-            GpuOceanCost,
-            GpuCloudsCost,
-            GpuTransparentCost,
-            GpuPyramidCost,
-            GpuTemporalCost,
-            GpuBloomCost,
-            GpuInterfaceCost,
             CostCount,
         };
 
@@ -125,6 +114,11 @@ namespace Flux {
                     for (std::size_t i = 0; i < CostCount; ++i) {
                         m_averages[i] = m_counts[i] > 0 ? m_sums[i] / m_counts[i] : -1.0;
                     }
+                    for (Row& row : m_gpu) {
+                        row.average = row.count > 0 ? row.sum / row.count : -1.0;
+                        row.sum = 0.0;
+                        row.count = 0;
+                    }
                     m_sums = {};
                     m_counts = {};
                     m_frames = 0;
@@ -139,11 +133,33 @@ namespace Flux {
                 }
             }
 
+            // Passes et étapes du GPU (RenderTimings::gpu) : leur liste ne change pas d'une image à l'autre.
+            void AddGpu(std::span<const RenderPassTiming> passes) {
+                m_gpu.resize(passes.size());
+                for (std::size_t i = 0; i < passes.size(); ++i) {
+                    m_gpu[i].name = passes[i].name;
+                    m_gpu[i].step = passes[i].step;
+                    if (passes[i].milliseconds >= 0.0) {
+                        m_gpu[i].sum += passes[i].milliseconds;
+                        ++m_gpu[i].count;
+                    }
+                }
+            }
+
             double GetFps() const { return m_fps; }
             double GetFrameMilliseconds() const { return m_frameMilliseconds; }
             double Get(Cost cost) const { return m_averages[cost]; }
             // La plus longue image des 5 à 10 dernières secondes : un à-coup (chargement) que la moyenne cache.
             double GetWorstMilliseconds() const { return std::max(m_previousWorst, m_worstInWindow); }
+            struct Row
+            {
+                const char* name = "";
+                bool step = false;
+                double sum = 0.0;
+                int count = 0;
+                double average = -1.0;
+            };
+            std::span<const Row> GetGpu() const { return m_gpu; }
 
             private:
             Clock::time_point m_windowStart = Clock::now();
@@ -157,6 +173,7 @@ namespace Flux {
             std::array<double, CostCount> m_sums{};
             std::array<int, CostCount> m_counts{};
             std::array<double, CostCount> m_averages{};
+            std::vector<Row> m_gpu;
         };
 
         std::string FormatCost(double milliseconds) {
@@ -193,19 +210,10 @@ namespace Flux {
                 ui.LabelText("CPU rendu", FormatCost(stats.Get(PrepareCost)) + " + " + FormatCost(stats.Get(RecordCost)));
                 ui.LabelText("Attente GPU", FormatCost(stats.Get(WaitGpuCost)));
                 ui.LabelText("Attente écran", FormatCost(stats.Get(WaitImageCost)));
-                ui.LabelText("GPU ombres", FormatCost(stats.Get(GpuShadowsCost)));
-                ui.LabelText("GPU scène", FormatCost(stats.Get(GpuSceneCost)));
-                ui.LabelText("  dont objets", FormatCost(stats.Get(GpuObjectsCost)));
-                ui.LabelText("  dont arbres", FormatCost(stats.Get(GpuVegetationCost)));
-                ui.LabelText("  dont sol", FormatCost(stats.Get(GpuGroundCost)));
-                ui.LabelText("  dont ciel", FormatCost(stats.Get(GpuSkyCost)));
-                ui.LabelText("  dont océan", FormatCost(stats.Get(GpuOceanCost)));
-                ui.LabelText("  dont nuages", FormatCost(stats.Get(GpuCloudsCost)));
-                ui.LabelText("  dont transparents, flammes", FormatCost(stats.Get(GpuTransparentCost)));
-                ui.LabelText("GPU pyramide de profondeur", FormatCost(stats.Get(GpuPyramidCost)));
-                ui.LabelText("GPU anticrénelage", FormatCost(stats.Get(GpuTemporalCost)));
-                ui.LabelText("GPU bloom, image finale", FormatCost(stats.Get(GpuBloomCost)));
-                ui.LabelText("GPU interface", FormatCost(stats.Get(GpuInterfaceCost)));
+                // Une ligne par passe du graphe de rendu, puis ses étapes.
+                for (const FrameStats::Row& row : stats.GetGpu()) {
+                    ui.LabelText(row.step ? std::format("  dont {}", row.name) : std::format("GPU {}", row.name), FormatCost(row.average));
+                }
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
                 ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
@@ -419,19 +427,7 @@ namespace Flux {
             stats.Add(RecordCost, render.record);
             stats.Add(WaitGpuCost, render.waitGpu);
             stats.Add(WaitImageCost, render.waitImage + render.present);
-            stats.Add(GpuShadowsCost, render.gpuShadows);
-            stats.Add(GpuSceneCost, render.gpuScene);
-            stats.Add(GpuObjectsCost, render.gpuObjects);
-            stats.Add(GpuVegetationCost, render.gpuVegetation);
-            stats.Add(GpuGroundCost, render.gpuGround);
-            stats.Add(GpuSkyCost, render.gpuSky);
-            stats.Add(GpuOceanCost, render.gpuOcean);
-            stats.Add(GpuCloudsCost, render.gpuClouds);
-            stats.Add(GpuTransparentCost, render.gpuTransparent);
-            stats.Add(GpuPyramidCost, render.gpuPyramid);
-            stats.Add(GpuTemporalCost, render.gpuTemporal);
-            stats.Add(GpuBloomCost, render.gpuBloom);
-            stats.Add(GpuInterfaceCost, render.gpuInterface);
+            stats.AddGpu(render.gpu);
 
             // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.
             ++m_frame;

@@ -27,6 +27,14 @@ namespace Flux {
     struct Projectile;
     struct Impact;
 
+    // Temps du GPU d'une passe du rendu (step false) ou d'une de ses étapes, en millisecondes ; négatif si inconnu.
+    struct RenderPassTiming
+    {
+        const char* name; // texte constant
+        double milliseconds;
+        bool step;
+    };
+
     // Temps de la dernière image rendue, en millisecondes. Les temps du GPU sont ceux d'une image un peu plus ancienne
     // (relus quand il l'a finie) ; négatifs s'ils sont inconnus (GPU sans heures, ou pas encore mesurés).
     struct RenderTimings
@@ -36,19 +44,10 @@ namespace Flux {
         double waitGpu = 0.0;  // CPU arrêté : le GPU n'a pas fini l'image qui utilisait les mêmes ressources
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
         double present = 0.0;  // CPU : appel de présentation
-        double gpuShadows = -1.0;   // GPU : carte d'ombres
-        double gpuScene = -1.0;     // GPU : maillages de la scène, somme des sept suivants
-        double gpuObjects = -1.0;   // GPU : entités opaques
-        double gpuVegetation = -1.0; // GPU : arbres des planètes
-        double gpuGround = -1.0;    // GPU : sol des planètes
-        double gpuSky = -1.0;       // GPU : fond du ciel
-        double gpuOcean = -1.0;     // GPU : océans
-        double gpuClouds = -1.0;    // GPU : nuages des planètes
-        double gpuTransparent = -1.0; // GPU : entités transparentes
-        double gpuPyramid = -1.0;   // GPU : pyramide de profondeur (entités cachées écartées à l'image suivante)
-        double gpuTemporal = -1.0;  // GPU : anticrénelage temporel
-        double gpuBloom = -1.0;     // GPU : bloom et image finale (courbe de tons)
-        double gpuInterface = -1.0; // GPU : interface (overlay 2D)
+        // GPU : chaque passe du graphe de rendu dans l'ordre de l'image, suivie de ses étapes (step) quand elle en a
+        // plusieurs. Rempli quand le panneau Moteur demande les heures (RequestDetailedTimings) ; valable jusqu'à
+        // l'image suivante.
+        std::span<const RenderPassTiming> gpu;
         std::uint32_t planetTiles = 0;       // tuiles de planète dessinées
         std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo

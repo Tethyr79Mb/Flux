@@ -78,8 +78,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 Couches, de la plus haute à la plus basse :
 
 ```
-Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seulement panneau Moteur ouvert),
-                   étapes du diagnostic de plantage GPU
+Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
+├─ RenderGraph     passes et étapes avec leurs lectures et écritures, vérifiées une fois (Compile) puis jouées à
+│                  chaque image ; repère de plantage GPU et heure du GPU (panneau Moteur ouvert) par étape
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
@@ -93,6 +94,14 @@ Renderer           ordre des passes, mesures (CPU, attentes, timestamps GPU seul
 └─ RHI             Device, Buffer, Texture, Sampler, BindGroup, Pipeline, CommandList (interfaces virtuelles)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
+
+Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
+(tuiles, arbres, objets cachés), ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan, nuages,
+transparents), pyramide de profondeur, anticrénelage, bloom, image finale (scène, grille, interface). Chaque passe
+déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
+gardé de l'image précédente ou rempli par le CPU). Le panneau Moteur affiche une ligne par passe et par étape, sans
+liste à tenir à part. Les barrières restent faites par les passes et le RHI (étape 2 du render graph, voir
+`Engine/ROADMAP.md`).
 
 Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
 enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses

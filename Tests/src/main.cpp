@@ -22,6 +22,7 @@ int main() {
         {"physique (Jolt)", RunPhysicsTests},
         {"animation squelettique", RunAnimationTests},
         {"cascades d'ombres", RunShadowTests},
+        {"graphe de rendu", RunRenderGraphTests},
         {"ciel", RunSkyTests},
         {"son", RunAudioTests},
         {"actions d'entrée", RunInputTests},

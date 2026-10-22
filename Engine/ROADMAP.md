@@ -192,7 +192,12 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Game.exe
   vérifie au démarrage qu'il est à jour.
 - ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
-- ⬜ Render graph.
+- 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
+  - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
+  - ⬜ 2. Barrières calculées par le graphe (plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`).
+  - ⬜ 3. Textures de travail créées, redimensionnées et partagées par le graphe (HDR, mouvement, bloom, profondeur).
+  - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
+  - Pas de calcul asynchrone (seconde file) tant que les mesures ne le demandent pas.
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).
 - ⬜ Backend DX12.
 
