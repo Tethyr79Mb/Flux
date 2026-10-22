@@ -785,7 +785,7 @@ namespace Flux {
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius,
-                                   Math::Length(sphere) - tile.radius, water});
+                                   Math::Length(sphere) - tile.radius, water, tile.firstIndex, tile.indexCount});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
@@ -1056,7 +1056,6 @@ namespace Flux {
             return bandA != bandB ? bandA < bandB : pageA != pageB ? pageA < pageB : a.distance < b.distance;
         });
         const std::uint32_t firstData = static_cast<std::uint32_t>(m_drawData.size());
-        const std::uint32_t indexCount = m_planets->GetIndexCount();
         std::array<std::size_t, TilePassCount + 1> passStarts{};
         for (std::size_t pass = 0; pass < TilePassCount; ++pass) {
             passStarts[pass] = m_tileBatches.size();
@@ -1072,7 +1071,7 @@ namespace Flux {
                     m_tileBatches.push_back({page, static_cast<std::uint32_t>(m_tileCommands.size()), 0});
                 }
                 ++m_tileBatches.back().count;
-                m_tileCommands.push_back({indexCount, 1, 0, static_cast<std::int32_t>(Planetology::PlanetTileCompute::GetFirstVertex(draw.tile)),
+                m_tileCommands.push_back({draw.indexCount, 1, draw.firstIndex, static_cast<std::int32_t>(Planetology::PlanetTileCompute::GetFirstVertex(draw.tile)),
                                           firstData + draw.data});
             }
         }

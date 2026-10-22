@@ -92,13 +92,16 @@ bool RunPlanetTests() {
     }
 
     // Indices : tous valides ; terrain vu de dehors dans le sens trigonométrique ; jupes tournées vers l'extérieur
-    // de la tuile (sur une sphère lisse).
+    // de la tuile (sur une sphère lisse) ; rangés par quart, chacun dans la part de la grille de son enfant.
     const std::vector<std::uint32_t> indices = Planetology::BuildTileIndices();
-    constexpr std::uint32_t gridIndices = 6 * Planetology::TileQuads * Planetology::TileQuads;
-    CHECK(indices.size() == gridIndices + 4 * 6 * Planetology::TileQuads);
+    constexpr std::uint32_t gridVertices = Planetology::TileSide * Planetology::TileSide;
+    constexpr std::uint32_t half = Planetology::TileQuads / 2;
+    CHECK(indices.size() == 6 * Planetology::TileQuads * Planetology::TileQuads + 4 * 6 * Planetology::TileQuads);
+    CHECK(indices.size() == 4 * Planetology::TileQuarterIndices);
     const Planetology::Terrain smooth(60000.0, 0.0, 1);
     Planetology::TileMesh flat;
     Planetology::BuildTile(smooth, {1, 3, 4, 6}, flat);
+    std::size_t gridTriangles = 0;
     for (std::size_t i = 0; i < indices.size(); i += 3) {
         CHECK(indices[i] < Planetology::TileVertexCount && indices[i + 1] < Planetology::TileVertexCount && indices[i + 2] < Planetology::TileVertexCount);
         const Math::Vector3d a = Position(flat, indices[i]);
@@ -106,13 +109,28 @@ bool RunPlanetTests() {
         const Math::Vector3d c = Position(flat, indices[i + 2]);
         const Math::Vector3d normal = Math::Cross(b - a, c - a);
         const Math::Vector3d middle = (a + b + c) / 3.0;
-        if (i < gridIndices) {
+        const std::uint32_t quarter = static_cast<std::uint32_t>(i / Planetology::TileQuarterIndices);
+        bool grid = true;
+        for (std::size_t k = i; k < i + 3; ++k) {
+            if (indices[k] >= gridVertices) {
+                grid = false;
+                continue;
+            }
+            // Un sommet de la grille du quart : dans sa moitié de chaque côté (le milieu est commun).
+            const std::uint32_t u = indices[k] % Planetology::TileSide;
+            const std::uint32_t v = indices[k] / Planetology::TileSide;
+            CHECK((quarter & 1u) == 0 ? u <= half : u >= half);
+            CHECK((quarter >> 1) == 0 ? v <= half : v >= half);
+        }
+        if (grid) {
+            ++gridTriangles;
             CHECK(Math::Dot(normal, middle) > 0.0);
         } else {
             const Math::Vector3d outward = middle - flat.center;
             CHECK(Math::Dot(normal, outward - Math::Normalize(middle) * Math::Dot(outward, Math::Normalize(middle))) > 0.0);
         }
     }
+    CHECK(gridTriangles == 2 * Planetology::TileQuads * Planetology::TileQuads);
 
     // Forme du terrain : des plaines larges où l'on peut se poser (pas de bruit partout), des montagnes rares et
     // hautes, et les creux sous le niveau zéro. Sur une petite lune, et sur une planète de 200 km aux montagnes de 50 km

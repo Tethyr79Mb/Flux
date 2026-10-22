@@ -49,7 +49,6 @@ namespace Flux::Planetology {
                 return;
             }
             m_indices = std::move(*buffer);
-            m_indexCount = static_cast<std::uint32_t>(indices.size());
         }
     }
 
@@ -148,49 +147,82 @@ namespace Flux::Planetology {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
         if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level)) {
-            // Les enfants visibles doivent tous être prêts ; sinon cette tuile reste affichée et ils sont demandés.
+            // Les enfants visibles et prêts sont dessinés ; à la place de ceux qui ne le sont pas encore (demandés), le
+            // quart de cette tuile qu'ils couvrent. Toute la tuile à leur place : quand la caméra tournait, un enfant
+            // qui entrait dans le champ remettait pour une image tout le sol grossier, jusque sous la caméra.
             std::array<Node*, 4> children{};
             std::array<bool, 4> culled{};
-            bool ready = true;
+            std::uint32_t ready = 0;
+            std::uint32_t visible = 0;
             for (std::uint32_t c = 0; c < 4; ++c) {
                 const TileKey childKey = key.Child(c);
                 children[c] = &GetNode(visit.state, childKey, &node);
                 children[c]->lastUsed = m_frame;
                 culled[c] = IsCulled(visit, *children[c]);
-                if (!culled[c] && children[c]->tile == NoTile) {
-                    ready = false;
+                if (culled[c]) {
+                    continue;
+                }
+                ++visible;
+                if (children[c]->tile != NoTile) {
+                    ++ready;
+                } else {
                     const double childDistance = Math::Length(visit.camera - children[c]->bounds.center) - children[c]->bounds.radius;
                     visit.state.requests.push_back({childKey, std::max(childDistance, 0.0)});
                 }
             }
-            if (ready) {
+            if (ready > 0) {
                 for (std::uint32_t c = 0; c < 4; ++c) {
-                    if (!culled[c]) {
+                    if (culled[c]) {
+                        continue;
+                    }
+                    if (children[c]->tile != NoTile) {
                         VisitNode(visit, key.Child(c), *children[c]);
+                    } else if (node.tile != NoTile) {
+                        AddTile(visit, key, node, children[c]->bounds, c);
                     }
                 }
                 return;
             }
+            if (visible == 0) {
+                return;
+            }
         }
+        if (node.tile != NoTile) {
+            AddTile(visit, key, node, node.bounds, 4);
+        }
+    }
+
+    // La tuile `key` à dessiner, entière (quarter 4) ou le quart de l'enfant `quarter` (sa sphère : `bounds`), et les
+    // plaines qu'elle couvre plus finement qu'elle.
+    void PlanetRenderer::AddTile(Visit& visit, TileKey key, const Node& node, const TileBounds& bounds, std::uint32_t quarter) {
+        const Terrain& terrain = *visit.state.terrain;
+        const bool whole = quarter >= 4;
+        const TileKey covered = whole ? key : key.Child(quarter);
+        const double distance = Math::Length(visit.camera - bounds.center) - bounds.radius;
         // Au plus 3 niveaux plus grossière (64 plaines) : plus haut, c'est une tuile dont les enfants ne sont pas
         // encore prêts, pas le sol au loin.
         if (visit.plains && key.level < visit.plainLevel && key.level + 3u >= visit.plainLevel && distance < visit.plainRange) {
-            AddPlains(visit, key);
-        }
-        if (node.tile != NoTile) {
-            // Glisse vers la forme parente jusqu'à la distance où la parente reprend la place (une voisine plus
-            // grossière n'est jamais plus proche) : là, son bord est celui de la parente, sans fente.
-            float morphStart = 1.0e30f;
-            float morphScale = 0.0f;
-            if (key.level > 0) {
-                const double end = GetSplitDistance(terrain, key.level - 1u);
-                morphStart = static_cast<float>(MorphStart * end);
-                morphScale = static_cast<float>(1.0 / ((1.0 - MorphStart) * end));
+            if (whole) {
+                AddPlains(visit, key);
+            } else if (covered.level == visit.plainLevel) {
+                visit.plains->push_back({covered, visit.position + visit.rotation.Rotate(bounds.origin), std::max(distance, 0.0)});
+            } else {
+                AddPlains(visit, covered);
             }
-            visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
-                                   visit.position + visit.rotation.Rotate(node.bounds.center), static_cast<float>(node.bounds.radius),
-                                   morphStart, morphScale, node.lowest});
         }
+        // Glisse vers la forme parente jusqu'à la distance où la parente reprend la place (une voisine plus grossière
+        // n'est jamais plus proche) : là, son bord est celui de la parente, sans fente.
+        float morphStart = 1.0e30f;
+        float morphScale = 0.0f;
+        if (key.level > 0) {
+            const double end = GetSplitDistance(terrain, key.level - 1u);
+            morphStart = static_cast<float>(MorphStart * end);
+            morphScale = static_cast<float>(1.0 / ((1.0 - MorphStart) * end));
+        }
+        visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
+                               visit.position + visit.rotation.Rotate(bounds.center), static_cast<float>(bounds.radius),
+                               morphStart, morphScale, node.lowest, whole ? 0u : quarter * TileQuarterIndices,
+                               whole ? 4u * TileQuarterIndices : TileQuarterIndices, covered});
     }
 
     // Plaines sous une tuile dessinée plus grossière qu'elles (loin, ou vue de haut) : les arbres ne s'arrêtent pas

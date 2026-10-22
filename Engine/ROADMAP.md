@@ -51,7 +51,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 
 ### Planètes (Planetology)
 - ✅ Code des planètes réuni dans le domaine Planetology (`Flux::Planetology`, dossiers `Planetology/`).
-- ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU (déformation en double si le GPU a shaderFloat64 : sol affiché et collision au centimètre sur une planète comme la Terre).
+- ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU (déformation en double si le GPU a shaderFloat64 : sol affiché et collision au centimètre sur une planète comme la Terre) ; une tuile pas encore calculée ne remplace que son quart de la parente (le sol ne clignote plus quand la caméra tourne).
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
 - 🔧 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; dans l'air d'une planète, le ciel de l'espace n'éclaire plus de jour (l'atmosphère éclaire à sa place) et peu la nuit. Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour (« Lumière de contour ») aussi sur les planètes, liseré selon la sphère, vue de l'espace seulement (effacée sous deux hauteurs d'atmosphère : au sol elle voilait tout le terrain). À améliorer : pas de cycle jour / nuit.

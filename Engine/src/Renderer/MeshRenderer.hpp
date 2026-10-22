@@ -125,6 +125,8 @@ namespace Flux {
             float radius;
             float distance;        // au bord de sa sphère : ordre de près à loin
             bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra
+            std::uint32_t firstIndex; // toute la tuile ou un quart (PlanetRenderer::Tile)
+            std::uint32_t indexCount;
         };
         // Appel indirect : `count` commandes de m_tileCommands à partir de `first`, toutes de la même page.
         struct TileBatch

@@ -43,12 +43,12 @@ namespace Flux::Planetology {
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Planetology/Planet.hpp). Les tuiles manquantes sont calculées
-    // par le GPU (PlanetTileCompute), les plus urgentes d'abord, au début de l'image suivante ; en attendant, leur
-    // parente reste affichée (jamais de trou). Le CPU ne fait que choisir les tuiles et préparer quelques valeurs
+    // par le GPU (PlanetTileCompute), les plus urgentes d'abord, au début de l'image suivante ; en attendant, le quart de
+    // leur parente qu'elles couvrent reste affiché (jamais de trou). Le CPU ne fait que choisir les tuiles et préparer quelques valeurs
     // par tuile.
     // Chaque tuile occupe une case des pages de PlanetTileCompute (les indices sont communs à toutes) ; MeshRenderer
     // dessine chaque page en un appel indirect.
-    class PlanetRenderer {
+    class FLUX_API PlanetRenderer {
         public:
         static std::expected<std::unique_ptr<PlanetRenderer>, std::string> Create(RHI::Device& device);
 
@@ -66,6 +66,10 @@ namespace Flux::Planetology {
             float morphStart;
             float morphScale;
             double lowest; // plus petite distance de ses sommets au centre de la planète (océan au-dessus ?)
+            // Ses indices à dessiner (BuildTileIndices) : tous, ou un quart seulement (là où un enfant n'est pas prêt).
+            std::uint32_t firstIndex;
+            std::uint32_t indexCount;
+            TileKey key; // la tuile, ou l'enfant dont elle tient la place (un quart)
         };
         // Une tuile du niveau des plaines semées d'arbres (VegetationRenderer), en vue, qu'elle soit dessinée ou coupée
         // en plus fines.
@@ -104,7 +108,6 @@ namespace Flux::Planetology {
         std::uint32_t GetStoredTileCount() const {
             return m_compute->GetTileCount() - static_cast<std::uint32_t>(m_freeTiles.size());
         }
-        std::uint32_t GetIndexCount() const { return m_indexCount; }
         // Tuiles demandées à la dernière image et pas encore prêtes (0 : le sol est au détail voulu partout où on le
         // voit). Sert à l'écran de chargement.
         std::uint32_t GetPendingTileCount() const { return m_pendingTiles; }
@@ -166,6 +169,7 @@ namespace Flux::Planetology {
         bool IsCulled(const Visit& visit, const Node& node) const { return IsCulled(visit, node.bounds); }
         void VisitNode(Visit& visit, TileKey key, Node& node);
         void AddPlains(Visit& visit, TileKey key);
+        void AddTile(Visit& visit, TileKey key, const Node& node, const TileBounds& bounds, std::uint32_t quarter);
         PlanetState* FindOwner(std::uint64_t owner);
         bool Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex);
         void Retire(Node& node);
@@ -173,7 +177,6 @@ namespace Flux::Planetology {
         RHI::Device& m_device;
         std::unique_ptr<PlanetTileCompute> m_compute; // avant les nœuds : leurs groupes sont rendus à son layout
         std::unique_ptr<RHI::Buffer> m_indices; // communs à toutes les tuiles
-        std::uint32_t m_indexCount = 0;
         std::unordered_map<Entity, PlanetState> m_planets;
         std::uint64_t m_frame = 0;
         bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
