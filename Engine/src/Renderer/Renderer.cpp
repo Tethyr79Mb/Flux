@@ -9,6 +9,7 @@
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/PostRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
+#include "Renderer/RenderGraph.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
@@ -22,17 +23,6 @@ namespace Flux {
     namespace {
         // Profondeur 32 bits flottante : obligatoire pour que le reverse-Z tienne l'échelle galaxie.
         constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
-
-        // Heures notées par le GPU pendant l'image (RHI::CommandList::WriteTimestamp), seulement quand le panneau
-        // Moteur les affiche (Renderer::RequestDetailedTimings). Pendant une passe, une heure attend la fin des dessins
-        // d'avant : le GPU ne fait plus chevaucher deux étapes, d'où un surcoût et des temps d'étape un peu plus longs
-        // qu'en vrai.
-        enum Timestamp : std::uint32_t {
-            FrameStart, ShadowsDone, ObjectsDone, VegetationDone, GroundDone, SkyDone, OceanDone, CloudsDone, SceneDone, PyramidDone, TemporalDone,
-            BloomDone, InterfaceDone,
-            TimestampCount
-        };
-        static_assert(TimestampCount <= RHI::MaxTimestamps);
 
         // Décalages d'un sous-pixel de l'anticrénelage : 8 points de la suite de Halton (bases 2 et 3), bien répartis
         // dans le pixel, puis on recommence. Plus de points lisseraient un peu mieux les bords presque droits, au prix
@@ -130,6 +120,18 @@ namespace Flux {
         bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
         bool grid = false;        // grille au sol de l'éditeur
         RenderTimings timings;
+        // L'image décrite une fois (BuildGraph), jouée à chaque RenderFrame avec l'état de l'image ci-dessous.
+        RenderGraph graph;
+        struct FrameState
+        {
+            std::uint32_t index = 0;
+            RHI::Rect scene3d;
+            float exposure = 1.0f;
+            TemporalView temporal;
+            Math::Matrix4f reprojection = Math::Matrix4f::Identity();
+            PostRenderer::GridParams gridParams{};
+        };
+        FrameState frame;
 
         explicit Impl(Window& w) : window(w) {}
 
@@ -265,91 +267,15 @@ namespace Flux {
 
             const Clock::time_point recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
-            RHI::CommandList& commands = device->GetCommandList();
-            const bool measured = std::exchange(detailedTimings, false);
-            const auto timestamp = [&](Timestamp stamp) {
-                if (measured) {
-                    commands.WriteTimestamp(stamp);
-                }
-            };
-            // Étapes nommées (BeginStep) : si le GPU se bloque, le rapport dit laquelle n'a pas fini.
-            timestamp(FrameStart);
-            if (sceneVisible) {
-                commands.BeginStep("tuiles de planète (compute)");
-                meshes->Compute(commands, frameIndex); // compté avec les ombres
-                commands.BeginStep("ciel (textures cube)");
-                sky->Bake(commands, frameIndex); // compté avec les ombres, l'image où il a lieu
-                commands.BeginStep("ombres");
-                meshes->DrawShadows(commands, frameIndex);
+            frame.index = frameIndex;
+            frame.scene3d = scene3d;
+            frame.exposure = exposure;
+            frame.temporal = temporal;
+            frame.reprojection = reprojection;
+            if (sceneVisible && grid) {
+                frame.gridParams = MakeGridParams(camera, aspect, viewProjection);
             }
-            timestamp(ShadowsDone);
-            if (sceneVisible) {
-                // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
-                // Profondeur et mouvement gardés pour l'anticrénelage.
-                commands.BeginRenderPass({.clearColor = PostRenderer::InverseToneMap(clearColor, exposure),
-                                          .depth = &post->GetSceneDepth(), .clearDepth = 0.0f,
-                                          .colorTarget = &post->GetSceneTarget(),
-                                          .secondColorTarget = &post->GetMotionTarget(), .keepDepth = true});
-                commands.SetViewport({0.0f, 0.0f, static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
-                commands.SetScissor({0, 0, scene3d.width, scene3d.height});
-                commands.BeginStep("objets opaques");
-                meshes->DrawOpaque(commands, frameIndex);
-                timestamp(ObjectsDone);
-                commands.BeginStep("arbres des planètes");
-                meshes->DrawVegetation(commands, frameIndex);
-                timestamp(VegetationDone);
-                commands.BeginStep("sol des planètes");
-                meshes->DrawGround(commands, frameIndex);
-                timestamp(GroundDone);
-                commands.BeginStep("fond du ciel");
-                sky->Draw(commands, frameIndex);
-                timestamp(SkyDone);
-                commands.BeginStep("océan");
-                meshes->DrawOcean(commands, frameIndex);
-                timestamp(OceanDone);
-                commands.BeginStep("nuages");
-                meshes->DrawClouds(commands, frameIndex);
-                timestamp(CloudsDone);
-                commands.BeginStep("transparents");
-                meshes->DrawTransparent(commands, frameIndex);
-                commands.BeginStep("flammes des réacteurs"); // comptées avec les transparents
-                thrusters->Draw(commands);
-                commands.BeginStep("traçantes"); // comptées avec les transparents
-                tracers->Draw(commands);
-                commands.EndRenderPass();
-            }
-            timestamp(SceneDone);
-            if (sceneVisible) {
-                // La profondeur de la scène réduite, pour écarter à l'image suivante ce qui sera caché.
-                commands.BeginStep("pyramide de profondeur");
-                meshes->BuildDepthPyramid(commands, frameIndex, post->GetSceneDepth(), {scene3d.width, scene3d.height});
-            }
-            timestamp(PyramidDone);
-            if (sceneVisible) {
-                commands.BeginStep("anticrénelage");
-                post->ResolveTemporal(commands, temporalAA, reprojection, temporal.history);
-            }
-            timestamp(TemporalDone);
-            if (sceneVisible) {
-                commands.BeginStep("bloom");
-                post->DrawBloom(commands, bloom);
-            }
-            commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
-            if (sceneVisible) {
-                commands.SetViewport({static_cast<float>(scene3d.x), static_cast<float>(scene3d.y),
-                                      static_cast<float>(scene3d.width), static_cast<float>(scene3d.height)});
-                commands.SetScissor(scene3d);
-                post->Composite(commands, bloom, exposure);
-                if (grid) {
-                    commands.BeginStep("grille");
-                    post->DrawGrid(commands, MakeGridParams(camera, aspect, viewProjection));
-                }
-            }
-            timestamp(BloomDone); // image finale comptée avec le bloom
-            commands.BeginStep("interface");
-            overlay->Draw(commands, frameIndex, device->GetSwapchainExtent());
-            commands.EndRenderPass();
-            timestamp(InterfaceDone);
+            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false));
             const bool presented = device->EndFrame();
             // Présentation exclue : mesurée à part par le RHI.
             timings.record = Milliseconds(Clock::now() - recordStart) - device->GetWaitTimes().present;
@@ -362,23 +288,128 @@ namespace Flux {
             const RHI::WaitTimes& waits = device->GetWaitTimes();
             timings.waitGpu = waits.frame;
             timings.waitImage = waits.acquire;
-            const std::span<const double> stamps = device->GetTimestamps();
-            const auto between = [&](std::uint32_t from, std::uint32_t to) {
-                return to < stamps.size() && stamps[from] >= 0.0 && stamps[to] >= 0.0 ? stamps[to] - stamps[from] : -1.0;
-            };
-            timings.gpuShadows = between(FrameStart, ShadowsDone);
-            timings.gpuScene = between(ShadowsDone, SceneDone);
-            timings.gpuObjects = between(ShadowsDone, ObjectsDone);
-            timings.gpuVegetation = between(ObjectsDone, VegetationDone);
-            timings.gpuGround = between(VegetationDone, GroundDone);
-            timings.gpuSky = between(GroundDone, SkyDone);
-            timings.gpuOcean = between(SkyDone, OceanDone);
-            timings.gpuClouds = between(OceanDone, CloudsDone);
-            timings.gpuTransparent = between(CloudsDone, SceneDone);
-            timings.gpuPyramid = between(SceneDone, PyramidDone);
-            timings.gpuTemporal = between(PyramidDone, TemporalDone);
-            timings.gpuBloom = between(TemporalDone, BloomDone);
-            timings.gpuInterface = between(BloomDone, InterfaceDone);
+            timings.gpu = graph.ReadTimings(device->GetTimestamps());
+        }
+
+        // L'image, dans l'ordre : calculs du GPU (tuiles, arbres, objets cachés), textures du ciel, carte d'ombres,
+        // scène HDR, pyramide de profondeur, anticrénelage, bloom, puis l'image de la fenêtre (scène avec la courbe de
+        // tons, grille, interface). Sans scène (éditeur d'interface), seule l'interface.
+        std::expected<void, std::string> BuildGraph() {
+            using Lifetime = RenderGraph::Lifetime;
+            const auto cpu = graph.AddResource("données envoyées par le CPU", Lifetime::External);
+            // Gardées d'une image à l'autre : tuiles calculées une fois, ciel recalculé quand il change, pyramide et
+            // historique de l'image précédente.
+            const auto tiles = graph.AddResource("tuiles de planète", Lifetime::Previous);
+            const auto skyCube = graph.AddResource("textures du ciel", Lifetime::Previous);
+            const auto pyramid = graph.AddResource("pyramide de profondeur", Lifetime::Previous);
+            const auto history = graph.AddResource("historique de l'anticrénelage", Lifetime::Previous);
+            const auto culled = graph.AddResource("arbres et objets retenus");
+            const auto shadowMap = graph.AddResource("carte d'ombres");
+            const auto sceneColor = graph.AddResource("image de la scène");
+            const auto motion = graph.AddResource("mouvement");
+            const auto sceneDepth = graph.AddResource("profondeur de la scène");
+            const auto bloomTextures = graph.AddResource("bloom");
+            const auto windowImage = graph.AddResource("image de la fenêtre");
+            const auto scene = [this] { return sceneVisible; };
+
+            graph.AddPass("calculs")
+                .When(scene)
+                .Reads(cpu)
+                .Reads(pyramid)
+                .Writes(tiles)
+                .Writes(culled)
+                .Step("calculs", [this](RHI::CommandList& commands) { meshes->Compute(commands, frame.index); });
+            graph.AddPass("ciel")
+                .When(scene)
+                .Reads(cpu)
+                .Writes(skyCube)
+                .Step("ciel", [this](RHI::CommandList& commands) { sky->Bake(commands, frame.index); });
+            graph.AddPass("ombres")
+                .When(scene)
+                .Reads(cpu)
+                .Reads(tiles)
+                .Reads(culled)
+                .Writes(shadowMap)
+                .Step("ombres", [this](RHI::CommandList& commands) { meshes->DrawShadows(commands, frame.index); });
+            graph.AddPass("scène")
+                .When(scene)
+                .Reads(cpu)
+                .Reads(tiles)
+                .Reads(culled)
+                .Reads(shadowMap)
+                .Reads(skyCube)
+                .Writes(sceneColor)
+                .Writes(motion)
+                .Writes(sceneDepth)
+                .Begin([this](RHI::CommandList& commands) {
+                    // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
+                    // Profondeur et mouvement gardés pour l'anticrénelage.
+                    commands.BeginRenderPass({.clearColor = PostRenderer::InverseToneMap(clearColor, frame.exposure),
+                                              .depth = &post->GetSceneDepth(), .clearDepth = 0.0f,
+                                              .colorTarget = &post->GetSceneTarget(),
+                                              .secondColorTarget = &post->GetMotionTarget(), .keepDepth = true});
+                    commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
+                    commands.SetScissor({0, 0, frame.scene3d.width, frame.scene3d.height});
+                })
+                .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); })
+                .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
+                .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
+                .Step("fond du ciel", [this](RHI::CommandList& commands) { sky->Draw(commands, frame.index); })
+                .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); })
+                .Step("nuages", [this](RHI::CommandList& commands) { meshes->DrawClouds(commands, frame.index); })
+                .Step("transparents", [this](RHI::CommandList& commands) {
+                    meshes->DrawTransparent(commands, frame.index);
+                    commands.BeginStep("flammes des réacteurs");
+                    thrusters->Draw(commands);
+                    commands.BeginStep("traçantes");
+                    tracers->Draw(commands);
+                });
+            // La profondeur de la scène réduite, pour écarter à l'image suivante ce qui sera caché.
+            graph.AddPass("pyramide")
+                .When(scene)
+                .Reads(sceneDepth)
+                .Writes(pyramid)
+                .Step("pyramide", [this](RHI::CommandList& commands) {
+                    meshes->BuildDepthPyramid(commands, frame.index, post->GetSceneDepth(), {frame.scene3d.width, frame.scene3d.height});
+                });
+            graph.AddPass("anticrénelage")
+                .When(scene)
+                .Reads(sceneColor)
+                .Reads(motion)
+                .Reads(sceneDepth)
+                .Reads(history)
+                .Writes(history)
+                .Step("anticrénelage", [this](RHI::CommandList& commands) {
+                    post->ResolveTemporal(commands, temporalAA, frame.reprojection, frame.temporal.history);
+                });
+            graph.AddPass("bloom")
+                .When(scene)
+                .Reads(sceneColor)
+                .Reads(history)
+                .Writes(bloomTextures)
+                .Step("bloom", [this](RHI::CommandList& commands) { post->DrawBloom(commands, bloom); });
+            graph.AddPass("image finale")
+                .Reads(sceneColor)
+                .Reads(history)
+                .Reads(bloomTextures)
+                .Reads(sceneDepth)
+                .Writes(windowImage)
+                .Begin([this](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
+                })
+                .Step("scène", [this](RHI::CommandList& commands) {
+                    commands.SetViewport({static_cast<float>(frame.scene3d.x), static_cast<float>(frame.scene3d.y),
+                                          static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
+                    commands.SetScissor(frame.scene3d);
+                    post->Composite(commands, bloom, frame.exposure);
+                }, scene)
+                // Même viewport que la scène.
+                .Step("grille", [this](RHI::CommandList& commands) { post->DrawGrid(commands, frame.gridParams); },
+                      [this] { return sceneVisible && grid; })
+                .Step("interface", [this](RHI::CommandList& commands) {
+                    overlay->Draw(commands, frame.index, device->GetSwapchainExtent());
+                });
+            return graph.Compile();
         }
     };
 
@@ -427,6 +458,9 @@ namespace Flux {
             return std::unexpected(post.error());
         }
         impl->post = std::move(*post);
+        if (auto graph = impl->BuildGraph(); !graph) {
+            return std::unexpected(graph.error());
+        }
 
         return std::unique_ptr<Renderer>(new Renderer(std::move(impl)));
     }

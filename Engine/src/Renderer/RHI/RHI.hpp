@@ -328,8 +328,8 @@ namespace Flux::RHI {
         virtual void BeginStep(const char* name) = 0;
     };
 
-    inline constexpr std::uint32_t MaxTimestamps = 16;
-    inline constexpr std::uint32_t MaxSteps = 16;
+    inline constexpr std::uint32_t MaxTimestamps = 32;
+    inline constexpr std::uint32_t MaxSteps = 32;
 
     // Temps passés par le CPU à attendre, pendant l'image précédente (millisecondes) : longs, ils disent que le GPU ou
     // la présentation (V-Sync, plafond du pilote) mène la cadence.
