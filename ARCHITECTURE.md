@@ -110,6 +110,14 @@ sauf celui de l'image de la swapchain. Les textures internes d'une passe (niveau
 première image) sont préparées par la passe elle-même avec `UseTextures`. Les buffers gardent la barrière globale de
 calcul (`ComputeBarrier`).
 
+Textures de travail : l'image HDR de la scène, son mouvement, sa profondeur, l'historique de l'anticrénelage et la
+profondeur de l'image finale sont créés par le graphe (`RenderGraph::CreateTexture`) à la taille de la vue 3D ou de la
+fenêtre, et recréés quand elle change (`ResizeTextures`, qui dit s'il faut refaire les groupes : `PostRenderer::Bind`).
+L'historique (`Lifetime::Previous`) a deux exemplaires : une passe lit le dernier écrit et écrit l'autre, qui devient le
+dernier écrit, sans échange à la main. Seuls les niveaux du bloom restent créés par `PostRenderer` (leur nombre dépend
+de la taille). Pas de partage de mémoire entre textures (aliasing) : presque toutes vivent de la scène à l'image finale,
+seule celle du mouvement pourrait prêter la sienne au bloom, une dizaine de Mo en 1440p.
+
 Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
 enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses
 commandes, et leurs buffers intermédiaires sont rendus quand le GPU a fini cette image. Chaque envoi commence par une
@@ -146,7 +154,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    `CommandList::ClearDepth` sur les seules cascades redessinées) et sa matrice est recalée sur la caméra
    (`MoveShadowCascade`). Redessinée quand même si le soleil a tourné ou si la caméra a bougé de 10 % de son rayon.
 4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
-   (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
+   (textures du graphe, lues par `PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans, nuages, transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
    Les matériaux opaques sans seuil d'alpha passent par `fragmentOpaque`, qui ne jette aucun pixel : le GPU teste la
@@ -160,7 +168,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 5. Anticrénelage temporel (`Temporal.slang`, Paramètres > Graphiques, activé par défaut) : chaque pixel est retrouvé
    dans le résultat de l'image précédente (profondeur + caméra d'avant, plus le mouvement propre), ramené dans la boîte
    de couleurs de son voisinage 3 x 3 (YCoCg, moyenne ± écart type) puis mélangé à 10 % de l'image actuelle. Deux
-   historiques en alternance ; rien de repris après un saut de caméra de plus de 100 km ou un changement de taille.
+   exemplaires de l'historique en alternance (le graphe les échange) ; rien de repris après un saut de caméra de plus de 100 km ou un changement de taille.
 6. Bloom (`Post.slang`, méthode de Jimenez) : l'image anticrénelée réduite de moitié jusqu'à 6 fois (13 lectures,
    moyenne de Karis à la première), puis remontée en additionnant chaque niveau flou au niveau au-dessus ; sans seuil.
 7. Passe principale vers la fenêtre : la scène mélangée à son bloom (Paramètres > Graphiques, 4 % par défaut), puis

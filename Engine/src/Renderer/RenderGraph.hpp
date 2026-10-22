@@ -4,9 +4,12 @@
 #include "Flux/Renderer/Renderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
+#include <array>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -22,6 +25,9 @@ namespace Flux {
     // déclare : lue (Sampled), ou écrite (cible de couleur, ou de profondeur selon son format). Les passes n'en posent
     // plus, sauf pour leurs textures internes (niveaux du bloom). Les buffers gardent leurs barrières de calcul
     // (CommandList::ComputeBarrier). L'ordre est celui de la description (Engine/ROADMAP.md, étapes suivantes).
+    // Textures de travail (CreateTexture) : créées par le graphe à la taille de la vue 3D ou de la fenêtre, recréées
+    // quand elle change (ResizeTextures). Un historique (Lifetime::Previous) en a deux exemplaires : une passe lit le
+    // dernier écrit et écrit l'autre, qui devient le dernier écrit ; rien à échanger à la main.
     class FLUX_API RenderGraph {
         public:
         using ResourceId = std::uint32_t;
@@ -39,6 +45,22 @@ namespace Flux {
         };
 
         using Timing = RenderPassTiming;
+
+        // Taille d'une texture de travail.
+        enum class TextureSize : std::uint8_t {
+            View,   // la vue 3D (scène, mouvement, profondeur, historique)
+            Window, // la fenêtre (profondeur de l'image finale)
+        };
+        struct TextureDesc
+        {
+            RHI::Format format = RHI::Format::Undefined;
+            TextureSize size = TextureSize::View;
+            bool sampled = true; // lue par des shaders, pas seulement cible
+        };
+
+        RenderGraph() = default;
+        RenderGraph(const RenderGraph&) = delete; // possède ses textures
+        RenderGraph& operator=(const RenderGraph&) = delete;
 
         // Ce qu'une passe décrit : ses ressources, ses étapes, et sa cible quand elle est une passe de dessin.
         class FLUX_API PassBuilder {
@@ -61,13 +83,23 @@ namespace Flux {
 
         // Ressource que le graphe ordonne seulement (buffers, envois du CPU).
         ResourceId AddResource(const char* name, Lifetime lifetime = Lifetime::Frame);
-        // Texture dont le graphe pose les barrières. Lifetime::Frame : son contenu d'avant est jeté à sa première
-        // écriture de l'image.
+        // Texture d'ailleurs (ciel, carte d'ombres) dont le graphe pose les barrières. Lifetime::Frame : son contenu
+        // d'avant est jeté à sa première écriture de l'image.
         ResourceId AddTexture(const char* name, Lifetime lifetime, TextureSource texture);
+        // Texture de travail créée par le graphe (Frame ou Previous ; Previous : deux exemplaires).
+        ResourceId CreateTexture(const char* name, Lifetime lifetime, TextureDesc desc);
+        // Crée ou recrée à `extent` les textures de travail de cette taille, le GPU attendu avant. true : recréées,
+        // les groupes qui les désignent (BindGroup) sont à refaire. Hors de Execute.
+        std::expected<bool, std::string> ResizeTextures(RHI::Device& device, TextureSize size, RHI::Extent extent);
+        // Texture de travail telle qu'une passe la lit (le dernier exemplaire écrit) ; nullptr avant ResizeTextures.
+        const RHI::Texture* GetTexture(ResourceId resource) const;
+        // Exemplaire `copy` (0 ou 1) d'un historique, et celui que sa prochaine écriture remplira.
+        const RHI::Texture* GetCopy(ResourceId resource, std::uint32_t copy) const;
+        std::uint32_t GetWriteCopy(ResourceId resource) const;
         PassBuilder AddPass(const char* name);
         // Vérifie la description : chaque lecture suit une écriture de l'image (ou lit l'image précédente, ou une
-        // ressource externe), pas de texture lue et écrite par la même passe, heures du GPU en nombre suffisant. Le
-        // message dit quelle passe et quelle ressource.
+        // ressource externe), pas de texture lue et écrite par la même passe (sauf un historique, qui a deux
+        // exemplaires), heures du GPU en nombre suffisant. Le message dit quelle passe et quelle ressource.
         std::expected<void, std::string> Compile();
 
         // Joue les passes dans l'ordre, chacune précédée des barrières de ses textures. `timestamps` : une heure du GPU au début puis après chaque étape (même une
@@ -84,7 +116,14 @@ namespace Flux {
         {
             const char* name;
             Lifetime lifetime;
-            TextureSource texture;
+            TextureSource texture;                          // texture d'ailleurs
+            std::optional<TextureDesc> desc;                // texture de travail
+            std::array<std::unique_ptr<RHI::Texture>, 2> owned;
+            RHI::Extent extent{};
+            std::uint32_t written = 0;                      // exemplaire lu (le dernier écrit)
+
+            bool IsTexture() const { return texture || desc; }
+            bool IsHistory() const { return desc && lifetime == Lifetime::Previous; }
         };
         struct Step
         {
@@ -103,6 +142,8 @@ namespace Flux {
         };
 
         void PrepareTextures(RHI::CommandList& commands, const Pass& pass);
+        const RHI::Texture* ReadTexture(const Resource& resource) const;
+        const RHI::Texture* WriteTexture(const Resource& resource) const;
 
         std::vector<Resource> m_resources;
         std::vector<Pass> m_passes;
