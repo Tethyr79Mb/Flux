@@ -28,6 +28,7 @@
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
+#include "Core/Measurements.hpp"
 #include "Interface/InterfaceLibrary.hpp"
 
 #include <nlohmann/json.hpp>
@@ -37,6 +38,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -184,10 +186,19 @@ namespace Flux {
             return std::format("{:.0f} Mo", static_cast<double>(bytes) / (1024.0 * 1024.0));
         }
 
-        void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, Camera& camera,
-                             FlyCameraController* controller) {
+        // Durée d'un relevé lancé depuis le panneau Moteur.
+        constexpr double MeasureSeconds = 10.0;
+
+        void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, MeasureRecorder& measures,
+                             Camera& camera, FlyCameraController* controller) {
             if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
                 renderer.RequestDetailedTimings();
+                // Le relevé écrit toutes ces mesures dans un fichier (Mesures/ à côté de l'exécutable).
+                if (measures.IsRecording()) {
+                    ui.LabelText("Enregistrement", std::format("encore {:.0f} s", std::ceil(measures.GetRemainingSeconds())));
+                } else if (ui.Button("Enregistrer les mesures (10 s)")) {
+                    measures.Start(MeasureSeconds);
+                }
                 // Toujours visible : la cadence et qui la mène. Lecture : si « Attente écran » domine alors que le GPU
                 // travaille peu, la cadence vient de l'extérieur (V-Sync, pilote) ; si le GPU est long, c'est le
                 // dessin ; sinon, le CPU. Le détail est replié en sections, pour tenir dans l'écran.
@@ -418,6 +429,18 @@ namespace Flux {
         }
 
         FrameStats stats;
+        MeasureRecorder measures;
+        // Temps du CPU de l'image précédente pour le relevé (négatif : pas mesuré, jeu arrêté).
+        double updateMilliseconds = -1.0;
+        double gameMilliseconds = -1.0;
+        // FLUX_MESURES=secondes : un relevé dès la fin du chargement (essais automatiques, sans clic).
+        double automaticMeasure = 0.0;
+#ifdef _MSC_VER
+#pragma warning(suppress : 4996) // getenv : lu avant tout fil
+#endif
+        if (const char* seconds = std::getenv("FLUX_MESURES")) {
+            automaticMeasure = std::max(std::atof(seconds), 0.0);
+        }
         Clock::time_point previousFrame = Clock::now();
         while (!m_quitRequested && !Platform::ConsoleCloseRequested() && m_window->IsOpen()) {
             m_window->HandleEvents();
@@ -442,7 +465,8 @@ namespace Flux {
 
             const Clock::time_point now = Clock::now();
             // Plafonné : après un blocage (déplacement de fenêtre, point d'arrêt), la caméra ne fait pas un bond.
-            const double deltaSeconds = std::min(std::chrono::duration<double>(now - previousFrame).count(), 0.1);
+            const double frameMilliseconds = Milliseconds(now - previousFrame);
+            const double deltaSeconds = std::min(frameMilliseconds * 0.001, 0.1);
             previousFrame = now;
             stats.Tick(now);
             m_fps = stats.GetFps();
@@ -452,6 +476,35 @@ namespace Flux {
             stats.Add(WaitGpuCost, render.waitGpu);
             stats.Add(WaitImageCost, render.waitImage + render.present);
             stats.AddGpu(render.gpu);
+            if (automaticMeasure > 0.0 && !m_loading) {
+                measures.Start(std::exchange(automaticMeasure, 0.0));
+            }
+            if (measures.Add(frameMilliseconds,
+                             {updateMilliseconds, gameMilliseconds, render.prepare, render.record, render.waitGpu,
+                              render.waitImage + render.present},
+                             render)) {
+                const Math::Vector2i view = m_window->GetSize();
+                const MeasureRecorder::Context context{
+                    .device = m_renderer->GetDeviceName(),
+                    .camera = std::format("secteur ({}, {}, {}), position ({:.1f}, {:.1f}, {:.1f}), lacet {:.3f}, tangage {:.3f}",
+                                          m_camera.position.sector.x, m_camera.position.sector.y, m_camera.position.sector.z,
+                                          m_camera.position.offset.x, m_camera.position.offset.y, m_camera.position.offset.z,
+                                          m_camera.yaw, m_camera.pitch),
+                    .width = static_cast<std::uint32_t>(view.x),
+                    .height = static_cast<std::uint32_t>(view.y),
+                    .vsync = m_renderer->IsVSyncEnabled(),
+                    .temporalAA = m_renderer->IsTemporalAAEnabled(),
+                    .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
+                    .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
+                    .groundMeshThreads = render.groundMeshThreads};
+                if (auto written = measures.Write(Platform::GetExecutableDirectory() / "Mesures", context)) {
+                    Log::Info("Mesures écrites dans {}", Platform::ToGenericUtf8(*written));
+                    ShowNotice("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));
+                } else {
+                    Log::Error("Mesures : {}", written.error());
+                }
+            }
+            gameMilliseconds = -1.0;
 
             // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.
             ++m_frame;
@@ -488,7 +541,8 @@ namespace Flux {
                 if (m_gameUpdate) {
                     m_gameUpdate(*this, gameDelta);
                 }
-                stats.Add(GameCost, Milliseconds(Clock::now() - gameStart));
+                gameMilliseconds = Milliseconds(Clock::now() - gameStart);
+                stats.Add(GameCost, gameMilliseconds);
             }
             // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
             m_hiddenPlayer = NullEntity;
@@ -536,11 +590,15 @@ namespace Flux {
                 DrawLoadingScreen({static_cast<float>(size.x), static_cast<float>(size.y)}); // par-dessus la scène
             }
             if (m_showDebugOverlay) {
-                DrawEnginePanel(*m_ui, *m_renderer, stats, m_camera, m_freeCamera ? &m_cameraController : nullptr);
+                DrawEnginePanel(*m_ui, *m_renderer, stats, measures, m_camera, m_freeCamera ? &m_cameraController : nullptr);
+            }
+            if (measures.IsRecording()) {
+                m_renderer->RequestDetailedTimings(); // heures du GPU même panneau fermé
             }
             m_ui->EndFrame(m_renderer->GetOverlay());
             m_window->SetMouseCursor(m_ui->GetMouseCursor()); // double flèche au bord d'un panneau
-            stats.Add(UpdateCost, Milliseconds(Clock::now() - now));
+            updateMilliseconds = Milliseconds(Clock::now() - now);
+            stats.Add(UpdateCost, updateMilliseconds);
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
