@@ -30,13 +30,79 @@ namespace Flux {
     }
 
     RenderGraph::ResourceId RenderGraph::AddResource(const char* name, Lifetime lifetime) {
-        m_resources.push_back({name, lifetime, {}});
+        m_resources.push_back({name, lifetime, {}, {}});
         return static_cast<ResourceId>(m_resources.size() - 1);
     }
 
     RenderGraph::ResourceId RenderGraph::AddTexture(const char* name, Lifetime lifetime, TextureSource texture) {
         m_resources.push_back({name, lifetime, std::move(texture)});
         return static_cast<ResourceId>(m_resources.size() - 1);
+    }
+
+    RenderGraph::ResourceId RenderGraph::CreateTexture(const char* name, Lifetime lifetime, TextureDesc desc) {
+        m_resources.push_back({name, lifetime, {}, desc});
+        return static_cast<ResourceId>(m_resources.size() - 1);
+    }
+
+    std::expected<bool, std::string> RenderGraph::ResizeTextures(RHI::Device& device, TextureSize size, RHI::Extent extent) {
+        extent = {std::max(extent.width, 1u), std::max(extent.height, 1u)};
+        const auto stale = [&](const Resource& resource) {
+            return resource.desc && resource.desc->size == size && (!resource.owned[0] || resource.extent != extent);
+        };
+        if (std::ranges::none_of(m_resources, stale)) {
+            return false;
+        }
+        device.WaitIdle(); // les images en vol les utilisent peut-être encore
+        for (Resource& resource : m_resources) {
+            if (!stale(resource)) {
+                continue;
+            }
+            for (auto& texture : resource.owned) {
+                texture.reset(); // tout libéré avant d'allouer à la nouvelle taille
+            }
+            resource.extent = extent;
+            resource.written = 0;
+        }
+        for (Resource& resource : m_resources) {
+            if (!resource.desc || resource.desc->size != size || resource.owned[0]) {
+                continue;
+            }
+            for (std::uint32_t copy = 0; copy < (resource.IsHistory() ? 2u : 1u); ++copy) {
+                auto created = device.CreateRenderTarget(resource.desc->format, extent, resource.desc->sampled);
+                if (!created) {
+                    return std::unexpected(std::format("graphe de rendu : « {} » : {}", resource.name, created.error()));
+                }
+                resource.owned[copy] = std::move(*created);
+            }
+        }
+        return true;
+    }
+
+    const RHI::Texture* RenderGraph::GetTexture(ResourceId resource) const {
+        return ReadTexture(m_resources[resource]);
+    }
+
+    const RHI::Texture* RenderGraph::GetCopy(ResourceId resource, std::uint32_t copy) const {
+        return m_resources[resource].owned[copy].get();
+    }
+
+    std::uint32_t RenderGraph::GetWriteCopy(ResourceId resource) const {
+        const Resource& r = m_resources[resource];
+        return r.IsHistory() ? 1 - r.written : 0;
+    }
+
+    const RHI::Texture* RenderGraph::ReadTexture(const Resource& resource) const {
+        if (resource.desc) {
+            return resource.owned[resource.written].get();
+        }
+        return resource.texture ? resource.texture() : nullptr;
+    }
+
+    const RHI::Texture* RenderGraph::WriteTexture(const Resource& resource) const {
+        if (resource.desc) {
+            return resource.owned[resource.IsHistory() ? 1 - resource.written : 0].get();
+        }
+        return resource.texture ? resource.texture() : nullptr;
     }
 
     RenderGraph::PassBuilder RenderGraph::AddPass(const char* name) {
@@ -52,6 +118,12 @@ namespace Flux {
         }
         m_stepCount = 0;
         m_timings.clear();
+        for (const Resource& resource : m_resources) {
+            if (resource.desc && resource.lifetime == Lifetime::External) {
+                return std::unexpected(std::format("graphe de rendu : « {} » est créée par le graphe, pas remplie hors de lui",
+                                                   resource.name));
+            }
+        }
         std::size_t uses = 0;
         for (const Pass& pass : m_passes) {
             uses = std::max(uses, pass.reads.size() + pass.writes.size());
@@ -71,7 +143,8 @@ namespace Flux {
                 if (resource >= m_resources.size()) {
                     return std::unexpected(std::format("graphe de rendu : la passe « {} » écrit une ressource inconnue", pass.name));
                 }
-                if (m_resources[resource].texture && std::ranges::contains(pass.reads, resource)) {
+                if (m_resources[resource].IsTexture() && !m_resources[resource].IsHistory()
+                    && std::ranges::contains(pass.reads, resource)) {
                     return std::unexpected(std::format("graphe de rendu : la passe « {} » lit et écrit la texture « {} »",
                                                        pass.name, m_resources[resource].name));
                 }
@@ -121,21 +194,31 @@ namespace Flux {
             if (active && pass.begin) {
                 commands.EndRenderPass();
             }
+            if (active) {
+                // L'exemplaire écrit devient celui que liront les passes suivantes, et l'image d'après.
+                for (const ResourceId resource : pass.writes) {
+                    if (Resource& r = m_resources[resource]; r.IsHistory()) {
+                        r.written = 1 - r.written;
+                    }
+                }
+            }
         }
     }
 
     void RenderGraph::PrepareTextures(RHI::CommandList& commands, const Pass& pass) {
         m_uses.clear(); // capacité gardée : pas d'allocation
         for (const ResourceId resource : pass.reads) {
-            if (const RHI::Texture* texture = m_resources[resource].texture ? m_resources[resource].texture() : nullptr) {
+            if (const RHI::Texture* texture = ReadTexture(m_resources[resource])) {
                 m_uses.push_back({texture, RHI::TextureAccess::Sampled, false});
             }
         }
+        // Contenu jeté : texture de l'image, ou exemplaire d'historique qui ne tient que l'avant-dernière image.
         for (const ResourceId resource : pass.writes) {
-            if (const RHI::Texture* texture = m_resources[resource].texture ? m_resources[resource].texture() : nullptr) {
+            const Resource& r = m_resources[resource];
+            if (const RHI::Texture* texture = WriteTexture(r)) {
                 const bool depth = texture->GetFormat() == RHI::Format::D32Float;
                 m_uses.push_back({texture, depth ? RHI::TextureAccess::DepthTarget : RHI::TextureAccess::ColorTarget,
-                                  m_resources[resource].lifetime == Lifetime::Frame});
+                                  r.lifetime == Lifetime::Frame || r.IsHistory()});
             }
         }
         if (!m_uses.empty()) {

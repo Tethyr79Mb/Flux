@@ -27,12 +27,16 @@ namespace {
         public:
         std::vector<std::string> log;
 
-        void UseTextures(std::span<const RHI::TextureUse> uses) override {
+        std::vector<RHI::TextureUse> uses; // toutes, dans l'ordre
+
+        void UseTextures(std::span<const RHI::TextureUse> list) override {
             std::string line = "barrières";
-            for (const RHI::TextureUse& use : uses) {
+            for (const RHI::TextureUse& use : list) {
                 constexpr std::array names{"rien", "couleur", "profondeur", "lue"};
-                line += std::format(" {}:{}{}", static_cast<const NamedTexture*>(use.texture)->name,
-                                    names[static_cast<std::size_t>(use.access)], use.discard ? " jetée" : "");
+                const auto* named = dynamic_cast<const NamedTexture*>(use.texture);
+                line += std::format(" {}:{}{}", named ? named->name : "?", names[static_cast<std::size_t>(use.access)],
+                                    use.discard ? " jetée" : "");
+                uses.push_back(use);
             }
             log.push_back(line);
         }
@@ -132,6 +136,49 @@ bool RunRenderGraphTests() {
         const auto feedback = both.AddTexture("historique", Lifetime::Previous, [&] { return &colorTexture; });
         both.AddPass("anticrénelage").Reads(feedback).Writes(feedback).Step("anticrénelage", [](RHI::CommandList&) {});
         CHECK(!both.Compile().has_value());
+    }
+
+    // Textures de travail : créées à la taille demandée, recréées seulement quand elle change ; un historique a deux
+    // exemplaires, la passe lit le dernier écrit et écrit l'autre, qui devient le dernier écrit.
+    if (auto device = RHI::Device::CreateHeadless(); device) {
+        using TextureSize = RenderGraph::TextureSize;
+        RenderGraph work;
+        const auto color = work.CreateTexture("couleur", Lifetime::Frame, {RHI::Format::RGBA16Float});
+        const auto history = work.CreateTexture("historique", Lifetime::Previous, {RHI::Format::RGBA16Float});
+        const auto windowDepth = work.CreateTexture("profondeur", Lifetime::Frame, {RHI::Format::D32Float, TextureSize::Window, false});
+        work.AddPass("scène").Writes(color).Step("scène", [](RHI::CommandList&) {});
+        work.AddPass("anticrénelage").Reads(color).Reads(history).Writes(history).Step("anticrénelage", [](RHI::CommandList&) {});
+        work.AddPass("fin").Reads(history).Writes(windowDepth).Step("fin", [](RHI::CommandList&) {});
+        CHECK(work.Compile().has_value());
+        CHECK(work.GetTexture(color) == nullptr);
+        const auto resized = work.ResizeTextures(**device, TextureSize::View, {64, 32});
+        CHECK(resized.has_value() && *resized);
+        CHECK(work.GetTexture(windowDepth) == nullptr); // taille de la fenêtre : pas encore demandée
+        CHECK(work.GetTexture(color) && work.GetTexture(color)->GetExtent() == (RHI::Extent{64, 32}));
+        const RHI::Texture* first = work.GetCopy(history, 0);
+        const RHI::Texture* second = work.GetCopy(history, 1);
+        CHECK(first && second && first != second);
+        const auto same = work.ResizeTextures(**device, TextureSize::View, {64, 32});
+        CHECK(same.has_value() && !*same && work.GetCopy(history, 0) == first);
+
+        RecordingCommands recorded;
+        CHECK(work.GetWriteCopy(history) == 1);
+        work.Execute(recorded, false);
+        // scène : couleur ; anticrénelage : couleur lue, exemplaire 0 lu, exemplaire 1 écrit (jeté) ; fin : 1 lu.
+        CHECK(recorded.uses.size() == 5);
+        CHECK(recorded.uses[2].texture == first && recorded.uses[2].access == RHI::TextureAccess::Sampled);
+        CHECK(recorded.uses[3].texture == second && recorded.uses[3].access == RHI::TextureAccess::ColorTarget && recorded.uses[3].discard);
+        CHECK(recorded.uses[4].texture == second && recorded.uses[4].access == RHI::TextureAccess::Sampled);
+        CHECK(work.GetTexture(history) == second && work.GetWriteCopy(history) == 0);
+        recorded.uses.clear();
+        work.Execute(recorded, false);
+        CHECK(recorded.uses.size() == 5 && recorded.uses[2].texture == second && recorded.uses[3].texture == first);
+
+        const auto bigger = work.ResizeTextures(**device, TextureSize::View, {128, 64});
+        CHECK(bigger.has_value() && *bigger && work.GetTexture(color)->GetExtent() == (RHI::Extent{128, 64}));
+        CHECK(work.GetWriteCopy(history) == 1); // recommence au premier exemplaire
+    } else {
+        GpuMissing("graphe de rendu (textures)", device.error().c_str());
     }
 
     // Lire avant toute écriture de l'image : refusé, en nommant la passe et la ressource.

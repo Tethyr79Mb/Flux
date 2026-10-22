@@ -204,7 +204,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
   - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
   - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
-  - ⬜ 3. Textures de travail créées, redimensionnées et partagées par le graphe (HDR, mouvement, bloom, profondeur).
+  - 🔧 3. Textures de travail créées et redimensionnées par le graphe (HDR, mouvement, profondeurs, historique à deux exemplaires échangés par le graphe). Limites : niveaux du bloom encore créés par `PostRenderer` ; pas de partage de mémoire (aliasing), une dizaine de Mo à gagner seulement aujourd'hui (seul le mouvement ne vit pas jusqu'à l'image finale).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Pas de calcul asynchrone (seconde file) tant que les mesures ne le demandent pas.
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).

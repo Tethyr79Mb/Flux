@@ -95,7 +95,6 @@ namespace Flux {
         Window& window;
         // Déclaré en premier : détruit en dernier, après les ressources créées par lui.
         std::unique_ptr<RHI::Device> device;
-        std::unique_ptr<RHI::Texture> depth; // de la taille de la swapchain : passe principale (interface)
         std::unique_ptr<SkyRenderer> sky;
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<ThrusterRenderer> thrusters;
@@ -130,11 +129,18 @@ namespace Flux {
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             PostRenderer::GridParams gridParams{};
-            // Historiques lu et écrit par l'anticrénelage (nuls sans lui).
-            const RHI::Texture* historySource = nullptr;
-            const RHI::Texture* historyTarget = nullptr;
         };
         FrameState frame;
+        // Textures de travail du graphe.
+        struct Targets
+        {
+            RenderGraph::ResourceId sceneColor = 0;
+            RenderGraph::ResourceId motion = 0;
+            RenderGraph::ResourceId sceneDepth = 0;
+            RenderGraph::ResourceId history = 0;
+            RenderGraph::ResourceId windowDepth = 0;
+        };
+        Targets targets;
 
         explicit Impl(Window& w) : window(w) {}
 
@@ -149,20 +155,16 @@ namespace Flux {
             return {static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y)};
         }
 
-        // Tampon de profondeur à la taille de la swapchain (recréée quand la fenêtre change de taille).
-        std::expected<void, std::string> UpdateDepth() {
-            const RHI::Extent extent = device->GetSwapchainExtent();
-            if (depth && depth->GetExtent() == extent) {
-                return {};
+        // Textures de la vue 3D à sa taille ; recréées, PostRenderer refait ses groupes.
+        std::expected<void, std::string> ResizeViewTargets(RHI::Extent extent) {
+            auto resized = graph.ResizeTextures(*device, RenderGraph::TextureSize::View, extent);
+            if (!resized || !*resized) {
+                return resized ? std::expected<void, std::string>{} : std::unexpected(resized.error());
             }
-            device->WaitIdle(); // l'image précédente l'utilise peut-être encore
-            depth.reset(); // libère l'ancien avant d'allouer le nouveau
-            auto created = device->CreateRenderTarget(DepthFormat, extent);
-            if (!created) {
-                return std::unexpected(created.error());
-            }
-            depth = std::move(*created);
-            return {};
+            return post->Bind({.scene = graph.GetTexture(targets.sceneColor),
+                               .depth = graph.GetTexture(targets.sceneDepth),
+                               .motion = graph.GetTexture(targets.motion),
+                               .history = {graph.GetCopy(targets.history, 0), graph.GetCopy(targets.history, 1)}});
         }
 
         // Rectangle de la scène (en pixels entiers), borné à la fenêtre : la vue 3D de l'éditeur, ou toute la fenêtre.
@@ -189,8 +191,9 @@ namespace Flux {
             if (!device->ResizeSwapchain(extent, vsync)) {
                 return false;
             }
-            if (auto updated = UpdateDepth(); !updated) {
-                Log::Error("{}", updated.error());
+            // Profondeur de l'image finale à la taille de la swapchain (recréée quand la fenêtre change de taille).
+            if (auto resized = graph.ResizeTextures(*device, RenderGraph::TextureSize::Window, device->GetSwapchainExtent()); !resized) {
+                Log::Error("{}", resized.error());
                 return false;
             }
 
@@ -235,9 +238,12 @@ namespace Flux {
             previousViewProjection = viewProjection;
             previousPosition = camera.position;
             if (sceneVisible) {
-                if (auto resized = post->Resize({scene3d.width, scene3d.height}); !resized) {
+                if (auto resized = ResizeViewTargets({scene3d.width, scene3d.height}); !resized) {
                     Log::Error("{}", resized.error());
                     return false;
+                }
+                if (!temporalAA) {
+                    post->SkipTemporal();
                 }
                 const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
                                                           assetsDirectory, frameIndex);
@@ -275,9 +281,6 @@ namespace Flux {
             frame.exposure = exposure;
             frame.temporal = temporal;
             frame.reprojection = reprojection;
-            const bool resolve = sceneVisible && temporalAA;
-            frame.historySource = resolve ? &post->GetHistorySource() : nullptr;
-            frame.historyTarget = resolve ? &post->GetHistoryTarget() : nullptr;
             if (sceneVisible && grid) {
                 frame.gridParams = MakeGridParams(camera, aspect, viewProjection);
             }
@@ -309,7 +312,7 @@ namespace Flux {
             const auto tiles = graph.AddResource("tuiles de planète", Lifetime::Previous);
             const auto pyramid = graph.AddResource("pyramide de profondeur", Lifetime::Previous);
             const auto culled = graph.AddResource("arbres et objets retenus");
-            // Textures : le graphe pose leurs barrières. Celles de la vue 3D n'existent qu'avec une scène.
+            // Textures du ciel et des ombres, à leurs renderers : le graphe pose leurs barrières, seulement avec une scène.
             const auto texture = [this](const char* name, Lifetime lifetime, auto source) {
                 return graph.AddTexture(name, lifetime, [this, source]() -> const RHI::Texture* {
                     return sceneVisible ? source() : nullptr;
@@ -321,15 +324,22 @@ namespace Flux {
             const auto airRayleigh = texture("air : Rayleigh", Lifetime::Previous, [this] { return &sky->GetAirRayleigh(); });
             const auto airMie = texture("air : Mie", Lifetime::Previous, [this] { return &sky->GetAirMie(); });
             const auto shadowMap = texture("carte d'ombres", Lifetime::Previous, [this] { return &meshes->GetShadowMap(); });
-            const auto sceneColor = texture("image de la scène", Lifetime::Frame, [this] { return &post->GetSceneTarget(); });
-            const auto motion = texture("mouvement", Lifetime::Frame, [this] { return &post->GetMotionTarget(); });
-            const auto sceneDepth = texture("profondeur de la scène", Lifetime::Frame, [this] { return &post->GetSceneDepth(); });
-            // Anticrénelage coupé : ni lu ni écrit.
-            const auto history = texture("historique de l'anticrénelage", Lifetime::Previous, [this] { return frame.historySource; });
-            const auto antialiased = texture("image anticrénelée", Lifetime::Frame, [this] { return frame.historyTarget; });
+            // Textures de travail, créées par le graphe à la taille de la vue 3D. Profondeur lisible : l'anticrénelage
+            // y retrouve où était chaque point. L'historique a deux exemplaires : l'anticrénelage lit l'un, écrit l'autre.
+            using TextureSize = RenderGraph::TextureSize;
+            targets.sceneColor = graph.CreateTexture("image de la scène", Lifetime::Frame, {PostRenderer::SceneFormat});
+            targets.motion = graph.CreateTexture("mouvement", Lifetime::Frame, {PostRenderer::MotionFormat});
+            targets.sceneDepth = graph.CreateTexture("profondeur de la scène", Lifetime::Frame, {DepthFormat});
+            targets.history = graph.CreateTexture("historique de l'anticrénelage", Lifetime::Previous, {PostRenderer::SceneFormat});
+            targets.windowDepth = graph.CreateTexture("profondeur de la fenêtre", Lifetime::Frame,
+                                                      {DepthFormat, TextureSize::Window, false});
+            const auto sceneColor = targets.sceneColor;
+            const auto motion = targets.motion;
+            const auto sceneDepth = targets.sceneDepth;
+            const auto history = targets.history;
+            const auto windowDepth = targets.windowDepth;
             // Niveaux du bloom : internes à PostRenderer::DrawBloom, qui laisse son résultat lisible.
             const auto bloomTextures = graph.AddResource("bloom");
-            const auto windowDepth = graph.AddTexture("profondeur de la fenêtre", Lifetime::Frame, [this] { return depth.get(); });
             const auto windowImage = graph.AddResource("image de la fenêtre"); // préparée par sa passe (RHI)
             const auto scene = [this] { return sceneVisible; };
 
@@ -378,9 +388,9 @@ namespace Flux {
                     // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
                     // Profondeur et mouvement gardés pour l'anticrénelage.
                     commands.BeginRenderPass({.clearColor = PostRenderer::InverseToneMap(clearColor, frame.exposure),
-                                              .depth = &post->GetSceneDepth(), .clearDepth = 0.0f,
-                                              .colorTarget = &post->GetSceneTarget(),
-                                              .secondColorTarget = &post->GetMotionTarget(), .keepDepth = true});
+                                              .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
+                                              .colorTarget = graph.GetTexture(targets.sceneColor),
+                                              .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true});
                     commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
                     commands.SetScissor({0, 0, frame.scene3d.width, frame.scene3d.height});
                 })
@@ -403,33 +413,35 @@ namespace Flux {
                 .Reads(sceneDepth)
                 .Writes(pyramid)
                 .Step("pyramide", [this](RHI::CommandList& commands) {
-                    meshes->BuildDepthPyramid(commands, frame.index, post->GetSceneDepth(), {frame.scene3d.width, frame.scene3d.height});
+                    meshes->BuildDepthPyramid(commands, frame.index, *graph.GetTexture(targets.sceneDepth),
+                                              {frame.scene3d.width, frame.scene3d.height});
                 });
+            // Coupé (réglage) : la passe ne joue pas, l'historique garde son dernier exemplaire écrit.
             graph.AddPass("anticrénelage")
-                .When(scene)
+                .When([this] { return sceneVisible && temporalAA; })
                 .Reads(sceneColor)
                 .Reads(motion)
                 .Reads(sceneDepth)
                 .Reads(history)
-                .Writes(antialiased)
+                .Writes(history)
                 .Step("anticrénelage", [this](RHI::CommandList& commands) {
-                    post->ResolveTemporal(commands, temporalAA, frame.reprojection, frame.temporal.history);
+                    post->ResolveTemporal(commands, graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history);
                 });
             graph.AddPass("bloom")
                 .When(scene)
                 .Reads(sceneColor)
-                .Reads(antialiased)
+                .Reads(history)
                 .Writes(bloomTextures)
                 .Step("bloom", [this](RHI::CommandList& commands) { post->DrawBloom(commands, bloom); });
             graph.AddPass("image finale")
                 .Reads(sceneColor)
-                .Reads(antialiased)
+                .Reads(history)
                 .Reads(bloomTextures)
                 .Reads(sceneDepth)
                 .Writes(windowDepth)
                 .Writes(windowImage)
                 .Begin([this](RHI::CommandList& commands) {
-                    commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});
+                    commands.BeginRenderPass({.clearColor = clearColor, .depth = graph.GetTexture(targets.windowDepth), .clearDepth = 0.0f});
                 })
                 .Step("scène", [this](RHI::CommandList& commands) {
                     commands.SetViewport({static_cast<float>(frame.scene3d.x), static_cast<float>(frame.scene3d.y),
@@ -455,9 +467,6 @@ namespace Flux {
             return std::unexpected(device.error());
         }
         impl->device = std::move(*device);
-        if (auto depth = impl->UpdateDepth(); !depth) {
-            return std::unexpected(depth.error());
-        }
         const RHI::Format colorFormat = impl->device->GetSwapchainFormat();
         // La scène est dessinée en HDR (PostRenderer) ; seules l'image finale et l'interface vont vers la fenêtre.
         constexpr RHI::Format sceneFormat = PostRenderer::SceneFormat;

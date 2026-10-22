@@ -117,13 +117,8 @@ namespace Flux {
         return post;
     }
 
-    std::expected<void, std::string> PostRenderer::Resize(RHI::Extent extent) {
-        extent.width = std::max(extent.width, 1u);
-        extent.height = std::max(extent.height, 1u);
-        if (m_scene && m_extent == extent) {
-            return {};
-        }
-        m_device.WaitIdle(); // les images en vol les utilisent peut-être encore
+    std::expected<void, std::string> PostRenderer::Bind(const Targets& targets) {
+        const RHI::Extent extent = targets.scene->GetExtent();
         // Groupes libérés avant les textures qu'ils désignent, et tout libéré avant d'allouer à la nouvelle taille.
         for (std::uint32_t o = 0; o < OutputCount; ++o) {
             m_compositeGroups[o].reset();
@@ -133,39 +128,17 @@ namespace Flux {
             group.reset();
         }
         m_gridGroup.reset();
-        for (auto& history : m_history) {
-            history.reset();
-        }
-        m_motion.reset();
         m_historyValid = false;
         m_historyCleared = false;
+        m_output = 0;
         for (std::uint32_t i = 0; i < MaxLevels; ++i) {
             m_downGroups[i].reset();
             m_upGroups[i].reset();
             m_down[i].reset();
             m_up[i].reset();
         }
-        m_scene.reset();
-        m_depth.reset();
         m_extent = extent;
-
-        // Profondeur lisible : l'anticrénelage y retrouve où était chaque point.
-        auto scene = m_device.CreateRenderTarget(SceneFormat, extent, true);
-        auto depth = m_device.CreateRenderTarget(DepthFormat, extent, true);
-        auto motion = m_device.CreateRenderTarget(MotionFormat, extent, true);
-        if (!scene || !depth || !motion) {
-            return std::unexpected(!scene ? scene.error() : !depth ? depth.error() : motion.error());
-        }
-        m_scene = std::move(*scene);
-        m_depth = std::move(*depth);
-        m_motion = std::move(*motion);
-        for (auto& history : m_history) {
-            auto created = m_device.CreateRenderTarget(SceneFormat, extent, true);
-            if (!created) {
-                return std::unexpected(created.error());
-            }
-            history = std::move(*created);
-        }
+        m_targets = targets;
 
         // Niveaux : la moitié de la vue, puis la moitié de la moitié... tant que le petit côté garde MinLevelSize.
         m_levels = 0;
@@ -227,16 +200,16 @@ namespace Flux {
             if (!m_temporalGroups[i]) {
                 return std::unexpected("création des groupes de l'anticrénelage");
             }
-            m_temporalGroups[i]->SetTexture(SourceSlot, *m_scene, *m_sampler);
-            m_temporalGroups[i]->SetTexture(OtherSlot, *m_history[1 - i], *m_sampler);
-            m_temporalGroups[i]->SetTexture(DepthSlot, *m_depth, *m_pointSampler);
-            m_temporalGroups[i]->SetTexture(MotionSlot, *m_motion, *m_pointSampler);
+            m_temporalGroups[i]->SetTexture(SourceSlot, *targets.scene, *m_sampler);
+            m_temporalGroups[i]->SetTexture(OtherSlot, *targets.history[1 - i], *m_sampler);
+            m_temporalGroups[i]->SetTexture(DepthSlot, *targets.depth, *m_pointSampler);
+            m_temporalGroups[i]->SetTexture(MotionSlot, *targets.motion, *m_pointSampler);
         }
         m_gridGroup = m_device.CreateBindGroup(*m_gridLayout);
         if (!m_gridGroup) {
             return std::unexpected("création du groupe de la grille");
         }
-        m_gridGroup->SetTexture(0, *m_depth, *m_pointSampler);
+        m_gridGroup->SetTexture(0, *targets.depth, *m_pointSampler);
         return {};
     }
 
@@ -260,22 +233,21 @@ namespace Flux {
     }
 
     const RHI::Texture& PostRenderer::GetOutput(std::uint32_t output) const {
-        return output == 0 ? *m_scene : *m_history[output - 1];
+        return output == 0 ? *m_targets.scene : *m_targets.history[output - 1];
     }
 
-    void PostRenderer::ResolveTemporal(RHI::CommandList& commands, bool enabled, const Math::Matrix4f& reprojection,
+    void PostRenderer::SkipTemporal() {
+        m_output = 0;
+        m_historyValid = false;
+    }
+
+    void PostRenderer::ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection,
                                        bool history) {
-        if (!enabled) {
-            m_output = 0;
-            m_historyValid = false;
-            return;
-        }
-        const std::uint32_t target = 1 - m_written;
         // L'historique lu n'a jamais été écrit à la première image : une passe vide l'efface (un contenu indéfini peut
         // tenir des NaN, que le poids nul ne suffit pas à effacer). Le graphe de rendu l'a déjà rendu lisible : il
         // redevient cible le temps de l'effacer.
         if (!m_historyCleared) {
-            const RHI::Texture& source = *m_history[1 - target];
+            const RHI::Texture& source = *m_targets.history[1 - target];
             commands.Use(source, RHI::TextureAccess::ColorTarget, true);
             commands.BeginRenderPass({.colorTarget = &source});
             commands.EndRenderPass();
@@ -285,7 +257,7 @@ namespace Flux {
         const TemporalParams params{reprojection,
                                     {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height),
                                      CurrentWeight, history && m_historyValid ? 1.0f : 0.0f}};
-        commands.BeginRenderPass({.colorTarget = m_history[target].get()});
+        commands.BeginRenderPass({.colorTarget = m_targets.history[target]});
         commands.SetViewport({0.0f, 0.0f, static_cast<float>(m_extent.width), static_cast<float>(m_extent.height)});
         commands.SetScissor({0, 0, m_extent.width, m_extent.height});
         commands.BindPipeline(*m_temporal);
@@ -293,7 +265,6 @@ namespace Flux {
         commands.PushConstants(&params, sizeof(params));
         commands.Draw(3, 0);
         commands.EndRenderPass();
-        m_written = target;
         m_historyValid = true;
         m_output = 1 + target;
     }
