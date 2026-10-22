@@ -20,6 +20,8 @@ struct CullFrame
     float4 rotation;  // de la planète (quaternion xyzw)
     float4 cascades[16];    // comme FrameData::cascades (shaders/Mesh.slang)
     float4 cascadeLimits[4]; // x : 1 / demi-côté ; y : 1 / profondeur couverte ; z : rayon minimal (m) ; w : fin de la tranche (m)
+    float4 receiverSides[4]; // bords du champ (ShadowReceivers::GetSides)
+    float4 toSun;            // w : distance des obstacles vers le soleil (ShadowCasterDistance)
     uint4 firstInstances[2]; // de chaque liste
     uint4 capacities[2];
     uint4 commandLists[8];   // liste de chaque commande
@@ -91,6 +93,25 @@ bool InCascade(float3 p, float radius, uint c)
     return abs(x.x) <= 1.0 + side && abs(x.y) <= 1.0 + side && x.z >= -depth && x.z <= 1.0 + depth;
 }
 
+// L'ombre de la sphère, prolongée de `length` mètres à l'opposé du soleil, peut tomber dans la tranche c du champ
+// (comme ShadowReceivers::Reaches).
+bool ReachesView(float3 center, float radius, float length, uint c)
+{
+    const float3 end = center - frame.toSun.xyz * length;
+    [unroll]
+    for (uint s = 0; s < 4; ++s) {
+        const float3 side = frame.receiverSides[s].xyz;
+        if (dot(center, side) > radius && dot(end, side) > radius) {
+            return false;
+        }
+    }
+    const float start = (c == 0 ? 0.0 : frame.cascadeLimits[c - 1].w) - radius - 1.0;
+    const float stop = frame.cascadeLimits[c].w + radius + 1.0;
+    const float depthA = dot(center, frame.forward.xyz);
+    const float depthB = dot(end, frame.forward.xyz);
+    return max(depthA, depthB) >= start && min(depthA, depthB) <= stop;
+}
+
 // Nombre de 0 à 1 tiré de la place d'un arbre.
 float Random(float3 p)
 {
@@ -134,7 +155,8 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float4 up = trees[at + 1];
         const float3 position = cell.origin.xyz + Rotate(planet, placed.xyz);
         const float angle = 0.5 * up.w;
-        const float4 rotation = Multiply(Align(Rotate(planet, up.xyz)), float4(0.0, sin(angle), 0.0, cos(angle)));
+        const float3 normal = Rotate(planet, up.xyz); // haut de l'arbre
+        const float4 rotation = Multiply(Align(normal), float4(0.0, sin(angle), 0.0, cos(angle)));
         const float scale = placed.w;
         const float3 center = position + Rotate(rotation, sphere.xyz * scale);
         const float radius = sphere.w * scale;
@@ -157,11 +179,16 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
                 }
             }
         }
-        // Ombres : le modèle simplifié, dans chaque cascade qu'il touche.
+        // Ombres : le modèle simplifié, dans chaque cascade qu'il touche et dont la tranche peut recevoir son ombre.
+        // Elle s'arrête au sol : pas plus loin que la cime divisée par la hauteur du soleil, doublée pour un sol qui
+        // descend (au-delà, sur une pente plus raide, elle serait coupée).
         if (distance - radius < shadowEnd) {
+            const float sunHeight = dot(frame.toSun.xyz, normal);
+            const float top = dot(center - position, normal) + radius;
+            const float length = sunHeight > 0.0 ? min(frame.toSun.w, 2.0 * top / sunHeight) : frame.toSun.w;
             [unroll]
             for (uint c = 0; c < 4; ++c) {
-                if (InCascade(center, radius, c)) {
+                if (InCascade(center, radius, c) && ReachesView(center, radius, length, c)) {
                     Append(3 + c, position, scale, rotation);
                 }
             }

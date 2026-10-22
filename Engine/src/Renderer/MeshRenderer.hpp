@@ -346,6 +346,7 @@ namespace Flux {
         std::unique_ptr<RHI::Texture> m_shadowMap;
         std::unique_ptr<RHI::Sampler> m_shadowSampler;
         std::array<ShadowCascade, ShadowCascadeCount> m_cascades{};
+        ShadowReceivers m_shadowReceivers;
         // Les deux cascades lointaines sont refaites à tour de rôle, une image sur deux : celle qui attend garde sa
         // carte (passe à profondeur gardée), sa matrice suit la caméra (MoveShadowCascade). Telles que dessinées, avec
         // la caméra et le soleil d'alors.

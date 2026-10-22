@@ -31,7 +31,7 @@ namespace {
         }
         (*renderer)->BeginFrame(0);
         (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, vegetation, Math::Quaternionf{}, plains);
-        (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {});
+        (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, {});
         CHECK(device.Submit([&](RHI::CommandList& commands) { (*renderer)->Compute(commands, 0); }));
         trees.assign(keys.size(), {});
         for (std::size_t k = 0; k < keys.size(); ++k) {

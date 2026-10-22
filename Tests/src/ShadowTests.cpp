@@ -107,5 +107,22 @@ bool RunShadowTests() {
             CHECK(GridError(Math::Dot(world, mapUp), texel) < 0.02);
         }
     }
+
+    // Obstacles écartés des cartes : seulement ceux dont l'ombre ne peut tomber nulle part dans la tranche vue.
+    const ShadowReceivers receivers(camera, aspect, toSun);
+    const Math::Vector3f ahead = forward * 40.0f; // dans la tranche 2 (20 à 60 m)
+    CHECK(receivers.Reaches(ahead, 1.0f, 30.0f, 2));
+    CHECK(!receivers.Reaches(ahead, 1.0f, 0.0f, 0) && !receivers.Reaches(ahead, 1.0f, 0.0f, 3));
+    // Derrière la caméra : gardé si le soleil est derrière aussi (l'ombre revient devant), écarté s'il est devant.
+    const Math::Vector3f behind = forward * -30.0f;
+    CHECK(ShadowReceivers(camera, aspect, -forward).Reaches(behind, 1.0f, 300.0f, 1));
+    CHECK(!ShadowReceivers(camera, aspect, forward).Reaches(behind, 1.0f, 300.0f, 1));
+    // Ombre trop courte pour arriver jusqu'à la tranche.
+    CHECK(!ShadowReceivers(camera, aspect, -forward).Reaches(behind, 1.0f, 10.0f, 1));
+    // Sur le côté, hors du champ, ombre courte : écarté ; une ombre assez longue pour rentrer dans le champ : gardé.
+    const Math::Vector3f beside = forward * 30.0f + right * 200.0f;
+    CHECK(!receivers.Reaches(beside, 2.0f, 5.0f, 2));
+    const ShadowReceivers sideSun(camera, aspect, right);
+    CHECK(sideSun.Reaches(beside, 2.0f, 250.0f, 2));
     return true;
 }

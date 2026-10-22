@@ -79,7 +79,7 @@ namespace Flux::Planetology {
         };
         // Fin de la préparation : plaines à semer, plaines à trier, commandes de dessin.
         void EndFrame(std::uint32_t frameIndex, const View& view, const std::array<ShadowCascade, ShadowCascadeCount>& cascades,
-                      const Models& models);
+                      const ShadowReceivers& receivers, const Models& models);
         // Semis puis tri, hors d'une passe et avant les dessins.
         void Compute(RHI::CommandList& commands, std::uint32_t frameIndex);
 
@@ -143,6 +143,8 @@ namespace Flux::Planetology {
             std::array<float, 4> rotation;
             std::array<Math::Matrix4f, ShadowCascadeCount> cascades;
             std::array<std::array<float, 4>, ShadowCascadeCount> cascadeLimits;
+            std::array<std::array<float, 4>, 4> receiverSides;
+            std::array<float, 4> toSun;
             std::array<std::uint32_t, 8> firstInstances;
             std::array<std::uint32_t, 8> capacities;
             std::array<std::uint32_t, MaxCommands> commandLists;

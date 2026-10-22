@@ -74,4 +74,36 @@ namespace Flux {
         }
         return moved;
     }
+
+    ShadowReceivers::ShadowReceivers(const Camera& camera, float aspect, const Math::Vector3f& toSun)
+        : m_forward(camera.GetForward()), m_toSun(Math::Normalize(toSun)) {
+        // Champ un peu élargi : les deux cascades lointaines servent deux images (MeshRenderer::ChooseShadowCascades),
+        // la caméra peut avoir tourné entre-temps.
+        const float tanY = std::tan(camera.verticalFov * 0.5f) * 1.1f + 0.05f;
+        const float tanX = std::tan(camera.verticalFov * 0.5f) * aspect * 1.1f + 0.05f;
+        const Math::Vector3f right = camera.GetRight();
+        const Math::Vector3f up = camera.GetUp();
+        // Distance signée au bord (dehors si positive) : (côté - profondeur x tan) / sqrt(1 + tan²).
+        const float scaleX = 1.0f / std::sqrt(1.0f + tanX * tanX);
+        const float scaleY = 1.0f / std::sqrt(1.0f + tanY * tanY);
+        m_sides = {(right - m_forward * tanX) * scaleX, (-right - m_forward * tanX) * scaleX,
+                   (up - m_forward * tanY) * scaleY, (-up - m_forward * tanY) * scaleY};
+    }
+
+    bool ShadowReceivers::Reaches(const Math::Vector3f& center, float radius, float length, std::size_t cascade) const {
+        // L'ombre balaie le segment [center, end] : elle manque la tranche si les deux bouts sont du même côté
+        // extérieur d'un de ses plans (test suffisant, pas exact dans les coins : prudent).
+        const Math::Vector3f end = center - m_toSun * length;
+        for (const Math::Vector3f& side : m_sides) {
+            if (Math::Dot(center, side) > radius && Math::Dot(end, side) > radius) {
+                return false;
+            }
+        }
+        // Un mètre de marge : le filtre de l'ombre lit autour du point, et une tranche gardée suit la caméra.
+        const float start = ShadowCascadeStart(cascade) - radius - 1.0f;
+        const float stop = ShadowCascadeEnds[cascade] + radius + 1.0f;
+        const float depthA = Math::Dot(center, m_forward);
+        const float depthB = Math::Dot(end, m_forward);
+        return std::max(depthA, depthB) >= start && std::min(depthA, depthB) <= stop;
+    }
 }

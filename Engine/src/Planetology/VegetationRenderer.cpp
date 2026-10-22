@@ -232,7 +232,8 @@ namespace Flux::Planetology {
     }
 
     void VegetationRenderer::EndFrame(std::uint32_t frameIndex, const View& view,
-                                      const std::array<ShadowCascade, ShadowCascadeCount>& cascades, const Models& models) {
+                                      const std::array<ShadowCascade, ShadowCascadeCount>& cascades,
+                                      const ShadowReceivers& receivers, const Models& models) {
         Frame& frame = m_frames[frameIndex];
         frame.sown = 0;
         frame.culled = 0;
@@ -330,6 +331,10 @@ namespace Flux::Planetology {
             data.cascadeLimits[c] = {1.0f / std::max(cascades[c].radius, 1.0e-3f), 1.0f / std::max(cascades[c].depthRange, 1.0e-3f),
                                      1.5f * cascades[c].texelSize, ShadowCascadeEnds[c]};
         }
+        for (std::size_t side = 0; side < 4; ++side) {
+            data.receiverSides[side] = vector(receivers.GetSides()[side], 0.0f);
+        }
+        data.toSun = vector(receivers.GetToSun(), ShadowCasterDistance);
         data.counts = {static_cast<std::uint32_t>(m_commands.size()), frame.culled, 0, 0};
         frame.cullFrame->Write(&data, sizeof(data));
     }

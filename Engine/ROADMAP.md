@@ -9,8 +9,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 
 ### Performances du rendu (demandé par Bruno le 2026-10-17)
 - ✅ Ombres sans programme de pixel ni faces arrière, petits objets hors des cascades lointaines ; opaques sans
-  `discard` (test de profondeur avant éclairage) ; objets ni en vue ni dans une ombre écartés (pose comprise) ; heures
-  GPU seulement panneau Moteur ouvert (fermé : le compteur d'images/s seul).
+  `discard` (test de profondeur avant éclairage) ; objets ni en vue ni dans une ombre écartés (pose comprise) ; chaque
+  carte ne reçoit que les objets, tuiles et arbres dont l'ombre peut tomber dans sa tranche du champ (derrière la
+  caméra ou ombre hors champ : écartés ; 416 ombres d'arbres -> 158 sur une vue d'essai) ; heures GPU seulement panneau
+  Moteur ouvert (fermé : le compteur d'images/s seul).
 - 🔧 Cascades d'ombres lointaines (60 et 200 m) redessinées une image sur deux, à tour de rôle, la carte gardée recalée
   sur la caméra. Limite : l'ombre lointaine d'un objet qui bouge a une image de retard.
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
