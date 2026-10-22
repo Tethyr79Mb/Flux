@@ -36,6 +36,10 @@ namespace Flux {
         const RHI::Texture& GetSceneTarget() const { return *m_scene; }
         const RHI::Texture& GetSceneDepth() const { return *m_depth; }
         const RHI::Texture& GetMotionTarget() const { return *m_motion; }
+        // Historiques de l'anticrénelage pour la prochaine ResolveTemporal : celui qu'elle lit (l'image précédente)
+        // et celui qu'elle écrit, que le bloom et l'image finale liront ensuite.
+        const RHI::Texture& GetHistorySource() const { return *m_history[m_written]; }
+        const RHI::Texture& GetHistoryTarget() const { return *m_history[1 - m_written]; }
 
         // Hors de toute passe, après la scène et avant DrawBloom : mélange la scène à l'historique (voir Temporal.slang).
         // `reprojection` : clip space de cette image sans décalage (x, y, profondeur, 1) -> celui de l'image précédente ;
@@ -43,7 +47,8 @@ namespace Flux {
         // lisent la scène telle quelle.
         void ResolveTemporal(RHI::CommandList& commands, bool enabled, const Math::Matrix4f& reprojection, bool history);
 
-        // Hors de toute passe, après la scène : réductions et remontées du bloom. Rien si `strength` vaut 0.
+        // Hors de toute passe, après la scène : réductions et remontées du bloom. Rien si `strength` vaut 0. Les niveaux
+        // sont internes (barrières posées ici) ; le résultat est laissé lisible pour Composite, même non dessiné.
         void DrawBloom(RHI::CommandList& commands, float strength);
         // Dans la passe principale, viewport sur la vue 3D : la scène et son bloom, avec la courbe de tons.
         void Composite(RHI::CommandList& commands, float strength, float exposure) const;

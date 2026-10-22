@@ -34,6 +34,11 @@ namespace Flux {
         std::uint32_t environmentMips = 1;
         // Atmosphère de la planète la plus proche (aucune : mie[3] à 0).
         Planetology::AtmosphereGpu atmosphere;
+        // Table de l'air entre la caméra et ce qu'elle voit (shaders/Atmosphere.slang), remplie par BakeTables quand la caméra
+        // est dans l'air (atmosphere.scale[1]) ; jamais nulles.
+        const RHI::Texture* airRayleigh = nullptr;
+        const RHI::Texture* airMie = nullptr;
+        const RHI::Sampler* airSampler = nullptr;
     };
 
     // Ciel de la scène (SkyComponent) : le fond, dessiné après les opaques là où rien ne l'a été, et la texture cube
@@ -52,9 +57,21 @@ namespace Flux {
         // pixel, étalées par l'anticrénelage sur ceux d'à côté, pâliraient ; le fond, lui, est déjà lisse.
         SkyLighting Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
                             const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
-        // Hors de toute passe et avant la passe principale : calcule la nébuleuse du ciel généré dans sa texture cube si
-        // Prepare l'a demandé (nouveau ciel, réglage changé). Rien sinon.
-        void Bake(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Tables de l'air à remplir à cette image : caméra dans l'air d'une planète, ou jamais remplies (les shaders
+        // les déclarent, elles doivent être lisibles).
+        bool TablesPending() const { return m_tablesWanted || !m_tablesFilled; }
+        // Hors de toute passe et avant la passe principale, quand TablesPending ; les quatre tables déjà cibles.
+        void BakeTables(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Nébuleuse du ciel généré à recalculer (nouveau ciel, réglage changé), demandée par Prepare.
+        bool BackgroundPending() const { return m_bakePending; }
+        // Hors de toute passe et avant la passe principale, quand BackgroundPending ; GetBackground déjà cible.
+        void BakeBackground(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Textures que les passes ci-dessus écrivent et que la scène lit (le graphe de rendu en pose les barrières).
+        const RHI::Texture& GetBackground() const { return *m_background; }
+        const RHI::Texture& GetSkyRayleigh() const { return *m_skyRayleigh; }
+        const RHI::Texture& GetSkyMie() const { return *m_skyMie; }
+        const RHI::Texture& GetAirRayleigh() const { return *m_airRayleigh; }
+        const RHI::Texture& GetAirMie() const { return *m_airMie; }
         // Dans la passe de la scène, après les opaques et avant les transparents : le fond puis le soleil.
         void Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
@@ -110,6 +127,18 @@ namespace Flux {
         bool m_bakePending = false;
         std::chrono::steady_clock::time_point m_lastBake;
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundBackground{};
+
+        // Tables de l'air (shaders/Atmosphere.slang) : le ciel vu de la caméra et l'air jusqu'à ce qu'elle voit, deux
+        // textures chacune. Une seule pour les deux images en vol : refaites en début d'image, lues dans la même image
+        // (la barrière attend que l'image d'avant ait fini de les lire). Remplies au moins une fois avant d'être lues.
+        std::unique_ptr<RHI::Pipeline> m_skyTablePipeline;
+        std::unique_ptr<RHI::Pipeline> m_airTablePipeline;
+        std::unique_ptr<RHI::Texture> m_skyRayleigh;
+        std::unique_ptr<RHI::Texture> m_skyMie;
+        std::unique_ptr<RHI::Texture> m_airRayleigh;
+        std::unique_ptr<RHI::Texture> m_airMie;
+        bool m_tablesWanted = false; // caméra dans l'air cette image
+        bool m_tablesFilled = false;
 
         // Pixels de la texture cube voulue (refaits quand la clé change, au plus tous les MinRebuildInterval), puis
         // une texture par image en vol, refaite quand elle n'a pas la dernière version : jamais remplacée pendant que

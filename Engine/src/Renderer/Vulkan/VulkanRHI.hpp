@@ -32,17 +32,23 @@ namespace Flux::Vk {
 
     class RhiTexture final : public RHI::Texture {
         public:
-        RhiTexture(Image image, RHI::Format format, VkImageAspectFlags aspect)
-            : m_image(std::move(image)), m_format(format), m_aspect(aspect) {}
+        // access : usage de départ, Sampled pour une image envoyée (déjà lisible), None pour une cible.
+        RhiTexture(Image image, RHI::Format format, VkImageAspectFlags aspect, RHI::TextureAccess access)
+            : m_image(std::move(image)), m_format(format), m_aspect(aspect), m_access(access) {}
         RHI::Extent GetExtent() const override { return {m_image.GetExtent().width, m_image.GetExtent().height}; }
         RHI::Format GetFormat() const override { return m_format; }
         const Image& GetImage() const { return m_image; }
         VkImageAspectFlags GetAspect() const { return m_aspect; }
+        // Dernier usage enregistré (CommandList::UseTextures). Les commandes passent dans l'ordre d'enregistrement,
+        // sur une seule file : c'est l'usage que le GPU lui aura donné quand la commande suivante s'exécutera.
+        RHI::TextureAccess GetAccess() const { return m_access; }
+        void SetAccess(RHI::TextureAccess access) const { m_access = access; }
 
         private:
         Image m_image;
         RHI::Format m_format;
         VkImageAspectFlags m_aspect;
+        mutable RHI::TextureAccess m_access;
     };
 
     class RhiSampler final : public RHI::Sampler {
@@ -121,10 +127,12 @@ namespace Flux::Vk {
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
         void TransitionToPresent();
 
+        void UseTextures(std::span<const RHI::TextureUse> uses) override;
         void BeginRenderPass(const RHI::RenderPassDesc& desc) override;
         void EndRenderPass() override;
         void SetViewport(const RHI::Viewport& viewport) override;
         void SetScissor(const RHI::Rect& rect) override;
+        void ClearDepth(const RHI::Rect& rect, float depth) override;
         void BindPipeline(const RHI::Pipeline& pipeline) override;
         void SetBindGroup(std::uint32_t index, const RHI::BindGroup& group) override;
         void BindVertexBuffers(std::uint32_t first, std::span<const RHI::Buffer* const> buffers) override;
@@ -158,11 +166,6 @@ namespace Flux::Vk {
         VkPipelineLayout m_layout = VK_NULL_HANDLE; // du pipeline lié
         VkPipelineBindPoint m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         VkShaderStageFlags m_pushStages = 0;
-        const RhiTexture* m_depthOnly = nullptr;    // passe de profondeur seule en cours : lisible à sa fin
-        const RhiTexture* m_colorTarget = nullptr;  // passe vers une texture (2D ou face de cube) : lisible à sa fin
-        std::uint32_t m_colorLayer = 0;
-        const RhiTexture* m_secondTarget = nullptr; // seconde cible de la passe en cours : lisible à sa fin
-        const RhiTexture* m_keptDepth = nullptr;    // profondeur gardée (RenderPassDesc::keepDepth) : lisible à sa fin
         VkQueryPool m_queryPool = VK_NULL_HANDLE;
         std::uint32_t m_writtenTimestamps = 0;
         StepMarkers m_markers;

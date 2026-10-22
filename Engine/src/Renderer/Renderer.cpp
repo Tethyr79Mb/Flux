@@ -130,6 +130,9 @@ namespace Flux {
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             PostRenderer::GridParams gridParams{};
+            // Historiques lu et écrit par l'anticrénelage (nuls sans lui).
+            const RHI::Texture* historySource = nullptr;
+            const RHI::Texture* historyTarget = nullptr;
         };
         FrameState frame;
 
@@ -272,6 +275,9 @@ namespace Flux {
             frame.exposure = exposure;
             frame.temporal = temporal;
             frame.reprojection = reprojection;
+            const bool resolve = sceneVisible && temporalAA;
+            frame.historySource = resolve ? &post->GetHistorySource() : nullptr;
+            frame.historyTarget = resolve ? &post->GetHistoryTarget() : nullptr;
             if (sceneVisible && grid) {
                 frame.gridParams = MakeGridParams(camera, aspect, viewProjection);
             }
@@ -297,19 +303,34 @@ namespace Flux {
         std::expected<void, std::string> BuildGraph() {
             using Lifetime = RenderGraph::Lifetime;
             const auto cpu = graph.AddResource("données envoyées par le CPU", Lifetime::External);
-            // Gardées d'une image à l'autre : tuiles calculées une fois, ciel recalculé quand il change, pyramide et
-            // historique de l'image précédente.
+            // Gardées d'une image à l'autre : tuiles calculées une fois, ciel et tables de l'air recalculés quand ils
+            // changent, cascades lointaines des ombres redessinées une image sur deux, pyramide et historique de
+            // l'image précédente.
             const auto tiles = graph.AddResource("tuiles de planète", Lifetime::Previous);
-            const auto skyCube = graph.AddResource("textures du ciel", Lifetime::Previous);
             const auto pyramid = graph.AddResource("pyramide de profondeur", Lifetime::Previous);
-            const auto history = graph.AddResource("historique de l'anticrénelage", Lifetime::Previous);
             const auto culled = graph.AddResource("arbres et objets retenus");
-            const auto shadowMap = graph.AddResource("carte d'ombres");
-            const auto sceneColor = graph.AddResource("image de la scène");
-            const auto motion = graph.AddResource("mouvement");
-            const auto sceneDepth = graph.AddResource("profondeur de la scène");
+            // Textures : le graphe pose leurs barrières. Celles de la vue 3D n'existent qu'avec une scène.
+            const auto texture = [this](const char* name, Lifetime lifetime, auto source) {
+                return graph.AddTexture(name, lifetime, [this, source]() -> const RHI::Texture* {
+                    return sceneVisible ? source() : nullptr;
+                });
+            };
+            const auto skyBackground = texture("fond du ciel", Lifetime::Previous, [this] { return &sky->GetBackground(); });
+            const auto skyRayleigh = texture("ciel : Rayleigh", Lifetime::Previous, [this] { return &sky->GetSkyRayleigh(); });
+            const auto skyMie = texture("ciel : Mie", Lifetime::Previous, [this] { return &sky->GetSkyMie(); });
+            const auto airRayleigh = texture("air : Rayleigh", Lifetime::Previous, [this] { return &sky->GetAirRayleigh(); });
+            const auto airMie = texture("air : Mie", Lifetime::Previous, [this] { return &sky->GetAirMie(); });
+            const auto shadowMap = texture("carte d'ombres", Lifetime::Previous, [this] { return &meshes->GetShadowMap(); });
+            const auto sceneColor = texture("image de la scène", Lifetime::Frame, [this] { return &post->GetSceneTarget(); });
+            const auto motion = texture("mouvement", Lifetime::Frame, [this] { return &post->GetMotionTarget(); });
+            const auto sceneDepth = texture("profondeur de la scène", Lifetime::Frame, [this] { return &post->GetSceneDepth(); });
+            // Anticrénelage coupé : ni lu ni écrit.
+            const auto history = texture("historique de l'anticrénelage", Lifetime::Previous, [this] { return frame.historySource; });
+            const auto antialiased = texture("image anticrénelée", Lifetime::Frame, [this] { return frame.historyTarget; });
+            // Niveaux du bloom : internes à PostRenderer::DrawBloom, qui laisse son résultat lisible.
             const auto bloomTextures = graph.AddResource("bloom");
-            const auto windowImage = graph.AddResource("image de la fenêtre");
+            const auto windowDepth = graph.AddTexture("profondeur de la fenêtre", Lifetime::Frame, [this] { return depth.get(); });
+            const auto windowImage = graph.AddResource("image de la fenêtre"); // préparée par sa passe (RHI)
             const auto scene = [this] { return sceneVisible; };
 
             graph.AddPass("calculs")
@@ -319,11 +340,19 @@ namespace Flux {
                 .Writes(tiles)
                 .Writes(culled)
                 .Step("calculs", [this](RHI::CommandList& commands) { meshes->Compute(commands, frame.index); });
-            graph.AddPass("ciel")
-                .When(scene)
+            graph.AddPass("tables de l'air")
+                .When([this] { return sceneVisible && sky->TablesPending(); })
                 .Reads(cpu)
-                .Writes(skyCube)
-                .Step("ciel", [this](RHI::CommandList& commands) { sky->Bake(commands, frame.index); });
+                .Writes(skyRayleigh)
+                .Writes(skyMie)
+                .Writes(airRayleigh)
+                .Writes(airMie)
+                .Step("tables de l'air", [this](RHI::CommandList& commands) { sky->BakeTables(commands, frame.index); });
+            graph.AddPass("nébuleuse")
+                .When([this] { return sceneVisible && sky->BackgroundPending(); })
+                .Reads(cpu)
+                .Writes(skyBackground)
+                .Step("nébuleuse", [this](RHI::CommandList& commands) { sky->BakeBackground(commands, frame.index); });
             graph.AddPass("ombres")
                 .When(scene)
                 .Reads(cpu)
@@ -337,7 +366,11 @@ namespace Flux {
                 .Reads(tiles)
                 .Reads(culled)
                 .Reads(shadowMap)
-                .Reads(skyCube)
+                .Reads(skyBackground)
+                .Reads(skyRayleigh)
+                .Reads(skyMie)
+                .Reads(airRayleigh)
+                .Reads(airMie)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -378,21 +411,22 @@ namespace Flux {
                 .Reads(motion)
                 .Reads(sceneDepth)
                 .Reads(history)
-                .Writes(history)
+                .Writes(antialiased)
                 .Step("anticrénelage", [this](RHI::CommandList& commands) {
                     post->ResolveTemporal(commands, temporalAA, frame.reprojection, frame.temporal.history);
                 });
             graph.AddPass("bloom")
                 .When(scene)
                 .Reads(sceneColor)
-                .Reads(history)
+                .Reads(antialiased)
                 .Writes(bloomTextures)
                 .Step("bloom", [this](RHI::CommandList& commands) { post->DrawBloom(commands, bloom); });
             graph.AddPass("image finale")
                 .Reads(sceneColor)
-                .Reads(history)
+                .Reads(antialiased)
                 .Reads(bloomTextures)
                 .Reads(sceneDepth)
+                .Writes(windowDepth)
                 .Writes(windowImage)
                 .Begin([this](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.clearColor = clearColor, .depth = depth.get(), .clearDepth = 0.0f});

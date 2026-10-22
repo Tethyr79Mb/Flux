@@ -244,6 +244,9 @@ namespace Flux {
                                 const RHI::BindGroup& group, const RHI::Texture& source, float radius) const {
         const RHI::Extent size = target.GetExtent();
         const RHI::Extent from = source.GetExtent();
+        const std::array<RHI::TextureUse, 2> uses{{{&source, RHI::TextureAccess::Sampled},
+                                                   {&target, RHI::TextureAccess::ColorTarget, true}}};
+        commands.UseTextures(uses);
         commands.BeginRenderPass({.colorTarget = &target});
         commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
         commands.SetScissor({0, 0, size.width, size.height});
@@ -268,11 +271,15 @@ namespace Flux {
             return;
         }
         const std::uint32_t target = 1 - m_written;
-        // L'historique lu n'a jamais été écrit à la première image : une passe vide l'efface et le rend lisible
-        // (sinon son layout reste indéfini et la validation Vulkan refuse de l'échantillonner, même avec un poids nul).
+        // L'historique lu n'a jamais été écrit à la première image : une passe vide l'efface (un contenu indéfini peut
+        // tenir des NaN, que le poids nul ne suffit pas à effacer). Le graphe de rendu l'a déjà rendu lisible : il
+        // redevient cible le temps de l'effacer.
         if (!m_historyCleared) {
-            commands.BeginRenderPass({.colorTarget = m_history[1 - target].get()});
+            const RHI::Texture& source = *m_history[1 - target];
+            commands.Use(source, RHI::TextureAccess::ColorTarget, true);
+            commands.BeginRenderPass({.colorTarget = &source});
             commands.EndRenderPass();
+            commands.Use(source, RHI::TextureAccess::Sampled);
             m_historyCleared = true;
         }
         const TemporalParams params{reprojection,
@@ -293,7 +300,12 @@ namespace Flux {
 
     void PostRenderer::DrawBloom(RHI::CommandList& commands, float strength) {
         m_bloomDrawn = strength > 0.0f && m_levels > 0;
+        // Ce que Composite lit comme bloom (m_compositeGroups) ; sans niveau, la sortie, déjà lisible.
+        const RHI::Texture* result = m_levels >= 2 ? m_up[0].get() : m_levels == 1 ? m_down[0].get() : nullptr;
         if (!m_bloomDrawn) {
+            if (result) {
+                commands.Use(*result, RHI::TextureAccess::Sampled); // lié même avec une force nulle
+            }
             return;
         }
         for (std::uint32_t i = 0; i < m_levels; ++i) {
@@ -305,6 +317,7 @@ namespace Flux {
             const RHI::Texture& smaller = i + 2 < m_levels ? *m_up[i + 1] : *m_down[i + 1];
             DrawPass(commands, *m_upsample, *m_up[i], *m_upGroups[i], smaller, 1.0f);
         }
+        commands.Use(*result, RHI::TextureAccess::Sampled);
     }
 
     void PostRenderer::Composite(RHI::CommandList& commands, float strength, float exposure) const {

@@ -248,6 +248,23 @@ namespace Flux::RHI {
         virtual Format GetFormat() const = 0;
     };
 
+    // Ce qu'une passe fait d'une texture : le graphe de rendu le déclare (RenderGraph), CommandList::UseTextures en
+    // déduit les barrières. Une texture remplie par envoi (CreateTexture…) commence en Sampled, une cible en None.
+    enum class TextureAccess : std::uint8_t {
+        None,        // jamais utilisée : contenu indéfini
+        ColorTarget, // cible de couleur d'une passe de dessin
+        DepthTarget, // tampon de profondeur d'une passe de dessin
+        Sampled,     // lue par les shaders (sommets, pixels, calcul)
+    };
+
+    // `discard` : le contenu d'avant ne sert plus (la passe efface tout ou réécrit tout), le GPU peut le jeter.
+    struct TextureUse
+    {
+        const Texture* texture = nullptr;
+        TextureAccess access = TextureAccess::None;
+        bool discard = false;
+    };
+
     class Sampler {
         public:
         virtual ~Sampler() = default;
@@ -274,10 +291,11 @@ namespace Flux::RHI {
     };
 
     // Passe qui dessine dans l'image de la swapchain, effacée, avec un tampon de profondeur effacé (s'il y en a un).
-    // Sans couleur (color = false) : profondeur seule dans `depth` (carte d'ombres, CreateRenderTarget sampled),
-    // lisible par les shaders après EndRenderPass.
+    // Sans couleur (color = false) : profondeur seule dans `depth` (carte d'ombres, CreateRenderTarget sampled).
     // Avec colorTarget : dans une texture (CreateRenderTarget sampled, de couleur) ou dans la face colorLayer d'une
-    // texture cube (CreateCubeRenderTarget), avec ou sans profondeur ; lisible par les shaders après EndRenderPass.
+    // texture cube (CreateCubeRenderTarget), avec ou sans profondeur.
+    // Les textures doivent déjà servir de cibles (UseTextures : ColorTarget, DepthTarget) ; la passe ne change pas leur
+    // usage : pour les lire ensuite, UseTextures(Sampled). Seule l'image de la swapchain est préparée par la passe.
     struct RenderPassDesc
     {
         Math::LinearColor clearColor;
@@ -286,20 +304,32 @@ namespace Flux::RHI {
         bool color = true;
         const Texture* colorTarget = nullptr;
         std::uint32_t colorLayer = 0;
-        // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0, lisible après la passe.
+        // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0.
         const Texture* secondColorTarget = nullptr;
-        // Tampon de profondeur gardé et lisible par les shaders après la passe (CreateRenderTarget sampled).
+        // Tampon de profondeur gardé après la passe, pour être lu ensuite (CreateRenderTarget sampled).
         bool keepDepth = false;
+        // Sans couleur seulement : la profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a
+        // déjà remplie) ; CommandList::ClearDepth efface les parties à redessiner.
+        bool loadDepth = false;
     };
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
     class CommandList {
         public:
         virtual ~CommandList() = default;
+        // Prépare chaque texture à son nouvel usage, en une barrière pour toutes : attend ce qui l'écrivait ou la
+        // lisait avant, change son layout. Sans effet pour une texture déjà lue (Sampled) et relue. Hors d'une passe.
+        virtual void UseTextures(std::span<const TextureUse> uses) = 0;
+        void Use(const Texture& texture, TextureAccess access, bool discard = false) {
+            const TextureUse use{&texture, access, discard};
+            UseTextures({&use, 1});
+        }
         virtual void BeginRenderPass(const RenderPassDesc& desc) = 0;
         virtual void EndRenderPass() = 0;
         virtual void SetViewport(const Viewport& viewport) = 0;
         virtual void SetScissor(const Rect& rect) = 0;
+        // Dans une passe : remplit `rect` de la profondeur `depth` (passe à profondeur gardée, RenderPassDesc::loadDepth).
+        virtual void ClearDepth(const Rect& rect, float depth) = 0;
         virtual void BindPipeline(const Pipeline& pipeline) = 0;
         // Pipeline lié avant : ses layouts disent où vont les groupes. Un groupe reste lié d'un pipeline à un autre
         // si les deux déclarent les mêmes layouts jusqu'à cet indice.

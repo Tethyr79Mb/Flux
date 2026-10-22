@@ -2,6 +2,8 @@
 // autour du soleil), une seule diffusion, en marchant le long du regard. Inclus par shaders/Sky.slang (le ciel) et
 // shaders/Mesh.slang (ce qu'on voit à travers). Exactement les calculs de Engine/src/Planetology/Atmosphere.cpp (toute
 // modification des deux côtés), sauf le décalage des pas, tiré au hasard par pixel (du bruit fin au lieu de bandes).
+// Caméra dans l'air : le ciel et l'air jusqu'aux surfaces sont lus dans deux tables calculées à chaque image (plus bas),
+// au lieu d'une marche par pixel et par sommet.
 
 static const uint AtmosphereAmbientSize = 16;
 static const float AtmospherePi = 3.14159265;
@@ -105,19 +107,35 @@ float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, flo
     return AtmosphereScatterFrom(a, -a.center.xyz, direction, distance, toSun, sunColor, steps, jitter, transmittance);
 }
 
-// La même depuis `origin` (relatif au centre de la planète) au lieu de la caméra : le ciel que reflète l'eau.
-float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, float3 sunColor,
-                             int steps, float jitter, out float3 transmittance)
+// Sommes de la marche le long d'un regard, avant les fonctions de phase (qui ne dépendent que de l'angle avec le
+// soleil) : ce que gardent les tables de l'air (AtmosphereTables), la phase étant appliquée à la lecture.
+struct AtmosphereSums
 {
-    transmittance = float3(1.0);
+    float3 rayleigh;     // lumière diffusée par Rayleigh, par unité de lumière du soleil (avant phase et intensité)
+    float3 mie;          // la même pour Mie
+    float rayleighDepth; // épaisseur d'air traversée (m de densité du sol), pour la transmittance
+    float mieDepth;
+};
+
+// Marche de `origin` (relatif au centre de la planète) dans `direction`, sur `distance` mètres au plus. lowest :
+// hauteur sous laquelle la densité ne monte plus (les tables y passent 0 : au-delà du sol, sous la sphère du sol,
+// l'air ne monte pas sans fin) ; -1e30 : aucune limite, comme Atmosphere.cpp.
+AtmosphereSums AtmosphereMarch(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, int steps,
+                               float jitter, float lowest)
+{
+    AtmosphereSums sums;
+    sums.rayleigh = float3(0.0);
+    sums.mie = float3(0.0);
+    sums.rayleighDepth = 0.0;
+    sums.mieDepth = 0.0;
     const float2 hit = AtmosphereRaySphere(origin, direction, a.mie.w);
     if (hit.x > hit.y || hit.y <= 0.0) {
-        return float3(0.0);
+        return sums;
     }
     const float start = max(hit.x, 0.0);
     const float end = min(hit.y, distance);
     if (end <= start) {
-        return float3(0.0);
+        return sums;
     }
     const float step = (end - start) / float(steps);
     float viewRayleigh = 0.0;
@@ -126,7 +144,7 @@ float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, 
     float3 sumMie = float3(0.0);
     for (int i = 0; i < steps; ++i) {
         const float3 p = origin + direction * (start + (float(i) + jitter) * step);
-        const float h = length(p) - a.center.w;
+        const float h = max(length(p) - a.center.w, lowest);
         const float rayleigh = exp(-h * a.rayleigh.w) * step;
         const float mie = exp(-h * a.mie.y) * step;
         viewRayleigh += 0.5 * rayleigh;
@@ -140,13 +158,163 @@ float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, 
         viewRayleigh += 0.5 * rayleigh;
         viewMie += 0.5 * mie;
     }
-    transmittance = AtmosphereExtinction(a, viewRayleigh, viewMie);
+    sums.rayleigh = sumRayleigh * a.rayleigh.rgb;
+    sums.mie = sumMie * a.mie.x;
+    sums.rayleighDepth = viewRayleigh;
+    sums.mieDepth = viewMie;
+    return sums;
+}
+
+// Lumière diffusée vers l'œil (regard `direction`) et transmittance, d'après les sommes : les fonctions de phase.
+float3 AtmosphereLight(AtmosphereData a, AtmosphereSums sums, float3 direction, float3 toSun, float3 sunColor,
+                       out float3 transmittance)
+{
+    transmittance = AtmosphereExtinction(a, sums.rayleighDepth, sums.mieDepth);
     const float mu = dot(direction, toSun);
     const float rayleighPhase = 3.0 / (16.0 * AtmospherePi) * (1.0 + mu * mu);
     const float g = a.mie.z;
     const float denominator = 1.0 + g * g - 2.0 * g * mu;
     const float miePhase = (1.0 - g * g) / (4.0 * AtmospherePi * denominator * sqrt(denominator));
-    return (sumRayleigh * a.rayleigh.rgb * rayleighPhase + sumMie * (a.mie.x * miePhase)) * sunColor * a.scale.x;
+    return (sums.rayleigh * rayleighPhase + sums.mie * miePhase) * sunColor * a.scale.x;
+}
+
+// La même depuis `origin` (relatif au centre de la planète) au lieu de la caméra : le ciel que reflète l'eau.
+float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, float3 sunColor,
+                             int steps, float jitter, out float3 transmittance)
+{
+    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, toSun, steps, jitter, -1.0e30);
+    return AtmosphereLight(a, sums, direction, toSun, sunColor, transmittance);
+}
+
+// --- Tables de l'air (calculées à chaque image par Sky.slang quand la caméra est dans l'air : scale.y à 1) ---
+// Deux textures par table : rgb, AtmosphereSums::rayleigh (ou mie) ; a, l'épaisseur en hauteurs d'échelle (en mètres,
+// elle dépasserait ce que tient un flottant 16 bits).
+
+static const float AtmosphereTableDepthMax = 60000.0;
+
+// Ciel vu de la caméra : colonnes, angle autour de la verticale depuis le soleil (0 à pi, symétrique) ; lignes, angle
+// depuis le zénith, resserré près de l'horizon où le ciel change vite (Hillaire 2020), l'horizon au milieu.
+static const uint2 AtmosphereSkySize = uint2(256, 128);
+
+// Air entre la caméra et ce qu'elle voit : AtmosphereAirSize x AtmosphereAirSize regards répartis sur le champ (un peu
+// plus large, AtmosphereAirMargin : les sommets juste hors de l'écran), AtmosphereAirSlices distances de 0 à toute
+// l'épaisseur de l'air, plus serrées près de la caméra. Tranches rangées en AtmosphereAirTiles dans une texture 2D.
+static const uint AtmosphereAirSize = 64;
+static const uint AtmosphereAirSlices = 64;
+static const uint2 AtmosphereAirTiles = uint2(8, 8);
+static const float AtmosphereAirMargin = 1.3;
+static const float AtmosphereAirNear = 1000.0; // m : distances presque régulières en deçà, de plus en plus espacées au-delà
+
+bool HasAtmosphereTables(AtmosphereData a)
+{
+    return a.scale.y > 0.0;
+}
+
+// Distance de la tranche s (0 à 1) ; scale.w : log(1 + distance la plus longue / AtmosphereAirNear).
+float AtmosphereSliceDistance(AtmosphereData a, float s)
+{
+    return AtmosphereAirNear * (exp(s * a.scale.w) - 1.0);
+}
+
+float AtmosphereDistanceSlice(AtmosphereData a, float distance)
+{
+    return saturate(log(1.0 + distance / AtmosphereAirNear) / a.scale.w);
+}
+
+// Ce qu'écrit une table pour une marche, et ce qu'en tire la lecture.
+void AtmosphereTableWrite(AtmosphereData a, AtmosphereSums sums, out float4 rayleigh, out float4 mie)
+{
+    rayleigh = float4(sums.rayleigh, min(sums.rayleighDepth * a.rayleigh.w, AtmosphereTableDepthMax));
+    mie = float4(sums.mie, min(sums.mieDepth * a.mie.y, AtmosphereTableDepthMax));
+}
+
+AtmosphereSums AtmosphereTableRead(AtmosphereData a, float4 rayleigh, float4 mie)
+{
+    AtmosphereSums sums;
+    sums.rayleigh = rayleigh.rgb;
+    sums.mie = mie.rgb;
+    sums.rayleighDepth = rayleigh.a / a.rayleigh.w;
+    sums.mieDepth = mie.a / a.mie.y;
+    return sums;
+}
+
+// Côté du soleil dans le plan de l'horizon du lieu (unitaire) ; soleil au zénith ou au nadir : un côté quelconque.
+float3 AtmosphereSunSide(float3 up, float3 toSun)
+{
+    const float3 side = toSun - up * dot(toSun, up);
+    const float length2 = dot(side, side);
+    if (length2 < 1.0e-8) {
+        return normalize(cross(up, abs(up.x) < 0.9 ? float3(1.0, 0.0, 0.0) : float3(0.0, 1.0, 0.0)));
+    }
+    return side * rsqrt(length2);
+}
+
+// Angle (radians) entre le zénith et l'horizon du sol vu à `radius` du centre, et sa part sous l'horizontale.
+float2 AtmosphereHorizon(AtmosphereData a, float radius)
+{
+    const float r = max(radius, a.center.w + 1.0);
+    const float beta = acos(saturate(sqrt((r - a.center.w) * (r + a.center.w)) / r));
+    return float2(AtmospherePi - beta, beta);
+}
+
+// Coordonnées du ciel vu de `origin` (relatif au centre) dans `direction`.
+float2 AtmosphereSkyUv(AtmosphereData a, float3 origin, float3 direction, float3 toSun)
+{
+    const float radius = length(origin);
+    const float3 up = origin / radius;
+    const float cosZenith = clamp(dot(direction, up), -1.0, 1.0);
+    const float3 flat = direction - up * cosZenith;
+    const float flatLength = length(flat);
+    const float cosAzimuth = flatLength > 1.0e-6 ? clamp(dot(flat, AtmosphereSunSide(up, toSun)) / flatLength, -1.0, 1.0) : 1.0;
+    const float2 horizon = AtmosphereHorizon(a, radius);
+    const float zenith = acos(cosZenith);
+    float v;
+    if (zenith < horizon.x) {
+        v = 0.5 * (1.0 - sqrt(saturate(1.0 - zenith / horizon.x)));
+    } else {
+        v = 0.5 + 0.5 * sqrt(saturate((zenith - horizon.x) / horizon.y));
+    }
+    return float2(acos(cosAzimuth) / AtmospherePi, v);
+}
+
+// Inverse de AtmosphereSkyUv : le regard d'un texel de la table.
+float3 AtmosphereSkyDirection(AtmosphereData a, float3 origin, float2 uv, float3 toSun)
+{
+    const float radius = length(origin);
+    const float3 up = origin / radius;
+    const float3 side = AtmosphereSunSide(up, toSun);
+    const float2 horizon = AtmosphereHorizon(a, radius);
+    float zenith;
+    if (uv.y < 0.5) {
+        const float s = 1.0 - 2.0 * uv.y;
+        zenith = (1.0 - s * s) * horizon.x;
+    } else {
+        const float c = 2.0 * uv.y - 1.0;
+        zenith = horizon.x + c * c * horizon.y;
+    }
+    const float azimuth = uv.x * AtmospherePi;
+    return up * cos(zenith) + (side * cos(azimuth) + cross(up, side) * sin(azimuth)) * sin(zenith);
+}
+
+// Coordonnées (0 à 1) dans une tranche de la table de l'air du point `p` (relatif à la caméra), regard de la caméra
+// `forward`, `right` et `up` à l'échelle du champ ; false : derrière la caméra ou hors de la table.
+bool AtmosphereAirUv(float3 p, float3 forward, float3 right, float3 up, out float2 uv)
+{
+    const float depth = dot(p, forward);
+    uv = float2(0.0);
+    if (depth <= 0.0) {
+        return false;
+    }
+    const float2 tangent = float2(dot(p, right) / dot(right, right), dot(p, up) / dot(up, up)) / depth;
+    uv = tangent / AtmosphereAirMargin * 0.5 + 0.5;
+    return all(uv >= 0.0) && all(uv <= 1.0);
+}
+
+// Coordonnées dans la texture de la tranche `slice`, et l'inverse (la tranche et le regard d'un texel).
+float2 AtmosphereAirTexel(float2 uv, uint slice)
+{
+    const float2 inside = (0.5 + uv * float(AtmosphereAirSize - 1)) / float(AtmosphereAirSize);
+    return (float2(slice % AtmosphereAirTiles.x, slice / AtmosphereAirTiles.x) + inside) / float2(AtmosphereAirTiles);
 }
 
 // Part de la lumière du ciel de l'espace (texture du ciel) qui éclaire encore un point dans l'air de la planète :

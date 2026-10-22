@@ -82,10 +82,10 @@ namespace Flux::Vk {
     }
 
     namespace {
+        // Image de la swapchain seulement : les textures passent par UseTextures.
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                             VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
-                             VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT, std::uint32_t layer = 0) {
+                             VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
             VkImageMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             barrier.srcStageMask = srcStage;
@@ -97,7 +97,7 @@ namespace Flux::Vk {
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image;
-            barrier.subresourceRange = {aspect, 0, 1, layer, 1};
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
             VkDependencyInfo dependency{};
             dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -178,21 +178,87 @@ namespace Flux::Vk {
         m_openStep = RHI::MaxSteps;
     }
 
+    namespace {
+        struct AccessInfo
+        {
+            VkImageLayout layout;
+            VkPipelineStageFlags2 stages;
+            VkAccessFlags2 access;
+            bool write;
+        };
+
+        // Où et comment chaque usage touche une texture. Lue : par tous les shaders qui le peuvent (le sol lit des
+        // tables par sommet, la pyramide la profondeur en calcul) ; plus précis ne gagnerait presque rien.
+        AccessInfo Describe(RHI::TextureAccess access) {
+            switch (access) {
+                case RHI::TextureAccess::None: return {VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, false};
+                case RHI::TextureAccess::ColorTarget:
+                    return {VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, true};
+                case RHI::TextureAccess::DepthTarget:
+                    return {VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, true};
+                case RHI::TextureAccess::Sampled:
+                    return {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, false};
+            }
+            return {VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, false};
+        }
+    }
+
+    void RhiCommandList::UseTextures(std::span<const RHI::TextureUse> uses) {
+        // Une barrière par lot : le pilote peut tout attendre d'un coup au lieu de vider le GPU à chaque texture.
+        constexpr std::size_t MaxBatch = 16;
+        std::array<VkImageMemoryBarrier2, MaxBatch> barriers{};
+        std::uint32_t count = 0;
+        const auto flush = [&] {
+            if (count == 0) {
+                return;
+            }
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.imageMemoryBarrierCount = count;
+            dependency.pImageMemoryBarriers = barriers.data();
+            vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+            count = 0;
+        };
+        for (const RHI::TextureUse& use : uses) {
+            const auto& texture = static_cast<const RhiTexture&>(*use.texture);
+            const AccessInfo before = Describe(texture.GetAccess());
+            const AccessInfo after = Describe(use.access);
+            // Lue puis relue : rien à attendre. Écrite : toujours attendre ce qui précède, même déjà cible (la même
+            // texture sert à chaque image, la précédente écrit peut-être encore).
+            if (texture.GetAccess() == use.access && !after.write) {
+                continue;
+            }
+            if (count == MaxBatch) {
+                flush();
+            }
+            VkImageMemoryBarrier2& barrier = barriers[count++];
+            barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = before.stages;
+            barrier.srcAccessMask = before.write ? before.access : VK_ACCESS_2_NONE; // après une lecture : l'ordre suffit
+            barrier.dstStageMask = after.stages;
+            barrier.dstAccessMask = after.access;
+            barrier.oldLayout = use.discard ? VK_IMAGE_LAYOUT_UNDEFINED : before.layout;
+            barrier.newLayout = after.layout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = texture.GetImage().GetHandle();
+            barrier.subresourceRange = {texture.GetAspect(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+            texture.SetAccess(use.access);
+        }
+        flush();
+    }
+
     // Tampon de profondeur d'une passe avec couleur, effacé ; son contenu n'est gardé (lisible après la passe) qu'avec
     // keepDepth.
     VkRenderingAttachmentInfo RhiCommandList::BeginDepthAttachment(const RHI::RenderPassDesc& desc) {
         const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
-        // Deux images en vol partagent le tampon de profondeur : on attend la fin des écritures de la précédente (et
-        // de ses lectures s'il est gardé).
-        TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
-                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
-                            | (desc.keepDepth ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
-                                              : VK_PIPELINE_STAGE_2_NONE),
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                        depth.GetAspect());
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = depth.GetImage().GetView();
@@ -200,9 +266,6 @@ namespace Flux::Vk {
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = desc.keepDepth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
-        if (desc.keepDepth) {
-            m_keptDepth = &depth;
-        }
         return depthAttachment;
     }
 
@@ -215,7 +278,8 @@ namespace Flux::Vk {
             BeginTexturePass(desc);
             return;
         }
-        // Le contenu précédent est jeté : on efface tout de suite après.
+        // Image de la swapchain : seule cible que la passe prépare elle-même (le graphe ne la voit pas). Le contenu
+        // précédent est jeté : on efface tout de suite après.
         TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -240,16 +304,9 @@ namespace Flux::Vk {
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
-    // Texture 2D ou face d'une texture cube : l'image précédente la lisait peut-être encore (même file : la barrière
-    // attend ses lectures). Son contenu est jeté : la passe l'efface puis la remplit.
+    // Texture 2D ou face d'une texture cube : effacée puis remplie.
     void RhiCommandList::BeginTexturePass(const RHI::RenderPassDesc& desc) {
         const auto& target = static_cast<const RhiTexture&>(*desc.colorTarget);
-        m_colorTarget = &target;
-        m_colorLayer = desc.colorLayer;
-        TransitionImage(m_commandBuffer, target.GetImage().GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                        VK_IMAGE_ASPECT_COLOR_BIT, desc.colorLayer);
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         const VkImageView faceView = target.GetImage().GetFaceView(desc.colorLayer);
@@ -261,11 +318,6 @@ namespace Flux::Vk {
         std::array<VkRenderingAttachmentInfo, 2> colorAttachments{colorAttachment, {}};
         if (desc.secondColorTarget) {
             const auto& second = static_cast<const RhiTexture&>(*desc.secondColorTarget);
-            m_secondTarget = &second;
-            TransitionImage(m_commandBuffer, second.GetImage().GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
-                            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                            VK_IMAGE_ASPECT_COLOR_BIT, 0);
             colorAttachments[1] = colorAttachment;
             colorAttachments[1].imageView = second.GetImage().GetView();
             colorAttachments[1].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
@@ -281,21 +333,14 @@ namespace Flux::Vk {
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
-    // Carte d'ombres : l'image précédente la lisait peut-être encore (même file : la barrière attend ses lectures).
+    // Carte d'ombres : effacée, ou gardée (loadDepth) quand seules certaines cascades sont redessinées.
     void RhiCommandList::BeginDepthOnlyPass(const RHI::RenderPassDesc& desc) {
         const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
-        m_depthOnly = &depth;
-        TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
-                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
-                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                        depth.GetAspect());
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = depth.GetImage().GetView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.loadOp = desc.loadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // lue ensuite
         depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
 
@@ -309,42 +354,14 @@ namespace Flux::Vk {
 
     void RhiCommandList::EndRenderPass() {
         vkCmdEndRendering(m_commandBuffer);
-        if (const RhiTexture* depth = std::exchange(m_depthOnly, nullptr)) {
-            TransitionImage(m_commandBuffer, depth->GetImage().GetHandle(),
-                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                            depth->GetAspect());
-        }
-        if (const RhiTexture* depth = std::exchange(m_keptDepth, nullptr)) {
-            // Lue ensuite par l'anticrénelage (pixels) et la pyramide de profondeur (compute).
-            TransitionImage(m_commandBuffer, depth->GetImage().GetHandle(),
-                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                            depth->GetAspect());
-        }
-        if (const RhiTexture* second = std::exchange(m_secondTarget, nullptr)) {
-            TransitionImage(m_commandBuffer, second->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0);
-        }
-        if (const RhiTexture* target = std::exchange(m_colorTarget, nullptr)) {
-            TransitionImage(m_commandBuffer, target->GetImage().GetHandle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT, m_colorLayer);
-        }
     }
 
     void RhiCommandList::TransitionToPresent() {
+        // Jusqu'au sémaphore que la présentation attend (signalé après ALL_COMMANDS) : avec NONE, rien n'obligeait le
+        // changement de layout à finir avant lui (la validation de synchronisation le signalait).
         TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+                        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE);
     }
 
     void RhiCommandList::SetViewport(const RHI::Viewport& viewport) {
@@ -355,6 +372,16 @@ namespace Flux::Vk {
     void RhiCommandList::SetScissor(const RHI::Rect& rect) {
         const VkRect2D scissor{{rect.x, rect.y}, {rect.width, rect.height}};
         vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+    }
+
+    void RhiCommandList::ClearDepth(const RHI::Rect& rect, float depth) {
+        VkClearAttachment attachment{};
+        attachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        attachment.clearValue.depthStencil = {depth, 0};
+        VkClearRect clearRect{};
+        clearRect.rect = {{rect.x, rect.y}, {rect.width, rect.height}};
+        clearRect.layerCount = 1;
+        vkCmdClearAttachments(m_commandBuffer, 1, &attachment, 1, &clearRect);
     }
 
     void RhiCommandList::BindPipeline(const RHI::Pipeline& pipeline) {

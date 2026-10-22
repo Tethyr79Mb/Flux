@@ -11,6 +11,8 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Ombres sans programme de pixel ni faces arrière, petits objets hors des cascades lointaines ; opaques sans
   `discard` (test de profondeur avant éclairage) ; objets ni en vue ni dans une ombre écartés (pose comprise) ; heures
   GPU seulement panneau Moteur ouvert (fermé : le compteur d'images/s seul).
+- 🔧 Cascades d'ombres lointaines (60 et 200 m) redessinées une image sur deux, à tour de rôle, la carte gardée recalée
+  sur la caméra. Limite : l'ombre lointaine d'un objet qui bouge a une image de retard.
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
@@ -40,6 +42,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée. À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets.
 - 🔧 Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre). À améliorer : les lumières traversent les murs (pas d'ombre).
 - 🔧 Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour. À améliorer : reflets flous, ciel seulement (pas la scène).
+- ⬜ Ciel plus fin (nébuleuse en 2048 ou 4096, compressée BC6H) réglable dans les détails des options graphiques (idée de Bruno).
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur en sections repliables : temps par passe du graphe de rendu, étapes, scène, mémoire) et de la mémoire (RAM du processus, mémoire vidéo).
 - ✅ Feuillage des arbres sans éclairage caché : pré-passe de profondeur (seuil d'alpha), puis éclairage de la seule feuille visible ; ombre des nuages par sommet (mesuré au profiler : 40 % de l'image avant). Feuilles sans reflet du soleil (blanches à contre-jour avant), lumière enveloppante et traversante réglables dans Végétation.
 - 🔧 Sol des planètes allégé : tuiles de près à loin (par bandes de distance), ombre des nuages par sommet, lectures sous 5 % de poids et couleur moyenne de près évitées. À améliorer : coût des pixels encore à mesurer chez Bruno, puis mesh shaders si la géométrie pèse.
@@ -96,6 +99,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
+- 🔧 Ciel et air lus dans deux tables refaites à chaque image quand la caméra est dans l'air (Hillaire 2020), au lieu
+  de 16 à 24 pas par sommet et par pixel ; écart mesuré sous 1,5 % de la marche d'avant. Limites : vu de l'espace,
+  marche d'avant (l'air n'y couvre qu'un anneau) ; une seule diffusion (pas de diffusion multiple).
 - ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
@@ -119,6 +125,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   de son imposteur) ; passage d'un niveau de détail à l'autre sans fondu ;
   arbres hors du champ sans ombre ; pas de collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé
   sur le relief fin peut flotter ou s'enfoncer un peu sur le sol plus grossier.
+- ⬜ Canyons (demande de Bruno du 2026-10-21) : gorges creusées dans le relief, parois raides en strates, fond plat ou
+  sinueux, sur les planètes sèches comme le long des rivières. À faire dans `Terrain::GetHeight` et `Height`
+  (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
 - ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume près de la caméra (8 pas), en colonne au loin et vu de l'espace, avec son ombre. À améliorer : voir la ligne suivante.
@@ -194,7 +203,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
   - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
-  - ⬜ 2. Barrières calculées par le graphe (plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`).
+  - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
   - ⬜ 3. Textures de travail créées, redimensionnées et partagées par le graphe (HDR, mouvement, bloom, profondeur).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Pas de calcul asynchrone (seconde file) tant que les mesures ne le demandent pas.

@@ -173,6 +173,10 @@ struct MaterialData
 // Arbres des planètes retenus pour l'image (shaders/Vegetation.slang) : deux float4 chacun, position relative à la
 // caméra et taille, puis rotation (quaternion).
 [[vk::binding(7, 1)]] StructuredBuffer<float4> treeInstances;
+// Table de l'air entre la caméra et ce qu'elle voit (SkyRenderer, shaders/Atmosphere.slang), quand elle est dans
+// l'air d'une planète.
+[[vk::binding(8, 1)]] Sampler2D airRayleigh;
+[[vk::binding(9, 1)]] Sampler2D airMie;
 
 // Groupe 2 : tables de tous les modèles chargés (ModelCache). Images des matériaux, choisies par indice : couleurs en
 // sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
@@ -760,9 +764,10 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
-// propre lumière. 16 pas fixes, sans bruit par pixel : ce bruit dessinait un damier fin sur le sol, et 8 pas fixes
-// des bandes (le ciel, lui, garde son bruit). Renvoie la lumière ajoutée ; transmittance : la part de celle de la
-// surface qui passe.
+// propre lumière. Renvoie la lumière ajoutée ; transmittance : la part de celle de la surface qui passe.
+// Caméra dans l'air : lu dans la table de l'air (deux tranches de distance mélangées), la phase calculée ici. Sinon,
+// ou pour un point hors de la table (derrière la caméra, loin hors du champ) : 16 pas fixes, sans bruit par pixel
+// (ce bruit dessinait un damier fin sur le sol, et 8 pas fixes des bandes).
 float3 AirTo(float3 worldPosition, out float3 transmittance)
 {
     const FrameData f = frame[0];
@@ -771,8 +776,25 @@ float3 AirTo(float3 worldPosition, out float3 transmittance)
         return float3(0.0);
     }
     const float distance = length(worldPosition);
-    return AtmosphereScatter(f.atmosphere, worldPosition / max(distance, 1.0e-4), distance, f.toSun.xyz, f.sunColor.rgb,
-                             16, 0.5, transmittance);
+    const float3 direction = worldPosition / max(distance, 1.0e-4);
+    float2 uv;
+    if (HasAtmosphereTables(f.atmosphere)
+        && AtmosphereAirUv(worldPosition, f.cameraForward.xyz, f.cameraRight.xyz, f.cameraUp.xyz, uv)) {
+        const float slice = AtmosphereDistanceSlice(f.atmosphere, distance) * float(AtmosphereAirSlices - 1);
+        const uint first = min(uint(slice), AtmosphereAirSlices - 2);
+        // Mélange selon la distance, pas selon la tranche : les sommes croissent presque comme la distance (en tranche,
+        // le mélange s'écartait de 7 % près de la caméra).
+        const float firstDistance = AtmosphereSliceDistance(f.atmosphere, float(first) / float(AtmosphereAirSlices - 1));
+        const float nextDistance = AtmosphereSliceDistance(f.atmosphere, float(first + 1) / float(AtmosphereAirSlices - 1));
+        const float t = saturate((distance - firstDistance) / (nextDistance - firstDistance));
+        const float2 near = AtmosphereAirTexel(uv, first);
+        const float2 far = AtmosphereAirTexel(uv, first + 1);
+        const float4 rayleigh = lerp(airRayleigh.SampleLevel(near, 0.0), airRayleigh.SampleLevel(far, 0.0), t);
+        const float4 mie = lerp(airMie.SampleLevel(near, 0.0), airMie.SampleLevel(far, 0.0), t);
+        return AtmosphereLight(f.atmosphere, AtmosphereTableRead(f.atmosphere, rayleigh, mie), direction, f.toSun.xyz,
+                               f.sunColor.rgb, transmittance);
+    }
+    return AtmosphereScatter(f.atmosphere, direction, distance, f.toSun.xyz, f.sunColor.rgb, 16, 0.5, transmittance);
 }
 
 float3 ThroughAir(float3 lit, float3 worldPosition)
@@ -1867,7 +1889,7 @@ CloudOutput fragmentClouds(CloudVertexOutput input)
     float3 airTransmittance = float3(1.0);
     float3 scattered = float3(0.0);
     if (air) {
-        scattered = AtmosphereScatter(f.atmosphere, direction, hit, toSun, f.sunColor.rgb, 8, 0.5, airTransmittance);
+        scattered = AirTo(direction * hit, airTransmittance);
     }
     const float3 color = light / alpha; // non prémultiplié : le mélange multiplie par alpha
     const float3 up = normalize(direction * hit - planet.clouds.xyz);

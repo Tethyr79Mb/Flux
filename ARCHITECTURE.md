@@ -96,12 +96,19 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 ```
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan, nuages,
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan, nuages,
 transparents), pyramide de profondeur, anticrénelage, bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
 gardé de l'image précédente ou rempli par le CPU). Le panneau Moteur affiche une ligne par passe et par étape, sans
-liste à tenir à part. Les barrières restent faites par les passes et le RHI (étape 2 du render graph, voir
-`Engine/ROADMAP.md`).
+liste à tenir à part.
+
+Barrières des textures : chaque texture du RHI retient son dernier usage (rien, cible de couleur, cible de profondeur,
+lue par les shaders) ; `CommandList::UseTextures` passe à un nouvel usage en une barrière pour tout le lot. Le graphe
+l'appelle avant chaque passe pour les textures déclarées (`AddTexture`) : lues, ou écrites (couleur ou profondeur selon
+le format), contenu jeté pour une texture de l'image. `BeginRenderPass`/`EndRenderPass` ne changent plus aucun layout,
+sauf celui de l'image de la swapchain. Les textures internes d'une passe (niveaux du bloom, historique effacé à la
+première image) sont préparées par la passe elle-même avec `UseTextures`. Les buffers gardent la barrière globale de
+calcul (`ComputeBarrier`).
 
 Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
 enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses
@@ -134,6 +141,10 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 3. Ombres du soleil : 4 cascades dans une carte 4096² D32, profondeur seule sans programme de pixel (sauf seuil
    d'alpha) ; un objet fermé à une face n'y dessine que ses faces tournées vers le soleil, et un objet de moins de
    1,5 texel de rayon n'est pas dessiné dans la cascade.
+   Les cascades 0 et 1 sont redessinées à chaque image, les deux lointaines une image sur deux, à tour de rôle
+   (`MeshRenderer::ChooseShadowCascades`) : la carte gardée n'est pas effacée (`RenderPassDesc::loadDepth`, puis
+   `CommandList::ClearDepth` sur les seules cascades redessinées) et sa matrice est recalée sur la caméra
+   (`MoveShadowCascade`). Redessinée quand même si le soleil a tourné ou si la caméra a bougé de 10 % de son rayon.
 4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
    (`PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans, nuages, transparents,
@@ -306,7 +317,13 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   et 2 cellules au plus (la plus faible des trois est retirée des autres, sans saut ; sous 5 % de poids, une cellule
   ou la deuxième matière n'est pas lue), 2 lectures par point (couleur + rugosité en alpha ; normales en rouge-vert +
   occlusion en bleu), couleur moyenne lue seulement au-delà de 600 m.
-- Atmosphère (diffusion calculée par sommet pour le sol et l'océan, au pixel pour les modèles et le ciel) et océan (tuiles sous le niveau de la mer redessinées en surface d'eau).
+- Atmosphère et océan (tuiles sous le niveau de la mer redessinées en surface d'eau). Caméra dans l'air, deux tables
+  de l'air sont refaites en début d'image (`SkyRenderer::Bake`, `skyTableFragment` et `airTableFragment` dans
+  `Sky.slang`) : le ciel vu de la caméra (256 x 128, resserré près de l'horizon) et l'air jusqu'à ce qu'elle voit
+  (64 x 64 regards sur le champ élargi, 64 distances). Elles gardent les sommes avant les fonctions de phase,
+  appliquées à la lecture : le halo du soleil reste net. Le ciel, et l'air du sol, de l'eau, des arbres (par sommet),
+  des modèles et des nuages (par pixel), y lisent au lieu de marcher le long du regard ; vu de l'espace, ou pour un
+  point hors de la table (derrière la caméra), la marche d'avant.
 - Nuages (`CloudsComponent`) : une couche épaisse entre deux sphères (base et sommet), sans maillage. Un triangle
   plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la
   caméra, il marche en 8 pas dans le volume (forme en cumulus, érosion, lumière du soleil traversée vers le haut) ;

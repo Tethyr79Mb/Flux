@@ -273,7 +273,7 @@ namespace Flux::Vk {
         if (!image) {
             return std::unexpected(image.error());
         }
-        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeTexture(RHI::Format format, std::uint32_t size,
@@ -283,7 +283,7 @@ namespace Flux::Vk {
         if (!image) {
             return std::unexpected(image.error());
         }
-        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTextureArray(RHI::Format format, RHI::Extent extent,
@@ -295,7 +295,7 @@ namespace Flux::Vk {
         if (!image) {
             return std::unexpected(image.error());
         }
-        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,
@@ -310,7 +310,7 @@ namespace Flux::Vk {
         if (!image) {
             return std::unexpected(image.error());
         }
-        return std::make_unique<RhiTexture>(std::move(*image), format, aspect);
+        return std::make_unique<RhiTexture>(std::move(*image), format, aspect, RHI::TextureAccess::None);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeRenderTarget(RHI::Format format,
@@ -320,7 +320,7 @@ namespace Flux::Vk {
         if (!image) {
             return std::unexpected(image.error());
         }
-        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT);
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::None);
     }
 
     std::expected<std::unique_ptr<RHI::Sampler>, std::string> RhiDevice::CreateSampler(const RHI::SamplerDesc& desc) {
