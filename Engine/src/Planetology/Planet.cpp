@@ -1,6 +1,7 @@
 #include "Flux/Planetology/Planet.hpp"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <cmath>
 #include <numbers>
@@ -800,15 +801,17 @@ namespace Flux::Planetology {
     }
 
     std::vector<std::uint32_t> BuildTileIndices() {
-        std::vector<std::uint32_t> indices;
-        indices.reserve(6 * TileQuads * TileQuads + 4 * 6 * TileQuads);
+        // Rangés par quart (ceux de l'enfant 0, puis 1, 2, 3) : un quart se dessine seul (PlanetRenderer::VisitNode).
+        constexpr std::uint32_t Half = TileQuads / 2;
+        const auto quarter = [](double i, double j) { return (i < Half ? 0u : 1u) + (j < Half ? 0u : 2u); };
+        std::array<std::vector<std::uint32_t>, 4> quarters;
         for (std::uint32_t j = 0; j < TileQuads; ++j) {
             for (std::uint32_t i = 0; i < TileQuads; ++i) {
                 const std::uint32_t a = j * TileSide + i;
                 const std::uint32_t b = a + 1;
                 const std::uint32_t c = a + TileSide + 1;
                 const std::uint32_t d = a + TileSide;
-                indices.insert(indices.end(), {a, b, c, a, c, d});
+                quarters[quarter(i, j)].insert(quarters[quarter(i, j)].end(), {a, b, c, a, c, d});
             }
         }
         // Le bord de la grille, dans l'ordre des jupes (BuildTile).
@@ -827,9 +830,17 @@ namespace Flux::Planetology {
                 const std::uint32_t top1 = border(edge, k + 1);
                 const std::uint32_t low0 = first + k;
                 const std::uint32_t low1 = first + k + 1;
+                // Au quart qui contient le milieu de ce bout de bord.
+                std::vector<std::uint32_t>& to = quarters[quarter(0.5 * (top0 % TileSide + top1 % TileSide),
+                                                                  0.5 * (top0 / TileSide + top1 / TileSide))];
                 // Tournée vers l'extérieur de la tuile : (bord, jupe, bord suivant) puis (bord suivant, jupe, jupe suivante).
-                indices.insert(indices.end(), {top0, low0, top1, top1, low0, low1});
+                to.insert(to.end(), {top0, low0, top1, top1, low0, low1});
             }
+        }
+        std::vector<std::uint32_t> indices;
+        indices.reserve(4 * TileQuarterIndices);
+        for (const std::vector<std::uint32_t>& part : quarters) {
+            indices.insert(indices.end(), part.begin(), part.end());
         }
         return indices;
     }

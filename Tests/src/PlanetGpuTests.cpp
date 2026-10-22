@@ -4,16 +4,89 @@
 #include "Check.hpp"
 
 #include "Flux/Planetology/Planet.hpp"
+#include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
+#include <utility>
 #include <vector>
 
 using namespace Flux;
 
 namespace {
+    // Sol sous une caméra qui tourne sur place (PlanetRenderer) : un enfant pas encore calculé qui entre dans le champ
+    // ne remplace que son quart de la parente, pas toute la parente. Elle revenait pour une image jusque sous la caméra :
+    // le sol clignotait, plus grossier, penché et sans arbres, à chaque mouvement de caméra au début du jeu.
+    bool CheckTurningCamera(RHI::Device& device) {
+        auto created = Planetology::PlanetRenderer::Create(device);
+        if (!created) {
+            std::printf("ÉCHEC %s\n", created.error().c_str());
+            return false;
+        }
+        Planetology::PlanetRenderer& renderer = **created;
+        const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
+        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+        // Pas au centre de la face : c'est le coin commun de quatre tuiles à tous les niveaux.
+        const Math::Vector3d up = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
+        const double ground = planet.radius + terrain.GetHeight(up, terrain.GetOctaves(terrain.GetMaxLevel()));
+        const Math::Vector3d position = up * -(ground + 2.0); // centre de la planète, relatif à la caméra
+        const auto frame = [&](const Math::Vector3d& forward, std::vector<Planetology::PlanetRenderer::Tile>& tiles) {
+            // Champ de 100° autour de `forward`.
+            const auto inView = [&forward](const Math::Vector3f& center, float radius) {
+                const double distance = Math::Length(Math::Vector3d(center));
+                if (distance <= radius) {
+                    return true;
+                }
+                const double angle = std::acos(std::clamp(Math::Dot(Math::Vector3d(center), forward) / distance, -1.0, 1.0));
+                return angle - std::asin(std::min(static_cast<double>(radius) / distance, 1.0)) < 50.0 * std::numbers::pi / 180.0;
+            };
+            tiles.clear();
+            renderer.BeginFrame(0);
+            renderer.Collect(static_cast<Entity>(1), planet, position, Math::Quaternionf{}, inView, tiles);
+            renderer.EndFrame(0);
+            return device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); });
+        };
+        // Tuile dessinée sous la caméra (entière ou quart), et la parente d'un quart dessiné qui la couvre.
+        const auto under = [&up](const std::vector<Planetology::PlanetRenderer::Tile>& tiles) {
+            int level = -1;
+            bool quarterAbove = false;
+            for (const Planetology::PlanetRenderer::Tile& tile : tiles) {
+                if (Planetology::FindTile(up, tile.key.level) == tile.key) {
+                    level = std::max(level, static_cast<int>(tile.key.level));
+                }
+                const Planetology::TileKey parent{tile.key.face, static_cast<std::uint8_t>(tile.key.level - 1u), tile.key.x / 2u, tile.key.y / 2u};
+                if (tile.indexCount == Planetology::TileQuarterIndices && Planetology::FindTile(up, parent.level) == parent) {
+                    quarterAbove = true;
+                }
+            }
+            return std::pair{level, quarterAbove};
+        };
+
+        std::vector<Planetology::PlanetRenderer::Tile> tiles;
+        const Math::Vector3d east{1.0, 0.0, 0.0};
+        for (int n = 0; n < 300; ++n) {
+            CHECK(frame(east, tiles));
+            if (n > 2 && renderer.GetPendingTileCount() == 0) {
+                break;
+            }
+        }
+        CHECK(renderer.GetPendingTileCount() == 0);
+        const int settled = under(tiles).first;
+        CHECK(settled >= 10);
+        // Un quart de tour : le sol au loin n'est pas encore calculé, celui sous la caméra l'est.
+        CHECK(frame({0.0, 0.0, 1.0}, tiles));
+        const auto [turned, quarterAbove] = under(tiles);
+        CHECK(quarterAbove); // une parente de la tuile sous la caméra attend un enfant : le cas qui clignotait
+        if (turned != settled) {
+            std::printf("ÉCHEC sol sous la caméra au niveau %d après un quart de tour (%d avant)\n", turned, settled);
+            return false;
+        }
+        return true;
+    }
+
     struct Case
     {
         const Planetology::Terrain* terrain;
@@ -101,5 +174,5 @@ bool RunPlanetGpuTests() {
         CHECK(std::abs(stats[n].lowest - mesh.lowest) < 2.0 * tolerance + 1.0e-6 * mesh.lowest);
         CHECK(std::abs(stats[n].radius - mesh.radius) < 2.0 * tolerance);
     }
-    return true;
+    return CheckTurningCamera(**device);
 }

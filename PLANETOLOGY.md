@@ -53,6 +53,11 @@ est coupée en quatre enfants, jusqu'à environ 1,5 m entre deux sommets.
 C'est du **CDLOD**. Chaque sommet glisse vers la forme de sa tuile parente à mesure qu'il s'éloigne, si bien que deux
 niveaux de détail se fondent sans saut ni fente. Des jupes sous les bords cachent les petits écarts qui restent.
 
+Une tuile qui manque est calculée par le GPU au début de l'image suivante. En attendant, le quart de sa parente qu'elle
+couvre est dessiné à sa place, ce que permettent les indices rangés par quart (`BuildTileIndices`). Avant, c'était toute
+la parente : quand la caméra tournait, une tuile au loin qui entrait dans le champ remettait pour une image du sol
+grossier jusque sous les pieds, sans arbres, et le sol clignotait.
+
 ### Le relief : une formule, en deux exemplaires
 
 Le relief est une formule : la hauteur dans une direction donnée. Rien n'est stocké, et le terrain n'est pas creusable

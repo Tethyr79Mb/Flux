@@ -190,6 +190,9 @@ namespace Flux::Planetology {
     FLUX_API void BuildTileSurface(const Terrain& terrain, TileKey key, Math::Vector3d& center, std::vector<Math::Vector3f>& positions);
     // Tuile de ce niveau où tombe une direction (unitaire).
     FLUX_API TileKey FindTile(const Math::Vector3d& direction, std::uint32_t level);
-    // Indices communs à toutes les tuiles (la grille, puis les jupes), dans le sens trigonométrique vu de dehors.
+    // Indices communs à toutes les tuiles, dans le sens trigonométrique vu de dehors, rangés par quart de tuile : ceux de
+    // l'enfant 0 (sa part de la grille, puis de ses jupes), puis de l'enfant 1, 2, 3 (TileKey::Child). Chaque quart en
+    // compte TileQuarterIndices.
+    constexpr std::uint32_t TileQuarterIndices = 6 * (TileQuads / 2) * (TileQuads / 2) + 2 * 6 * (TileQuads / 2);
     FLUX_API std::vector<std::uint32_t> BuildTileIndices();
 }
