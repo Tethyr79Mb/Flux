@@ -11,6 +11,9 @@
 
 [[vk::binding(1, 0)]] Sampler2D panorama; // sRGB, ramené en linéaire à la lecture
 [[vk::binding(2, 0)]] SamplerCube background; // nébuleuse et bande galactique (bakeFragment), en linéaire
+// Table du ciel vu de la caméra (skyTableFragment), dans l'air d'une planète : voir AtmosphereSkySize.
+[[vk::binding(3, 0)]] Sampler2D skyRayleigh;
+[[vk::binding(4, 0)]] Sampler2D skyMie;
 
 // bakeFragment : la face de la texture cube en cours (0 à 5 : +X, -X, +Y, -Y, +Z, -Z).
 struct BakeParams
@@ -211,6 +214,51 @@ float4 bakeFragment(VertexOutput input) : SV_Target
     return float4(SkyBackground(CubeFaceDirection(bake.face, input.clip.x, input.clip.y), sky[0]), 1.0);
 }
 
+// --- Tables de l'air (Atmosphere.slang), refaites à chaque image quand la caméra est dans l'air. ---
+
+struct TableOutput
+{
+    float4 rayleigh : SV_Target0;
+    float4 mie      : SV_Target1;
+};
+
+// Ciel vu de la caméra : un texel par regard, jusqu'au sol ou à travers tout l'air.
+[shader("fragment")]
+TableOutput skyTableFragment(float4 position : SV_Position)
+{
+    const AtmosphereData a = sky[0].atmosphere;
+    const float3 origin = -a.center.xyz;
+    const float3 direction = AtmosphereSkyDirection(a, origin, position.xy / float2(AtmosphereSkySize), sky[0].toSun.xyz);
+    const float2 ground = AtmosphereRaySphere(origin, direction, a.center.w);
+    const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
+    // 32 pas : la table est petite, le ciel y gagne en finesse à travers le bord de l'air.
+    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, -1.0e30);
+    TableOutput output;
+    AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
+    return output;
+}
+
+// Air entre la caméra et la distance de la tranche, dans un regard du champ (AtmosphereAirUv). Au-delà du sol, la
+// densité ne monte plus : la tranche d'après un sommet du sol reste dans la suite de celle d'avant.
+[shader("fragment")]
+TableOutput airTableFragment(float4 position : SV_Position)
+{
+    const SkyData s = sky[0];
+    const AtmosphereData a = s.atmosphere;
+    const uint2 texel = uint2(position.xy);
+    const uint2 tile = texel / AtmosphereAirSize;
+    const uint slice = tile.y * AtmosphereAirTiles.x + tile.x;
+    const float2 uv = float2(texel % AtmosphereAirSize) / float(AtmosphereAirSize - 1);
+    const float2 tangent = (uv * 2.0 - 1.0) * AtmosphereAirMargin;
+    const float3 direction = normalize(s.forward.xyz + s.right.xyz * tangent.x + s.up.xyz * tangent.y);
+    const float distance = AtmosphereSliceDistance(a, float(slice) / float(AtmosphereAirSlices - 1));
+    // 16 pas, comme la marche par sommet qu'elle remplace (AirTo dans Mesh.slang).
+    const AtmosphereSums sums = AtmosphereMarch(a, -a.center.xyz, direction, distance, s.toSun.xyz, 16, 0.5, 0.0);
+    TableOutput output;
+    AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
+    return output;
+}
+
 // Point du panorama vu dans `direction` (PanoramaUv dans Sky.cpp).
 float2 PanoramaUv(float3 direction)
 {
@@ -251,10 +299,20 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, s.atmosphere.center.w);
         const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
         float3 transmittance;
-        // Pas fixes (milieu de chaque pas) : décalés par pixel, ils donnaient un damier fin bien visible sans
-        // anticrénelage temporel pour le lisser ; 24 pas pour ne pas voir de bandes à travers le bord de l'air.
-        const float3 scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
-                                                   transmittance);
+        float3 scattered;
+        if (HasAtmosphereTables(s.atmosphere)) {
+            // Dans l'air : lu dans la table du ciel, la phase (le halo autour du soleil) calculée ici, au pixel.
+            const float2 uv = AtmosphereSkyUv(s.atmosphere, -s.atmosphere.center.xyz, direction, s.toSun.xyz);
+            const AtmosphereSums sums = AtmosphereTableRead(s.atmosphere, skyRayleigh.SampleLevel(uv, 0.0),
+                                                            skyMie.SampleLevel(uv, 0.0));
+            scattered = AtmosphereLight(s.atmosphere, sums, direction, s.toSun.xyz, s.sunColor.rgb, transmittance);
+        } else {
+            // Vu de l'espace : l'air ne couvre qu'un anneau, trop fin pour la table. Pas fixes (milieu de chaque pas) :
+            // décalés par pixel, ils donnaient un damier fin bien visible sans anticrénelage temporel pour le
+            // lisser ; 24 pas pour ne pas voir de bandes à travers le bord de l'air.
+            scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
+                                          transmittance);
+        }
         // Le jour, l'air éclairé est bien plus lumineux que les étoiles et la nébuleuse : l'œil ne les voit plus. Elles
         // s'effacent d'après la lumière de l'air dans cette direction, donc en douceur à la descente et au couchant,
         // et reviennent la nuit.
