@@ -53,6 +53,7 @@ namespace Flux {
             std::uint32_t stored = 0;
             std::uint32_t pending = 0;  // demandées, pas encore prêtes
             bool groundLoading = false; // textures du sol en cours de lecture
+            std::uint32_t meshThreads = 0; // threads par groupe des mesh shaders du sol (0 : par les sommets)
         };
         PlanetTileStats GetPlanetTileStats() const;
         Planetology::VegetationRenderer::Stats GetVegetationStats() const { return m_vegetation->GetStats(); }
@@ -320,6 +321,15 @@ namespace Flux {
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
         bool m_groundGeometryOnly = false;
+        // Le même sol en mesh shaders (shaders/PlanetMesh.slang), quand le GPU les a : nuls sinon. Le groupe 3 lit les
+        // sommets et les boîtes des paquets d'une page de tuiles (un groupe par page, fait à sa première utilisation).
+        std::unique_ptr<RHI::BindGroupLayout> m_tileMeshLayout;
+        std::unique_ptr<RHI::Pipeline> m_planetMesh;
+        std::uint32_t m_planetMeshThreads = 0; // 128 (PlanetMesh.slang) ou 64 (PlanetMeshSmall.slang)
+        std::unique_ptr<RHI::Pipeline> m_planetMeshGeometry; // pixel presque vide, comme Pipelines::geometryOnly
+        std::vector<std::unique_ptr<RHI::BindGroup>> m_tileMeshGroups;
+        // Pyramide de profondeur liée au groupe de chaque image pour les mesh shaders (celle d'OcclusionCulling).
+        std::array<const RHI::Buffer*, RHI::FramesInFlight> m_boundPyramid{};
         // Arbres des planètes : leur place et leur rotation lues dans les arbres retenus par VegetationRenderer.
         Pipelines m_tree;
         // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).

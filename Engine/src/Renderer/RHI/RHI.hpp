@@ -83,6 +83,8 @@ namespace Flux::RHI {
     };
 
     enum class ShaderStage : std::uint8_t {
+        // Étape de la géométrie : les sommets, ou les étapes de tâche et de maillage qui la remplacent dans un
+        // pipeline à mesh shaders (Device::HasMeshShaders) ; une ressource vue des sommets l'est aussi d'elles.
         Vertex = 1 << 0,
         Fragment = 1 << 1,
         Compute = 1 << 2,
@@ -198,6 +200,10 @@ namespace Flux::RHI {
         std::filesystem::path shaderPath;
         const char* vertexEntryPoint = "vertexMain";
         const char* fragmentEntryPoint = "fragmentMain"; // nullptr : aucun (passe de profondeur seule)
+        // Pipeline à mesh shaders (Device::HasMeshShaders) : étape de maillage, et de tâche avant elle, à la place
+        // des sommets (vertexEntryPoint, vertexBuffers et vertexAttributes ignorés) ; dessiné par DrawMeshTasks.
+        const char* taskEntryPoint = nullptr;
+        const char* meshEntryPoint = nullptr;
         std::span<const VertexBufferLayout> vertexBuffers;
         std::span<const VertexAttribute> vertexAttributes;
         // Groupe i : layouts[i] (BindGroup lié à l'indice i).
@@ -347,6 +353,8 @@ namespace Flux::RHI {
         // `count` commandes DrawIndexedCommand lues dans `buffer` (BufferUsage::Indirect) à partir de `offset` : un
         // seul appel pour beaucoup de maillages qui partagent pipeline, sommets et indices.
         virtual void DrawIndexedIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t count) = 0;
+        // Pipeline à mesh shaders lié : `groups` groupes de l'étape de tâche (SV_GroupID.x de 0 à groups - 1).
+        virtual void DrawMeshTasks(std::uint32_t groups) = 0;
         // Compute shader du pipeline lié (CreateComputePipeline), en groupes de threads ; hors d'une passe.
         virtual void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1) = 0;
         // Les buffers écrits par les Dispatch précédents deviennent lisibles par la suite : sommets, index, shaders,
@@ -405,6 +413,10 @@ namespace Flux::RHI {
         virtual MemoryUsage GetMemoryUsage() const = 0;
         // Doubles permis dans les shaders (shaderFloat64) : facultatif, les tuiles de planète s'en servent quand il y est.
         virtual bool HasFloat64() const = 0;
+        // Mesh shaders (étapes de tâche et de maillage) : facultatifs, le sol des planètes s'en sert quand ils y sont.
+        virtual bool HasMeshShaders() const = 0;
+        // Nombre de threads par groupe de maillage que le pilote préfère (0 sans mesh shaders).
+        virtual std::uint32_t GetMeshPreferredThreads() const = 0;
         // Formats compressés BC (textureCompressionBC) : tous les GPU de bureau, facultatif quand même.
         virtual bool HasTextureCompressionBC() const = 0;
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).

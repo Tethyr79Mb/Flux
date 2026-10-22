@@ -97,15 +97,28 @@ namespace Flux::Vk {
             return std::unexpected("création du pipeline layout");
         }
 
-        std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
-        stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-        stages[0].module = shaderModule;
-        stages[0].pName = desc.vertexEntryPoint;
-        stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stages[1].module = shaderModule;
-        stages[1].pName = desc.fragmentEntryPoint;
+        std::array<VkPipelineShaderStageCreateInfo, 3> stages{};
+        uint32_t stageCount = 0;
+        const auto addStage = [&](VkShaderStageFlagBits stage, const char* entryPoint) {
+            VkPipelineShaderStageCreateInfo& info = stages[stageCount++];
+            info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            info.stage = stage;
+            info.module = shaderModule;
+            info.pName = entryPoint;
+        };
+        const bool mesh = desc.meshEntryPoint != nullptr;
+        if (mesh) {
+            if (desc.taskEntryPoint) {
+                addStage(VK_SHADER_STAGE_TASK_BIT_EXT, desc.taskEntryPoint);
+            }
+            addStage(VK_SHADER_STAGE_MESH_BIT_EXT, desc.meshEntryPoint);
+        } else {
+            addStage(VK_SHADER_STAGE_VERTEX_BIT, desc.vertexEntryPoint);
+        }
+        // Sans fragment (carte d'ombres) : la profondeur seule, les pixels ne passent par aucun programme.
+        if (desc.fragmentEntryPoint) {
+            addStage(VK_SHADER_STAGE_FRAGMENT_BIT, desc.fragmentEntryPoint);
+        }
 
         VkPipelineVertexInputStateCreateInfo vertexInput{};
         vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -198,11 +211,11 @@ namespace Flux::Vk {
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.pNext = &renderingInfo;
-        // Sans fragment (carte d'ombres) : la profondeur seule, les pixels ne passent par aucun programme.
-        pipelineInfo.stageCount = desc.fragmentEntryPoint ? 2u : 1u;
+        pipelineInfo.stageCount = stageCount;
         pipelineInfo.pStages = stages.data();
-        pipelineInfo.pVertexInputState = &vertexInput;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        // Un pipeline à mesh shaders n'a ni sommets ni assemblage : son étape de maillage sort les triangles.
+        pipelineInfo.pVertexInputState = mesh ? nullptr : &vertexInput;
+        pipelineInfo.pInputAssemblyState = mesh ? nullptr : &inputAssembly;
         pipelineInfo.pViewportState = &viewportState;
         pipelineInfo.pRasterizationState = &rasterization;
         pipelineInfo.pMultisampleState = &multisample;

@@ -347,6 +347,16 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol sans pixels ») pour séparer leur coût
   de celui des sommets. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
+- Sol en mesh shaders quand le GPU a `VK_EXT_mesh_shader` (choisi seul au démarrage, `FLUX_MESH_SHADERS=0` pour
+  comparer) : `PlanetMesh.slang`, module SPIR-V à part (un module qui déclare la capacité MeshShadingEXT ne se charge
+  pas sur une carte sans). Le calcul des tuiles écrit aussi la boîte de chacun des 16 paquets de 8×8 carrés (jupes
+  comprises, les deux formes du morphing). Une tâche par commande de dessin indirect (lue dans le même buffer) garde
+  les paquets dans le champ et non cachés par la pyramide de profondeur de l'image précédente, puis un mesh shader de
+  128 threads refait sommets et triangles du paquet avec la même fonction que le vertex shader (`PlanetVertex`). Si le
+  pilote préfère des groupes plus petits (`maxPreferredMeshWorkGroupInvocations` sous 128), `PlanetMeshSmall.slang`
+  dessine chaque paquet en deux moitiés de 8×4 à 64 threads.
+  `ShaderStage::Vertex` couvre alors aussi tâche et maillage, pour que les layouts restent les mêmes sur les deux
+  chemins.
 - Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont
   les tuiles d'un niveau fixe (bord de 200 à 400 m) que `PlanetRenderer` visite en vue. Chacune est semée une fois
   (`computeTrees` dans `PlanetTile.slang`, avec le même `Height` que le sol au détail le plus fin) : 64×64 places, le

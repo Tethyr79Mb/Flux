@@ -45,10 +45,15 @@ namespace Flux::Vk {
             return flags;
         }
 
-        VkShaderStageFlags ToVulkan(RHI::ShaderStage stages) {
+        // Avec les mesh shaders, la géométrie (Vertex) comprend les étapes de tâche et de maillage : les mêmes groupes
+        // et constantes servent aux deux chemins, et les pipelines restent compatibles d'un chemin à l'autre.
+        VkShaderStageFlags ToVulkan(RHI::ShaderStage stages, bool meshShaders) {
             VkShaderStageFlags flags = 0;
             if (RHI::HasFlag(stages, RHI::ShaderStage::Vertex)) {
                 flags |= VK_SHADER_STAGE_VERTEX_BIT;
+                if (meshShaders) {
+                    flags |= VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
+                }
             }
             if (RHI::HasFlag(stages, RHI::ShaderStage::Fragment)) {
                 flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -99,6 +104,7 @@ namespace Flux::Vk {
         }
         rhi->m_timestampPeriod = rhi->m_device->GetTimestampPeriod();
         rhi->m_commandList.SetDebugLabels(rhi->m_device->HasDebugLabels());
+        rhi->m_commandList.SetMeshShaders(rhi->m_device->HasMeshShaders());
         // Repères du diagnostic de plantage : facultatifs, l'image se dessine sans.
         if (nativeWindowHandle && rhi->m_device->HasBufferMarkers()) {
             auto markers = Vk::Buffer::Create(rhi->m_device->GetAllocator(),
@@ -375,7 +381,7 @@ namespace Flux::Vk {
             const VkDescriptorType type = ToVulkan(binding.type);
             const bool isTable = binding.type == RHI::BindingType::TextureTable;
             const std::uint32_t count = isTable ? binding.count : 1;
-            bindings.push_back({binding.slot, type, count, ToVulkan(binding.stages), nullptr});
+            bindings.push_back({binding.slot, type, count, ToVulkan(binding.stages, m_device->HasMeshShaders()), nullptr});
             flags.push_back(isTable ? VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
                                           | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
                                     : 0);
@@ -446,12 +452,18 @@ namespace Flux::Vk {
         for (const RHI::BindGroupLayout* layout : desc.bindGroupLayouts) {
             setLayouts.push_back(static_cast<const RhiBindGroupLayout*>(layout)->GetHandle());
         }
-        const VkPushConstantRange pushConstants{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, desc.pushConstantsSize};
+        if (desc.meshEntryPoint && !m_device->HasMeshShaders()) {
+            return std::unexpected("mesh shaders demandés, absents de ce GPU : " + desc.shaderPath.string());
+        }
+        const VkPushConstantRange pushConstants{
+            ToVulkan(RHI::ShaderStage::Vertex | RHI::ShaderStage::Fragment, m_device->HasMeshShaders()), 0, desc.pushConstantsSize};
 
         GraphicsPipelineDesc vkDesc;
         vkDesc.shaderPath = desc.shaderPath;
         vkDesc.vertexEntryPoint = desc.vertexEntryPoint;
         vkDesc.fragmentEntryPoint = desc.fragmentEntryPoint;
+        vkDesc.taskEntryPoint = desc.taskEntryPoint;
+        vkDesc.meshEntryPoint = desc.meshEntryPoint;
         vkDesc.vertexBindings = bindings;
         vkDesc.vertexAttributes = attributes;
         vkDesc.setLayouts = setLayouts;
@@ -502,6 +514,7 @@ namespace Flux::Vk {
     bool RhiDevice::Submit(const std::function<void(RHI::CommandList&)>& record) {
         return m_device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
             RhiCommandList commandList;
+            commandList.SetMeshShaders(m_device->HasMeshShaders());
             commandList.Begin(commandBuffer, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, VK_NULL_HANDLE);
             record(commandList);
         });

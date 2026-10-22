@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <format>
+#include <string_view>
 #include <vector>
 
 namespace Flux::Vk {
@@ -115,6 +117,32 @@ namespace Flux::Vk {
         VkPhysicalDeviceFeatures float64{};
         float64.shaderFloat64 = VK_TRUE;
         device->m_float64 = device->m_physicalDevice.enable_features_if_present(float64);
+        // Mesh shaders : le sol des planètes en paquets de triangles que le GPU écarte lui-même (shaders/PlanetMesh.slang).
+        // RTX 20, RX 6000, Arc et plus récentes ; sans eux (GTX 1060, RX 5700), le chemin des sommets.
+        // FLUX_MESH_SHADERS=0 les ignore : diagnostic d'un pilote fautif, et comparaison des deux chemins.
+#ifdef _MSC_VER
+#pragma warning(suppress : 4996) // getenv : lu avant tout fil
+#endif
+        const char* meshSetting = std::getenv("FLUX_MESH_SHADERS");
+        if (device->m_physicalDevice.is_extension_present(VK_EXT_MESH_SHADER_EXTENSION_NAME)
+            && !(meshSetting && std::string_view(meshSetting) == "0")) {
+            VkPhysicalDeviceMeshShaderFeaturesEXT mesh{};
+            mesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+            mesh.taskShader = VK_TRUE;
+            mesh.meshShader = VK_TRUE;
+            device->m_meshShaders = device->m_physicalDevice.enable_extension_features_if_present(mesh)
+                                    && device->m_physicalDevice.enable_extension_if_present(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+        }
+        if (device->m_meshShaders) {
+            // Taille de groupe que le pilote préfère (NVIDIA plus petite qu'AMD) : choisit la variante des paquets du sol.
+            VkPhysicalDeviceMeshShaderPropertiesEXT meshProperties{};
+            meshProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+            VkPhysicalDeviceProperties2 properties{};
+            properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            properties.pNext = &meshProperties;
+            vkGetPhysicalDeviceProperties2(device->m_physicalDevice.physical_device, &properties);
+            device->m_meshPreferredThreads = meshProperties.maxPreferredMeshWorkGroupInvocations;
+        }
         // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
         device->m_bufferMarkers = device->m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
         if (device->m_physicalDevice.is_extension_present(VK_EXT_DEVICE_FAULT_EXTENSION_NAME)) {

@@ -141,6 +141,7 @@ namespace Flux::Vk {
         void Draw(std::uint32_t vertexCount, std::uint32_t firstVertex) override;
         void DrawIndexed(std::uint32_t indexCount, std::uint32_t firstIndex, std::uint32_t instance) override;
         void DrawIndexedIndirect(const RHI::Buffer& buffer, std::uint64_t offset, std::uint32_t count) override;
+        void DrawMeshTasks(std::uint32_t groups) override;
         void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
         void ComputeBarrier() override;
         void WriteTimestamp(std::uint32_t slot) override;
@@ -149,6 +150,8 @@ namespace Flux::Vk {
         void SetStepMarkers(const StepMarkers& markers);
         // VK_EXT_debug_utils activée (Device::HasDebugLabels) : chaque étape devient aussi un repère nommé.
         void SetDebugLabels(bool enabled) { m_debugLabels = enabled; }
+        // Mesh shaders activés : les barrières attendent aussi les étapes de tâche et de maillage.
+        void SetMeshShaders(bool enabled) { m_meshShaders = enabled; }
         // Note la fin de l'étape en cours, s'il y en a une (fin de l'image).
         void EndStep();
         // Cases écrites pendant l'image (bit i : case i).
@@ -171,6 +174,7 @@ namespace Flux::Vk {
         StepMarkers m_markers;
         std::uint32_t m_openStep = RHI::MaxSteps; // MaxSteps : aucune
         bool m_debugLabels = false;
+        bool m_meshShaders = false;
         bool m_labelOpen = false;                 // repère VK_EXT_debug_utils ouvert par BeginStep
     };
 
@@ -183,6 +187,8 @@ namespace Flux::Vk {
         std::string_view GetName() const override { return m_device->GetName(); }
         std::string_view GetApiVersion() const override { return m_device->GetApiVersion(); }
         bool HasFloat64() const override { return m_device->HasFloat64(); }
+        bool HasMeshShaders() const override { return m_device->HasMeshShaders(); }
+        std::uint32_t GetMeshPreferredThreads() const override { return m_device->GetMeshPreferredThreads(); }
         bool HasTextureCompressionBC() const override { return m_device->HasTextureCompressionBC(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override { m_device->WaitIdle(); }
