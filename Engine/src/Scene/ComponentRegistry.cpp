@@ -218,6 +218,7 @@ namespace Flux {
             .Field("walkSpeed", "Marche (m/s)", &CharacterComponent::walkSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("runSpeed", "Course (m/s)", &CharacterComponent::runSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
             .Field("jumpSpeed", "Saut (m/s)", &CharacterComponent::jumpSpeed, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 1})
+            .Field("acceleration", "Accélération (m/s²)", &CharacterComponent::acceleration, {.speed = 0.1, .min = 0.5, .max = 1000.0, .decimals = 1})
             .Field("player", "Dirigé par le joueur", &CharacterComponent::player);
         registry.Register<ShipComponent>("ship", "Vaisseau")
             .Field("gravity", "Gravité à bord (m/s²)", &ShipComponent::gravity, {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2})
