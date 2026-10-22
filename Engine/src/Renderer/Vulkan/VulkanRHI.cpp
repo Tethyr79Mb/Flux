@@ -285,8 +285,11 @@ namespace Flux::Vk {
     void RhiCommandList::BeginDepthOnlyPass(const RHI::RenderPassDesc& desc) {
         const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
         m_depthOnly = &depth;
+        // Gardée : elle sort de la passe précédente lisible par les shaders (EndRenderPass), ses écritures à attendre
+        // aussi ; sinon son contenu est jeté.
         TransitionImage(m_commandBuffer, depth.GetImage().GetHandle(),
-                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                        desc.loadDepth ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
                         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                         VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
@@ -295,7 +298,7 @@ namespace Flux::Vk {
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = depth.GetImage().GetView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.loadOp = desc.loadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // lue ensuite
         depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
 
@@ -355,6 +358,16 @@ namespace Flux::Vk {
     void RhiCommandList::SetScissor(const RHI::Rect& rect) {
         const VkRect2D scissor{{rect.x, rect.y}, {rect.width, rect.height}};
         vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+    }
+
+    void RhiCommandList::ClearDepth(const RHI::Rect& rect, float depth) {
+        VkClearAttachment attachment{};
+        attachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        attachment.clearValue.depthStencil = {depth, 0};
+        VkClearRect clearRect{};
+        clearRect.rect = {{rect.x, rect.y}, {rect.width, rect.height}};
+        clearRect.layerCount = 1;
+        vkCmdClearAttachments(m_commandBuffer, 1, &attachment, 1, &clearRect);
     }
 
     void RhiCommandList::BindPipeline(const RHI::Pipeline& pipeline) {

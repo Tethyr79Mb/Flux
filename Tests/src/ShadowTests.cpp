@@ -69,6 +69,19 @@ bool RunShadowTests() {
         CHECK(cascades[static_cast<std::size_t>(i)].radius > cascades[static_cast<std::size_t>(i - 1)].radius);
     }
 
+    // Carte gardée d'une image à l'autre (MoveShadowCascade) : un point fixe du monde tombe au même endroit de la carte
+    // vu de la caméra déplacée.
+    {
+        const Math::Vector3f offset{3.5f, -0.25f, 12.0f};
+        const ShadowCascade moved = MoveShadowCascade(cascades[3], offset);
+        const Math::Vector3f point{40.0f, -2.0f, -90.0f}; // relatif à l'ancienne caméra
+        const Math::Vector3f before = Apply(cascades[3].lightViewProjection, point);
+        const Math::Vector3f after = Apply(moved.lightViewProjection, point - offset);
+        CHECK(std::abs(before.x - after.x) < 1.0e-5f && std::abs(before.y - after.y) < 1.0e-5f
+              && std::abs(before.z - after.z) < 1.0e-5f);
+        CHECK(std::abs(moved.center.z - (cascades[3].center.z - offset.z)) < 1.0e-4f);
+    }
+
     // Tourner la caméra ne change pas la taille des cascades (pas de scintillement des bords d'ombre).
     Camera turned = camera;
     turned.yaw += 1.1f;

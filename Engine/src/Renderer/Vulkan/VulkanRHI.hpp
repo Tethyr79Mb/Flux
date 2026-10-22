@@ -125,6 +125,7 @@ namespace Flux::Vk {
         void EndRenderPass() override;
         void SetViewport(const RHI::Viewport& viewport) override;
         void SetScissor(const RHI::Rect& rect) override;
+        void ClearDepth(const RHI::Rect& rect, float depth) override;
         void BindPipeline(const RHI::Pipeline& pipeline) override;
         void SetBindGroup(std::uint32_t index, const RHI::BindGroup& group) override;
         void BindVertexBuffers(std::uint32_t first, std::span<const RHI::Buffer* const> buffers) override;
