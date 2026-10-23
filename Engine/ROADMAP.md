@@ -116,7 +116,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
-- ⬜ Océan : tuiles plus grossières et moins nombreuses (253 tuiles redessinées aujourd'hui).
+- 🔨 Océan : tuiles plus grossières et moins nombreuses. Fait : l'eau, le fond et les terres basses sous l'horizon de la mer ne sont plus gardés (scène d'essai à 1 300 m : 20 tuiles d'eau → 10, 313 tuiles → 291). Reste : tuiles d'eau plus grossières que celles du sol ; eau cachée derrière une montagne écartée par la pyramide de profondeur seulement avec les mesh shaders.
 - ⬜ Réglage du niveau de détail des tuiles (`LodSplitFactor`).
 
 ### Rendu

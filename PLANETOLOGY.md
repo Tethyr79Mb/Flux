@@ -63,6 +63,9 @@ le point le plus haut de cette tuile, et non le plus haut sommet de la planète 
 écartée bien avant une montagne. Le sol est aussi découpé pour là où la caméra sera dans 2 secondes (sa vitesse dans le
 repère de la planète, lissée). À pied, cela ne change rien. En vaisseau au ras du sol, les tuiles sont prêtes quand il
 arrive. En attendant, elles sont dessinées à la forme de leur parente (glissement CDLOD), donc sans différence visible.
+Avec un océan, caméra au-dessus de la mer, l'horizon est celui de la mer : rien n'est plus bas que sa surface. L'eau,
+le fond et les terres basses qui passent dessous ne sont plus gardés. Le fond vu au travers de l'eau ne le serait qu'en
+rasant la surface, où elle reflète tout (fresnel de `fragmentOcean`).
 
 ### Le relief : une formule, en deux exemplaires
 
