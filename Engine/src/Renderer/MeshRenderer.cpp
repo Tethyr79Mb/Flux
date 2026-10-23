@@ -907,7 +907,7 @@ namespace Flux {
             }
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.
-        const double seaRadius = std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;
+        const double seaRadius = Planetology::PlanetRenderer::GetSeaRadius(planet);
         const bool ocean = added && planet.ocean;
         if (ocean) {
             m_planetData[index].water[3] = static_cast<float>(seaRadius);

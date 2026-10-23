@@ -6,6 +6,7 @@
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -114,6 +115,10 @@ namespace Flux::Planetology {
         // voit). Sert à l'écran de chargement.
         std::uint32_t GetPendingTileCount() const { return m_pendingTiles; }
 
+        // Rayon de la surface de l'océan (seaLevel : en % du relief autour du rayon).
+        static double GetSeaRadius(const PlanetComponent& planet) {
+            return std::max(planet.radius, 1.0f) + planet.seaLevel * 0.01 * planet.relief;
+        }
         // Sphère (centre `center`, rayon `radius`, repère de la planète) entièrement cachée à `camera` par la courbure
         // d'une sphère de rayon `occluder` (rien n'est plus bas qu'elle), quand rien en elle ne dépasse le rayon `top`.
         static bool IsBehindHorizon(const Math::Vector3d& camera, const Math::Vector3d& center, double radius, double occluder,

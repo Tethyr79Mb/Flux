@@ -126,8 +126,14 @@ namespace Flux::Planetology {
 
         const Terrain& terrain = *state.terrain;
         const Math::Vector3d camera = rotation.Conjugate().Rotate(-position);
-        const double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief(), 1.0);
         const double maxRadius = terrain.GetRadius() + terrain.GetRelief();
+        // Rien n'est plus bas que le sol le plus bas possible ; avec un océan, caméra au-dessus de lui, rien n'est plus
+        // bas que sa surface non plus : ce qui passe sous son horizon (eau, fond, îles basses) est caché. Le fond vu
+        // au travers de l'eau ne l'est qu'en rasant la surface, où elle reflète tout (fresnel de fragmentOcean).
+        double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief(), 1.0);
+        if (const double sea = GetSeaRadius(planet); planet.ocean && sea > minRadius && Math::Length(camera) > sea) {
+            minRadius = sea;
+        }
         // Vitesse de la caméra, lissée sur un quart de seconde (une image lente ne la fait pas sauter).
         const double elapsed = std::chrono::duration<double>(m_now - state.time).count();
         if (state.time != std::chrono::steady_clock::time_point{} && elapsed > 0.0 && elapsed < 0.5) {
