@@ -264,9 +264,10 @@ namespace Flux {
     // la couleur des forêts sur le sol. Pas de collision.
     struct VegetationComponent
     {
-        std::string model = "Modeles/Arbre/Arbre.glb";
-        std::string lodModel = "Modeles/Arbre/Arbre-lod1.glb";
-        std::string farModel = "Modeles/Arbre/Arbre-loin.glb";
+        // Épicéa par défaut (Modeles/Coniferes : aussi sapin et pin, deux variantes chacun ; feuillu dans Modeles/Arbre).
+        std::string model = "Modeles/Coniferes/Epicea-1.glb";
+        std::string lodModel = "Modeles/Coniferes/Epicea-1-lod1.glb";
+        std::string farModel = "Modeles/Coniferes/Epicea-1-loin.glb";
         float density = 0.4f;     // part des places possibles occupée dans une forêt (une tous les 5,7 m au plus)
         float cover = 0.5f;       // part des plaines couverte de forêts
         float maxSlope = 25.0f;   // degrés : au-delà, pas d'arbre
