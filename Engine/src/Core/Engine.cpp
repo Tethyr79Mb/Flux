@@ -245,6 +245,10 @@ namespace Flux {
                     }
                     const RenderTimings& render = renderer.GetTimings();
                     ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
+                    ui.LabelText("Paquets des modèles", render.modelMeshShaders
+                                                            ? std::format("{} dont {} dessinés", render.modelMeshlets,
+                                                                          render.modelMeshletsDrawn)
+                                                            : std::string("par les sommets"));
                     if (render.modelsLoading > 0) {
                         ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
                     }
@@ -496,7 +500,8 @@ namespace Flux {
                     .temporalAA = m_renderer->IsTemporalAAEnabled(),
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
                     .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
-                    .groundMeshThreads = render.groundMeshThreads};
+                    .groundMeshThreads = render.groundMeshThreads,
+                    .modelMeshShaders = render.modelMeshShaders};
                 if (auto written = measures.Write(Platform::GetExecutableDirectory() / "Mesures", context)) {
                     Log::Info("Mesures écrites dans {}", Platform::ToGenericUtf8(*written));
                     ShowNotice("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));

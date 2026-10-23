@@ -56,7 +56,8 @@ namespace Flux {
         m_gpu.clear();
         constexpr std::array<const char*, CounterCount> counters{
             "Tuiles de planète", "  dont eau", "  gardées", "Arbres près", "Arbres simplifiés", "Arbres loin",
-            "Ombres d'arbres", "Plaines d'arbres", "  à semer", "Objets testés", "  dont cachés"};
+            "Ombres d'arbres", "Plaines d'arbres", "  à semer", "Objets testés", "  dont cachés",
+            "Paquets des modèles", "  dont dessinés"};
         for (std::size_t i = 0; i < CounterCount; ++i) {
             m_counters[i] = {counters[i]};
         }
@@ -98,7 +99,7 @@ namespace Flux {
         const std::array<std::uint32_t, CounterCount> counters{
             render.planetTiles, render.planetOceanTiles, render.planetStoredTiles, render.trees[0], render.trees[1],
             render.trees[2], render.shadowTrees, render.treePlains, render.pendingTreePlains, render.occlusionTested,
-            render.occlusionHidden};
+            render.occlusionHidden, render.modelMeshlets, render.modelMeshletsDrawn};
         for (std::size_t i = 0; i < CounterCount; ++i) {
             m_counters[i].Add(static_cast<double>(counters[i]));
         }
@@ -133,6 +134,7 @@ namespace Flux {
                             context.occlusionCulling ? "oui" : "non", context.groundGeometryOnly ? "oui" : "non",
                             context.groundMeshThreads > 0 ? std::format("mesh shaders ({} threads)", context.groundMeshThreads)
                                                           : std::string("sommets"));
+        text += std::format("Modèles fixes dessinés par {}\n", context.modelMeshShaders ? "mesh shaders" : "sommets");
         text += std::format("Caméra : {}\n", context.camera);
         text += std::format("Durée : {:.1f} s, {} images\n\n", total * 0.001, m_frames.size());
 

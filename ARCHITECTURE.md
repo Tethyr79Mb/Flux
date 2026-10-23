@@ -138,7 +138,17 @@ sphère et le cône de ses normales (écarté de dos si `dot(centre − caméra,
 indices de la primitive sont rangés paquet par paquet, ses plages et celles des ombres ne changent pas), pour le chemin
 par les sommets, et en indices locaux sur 8 bits vers `meshletVertices` (`meshletTriangles`, complété à 4 octets par
 paquet), pour les mesh shaders. Un modèle animé n'est pas découpé : ses sommets bougent, sphères et cônes ne tiendraient
-pas. Les paquets ne servent pas encore au rendu (étape 2 : scène sur le GPU qui écarte instances puis paquets).
+pas.
+
+Quand le GPU a les mesh shaders, `ModelCache` envoie aussi les paquets dans la page de géométrie (`GpuMeshlet`, puis
+leurs sommets en indices de la page et leurs triangles, 4 par mot de 32 bits), et `MeshRenderer` dessine les primitives
+opaques des modèles fixes par `shaders/ModelMesh.slang` au lieu de `vertexMain` : le CPU écrit une tâche (`MeshTask`)
+pour 32 paquets d'une primitive d'une entité, rangées par pipeline et par page (un `DrawMeshTasks` chacun, groupe 3 :
+sommets et paquets de la page) ; chaque tâche teste ses paquets (champ, cône des normales si l'échelle est uniforme,
+pyramide de profondeur de l'image précédente, `MeshCulling.slang` partagé avec le sol) et le mesh shader dessine les
+restants avec `MovingOutput` et les mêmes programmes de pixel. Le GPU compte les paquets dessinés dans un buffer relu
+sans remise à zéro (écart entre deux lectures). Sans mesh shaders, ou pour les ombres et les transparents, les modèles
+restent dessinés primitive par primitive (lots indirects, test des entités cachées).
 
 Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 

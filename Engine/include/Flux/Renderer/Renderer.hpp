@@ -70,6 +70,11 @@ namespace Flux {
         // d'autres (non dessinées), deux images plus tôt.
         std::uint32_t occlusionTested = 0;
         std::uint32_t occlusionHidden = 0;
+        // Paquets de triangles des modèles fixes envoyés aux mesh shaders, et dont dessinés (les autres écartés par le
+        // GPU : hors champ, de dos, cachés), deux images plus tôt. modelMeshShaders à false : par les sommets.
+        std::uint32_t modelMeshlets = 0;
+        std::uint32_t modelMeshletsDrawn = 0;
+        bool modelMeshShaders = false;
     };
 
     // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.
