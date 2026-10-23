@@ -13,6 +13,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <tuple>
 
@@ -24,6 +25,7 @@
 #pragma warning(disable : 4996)
 #endif
 #include <cgltf.h>
+#include <meshoptimizer.h>
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
@@ -807,7 +809,7 @@ namespace Flux {
         if (loader.model.indices.empty()) {
             return std::unexpected("« " + fileName + " » : aucun triangle");
         }
-        PrepareModel(loader.model);
+        PrepareModel(loader.model, images);
         return std::move(loader.model);
     }
 
@@ -831,9 +833,84 @@ namespace Flux {
             }
             return material.doubleSided ? ShadowKind::DoubleSided : ShadowKind::SingleSided;
         }
+
+        // Découpe chaque primitive en paquets (meshoptimizer) et range ses indices paquet par paquet : les plages des
+        // primitives et des ombres ne changent pas. Chaque primitive est d'abord ramenée à ses seuls sommets, sinon
+        // meshoptimizer parcourt tous les sommets du modèle pour chacune (quadratique sur une station à blocs).
+        void BuildMeshlets(ModelData& model) {
+            model.meshlets.clear();
+            model.meshletVertices.clear();
+            model.meshletTriangles.clear();
+            std::vector<std::uint32_t> indices;
+            indices.reserve(model.indices.size());
+            std::vector<std::uint32_t> local(model.vertices.size(), std::numeric_limits<std::uint32_t>::max());
+            std::vector<std::uint32_t> globals;
+            std::vector<Math::Vector3f> positions;
+            std::vector<std::uint32_t> localIndices;
+            std::vector<meshopt_Meshlet> meshlets;
+            std::vector<std::uint32_t> meshletVertices;
+            std::vector<std::uint8_t> meshletTriangles;
+            for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
+                ModelPrimitive& primitive = model.primitives[p];
+                const std::span<const std::uint32_t> source(model.indices.data() + primitive.firstIndex, primitive.indexCount);
+                globals.clear();
+                positions.clear();
+                localIndices.clear();
+                for (const std::uint32_t index : source) {
+                    if (local[index] == std::numeric_limits<std::uint32_t>::max()) {
+                        local[index] = static_cast<std::uint32_t>(globals.size());
+                        globals.push_back(index);
+                        positions.push_back(model.vertices[index].position);
+                    }
+                    localIndices.push_back(local[index]);
+                }
+                for (const std::uint32_t index : globals) {
+                    local[index] = std::numeric_limits<std::uint32_t>::max();
+                }
+
+                // Poids du cône 0,25 (conseil de meshoptimizer) : paquets un peu plus plats, plus souvent écartés de dos.
+                meshlets.resize(meshopt_buildMeshletsBound(localIndices.size(), ModelMeshletMaxVertices, ModelMeshletMaxTriangles));
+                meshletVertices.resize(localIndices.size());
+                meshletTriangles.resize(localIndices.size());
+                meshlets.resize(meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(), meshletTriangles.data(),
+                                                      localIndices.data(), localIndices.size(), &positions[0].x, positions.size(),
+                                                      sizeof(Math::Vector3f), ModelMeshletMaxVertices, ModelMeshletMaxTriangles, 0.25f));
+                const bool doubleSided = model.materials[primitive.material].doubleSided;
+                primitive.firstMeshlet = static_cast<std::uint32_t>(model.meshlets.size());
+                primitive.meshletCount = static_cast<std::uint32_t>(meshlets.size());
+                primitive.firstIndex = static_cast<std::uint32_t>(indices.size());
+                for (const meshopt_Meshlet& meshlet : meshlets) {
+                    std::uint32_t* vertices = meshletVertices.data() + meshlet.vertex_offset;
+                    std::uint8_t* triangles = meshletTriangles.data() + meshlet.triangle_offset;
+                    meshopt_optimizeMeshlet(vertices, triangles, meshlet.triangle_count, meshlet.vertex_count);
+                    const meshopt_Bounds bounds = meshopt_computeMeshletBounds(vertices, triangles, meshlet.triangle_count, &positions[0].x,
+                                                                               positions.size(), sizeof(Math::Vector3f));
+                    ModelMeshlet& out = model.meshlets.emplace_back();
+                    out.center = {bounds.center[0], bounds.center[1], bounds.center[2]};
+                    out.radius = bounds.radius;
+                    out.coneAxis = {bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2]};
+                    out.coneCutoff = doubleSided ? 2.0f : bounds.cone_cutoff;
+                    out.firstIndex = static_cast<std::uint32_t>(indices.size());
+                    out.firstVertex = static_cast<std::uint32_t>(model.meshletVertices.size());
+                    out.firstTriangle = static_cast<std::uint32_t>(model.meshletTriangles.size());
+                    out.vertexCount = static_cast<std::uint16_t>(meshlet.vertex_count);
+                    out.triangleCount = static_cast<std::uint16_t>(meshlet.triangle_count);
+                    out.primitive = p;
+                    for (std::uint32_t v = 0; v < meshlet.vertex_count; ++v) {
+                        model.meshletVertices.push_back(globals[vertices[v]]);
+                    }
+                    for (std::uint32_t i = 0; i < meshlet.triangle_count * 3; ++i) {
+                        model.meshletTriangles.push_back(triangles[i]);
+                        indices.push_back(globals[vertices[triangles[i]]]);
+                    }
+                    model.meshletTriangles.resize((model.meshletTriangles.size() + 3) & ~std::size_t{3}, 0);
+                }
+            }
+            model.indices = std::move(indices);
+        }
     }
 
-    void PrepareModel(ModelData& model) {
+    void PrepareModel(ModelData& model, bool meshlets) {
         if (model.materials.empty() || model.indices.size() < 3) {
             return;
         }
@@ -928,6 +1005,9 @@ namespace Flux {
             }
         }
         model.indices = std::move(indices);
+        if (meshlets && !model.IsAnimated()) {
+            BuildMeshlets(model);
+        }
     }
 
     std::expected<std::vector<std::string>, std::string> ListModelFiles(const std::filesystem::path& path) {

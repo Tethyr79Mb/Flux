@@ -4,6 +4,7 @@
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -296,6 +297,104 @@ namespace {
         CHECK(station.shadowPrimitives[1].cluster == 1 && station.shadowPrimitives[1].firstIndex == 6);
         return true;
     }
+
+    // Triangle rangé pour comparer deux listes sans tenir compte de l'ordre (le premier coin est le plus petit, le
+    // sens est gardé).
+    std::array<std::uint32_t, 3> Canonical(std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+        if (b < a && b < c) {
+            return {b, c, a};
+        }
+        if (c < a && c < b) {
+            return {c, a, b};
+        }
+        return {a, b, c};
+    }
+
+    // Paquets de triangles (meshlets) : limites respectées, mêmes triangles qu'avant, indices globaux et locaux
+    // d'accord, sphère qui contient les sommets, cône qui écarte une face vue de dos seulement.
+    bool RunMeshletTests() {
+        // Plaque de 30 x 30 carrés tournée vers +z (Coque, sous la taille des blocs) et un triangle en double face
+        // au-dessus (Verrière).
+        ModelData model;
+        model.materials.resize(2);
+        model.materials[1].doubleSided = true;
+        constexpr std::uint32_t Side = 30;
+        for (std::uint32_t y = 0; y <= Side; ++y) {
+            for (std::uint32_t x = 0; x <= Side; ++x) {
+                model.vertices.push_back({{static_cast<float>(x), static_cast<float>(y), 0.0f}, {0, 0, 1}, {0, 0}});
+            }
+        }
+        for (std::uint32_t y = 0; y < Side; ++y) {
+            for (std::uint32_t x = 0; x < Side; ++x) {
+                const std::uint32_t corner = y * (Side + 1) + x;
+                model.indices.insert(model.indices.end(),
+                                     {corner, corner + 1, corner + Side + 2, corner, corner + Side + 2, corner + Side + 1});
+            }
+        }
+        model.primitives.push_back({0, static_cast<std::uint32_t>(model.indices.size()), 0});
+        AddTriangle(model, {0, 0, 5}, 1);
+        model.bounds = {{0, 0, 0}, {Side, Side, 5}};
+        std::vector<std::array<std::uint32_t, 3>> before;
+        for (std::size_t i = 0; i < model.indices.size(); i += 3) {
+            before.push_back(Canonical(model.indices[i], model.indices[i + 1], model.indices[i + 2]));
+        }
+        PrepareModel(model);
+
+        CHECK(model.primitives.size() == 2 && !model.meshlets.empty());
+        std::vector<std::array<std::uint32_t, 3>> after;
+        for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
+            const ModelPrimitive& primitive = model.primitives[p];
+            std::uint32_t index = primitive.firstIndex;
+            for (std::uint32_t m = primitive.firstMeshlet; m < primitive.firstMeshlet + primitive.meshletCount; ++m) {
+                const ModelMeshlet& meshlet = model.meshlets[m];
+                CHECK(meshlet.primitive == p && meshlet.firstIndex == index);
+                CHECK(meshlet.vertexCount > 0 && meshlet.vertexCount <= ModelMeshletMaxVertices);
+                CHECK(meshlet.triangleCount > 0 && meshlet.triangleCount <= ModelMeshletMaxTriangles);
+                CHECK(meshlet.firstTriangle % 4 == 0);
+                for (std::uint32_t i = 0; i < meshlet.triangleCount * 3u; ++i) {
+                    const std::uint8_t corner = model.meshletTriangles[meshlet.firstTriangle + i];
+                    CHECK(corner < meshlet.vertexCount);
+                    const std::uint32_t vertex = model.meshletVertices[meshlet.firstVertex + corner];
+                    CHECK(model.indices[meshlet.firstIndex + i] == vertex);
+                    const Vector3f offset = model.vertices[vertex].position - meshlet.center;
+                    CHECK(std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z) <= meshlet.radius + 1e-3f);
+                }
+                index += meshlet.triangleCount * 3u;
+            }
+            CHECK(index == primitive.firstIndex + primitive.indexCount);
+        }
+        for (std::size_t i = 0; i < model.indices.size(); i += 3) {
+            after.push_back(Canonical(model.indices[i], model.indices[i + 1], model.indices[i + 2]));
+        }
+        std::ranges::sort(before);
+        std::ranges::sort(after);
+        CHECK(before == after);
+        // 1 800 triangles de la plaque : au moins 15 paquets pleins, pas beaucoup plus.
+        CHECK(model.clusters.empty() && model.primitives[0].meshletCount >= 15 && model.primitives[0].meshletCount <= 35);
+
+        // Vue de dos (sous la plaque), de loin : écarté ; de face : gardé ; double face : jamais.
+        const auto backFacing = [](const ModelMeshlet& meshlet, Vector3f camera) {
+            const Vector3f toMeshlet = meshlet.center - camera;
+            const float distance = std::sqrt(toMeshlet.x * toMeshlet.x + toMeshlet.y * toMeshlet.y + toMeshlet.z * toMeshlet.z);
+            return toMeshlet.x * meshlet.coneAxis.x + toMeshlet.y * meshlet.coneAxis.y + toMeshlet.z * meshlet.coneAxis.z
+                >= meshlet.coneCutoff * distance + meshlet.radius;
+        };
+        const ModelMeshlet& plate = model.meshlets[model.primitives[0].firstMeshlet];
+        CHECK(backFacing(plate, plate.center + Vector3f{0, 0, -100}));
+        CHECK(!backFacing(plate, plate.center + Vector3f{0, 0, 100}));
+        const ModelMeshlet& canopy = model.meshlets[model.primitives[1].firstMeshlet];
+        CHECK(canopy.coneCutoff > 1.0f && !backFacing(canopy, canopy.center + Vector3f{0, 0, -100}));
+
+        // Modèle animé : pas de paquets (ses sommets bougent).
+        ModelData animated;
+        animated.materials.resize(1);
+        AddTriangle(animated, {0, 0, 0}, 0);
+        animated.skinVertices.resize(animated.vertices.size());
+        animated.bounds = {{0, 0, 0}, {1, 1, 0}};
+        PrepareModel(animated);
+        CHECK(animated.meshlets.empty() && animated.primitives[0].meshletCount == 0);
+        return true;
+    }
 }
 
 bool RunModelTests() {
@@ -303,7 +402,7 @@ bool RunModelTests() {
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunPrepareTests() && RunTextGltfTests(directory) && RunBinaryGltfTests(directory)
+    const bool passed = RunPrepareTests() && RunMeshletTests() && RunTextGltfTests(directory) && RunBinaryGltfTests(directory)
                      && RunErrorTests(directory);
     std::filesystem::remove_all(directory, error);
     return passed;
