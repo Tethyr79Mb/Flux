@@ -11,6 +11,35 @@ namespace Flux::Planetology {
         // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 70 Ko de
         // sommets par tuile, soit environ 70 Mo de mémoire vidéo).
         constexpr std::size_t MaxNodes = 1024;
+        // Le sol est découpé comme si la caméra était déjà là où elle sera dans ce temps-là (s) : à pied, quelques
+        // mètres, rien ne change ; en vaisseau, des kilomètres, les tuiles sont prêtes quand il arrive.
+        constexpr double LookAhead = 2.0;
+        // Au-delà (m/s), la caméra a sauté (téléportation, autre scène) : pas de vitesse.
+        constexpr double MaxCameraSpeed = 100000.0;
+
+        // Distance de `point` au trajet de la caméra, de `from` à `to`.
+        double DistanceToPath(const Math::Vector3d& from, const Math::Vector3d& to, const Math::Vector3d& point) {
+            const Math::Vector3d path = to - from;
+            const double length2 = Math::Dot(path, path);
+            const double t = length2 > 0.0 ? std::clamp(Math::Dot(point - from, path) / length2, 0.0, 1.0) : 0.0;
+            return Math::Length(from + path * t - point);
+        }
+    }
+
+    bool PlanetRenderer::IsBehindHorizon(const Math::Vector3d& camera, const Math::Vector3d& center, double radius,
+                                         double occluder, double top) {
+        const double distance = Math::Length(camera);
+        const double centerLength = Math::Length(center);
+        if (distance <= occluder || centerLength <= 0.0) {
+            return false;
+        }
+        // La caméra voit la sphère `occluder` jusqu'à l'angle acos(occluder / d) depuis le point sous elle ; un point
+        // au rayon `top` dépasse de acos(occluder / top) au-delà.
+        const double horizon = std::acos(occluder / distance) + (top > occluder ? std::acos(occluder / top) : 0.0);
+        const double cosine = Math::Dot(camera, center) / (distance * centerLength);
+        const double angle = std::acos(std::clamp(cosine, -1.0, 1.0));
+        const double angularRadius = std::asin(std::min(radius / centerLength, 1.0));
+        return angle - angularRadius > horizon;
     }
 
     std::expected<std::unique_ptr<PlanetRenderer>, std::string> PlanetRenderer::Create(RHI::Device& device) {
@@ -21,8 +50,9 @@ namespace Flux::Planetology {
         return std::unique_ptr<PlanetRenderer>(new PlanetRenderer(device, std::move(*compute)));
     }
 
-    void PlanetRenderer::BeginFrame(std::uint32_t frameIndex) {
+    void PlanetRenderer::BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now) {
         ++m_frame;
+        m_now = now;
         // Mesures des tuiles calculées avec cette image (le GPU l'a finie) : leurs hauteurs extrêmes donnent leur
         // sphère englobante (jupes comprises), à la place des estimations prudentes.
         const auto stats = m_compute->GetStats(frameIndex);
@@ -98,11 +128,20 @@ namespace Flux::Planetology {
         const Math::Vector3d camera = rotation.Conjugate().Rotate(-position);
         const double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief(), 1.0);
         const double maxRadius = terrain.GetRadius() + terrain.GetRelief();
-        const double distance = Math::Length(camera);
-        // Horizon : la caméra voit la sphère du sol le plus bas jusqu'à l'angle acos(rmin / d) depuis le point sous
-        // elle, et un sommet (au plus haut) dépasse de acos(rmin / rmax) au-delà.
-        const double horizon = distance > minRadius ? std::acos(minRadius / distance) + std::acos(minRadius / maxRadius) : -1.0;
-        Visit visit{state, camera, position, rotation, horizon, minRadius, inView, tiles, plains, plainLevel, plainRange};
+        // Vitesse de la caméra, lissée sur un quart de seconde (une image lente ne la fait pas sauter).
+        const double elapsed = std::chrono::duration<double>(m_now - state.time).count();
+        if (state.time != std::chrono::steady_clock::time_point{} && elapsed > 0.0 && elapsed < 0.5) {
+            const Math::Vector3d velocity = (camera - state.camera) / elapsed;
+            state.velocity = Math::Length(velocity) > MaxCameraSpeed
+                               ? Math::Vector3d{}
+                               : state.velocity + (velocity - state.velocity) * std::min(elapsed / 0.25, 1.0);
+        } else {
+            state.velocity = {};
+        }
+        state.camera = camera;
+        state.time = m_now;
+        Visit visit{state, camera, position, rotation, camera + state.velocity * LookAhead, minRadius, maxRadius, inView, tiles,
+                    plains, plainLevel, plainRange};
         // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
         bool rootsReady = true;
         for (std::uint8_t face = 0; face < 6; ++face) {
@@ -123,14 +162,11 @@ namespace Flux::Planetology {
     }
 
     bool PlanetRenderer::IsCulled(const Visit& visit, const TileBounds& bounds) const {
-        const double centerLength = Math::Length(bounds.center);
-        if (visit.horizon >= 0.0 && centerLength > 0.0) {
-            const double cosine = Math::Dot(visit.camera, bounds.center) / (Math::Length(visit.camera) * centerLength);
-            const double angle = std::acos(std::clamp(cosine, -1.0, 1.0));
-            const double angularRadius = std::asin(std::min(bounds.radius / centerLength, 1.0));
-            if (angle - angularRadius > visit.horizon) {
-                return true;
-            }
+        // Derrière l'horizon du sol le plus bas, pour le plus haut point de cette tuile (et non de toute la planète) :
+        // près du sol, une tuile basse au loin est cachée bien avant une montagne.
+        const double top = std::min(Math::Length(bounds.center) + bounds.radius, visit.maxRadius);
+        if (IsBehindHorizon(visit.camera, bounds.center, bounds.radius, visit.minRadius, top)) {
+            return true;
         }
         const Math::Vector3d relative = visit.position + visit.rotation.Rotate(bounds.center);
         return !visit.inView(Math::Vector3f(relative), static_cast<float>(bounds.radius));
@@ -142,11 +178,14 @@ namespace Flux::Planetology {
             return;
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
+        // Découpée aussi pour là où va la caméra : les enfants sont demandés en avance, et dessinés plus fins que
+        // nécessaire en attendant, mais à la forme de leur parente (glissement de AddTile), donc sans différence.
+        const double pathDistance = DistanceToPath(visit.camera, visit.ahead, node.bounds.center) - node.bounds.radius;
         const Terrain& terrain = *visit.state.terrain;
         if (visit.plains && key.level == visit.plainLevel && distance < visit.plainRange) {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
-        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level)) {
+        if (key.level < terrain.GetMaxLevel() && pathDistance < GetSplitDistance(terrain, key.level)) {
             // Les enfants visibles et prêts sont dessinés ; à la place de ceux qui ne le sont pas encore (demandés), le
             // quart de cette tuile qu'ils couvrent. Toute la tuile à leur place : quand la caméra tournait, un enfant
             // qui entrait dans le champ remettait pour une image tout le sol grossier, jusque sous la caméra.
@@ -166,7 +205,7 @@ namespace Flux::Planetology {
                 if (children[c]->tile != NoTile) {
                     ++ready;
                 } else {
-                    const double childDistance = Math::Length(visit.camera - children[c]->bounds.center) - children[c]->bounds.radius;
+                    const double childDistance = DistanceToPath(visit.camera, visit.ahead, children[c]->bounds.center) - children[c]->bounds.radius;
                     visit.state.requests.push_back({childKey, std::max(childDistance, 0.0)});
                 }
             }

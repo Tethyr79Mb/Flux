@@ -5,6 +5,7 @@
 #include "Flux/Planetology/Atmosphere.hpp"
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Scene/Components.hpp"
+#include "Planetology/PlanetRenderer.hpp"
 
 #include <algorithm>
 #include <array>
@@ -294,6 +295,25 @@ bool RunPlanetTests() {
         CHECK(ambient.back().z > ambient[Planetology::AtmosphereAmbientSize / 2].z && ambient.back().z > 0.05f);
         planet.atmosphere = 0.0f;
         CHECK(Planetology::MakeAtmosphereParameters(planet).top == 0.0f);
+    }
+    // Horizon par tuile (PlanetRenderer::IsBehindHorizon) : à 2 m au-dessus d'une sphère de 60 km, le sol se cache
+    // vers 490 m ; un sommet de 800 m reste visible bien plus loin.
+    {
+        const double radius = 60000.0;
+        const Math::Vector3d camera{0.0, radius + 2.0, 0.0};
+        const auto at = [&](double meters, double height) {
+            const double angle = meters / radius;
+            return Math::Vector3d{std::sin(angle), std::cos(angle), 0.0} * (radius + height);
+        };
+        using Planetology::PlanetRenderer;
+        CHECK(!PlanetRenderer::IsBehindHorizon(camera, at(300.0, 0.0), 1.0, radius, radius + 1.0));
+        CHECK(PlanetRenderer::IsBehindHorizon(camera, at(5000.0, 0.0), 1.0, radius, radius + 1.0));
+        CHECK(!PlanetRenderer::IsBehindHorizon(camera, at(5000.0, 799.0), 1.0, radius, radius + 800.0));
+        CHECK(PlanetRenderer::IsBehindHorizon(camera, at(40000.0, 799.0), 1.0, radius, radius + 800.0));
+        // Une grande tuile proche n'est jamais cachée, même si son centre est loin derrière l'horizon.
+        CHECK(!PlanetRenderer::IsBehindHorizon(camera, at(5000.0, 0.0), 4900.0, radius, radius + 1.0));
+        // Caméra sous la sphère qui cache (dans une grotte, sous la mer) : rien n'est caché par elle.
+        CHECK(!PlanetRenderer::IsBehindHorizon(Math::Vector3d{0.0, radius - 10.0, 0.0}, at(40000.0, 0.0), 1.0, radius, radius + 1.0));
     }
     return true;
 }

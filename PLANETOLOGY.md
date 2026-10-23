@@ -58,6 +58,12 @@ couvre est dessiné à sa place, ce que permettent les indices rangés par quart
 la parente : quand la caméra tournait, une tuile au loin qui entrait dans le champ remettait pour une image du sol
 grossier jusque sous les pieds, sans arbres, et le sol clignotait.
 
+Une tuile cachée par la courbure n'est ni dessinée ni découpée. Le test prend l'horizon du sol le plus bas possible et
+le point le plus haut de cette tuile, et non le plus haut sommet de la planète : près du sol, une plaine au loin est
+écartée bien avant une montagne. Le sol est aussi découpé pour là où la caméra sera dans 2 secondes (sa vitesse dans le
+repère de la planète, lissée). À pied, cela ne change rien. En vaisseau au ras du sol, les tuiles sont prêtes quand il
+arrive. En attendant, elles sont dessinées à la forme de leur parente (glissement CDLOD), donc sans différence visible.
+
 ### Le relief : une formule, en deux exemplaires
 
 Le relief est une formule : la hauteur dans une direction donnée. Rien n'est stocké, et le terrain n'est pas creusable
