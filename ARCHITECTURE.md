@@ -131,6 +131,15 @@ ombres n'ont pas besoin du matériau). Un modèle fixe de plus de 32 m est déco
 selon le centre de chaque triangle), chacun avec sa boîte : `MeshRenderer` les écarte un par un du champ et des
 cascades (`ClusterDraw`), une station n'est dessinée que là où on la voit.
 
+Chaque primitive d'un modèle fixe est ensuite découpée en paquets de triangles voisins (`ModelMeshlet`, 64 sommets
+et 124 triangles au plus, meshoptimizer), première étape du rendu des modèles piloté par le GPU. Un paquet porte sa
+sphère et le cône de ses normales (écarté de dos si `dot(centre − caméra, axe) ≥ coupure × distance + rayon` ; coupure
+2 pour les faces doubles : jamais). Ses triangles sont écrits deux fois : à la suite dans `ModelData::indices` (les
+indices de la primitive sont rangés paquet par paquet, ses plages et celles des ombres ne changent pas), pour le chemin
+par les sommets, et en indices locaux sur 8 bits vers `meshletVertices` (`meshletTriangles`, complété à 4 octets par
+paquet), pour les mesh shaders. Un modèle animé n'est pas découpé : ses sommets bougent, sphères et cônes ne tiendraient
+pas. Les paquets ne servent pas encore au rendu (étape 2 : scène sur le GPU qui écarte instances puis paquets).
+
 Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 
 1. Préparation sur le CPU : ciel et soleil (direction de la caméra vers le `SunComponent` s'il y en a un, sinon

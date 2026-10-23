@@ -23,6 +23,14 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pièces à la main.
 - ✅ Préparation au chargement : matériaux identiques réunis, une primitive par matériau, ombres en un appel par
   modèle, grands modèles découpés en blocs de 16 m écartés un par un (champ, cascades).
+- 🔨 Gros modèles par paquets de triangles (Bruno, 2026-10-23 : vaisseaux S ~150 000 triangles, M ~400 000, plus gros
+  ensuite, tourelles comprises), en 4 étapes. Fait (étape 1) : chaque primitive d'un modèle fixe découpée au chargement
+  en paquets de 64 sommets / 124 triangles (meshoptimizer), avec sphère et cône des normales, sur le fil de chargement
+  (Chasseur : 50 ms en Release pour 68 000 triangles, contre 600 ms pour lire ses images ; pas de cache disque tant que
+  ça reste petit, à revoir avec les paquets .pak). À faire : 2) scène
+  persistante sur le GPU qui écarte instances puis paquets (champ, pyramide de profondeur, dos), en mesh shaders ou en
+  compute + sommets sur une carte sans ; 3) ombres par le même tri ; 4) détail continu façon Nanite (groupes de paquets
+  simplifiés). Modèles animés pas découpés.
 - 🔨 Rendu piloté par le GPU, commencé le 2026-10-17. Fait : géométrie de tous les modèles dans des pages partagées
   (modèles animés à part), images et matériaux dans deux tables lues par indice, lots du même pipeline et de la même
   page dessinés en un seul `DrawIndexedIndirect` (plusieurs commandes) ; entités et blocs cachés derrière d'autres

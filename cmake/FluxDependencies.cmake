@@ -135,6 +135,15 @@ FetchContent_Declare(bc7enc
         SOURCE_SUBDIR flux-telechargement-seul
         SYSTEM)
 
+# Découpe des modèles en paquets de triangles (meshlets) pour le rendu piloté par le GPU, puis simplification :
+# meshoptimizer d'Arseny Kapoulkine (MIT). Seulement la bibliothèque, ni démo ni gltfpack.
+set(MESHOPT_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(meshoptimizer
+        GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+        GIT_TAG v1.3
+        GIT_SHALLOW TRUE
+        SYSTEM)
+
 # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
 FetchContent_MakeAvailable(VulkanHeaders)
 FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf miniaudio bc7enc)
@@ -156,7 +165,7 @@ add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # Ce qui tourne au démarrage (atlas de la police : FreeType et msdfgen ; décodage des images : stb_image ; compression
-# des textures du sol : bc7enc) est compilé
+# des textures du sol : bc7enc ; paquets de triangles des modèles : meshoptimizer) est compilé
 # optimisé même en Debug : sinon une vingtaine de secondes de plus à chaque lancement. On ne les suit pas pas à pas.
 # Les options d'un dossier valent pour ses cibles : changées le temps d'ajouter ces dossiers, puis remises.
 set(FLUX_SAVED_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
@@ -168,7 +177,7 @@ else()
     set(CMAKE_C_FLAGS_DEBUG "-O2")
     set(CMAKE_CXX_FLAGS_DEBUG "-O2")
 endif()
-FetchContent_MakeAvailable(freetype msdfgen)
+FetchContent_MakeAvailable(freetype msdfgen meshoptimizer)
 add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/stb ${CMAKE_BINARY_DIR}/stb_image_impl)
 add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/bc7enc ${CMAKE_BINARY_DIR}/bc7enc_impl)
 set(CMAKE_C_FLAGS_DEBUG "${FLUX_SAVED_C_FLAGS_DEBUG}")

@@ -33,6 +33,8 @@ target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann
 target_link_libraries(FluxEngine PRIVATE stb_image stb_image_impl bc7enc)
 # Lecture des modèles 3D glTF.
 target_link_libraries(FluxEngine PRIVATE cgltf_header)
+# Paquets de triangles des modèles (meshlets).
+target_link_libraries(FluxEngine PRIVATE meshoptimizer)
 # Physique (Jolt), privée : ses types n'apparaissent dans aucun en-tête public.
 target_link_libraries(FluxEngine PRIVATE Jolt)
 # Son.

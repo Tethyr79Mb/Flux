@@ -59,6 +59,31 @@ namespace Flux {
         std::uint32_t indexCount = 0;
         std::uint32_t material = 0;
         std::uint32_t cluster = 0; // bloc d'un grand modèle (ModelData::clusters) ; 0 sinon
+        // Ses paquets de triangles (ModelData::meshlets), qui couvrent exactement ses indices ; aucun : pas découpée.
+        std::uint32_t firstMeshlet = 0;
+        std::uint32_t meshletCount = 0;
+    };
+
+    // Paquet de triangles voisins d'une primitive (meshlet), l'unité que le GPU écarte seule (hors du champ, caché,
+    // tourné vers l'arrière) et que dessine un groupe de fils du mesh shader. Ses triangles sont décrits deux fois :
+    // indices globaux (chemin par les sommets) et indices locaux sur 8 bits vers ses sommets (mesh shaders).
+    inline constexpr std::uint32_t ModelMeshletMaxVertices = 64;
+    inline constexpr std::uint32_t ModelMeshletMaxTriangles = 124;
+    struct ModelMeshlet
+    {
+        // Sphère qui contient ses triangles.
+        Math::Vector3f center;
+        float radius = 0.0f;
+        // Cône des normales : tout le paquet tourne le dos à une caméra en c si
+        // dot(center - c, coneAxis) >= coneCutoff * |center - c| + radius. coneCutoff > 1 : jamais (faces doubles).
+        Math::Vector3f coneAxis;
+        float coneCutoff = 2.0f;
+        std::uint32_t firstIndex = 0;    // ses triangles dans ModelData::indices, à la suite
+        std::uint32_t firstVertex = 0;   // ses sommets dans ModelData::meshletVertices
+        std::uint32_t firstTriangle = 0; // ses triangles dans ModelData::meshletTriangles (octets, multiple de 4)
+        std::uint16_t vertexCount = 0;
+        std::uint16_t triangleCount = 0;
+        std::uint32_t primitive = 0; // dans ModelData::primitives (son matériau, son bloc)
     };
 
     // Os qui déforment un sommet d'un modèle animé, envoyés au GPU à côté de ModelVertex (SkinInput dans
@@ -142,6 +167,12 @@ namespace Flux {
         // Blocs d'un grand modèle (station), chacun avec la boîte de ses triangles : écartés un par un hors du champ
         // et des ombres. Vide : un seul bloc, la boîte du modèle.
         std::vector<Math::Box3f> clusters;
+        // Paquets de triangles d'un modèle fixe (vides pour un modèle animé : ses sommets bougent, les sphères et cônes
+        // ne tiendraient pas), primitive par primitive. meshletVertices : indices dans vertices ; meshletTriangles :
+        // trois octets par triangle vers les sommets du paquet, chaque paquet complété à un multiple de 4 octets.
+        std::vector<ModelMeshlet> meshlets;
+        std::vector<std::uint32_t> meshletVertices;
+        std::vector<std::uint8_t> meshletTriangles;
         // Ce qui a été ignoré sans empêcher le chargement (image illisible, primitive en lignes...).
         std::vector<std::string> warnings;
 
@@ -153,15 +184,18 @@ namespace Flux {
     // (facteur, image, intensité), l'alpha masqué et les faces doubles, les squelettes et les animations (pas les
     // morph targets). Les extensions de compression (Draco,
     // meshopt, KTX2) ne sont pas gérées : le fichier est refusé. images = false : les images ne sont pas décodées
-    // (ModelData::images vide, indices d'image à -1), pour qui n'a besoin que des triangles (collisions).
+    // (ModelData::images vide, indices d'image à -1) ni les paquets construits, pour qui n'a besoin que des triangles
+    // (collisions).
     FLUX_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true);
 
     // Rangement pour le rendu, appelé par LoadModelFile : le modèle se dessine en peu d'appels quelle que soit la façon
     // dont il a été modélisé. Les matériaux identiques (tout sauf le nom) n'en font plus qu'un, les triangles d'un même
     // matériau ne forment plus qu'une primitive, et shadowPrimitives est rempli. Un modèle fixe dont un côté dépasse
-    // 2 x ModelClusterSize est en plus découpé en blocs de ModelClusterSize (selon le centre de chaque triangle).
+    // 2 x ModelClusterSize est en plus découpé en blocs de ModelClusterSize (selon le centre de chaque triangle). Enfin
+    // chaque primitive d'un modèle fixe est découpée en paquets (meshlets), ses indices rangés paquet par paquet, sauf
+    // si meshlets = false.
     inline constexpr float ModelClusterSize = 16.0f;
-    FLUX_API void PrepareModel(ModelData& model);
+    FLUX_API void PrepareModel(ModelData& model, bool meshlets = true);
 
     // Fichiers dont dépend un modèle (.bin, images), relatifs à son dossier, avec des « / » : ce qu'il faut copier
     // avec un .gltf pour qu'il reste lisible ailleurs. Vide pour un .glb autonome.
