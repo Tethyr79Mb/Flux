@@ -69,3 +69,14 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   « fusionne », Claude fusionne la PR sur GitHub (méthode merge). Ne pas lui demander de fusionner ni de pousser.
 - Il veut un avis franc sur la qualité et les performances du code, et une question quand plusieurs choix existent.
 - Avant de toucher à un fichier de scène ou d'asset de Bruno, regarder ce qu'il contient : ce sont ses réglages.
+
+## Économie de tokens (demande de Bruno du 2026-10-23)
+- Tâche de plusieurs fichiers ou à choix d'architecture : d'abord un plan court (fichiers touchés, étapes, choix à
+  trancher) validé par Bruno, puis le code. Petite tâche (doc, fusion, question) : directement, avec un effort bas.
+- Effort de réflexion normal par défaut ; Bruno demande un effort bas au cas par cas. Quand une tâche demande plus
+  (bug difficile, architecture, shaders), Claude peut monter l'effort lui-même (accord de Bruno du 2026-10-23) et
+  le dit en une ligne.
+- Lire les fichiers par morceaux (recherche, plages de lignes), jamais un gros fichier en entier sans besoin.
+- Contexte : `.claude/settings.json` résume la conversation à 400 000 tokens. Un sujet nouveau va dans un nouveau
+  fil plutôt qu'à la suite d'un fil déjà long ; proposer à Bruno de compacter (`/compact`) ou d'ouvrir un fil quand
+  le contexte n'est plus utile au sujet en cours.
