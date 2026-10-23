@@ -7,6 +7,7 @@
 #include "Renderer/RHI/RHI.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -82,8 +83,9 @@ namespace Flux::Planetology {
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
 
-        // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice.
-        void BeginFrame(std::uint32_t frameIndex);
+        // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice. `now` : heure
+        // de l'image, d'où vient la vitesse de la caméra (les tests en donnent une).
+        void BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
         // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra. Avec
         // `plains`, y ajoute aussi les tuiles du niveau `plainLevel` en vue à moins de `plainRange` mètres : celles
         // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre.
@@ -111,6 +113,11 @@ namespace Flux::Planetology {
         // Tuiles demandées à la dernière image et pas encore prêtes (0 : le sol est au détail voulu partout où on le
         // voit). Sert à l'écran de chargement.
         std::uint32_t GetPendingTileCount() const { return m_pendingTiles; }
+
+        // Sphère (centre `center`, rayon `radius`, repère de la planète) entièrement cachée à `camera` par la courbure
+        // d'une sphère de rayon `occluder` (rien n'est plus bas qu'elle), quand rien en elle ne dépasse le rayon `top`.
+        static bool IsBehindHorizon(const Math::Vector3d& camera, const Math::Vector3d& center, double radius, double occluder,
+                                    double top);
 
         private:
         PlanetRenderer(RHI::Device& device, std::unique_ptr<PlanetTileCompute> compute)
@@ -147,6 +154,11 @@ namespace Flux::Planetology {
             std::unordered_map<std::uint64_t, Node> nodes;
             std::vector<Request> requests;
             std::uint64_t lastUsed = 0;
+            // Vitesse de la caméra dans le repère de la planète (m/s, lissée) : le sol est demandé en avance là où
+            // elle va.
+            Math::Vector3d camera;
+            Math::Vector3d velocity;
+            std::chrono::steady_clock::time_point time;
         };
         // Ce qu'un parcours de l'arbre garde d'une planète (évite de passer dix paramètres).
         struct Visit
@@ -155,8 +167,9 @@ namespace Flux::Planetology {
             Math::Vector3d camera; // repère de la planète
             Math::Vector3d position;
             Math::Quaternionf rotation;
-            double horizon; // angle (radians) au-delà duquel une tuile est cachée par la planète ; < 0 : aucun
-            double minRadius;
+            Math::Vector3d ahead; // où sera la caméra dans LookAhead secondes (repère de la planète)
+            double minRadius;     // sol le plus bas possible
+            double maxRadius;     // sommet le plus haut possible
             const ViewTest& inView;
             std::vector<Tile>& tiles;
             std::vector<Plain>* plains;
@@ -178,6 +191,7 @@ namespace Flux::Planetology {
         std::unique_ptr<PlanetTileCompute> m_compute; // avant les nœuds : leurs groupes sont rendus à son layout
         std::unique_ptr<RHI::Buffer> m_indices; // communs à toutes les tuiles
         std::unordered_map<Entity, PlanetState> m_planets;
+        std::chrono::steady_clock::time_point m_now;
         std::uint64_t m_frame = 0;
         bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
         std::uint32_t m_pendingTiles = 0;

@@ -10,7 +10,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
+#include <expected>
+#include <string>
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -84,6 +87,73 @@ namespace {
         CHECK(quarterAbove); // une parente de la tuile sous la caméra attend un enfant : le cas qui clignotait
         if (turned != settled) {
             std::printf("ÉCHEC sol sous la caméra au niveau %d après un quart de tour (%d avant)\n", turned, settled);
+            return false;
+        }
+        return true;
+    }
+
+    // Caméra qui file au ras du sol (vaisseau) : le sol devant elle est demandé en avance (PlanetRenderer::LookAhead),
+    // plus fin qu'à la même place sans vitesse. Sans vitesse (images à plus d'une demi-seconde d'écart), rien d'avance.
+    bool CheckMovingCamera(RHI::Device& device) {
+        const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
+        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+        const Math::Vector3d start = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
+        const Math::Vector3d east = Math::Normalize(Math::Cross(start, Math::Vector3d{0.0, 0.0, 1.0}));
+        const double altitude = planet.radius + terrain.GetHeight(start, terrain.GetOctaves(terrain.GetMaxLevel())) + 300.0;
+        // Direction du centre de la planète vers la caméra après `meters` le long du sol vers `east`.
+        const auto along = [&](double meters) {
+            const double angle = meters / planet.radius;
+            return start * std::cos(angle) + east * std::sin(angle);
+        };
+        constexpr double Speed = 3000.0; // m/s
+        constexpr int Frames = 40;
+        const auto run = [&](std::chrono::duration<double> step) -> std::expected<int, std::string> {
+            auto created = Planetology::PlanetRenderer::Create(device);
+            if (!created) {
+                return std::unexpected(created.error());
+            }
+            Planetology::PlanetRenderer& renderer = **created;
+            const auto inView = [&](const Math::Vector3f& center, float radius) {
+                const double distance = Math::Length(Math::Vector3d(center));
+                if (distance <= radius) {
+                    return true;
+                }
+                const double angle = std::acos(std::clamp(Math::Dot(Math::Vector3d(center), east) / distance, -1.0, 1.0));
+                return angle - std::asin(std::min(static_cast<double>(radius) / distance, 1.0)) < 60.0 * std::numbers::pi / 180.0;
+            };
+            std::vector<Planetology::PlanetRenderer::Tile> tiles;
+            auto time = std::chrono::steady_clock::time_point{} + std::chrono::hours(1);
+            for (int n = 0; n < 200 + Frames; ++n) {
+                // Immobile jusqu'à ce que le sol soit prêt, puis en route.
+                const int moving = std::max(n - 200, 0);
+                const Math::Vector3d position = along(Speed * moving / 60.0) * -altitude;
+                time += std::chrono::duration_cast<std::chrono::steady_clock::duration>(moving > 0 ? step : std::chrono::duration<double>(1.0 / 60.0));
+                tiles.clear();
+                renderer.BeginFrame(0, time);
+                renderer.Collect(static_cast<Entity>(1), planet, position, Math::Quaternionf{}, inView, tiles);
+                renderer.EndFrame(0);
+                if (!device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); })) {
+                    return std::unexpected(std::string("envoi au GPU"));
+                }
+            }
+            // Le sol 4 km devant la caméra.
+            const Math::Vector3d ahead = along(Speed * Frames / 60.0 + 4000.0);
+            int level = -1;
+            for (const Planetology::PlanetRenderer::Tile& tile : tiles) {
+                if (Planetology::FindTile(ahead, tile.key.level) == tile.key) {
+                    level = std::max(level, static_cast<int>(tile.key.level));
+                }
+            }
+            return level;
+        };
+        const auto flying = run(std::chrono::duration<double>(1.0 / 60.0));
+        const auto jumping = run(std::chrono::duration<double>(1.0));
+        if (!flying || !jumping) {
+            std::printf("ÉCHEC %s\n", (!flying ? flying.error() : jumping.error()).c_str());
+            return false;
+        }
+        if (*flying < *jumping + 2) {
+            std::printf("ÉCHEC sol 4 km devant au niveau %d en vol, %d sans vitesse\n", *flying, *jumping);
             return false;
         }
         return true;
@@ -221,5 +291,5 @@ bool RunPlanetGpuTests() {
         CHECK(std::abs(stats[n].radius - mesh.radius) < 2.0 * tolerance);
         CHECK(CheckMeshlets(**compute, tiles[n], vertices, morph));
     }
-    return CheckTurningCamera(**device);
+    return CheckTurningCamera(**device) && CheckMovingCamera(**device);
 }
