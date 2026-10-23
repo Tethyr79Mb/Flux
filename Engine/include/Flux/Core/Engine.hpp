@@ -177,8 +177,9 @@ namespace Flux {
         // Charge tout de suite la scène du fichier (scène de démarrage du jeu) ; pendant le jeu, son monde physique
         // est préparé aussitôt (voir PhysicsWorld::Prepare). En cas d'échec, la scène actuelle reste.
         std::expected<void, std::string> LoadScene(const std::filesystem::path& path);
-        // Sauvegarde rapide (F8) : reprise à la fin de l'image si elle existe (lancement du jeu, Jouer dans
-        // l'éditeur), joueur remis sur son siège ; false sans sauvegarde. Effacée par DeleteQuickSave (F7).
+        // Sauvegarde rapide (F8) : reprise à la fin de l'image au lancement du jeu, joueur remis sur son siège ; false
+        // sans sauvegarde, ou si la scène de démarrage du projet a changé depuis (la scène modifiée dans l'éditeur
+        // l'emporte ; F9 la recharge quand même). Effacée par DeleteQuickSave (F7).
         bool ResumeQuickSave();
         void DeleteQuickSave();
 
