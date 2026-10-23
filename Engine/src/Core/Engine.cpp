@@ -37,12 +37,14 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <numbers>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -67,6 +69,19 @@ namespace Flux {
         }
         std::filesystem::path QuickSavePlayerFile() {
             return QuickSaveDirectory() / "rapide.joueur.json";
+        }
+        // Empreinte du contenu d'une scène (FNV-1a 64 bits, en hexadécimal) : la date du fichier ne dit rien, la
+        // génération le recopie à chaque fois qu'un asset change.
+        std::optional<std::string> FileDigest(const std::filesystem::path& path) {
+            std::ifstream file(path, std::ios::binary);
+            if (!file) {
+                return std::nullopt;
+            }
+            std::uint64_t hash = 14695981039346656037ull;
+            for (std::istreambuf_iterator<char> it(file), end; it != end; ++it) {
+                hash = (hash ^ static_cast<std::uint8_t>(*it)) * 1099511628211ull;
+            }
+            return std::format("{:016x}", hash);
         }
         constexpr double NoticeSeconds = 2.5;
         using Clock = std::chrono::steady_clock;
@@ -1246,6 +1261,19 @@ namespace Flux {
         if (!std::filesystem::exists(QuickSaveSceneFile(), error)) {
             return false;
         }
+        // Scène de démarrage changée depuis la sauvegarde (dans l'éditeur, puis recopiée à côté du jeu par la
+        // génération) : la sauvegarde cacherait ce qui vient d'être modifié. Gardée pour F9. Une sauvegarde d'avant
+        // cette empreinte compte comme changée.
+        nlohmann::json player;
+        if (std::ifstream file(QuickSavePlayerFile(), std::ios::binary); file) {
+            player = nlohmann::json::parse(file, nullptr, false);
+        }
+        if (const std::optional<std::string> scene = m_project ? FileDigest(m_project->GetStartupScenePath()) : std::nullopt;
+            scene && (!player.is_object() || !player.contains("startupScene") || player["startupScene"] != *scene)) {
+            Log::Info("sauvegarde rapide faite avec une autre scène de démarrage : non reprise");
+            ShowNotice("Scène modifiée depuis la sauvegarde : partie repartie du début (F9 pour la reprendre)");
+            return false;
+        }
         m_quickLoadRequested = true; // à la fin de la première image, comme F9
         m_quickLoadResumes = true;
         return true;
@@ -1297,6 +1325,9 @@ namespace Flux {
         }
         if (!systems.empty()) {
             player["systems"] = std::move(systems);
+        }
+        if (std::optional<std::string> scene = m_project ? FileDigest(m_project->GetStartupScenePath()) : std::nullopt) {
+            player["startupScene"] = std::move(*scene); // pour ne pas la reprendre si la scène change (ResumeQuickSave)
         }
         if (auto saved = SceneSerializer::WriteFile(QuickSavePlayerFile(), player.dump(2)); !saved) {
             Log::Error("sauvegarde rapide : {}", saved.error());
