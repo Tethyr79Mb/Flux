@@ -73,6 +73,15 @@ namespace Flux {
         void SetOcclusionCulling(bool enabled) { m_occlusion->SetEnabled(enabled); }
         bool IsOcclusionCullingEnabled() const { return m_occlusion->IsEnabled(); }
         OcclusionCulling::Stats GetOcclusionStats() const { return m_occlusion->GetStats(); }
+        // Paquets des modèles fixes envoyés aux mesh shaders, et dont dessinés (les autres écartés par le GPU), deux
+        // images plus tôt ; meshShaders à false : modèles dessinés par les sommets (GPU sans mesh shaders).
+        struct MeshletStats
+        {
+            std::uint32_t sent = 0;
+            std::uint32_t drawn = 0;
+            bool meshShaders = false;
+        };
+        MeshletStats GetMeshletStats() const { return m_meshletStats; }
         // Mesure : le sol des planètes sans le calcul de ses pixels (voir fragmentPlanetGeometry).
         void SetGroundGeometryOnly(bool enabled) { m_groundGeometryOnly = enabled; }
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
@@ -108,6 +117,7 @@ namespace Flux {
             float distance = 0.0f; // du centre à la caméra : ordre des transparents
             bool visible = true;   // false : ombre seulement (personnage vu de l'intérieur)
             bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
+            bool uniformScale = false; // échelle uniforme et positive : le cône des normales des paquets reste juste
             std::uint32_t firstCluster = 0; // dans m_clusters, si son modèle est découpé en blocs (GpuModel::clusters)
         };
         // Un bloc d'un grand modèle dessiné (GpuModel::clusters), relatif à la caméra.
@@ -234,6 +244,45 @@ namespace Flux {
         static constexpr std::size_t TransparentModelPass = 1;
         static constexpr std::size_t ModelPassCount = 2 + ShadowCascadeCount;
 
+        // Doit correspondre à MeshTask dans shaders/ModelMesh.slang : une tâche des mesh shaders, jusqu'à
+        // MeshTaskMeshlets paquets d'une primitive d'une entité.
+        static constexpr std::uint32_t MeshTaskMeshlets = 32;
+        struct MeshTask
+        {
+            std::uint32_t draw;
+            std::uint32_t material;      // GpuMaterial::index
+            std::uint32_t firstMeshlet;  // dans les paquets de la page
+            std::uint32_t countAndFlags; // bits 0-7 : paquets ; bit 8 : test des faces de dos permis
+        };
+        // Une primitive opaque d'un modèle fixe d'une entité, dessinée en mesh shaders.
+        struct MeshEntry
+        {
+            const RHI::Pipeline* pipeline;
+            std::uint32_t page;
+            float distance; // au bord de sa sphère (ou de celle de son bloc)
+            std::uint32_t draw;
+            std::uint32_t material;
+            std::uint32_t firstMeshlet;
+            std::uint32_t meshletCount;
+            bool backFaces; // MeshDraw::uniformScale
+        };
+        // Un appel DrawMeshTasks : `count` tâches de m_meshTasks à partir de `first`, même pipeline et même page.
+        struct MeshBatch
+        {
+            const RHI::Pipeline* pipeline;
+            std::uint32_t page;
+            std::uint32_t first;
+            std::uint32_t count;
+        };
+        // Modèles fixes opaques en mesh shaders (shaders/ModelMesh.slang), quand le GPU les a : nuls sinon.
+        struct ModelMeshPipelines
+        {
+            std::unique_ptr<RHI::Pipeline> opaque;
+            std::unique_ptr<RHI::Pipeline> opaqueDoubleSided;
+            std::unique_ptr<RHI::Pipeline> masked;
+            std::unique_ptr<RHI::Pipeline> maskedDoubleSided;
+        };
+
         // Primitive transparente d'une entité, dessinée après les opaques.
         struct TransparentDraw
         {
@@ -296,6 +345,11 @@ namespace Flux {
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
         static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
+        const RHI::Pipeline& ModelMeshPipeline(const GpuMaterial& material) const;
+        const RHI::BindGroup* GetModelMeshGroup(std::uint32_t page);
+        bool BuildMeshTasks(std::uint32_t frameIndex);
+        void ReadMeshletStats(std::uint32_t frameIndex);
+        void DrawModelMeshes(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex) const;
         void AddBatches(bool nearestFirst, bool occlusion);
         std::array<float, 4> OcclusionSphere(const MeshDraw& draw, const ModelPrimitive& primitive) const;
         void AddOcclusionItem(const BatchEntry& entry, std::uint32_t material);
@@ -328,6 +382,21 @@ namespace Flux {
         std::uint32_t m_planetMeshThreads = 0; // 128 (PlanetMesh.slang) ou 64 (PlanetMeshSmall.slang)
         std::unique_ptr<RHI::Pipeline> m_planetMeshGeometry; // pixel presque vide, comme Pipelines::geometryOnly
         std::vector<std::unique_ptr<RHI::BindGroup>> m_tileMeshGroups;
+        // Modèles fixes en mesh shaders : le groupe 3 lit les sommets et les paquets d'une page de géométrie (un groupe
+        // par page, fait à sa première utilisation) ; les tâches de l'image sont au groupe 1.
+        std::unique_ptr<RHI::BindGroupLayout> m_modelMeshLayout;
+        ModelMeshPipelines m_modelMesh;
+        std::vector<std::unique_ptr<RHI::BindGroup>> m_modelMeshGroups;
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_meshTaskBuffers;
+        // Paquets dessinés par le GPU, comptés sans fin (Readback) : l'écart entre deux lectures est celui d'une image.
+        std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_meshletStatBuffers;
+        std::array<std::uint32_t, RHI::FramesInFlight> m_meshletStatRead{};
+        std::array<bool, RHI::FramesInFlight> m_meshletStatKnown{};
+        std::array<std::uint32_t, RHI::FramesInFlight> m_meshletsSent{};
+        MeshletStats m_meshletStats;
+        std::vector<MeshEntry> m_meshEntries;
+        std::vector<MeshTask> m_meshTasks;
+        std::vector<MeshBatch> m_meshBatches;
         // Pyramide de profondeur liée au groupe de chaque image pour les mesh shaders (celle d'OcclusionCulling).
         std::array<const RHI::Buffer*, RHI::FramesInFlight> m_boundPyramid{};
         // Arbres des planètes : leur place et leur rotation lues dans les arbres retenus par VegetationRenderer.

@@ -34,6 +34,7 @@ namespace Flux {
             bool occlusionCulling = false;  // « Objets cachés écartés »
             bool groundGeometryOnly = false; // « Sol sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets
+            bool modelMeshShaders = false;       // modèles fixes en mesh shaders
         };
 
         void Start(double seconds);
@@ -66,7 +67,7 @@ namespace Flux {
         std::vector<double> m_frames;
         std::array<Stat, CpuCount> m_cpu;
         std::vector<Stat> m_gpu; // passes et étapes, dans l'ordre de l'image
-        static constexpr std::size_t CounterCount = 11;
+        static constexpr std::size_t CounterCount = 13;
         std::array<Stat, CounterCount> m_counters;
     };
 }

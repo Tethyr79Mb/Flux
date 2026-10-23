@@ -254,6 +254,10 @@ namespace Flux {
                 const OcclusionCulling::Stats occlusion = meshes->GetOcclusionStats();
                 timings.occlusionTested = occlusion.tested;
                 timings.occlusionHidden = occlusion.hidden;
+                const MeshRenderer::MeshletStats meshlets = meshes->GetMeshletStats();
+                timings.modelMeshlets = meshlets.sent;
+                timings.modelMeshletsDrawn = meshlets.drawn;
+                timings.modelMeshShaders = meshlets.meshShaders;
                 const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
                 timings.planetTiles = tiles.drawn;
                 timings.planetOceanTiles = tiles.ocean;

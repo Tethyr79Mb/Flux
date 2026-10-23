@@ -60,6 +60,10 @@ namespace Flux {
         std::uint32_t imageCount = 0;
         std::uint32_t firstMaterial = 0; // cases de la table des matériaux
         std::uint32_t materialCount = 0;
+        std::uint32_t firstMeshlet = 0;  // paquets dans la page (GeometryPage::meshlets), mesh shaders seulement
+        std::uint32_t meshletCount = 0;
+        std::uint32_t firstMeshletWord = 0; // leurs sommets et triangles (GeometryPage::meshletData)
+        std::uint32_t meshletWordCount = 0;
         std::vector<std::unique_ptr<RHI::Texture>> images;
 
         private:
@@ -76,6 +80,7 @@ namespace Flux {
         ModelSkeleton skeleton; // gardé sur le CPU : les poses y sont calculées à chaque image
         std::vector<GpuMaterial> materials;
         // firstIndex : dans les indices de la page ; indices relatifs au premier sommet du modèle (resources.firstVertex).
+        // firstMeshlet : dans les paquets de la page (meshletCount à 0 sans mesh shaders).
         std::vector<ModelPrimitive> primitives;
         std::vector<ModelPrimitive> shadowPrimitives; // ModelData::shadowPrimitives
         std::vector<Math::Box3f> clusters;            // ModelData::clusters ; vide : un seul bloc
@@ -96,8 +101,15 @@ namespace Flux {
         std::unique_ptr<RHI::Buffer> vertices; // ModelVertex
         std::unique_ptr<RHI::Buffer> indices;
         std::unique_ptr<RHI::Buffer> skin;     // ModelSkinVertex, une par sommet ; page de modèles animés seulement
+        // Paquets des modèles fixes, lus par les mesh shaders (shaders/ModelMesh.slang ; pages fixes, GPU qui les a) :
+        // GpuMeshlet, puis des mots de 32 bits, les sommets de chaque paquet (indices dans la page) et ses triangles
+        // (trois octets par triangle, quatre par mot).
+        std::unique_ptr<RHI::Buffer> meshlets;
+        std::unique_ptr<RHI::Buffer> meshletData;
         RangeAllocator vertexRanges;
         RangeAllocator indexRanges;
+        RangeAllocator meshletRanges;
+        RangeAllocator meshletDataRanges;
         bool animated = false;
     };
 
@@ -125,6 +137,9 @@ namespace Flux {
         const RHI::BindGroup& GetSceneGroup() const { return *m_sceneGroup; }
         const GpuModel& GetCube() const { return m_cube; }
         const GeometryPage& GetPage(std::uint32_t page) const { return m_pages[page]; }
+        std::uint32_t GetPageCount() const { return static_cast<std::uint32_t>(m_pages.size()); }
+        // Paquets des modèles fixes envoyés au GPU (Device::HasMeshShaders) : primitives à meshletCount non nul.
+        bool HasMeshlets() const { return m_meshlets; }
 
         // Envoie au GPU les modèles lus depuis l'image précédente (un par image : chacun copie ses sommets et ses images
         // vers la mémoire vidéo). Une fois par image, avant Find.
@@ -161,6 +176,7 @@ namespace Flux {
         };
 
         RHI::Device& m_device;
+        bool m_meshlets = false;
         // Dans cet ordre : les groupes sont rendus avant leur layout, et les modèles (qui rendent leurs places aux
         // tables) avant les tables.
         std::unique_ptr<RHI::Sampler> m_sampler;

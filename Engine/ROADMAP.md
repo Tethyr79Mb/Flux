@@ -27,10 +27,13 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   ensuite, tourelles comprises), en 4 étapes. Fait (étape 1) : chaque primitive d'un modèle fixe découpée au chargement
   en paquets de 64 sommets / 124 triangles (meshoptimizer), avec sphère et cône des normales, sur le fil de chargement
   (Chasseur : 50 ms en Release pour 68 000 triangles, contre 600 ms pour lire ses images ; pas de cache disque tant que
-  ça reste petit, à revoir avec les paquets .pak). À faire : 2) scène
-  persistante sur le GPU qui écarte instances puis paquets (champ, pyramide de profondeur, dos), en mesh shaders ou en
-  compute + sommets sur une carte sans ; 3) ombres par le même tri ; 4) détail continu façon Nanite (groupes de paquets
-  simplifiés). Modèles animés pas découpés.
+  ça reste petit, à revoir avec les paquets .pak). Fait (étape 2, mesh shaders) : sur une carte qui les a, les
+  primitives opaques des modèles fixes sont dessinées paquet par paquet, le GPU écartant ceux hors du champ, tournés
+  vers l'arrière ou cachés (pyramide de profondeur) ; compteur « Paquets des modèles » au panneau Moteur et dans le
+  relevé. À faire : 2b) même tri en compute + sommets pour une carte sans mesh shaders (aujourd'hui modèle par modèle) ;
+  2c) scène persistante sur le GPU (n'envoyer que ce qui bouge ; aujourd'hui les tâches sont refaites par le CPU à chaque
+  image, une pour 32 paquets) ; 3) ombres par le même tri ; 4) détail continu façon Nanite (groupes de paquets
+  simplifiés). Modèles animés et transparents pas découpés. Gain à mesurer en Release chez Bruno.
 - 🔨 Rendu piloté par le GPU, commencé le 2026-10-17. Fait : géométrie de tous les modèles dans des pages partagées
   (modèles animés à part), images et matériaux dans deux tables lues par indice, lots du même pipeline et de la même
   page dessinés en un seul `DrawIndexedIndirect` (plusieurs commandes) ; entités et blocs cachés derrière d'autres

@@ -19,6 +19,49 @@ namespace Flux {
         constexpr std::uint32_t PageIndices = 4u << 20;
         constexpr std::uint32_t AnimatedPageVertices = 1u << 18;
         constexpr std::uint32_t AnimatedPageIndices = 1u << 20;
+        // Paquets d'une page fixe : un pour 32 triangles en moyenne (les paquets du Chasseur en ont 77), et leurs mots
+        // (sommets et triangles) : au plus un sommet par indice et un mot pour quatre indices, soit 5/4 des indices.
+        constexpr std::uint32_t PageMeshlets = PageIndices / 3 / 32;
+        constexpr std::uint32_t PageMeshletWords = PageIndices + PageIndices / 4;
+
+        // Doit correspondre à Meshlet dans shaders/ModelMesh.slang : un paquet d'une page.
+        struct GpuMeshlet
+        {
+            std::array<float, 4> sphere; // centre dans le repère du modèle ; rayon
+            std::array<float, 4> cone;   // axe ; coupure (ModelMeshlet::coneCutoff)
+            std::uint32_t firstVertex;   // dans GeometryPage::meshletData : ses sommets, indices dans la page
+            std::uint32_t firstTriangle; // dans GeometryPage::meshletData : ses triangles, 4 octets par mot
+            std::uint32_t vertexCount;
+            std::uint32_t triangleCount;
+        };
+        static_assert(sizeof(GpuMeshlet) == 48);
+
+        // Paquets du modèle tels que le GPU les lit : sommets en indices de la page (premier sommet du modèle ajouté),
+        // décalés de firstWord (sa place dans meshletData).
+        void BuildGpuMeshlets(const ModelData& data, std::uint32_t firstVertex, std::uint32_t firstWord,
+                              std::vector<GpuMeshlet>& meshlets, std::vector<std::uint32_t>& words) {
+            meshlets.clear();
+            words.clear();
+            for (const ModelMeshlet& meshlet : data.meshlets) {
+                GpuMeshlet& out = meshlets.emplace_back();
+                out.sphere = {meshlet.center.x, meshlet.center.y, meshlet.center.z, meshlet.radius};
+                out.cone = {meshlet.coneAxis.x, meshlet.coneAxis.y, meshlet.coneAxis.z, meshlet.coneCutoff};
+                out.vertexCount = meshlet.vertexCount;
+                out.triangleCount = meshlet.triangleCount;
+                out.firstVertex = firstWord + static_cast<std::uint32_t>(words.size());
+                for (std::uint32_t v = 0; v < meshlet.vertexCount; ++v) {
+                    words.push_back(firstVertex + data.meshletVertices[meshlet.firstVertex + v]);
+                }
+                out.firstTriangle = firstWord + static_cast<std::uint32_t>(words.size());
+                // ModelData::meshletTriangles complète chaque paquet à 4 octets : des mots entiers.
+                const std::uint32_t wordCount = (meshlet.triangleCount * 3u + 3u) / 4u;
+                for (std::uint32_t w = 0; w < wordCount; ++w) {
+                    const std::uint8_t* bytes = data.meshletTriangles.data() + meshlet.firstTriangle + 4 * w;
+                    words.push_back(std::uint32_t{bytes[0]} | std::uint32_t{bytes[1]} << 8 | std::uint32_t{bytes[2]} << 16
+                                    | std::uint32_t{bytes[3]} << 24);
+                }
+            }
+        }
         // Intervalle entre deux vérifications de la date d'un fichier (relu s'il a changé) : assez court pour voir
         // une retouche aussitôt, assez long pour ne pas interroger le disque à chaque image.
         constexpr std::chrono::milliseconds CheckInterval{1000};
@@ -96,6 +139,10 @@ namespace Flux {
             imageCount = std::exchange(other.imageCount, 0);
             firstMaterial = other.firstMaterial;
             materialCount = std::exchange(other.materialCount, 0);
+            firstMeshlet = other.firstMeshlet;
+            meshletCount = std::exchange(other.meshletCount, 0);
+            firstMeshletWord = other.firstMeshletWord;
+            meshletWordCount = std::exchange(other.meshletWordCount, 0);
             images = std::move(other.images);
         }
         return *this;
@@ -117,12 +164,16 @@ namespace Flux {
         // Les cases rendues gardent leur image jusqu'à ce qu'une autre la remplace : aucun matériau ne les lit plus.
         m_imageSlots.Free(resources.firstImage, resources.imageCount);
         m_materialSlots.Free(resources.firstMaterial, resources.materialCount);
+        page.meshletRanges.Free(resources.firstMeshlet, resources.meshletCount);
+        page.meshletDataRanges.Free(resources.firstMeshletWord, resources.meshletWordCount);
         resources.vertexCount = resources.indexCount = resources.imageCount = resources.materialCount = 0;
+        resources.meshletCount = resources.meshletWordCount = 0;
         resources.images.clear();
     }
 
     std::expected<std::unique_ptr<ModelCache>, std::string> ModelCache::Create(RHI::Device& device) {
         std::unique_ptr<ModelCache> cache(new ModelCache(device));
+        cache->m_meshlets = device.HasMeshShaders();
 
         // Répété (les UV des modèles sortent souvent de [0, 1]), filtré entre les mips.
         auto sampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Linear,
@@ -199,31 +250,42 @@ namespace Flux {
         return cache;
     }
 
-    // Place les sommets et les indices du modèle dans une page de géométrie (une nouvelle si aucune n'a la place) et
-    // les y envoie.
+    // Place les sommets, les indices et les paquets du modèle dans une page de géométrie (une nouvelle si aucune n'a la
+    // place) et les y envoie.
     bool ModelCache::PlaceGeometry(const ModelData& data, GpuModelResources& resources) {
         const auto vertexCount = static_cast<std::uint32_t>(data.vertices.size());
         const auto indexCount = static_cast<std::uint32_t>(data.indices.size());
         const bool animated = data.IsAnimated();
-        std::optional<std::uint32_t> page;
-        std::optional<std::uint32_t> firstVertex;
-        std::optional<std::uint32_t> firstIndex;
-        for (std::uint32_t p = 0; p < m_pages.size() && !page; ++p) {
-            GeometryPage& candidate = m_pages[p];
-            if (candidate.animated != animated || candidate.vertexRanges.GetLargestFree() < vertexCount
-                || candidate.indexRanges.GetLargestFree() < indexCount) {
-                continue;
+        // Paquets : seulement pour les mesh shaders, qui ne lisent que les pages fixes.
+        const bool meshlets = m_meshlets && !animated && !data.meshlets.empty();
+        const auto meshletCount = meshlets ? static_cast<std::uint32_t>(data.meshlets.size()) : 0u;
+        std::uint32_t wordCount = 0;
+        if (meshlets) {
+            for (const ModelMeshlet& meshlet : data.meshlets) {
+                wordCount += meshlet.vertexCount + (meshlet.triangleCount * 3u + 3u) / 4u;
             }
-            page = p;
-            firstVertex = candidate.vertexRanges.Allocate(vertexCount);
-            firstIndex = candidate.indexRanges.Allocate(indexCount);
+        }
+        const auto fits = [&](const GeometryPage& page) {
+            return page.animated == animated && page.vertexRanges.GetLargestFree() >= vertexCount
+                && page.indexRanges.GetLargestFree() >= indexCount
+                && (!meshlets || (page.meshletRanges.GetLargestFree() >= meshletCount
+                                  && page.meshletDataRanges.GetLargestFree() >= wordCount));
+        };
+        std::optional<std::uint32_t> page;
+        for (std::uint32_t p = 0; p < m_pages.size() && !page; ++p) {
+            if (fits(m_pages[p])) {
+                page = p;
+            }
         }
         if (!page) {
             GeometryPage created;
             created.animated = animated;
             const std::uint32_t vertices = std::max(vertexCount, animated ? AnimatedPageVertices : PageVertices);
             const std::uint32_t indices = std::max(indexCount, animated ? AnimatedPageIndices : PageIndices);
-            auto vertexBuffer = m_device.CreateBuffer({std::uint64_t{vertices} * sizeof(ModelVertex), RHI::BufferUsage::Vertex});
+            // Storage : les mesh shaders lisent les sommets eux-mêmes.
+            const RHI::BufferUsage vertexUsage = m_meshlets && !animated ? RHI::BufferUsage::Vertex | RHI::BufferUsage::Storage
+                                                                        : RHI::BufferUsage::Vertex;
+            auto vertexBuffer = m_device.CreateBuffer({std::uint64_t{vertices} * sizeof(ModelVertex), vertexUsage});
             auto indexBuffer = m_device.CreateBuffer({std::uint64_t{indices} * sizeof(std::uint32_t), RHI::BufferUsage::Index});
             if (!vertexBuffer || !indexBuffer) {
                 Log::Error("géométrie des modèles : {}", !vertexBuffer ? vertexBuffer.error() : indexBuffer.error());
@@ -238,27 +300,54 @@ namespace Flux {
                     return false;
                 }
                 created.skin = std::move(*skin);
+            } else if (m_meshlets) {
+                const std::uint32_t pageMeshlets = std::max(meshletCount, PageMeshlets);
+                const std::uint32_t pageWords = std::max(wordCount, PageMeshletWords);
+                auto meshletBuffer = m_device.CreateBuffer({std::uint64_t{pageMeshlets} * sizeof(GpuMeshlet), RHI::BufferUsage::Storage});
+                auto dataBuffer = m_device.CreateBuffer({std::uint64_t{pageWords} * sizeof(std::uint32_t), RHI::BufferUsage::Storage});
+                if (!meshletBuffer || !dataBuffer) {
+                    Log::Error("paquets des modèles : {}", !meshletBuffer ? meshletBuffer.error() : dataBuffer.error());
+                    return false;
+                }
+                created.meshlets = std::move(*meshletBuffer);
+                created.meshletData = std::move(*dataBuffer);
+                created.meshletRanges = RangeAllocator(pageMeshlets);
+                created.meshletDataRanges = RangeAllocator(pageWords);
             }
             created.vertexRanges = RangeAllocator(vertices);
             created.indexRanges = RangeAllocator(indices);
-            firstVertex = created.vertexRanges.Allocate(vertexCount);
-            firstIndex = created.indexRanges.Allocate(indexCount);
             page = static_cast<std::uint32_t>(m_pages.size());
             m_pages.push_back(std::move(created));
         }
-        resources.page = *page;
-        resources.firstVertex = *firstVertex;
-        resources.vertexCount = vertexCount;
-        resources.firstIndex = *firstIndex;
-        resources.indexCount = indexCount;
         GeometryPage& target = m_pages[*page];
-        bool sent = m_device.WriteBuffer(*target.vertices, std::uint64_t{*firstVertex} * sizeof(ModelVertex), data.vertices.data(),
-                                         data.vertices.size() * sizeof(ModelVertex))
-                 && m_device.WriteBuffer(*target.indices, std::uint64_t{*firstIndex} * sizeof(std::uint32_t), data.indices.data(),
-                                         data.indices.size() * sizeof(std::uint32_t));
+        resources.page = *page;
+        resources.firstVertex = *target.vertexRanges.Allocate(vertexCount);
+        resources.vertexCount = vertexCount;
+        resources.firstIndex = *target.indexRanges.Allocate(indexCount);
+        resources.indexCount = indexCount;
+        if (meshlets) {
+            resources.firstMeshlet = *target.meshletRanges.Allocate(meshletCount);
+            resources.meshletCount = meshletCount;
+            resources.firstMeshletWord = *target.meshletDataRanges.Allocate(wordCount);
+            resources.meshletWordCount = wordCount;
+        }
+        bool sent = m_device.WriteBuffer(*target.vertices, std::uint64_t{resources.firstVertex} * sizeof(ModelVertex),
+                                         data.vertices.data(), data.vertices.size() * sizeof(ModelVertex))
+                 && m_device.WriteBuffer(*target.indices, std::uint64_t{resources.firstIndex} * sizeof(std::uint32_t),
+                                         data.indices.data(), data.indices.size() * sizeof(std::uint32_t));
         if (animated) {
-            sent = sent && m_device.WriteBuffer(*target.skin, std::uint64_t{*firstVertex} * sizeof(ModelSkinVertex),
+            sent = sent && m_device.WriteBuffer(*target.skin, std::uint64_t{resources.firstVertex} * sizeof(ModelSkinVertex),
                                                 data.skinVertices.data(), data.skinVertices.size() * sizeof(ModelSkinVertex));
+        }
+        if (meshlets) {
+            std::vector<GpuMeshlet> gpuMeshlets;
+            std::vector<std::uint32_t> words;
+            BuildGpuMeshlets(data, resources.firstVertex, resources.firstMeshletWord, gpuMeshlets, words);
+            sent = sent
+                && m_device.WriteBuffer(*target.meshlets, std::uint64_t{resources.firstMeshlet} * sizeof(GpuMeshlet), gpuMeshlets.data(),
+                                        gpuMeshlets.size() * sizeof(GpuMeshlet))
+                && m_device.WriteBuffer(*target.meshletData, std::uint64_t{resources.firstMeshletWord} * sizeof(std::uint32_t),
+                                        words.data(), words.size() * sizeof(std::uint32_t));
         }
         return sent;
     }
@@ -373,6 +462,10 @@ namespace Flux {
         for (std::vector<ModelPrimitive>* primitives : {&model.primitives, &model.shadowPrimitives}) {
             for (ModelPrimitive& primitive : *primitives) {
                 primitive.firstIndex += resources.firstIndex;
+                primitive.firstMeshlet += resources.firstMeshlet;
+                if (resources.meshletCount == 0) {
+                    primitive.meshletCount = 0; // pas de mesh shaders, ou modèle animé
+                }
             }
         }
         model.clusters = data.clusters;

@@ -125,8 +125,15 @@ namespace Flux {
         constexpr std::uint32_t TreeSlot = 7;
         constexpr std::uint32_t AirRayleighSlot = 8;
         constexpr std::uint32_t AirMieSlot = 9;
-        constexpr std::uint32_t TilePyramidSlot = 10; // mesh shaders du sol seulement (shaders/PlanetMesh.slang)
+        constexpr std::uint32_t PyramidSlot = 10; // mesh shaders seulement (shaders/MeshCulling.slang)
         constexpr std::uint32_t TileCommandSlot = 11;
+        constexpr std::uint32_t MeshTaskSlot = 12;    // mesh shaders des modèles (shaders/ModelMesh.slang)
+        constexpr std::uint32_t MeshletStatSlot = 13;
+        // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
+        // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
+        constexpr std::uint32_t MaxModelMeshPages = 64;
+        // Tâches d'un appel DrawMeshTasks au plus : le minimum garanti par Vulkan (maxTaskWorkGroupCount).
+        constexpr std::uint32_t MaxMeshTaskGroups = 65535;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -214,8 +221,10 @@ namespace Flux {
             RHI::Binding{TreeSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{AirRayleighSlot, RHI::BindingType::Texture, both}, // lue par sommet (sol, eau, arbres) et par pixel
             RHI::Binding{AirMieSlot, RHI::BindingType::Texture, both},
-            RHI::Binding{TilePyramidSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{PyramidSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TileCommandSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{MeshTaskSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -247,6 +256,20 @@ namespace Flux {
                 return std::unexpected(pageLayout.error());
             }
             renderer->m_tileMeshLayout = std::move(*pageLayout);
+            // Page de modèles : sommets, paquets, leurs sommets et triangles (même forme, autre nombre de groupes).
+            auto modelLayout = device.CreateBindGroupLayout({.bindings = pageBindings, .maxGroups = MaxModelMeshPages});
+            if (!modelLayout) {
+                return std::unexpected(modelLayout.error());
+            }
+            renderer->m_modelMeshLayout = std::move(*modelLayout);
+            for (std::uint32_t f = 0; f < RHI::FramesInFlight; ++f) {
+                auto stats = device.CreateBuffer({16, RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
+                if (!stats || !renderer->GrowBuffer(renderer->m_meshTaskBuffers[f], f, MeshTaskSlot, MinInstanceBufferSize)) {
+                    return std::unexpected(!stats ? stats.error() : "création des tâches des mesh shaders");
+                }
+                renderer->m_meshletStatBuffers[f] = std::move(*stats);
+                renderer->m_frameGroups[f]->SetBuffer(MeshletStatSlot, *renderer->m_meshletStatBuffers[f]);
+            }
         }
 
         if (auto pipelines = renderer->CreatePipelines(colorFormat, motionFormat, depthFormat); !pipelines) {
@@ -502,6 +525,45 @@ namespace Flux {
                 m_planetMeshGeometry.reset();
             }
         }
+        // Modèles fixes opaques en mesh shaders, si le GPU les a : comme m_static.opaque et ses variantes, plus le groupe
+        // 3. En cas d'échec (pilote), les modèles restent sur le chemin des sommets.
+        if (m_modelMeshLayout && m_models->HasMeshlets()) {
+            const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_modelMeshLayout.get()};
+            RHI::PipelineDesc mesh;
+            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "ModelMesh.spv";
+            mesh.taskEntryPoint = "taskModel";
+            mesh.meshEntryPoint = "meshModel";
+            mesh.bindGroupLayouts = meshLayouts;
+            mesh.pushConstantsSize = sizeof(DrawParams);
+            mesh.colorFormat = colorFormat;
+            mesh.secondColorFormat = motionFormat;
+            mesh.writeSecondColor = true;
+            mesh.depthFormat = depthFormat;
+            mesh.depthTest = true;
+            mesh.depthWrite = true;
+            mesh.depthCompare = RHI::CompareOp::Greater;
+            const auto createMesh = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const char* fragment, RHI::CullMode cullMode) {
+                mesh.fragmentEntryPoint = fragment;
+                mesh.cullMode = cullMode;
+                return create(pipeline, mesh);
+            };
+            auto created = createMesh(m_modelMesh.opaque, "fragmentOpaque", RHI::CullMode::Back);
+            if (created) {
+                created = createMesh(m_modelMesh.opaqueDoubleSided, "fragmentOpaque", RHI::CullMode::None);
+            }
+            if (created) {
+                created = createMesh(m_modelMesh.masked, "fragmentMain", RHI::CullMode::Back);
+            }
+            if (created) {
+                created = createMesh(m_modelMesh.maskedDoubleSided, "fragmentMain", RHI::CullMode::None);
+            }
+            if (created) {
+                Log::Info("Modèles : mesh shaders, paquets écartés par le GPU");
+            } else {
+                Log::Warning("Modèles : mesh shaders indisponibles ({}), chemin des sommets", created.error());
+                m_modelMesh = {};
+            }
+        }
         // Nuages : la profondeur du point touché est écrite par le shader (SV_Depth) et testée contre celle de la
         // scène, sans être enregistrée : le sol, les montagnes et les vaisseaux devant eux les cachent.
         RHI::PipelineDesc clouds;
@@ -531,6 +593,13 @@ namespace Flux {
             return material.doubleSided ? *pipelines.maskedDoubleSided : *pipelines.masked;
         }
         return material.doubleSided ? *pipelines.opaqueDoubleSided : *pipelines.opaque;
+    }
+
+    const RHI::Pipeline& MeshRenderer::ModelMeshPipeline(const GpuMaterial& material) const {
+        if (material.alphaCutoff > 0.0f) {
+            return material.doubleSided ? *m_modelMesh.maskedDoubleSided : *m_modelMesh.masked;
+        }
+        return material.doubleSided ? *m_modelMesh.opaqueDoubleSided : *m_modelMesh.opaque;
     }
 
     const MeshRenderer::Pipelines& MeshRenderer::GetPipelines(const MeshDraw& draw) const {
@@ -579,6 +648,7 @@ namespace Flux {
         m_hasClouds = false;
         ++m_preparedFrame;
         m_occlusionActive = m_occlusion->Begin(frameIndex, temporal.continuous, temporal.previousViewProjection);
+        ReadMeshletStats(frameIndex);
         // Textures du sol : lues (sur un autre fil) seulement quand la scène a une planète.
         const bool planets = std::ranges::any_of(m_relativeTransforms, [&scene](const RelativeTransform& transform) {
             return scene.TryGet<PlanetComponent>(transform.entity) != nullptr;
@@ -711,8 +781,12 @@ namespace Flux {
                 m_clusters.push_back({clusterCenter, clusterRadius, inView && view.Contains(clusterCenter, clusterRadius)});
             }
 
+            const float smallest = std::min({transform.scale.x, transform.scale.y, transform.scale.z});
+            const float largest = std::max({transform.scale.x, transform.scale.y, transform.scale.z});
+            const bool uniformScale = smallest > 0.0f && largest <= smallest * 1.001f;
             m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
-                               Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView, firstCluster});
+                               Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView, uniformScale,
+                               firstCluster});
         }
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         m_planets->EndFrame(frameIndex);
@@ -1045,8 +1119,8 @@ namespace Flux {
         std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
         std::ranges::copy(m_planetData, frame.planets.begin());
         frame.atmosphere = sky.atmosphere;
-        if (m_planetMesh) {
-            // Paquets du sol cachés : testés dans la pyramide de l'image précédente quand les entités le sont aussi ;
+        if (m_planetMesh || m_modelMesh.opaque) {
+            // Paquets cachés (sol, modèles) : testés dans la pyramide de l'image précédente quand les entités le sont aussi ;
             // sans elle, un buffer quelconque reste lié (jamais lu, pyramidSize.w à 0).
             const OcclusionCulling::SourcePyramid pyramid = m_occlusion->GetSourcePyramid();
             const bool tested = m_occlusionActive && pyramid.buffer;
@@ -1057,7 +1131,7 @@ namespace Flux {
             const RHI::Buffer* bound = tested ? pyramid.buffer : m_frameBuffers[frameIndex].get();
             if (m_boundPyramid[frameIndex] != bound) {
                 m_boundPyramid[frameIndex] = bound;
-                m_frameGroups[frameIndex]->SetBuffer(TilePyramidSlot, *bound);
+                m_frameGroups[frameIndex]->SetBuffer(PyramidSlot, *bound);
             }
         }
         m_frameBuffers[frameIndex]->Write(&frame, sizeof(frame));
@@ -1140,6 +1214,7 @@ namespace Flux {
         m_tileDraws.clear();
         m_tilePasses = {};
         m_modelPasses = {};
+        m_meshBatches.clear();
     }
 
     // Commandes indirectes des tuiles de chaque passe, groupées par page (un appel par page), de près à loin dans
@@ -1381,6 +1456,13 @@ namespace Flux {
                     }
                     distance = Math::Length(cluster->center) - cluster->radius;
                 }
+                // Modèle fixe découpé en paquets : en mesh shaders, le GPU écarte ce qu'il ne verra pas paquet par
+                // paquet (le test des entités cachées est alors fait par paquet, dans la tâche).
+                if (primitive.meshletCount > 0 && m_modelMesh.opaque && GetModelMeshGroup(draw.model->resources.page)) {
+                    m_meshEntries.push_back({&ModelMeshPipeline(material), draw.model->resources.page, distance, d, material.index,
+                                             primitive.firstMeshlet, primitive.meshletCount, draw.uniformScale});
+                    continue;
+                }
                 m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, &primitive, d, distance,
                                           OcclusionSphere(draw, primitive)});
             }
@@ -1446,6 +1528,9 @@ namespace Flux {
             AddBatches(false, false); // le test ne vaut que pour la vue de la caméra
         }
         passStarts[ModelPassCount] = m_modelBatches.size();
+        if (!BuildMeshTasks(frameIndex)) {
+            return false;
+        }
 
         const std::uint64_t instanceBytes = m_instances.size() * sizeof(Instance);
         const std::uint64_t commandBytes = m_modelCommands.size() * sizeof(RHI::DrawIndexedCommand);
@@ -1477,6 +1562,99 @@ namespace Flux {
             m_modelPasses[pass] = std::span(m_modelBatches).subspan(passStarts[pass], passStarts[pass + 1] - passStarts[pass]);
         }
         return true;
+    }
+
+    // Groupe 3 des mesh shaders des modèles pour cette page de géométrie, fait à sa première utilisation ; nullptr si la
+    // page n'a pas de paquets (modèles animés) ou s'il y a trop de pages.
+    const RHI::BindGroup* MeshRenderer::GetModelMeshGroup(std::uint32_t page) {
+        if (page >= MaxModelMeshPages) {
+            return nullptr;
+        }
+        if (page >= m_modelMeshGroups.size()) {
+            m_modelMeshGroups.resize(page + 1);
+        }
+        std::unique_ptr<RHI::BindGroup>& group = m_modelMeshGroups[page];
+        if (!group) {
+            const GeometryPage& geometry = m_models->GetPage(page);
+            if (!geometry.meshlets) {
+                return nullptr;
+            }
+            group = m_device.CreateBindGroup(*m_modelMeshLayout);
+            if (!group) {
+                return nullptr;
+            }
+            group->SetBuffer(0, *geometry.vertices);
+            group->SetBuffer(1, *geometry.meshlets);
+            group->SetBuffer(2, *geometry.meshletData);
+        }
+        return group.get();
+    }
+
+    // Tâches des mesh shaders de l'image (m_meshEntries), rangées par pipeline et par page (un appel chacun), de près à
+    // loin dans chacun, et envoyées au GPU. false si le buffer ne peut grandir.
+    bool MeshRenderer::BuildMeshTasks(std::uint32_t frameIndex) {
+        m_meshTasks.clear();
+        m_meshBatches.clear();
+        m_meshletsSent[frameIndex] = 0;
+        if (m_meshEntries.empty()) {
+            return true;
+        }
+        std::ranges::sort(m_meshEntries, [](const MeshEntry& a, const MeshEntry& b) {
+            if (a.pipeline != b.pipeline) {
+                return std::less<>{}(a.pipeline, b.pipeline);
+            }
+            return a.page != b.page ? a.page < b.page : a.distance < b.distance;
+        });
+        for (const MeshEntry& entry : m_meshEntries) {
+            const MeshBatch* last = m_meshBatches.empty() ? nullptr : &m_meshBatches.back();
+            if (!last || last->pipeline != entry.pipeline || last->page != entry.page || last->count >= MaxMeshTaskGroups) {
+                m_meshBatches.push_back({entry.pipeline, entry.page, static_cast<std::uint32_t>(m_meshTasks.size()), 0});
+            }
+            for (std::uint32_t first = 0; first < entry.meshletCount; first += MeshTaskMeshlets) {
+                const std::uint32_t count = std::min(MeshTaskMeshlets, entry.meshletCount - first);
+                m_meshTasks.push_back({entry.draw, entry.material, entry.firstMeshlet + first, count | (entry.backFaces ? 0x100u : 0u)});
+                ++m_meshBatches.back().count;
+            }
+            m_meshletsSent[frameIndex] += entry.meshletCount;
+        }
+        m_meshEntries.clear();
+        const std::uint64_t bytes = m_meshTasks.size() * sizeof(MeshTask);
+        if (!GrowBuffer(m_meshTaskBuffers[frameIndex], frameIndex, MeshTaskSlot, bytes)) {
+            m_meshBatches.clear();
+            return false;
+        }
+        m_meshTaskBuffers[frameIndex]->Write(m_meshTasks.data(), bytes);
+        return true;
+    }
+
+    // Paquets dessinés par l'image frameIndex précédente (finie : BeginFrame l'a attendue), comparés à ceux envoyés.
+    void MeshRenderer::ReadMeshletStats(std::uint32_t frameIndex) {
+        if (!m_meshletStatBuffers[frameIndex]) {
+            return;
+        }
+        std::uint32_t total = 0;
+        m_meshletStatBuffers[frameIndex]->Read(&total, sizeof(total));
+        // Première lecture : le contenu de départ du buffer n'est pas connu, il sert seulement de point de départ.
+        const std::uint32_t drawn = m_meshletStatKnown[frameIndex] ? total - m_meshletStatRead[frameIndex] : 0u;
+        m_meshletStatRead[frameIndex] = total;
+        m_meshletStatKnown[frameIndex] = true;
+        m_meshletStats = {m_meshletsSent[frameIndex], drawn, m_modelMesh.opaque != nullptr};
+    }
+
+    // Les modèles fixes opaques en mesh shaders : un DrawMeshTasks par lot, une tâche par groupe de 32 paquets.
+    void MeshRenderer::DrawModelMeshes(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex) const {
+        for (const MeshBatch& batch : m_meshBatches) {
+            BindPipeline(commands, state, frameIndex, *batch.pipeline);
+            if (state.group != &m_models->GetWhiteGroup()) {
+                state.group = &m_models->GetWhiteGroup();
+                commands.SetBindGroup(0, *state.group);
+            }
+            const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, 0u, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                    0u, batch.first, {}};
+            commands.PushConstants(&params, sizeof(params));
+            commands.SetBindGroup(3, *m_modelMeshGroups[batch.page]);
+            commands.DrawMeshTasks(batch.count);
+        }
     }
 
     // Les lots d'une passe des modèles : un appel indirect chacun, les changements d'état seulement quand il le faut.
@@ -1612,6 +1790,7 @@ namespace Flux {
 
     void MeshRenderer::DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         BindState state;
+        DrawModelMeshes(commands, state, frameIndex);
         DrawBatches(commands, state, frameIndex, OpaqueModelPass);
     }
 
