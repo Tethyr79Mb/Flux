@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "bashOutputMaxChars": 12000,
+  "autoCompactWindow": 400000,
+  "permissions": {
+    "deny": [
+      "Read(out/**)",
+      "Read(build/**)",
+      "Read(bin/**)",
+      "Read(cmake-build-*/**)",
+      "Read(.vs/**)",
+      "Read(**/*.glb)",
+      "Read(**/*.blend)",
+      "Read(**/*.fbx)"
+    ]
+  },
+  "skillOverrides": {
+    "design:accessibility-review": "off",
+    "design:design-critique": "off",
+    "design:design-handoff": "off",
+    "design:design-system": "off",
+    "design:research-synthesis": "off",
+    "design:user-research": "off",
+    "design:ux-copy": "off",
+    "engineering:incident-response": "off",
+    "engineering:deploy-checklist": "off",
+    "engineering:standup": "off",
+    "anthropic-skills:morning": "off",
+    "anthropic-skills:import-memory": "off",
+    "anthropic-skills:pptx": "off",
+    "anthropic-skills:xlsx": "off",
+    "anthropic-skills:docx": "off",
+    "anthropic-skills:google-workspace": "off"
+  }
+}
