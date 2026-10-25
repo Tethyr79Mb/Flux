@@ -136,7 +136,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents, vraies montagnes : sommets placés un par un, aux versants de pentes différentes, creusés de ravines en arbre (bruit d'érosion), largeur des montagnes en mètres quel que soit le rayon (réglage « Largeur des montagnes »). À améliorer : la raideur dépend du rapport relief / largeur (trop de relief = aiguilles) ; pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; contreforts encore réguliers, pas de rochers posés sur les versants.
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
   aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des forêts sur le sol (visible de
-  haut et de l'espace). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
+  haut et de l'espace). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
+  au-dessus des forêts de montagne). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
   du feuillu ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
   Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud,
   réglés dans le panneau Végétation de l'éditeur avec aperçu en direct, `Planetology::SetVegetationPreview`) :

@@ -37,6 +37,8 @@ namespace Flux::Planetology {
         // Doivent correspondre à shaders/PlanetTile.slang et shaders/Vegetation.slang.
         static constexpr std::uint32_t TreeGrid = 64;
         static constexpr std::uint32_t TreesPerPlain = TreeGrid * TreeGrid;
+        // Groupes de computeTrees par plaine semée : une place par thread, 256 threads (GroupSize de PlanetTile.slang).
+        static constexpr std::uint32_t SowGroupsPerPlain = TreesPerPlain / 256;
         // Plaines gardées semées (32 octets par place : 128 Ko par plaine).
         static constexpr std::uint32_t MaxPlains = 256;
         // Semées par image au plus : chacune coûte environ autant de relief que 8 tuiles de sol.
@@ -202,6 +204,7 @@ namespace Flux::Planetology {
         std::unique_ptr<RHI::BindGroupLayout> m_sowLayout;
         std::unique_ptr<RHI::BindGroupLayout> m_cullLayout;
         std::unique_ptr<RHI::Pipeline> m_sow;
+        std::unique_ptr<RHI::Pipeline> m_clearCounts; // compteurs des plaines à semer à zéro
         std::unique_ptr<RHI::Pipeline> m_cull;
         std::unique_ptr<RHI::Pipeline> m_finalize;
         std::unique_ptr<RHI::Pipeline> m_scatter;
