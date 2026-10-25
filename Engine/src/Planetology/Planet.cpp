@@ -43,6 +43,8 @@ namespace Flux::Planetology {
         // Largeur des chaînes de montagnes : là où 1 - |bruit de zone| dépasse ChainStart, pleines au-delà de ChainEnd.
         constexpr double ChainStart = 0.75;
         constexpr double ChainEnd = 0.95;
+        // Piémonts (Terrain::Zones::mountains) : la zone des montagnes commence aussi loin avant la chaîne.
+        constexpr double Foothills = 0.05;
         // Part de la hauteur d'une chaîne donnée par sa bande elle-même (un dos continu le long de la chaîne), le reste
         // par les sommets : sans elle, les montagnes seraient des pics isolés dans la plaine.
         constexpr double ChainBase = 0.2;
@@ -504,8 +506,11 @@ namespace Flux::Planetology {
         return warp;
     }
 
-    double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves) const {
+    double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones) const {
         if (m_relief <= 0.0) {
+            if (zones) {
+                *zones = {};
+            }
             return 0.0;
         }
         const double toSlope = m_relief / m_radius; // une unité de hauteur (fraction du relief) par radian, en m/m
@@ -521,6 +526,9 @@ namespace Flux::Planetology {
         const double hillZone = SmoothStep(0.05, 0.4, Fbm(large, direction, HillZone, octaves, 0.0));
         const double chains = 1.0 - std::abs(Fbm(large, direction, MountainZone, octaves, 0.0));
         const double mountainZone = SmoothStep(ChainStart, ChainEnd, chains) * SmoothStep(0.0, 0.2, continents);
+        if (zones) {
+            *zones = {hillZone, SmoothStep(ChainStart - Foothills, ChainEnd, chains) * SmoothStep(0.0, 0.2, continents)};
+        }
         // - les reliefs eux-mêmes, calculés seulement où ils comptent (une plaine ne paie pas les sommets), érodés
         //   selon leur vraie pente ;
         //   les sommets, leurs versants creusés de ravines ;
@@ -609,8 +617,10 @@ namespace Flux::Planetology {
         constexpr std::uint32_t Wide = TileSide + 2;
         thread_local std::vector<Math::Vector3d> positions;
         thread_local std::vector<Math::Vector3d> directions;
+        thread_local std::vector<Terrain::Zones> zones;
         positions.resize(Wide * Wide);
         directions.resize(Wide * Wide);
+        zones.resize(Wide * Wide);
         const auto x0 = static_cast<std::int64_t>(key.x) * TileQuads - 1;
         const auto y0 = static_cast<std::int64_t>(key.y) * TileQuads - 1;
         for (std::uint32_t j = 0; j < Wide; ++j) {
@@ -618,7 +628,7 @@ namespace Flux::Planetology {
             for (std::uint32_t i = 0; i < Wide; ++i) {
                 const Math::Vector3d d = DirectionFromFace(key.face, GridToFace(x0 + i, key.level), t);
                 directions[j * Wide + i] = d;
-                positions[j * Wide + i] = d * (R + terrain.GetHeight(d, octaves));
+                positions[j * Wide + i] = d * (R + terrain.GetHeight(d, octaves, &zones[j * Wide + i]));
             }
         }
 
@@ -635,7 +645,9 @@ namespace Flux::Planetology {
                 const Math::Vector3d across = positions[w + Wide] - positions[w - Wide];
                 const Math::Vector3d normal = Math::Normalize(Math::Cross(along, across));
                 const Math::Vector3d local = positions[w] - mesh.center;
-                vertex(i, j) = {Math::Vector3f(local), Math::Vector3f(normal), {0.0f, 0.0f}};
+                // uv : zones du relief (biomes des forêts vues de loin, fragmentPlanet).
+                vertex(i, j) = {Math::Vector3f(local), Math::Vector3f(normal),
+                                {static_cast<float>(zones[w].hills), static_cast<float>(zones[w].mountains)}};
                 mesh.radius = std::max(mesh.radius, Math::Length(local));
                 mesh.lowest = std::min(mesh.lowest, Math::Length(positions[w]));
             }
@@ -697,7 +709,7 @@ namespace Flux::Planetology {
             const std::uint32_t w = (j + 1) * Wide + (i + 1);
             const Math::Vector3d local = positions[w] - directions[w] * depth - mesh.center;
             mesh.morph[next] = mesh.morph[j * TileSide + i]; // glisse avec son bord
-            mesh.vertices[next++] = {Math::Vector3f(local), vertex(i, j).normal, {0.0f, 0.0f}};
+            mesh.vertices[next++] = {Math::Vector3f(local), vertex(i, j).normal, vertex(i, j).uv};
             mesh.radius = std::max(mesh.radius, Math::Length(local + Math::Vector3d(mesh.morph[j * TileSide + i].offset)));
         };
         for (std::uint32_t k = 0; k < TileSide; ++k) {

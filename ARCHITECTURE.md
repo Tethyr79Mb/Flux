@@ -383,12 +383,15 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 - Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont
   les tuiles d'un niveau fixe (bord de 200 à 400 m) que `PlanetRenderer` visite en vue. Chacune est semée une fois
   (`computeTrees` dans `PlanetTile.slang`, avec le même `Height` que le sol au détail le plus fin) : 64×64 places, le
-  hasard tiré de la place sur la face (mêmes arbres à chaque passage), gardées selon les forêts, la pente, l'altitude
-  et le climat du sol (`PlanetClimate.slang`, partagé avec `fragmentPlanet` : les arbres poussent sur l'herbe). 256
-  plaines restent semées en mémoire vidéo. À chaque image, `Vegetation.slang` range les arbres des plaines en vue en
-  listes (détaillé, simplifié, imposteur selon la distance ; ombres avec le modèle simplifié, une liste par cascade
-  touchée), puis écrit leurs nombres dans les commandes : un `DrawIndexedIndirect` par primitive de modèle et par liste.
-  `vertexTree` lit la place et la rotation de chaque arbre et le balance au vent ; `fragmentTree` ne retourne pas les
+  hasard tiré de la place sur la face (mêmes arbres à chaque passage), gardées selon les biomes de la planète
+  (`VegetationLibrary` lit les `.biome.json` et `.espece.json` ; `BiomeFit` dans `PlanetClimate.slang`, partagé avec
+  le sol : zones du relief `Terrain::Zones`, altitude, climat ; chaque biome prend ce que les précédents laissent),
+  leurs forêts et la pente de l'espèce tirée dans le biome. 256 plaines restent semées en mémoire vidéo. À chaque
+  image, `Vegetation.slang` range les arbres des plaines en vue en listes (détaillé, simplifié, imposteur selon la
+  distance ; ombres avec le modèle simplifié, une liste par cascade touchée) en comptant chaque espèce, donne à chaque
+  espèce sa part de la liste (`computeFinalize`, qui écrit aussi les commandes) puis y range ses arbres
+  (`computeScatter`) : un `DrawIndexedIndirect` par primitive de modèle, par espèce et par liste.
+  `vertexTree` lit la place, la rotation et la teinte de chaque arbre et le balance au vent ; `fragmentTree` ne retourne pas les
   normales des feuilles (tournées vers l'extérieur de la couronne des deux côtés). Le feuillage (seuil d'alpha) passe
   d'abord en pré-passe de profondeur (`vertexTreeDepth` + `fragmentShadow`, couleur non écrite, profondeur un peu
   plus loin : deux programmes de sommets ne la donnent pas au bit près), puis `fragmentTree` l'éclaire en « plus

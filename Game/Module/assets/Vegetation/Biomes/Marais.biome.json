@@ -1,0 +1,12 @@
+{
+  "zones": {"plains": 1, "hills": 0, "mountains": 0},
+  "altitude": [-100, 6],
+  "temperature": [5, 35],
+  "humidity": [0.7, 2],
+  "cover": 0.3,
+  "density": 0.15,
+  "scale": 0.75,
+  "species": [
+    {"species": "Vegetation/Especes/Feuillu.espece.json", "share": 100}
+  ]
+}

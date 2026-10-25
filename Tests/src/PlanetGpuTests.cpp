@@ -286,6 +286,9 @@ bool RunPlanetGpuTests() {
             }
             CHECK(Math::Dot(vertices[v].normal, mesh.vertices[v].normal) > 0.999f);
             CHECK(Math::Dot(morph[v].normal, mesh.morph[v].normal) > 0.999f);
+            // Zones du relief (biomes) dans uv : demi-floats sur le GPU.
+            CHECK(std::abs(vertices[v].uv.x - mesh.vertices[v].uv.x) < 2.0e-3f);
+            CHECK(std::abs(vertices[v].uv.y - mesh.vertices[v].uv.y) < 2.0e-3f);
         }
         CHECK(std::abs(stats[n].lowest - mesh.lowest) < 2.0 * tolerance + 1.0e-6 * mesh.lowest);
         CHECK(std::abs(stats[n].radius - mesh.radius) < 2.0 * tolerance);

@@ -46,6 +46,7 @@ namespace Flux {
         Animation,
         Prefab, // .prefab.json
         Font, // .ttf, .otf (rangées dans Polices/), choisie dans une liste
+        Biome, // .biome.json (végétation des planètes)
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).

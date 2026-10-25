@@ -80,8 +80,16 @@ namespace Flux::Planetology {
         // Octaves du bruit pour une tuile de ce niveau : celles dont le détail est plus grand que l'écart de ses
         // sommets (les plus fines ne se verraient pas et coûteraient cher).
         std::uint32_t GetOctaves(std::uint32_t level) const;
-        // Hauteur au-dessus du rayon (m, de -relief à +relief environ) dans cette direction (unitaire).
-        double GetHeight(const Math::Vector3d& direction, std::uint32_t octaves) const;
+        // Zones du relief en un point (0 à 1), d'où les biomes de la végétation tirent leurs conditions : collines, et
+        // montagnes avec leurs piémonts (plus larges que les chaînes elles-mêmes). Le reste est de la plaine.
+        struct Zones
+        {
+            double hills = 0.0;
+            double mountains = 0.0;
+        };
+        // Hauteur au-dessus du rayon (m, de -relief à +relief environ) dans cette direction (unitaire) ; zones : celles
+        // du point, si demandées.
+        double GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones = nullptr) const;
         // Relief que les octaves omises peuvent encore ajouter (m) : profondeur minimale des jupes.
         double GetOmittedRelief(std::uint32_t octaves) const;
         // Table de permutation du bruit (tirée de la graine).
