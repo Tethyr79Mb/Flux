@@ -4,7 +4,6 @@
 #include "Flux/Audio/AudioSystem.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Core/Version.hpp"
-#include "Flux/Planetology/Planet.hpp"
 #include "Flux/Input/InputActions.hpp"
 #include "Flux/Interface/Interface.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
@@ -29,14 +28,16 @@
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
+#include "Core/EnginePanel.hpp"
+#include "Core/FlightHud.hpp"
+#include "Core/InterfaceBindings.hpp"
+#include "Core/LoadingScreen.hpp"
 #include "Core/Measurements.hpp"
+#include "Core/PlayerCamera.hpp"
+#include "Core/QuickSave.hpp"
 #include "Interface/InterfaceLibrary.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
-#include <array>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -44,51 +45,16 @@
 #include <format>
 #include <fstream>
 #include <iterator>
-#include <numbers>
 #include <optional>
-#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace Flux {
     namespace {
-        // Liaison d'un texte ou d'un bouton aux touches d'une action d'entrée : « Touche : Avancer ».
-        constexpr std::string_view KeyBindingPrefix = "Touche : ";
-
         std::filesystem::path InputActionsFile() {
             return Platform::GetExecutableDirectory() / "Touches.json";
         }
-        // Sauvegarde rapide : une seule, à côté de l'exécutable. La scène est un fichier de scène ordinaire (on peut
-        // l'ouvrir dans l'éditeur) ; à côté, ce qu'elle ne garde pas : le siège où est assis le joueur
-        // et l'état des systèmes du jeu (AddGameSaveData).
-        std::filesystem::path QuickSaveDirectory() {
-            return Platform::GetExecutableDirectory() / "Sauvegardes";
-        }
-        std::filesystem::path QuickSaveSceneFile() {
-            return QuickSaveDirectory() / "rapide.scene.json";
-        }
-        std::filesystem::path QuickSavePlayerFile() {
-            return QuickSaveDirectory() / "rapide.joueur.json";
-        }
-        // Empreinte du contenu d'une scène (FNV-1a 64 bits, en hexadécimal) : la date du fichier ne dit rien, la
-        // génération le recopie à chaque fois qu'un asset change.
-        std::optional<std::string> FileDigest(const std::filesystem::path& path) {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return std::nullopt;
-            }
-            std::uint64_t hash = 14695981039346656037ull;
-            for (std::istreambuf_iterator<char> it(file), end; it != end; ++it) {
-                hash = (hash ^ static_cast<std::uint8_t>(*it)) * 1099511628211ull;
-            }
-            return std::format("{:016x}", hash);
-        }
-        constexpr double NoticeSeconds = 2.5;
-        using Clock = std::chrono::steady_clock;
-
-        // Caméra qui suit le personnage : un peu moins que la verticale, au-dessus comme en dessous.
-        constexpr float FollowMaxPitch = 1.3f;
         // Projectiles réservés d'avance : un combat chargé n'alloue pas en pleine image.
         constexpr std::size_t ReservedProjectiles = 4096;
         // Durée de l'éclat d'un impact (s).
@@ -96,218 +62,22 @@ namespace Flux {
         // Explosion d'un missile : plus grande et plus longue qu'un impact d'obus (vif, puis pâlit comme lui).
         constexpr float ExplosionSize = 5.0f;
         constexpr float ExplosionSeconds = 0.3f;
-
-        double Milliseconds(Clock::duration duration) {
-            return std::chrono::duration<double, std::milli>(duration).count();
-        }
-
-        // Où passe le temps d'une image (millisecondes) : ce que montre le panneau « Moteur ».
-        enum Cost : std::size_t {
-            UpdateCost,       // CPU : fenêtre, interface, caméra, jeu, éditeur (avant le rendu)
-            GameCost,         // CPU, compris dans le précédent : systèmes du jeu (physique, sièges, animation)
-            PrepareCost,      // CPU : préparation du rendu
-            RecordCost,       // CPU : commandes de dessin
-            WaitGpuCost,      // CPU arrêté : attente du GPU
-            WaitImageCost,    // CPU arrêté : attente d'une image libre et présentation (V-Sync, plafond)
-            CostCount,
-        };
-
-        // Moyenne sur une fenêtre glissante d'une demi-seconde : lisible, sans chiffres qui clignotent. Un temps
-        // inconnu (négatif : heures du GPU absentes) n'entre pas dans sa moyenne.
-        class FrameStats {
-            public:
-            void Tick(Clock::time_point now) {
-                ++m_frames;
-                m_worstInWindow = std::max(m_worstInWindow, Milliseconds(now - m_lastTick));
-                m_lastTick = now;
-                if (now - m_worstStart >= std::chrono::seconds(5)) {
-                    m_previousWorst = m_worstInWindow;
-                    m_worstInWindow = 0.0;
-                    m_worstStart = now;
-                }
-                const std::chrono::duration<double> elapsed = now - m_windowStart;
-                if (elapsed.count() >= 0.5) {
-                    m_fps = m_frames / elapsed.count();
-                    m_frameMilliseconds = 1000.0 * elapsed.count() / m_frames;
-                    for (std::size_t i = 0; i < CostCount; ++i) {
-                        m_averages[i] = m_counts[i] > 0 ? m_sums[i] / m_counts[i] : -1.0;
-                    }
-                    for (Row& row : m_gpu) {
-                        row.average = row.count > 0 ? row.sum / row.count : -1.0;
-                        row.sum = 0.0;
-                        row.count = 0;
-                    }
-                    m_sums = {};
-                    m_counts = {};
-                    m_frames = 0;
-                    m_windowStart = now;
-                }
-            }
-
-            void Add(Cost cost, double milliseconds) {
-                if (milliseconds >= 0.0) {
-                    m_sums[cost] += milliseconds;
-                    ++m_counts[cost];
-                }
-            }
-
-            // Passes et étapes du GPU (RenderTimings::gpu) : leur liste ne change pas d'une image à l'autre.
-            void AddGpu(std::span<const RenderPassTiming> passes) {
-                m_gpu.resize(passes.size());
-                for (std::size_t i = 0; i < passes.size(); ++i) {
-                    m_gpu[i].name = passes[i].name;
-                    m_gpu[i].step = passes[i].step;
-                    if (passes[i].milliseconds >= 0.0) {
-                        m_gpu[i].sum += passes[i].milliseconds;
-                        ++m_gpu[i].count;
-                    }
-                }
-            }
-
-            double GetFps() const { return m_fps; }
-            double GetFrameMilliseconds() const { return m_frameMilliseconds; }
-            double Get(Cost cost) const { return m_averages[cost]; }
-            // La plus longue image des 5 à 10 dernières secondes : un à-coup (chargement) que la moyenne cache.
-            double GetWorstMilliseconds() const { return std::max(m_previousWorst, m_worstInWindow); }
-            struct Row
-            {
-                const char* name = "";
-                bool step = false;
-                double sum = 0.0;
-                int count = 0;
-                double average = -1.0;
-            };
-            std::span<const Row> GetGpu() const { return m_gpu; }
-
-            private:
-            Clock::time_point m_windowStart = Clock::now();
-            Clock::time_point m_lastTick = Clock::now();
-            Clock::time_point m_worstStart = Clock::now();
-            double m_worstInWindow = 0.0;
-            double m_previousWorst = 0.0;
-            int m_frames = 0;
-            double m_fps = 0.0;
-            double m_frameMilliseconds = 0.0;
-            std::array<double, CostCount> m_sums{};
-            std::array<int, CostCount> m_counts{};
-            std::array<double, CostCount> m_averages{};
-            std::vector<Row> m_gpu;
-        };
-
-        std::string FormatCost(double milliseconds) {
-            return milliseconds < 0.0 ? std::string("?") : std::format("{:.2f} ms", milliseconds);
-        }
-
-        std::string FormatMegabytes(std::uint64_t bytes) {
-            return std::format("{:.0f} Mo", static_cast<double>(bytes) / (1024.0 * 1024.0));
-        }
-
-        // Durée d'un relevé lancé depuis le panneau Moteur.
-        constexpr double MeasureSeconds = 10.0;
-
-        void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, MeasureRecorder& measures,
-                             Camera& camera, FlyCameraController* controller) {
-            if (ui.BeginPanel("Moteur", {8.0f, 8.0f}, 360.0f)) {
-                renderer.RequestDetailedTimings();
-                // Le relevé écrit toutes ces mesures dans un fichier (Mesures/ à côté de l'exécutable).
-                if (measures.IsRecording()) {
-                    ui.LabelText("Enregistrement", std::format("encore {:.0f} s", std::ceil(measures.GetRemainingSeconds())));
-                } else if (ui.Button("Enregistrer les mesures (10 s)")) {
-                    measures.Start(MeasureSeconds);
-                }
-                // Toujours visible : la cadence et qui la mène. Lecture : si « Attente écran » domine alors que le GPU
-                // travaille peu, la cadence vient de l'extérieur (V-Sync, pilote) ; si le GPU est long, c'est le
-                // dessin ; sinon, le CPU. Le détail est replié en sections, pour tenir dans l'écran.
-                ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
-                ui.LabelText("Pire image (10 s)", std::format("{:.1f} ms", stats.GetWorstMilliseconds()));
-                ui.LabelText("CPU màj + rendu", std::format("{:.2f} + {:.2f} ms (jeu {:.2f})", stats.Get(UpdateCost),
-                                                            stats.Get(PrepareCost) + stats.Get(RecordCost), stats.Get(GameCost)));
-                ui.LabelText("Attente", std::format("GPU {:.2f}, écran {:.2f} ms", stats.Get(WaitGpuCost), stats.Get(WaitImageCost)));
-
-                // Une ligne par passe du graphe de rendu ; ses étapes à part, repliées (une vingtaine de lignes).
-                double gpuTotal = 0.0;
-                for (const FrameStats::Row& row : stats.GetGpu()) {
-                    gpuTotal += !row.step && row.average > 0.0 ? row.average : 0.0;
-                }
-                ui.LabelText("GPU", FormatCost(gpuTotal));
-                if (ui.CollapsingHeader("Temps du GPU")) {
-                    for (const FrameStats::Row& row : stats.GetGpu()) {
-                        if (!row.step) {
-                            ui.LabelText(row.name, FormatCost(row.average));
-                        }
-                    }
-                }
-                if (ui.CollapsingHeader("Étapes du GPU", false)) {
-                    // Les passes d'une seule étape n'ont rien à détailler.
-                    const auto rows = stats.GetGpu();
-                    for (std::size_t i = 0; i < rows.size(); ++i) {
-                        const bool hasSteps = i + 1 < rows.size() && rows[i + 1].step;
-                        if (rows[i].step || hasSteps) {
-                            ui.LabelText(rows[i].step ? std::format("  {}", rows[i].name) : std::string(rows[i].name),
-                                         FormatCost(rows[i].average));
-                        }
-                    }
-                }
-
-                if (ui.CollapsingHeader("Scène", false)) {
-                    // V-Sync et anticrénelage : dans Fichier > Paramètres (le panneau garde la mesure).
-                    bool occlusion = renderer.IsOcclusionCullingEnabled();
-                    if (ui.Checkbox("Objets cachés écartés", occlusion)) {
-                        renderer.SetOcclusionCulling(occlusion);
-                    }
-                    bool geometryOnly = renderer.IsGroundGeometryOnly();
-                    if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
-                        renderer.SetGroundGeometryOnly(geometryOnly);
-                    }
-                    const RenderTimings& render = renderer.GetTimings();
-                    ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
-                    ui.LabelText("Paquets des modèles", render.modelMeshShaders
-                                                            ? std::format("{} dont {} dessinés", render.modelMeshlets,
-                                                                          render.modelMeshletsDrawn)
-                                                            : std::string("par les sommets"));
-                    if (render.modelsLoading > 0) {
-                        ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
-                    }
-                    ui.LabelText("Tuiles de planète", std::format("{} ({} eau), {}/{} gardées", render.planetTiles,
-                                                                  render.planetOceanTiles, render.planetStoredTiles,
-                                                                  render.planetTileCapacity));
-                    ui.LabelText("Sol dessiné par", render.groundMeshThreads > 0
-                                                         ? std::format("mesh shaders ({} threads)", render.groundMeshThreads)
-                                                         : std::string("sommets"));
-                    ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
-                    ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer)", render.shadowTrees, render.treePlains,
-                                                                 render.pendingTreePlains));
-                }
-
-                // RAM utilisée : présente en RAM en ce moment, bibliothèques partagées comprises (le Gestionnaire des
-                // tâches montre la part privée, plus petite) ; réservée : promise au processus, même pas encore
-                // touchée (pilote compris). GPU : ce que le rendu a demandé au pilote, en mémoire vidéo et en RAM.
-                if (ui.CollapsingHeader("Mémoire", false)) {
-                    const Platform::ProcessMemory memory = Platform::GetProcessMemory();
-                    const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
-                    ui.LabelText("RAM", std::format("{} (réservée {})", FormatMegabytes(memory.workingSet),
-                                                    FormatMegabytes(memory.privateBytes)));
-                    ui.LabelText("Mémoire vidéo", std::format("{} (+ {} en RAM)", FormatMegabytes(gpuDevice), FormatMegabytes(gpuHost)));
-                }
-
-                if (controller && ui.CollapsingHeader("Caméra", false)) {
-                    controller->DrawFields(ui, camera);
-                }
-            }
-            ui.EndPanel();
-        }
     }
 
     Engine::Engine(const EngineConfig& config)
         : m_window(std::make_unique<Window>()),
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
-          m_loadingScreen(config.loadingScreen),
           m_freeCamera(config.freeCamera),
           m_physicsContext(std::make_shared<PhysicsContext>()),
           m_audio(std::make_unique<AudioSystem>()),
           m_interfaces(std::make_unique<InterfaceLibrary>()),
-          m_inputActions(std::make_unique<InputActions>()) {
+          m_inputActions(std::make_unique<InputActions>()),
+          m_interfaceBindings(std::make_unique<InterfaceBindings>()),
+          m_playerCamera(std::make_unique<PlayerCamera>()),
+          m_flightHud(std::make_unique<FlightHud>()),
+          m_loadingScreen(std::make_unique<LoadingScreen>(config.loadingScreen)),
+          m_quickSave(std::make_unique<QuickSave>()) {
         RegisterEngineComponents(m_components);
         Log::Info("Flux {}", GetFullVersion());
         if (!m_window->Create(config.title, config.windowSize, config.maximized, config.fullscreen)) {
@@ -336,19 +106,19 @@ namespace Flux {
         });
 
         // Valeurs du moteur que les interfaces peuvent lier (menu Options du jeu, affichage des images/s).
-        m_engineValues["V-Sync"] = {.get = [this] { return m_renderer->IsVSyncEnabled() ? 1.0 : 0.0; },
+        m_interfaceBindings->SetEngineValue("V-Sync", {.get = [this] { return m_renderer->IsVSyncEnabled() ? 1.0 : 0.0; },
                                     .set = [this](double value) {
                                         if ((value >= 0.5) != m_renderer->IsVSyncEnabled()) {
                                             m_renderer->SetVSync(value >= 0.5); // recrée la chaîne d'images : pas à chaque image
                                         }
-                                    }};
-        m_engineValues["Anticrénelage"] = {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
-                                           .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }};
-        m_engineValues["Volume général"] = {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
+                                    }});
+        m_interfaceBindings->SetEngineValue("Anticrénelage", {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
+                                           .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }});
+        m_interfaceBindings->SetEngineValue("Volume général", {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
                                              .set = [this](double value) {
                                                  m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
-                                             }};
-        m_engineValues["Images par seconde"] = {.get = [this] { return std::round(m_fps); }};
+                                             }});
+        m_interfaceBindings->SetEngineValue("Images par seconde", {.get = [this] { return std::round(m_fps); }});
 
         // Actions du moteur (personnage, vaisseau), puis les touches choisies par le joueur. ZQSD en AZERTY : les
         // touches sont des positions sur le clavier (Key::W est la touche Z en AZERTY).
@@ -458,7 +228,7 @@ namespace Flux {
         if (const std::optional<std::string> seconds = Platform::ReadEnvironment("FLUX_MESURES")) {
             automaticMeasure = std::max(std::atof(seconds->c_str()), 0.0);
         }
-        Clock::time_point previousFrame = Clock::now();
+        FrameClock::time_point previousFrame = FrameClock::now();
         while (!m_quitRequested && !Platform::ConsoleCloseRequested() && m_window->IsOpen()) {
             m_window->HandleEvents();
             if (m_window->ConsumeCloseRequest() && (!m_closeRequestHandler || m_closeRequestHandler(*this))) {
@@ -480,7 +250,7 @@ namespace Flux {
                 continue;
             }
 
-            const Clock::time_point now = Clock::now();
+            const FrameClock::time_point now = FrameClock::now();
             // Plafonné : après un blocage (déplacement de fenêtre, point d'arrêt), la caméra ne fait pas un bond.
             const double frameMilliseconds = Milliseconds(now - previousFrame);
             const double deltaSeconds = std::min(frameMilliseconds * 0.001, 0.1);
@@ -493,7 +263,7 @@ namespace Flux {
             stats.Add(WaitGpuCost, render.waitGpu);
             stats.Add(WaitImageCost, render.waitImage + render.present);
             stats.AddGpu(render.gpu);
-            if (automaticMeasure > 0.0 && !m_loading) {
+            if (automaticMeasure > 0.0 && !m_loadingScreen->IsActive()) {
                 measures.Start(std::exchange(automaticMeasure, 0.0));
             }
             if (measures.Add(frameMilliseconds,
@@ -517,7 +287,7 @@ namespace Flux {
                     .modelMeshShaders = render.modelMeshShaders};
                 if (auto written = measures.Write(Platform::GetExecutableDirectory() / "Mesures", context)) {
                     Log::Info("Mesures écrites dans {}", Platform::ToGenericUtf8(*written));
-                    ShowNotice("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));
+                    m_flightHud->ShowNotice("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));
                 } else {
                     Log::Error("Mesures : {}", written.error());
                 }
@@ -539,9 +309,9 @@ namespace Flux {
                              !m_window->IsCursorLocked());
             // Pendant le jeu, la caméra suit le personnage du joueur s'il y en a un ; sinon, vol libre (éditeur seulement).
             if (GetFollowedPlayer() != NullEntity) {
-                RotateFollowCamera();
+                m_playerCamera->HandleInput(*this, GetFollowedPlayer());
             } else {
-                m_followRotating = false;
+                m_playerCamera->StopRotating();
                 if (m_freeCamera) {
                     m_camera.roll = 0.0f; // vol libre : l'horizon reste droit, même après la vue cockpit
                     m_cameraController.Update(m_camera, *m_window, deltaSeconds,
@@ -551,30 +321,27 @@ namespace Flux {
                     m_window->SetCursorLocked(false); // personnage retiré pendant un clic droit
                 }
             }
-            if (m_gameState != GameState::Stopped && !m_loading) {
+            if (m_gameState != GameState::Stopped && !m_loadingScreen->IsActive()) {
                 // Pause : celle de l'éditeur (F6), ou un menu ouvert qui la demande.
                 const double gameDelta = m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0;
-                const Clock::time_point gameStart = Clock::now();
+                const FrameClock::time_point gameStart = FrameClock::now();
                 UpdateGameSystems(gameDelta);
                 if (m_gameUpdate) {
                     m_gameUpdate(*this, gameDelta);
                 }
-                gameMilliseconds = Milliseconds(Clock::now() - gameStart);
+                gameMilliseconds = Milliseconds(FrameClock::now() - gameStart);
                 stats.Add(GameCost, gameMilliseconds);
             }
             // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
-            m_hiddenPlayer = NullEntity;
             if (const Entity player = GetFollowedPlayer(); player != NullEntity) {
-                PlaceFollowCamera(player, deltaSeconds);
+                m_playerCamera->Place(*this, player, deltaSeconds);
             } else {
-                m_followShown = -1.0f;
-                m_followShip = NullEntity;
-                m_followFrameSet = false;
+                m_playerCamera->Reset();
             }
             // Sons des entités, à la caméra de cette image (qui suit le joueur ou vole librement).
             m_audio->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_audio->Update(m_scene, m_camera, m_gameState != GameState::Stopped,
-                            m_gameState == GameState::Paused || m_interfacePaused || m_loading, deltaSeconds);
+                            m_gameState == GameState::Paused || m_interfacePaused || m_loadingScreen->IsActive(), deltaSeconds);
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
             }
@@ -586,7 +353,7 @@ namespace Flux {
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
                 const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
-                DrawFlightInfo(player, screen, deltaSeconds);
+                m_flightHud->DrawFlightInfo(m_scene, m_physics.get(), m_renderer->GetOverlay(), player, screen, deltaSeconds);
                 DrawWarpInfo(player, screen);
                 if (m_gameState == GameState::Running) {
                     RunGameSystems(GameStage::Hud, deltaSeconds);
@@ -601,11 +368,13 @@ namespace Flux {
                 list.AddText({static_cast<float>(size.x) - extent.x - 8.0f, static_cast<float>(size.y) - extent.y - 6.0f}, version,
                              VersionSize, {1.0f, 1.0f, 1.0f, 0.45f});
             }
-            if (m_noticeSeconds > 0.0 && m_drawScreenUi) {
-                DrawNotice({static_cast<float>(size.x), static_cast<float>(size.y)}, deltaSeconds);
+            if (m_flightHud->HasNotice() && m_drawScreenUi) {
+                m_flightHud->DrawNotice(m_renderer->GetOverlay(), {static_cast<float>(size.x), static_cast<float>(size.y)},
+                                        deltaSeconds, m_loadingScreen->IsActive());
             }
-            if (m_loading) {
-                DrawLoadingScreen({static_cast<float>(size.x), static_cast<float>(size.y)}); // par-dessus la scène
+            if (m_loadingScreen->IsActive()) { // par-dessus la scène
+                m_loadingScreen->Draw(m_renderer->GetOverlay(), m_renderer->GetTimings(),
+                                      {static_cast<float>(size.x), static_cast<float>(size.y)});
             }
             if (m_showDebugOverlay) {
                 DrawEnginePanel(*m_ui, *m_renderer, stats, measures, m_camera, m_freeCamera ? &m_cameraController : nullptr);
@@ -615,17 +384,18 @@ namespace Flux {
             }
             m_ui->EndFrame(m_renderer->GetOverlay());
             m_window->SetMouseCursor(m_ui->GetMouseCursor()); // double flèche au bord d'un panneau
-            updateMilliseconds = Milliseconds(Clock::now() - now);
+            updateMilliseconds = Milliseconds(FrameClock::now() - now);
             stats.Add(UpdateCost, updateMilliseconds);
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
             m_renderer->SetProjectiles(m_projectiles, m_impacts);
-            if (!m_renderer->RenderFrame(m_scene, m_camera, m_hiddenPlayer)) {
+            if (!m_renderer->RenderFrame(m_scene, m_camera, m_playerCamera->GetHiddenPlayer())) {
                 return 1;
             }
-            UpdateLoading(deltaSeconds);
-            RunInterfaceActions(); // avant le changement de scène : une fonction peut en demander un
+            m_loadingScreen->Update(m_renderer->GetTimings(), deltaSeconds);
+            // Avant le changement de scène : une fonction peut en demander un.
+            m_interfaceBindings->RunActions(*this, m_gameQuitHandler);
             LoadRequestedScene();
             RunQuickSave(); // après le changement de scène : F9 l'emporte sur une scène demandée à la même image
         }
@@ -649,9 +419,13 @@ namespace Flux {
         if (std::optional<std::string> next = SceneChange::Update(m_scene, deltaSeconds, confirmed)) {
             RequestScene(std::move(*next));
         }
-        if (!m_loading) { // pendant le chargement, la scène n'est pas encore celle que voit le joueur
-            m_quickSaveRequested |= WasActionPressed("Sauvegarde rapide");
-            m_quickLoadRequested |= WasActionPressed("Chargement rapide");
+        if (!m_loadingScreen->IsActive()) { // pendant le chargement, la scène n'est pas encore celle que voit le joueur
+            if (WasActionPressed("Sauvegarde rapide")) {
+                m_quickSave->RequestSave();
+            }
+            if (WasActionPressed("Chargement rapide")) {
+                m_quickSave->RequestLoad(false);
+            }
             if (WasActionPressed("Effacer la sauvegarde")) {
                 DeleteQuickSave();
             }
@@ -684,10 +458,10 @@ namespace Flux {
             shipInput.brake = IsActionDown("Freiner");
             shipInput.boost = IsActionDown("Boost");
             shipInput.travel = WasActionPressed("Mode voyage");
-            shipInput.mouseYaw = m_steerYaw;
-            shipInput.mousePitch = m_steerPitch;
+            shipInput.mouseYaw = m_playerCamera->GetSteerYaw();
+            shipInput.mousePitch = m_playerCamera->GetSteerPitch();
             if (WasActionPressed("Changer de vue")) {
-                m_cockpitView = !m_cockpitView;
+                m_playerCamera->ToggleCockpitView();
             }
             // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
             if (const Entity ship = Ships::GetPilotedShip(m_scene, player); ship != NullEntity) {
@@ -699,7 +473,7 @@ namespace Flux {
                 if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
                     shipInput.up = Math::Normalize(gravity) * -1.0f;
                 }
-                const FlightState flight = GetFlightState(ship);
+                const FlightHud::FlightState flight = m_flightHud->GetFlightState(m_scene, m_physics.get(), ship);
                 shipInput.air = flight.air;
                 if (flight.nearPlanet) {
                     shipInput.planetUp = Math::Vector3f(flight.up);
@@ -709,9 +483,8 @@ namespace Flux {
             }
         } else {
             // Avant et droite de la caméra, ramenés à l'horizontale de l'endroit (sur une planète : tangente au sol).
-            const Math::Vector3f forward = m_followFrame.Rotate(Math::Vector3f{-std::sin(m_followYaw), 0.0f, -std::cos(m_followYaw)});
-            const Math::Vector3f right = m_followFrame.Rotate(Math::Vector3f{std::cos(m_followYaw), 0.0f, -std::sin(m_followYaw)});
-            character.move = forward * axis("Avancer", "Reculer") + right * axis("Aller à droite", "Aller à gauche");
+            character.move = m_playerCamera->GetWalkForward() * axis("Avancer", "Reculer")
+                           + m_playerCamera->GetWalkRight() * axis("Aller à droite", "Aller à gauche");
             character.run = IsActionDown("Courir");
             character.jump = WasActionPressed("Sauter");
         }
@@ -735,9 +508,9 @@ namespace Flux {
             switch (Docking::Toggle(m_scene, pilotedShip)) {
             case Docking::ToggleResult::Docking:
             case Docking::ToggleResult::Leaving: break; // l'étape s'affiche dans les infos de vol
-            case Docking::ToggleResult::Cancelled: ShowFlightMessage("Pilote automatique coupé"); break;
+            case Docking::ToggleResult::Cancelled: m_flightHud->ShowFlightMessage("Pilote automatique coupé"); break;
             case Docking::ToggleResult::NoDock:
-                ShowFlightMessage(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
+                m_flightHud->ShowFlightMessage(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
                 break;
             }
         }
@@ -796,7 +569,7 @@ namespace Flux {
         ResetGameState();
         if (m_gameState != GameState::Stopped) {
             StartPhysics();
-            BeginLoading();
+            m_loadingScreen->Begin();
         }
         return {};
     }
@@ -806,7 +579,7 @@ namespace Flux {
         m_gameState = state;
         if (starting) {
             StartPhysics(); // lancement du jeu (éditeur) : la scène est prête
-            BeginLoading();
+            m_loadingScreen->Begin();
         }
         if (state == GameState::Stopped) {
             m_physics.reset();
@@ -815,176 +588,9 @@ namespace Flux {
             ResetGameState();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
-            m_interfaceActions.clear();
+            m_interfaceBindings->ClearActions();
             m_interfacePaused = m_interfacePausedNow = false;
         }
-    }
-
-    void Engine::BeginLoading() {
-        if (!m_loadingScreen) {
-            return;
-        }
-        m_loading = true;
-        m_loadingSeconds = 0.0;
-        m_loadingQuietFrames = 0;
-        m_loadingMostPending = 0;
-    }
-
-    void Engine::UpdateLoading(double deltaSeconds) {
-        if (!m_loading) {
-            return;
-        }
-        // Plus rien d'attendu pendant quelques images : les tuiles prêtes en font demander de plus fines tant que le
-        // sol n'est pas au détail voulu, une seule image vide ne suffit pas. Au-delà de MaxSeconds, la scène est
-        // montrée quand même (une tuile qui ne viendrait jamais ne doit pas bloquer le jeu).
-        constexpr std::uint32_t QuietFrames = 10;
-        constexpr double MinSeconds = 0.2;
-        constexpr double MaxSeconds = 30.0;
-        const RenderTimings& render = m_renderer->GetTimings();
-        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u)
-                                    + render.modelsLoading + render.fontsLoading + render.pendingTreePlains;
-        m_loadingMostPending = std::max(m_loadingMostPending, pending);
-        m_loadingQuietFrames = pending == 0 ? m_loadingQuietFrames + 1 : 0;
-        m_loadingSeconds += deltaSeconds;
-        if (m_loadingSeconds >= MaxSeconds) {
-            Log::Warning("Chargement : scène montrée après {:.0f} s, {} tuiles ou modèles encore attendus", MaxSeconds, pending);
-        } else if (m_loadingQuietFrames < QuietFrames || m_loadingSeconds < MinSeconds) {
-            return;
-        }
-        m_loading = false;
-        Log::Info("Scène prête en {:.1f} s", m_loadingSeconds);
-    }
-
-    void Engine::DrawLoadingScreen(Math::Vector2f screen) {
-        UI::DrawList& list = m_renderer->GetOverlay();
-        list.AddRect({0.0f, 0.0f}, screen, {0.012f, 0.014f, 0.02f, 1.0f});
-        constexpr float TextSize = 28.0f;
-        const std::string_view text = "Chargement..."; // police en Latin-1 : pas de « … »
-        const Math::Vector2f extent = list.MeasureText(text, TextSize);
-        const Math::Vector2f center = screen * 0.5f;
-        list.AddText({center.x - extent.x * 0.5f, center.y - extent.y - 16.0f}, text, TextSize, {0.85f, 0.88f, 0.95f, 1.0f});
-        // Avancement : la part des attentes déjà levées, puis les dernières images de vérification.
-        const RenderTimings& render = m_renderer->GetTimings();
-        const std::uint32_t pending = render.planetPendingTiles + (render.groundTexturesLoading ? 1u : 0u)
-                                    + render.modelsLoading + render.fontsLoading + render.pendingTreePlains;
-        const float done = m_loadingMostPending > 0
-                               ? 1.0f - static_cast<float>(pending) / static_cast<float>(m_loadingMostPending)
-                               : 1.0f;
-        const float progress = std::clamp(0.9f * done + 0.1f * static_cast<float>(m_loadingQuietFrames) / 10.0f, 0.0f, 1.0f);
-        constexpr float BarWidth = 320.0f;
-        constexpr float BarHeight = 4.0f;
-        const Math::Vector2f barMin{center.x - BarWidth * 0.5f, center.y + 8.0f};
-        list.AddRect(barMin, {barMin.x + BarWidth, barMin.y + BarHeight}, {1.0f, 1.0f, 1.0f, 0.12f});
-        list.AddRect(barMin, {barMin.x + BarWidth * progress, barMin.y + BarHeight}, {0.55f, 0.75f, 1.0f, 1.0f});
-    }
-
-    Engine::FlightState Engine::GetFlightState(Entity ship) {
-        FlightState flight;
-        // L'air des planètes ou du monde (WorldComponent), comme pour les objets qui tombent.
-        if (m_physics) {
-            flight.air = std::min(1.0f, m_physics->GetOutsideAir(m_scene, ship));
-        }
-        const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
-        const PlanetComponent* nearest = nullptr;
-        Math::Vector3d offset{};
-        Math::Quaternionf rotation;
-        for (const auto [entity, planet] : m_scene.GetRegistry().view<const PlanetComponent>().each()) {
-            if (m_scene.GetShip(entity) != NullEntity) {
-                continue; // décor d'un vaisseau
-            }
-            const Math::Vector3d candidate = Math::Delta(m_scene.GetWorldPosition(entity), position);
-            if (!nearest || Math::Length(candidate) - planet.radius < Math::Length(offset) - nearest->radius) {
-                nearest = &planet;
-                offset = candidate;
-                rotation = m_scene.GetWorldRotation(entity);
-            }
-        }
-        // Dans l'espace (au-delà de deux rayons, là où s'arrête sa gravité, voir PlanetGround) : pas d'altitude.
-        if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
-            return flight;
-        }
-        if (!m_flightTerrain || m_flightTerrain->GetRadius() != nearest->radius || m_flightTerrain->GetRelief() != nearest->relief
-            || m_flightTerrainSeed != nearest->seed || m_flightTerrainWidth != nearest->mountainWidth) {
-            m_flightTerrain = std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief, nearest->seed, nearest->mountainWidth);
-            m_flightTerrainSeed = nearest->seed;
-            m_flightTerrainWidth = nearest->mountainWidth;
-        }
-        flight.nearPlanet = true;
-        flight.up = Math::Normalize(offset);
-        flight.center = Math::Length(offset);
-        const Math::Vector3d direction = rotation.Conjugate().Rotate(flight.up);
-        double ground = m_flightTerrain->GetHeight(direction, m_flightTerrain->GetOctaves(m_flightTerrain->GetMaxLevel()));
-        if (nearest->ocean) {
-            ground = std::max(ground, nearest->seaLevel * 0.01 * nearest->relief);
-        }
-        flight.altitude = Math::Length(offset) - nearest->radius - ground;
-        const double height = std::max(nearest->atmosphereHeight, 100.0f);
-        const double above = std::max(Math::Length(offset) - nearest->radius, 0.0);
-        flight.boundary = std::max(nearest->atmosphere > 0.0f ? above - height : flight.altitude, 0.0);
-        return flight;
-    }
-
-    void Engine::ShowFlightMessage(std::string message) {
-        constexpr double MessageSeconds = 3.0;
-        m_flightMessage = std::move(message);
-        m_flightMessageSeconds = MessageSeconds;
-    }
-
-    void Engine::DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds) {
-        const Entity seat = Seats::GetPilotSeat(m_scene, player);
-        const Entity ship = seat != NullEntity ? m_scene.GetShip(seat) : NullEntity;
-        if (ship == NullEntity) {
-            m_flightShip = NullEntity; // remesurée en reprenant les commandes
-            return;
-        }
-        const ShipComponent& component = m_scene.Get<ShipComponent>(ship);
-        // Vitesse mesurée sur son déplacement, pas celle que visent ses propulseurs : contre le sol ou un mur, il
-        // pousse sans avancer. Lissée sur un quart de seconde ; figée en pause.
-        const Math::WorldPosition position = m_scene.GetWorldPosition(ship);
-        if (m_flightShip != ship) {
-            m_flightShip = ship;
-            m_flightVelocity = Math::Vector3d(m_scene.GetWorldRotation(ship).Rotate(component.velocity));
-        } else if (deltaSeconds > 0.0) {
-            const Math::Vector3d measured = Math::Delta(m_flightPosition, position) / deltaSeconds;
-            m_flightVelocity = m_flightVelocity + (measured - m_flightVelocity) * std::min(1.0, deltaSeconds / 0.25);
-        }
-        m_flightPosition = position;
-        const Math::Vector3d velocity = m_flightVelocity;
-        // Nombre à la française, en m ou km selon sa taille.
-        const auto distance = [](double meters, std::string_view unit) {
-            std::string text = std::abs(meters) >= 10000.0 ? std::format("{:.1f} k{}", meters / 1000.0, unit)
-                                                            : std::format("{:.0f} {}", meters, unit);
-            std::ranges::replace(text, '.', ',');
-            return text;
-        };
-        std::string text = "Vitesse  " + distance(Math::Length(velocity), "m/s");
-        if (component.travelLevel > 0.0f) {
-            text += component.travelLevel < 1.0f ? std::format("\nMode voyage  {:.0f} %", component.travelLevel * 100.0f) : "\nMode voyage";
-        }
-
-        if (const FlightState flight = GetFlightState(ship); flight.nearPlanet) {
-            text += "\nVerticale  " + distance(Math::Dot(velocity, flight.up), "m/s");
-            text += "\nAltitude  " + distance(flight.altitude, "m");
-            if (flight.air > 0.001f) {
-                text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
-            }
-        }
-        if (const std::string docking = Docking::Describe(m_scene, ship); !docking.empty()) {
-            text += "\n" + docking;
-        }
-        if (m_flightMessageSeconds > 0.0) {
-            m_flightMessageSeconds -= deltaSeconds;
-            text += "\n" + m_flightMessage;
-        }
-        if (!m_flightInfoExtra.empty()) {
-            text += "\n" + m_flightInfoExtra;
-        }
-        const float size = 20.0f;
-        UI::DrawList& list = m_renderer->GetOverlay();
-        const Math::Vector2f extent = list.MeasureText(text, size);
-        const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, screen.y - extent.y - 40.0f};
-        list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 10.0f}, topLeft + extent + Math::Vector2f{14.0f, 10.0f}, {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
-        list.AddText(topLeft, text, size, {0.85f, 0.95f, 1.0f, 1.0f});
     }
 
     Entity Engine::GetFollowedPlayer() const {
@@ -993,246 +599,6 @@ namespace Flux {
         }
         const Entity player = m_physics->GetPlayer();
         return m_scene.IsValid(player) ? player : NullEntity;
-    }
-
-    void Engine::RotateFollowCamera() {
-        // Comme le vol libre : clic droit maintenu (commencé hors de l'interface) pour tourner autour du personnage.
-        const Input& input = m_window->GetInput();
-        const bool held = m_window->HasFocus() && input.IsMouseButtonDown(MouseButton::Right);
-        const bool started = input.WasMouseButtonPressed(MouseButton::Right) && !m_ui->WantsMouse() && !m_interfaceWantsMouse;
-        m_followRotating = held && (m_followRotating || started);
-        constexpr float Sensitivity = 0.0025f;
-        const Math::Vector2f mouse = input.GetMouseDelta();
-        // Aux commandes, sans clic droit : la souris dirige le vaisseau, curseur caché. Alt maintenu le libère (panneaux
-        // de l'éditeur), comme un menu qui met le jeu en pause.
-        const bool piloting = Seats::GetPilotSeat(m_scene, GetFollowedPlayer()) != NullEntity;
-        const bool steering = piloting && !m_followRotating && m_window->HasFocus() && !m_interfacePaused
-                           && m_gameState == GameState::Running && !input.IsKeyDown(Key::LeftAlt)
-                           && !input.IsKeyDown(Key::RightAlt);
-        // La première image où le curseur se cache, son déplacement vient d'avant : ignoré.
-        const bool wasLocked = m_window->IsCursorLocked();
-        m_window->SetCursorLocked(m_followRotating || steering);
-        m_steerYaw = steering && wasLocked ? -mouse.x * Sensitivity : 0.0f;
-        m_steerPitch = steering && wasLocked ? -mouse.y * Sensitivity : 0.0f;
-        if (m_followRotating) {
-            if (Seats::GetPilotSeat(m_scene, GetFollowedPlayer()) != NullEntity) {
-                // Aux commandes (cockpit ou vue extérieure) : on tourne la tête, sans perdre le vaisseau de vue.
-                m_lookYaw = std::clamp(m_lookYaw - mouse.x * Sensitivity, -2.0f, 2.0f);
-                m_lookPitch = std::clamp(m_lookPitch - mouse.y * Sensitivity, -1.2f, 1.2f);
-            } else {
-                m_followYaw = std::remainder(m_followYaw - mouse.x * Sensitivity, 2.0f * std::numbers::pi_v<float>);
-                m_followPitch = std::clamp(m_followPitch - mouse.y * Sensitivity, -FollowMaxPitch, FollowMaxPitch);
-            }
-        }
-        if (const float wheel = input.GetWheelDelta(); wheel != 0.0f && !m_ui->WantsMouse() && !m_interfaceWantsMouse) {
-            constexpr float MinDistance = 1.0f;
-            constexpr float MinChaseZoom = 0.9f; // en tailles du vaisseau : plus près, on entrerait dans sa coque
-            if (Seats::GetPilotSeat(m_scene, GetFollowedPlayer()) != NullEntity) {
-                // Aux commandes, comme à pied : en arrière, le cockpit passe à la vue extérieure ; en avant au plus près,
-                // retour dans le cockpit.
-                if (m_cockpitView) {
-                    if (wheel < 0.0f) {
-                        m_cockpitView = false;
-                        m_chaseZoom = MinChaseZoom;
-                        m_chaseShown = -1.0f;
-                    }
-                } else if (wheel > 0.0f && m_chaseZoom <= MinChaseZoom) {
-                    m_cockpitView = true;
-                } else {
-                    m_chaseZoom = std::clamp(m_chaseZoom * std::pow(0.85f, wheel), MinChaseZoom, 8.0f);
-                }
-            } else if (m_firstPerson) {
-                if (wheel < 0.0f) { // en arrière : la caméra ressort doucement derrière le personnage
-                    m_firstPerson = false;
-                    m_followDistance = 1.5f;
-                    m_followShown = 0.0f;
-                }
-            } else if (wheel > 0.0f && m_followDistance <= MinDistance) {
-                m_firstPerson = true; // déjà au plus près : un cran de plus passe dans ses yeux
-            } else {
-                m_followDistance = std::clamp(m_followDistance * std::pow(0.85f, wheel), MinDistance, 30.0f);
-            }
-        }
-    }
-
-    Entity Engine::GetCockpitSeat(Entity player) const {
-        // Dès qu'il s'assoit (animation comprise) et jusqu'à ce qu'il soit debout : la vue part du siège, dans l'axe
-        // du vaisseau, au lieu de rester tournée vers où regardait la caméra quand il est monté.
-        if (!m_cockpitView || player == NullEntity) {
-            return NullEntity;
-        }
-        const auto* character = m_scene.TryGet<CharacterComponent>(player);
-        if (!character || character->seatState == SeatState::Standing || !m_scene.IsValid(character->seat)) {
-            return NullEntity;
-        }
-        const auto* seat = m_scene.TryGet<SeatComponent>(character->seat);
-        return seat && seat->pilot ? character->seat : NullEntity;
-    }
-
-    void Engine::TurnWithShip(Entity player) {
-        const Math::Vector3f up = m_physics->GetUp(m_scene, player);
-        const Math::Vector3f y{0.0f, 1.0f, 0.0f};
-        if (!m_followFrameSet) {
-            // Début du suivi : la caméra garde sa direction (celle de l'éditeur), dans l'horizontale de l'endroit.
-            m_followFrame = Math::Quaternionf::FromTo(y, up);
-            m_followFrameSet = true;
-            AimFollowCamera();
-        }
-        // Le vaisseau a tourné depuis la dernière image : la caméra aussi, comme la tête de quelqu'un à bord.
-        const Entity ship = m_scene.GetShip(player);
-        const Math::Quaternionf rotation = ship != NullEntity ? m_scene.GetWorldRotation(ship) : Math::Quaternionf{};
-        if (ship != NullEntity && ship == m_followShip) {
-            m_followFrame = Math::Normalize(rotation * m_followShipRotation.Conjugate() * m_followFrame);
-        }
-        m_followShip = ship;
-        m_followShipRotation = rotation;
-        // Redressée au plus court sur le haut de l'endroit : en marchant autour d'une planète, l'horizon reste droit.
-        m_followFrame = Math::Normalize(Math::Quaternionf::FromTo(m_followFrame.Rotate(y), up) * m_followFrame);
-    }
-
-    void Engine::AimFollowCamera() {
-        const Math::Vector3f forward = m_followFrame.Conjugate().Rotate(m_camera.GetForward());
-        m_followYaw = std::atan2(-forward.x, -forward.z);
-        m_followPitch = std::clamp(std::asin(std::clamp(forward.y, -1.0f, 1.0f)), -FollowMaxPitch, FollowMaxPitch);
-    }
-
-    void Engine::MeasureShip(Entity ship) {
-        // Boîte des modèles du vaisseau dans son repère (sans les personnages à bord) : la caméra vise son centre,
-        // à une distance proportionnelle à sa taille.
-        m_chaseShip = ship;
-        Math::Vector3f min{1.0e9f, 1.0e9f, 1.0e9f};
-        Math::Vector3f max = min * -1.0f;
-        const auto visit = [&](auto&& self, Entity entity, const Math::Vector3d& position, const Math::Quaternionf& rotation,
-                               const Math::Vector3f& scale) -> void {
-            if (m_scene.TryGet<CharacterComponent>(entity)) {
-                return;
-            }
-            if (m_scene.TryGet<ModelComponent>(entity) || m_scene.TryGet<MeshRendererComponent>(entity)) {
-                if (const std::optional<Math::Box3f> box = GetMeshBounds(entity)) {
-                    for (int corner = 0; corner < 8; ++corner) {
-                        const Math::Vector3f local{(corner & 1) ? box->max.x : box->min.x, (corner & 2) ? box->max.y : box->min.y,
-                                                   (corner & 4) ? box->max.z : box->min.z};
-                        const Math::Vector3f point = Math::Vector3f(position)
-                                                   + rotation.Rotate(Math::Vector3f{local.x * scale.x, local.y * scale.y, local.z * scale.z});
-                        min = {std::min(min.x, point.x), std::min(min.y, point.y), std::min(min.z, point.z)};
-                        max = {std::max(max.x, point.x), std::max(max.y, point.y), std::max(max.z, point.z)};
-                    }
-                }
-            }
-            m_scene.ForEachChild(entity, [&](Entity child) {
-                const TransformComponent& transform = m_scene.Get<TransformComponent>(child);
-                const Math::Vector3f offset{static_cast<float>(transform.position.x) * scale.x,
-                                            static_cast<float>(transform.position.y) * scale.y,
-                                            static_cast<float>(transform.position.z) * scale.z};
-                self(self, child, position + Math::Vector3d(rotation.Rotate(offset)), rotation * transform.rotation,
-                     Math::Vector3f{scale.x * transform.scale.x, scale.y * transform.scale.y, scale.z * transform.scale.z});
-            });
-        };
-        visit(visit, ship, {}, {}, {1.0f, 1.0f, 1.0f});
-        if (min.x > max.x) {
-            m_chaseCenter = {};
-            m_chaseRadius = 10.0f; // rien d'affiché : une taille de chasseur
-            return;
-        }
-        m_chaseCenter = (min + max) * 0.5f;
-        m_chaseRadius = std::max(1.0f, Math::Length(max - min) * 0.5f);
-    }
-
-    void Engine::PlaceChaseCamera(Entity seat, double deltaSeconds) {
-        const Entity ship = m_scene.GetShip(seat);
-        if (ship == NullEntity) {
-            return;
-        }
-        if (ship != m_chaseShip) {
-            MeasureShip(ship);
-            m_chaseShown = -1.0f;
-        }
-        // Derrière le vaisseau, un peu au-dessus (on regarde légèrement vers le bas), tournée avec lui, roulis compris ;
-        // le clic droit tourne autour.
-        constexpr float LookDown = 0.2f;
-        const Math::Quaternionf shipRotation = m_scene.GetWorldRotation(ship);
-        const Math::Quaternionf rotation = shipRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
-                                         * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch - LookDown);
-        Math::WorldPosition target = m_scene.GetWorldPosition(ship);
-        target += Math::Vector3d(shipRotation.Rotate(m_chaseCenter));
-        const Math::Vector3f back = rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-        const float distance = m_chaseRadius * m_chaseZoom;
-        // Un mur derrière le vaisseau (hangar) : la caméra s'avance, sans que le vaisseau lui-même l'arrête.
-        constexpr float CameraRadius = 0.2f;
-        const float free = m_physics->CastCamera(m_scene, seat, target, back, distance, CameraRadius, ship);
-        if (m_chaseShown < 0.0f || free < m_chaseShown) {
-            m_chaseShown = free;
-        } else {
-            constexpr double ReturnRate = 6.0;
-            m_chaseShown += (free - m_chaseShown) * static_cast<float>(1.0 - std::exp(-ReturnRate * deltaSeconds));
-        }
-        m_camera.position = target;
-        m_camera.position += Math::Vector3d(back) * static_cast<double>(m_chaseShown);
-        m_camera.SetRotation(rotation);
-    }
-
-    void Engine::PlaceFollowCamera(Entity player, double deltaSeconds) {
-        TurnWithShip(player);
-        if (const Entity pilotSeat = Seats::GetPilotSeat(m_scene, player); pilotSeat != NullEntity && !m_cockpitView) {
-            PlaceChaseCamera(pilotSeat, deltaSeconds);
-            AimFollowCamera(); // en se relevant, elle regarde où regardait la vue extérieure
-            m_followShown = -1.0f; // en se relevant, la caméra se replace d'un coup derrière le personnage
-            return;
-        }
-        m_chaseShown = -1.0f;
-        if (const Entity seat = GetCockpitSeat(player); seat != NullEntity) {
-            // Vue cockpit : depuis l'œil du pilote, dans l'axe du siège (roulis du vaisseau compris).
-            const Math::Quaternionf seatRotation = m_scene.GetWorldRotation(seat);
-            m_camera.position = m_scene.GetWorldPosition(seat);
-            m_camera.position += Math::Vector3d(seatRotation.Rotate(m_scene.Get<SeatComponent>(seat).eye));
-            m_camera.SetRotation(seatRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
-                                 * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch));
-            AimFollowCamera(); // en se relevant, elle regarde où regardait le pilote
-            m_followShown = -1.0f; // en ressortant, la caméra se replace d'un coup derrière le personnage
-            m_hiddenPlayer = player;
-            return;
-        }
-        m_lookYaw = 0.0f;
-        m_lookPitch = 0.0f;
-        m_followPitch = std::clamp(m_followPitch, -FollowMaxPitch, FollowMaxPitch);
-        m_camera.SetRotation(m_followFrame * Math::Quaternionf::FromYawPitchRoll(m_followYaw, m_followPitch, 0.0f));
-
-        // Derrière le personnage, visant un peu sous le haut de sa tête.
-        const auto* character = m_scene.TryGet<CharacterComponent>(player);
-        const float eyeHeight = character ? character->height * 0.9f : 1.6f;
-        Math::WorldPosition target = m_scene.GetWorldPosition(player);
-        target += Math::Vector3d(m_followFrame.Rotate(Math::Vector3f{0.0f, eyeHeight, 0.0f}));
-
-        if (m_firstPerson) {
-            // Depuis ses yeux : rien entre la tête et la caméra, pas besoin de chercher les murs. Son ombre reste.
-            m_camera.position = target;
-            m_followShown = 0.0f;
-            m_hiddenPlayer = player;
-            return;
-        }
-
-        // Un mur entre le personnage et la caméra : elle s'avance devant lui. Sphère un peu plus grosse que ce que
-        // le plan proche découpe (0,1 m devant l'œil, écran 16/9 : 0,12 m au coin), pour ne jamais voir à travers.
-        constexpr float CameraRadius = 0.2f;
-        const Math::Vector3f back = m_camera.GetForward() * -1.0f;
-        const float free = m_physics->CastCamera(m_scene, player, target, back, m_followDistance, CameraRadius);
-        // Elle rentre d'un coup (sinon on verrait le mur de l'intérieur) et ressort en douceur (pas de bond quand
-        // le mur ne cache plus rien, par exemple en passant une porte).
-        if (m_followShown < 0.0f || free < m_followShown) {
-            m_followShown = free;
-        } else {
-            constexpr double ReturnRate = 6.0; // par seconde : les deux tiers du chemin en 1/6 s
-            m_followShown += (free - m_followShown) * static_cast<float>(1.0 - std::exp(-ReturnRate * deltaSeconds));
-        }
-
-        m_camera.position = target;
-        m_camera.position += Math::Vector3d(back) * static_cast<double>(m_followShown);
-        // Caméra poussée contre la tête (dos au mur, sous une verrière) : on verrait l'intérieur du crâne, on ne
-        // dessine plus le personnage (vue à la première personne), comme la vue cockpit.
-        constexpr float HideDistance = 0.5f;
-        if (m_followShown < HideDistance) {
-            m_hiddenPlayer = player;
-        }
     }
 
     void Engine::LoadRequestedScene() {
@@ -1255,298 +621,88 @@ namespace Flux {
     }
 
     bool Engine::ResumeQuickSave() {
-        std::error_code error;
-        if (!std::filesystem::exists(QuickSaveSceneFile(), error)) {
+        if (!QuickSave::Exists()) {
             return false;
         }
         // Scène de démarrage changée depuis la sauvegarde (dans l'éditeur, puis recopiée à côté du jeu par la
-        // génération) : la sauvegarde cacherait ce qui vient d'être modifié. Gardée pour F9. Une sauvegarde d'avant
-        // cette empreinte compte comme changée.
-        nlohmann::json player;
-        if (std::ifstream file(QuickSavePlayerFile(), std::ios::binary); file) {
-            player = nlohmann::json::parse(file, nullptr, false);
-        }
-        if (const std::optional<std::string> scene = m_project ? FileDigest(m_project->GetStartupScenePath()) : std::nullopt;
-            scene && (!player.is_object() || !player.contains("startupScene") || player["startupScene"] != *scene)) {
+        // génération) : la sauvegarde cacherait ce qui vient d'être modifié. Gardée pour F9.
+        if (m_project && !QuickSave::MatchesStartupScene(*m_project)) {
             Log::Info("sauvegarde rapide faite avec une autre scène de démarrage : non reprise");
-            ShowNotice("Scène modifiée depuis la sauvegarde : partie repartie du début (F9 pour la reprendre)");
+            m_flightHud->ShowNotice("Scène modifiée depuis la sauvegarde : partie repartie du début (F9 pour la reprendre)");
             return false;
         }
-        m_quickLoadRequested = true; // à la fin de la première image, comme F9
-        m_quickLoadResumes = true;
+        m_quickSave->RequestLoad(true); // à la fin de la première image, comme F9
         return true;
     }
 
     void Engine::DeleteQuickSave() {
-        std::error_code error;
-        const bool removed = std::filesystem::remove(QuickSaveSceneFile(), error);
-        std::filesystem::remove(QuickSavePlayerFile(), error);
-        ShowNotice(removed ? "Sauvegarde effacée : le prochain lancement repart du début" : "Aucune sauvegarde rapide");
+        m_flightHud->ShowNotice(QuickSave::Delete() ? "Sauvegarde effacée : le prochain lancement repart du début"
+                                                    : "Aucune sauvegarde rapide");
     }
 
     void Engine::RunQuickSave() {
-        const bool save = std::exchange(m_quickSaveRequested, false);
-        const bool load = std::exchange(m_quickLoadRequested, false);
-        const bool resumes = std::exchange(m_quickLoadResumes, false);
+        const QuickSave::Requests requests = m_quickSave->TakeRequests();
         if (m_gameState == GameState::Stopped) {
             return; // jeu arrêté dans l'éditeur à la même image : la scène éditée est déjà restaurée
         }
-        if (save) {
-            QuickSave();
-        }
-        if (load) {
-            QuickLoad(resumes);
-        }
-    }
-
-    void Engine::QuickSave() {
-        std::error_code error;
-        std::filesystem::create_directories(QuickSaveDirectory(), error);
-        if (auto saved = SceneSerializer::Save(m_scene, m_components, QuickSaveSceneFile(), GetPrefabReader()); !saved) {
-            Log::Error("sauvegarde rapide : {}", saved.error());
-            ShowNotice("Sauvegarde impossible : " + saved.error());
-            return;
-        }
-        // Assis, il le reste au chargement (en vol, sinon il tomberait de son siège). Un siège en train de s'asseoir
-        // ou de se lever compte comme assis : l'étape est courte.
-        nlohmann::json player = nlohmann::json::object();
-        const Entity entity = m_physics ? m_physics->GetPlayer() : NullEntity;
-        if (const auto* character = m_scene.IsValid(entity) ? m_scene.TryGet<CharacterComponent>(entity) : nullptr;
-            character && character->seat != NullEntity && m_scene.IsValid(character->seat)) {
-            player["seat"] = m_scene.GetId(character->seat).ToString();
-        }
-        nlohmann::json systems = nlohmann::json::object();
-        for (const GameSaveData& data : m_gameSaveData) {
-            if (std::string text = data.save ? data.save(*this) : std::string{}; !text.empty()) {
-                systems[data.name] = std::move(text);
+        if (requests.save) {
+            if (auto saved = m_quickSave->Write(*this, m_physics ? m_physics->GetPlayer() : NullEntity); !saved) {
+                Log::Error("sauvegarde rapide : {}", saved.error());
+                m_flightHud->ShowNotice("Sauvegarde impossible : " + saved.error());
+            } else {
+                Log::Info("partie sauvegardée dans {}", Platform::ToGenericUtf8(QuickSave::GetSceneFile()));
+                m_flightHud->ShowNotice("Partie sauvegardée");
             }
         }
-        if (!systems.empty()) {
-            player["systems"] = std::move(systems);
+        if (requests.load) {
+            QuickLoad(requests.resumes);
         }
-        if (std::optional<std::string> scene = m_project ? FileDigest(m_project->GetStartupScenePath()) : std::nullopt) {
-            player["startupScene"] = std::move(*scene); // pour ne pas la reprendre si la scène change (ResumeQuickSave)
-        }
-        if (auto saved = SceneSerializer::WriteFile(QuickSavePlayerFile(), player.dump(2)); !saved) {
-            Log::Error("sauvegarde rapide : {}", saved.error());
-            ShowNotice("Sauvegarde impossible : " + saved.error());
-            return;
-        }
-        Log::Info("partie sauvegardée dans {}", Platform::ToGenericUtf8(QuickSaveSceneFile()));
-        ShowNotice("Partie sauvegardée");
     }
 
     void Engine::QuickLoad(bool resumes) {
-        std::error_code error;
-        if (!std::filesystem::exists(QuickSaveSceneFile(), error)) {
-            ShowNotice("Aucune sauvegarde rapide");
+        if (!QuickSave::Exists()) {
+            m_flightHud->ShowNotice("Aucune sauvegarde rapide");
             return;
         }
-        if (auto loaded = LoadScene(QuickSaveSceneFile()); !loaded) {
+        if (auto loaded = LoadScene(QuickSave::GetSceneFile()); !loaded) {
             Log::Error("chargement rapide : {}", loaded.error());
             // Sauvegarde d'une version du moteur qui ne la lit plus, par exemple : la partie continue sur la scène
             // en cours (LoadScene ne l'a pas touchée).
-            ShowNotice("Sauvegarde non chargée : " + loaded.error());
+            m_flightHud->ShowNotice("Sauvegarde non chargée : " + loaded.error());
             return;
         }
         m_audio->StopAll();
-        m_followShown = -1.0f; // caméra replacée d'un coup derrière le personnage
-
-        // Fichier du joueur absent ou illisible : il est debout là où il était, rien de plus.
-        nlohmann::json player;
-        if (std::ifstream file(QuickSavePlayerFile(), std::ios::binary); file) {
-            player = nlohmann::json::parse(file, nullptr, false);
-        }
-        const Entity entity = m_physics ? m_physics->GetPlayer() : NullEntity;
-        auto* character = m_scene.IsValid(entity) ? m_scene.TryGet<CharacterComponent>(entity) : nullptr;
-        if (character && player.is_object() && player.contains("seat") && player["seat"].is_string()) {
-            const std::optional<Uuid> id = Uuid::Parse(player["seat"].get<std::string>());
-            const Entity seat = id ? m_scene.FindById(*id) : NullEntity;
-            if (const auto* component = seat != NullEntity ? m_scene.TryGet<SeatComponent>(seat) : nullptr) {
-                character->seat = seat;
-                character->seatState = SeatState::Seated;
-                character->seatTime = 0.0f;
-                // Aux commandes : il garde la vitesse enregistrée au lieu de freiner (comme en s'asseyant).
-                if (const Entity ship = component->pilot ? m_scene.GetShip(seat) : NullEntity; ship != NullEntity) {
-                    ShipComponent& shipComponent = m_scene.Get<ShipComponent>(ship);
-                    shipComponent.cruiseSpeed = -shipComponent.velocity.z;
-                }
-            }
-        }
-        // Systèmes du jeu : chacun reprend son état (une copie : un load peut en ajouter ou en retirer un autre).
-        if (player.is_object() && player.contains("systems") && player["systems"].is_object()) {
-            const std::vector<GameSaveData> handlers = m_gameSaveData;
-            for (const GameSaveData& data : handlers) {
-                if (const auto found = player["systems"].find(data.name); found != player["systems"].end() && found->is_string()
-                                                                         && data.load) {
-                    data.load(*this, found->get_ref<const std::string&>());
-                }
-            }
-        }
-        ShowNotice(resumes ? "Partie reprise (F7 : effacer la sauvegarde)" : "Partie chargée");
-    }
-
-    void Engine::ShowNotice(std::string text) {
-        m_notice = std::move(text);
-        m_noticeSeconds = NoticeSeconds;
-    }
-
-    void Engine::DrawNotice(Math::Vector2f screen, double deltaSeconds) {
-        if (!m_loading) {
-            m_noticeSeconds -= deltaSeconds; // l'écran de chargement le cache : il attend la fin pour décompter
-        }
-        // En haut au centre, au-dessus de tout ; s'efface dans la dernière demi-seconde.
-        constexpr float NoticeSize = 22.0f;
-        const float alpha = static_cast<float>(std::clamp(m_noticeSeconds / 0.5, 0.0, 1.0));
-        UI::DrawList& list = m_renderer->GetOverlay();
-        const Math::Vector2f extent = list.MeasureText(m_notice, NoticeSize);
-        const Math::Vector2f position{(screen.x - extent.x) * 0.5f, screen.y * 0.08f};
-        list.AddText({position.x + 1.5f, position.y + 1.5f}, m_notice, NoticeSize, {0.0f, 0.0f, 0.0f, 0.6f * alpha});
-        list.AddText(position, m_notice, NoticeSize, {1.0f, 1.0f, 1.0f, alpha});
-    }
-
-    void Engine::RunInterfaceActions() {
-        std::vector<std::pair<Interface::ButtonAction, std::string>> actions = std::exchange(m_interfaceActions, {});
-        for (auto& [action, target] : actions) {
-            if (m_gameState == GameState::Stopped) {
-                return; // « Quitter » a arrêté le jeu (éditeur) : la suite visait le jeu
-            }
-            switch (action) {
-                case Interface::ButtonAction::ChangeScene:
-                    if (!target.empty()) {
-                        RequestScene(std::move(target));
-                    }
-                    break;
-                case Interface::ButtonAction::Quit:
-                    if (m_gameQuitHandler) {
-                        m_gameQuitHandler(*this);
-                    } else {
-                        RequestQuit();
-                    }
-                    break;
-                case Interface::ButtonAction::RebindKey:
-                    StartKeyRebinding(std::move(target));
-                    break;
-                case Interface::ButtonAction::ResetKeys:
-                    ResetInputActions();
-                    break;
-                case Interface::ButtonAction::CallFunction:
-                    if (const auto found = m_interfaceFunctions.find(target); found != m_interfaceFunctions.end()) {
-                        // Copie : la fonction peut s'enregistrer à nouveau ou se retirer pendant l'appel.
-                        const InterfaceFunction function = found->second;
-                        function(*this);
-                    } else {
-                        Log::Warning("bouton d'interface : aucune fonction « {} » enregistrée par le jeu", target);
-                    }
-                    break;
-                default:
-                    break;
-            }
-        }
+        m_playerCamera->Snap();
+        m_quickSave->Restore(*this, m_physics ? m_physics->GetPlayer() : NullEntity);
+        m_flightHud->ShowNotice(resumes ? "Partie reprise (F7 : effacer la sauvegarde)" : "Partie chargée");
     }
 
     void Engine::RegisterInterfaceFunction(std::string name, InterfaceFunction function) {
-        m_interfaceFunctions.insert_or_assign(std::move(name), std::move(function));
+        m_interfaceBindings->RegisterFunction(std::move(name), std::move(function));
     }
 
     void Engine::UnregisterInterfaceFunction(std::string_view name) {
-        if (const auto found = m_interfaceFunctions.find(name); found != m_interfaceFunctions.end()) {
-            m_interfaceFunctions.erase(found);
-        }
+        m_interfaceBindings->UnregisterFunction(name);
     }
 
     void Engine::ClearInterfaceFunctions() {
-        m_interfaceFunctions.clear();
-        m_interfaceActions.clear();
-        m_interfaceValues.clear();
+        m_interfaceBindings->ClearGame();
     }
 
     void Engine::BindInterfaceValue(std::string name, std::function<double()> get, std::function<void(double)> set) {
-        m_interfaceValues.insert_or_assign(std::move(name), InterfaceValue{.get = std::move(get), .set = std::move(set), .getText = {}});
+        m_interfaceBindings->BindValue(std::move(name), {.get = std::move(get), .set = std::move(set), .getText = {}});
     }
 
     void Engine::BindInterfaceText(std::string name, std::function<std::string()> get) {
-        m_interfaceValues.insert_or_assign(std::move(name), InterfaceValue{.get = {}, .set = {}, .getText = std::move(get)});
+        m_interfaceBindings->BindValue(std::move(name), {.get = {}, .set = {}, .getText = std::move(get)});
     }
 
     void Engine::UnbindInterfaceValue(std::string_view name) {
-        if (const auto found = m_interfaceValues.find(name); found != m_interfaceValues.end()) {
-            m_interfaceValues.erase(found);
-        }
+        m_interfaceBindings->UnbindValue(name);
     }
 
     std::vector<std::string> Engine::GetInterfaceValueNames() const {
-        std::vector<std::string> names;
-        for (const auto& [name, value] : m_engineValues) {
-            if (!m_interfaceValues.contains(name)) {
-                names.push_back(name);
-            }
-        }
-        for (const auto& [name, value] : m_interfaceValues) {
-            names.push_back(name);
-        }
-        for (const InputAction& action : m_inputActions->GetActions()) {
-            names.push_back(std::string(KeyBindingPrefix) + action.name);
-        }
-        return names;
-    }
-
-    const Engine::InterfaceValue* Engine::FindInterfaceValue(std::string_view name) const {
-        if (const auto found = m_interfaceValues.find(name); found != m_interfaceValues.end()) {
-            return &found->second; // celles du jeu d'abord : elles peuvent remplacer celles du moteur
-        }
-        const auto found = m_engineValues.find(name);
-        return found != m_engineValues.end() ? &found->second : nullptr;
-    }
-
-    void Engine::SyncInterfaceBindings(std::vector<Interface::Element>& elements, std::uint32_t changed) {
-        for (Interface::Element& element : elements) {
-            if (element.binding.starts_with(KeyBindingPrefix)) {
-                // « Touche : Avancer » : les touches de l'action, sur un texte ou un bouton.
-                const std::string_view action = std::string_view(element.binding).substr(KeyBindingPrefix.size());
-                element.boundText = m_rebindingAction == action ? std::string("Appuyez sur une touche...")
-                                                                : m_inputActions->GetKeysText(action);
-            } else if (!element.binding.empty()) {
-                if (const InterfaceValue* value = FindInterfaceValue(element.binding)) {
-                    const bool touched = element.id == changed && value->set;
-                    switch (element.type) {
-                        case Interface::ElementType::Checkbox:
-                            if (touched) {
-                                value->set(element.checked ? 1.0 : 0.0);
-                            } else if (value->get) {
-                                element.checked = value->get() >= 0.5;
-                            }
-                            break;
-                        case Interface::ElementType::Slider:
-                            if (touched) {
-                                value->set(element.value);
-                            } else if (value->get) {
-                                element.value = static_cast<float>(value->get());
-                            }
-                            break;
-                        case Interface::ElementType::ProgressBar:
-                            if (value->get) {
-                                element.value = static_cast<float>(value->get());
-                            }
-                            break;
-                        case Interface::ElementType::Text:
-                        case Interface::ElementType::Button:
-                            if (value->getText) {
-                                element.boundText = value->getText();
-                            } else if (value->get) {
-                                // Entier sans décimales (images/s, munitions), sinon deux décimales.
-                                const double number = value->get();
-                                element.boundText = number == std::round(number) ? std::format("{:.0f}", number)
-                                                                                 : std::format("{:.2f}", number);
-                            }
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-            SyncInterfaceBindings(element.children, changed);
-        }
+        return m_interfaceBindings->GetValueNames(*m_inputActions);
     }
 
     bool Engine::SetInterfaceWindowOpen(std::string_view name, bool open) {
@@ -1572,16 +728,15 @@ namespace Flux {
 
     void Engine::ClearGameSystems() {
         m_gameSystems.clear();
-        m_gameSaveData.clear();
+        m_quickSave->ClearData();
     }
 
     void Engine::AddGameSaveData(std::string name, SaveFunction save, LoadFunction load) {
-        RemoveGameSaveData(name);
-        m_gameSaveData.push_back({std::move(name), std::move(save), std::move(load)});
+        m_quickSave->AddData(std::move(name), std::move(save), std::move(load));
     }
 
     void Engine::RemoveGameSaveData(std::string_view name) {
-        std::erase_if(m_gameSaveData, [&](const GameSaveData& data) { return data.name == name; });
+        m_quickSave->RemoveData(name);
     }
 
     void Engine::RunGameSystems(GameStage stage, double deltaSeconds) {
@@ -1604,7 +759,7 @@ namespace Flux {
     }
 
     void Engine::SetFlightInfoExtra(std::string_view text) {
-        m_flightInfoExtra.assign(text); // garde sa capacité : pas d'allocation d'une image à l'autre
+        m_flightHud->SetExtra(text);
     }
 
     void Engine::ResetGameState() {
@@ -1613,7 +768,7 @@ namespace Flux {
         m_warpName.clear();
         m_warpObjective.reset();
         m_warpObjectiveName.clear();
-        m_flightInfoExtra.clear();
+        m_flightHud->ClearExtra();
         RunGameSystems(GameStage::Reset, 0.0);
     }
 
@@ -1685,13 +840,13 @@ namespace Flux {
                                                  .wheel = input.GetWheelDelta()};
                 Interface::Interaction& interaction = instance->interaction;
                 Interface::Update(instance->document, interaction, request.viewMin, request.viewMax, pointer);
-                SyncInterfaceBindings(instance->document.roots, interaction.changed);
+                m_interfaceBindings->Sync(instance->document.roots, interaction.changed, *m_inputActions, m_rebindingAction);
                 m_interfaceMouseNow = m_interfaceMouseNow || interaction.wantsMouse;
                 m_interfacePausedNow = m_interfacePausedNow || interaction.pausesGame;
                 m_escapeUsed = m_escapeUsed || interaction.escapeUsed;
                 if (interaction.action != Interface::ButtonAction::None) {
                     // Pas pendant le dessin : la scène est en cours de parcours.
-                    m_interfaceActions.emplace_back(interaction.action, interaction.target);
+                    m_interfaceBindings->QueueAction(interaction.action, interaction.target);
                 }
                 options.interaction = &instance->interaction;
                 document = &instance->document;
@@ -1769,6 +924,10 @@ namespace Flux {
             return Math::Box3f{collider->center - half, collider->center + half};
         }
         return std::nullopt;
+    }
+
+    bool Engine::IsLoading() const {
+        return m_loadingScreen->IsActive();
     }
 
     UI::Context& Engine::GetUi() {

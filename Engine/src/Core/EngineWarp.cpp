@@ -5,6 +5,7 @@
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Ships.hpp"
 #include "Flux/UI/HudText.hpp"
+#include "Core/FlightHud.hpp"
 
 #include <format>
 
@@ -30,7 +31,7 @@ namespace Flux {
         ShipComponent& component = m_scene.Get<ShipComponent>(ship);
         // Arrivé, ou arrêté par une planète sur le chemin.
         if (component.warp == WarpStage::Off && !m_warpName.empty()) {
-            ShowFlightMessage("Sortie du warp : " + m_warpName);
+            m_flightHud->ShowFlightMessage("Sortie du warp : " + m_warpName);
             m_warpName.clear();
         }
         if (component.warp == WarpStage::Off) {
@@ -42,18 +43,18 @@ namespace Flux {
         if (component.warp != WarpStage::Off) {
             Warp::Stop(m_scene, ship);
             m_warpName.clear();
-            ShowFlightMessage("Warp coupé");
+            m_flightHud->ShowFlightMessage("Warp coupé");
             return;
         }
         if (m_warpAim < 0) {
-            ShowFlightMessage("Warp : tournez le nez vers une destination");
+            m_flightHud->ShowFlightMessage("Warp : tournez le nez vers une destination");
             return;
         }
         const Warp::Destination& destination = m_warpDestinations[static_cast<std::size_t>(m_warpAim)];
         switch (Warp::Engage(m_scene, ship, destination)) {
         case Warp::EngageResult::Started: m_warpName = GetDestinationName(destination); break;
-        case Warp::EngageResult::Unavailable: ShowFlightMessage("Warp impossible ici (posé, amarré, près d'une planète)"); break;
-        case Warp::EngageResult::TooClose: ShowFlightMessage("Trop près pour le warp : mode voyage (Tab)"); break;
+        case Warp::EngageResult::Unavailable: m_flightHud->ShowFlightMessage("Warp impossible ici (posé, amarré, près d'une planète)"); break;
+        case Warp::EngageResult::TooClose: m_flightHud->ShowFlightMessage("Trop près pour le warp : mode voyage (Tab)"); break;
         }
     }
 

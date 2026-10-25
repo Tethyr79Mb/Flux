@@ -28,16 +28,17 @@
 
 namespace Flux {
     class AudioSystem;
+    class FlightHud;
     class InputActions;
+    class InterfaceBindings;
     class InterfaceLibrary;
+    class LoadingScreen;
     class PhysicsContext;
     class PhysicsWorld;
+    class PlayerCamera;
+    class QuickSave;
     class Renderer;
     class Window;
-
-    namespace Planetology {
-        class Terrain;
-    }
 
     namespace UI {
         class Context;
@@ -245,7 +246,7 @@ namespace Flux {
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
         // Écran de chargement affiché (EngineConfig::loadingScreen) : le jeu (physique, module du jeu) attend.
-        bool IsLoading() const { return m_loading; }
+        bool IsLoading() const;
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
         void SetEditorUpdate(UpdateFunction update);
         // Appelée quand l'utilisateur ferme la fenêtre ; sans fonction, la fenêtre se ferme toujours.
@@ -267,17 +268,9 @@ namespace Flux {
             UpdateFunction function;
         };
         std::vector<GameSystem> m_gameSystems;
-        struct GameSaveData
-        {
-            std::string name;
-            SaveFunction save;
-            LoadFunction load;
-        };
-        std::vector<GameSaveData> m_gameSaveData;
         bool m_interactionPending = false; // Interagir enfoncée à cette image, pas encore prise
         std::string m_warpObjectiveName;
         std::optional<Math::WorldPosition> m_warpObjective;
-        std::string m_flightInfoExtra; // lignes du jeu sous les infos de vol (SetFlightInfoExtra)
         GameState m_gameState = GameState::Running;
         UpdateFunction m_editorUpdate;
         CloseFunction m_closeRequestHandler;
@@ -287,34 +280,19 @@ namespace Flux {
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
         bool m_drawScreenUi = true;
-        bool m_loadingScreen = true;
-        // Écran de chargement : en cours, depuis combien de temps, images de suite sans rien à attendre, et le plus
-        // d'attentes vues (pour la barre d'avancement).
-        bool m_loading = false;
-        double m_loadingSeconds = 0.0;
-        std::uint32_t m_loadingQuietFrames = 0;
-        std::uint32_t m_loadingMostPending = 0;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
-        // Sauvegarde et chargement rapides (F8 / F9) : demandés pendant l'image, faits à la fin (RunQuickSave).
-        bool m_quickSaveRequested = false;
-        bool m_quickLoadRequested = false;
-        bool m_quickLoadResumes = false; // demandé par ResumeQuickSave : son propre message
-        // Message court en haut de l'écran (« Partie sauvegardée ») et le temps qu'il reste affiché (s).
-        std::string m_notice;
-        double m_noticeSeconds = 0.0;
         std::shared_ptr<PhysicsContext> m_physicsContext;
         std::unique_ptr<PhysicsWorld> m_physics;
-        std::shared_ptr<const Planetology::Terrain> m_flightTerrain; // relief de la planète la plus proche (DrawFlightInfo)
-        std::int32_t m_flightTerrainSeed = 0;
-        float m_flightTerrainWidth = 0.0f;
-        // Vitesse réellement parcourue par le vaisseau piloté (DrawFlightInfo) : sa position à l'image d'avant et la
-        // vitesse mesurée, lissée.
-        Entity m_flightShip = NullEntity;
-        Math::WorldPosition m_flightPosition;
-        Math::Vector3d m_flightVelocity;
         std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
+        std::unique_ptr<InputActions> m_inputActions;
+        // Services privés du moteur (src/Core) : leur détail ne recompile ni l'éditeur ni le jeu.
+        std::unique_ptr<InterfaceBindings> m_interfaceBindings; // valeurs, fonctions et actions des interfaces
+        std::unique_ptr<PlayerCamera> m_playerCamera;           // caméra qui suit le joueur, cockpit, vue extérieure
+        std::unique_ptr<FlightHud> m_flightHud;                 // infos de vol et message en haut de l'écran
+        std::unique_ptr<LoadingScreen> m_loadingScreen;
+        std::unique_ptr<QuickSave> m_quickSave;                 // F7 / F8 / F9
         std::uint64_t m_frame = 0;
         bool m_interfaceWantsMouse = false; // à l'image précédente
         bool m_interfaceMouseNow = false;   // à l'image en cours, d'après les interfaces déjà dessinées
@@ -322,124 +300,40 @@ namespace Flux {
         bool m_interfacePaused = false;    // à l'image précédente
         bool m_interfacePausedNow = false; // à l'image en cours
         bool m_escapeUsed = false;         // Échap a déjà servi à une interface dans cette image
-        std::map<std::string, InterfaceFunction, std::less<>> m_interfaceFunctions;
-        struct InterfaceValue
-        {
-            std::function<double()> get{};
-            std::function<void(double)> set{};
-            std::function<std::string()> getText{}; // texte : prioritaire sur get pour un élément Texte
-        };
-        std::map<std::string, InterfaceValue, std::less<>> m_engineValues; // fournies par le moteur
-        std::map<std::string, InterfaceValue, std::less<>> m_interfaceValues; // fournies par le jeu
         double m_fps = 0.0; // moyenne de la dernière seconde (« Images par seconde »)
-        std::unique_ptr<InputActions> m_inputActions;
         std::string m_rebindingAction; // action dont on attend la nouvelle touche
         bool m_keyCaptured = false;    // une touche a servi à la réassignation à cette image : le jeu ne la voit pas
         void CaptureKeyRebinding();
         void SaveInputActions() const;
         InterfaceFunction m_gameQuitHandler;
-        // Actions des boutons cliqués pendant le dessin des interfaces, faites à la fin de la frame.
-        std::vector<std::pair<Interface::ButtonAction, std::string>> m_interfaceActions;
-        // Caméra qui suit le personnage du joueur pendant le jeu, à cette distance (molette). Molette vers l'avant
-        // au plus près : vue à la première personne (depuis ses yeux, personnage non dessiné) ; vers l'arrière : retour.
-        float m_followDistance = 4.0f;
-        bool m_firstPerson = false;
-        float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
-        Entity m_hiddenPlayer = NullEntity; // caméra dans sa tête (vue cockpit, ou coincée contre un mur) : pas dessiné
-        bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
-        // Aux commandes : la souris dirige le vaisseau (curseur caché ; Alt maintenu ou un menu de pause le libère).
-        // Rotation demandée à cette image, en radians.
-        float m_steerYaw = 0.0f;
-        float m_steerPitch = 0.0f;
         // Projectiles en vol (Weapons), vidés quand le jeu s'arrête ou qu'une scène se charge.
         std::vector<Projectile> m_projectiles;
         std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
         std::vector<Impact> m_impacts;
         std::vector<std::string> m_destroyedNames;
-        // Message bref sous les infos de vol (pilote automatique lancé, aucun quai à portée), et son temps restant.
-        std::string m_flightMessage;
-        double m_flightMessageSeconds = 0.0;
         // Warp (EngineWarp.cpp) : destinations du vaisseau piloté (recalculées à chaque image, mémoire gardée), celle
         // que vise son nez (-1 : aucune) et le nom de celle vers laquelle il file (vide hors warp).
         std::vector<Warp::Destination> m_warpDestinations;
         int m_warpAim = -1;
         std::string m_warpName;
-        // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
-        Entity m_followShip = NullEntity;
-        Math::Quaternionf m_followShipRotation;
-        // Repère où la caméra qui suit le joueur tourne (lacet, tangage) : son y est le haut de l'endroit (le monde, le
-        // pont du vaisseau, ou la verticale de la planète), son horizontale celle du joueur. Il tourne avec le
-        // vaisseau et se redresse au plus court quand le haut change (on fait le tour d'une planète).
-        Math::Quaternionf m_followFrame;
-        bool m_followFrameSet = false;
-        float m_followYaw = 0.0f;
-        float m_followPitch = 0.0f;
-        // Aux commandes d'un vaisseau : vue depuis l'œil du pilote, ou de l'extérieur, derrière le vaisseau et tournée
-        // avec lui (V ou molette pour changer), et où il regarde (clic droit).
-        bool m_cockpitView = true;
-        float m_lookYaw = 0.0f;
-        float m_lookPitch = 0.0f;
-        // Vue extérieure : distance en tailles du vaisseau (molette), et sa boîte (centre dans son repère, rayon),
-        // calculée une fois par vaisseau piloté.
-        float m_chaseZoom = 1.4f;
-        float m_chaseShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
-        Entity m_chaseShip = NullEntity;
-        Math::Vector3f m_chaseCenter;
-        float m_chaseRadius = 10.0f;
-
-        const InterfaceValue* FindInterfaceValue(std::string_view name) const;
-        // Interfaces en jeu : les éléments liés affichent leur valeur, ou la changent (changed : touché par le joueur).
-        void SyncInterfaceBindings(std::vector<Interface::Element>& elements, std::uint32_t changed);
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
+        // Sauvegarde et chargement rapides demandés pendant l'image (F8 / F9), faits à la fin.
         void RunQuickSave();
-        void QuickSave();
         // Recharge la sauvegarde rapide, joueur remis sur son siège s'il y était.
         void QuickLoad(bool resumes);
-        void ShowNotice(std::string text);
-        void DrawNotice(Math::Vector2f screen, double deltaSeconds);
         // Nouveau monde physique pour la scène actuelle, corps déjà créés.
         void StartPhysics();
-        void RunInterfaceActions();
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
         Entity GetFollowedPlayer() const;
-        void RotateFollowCamera();
-        void PlaceFollowCamera(Entity player, double deltaSeconds);
-        // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
-        Entity GetCockpitSeat(Entity player) const;
-        void TurnWithShip(Entity player);
-        // Où vole un vaisseau par rapport à la planète la plus proche : altitude au-dessus du sol (ou de la mer qui
-        // le recouvre), verticale du lieu (unitaire, monde) et densité de l'air (0 dans l'espace, voir ShipInput::air).
-        struct FlightState
-        {
-            bool nearPlanet = false;
-            double altitude = 0.0;
-            Math::Vector3d up;
-            float air = 0.0f;
-            double boundary = 0.0; // distance au haut de l'atmosphère, ou à l'altitude sans atmosphère (ShipInput::planetDistance)
-            double center = 0.0;   // distance au centre de la planète (ShipInput::planetCenter)
-        };
-        FlightState GetFlightState(Entity ship);
-        // Vitesse, vitesse verticale et altitude du vaisseau piloté, en bas de l'écran.
-        void DrawFlightInfo(Entity player, Math::Vector2f screen, double deltaSeconds);
         void UpdateWarp(Entity ship, bool toggle);
         void DrawWarpInfo(Entity player, Math::Vector2f screen);
         std::string GetDestinationName(const Warp::Destination& destination) const;
-        void ShowFlightMessage(std::string message);
         void RunGameSystems(GameStage stage, double deltaSeconds);
         // Scène chargée ou jeu arrêté : destinations du warp et objectif oubliés, systèmes du jeu prévenus.
         void ResetGameState();
-        void BeginLoading();
-        // Après le rendu : le chargement est fini quand plus rien n'est attendu pendant quelques images.
-        void UpdateLoading(double deltaSeconds);
-        void DrawLoadingScreen(Math::Vector2f screen);
-        // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
-        void AimFollowCamera();
-        // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
-        void PlaceChaseCamera(Entity seat, double deltaSeconds);
-        void MeasureShip(Entity ship);
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterface(const ScreenUi::InterfaceRequest& request);
     };
 }

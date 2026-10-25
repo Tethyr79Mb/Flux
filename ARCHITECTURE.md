@@ -73,6 +73,14 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces, changement de scène et sauvegarde rapide (F8 / F9,
    `Engine::RunQuickSave`) en fin d'image.
 
+`Engine` orchestre l'image ; le détail est dans des classes privées de `Engine/src/Core` qu'elle possède (pointeurs
+vers des types seulement déclarés dans `Engine.hpp`, pour que les changer ne recompile ni l'éditeur ni le jeu) :
+`PlayerCamera` (caméra qui suit le personnage, vue cockpit, vue extérieure), `QuickSave` (fichiers de la sauvegarde
+rapide, données des systèmes du jeu), `InterfaceBindings` (valeurs liées, fonctions et actions des boutons),
+`FlightHud` (infos de vol, message en haut de l'écran), `LoadingScreen` et `EnginePanel` (temps d'image et panneau
+Moteur). Elles passent par l'interface publique d'`Engine` (`GetScene`, `GetPhysics`...) ou reçoivent ce qu'il leur
+faut en argument.
+
 ## Rendu
 
 Couches, de la plus haute à la plus basse :
