@@ -62,6 +62,9 @@ namespace Flux::UI {
         Info,      // disque bleu, « i »
         Warning,   // triangle jaune, « ! »
         Error,     // disque rouge, croix
+        // Ajoutés ensuite (à la fin : les valeurs d'avant ne changent pas pour le module du jeu).
+        Tree,      // sapin : espèce d'arbre (fichier .espece.json)
+        Biome,     // sapin et feuillu sur une colline : biome (fichier .biome.json)
     };
 
     // Dessine l'icône dans le carré [min, min + size].

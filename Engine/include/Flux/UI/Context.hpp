@@ -80,6 +80,9 @@ namespace Flux::UI {
         static Style Graphite();   // gris neutres, accents orange
         static Style ArsSolaris(); // bleu nuit, accents cyan
         static Style FromTheme(Theme theme);
+        // Mêmes couleurs, tailles (texte, marges, arrondis, ombre) multipliées par scale : interface plus grande ou
+        // plus petite. Les largeurs données par l'appelant (panneaux, vignettes) ne suivent pas.
+        Style Scaled(float scale) const;
     };
 
     // Noms affichés des thèmes (« Sombre », « Clair »...), indexés par Theme ; aussi ceux enregistrés dans les
@@ -122,6 +125,9 @@ namespace Flux::UI {
         // (cible d'un glisser-déposer).
         Rect GetItemRect() const;
         bool IsMouseOverItem() const;
+        // Vrai si la souris est sur le panneau en cours (entre BeginPanel et EndPanel), sans rien par-dessus : ses
+        // raccourcis (Ctrl+Z...) passent avant ceux du reste du programme.
+        bool IsPanelHovered() const;
         // Liste de dessin du contenu du panneau en cours (repères de glisser-déposer...), ou nullptr hors panneau.
         DrawList* GetPanelDrawList();
 

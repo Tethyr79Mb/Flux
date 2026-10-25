@@ -497,6 +497,23 @@ namespace Flux::UI {
                 pen.Line(0.68f, 0.32f, 0.32f, 0.68f, white, 0.12f);
                 break;
             }
+            case Icon::Tree: {
+                const LinearColor needles = LinearColor::FromSrgb8(70, 150, 80);
+                pen.Rect(0.44f, 0.78f, 0.56f, 0.94f, LinearColor::FromSrgb8(130, 90, 56)); // tronc
+                pen.Triangle({0.5f, 0.06f}, {0.78f, 0.46f}, {0.22f, 0.46f}, Shade(needles, 1.15f)); // trois étages
+                pen.Triangle({0.5f, 0.26f}, {0.84f, 0.64f}, {0.16f, 0.64f}, needles);
+                pen.Triangle({0.5f, 0.44f}, {0.9f, 0.82f}, {0.1f, 0.82f}, Shade(needles, 0.85f));
+                break;
+            }
+            case Icon::Biome: {
+                const LinearColor hill = LinearColor::FromSrgb8(120, 160, 70);
+                pen.Quad({0.04f, 0.94f}, {0.3f, 0.66f}, {0.7f, 0.66f}, {0.96f, 0.94f}, hill); // colline
+                pen.Rect(0.27f, 0.6f, 0.33f, 0.7f, LinearColor::FromSrgb8(130, 90, 56));
+                pen.Triangle({0.3f, 0.12f}, {0.48f, 0.62f}, {0.12f, 0.62f}, LinearColor::FromSrgb8(52, 120, 64)); // sapin
+                pen.Rect(0.67f, 0.56f, 0.73f, 0.68f, LinearColor::FromSrgb8(130, 90, 56));
+                pen.Disc(0.7f, 0.42f, 0.17f, LinearColor::FromSrgb8(96, 170, 72)); // feuillu
+                break;
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Flux/Export.hpp"
-#include "Flux/Math/Color.hpp"
+#include "Flux/Planetology/Vegetation.hpp"
 #include "Flux/Scene/Components.hpp"
 
 #include <array>
@@ -10,47 +10,12 @@
 #include <expected>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace Flux::Planetology {
-    // Une espèce d'arbre (fichier .espece.json) : à quoi il ressemble. Chaque variante a ses trois modèles (près,
-    // simplifié, loin) ; le reste est commun.
-    struct TreeSpecies
-    {
-        struct Variant
-        {
-            std::string model, lodModel, farModel; // relatifs au dossier des assets
-        };
-        std::vector<Variant> variants;
-        float minScale = 0.7f, maxScale = 1.3f; // x le modèle
-        float maxSlope = 30.0f;                 // degrés
-        float tint = 0.1f;                      // écart de teinte d'un arbre à l'autre (0 : aucun)
-        Math::LinearColor canopyColor{0.02f, 0.045f, 0.012f, 1.0f}; // cimes vues de loin
-    };
-
-    // Un biome (fichier .biome.json) : où il pousse et quelles espèces.
-    struct VegetationBiome
-    {
-        float plains = 1.0f, hills = 1.0f, mountains = 1.0f; // part prise dans chaque zone du relief (Terrain::Zones)
-        float minAltitude = -100.0f, maxAltitude = 100.0f;   // % du relief, au-dessus du niveau zéro
-        float minTemperature = -100.0f, maxTemperature = 100.0f; // °C
-        float minHumidity = -1.0f, maxHumidity = 2.0f;
-        float cover = 0.5f;   // part couverte de forêts
-        float density = 0.4f; // part des places occupée dans une forêt
-        float scale = 1.0f;   // taille des arbres, x celle de l'espèce
-        struct Share
-        {
-            std::string species; // chemin du .espece.json
-            float share = 1.0f;
-        };
-        std::vector<Share> species; // 4 au plus
-    };
-
-    FLUX_API std::expected<TreeSpecies, std::string> ParseTreeSpecies(std::string_view text);
-    FLUX_API std::expected<VegetationBiome, std::string> ParseVegetationBiome(std::string_view text);
-
     // Doit correspondre à Biome dans shaders/PlanetClimate.slang.
     struct BiomeGpu
     {
@@ -65,7 +30,7 @@ namespace Flux::Planetology {
     {
         static constexpr std::uint32_t MaxBiomes = 8;   // shaders/PlanetClimate.slang
         static constexpr std::uint32_t MaxSpecies = 8;  // shaders/PlanetTile.slang, shaders/Vegetation.slang
-        static constexpr std::uint32_t MaxSharesPerBiome = 4;
+        static constexpr std::uint32_t MaxSharesPerBiome = VegetationBiome::MaxSpecies;
         struct Species
         {
             TreeSpecies::Variant models;
@@ -80,9 +45,15 @@ namespace Flux::Planetology {
         std::uint64_t revision = 0; // change avec un fichier lu
     };
 
+    // Aperçus de l'éditeur (SetVegetationPreview) : le texte provisoire de path, s'il y en a un, et leur compteur, qui
+    // change avec chacun.
+    std::optional<std::string> FindVegetationPreview(std::string_view path);
+    std::uint64_t GetVegetationPreviewRevision();
+
     // Lit les biomes d'une planète (VegetationComponent::biome1 à biome8) et leurs espèces, et les relit quand un
-    // fichier change (vérifié une fois par seconde). Fichier faux ou absent : un message à chaque lecture, et il est
-    // ignoré. Garde les biomes de quelques planètes à la fois (une liste de biomes chacune).
+    // fichier change (vérifié une fois par seconde) ou qu'un aperçu de l'éditeur change (dès l'appel suivant).
+    // Fichier faux ou absent : un message à chaque lecture, et il est ignoré. Garde les biomes de quelques planètes à
+    // la fois (une liste de biomes chacune).
     // Exporté pour les tests (Tests/src/VegetationTests.cpp).
     class FLUX_API VegetationLibrary {
         public:
@@ -97,6 +68,7 @@ namespace Flux::Planetology {
             // Biomes et espèces lus (chemins relatifs aux assets) et leur date (min : absent).
             std::map<std::string, std::filesystem::file_time_type> files;
             std::chrono::steady_clock::time_point checked{};
+            std::uint64_t previews = 0; // GetVegetationPreviewRevision() à la dernière lecture
             std::uint64_t lastUsed = 0;
             VegetationSet set;
         };

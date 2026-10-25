@@ -46,6 +46,9 @@ namespace FluxEditor {
             if (type == AssetType::Biome) {
                 return {{"Biomes Flux", ".biome.json"}, "Choisir un biome", "Vegetation/Biomes"};
             }
+            if (type == AssetType::Species) {
+                return {{"Espèces Flux", ".espece.json"}, "Choisir une espèce", "Vegetation/Especes"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 
