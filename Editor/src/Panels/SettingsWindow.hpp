@@ -37,5 +37,6 @@ namespace FluxEditor {
         bool m_bloomChanged = false; // pas encore enregistré (curseur tenu)
         bool m_temporalAA = true;
         Flux::GroundDetail m_groundDetail = Flux::DefaultGroundDetail;
+        Flux::CloudQuality m_cloudQuality = Flux::DefaultCloudQuality;
     };
 }

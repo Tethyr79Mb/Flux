@@ -5,6 +5,7 @@
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -136,6 +137,9 @@ namespace Flux {
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;
+        // Qualité des nuages volumétriques (DefaultCloudQuality par défaut) : moins de pas, moins de calcul.
+        void SetCloudQuality(CloudQuality quality);
+        CloudQuality GetCloudQuality() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

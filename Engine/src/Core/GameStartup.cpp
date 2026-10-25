@@ -58,6 +58,7 @@ namespace Flux {
                        .vsync = settings.vsync,
                        .temporalAA = settings.temporalAA,
                        .groundDetail = settings.groundDetail,
+                       .cloudQuality = settings.cloudQuality,
                        .volume = settings.volume});
         engine.SetProject(*project);
 
@@ -105,6 +106,7 @@ namespace Flux {
         settings.vsync = engine.GetRenderer().IsVSyncEnabled();
         settings.temporalAA = engine.GetRenderer().IsTemporalAAEnabled();
         settings.groundDetail = engine.GetRenderer().GetGroundDetail();
+        settings.cloudQuality = engine.GetRenderer().GetCloudQuality();
         settings.volume = engine.GetAudio().GetMasterVolume();
         return settings;
     }

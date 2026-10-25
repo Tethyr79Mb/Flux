@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 
 #include <expected>
@@ -20,6 +21,7 @@ namespace Flux {
         bool vsync = true;
         bool temporalAA = true;    // anticrénelage temporel (TAA)
         GroundDetail groundDetail = DefaultGroundDetail;
+        CloudQuality cloudQuality = DefaultCloudQuality;
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)
     };

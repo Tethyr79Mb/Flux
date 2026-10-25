@@ -129,9 +129,10 @@ namespace Flux {
         std::string text;
         text += std::format("Mesures de Flux {} du {}\n", GetFullVersion(), Time(now, "%d/%m/%Y à %H:%M:%S"));
         text += std::format("GPU : {}\n", context.device);
-        text += std::format("Image : {} x {}, V-Sync {}, anticrénelage {}, détail du sol {}\n", context.width, context.height,
+        text += std::format("Image : {} x {}, V-Sync {}, anticrénelage {}, détail du sol {}, nuages {}\n", context.width, context.height,
                             context.vsync ? "oui" : "non", context.temporalAA ? "oui" : "non",
-                            GroundDetailLabels[static_cast<std::size_t>(context.groundDetail)]);
+                            GroundDetailLabels[static_cast<std::size_t>(context.groundDetail)],
+                            CloudQualityLabels[static_cast<std::size_t>(context.cloudQuality)]);
         text += std::format("Objets cachés écartés {}, sol sans pixels {}, sol dessiné par {}\n",
                             context.occlusionCulling ? "oui" : "non", context.groundGeometryOnly ? "oui" : "non",
                             context.groundMeshThreads > 0 ? std::format("mesh shaders ({} threads)", context.groundMeshThreads)

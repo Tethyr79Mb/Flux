@@ -96,6 +96,7 @@ namespace Flux {
         m_renderer->SetVSync(config.vsync);
         m_renderer->SetTemporalAA(config.temporalAA);
         m_renderer->SetGroundDetail(config.groundDetail);
+        m_renderer->SetCloudQuality(config.cloudQuality);
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
@@ -124,6 +125,15 @@ namespace Flux {
                                              },
                                              .getText = {},
                                              .options = {GroundDetailLabels.begin(), GroundDetailLabels.end()}});
+        // Numéro dans CloudQualityLabels (0 Bas à 2 Élevé).
+        m_interfaceBindings->SetEngineValue("Qualité des nuages", "Graphismes",
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetCloudQuality()); },
+                                             .set = [this](double value) {
+                                                 m_renderer->SetCloudQuality(static_cast<CloudQuality>(
+                                                     std::clamp(std::lround(value), 0l, static_cast<long>(CloudQualityCount) - 1)));
+                                             },
+                                             .getText = {},
+                                             .options = {CloudQualityLabels.begin(), CloudQualityLabels.end()}});
         m_interfaceBindings->SetEngineValue("Volume général", "Son", {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
                                              .set = [this](double value) {
                                                  m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
@@ -292,6 +302,7 @@ namespace Flux {
                     .vsync = m_renderer->IsVSyncEnabled(),
                     .temporalAA = m_renderer->IsTemporalAAEnabled(),
                     .groundDetail = m_renderer->GetGroundDetail(),
+                    .cloudQuality = m_renderer->GetCloudQuality(),
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
                     .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
                     .groundMeshThreads = render.groundMeshThreads,

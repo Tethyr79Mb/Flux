@@ -720,6 +720,14 @@ namespace Flux {
         return m_impl->meshes->GetGroundDetail();
     }
 
+    void Renderer::SetCloudQuality(CloudQuality quality) {
+        m_impl->clouds->SetQuality(quality);
+    }
+
+    CloudQuality Renderer::GetCloudQuality() const {
+        return m_impl->clouds->GetQuality();
+    }
+
     std::string_view Renderer::GetPresentModeName() const {
         switch (m_impl->device->GetPresentMode()) {
             case RHI::PresentMode::Fifo: return "FIFO (synchronisé)";

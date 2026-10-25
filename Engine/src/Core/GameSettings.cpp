@@ -72,6 +72,14 @@ namespace Flux::GameSettingsFile {
                 warnings->push_back("« groundDetail » ignoré (valeur non valide)");
             }
         }
+        if (const auto quality = document.find("cloudQuality"); quality != document.end()) {
+            const auto found = quality->is_string() ? std::ranges::find(CloudQualityKeys, quality->get<std::string>()) : CloudQualityKeys.end();
+            if (found != CloudQualityKeys.end()) {
+                settings.cloudQuality = static_cast<CloudQuality>(found - CloudQualityKeys.begin());
+            } else if (warnings) {
+                warnings->push_back("« cloudQuality » ignoré (valeur non valide)");
+            }
+        }
         Read(document, "volume", settings.volume, IsNumber, warnings);
         settings.volume = std::clamp(settings.volume, 0.0f, 1.0f);
         Read(document, "engineStats", settings.showEngineStats, IsBool, warnings);
@@ -87,6 +95,7 @@ namespace Flux::GameSettingsFile {
         document["vsync"] = settings.vsync;
         document["temporalAA"] = settings.temporalAA;
         document["groundDetail"] = GroundDetailKeys[static_cast<std::size_t>(settings.groundDetail)];
+        document["cloudQuality"] = CloudQualityKeys[static_cast<std::size_t>(settings.cloudQuality)];
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;
         return document.dump(2) + "\n";

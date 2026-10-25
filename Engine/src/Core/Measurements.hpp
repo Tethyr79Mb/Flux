@@ -32,6 +32,7 @@ namespace Flux {
             bool vsync = false;
             bool temporalAA = false;
             GroundDetail groundDetail = DefaultGroundDetail;
+            CloudQuality cloudQuality = DefaultCloudQuality;
             bool occlusionCulling = false;  // « Objets cachés écartés »
             bool groundGeometryOnly = false; // « Sol sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets
