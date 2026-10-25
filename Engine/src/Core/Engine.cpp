@@ -11,6 +11,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Platform/Console.hpp"
 #include "Flux/Platform/Dialogs.hpp"
+#include "Flux/Platform/Environment.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Platform/Input.hpp"
 #include "Flux/Platform/Memory.hpp"
@@ -454,11 +455,8 @@ namespace Flux {
         double gameMilliseconds = -1.0;
         // FLUX_MESURES=secondes : un relevé dès la fin du chargement (essais automatiques, sans clic).
         double automaticMeasure = 0.0;
-#ifdef _MSC_VER
-#pragma warning(suppress : 4996) // getenv : lu avant tout fil
-#endif
-        if (const char* seconds = std::getenv("FLUX_MESURES")) {
-            automaticMeasure = std::max(std::atof(seconds), 0.0);
+        if (const std::optional<std::string> seconds = Platform::ReadEnvironment("FLUX_MESURES")) {
+            automaticMeasure = std::max(std::atof(seconds->c_str()), 0.0);
         }
         Clock::time_point previousFrame = Clock::now();
         while (!m_quitRequested && !Platform::ConsoleCloseRequested() && m_window->IsOpen()) {
