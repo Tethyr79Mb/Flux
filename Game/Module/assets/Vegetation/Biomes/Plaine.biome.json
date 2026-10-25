@@ -1,6 +1,6 @@
 {
   "zones": {"plains": 1, "hills": 0.5, "mountains": 0},
-  "temperature": [4, 30],
+  "temperature": [4, 32],
   "humidity": [0.45, 2],
   "cover": 0.45,
   "density": 0.35,

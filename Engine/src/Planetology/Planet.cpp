@@ -44,7 +44,7 @@ namespace Flux::Planetology {
         constexpr double ChainStart = 0.75;
         constexpr double ChainEnd = 0.95;
         // Piémonts (Terrain::Zones::mountains) : la zone des montagnes commence aussi loin avant la chaîne.
-        constexpr double Foothills = 0.2;
+        constexpr double Foothills = 0.05;
         // Part de la hauteur d'une chaîne donnée par sa bande elle-même (un dos continu le long de la chaîne), le reste
         // par les sommets : sans elle, les montagnes seraient des pics isolés dans la plaine.
         constexpr double ChainBase = 0.2;

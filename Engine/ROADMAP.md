@@ -141,7 +141,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   une planète liste jusqu'à 8 biomes, chacun avec ses conditions (plaines, collines, montagnes et piémonts, altitude,
   température, humidité), ses forêts et jusqu'à 4 espèces avec leur part ; le premier qui convient prend le sol.
   Livrés : marais, désert, montagne (épicéas et sapins), taïga, pinède, plaine (feuillus). Teinte propre à chaque
-  arbre, couleur des forêts lointaines selon le biome. À améliorer : pas encore de panneau pour les biomes et les
+  arbre, couleur des forêts lointaines selon le biome. Humidité en bandes de latitude comme sur Terre (déserts vers
+  25-30°, taïga vers 55-65°, toundra au-delà). À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
+  pluie derrière les montagnes ; pas encore de panneau pour les biomes et les
   espèces (étape 2b, éditeur) ; 8 variantes d'arbres au plus par planète ; imposteurs en 3 quads croisés (plats vus
   d'en haut) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas de
   collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou

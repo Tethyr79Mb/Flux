@@ -20,9 +20,20 @@ float PlanetNoise(float3 x)
                      lerp(PlanetHash(i + float3(0, 1, 1)), PlanetHash(i + float3(1, 1, 1)), t.x), t.y), t.z);
 }
 
+// Humidité ajoutée selon la latitude (degrés), comme sur Terre : l'air chaud monte et pleut à l'équateur, redescend sec
+// vers 25-30° (les grands déserts), pleut de nouveau vers 50-60° (forêts tempérées et boréales), redescend sec aux pôles.
+float LatitudeHumidity(float degrees)
+{
+    const float equator = (degrees / 12.0) * (degrees / 12.0);
+    const float tropics = ((degrees - 27.0) / 10.0) * ((degrees - 27.0) / 10.0);
+    const float temperate = ((degrees - 55.0) / 13.0) * ((degrees - 55.0) / 13.0);
+    return 0.3 * exp(-equator) - 0.35 * exp(-tropics) + 0.12 * exp(-temperate) - 0.15 * smoothstep(65.0, 90.0, degrees);
+}
+
 // Température (°C) et humidité (0 à 1 environ) au point `local` (repère de la planète, centre à l'origine).
 // climate : température à l'équateur, aux pôles, humidité de la planète ; waterRadius : rayon de la surface de
-// l'océan (0 : aucun).
+// l'océan (0 : aucun). Les ceintures de latitude (LatitudeHumidity) décident d'abord, des taches de quelques centaines
+// de km et de 30 km les déforment, les côtes sont plus humides.
 float2 ClimateAt(float radius, float relief, float3 climate, float waterRadius, float3 local)
 {
     relief = max(relief, 1.0);
@@ -32,8 +43,11 @@ float2 ClimateAt(float radius, float relief, float3 climate, float waterRadius, 
     const float temperature = lerp(climate.x, climate.y, (latitude * latitude) * (latitude * latitude))
                             - 0.0065 * max(altitude, 0.0) + (PlanetNoise(local * (100.0 / radius)) - 0.5) * 8.0;
     const float coast = waterRadius > 0.0 ? smoothstep(0.02 * relief, 0.0, distance - waterRadius) : 0.0;
-    const float humidity = climate.z + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.9
-                         + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.4 + coast * 0.3;
+    // Ceintures ondulées de ±8° (les déserts ne font pas le tour de la planète en ligne droite).
+    const float wave = (PlanetNoise(local * (1.5 / radius) + 31.0) - 0.5) * 16.0;
+    const float humidity = climate.z + LatitudeHumidity(abs(asin(saturate(latitude)) * 57.29578 + wave))
+                         + (PlanetNoise(local * (2.0 / radius) + 17.0) - 0.5) * 0.5
+                         + (PlanetNoise(local * (1.0 / 30000.0) + 5.0) - 0.5) * 0.3 + coast * 0.3;
     return float2(temperature, humidity);
 }
 

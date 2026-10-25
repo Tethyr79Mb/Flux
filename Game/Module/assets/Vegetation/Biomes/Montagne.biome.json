@@ -1,5 +1,5 @@
 {
-  "zones": {"plains": 0, "hills": 0.5, "mountains": 1},
+  "zones": {"plains": 0, "hills": 0.3, "mountains": 1},
   "temperature": [-6, 30],
   "humidity": [0.35, 2],
   "cover": 0.6,
