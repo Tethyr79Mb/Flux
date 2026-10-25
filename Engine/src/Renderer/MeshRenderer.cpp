@@ -494,10 +494,14 @@ namespace Flux {
         if (m_tileMeshLayout) {
             const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_tileMeshLayout.get()};
             RHI::PipelineDesc mesh;
-            // Groupes de 128 threads, ou de 64 si le pilote préfère moins (NVIDIA) : PlanetMeshSmall.slang.
-            m_planetMeshThreads = m_device.GetMeshPreferredThreads() >= 128 ? 128u : 64u;
+            // Groupes de 128 threads, de 256 si le pilote préfère plus (AMD) et que le GPU le permet
+            // (PlanetMeshLarge.slang), ou de 64 s'il préfère moins (NVIDIA) : PlanetMeshSmall.slang.
+            const std::uint32_t preferred = m_device.GetMeshPreferredThreads();
+            m_planetMeshThreads = preferred >= 256 && m_device.GetMeshMaxThreads() >= 256 ? 256u : preferred >= 128 ? 128u : 64u;
             mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders"
-                            / (m_planetMeshThreads == 128 ? "PlanetMesh.spv" : "PlanetMeshSmall.spv");
+                            / (m_planetMeshThreads == 256   ? "PlanetMeshLarge.spv"
+                               : m_planetMeshThreads == 128 ? "PlanetMesh.spv"
+                                                            : "PlanetMeshSmall.spv");
             mesh.taskEntryPoint = "taskPlanet";
             mesh.meshEntryPoint = "meshPlanet";
             mesh.fragmentEntryPoint = "fragmentPlanet";

@@ -377,7 +377,11 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   les paquets dans le champ et non cachés par la pyramide de profondeur de l'image précédente, puis un mesh shader de
   128 threads refait sommets et triangles du paquet avec la même fonction que le vertex shader (`PlanetVertex`). Si le
   pilote préfère des groupes plus petits (`maxPreferredMeshWorkGroupInvocations` sous 128), `PlanetMeshSmall.slang`
-  dessine chaque paquet en deux moitiés de 8×4 à 64 threads.
+  dessine chaque paquet en deux moitiés de 8×4 à 64 threads. S'il en préfère 256 (AMD) et que le GPU accepte des
+  groupes de 256 threads, `PlanetMeshLarge.slang` dessine deux paquets superposés par groupe (8×16 mailles, 256
+  triangles, un triangle par thread) et les jupes à part, par moitiés de bord (au plus 7 par groupe) : avec leurs jupes,
+  ces morceaux dépasseraient les 256 triangles qu'un groupe peut sortir. Sur AMD, le pilote lance de toute façon un
+  thread par sommet ou triangle de sortie : des groupes pleins évitent les threads qui n'ont rien à faire.
   `ShaderStage::Vertex` couvre alors aussi tâche et maillage, pour que les layouts restent les mêmes sur les deux
   chemins.
 - Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont

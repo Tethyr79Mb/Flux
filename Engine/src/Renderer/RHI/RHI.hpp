@@ -417,6 +417,8 @@ namespace Flux::RHI {
         virtual bool HasMeshShaders() const = 0;
         // Nombre de threads par groupe de maillage que le pilote préfère (0 sans mesh shaders).
         virtual std::uint32_t GetMeshPreferredThreads() const = 0;
+        // Plus grand groupe de maillage permis, en threads comme en sommets et triangles de sortie (0 sans mesh shaders).
+        virtual std::uint32_t GetMeshMaxThreads() const = 0;
         // Formats compressés BC (textureCompressionBC) : tous les GPU de bureau, facultatif quand même.
         virtual bool HasTextureCompressionBC() const = 0;
         // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).

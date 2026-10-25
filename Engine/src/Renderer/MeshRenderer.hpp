@@ -382,7 +382,7 @@ namespace Flux {
         // sommets et les boîtes des paquets d'une page de tuiles (un groupe par page, fait à sa première utilisation).
         std::unique_ptr<RHI::BindGroupLayout> m_tileMeshLayout;
         std::unique_ptr<RHI::Pipeline> m_planetMesh;
-        std::uint32_t m_planetMeshThreads = 0; // 128 (PlanetMesh.slang) ou 64 (PlanetMeshSmall.slang)
+        std::uint32_t m_planetMeshThreads = 0; // 128 (PlanetMesh.slang), 256 (PlanetMeshLarge.slang) ou 64 (PlanetMeshSmall.slang)
         std::unique_ptr<RHI::Pipeline> m_planetMeshGeometry; // pixel presque vide, comme Pipelines::geometryOnly
         std::vector<std::unique_ptr<RHI::BindGroup>> m_tileMeshGroups;
         // Modèles fixes en mesh shaders : le groupe 3 lit les sommets et les paquets d'une page de géométrie (un groupe

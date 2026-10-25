@@ -45,6 +45,8 @@ namespace Flux::Vk {
         bool HasMeshShaders() const { return m_meshShaders; }
         // maxPreferredMeshWorkGroupInvocations (0 sans mesh shaders).
         std::uint32_t GetMeshPreferredThreads() const { return m_meshPreferredThreads; }
+        // Plus grand groupe de maillage permis : threads, sommets et triangles en sortie (0 sans mesh shaders).
+        std::uint32_t GetMeshMaxThreads() const { return m_meshMaxThreads; }
         // textureCompressionBC activé : formats BC7 (sol des planètes).
         bool HasTextureCompressionBC() const { return m_textureCompressionBC; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
@@ -99,6 +101,7 @@ namespace Flux::Vk {
         bool m_float64 = false;
         bool m_meshShaders = false;
         std::uint32_t m_meshPreferredThreads = 0;
+        std::uint32_t m_meshMaxThreads = 0;
         bool m_textureCompressionBC = false;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;

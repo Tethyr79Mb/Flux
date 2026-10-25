@@ -189,6 +189,7 @@ namespace Flux::Vk {
         bool HasFloat64() const override { return m_device->HasFloat64(); }
         bool HasMeshShaders() const override { return m_device->HasMeshShaders(); }
         std::uint32_t GetMeshPreferredThreads() const override { return m_device->GetMeshPreferredThreads(); }
+        std::uint32_t GetMeshMaxThreads() const override { return m_device->GetMeshMaxThreads(); }
         bool HasTextureCompressionBC() const override { return m_device->HasTextureCompressionBC(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override { m_device->WaitIdle(); }

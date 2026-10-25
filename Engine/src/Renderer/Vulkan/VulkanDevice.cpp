@@ -142,6 +142,9 @@ namespace Flux::Vk {
             properties.pNext = &meshProperties;
             vkGetPhysicalDeviceProperties2(device->m_physicalDevice.physical_device, &properties);
             device->m_meshPreferredThreads = meshProperties.maxPreferredMeshWorkGroupInvocations;
+            // La norme ne garantit que 128 threads (256 sommets et triangles) : la variante à 256 threads le vérifie.
+            device->m_meshMaxThreads = std::min({meshProperties.maxMeshWorkGroupInvocations, meshProperties.maxMeshOutputVertices,
+                                                 meshProperties.maxMeshOutputPrimitives});
         }
         // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
         device->m_bufferMarkers = device->m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
