@@ -12,14 +12,14 @@ bool RunGameSettingsTests() {
     changed.fullscreen = true;
     changed.vsync = false;
     changed.temporalAA = false;
-    changed.groundDetail = GroundDetail::VeryHigh;
+    changed.groundDetail = GroundDetail::Ultra;
     changed.volume = 0.25f;
     changed.showEngineStats = false;
     const auto reread = GameSettingsFile::Parse(GameSettingsFile::ToString(changed));
     CHECK(reread.has_value());
     CHECK(reread->windowSize.x == 1920 && reread->windowSize.y == 1080 && reread->maximized && reread->fullscreen);
     CHECK(!reread->vsync && !reread->temporalAA && reread->volume == 0.25f && !reread->showEngineStats);
-    CHECK(reread->groundDetail == GroundDetail::VeryHigh);
+    CHECK(reread->groundDetail == GroundDetail::Ultra);
 
     // Valeur absente : la valeur par défaut, sans avertissement.
     std::vector<std::string> warnings;

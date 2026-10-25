@@ -25,13 +25,17 @@ namespace Flux {
             std::function<double()> get{};
             std::function<void(double)> set{};
             std::function<std::string()> getText{}; // texte : prioritaire sur get pour un élément Texte
+            std::vector<std::string> options{};     // valeur à choix : ceux des listes déroulantes liées
+            std::string_view category{};            // pour l'éditeur (texte constant)
         };
-        // Valeur fournie par le moteur (« V-Sync », « Images par seconde ») ; celles du jeu la remplacent.
-        void SetEngineValue(std::string name, Value value);
+        // Valeur fournie par le moteur (« V-Sync », « Images par seconde »), rangée dans une catégorie de l'éditeur
+        // (« Graphismes »...) ; celles du jeu la remplacent.
+        void SetEngineValue(std::string name, std::string_view category, Value value);
+        // Valeur du jeu, dans la catégorie « Jeu ».
         void BindValue(std::string name, Value value);
         void UnbindValue(std::string_view name);
-        // Noms des valeurs liables (moteur puis jeu, puis les touches des actions), pour l'éditeur.
-        std::vector<std::string> GetValueNames(const InputActions& actions) const;
+        // Valeurs liables (moteur puis jeu, puis les touches des actions), pour l'éditeur.
+        std::vector<Engine::InterfaceValueInfo> GetValues(const InputActions& actions) const;
 
         void RegisterFunction(std::string name, Engine::InterfaceFunction function);
         void UnregisterFunction(std::string_view name);

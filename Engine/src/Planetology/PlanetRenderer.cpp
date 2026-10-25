@@ -8,7 +8,7 @@
 
 namespace Flux::Planetology {
     namespace {
-        // Nœuds gardés par planète au plus, au détail Normal : au-delà, les moins récemment utilisés sont oubliés
+        // Nœuds gardés par planète au plus, au détail Bas : au-delà, les moins récemment utilisés sont oubliés
         // (environ 70 Ko de sommets par tuile, soit environ 70 Mo de mémoire vidéo). Autant de fois plus que de
         // tuiles en plus aux détails plus fins (carré du facteur de coupe).
         constexpr std::size_t MaxNodes = 1024;
@@ -417,7 +417,7 @@ namespace Flux::Planetology {
             }
         }
         // Trop de nœuds : les moins récemment visités (jamais ceux de cette image, ni les racines) sont oubliés.
-        const double normalFactor = GetSplitFactor(GroundDetail::Normal);
+        const double normalFactor = GetSplitFactor(GroundDetail::Low);
         const auto maxNodes = static_cast<std::size_t>(static_cast<double>(MaxNodes) * (m_splitFactor * m_splitFactor) / (normalFactor * normalFactor));
         for (auto& [entity, state] : m_planets) {
             if (state.nodes.size() <= maxNodes) {

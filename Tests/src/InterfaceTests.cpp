@@ -553,6 +553,76 @@ namespace {
     }
 }
 
+namespace {
+    // Liste déroulante : un clic la déplie, un clic sur un choix le prend (sans toucher le bouton qu'elle couvre), un
+    // clic ailleurs ou Échap la replie ; ses choix et le choix fait passent par le fichier.
+    bool RunDropdownTests(const UI::Font& font) {
+        Interface::Document document;
+        Interface::Element window = Interface::MakeElement(document, Interface::ElementType::Window);
+        window.anchor = Interface::Anchor::TopLeft;
+        window.size = {600.0f, 400.0f};
+        window.closeOnEscape = true;
+        Interface::Element dropdown = Interface::MakeElement(document, Interface::ElementType::Dropdown);
+        dropdown.anchor = Interface::Anchor::TopLeft;
+        dropdown.position = {20.0f, 60.0f};
+        dropdown.size = {200.0f, 40.0f}; // choix dépliés : y 100-140, 140-180, 180-220
+        dropdown.options = {"Bas", "Moyen", "Élevé"};
+        dropdown.value = 0.0f;
+        Interface::Element button = Interface::MakeElement(document, Interface::ElementType::Button);
+        button.anchor = Interface::Anchor::TopLeft;
+        button.position = {20.0f, 150.0f};
+        button.size = {200.0f, 40.0f}; // sous la liste dépliée
+        window.children = {dropdown, button};
+        document.roots.push_back(window);
+        const Vector2f min{0.0f, 0.0f};
+        const Vector2f max{1920.0f, 1080.0f};
+
+        Interface::Interaction interaction;
+        const auto frame = [&](Vector2f mouse, bool down, bool pressed, bool released, bool escape = false) {
+            Interface::Update(document, interaction, min, max, {mouse, down, pressed, released, true, escape});
+        };
+        const auto click = [&](Vector2f mouse) {
+            frame(mouse, true, true, false);
+            frame(mouse, false, false, true);
+        };
+
+        click({100.0f, 80.0f});
+        CHECK(interaction.openList == dropdown.id);
+        frame({100.0f, 165.0f}, false, false, false);
+        CHECK(interaction.hoveredOption == 1 && interaction.hovered == 0 && interaction.wantsMouse);
+        UI::DrawList list(font);
+        Interface::Draw(document, list, min, max, {.interaction = &interaction});
+        frame({100.0f, 165.0f}, true, true, false);
+        CHECK(interaction.changed == dropdown.id && interaction.openList == 0);
+        CHECK(Interface::GetDropdownChoice(*Interface::Find(document, dropdown.id)) == 1);
+        frame({100.0f, 165.0f}, false, false, true);
+        CHECK(interaction.clicked == 0); // le clic était pour la liste, pas pour le bouton dessous
+
+        // Échap replie la liste sans fermer la fenêtre ; un clic ailleurs aussi, sans rien choisir.
+        click({100.0f, 80.0f});
+        frame({100.0f, 80.0f}, false, false, false, true);
+        CHECK(interaction.openList == 0 && interaction.escapeUsed && Interface::Find(document, window.id)->visible);
+        click({100.0f, 80.0f});
+        click({1000.0f, 800.0f});
+        CHECK(interaction.openList == 0 && Interface::GetDropdownChoice(*Interface::Find(document, dropdown.id)) == 1);
+
+        // Choix fait ramené dans les choix ; sans choix, aucun (et la liste ne se déplie pas).
+        Interface::Element alone = Interface::MakeDefault(Interface::ElementType::Dropdown);
+        alone.value = 7.0f;
+        CHECK(Interface::GetDropdownChoice(alone) == static_cast<int>(alone.options.size()) - 1);
+        alone.options.clear();
+        CHECK(Interface::GetDropdownChoice(alone) == -1);
+
+        // Fichier : choix et choix fait gardés.
+        const auto reread = Interface::LoadFromString(Interface::SaveToString(document));
+        CHECK(reread.has_value());
+        const Interface::Element* loaded = Interface::Find(*reread, dropdown.id);
+        CHECK(loaded && loaded->type == Interface::ElementType::Dropdown && loaded->options == dropdown.options);
+        CHECK(loaded && Interface::GetDropdownChoice(*loaded) == 1);
+        return true;
+    }
+}
+
 bool RunInterfaceTests() {
     auto font = UI::Font::Load(Platform::GetExecutableDirectory() / "assets" / "fonts" / "Arimo.ttf");
     if (!font) {
@@ -560,5 +630,5 @@ bool RunInterfaceTests() {
         return false;
     }
     return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests() && RunBindingTests()
-        && RunScrollTests();
+        && RunScrollTests() && RunDropdownTests(**font);
 }

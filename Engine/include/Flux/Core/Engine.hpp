@@ -145,9 +145,9 @@ namespace Flux {
         // Interfaces en jeu (une copie par entité, créée quand elle est dessinée la première fois) : ouvre ou ferme
         // l'élément de ce nom dans toutes ; false si aucune n'en a.
         bool SetInterfaceWindowOpen(std::string_view name, bool open);
-        // Liaisons des interfaces (champ « Liaison » d'une case, d'un curseur, d'une barre de progression ou d'un
-        // texte) : une valeur nommée, lue à chaque image pour l'afficher, et changée par set quand le joueur touche
-        // la case (0 ou 1) ou le curseur (sans set : en lecture seule). Le moteur fournit les siennes (« V-Sync »,
+        // Liaisons des interfaces (champ « Liaison » d'une case, d'un curseur, d'une liste déroulante, d'une barre de
+        // progression ou d'un texte) : une valeur nommée, lue à chaque image pour l'afficher, et changée par set quand
+        // le joueur touche la case (0 ou 1), le curseur ou la liste (numéro du choix ; sans set : en lecture seule). Le moteur fournit les siennes (« V-Sync »,
         // « Volume général », « Images par seconde ») ; celles du jeu remplacent une valeur du même nom et sont
         // retirées avec ses fonctions quand le module de jeu est déchargé.
         //     engine.BindInterfaceValue("Vie", [] { return g_vie; });
@@ -155,9 +155,22 @@ namespace Flux {
         //     engine.BindInterfaceText("Nom du vaisseau", [] { return g_nom; });
         void BindInterfaceValue(std::string name, std::function<double()> get, std::function<void(double)> set = {});
         void BindInterfaceText(std::string name, std::function<std::string()> get);
+        // Valeur à choix (numéro, 0 le premier) : une liste déroulante liée montre ces choix-là.
+        //     engine.BindInterfaceChoice("Difficulté", {"Facile", "Normale", "Difficile"}, [] { return g_niveau; },
+        //                                [](double v) { g_niveau = static_cast<int>(v); });
+        void BindInterfaceChoice(std::string name, std::vector<std::string> options, std::function<double()> get,
+                                 std::function<void(double)> set);
         void UnbindInterfaceValue(std::string_view name);
-        // Noms des valeurs liables (moteur puis jeu), pour l'éditeur.
-        std::vector<std::string> GetInterfaceValueNames() const;
+        // Valeur liable, pour l'éditeur : son nom, sa catégorie (« Graphismes », « Son », « Informations », « Jeu »
+        // pour celles du jeu, « Touches » pour les touches des actions) et ses choix (valeur à choix seulement).
+        struct InterfaceValueInfo
+        {
+            std::string name;
+            std::string_view category;
+            std::vector<std::string> options;
+        };
+        // Celles du moteur puis du jeu, puis les touches.
+        std::vector<InterfaceValueInfo> GetInterfaceValues() const;
         // Premier élément de ce nom dans les interfaces en jeu (lire une case, un curseur ; changer un texte) ;
         // nullptr hors du jeu ou si aucune n'en a. Valable jusqu'à la fin de la frame.
         Interface::Element* FindInterfaceElement(std::string_view name);

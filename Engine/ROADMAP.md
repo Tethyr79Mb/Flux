@@ -95,7 +95,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 
 ### Interface (FluxUI)
 - 🔧 Mode immédiat partagé éditeur/jeu, texte MSDF, formes SDF, thèmes. À améliorer : pas de DPI (mise à l'échelle 100 % seulement), police Latin-1.
-- ✅ Interfaces du jeu en fichiers `.fluxui` : fenêtres, boutons à actions, liaisons de valeurs, onglets, défilement.
+- ✅ Interfaces du jeu en fichiers `.fluxui` : fenêtres, boutons à actions, liaisons de valeurs (rangées par catégorie), onglets, défilement, listes déroulantes (choix tapés ou donnés par la valeur liée, comme « Détail du sol »).
 - ✅ Textes et images à l'écran, changement de scène.
 - 🔧 Polices du projet pour les textes à l'écran (`.ttf`, `.otf` du dossier `Polices/`), atlas MSDF construit sur un
   autre fil au premier usage, attendu par l'écran de chargement. À améliorer : 0,3 à 0,5 s de processeur par police
@@ -121,7 +121,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - 🔨 Océan : tuiles plus grossières et moins nombreuses. Fait : l'eau, le fond et les terres basses sous l'horizon de la mer ne sont plus gardés (scène d'essai à 1 300 m : 20 tuiles d'eau → 10, 313 tuiles → 291). Reste : tuiles d'eau plus grossières que celles du sol ; eau cachée derrière une montagne écartée par la pyramide de profondeur seulement avec les mesh shaders.
-- 🔧 Réglage « Détail du sol » (Normal, Élevé par défaut, Très élevé : tuile coupée à 3, 4,5 ou 6 fois son bord), dans les Paramètres de l'éditeur et les réglages du jeu. Limite : choisi à la main, pas encore selon la carte graphique ni la vitesse mesurée.
+- 🔧 Réglage « Détail du sol » (Bas, Moyen, Élevé par défaut, Ultra : tuile coupée à 3, 4, 5 ou 6 fois son bord), dans les Paramètres de l'éditeur, les réglages du jeu et les listes déroulantes des interfaces. Limite : choisi à la main, pas encore selon la carte graphique ni la vitesse mesurée.
 
 ### Rendu
 - 🔧 HDR + bloom (lueurs, soleil, réacteurs) ; soleil dans son propre shader (disque assombri au bord, halo, rayons en étoile ou long trait horizontal façon EVE Online, au choix du composant Soleil). Force réglable dans Paramètres > Graphiques de l'éditeur ; le jeu garde la force par défaut (réglage du jeu à venir).

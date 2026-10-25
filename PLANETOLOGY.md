@@ -69,8 +69,8 @@ le glissement CDLOD ne cachait qu'un niveau, et le sol devant la caméra devenai
 d'un coup à l'arrêt. Ces demandes passent après les tuiles à dessiner et ne retiennent pas l'écran de chargement.
 
 Le réglage **Détail du sol** (`GroundDetail`, Paramètres de l'éditeur, `Reglages.json` du jeu, valeur « Détail du sol »
-des interfaces) choisit la distance de coupe : une tuile est coupée en 4 à moins de 3 (Normal), 4,5 (Élevé, par défaut)
-ou 6 (Très élevé) fois son bord. Au plus loin, deux sommets voisins sont à environ 10, 6,5 ou 5 pixels l'un de l'autre ;
+des interfaces) choisit la distance de coupe : une tuile est coupée en 4 à moins de 3 (Bas), 4 (Moyen), 5 (Élevé, par défaut) ou 6
+(Ultra) fois son bord. Au plus loin, deux sommets voisins sont à environ 10, 7,5, 6 ou 5 pixels l'un de l'autre ;
 le nombre de tuiles croît comme le carré du facteur.
 Avec un océan, caméra au-dessus de la mer, l'horizon est celui de la mer : rien n'est plus bas que sa surface. L'eau,
 le fond et les terres basses qui passent dessous ne sont plus gardés. Le fond vu au travers de l'eau ne le serait qu'en
