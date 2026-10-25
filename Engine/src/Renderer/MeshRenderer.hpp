@@ -100,8 +100,12 @@ namespace Flux {
         void DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const;
-        // Nuages des planètes, après l'eau (ils sont devant elle ou cachés par le sol) et avant les autres transparents.
-        void DrawClouds(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Une planète de l'image a des nuages (dessinés par Planetology::CloudRenderer).
+        bool HasClouds() const { return m_hasClouds; }
+        // Groupes 0 à 2 des shaders de Mesh.slang (sol neutre, image, tables des modèles), pour les passes d'ailleurs
+        // qui en incluent les données (nuages : shaders/Clouds.slang). BindScene les lie, après le pipeline.
+        std::array<const RHI::BindGroupLayout*, 3> GetSceneLayouts() const;
+        void BindScene(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
         private:
@@ -408,8 +412,6 @@ namespace Flux {
         Pipelines m_tree;
         // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).
         Pipelines m_ocean;
-        // Nuages des planètes : un triangle plein écran (vertexClouds, fragmentClouds), sans sommets.
-        std::unique_ptr<RHI::Pipeline> m_clouds;
         bool m_hasClouds = false; // une planète de l'image a des nuages
         std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now(); // vagues
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.

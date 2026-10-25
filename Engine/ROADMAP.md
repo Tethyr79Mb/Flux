@@ -126,7 +126,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Rendu
 - 🔧 HDR + bloom (lueurs, soleil, réacteurs) ; soleil dans son propre shader (disque assombri au bord, halo, rayons en étoile ou long trait horizontal façon EVE Online, au choix du composant Soleil). Force réglable dans Paramètres > Graphiques de l'éditeur ; le jeu garde la force par défaut (réglage du jeu à venir).
 - ⬜ Particules sur le GPU : armes, explosions, étincelles, fumée (et poussière sous les réacteurs au sol).
-- 🔧 Anticrénelage temporel (TAA) : sous-pixels de Halton, reprojection par la profondeur, mouvement propre des objets (vaisseau, cockpit), voisinage en YCoCg ; grain des nuages qui change à chaque image et s'efface. Limites : le mouvement des os d'un personnage animé n'est pas compté (le voisinage rattrape), le mouvement des nuages non plus.
+- 🔧 Anticrénelage temporel (TAA) : sous-pixels de Halton, reprojection par la profondeur, mouvement propre des objets (vaisseau, cockpit), voisinage en YCoCg ; grain des nuages qui change à chaque image et s'efface. Limites : le mouvement des os d'un personnage animé n'est pas compté (le voisinage rattrape), les nuages ont leur propre historique (demi-résolution) avant le TAA.
 - ⬜ Ombres des lumières intérieures.
 - ⬜ Champs d'astéroïdes (l'instancing des modèles est fait : reste à les générer et à les placer, comme les arbres).
 - ⬜ Rendu vers texture : écrans du cockpit, interfaces dans le monde 3D.
@@ -154,11 +154,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
 - ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
-- 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume près de la caméra (8 pas), en colonne au loin et vu de l'espace, avec son ombre. À améliorer : voir la ligne suivante.
-- ⬜ Nuages : plus de pas quand on vole dedans, reprojection d'une image à l'autre, formes par type (cumulus, stratus).
+- 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume (64 pas en demi-résolution, reprojetés d'une image à l'autre), cumulus et stratus, avec leur ombre au sol. À améliorer : qualité réglable et coût mesuré (étape 3 ci-dessous).
 - 🔨 Nuages volumétriques (3 étapes) : 1) ✅ bruit 3D (forme Perlin-Worley 128³, détail Worley 32³) calculé une fois
-  par le GPU, avec ses mips ; 2) ⬜ rendu au quart de la résolution avec reprojection, 64 pas de près, ombre interne
-  vers le soleil, diffusion multiple, carte météo ; 3) ⬜ qualité réglable (GTX 1060), mesures GPU.
+  par le GPU, avec ses mips ; 2) ✅ rendu en demi-résolution avec reprojection, 64 pas, ombre interne
+  vers le soleil, diffusion multiple, cumulus et stratus ; 3) ⬜ qualité réglable (GTX 1060), mesures GPU.
 - ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 - ⬜ 2 ou 3 textures par matière, pour varier davantage le sol de près.
 

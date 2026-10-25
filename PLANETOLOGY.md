@@ -4,7 +4,7 @@ Ce document explique comment Flux fabrique une planète. Il couvre ce qu'on règ
 moteur, le détail des montagnes, puis la démarche à suivre pour améliorer le relief. Il complète `ARCHITECTURE.md`
 (vue d'ensemble) et `Engine/ROADMAP.md` (ce qui est fait). Le code est dans `Engine/include/Flux/Planetology/` et
 `Engine/src/Planetology/`, les shaders dans `Engine/shaders/PlanetTile.slang` (relief, arbres) et
-`Engine/shaders/Mesh.slang` (sol, océan, nuages).
+`Engine/shaders/Mesh.slang` (sol, océan, ombre des nuages), `Engine/shaders/Clouds.slang` (nuages en volume).
 
 ## 1. Créer une planète dans l'éditeur
 
@@ -15,7 +15,7 @@ entité. **Placer > Espace > Planète** la pose à trois rayons devant la camér
 |---|---|
 | Planète | forme (rayon, relief, montagnes, graine), sol, climat, mer, gravité, atmosphère |
 | Végétation | arbres semés par le GPU autour de la caméra |
-| Nuages | une couche de nuages qui dérive et fait de l'ombre |
+| Nuages | une couche de nuages en volume (cumulus, stratus) qui dérive et fait de l'ombre |
 | Orbite | place la planète autour de son étoile |
 
 Ordre conseillé des réglages, du plus grand au plus fin :

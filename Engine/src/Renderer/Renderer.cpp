@@ -6,6 +6,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
+#include "Planetology/CloudRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/PostRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
@@ -103,6 +104,7 @@ namespace Flux {
         std::span<const Impact> impacts;
         std::unique_ptr<OverlayRenderer> overlay;
         std::unique_ptr<PostRenderer> post;
+        std::unique_ptr<Planetology::CloudRenderer> clouds;
         std::filesystem::path assetsDirectory;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
@@ -129,6 +131,7 @@ namespace Flux {
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             PostRenderer::GridParams gridParams{};
+            std::uint32_t cloudCopy = 0; // exemplaire de l'historique des nuages écrit à cette image
         };
         FrameState frame;
         // Textures de travail du graphe.
@@ -139,6 +142,9 @@ namespace Flux {
             RenderGraph::ResourceId sceneDepth = 0;
             RenderGraph::ResourceId history = 0;
             RenderGraph::ResourceId windowDepth = 0;
+            RenderGraph::ResourceId cloudLight = 0;
+            RenderGraph::ResourceId cloudDistances = 0;
+            RenderGraph::ResourceId cloudHistory = 0;
         };
         Targets targets;
 
@@ -155,12 +161,24 @@ namespace Flux {
             return {static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y)};
         }
 
-        // Textures de la vue 3D à sa taille ; recréées, PostRenderer refait ses groupes.
+        // Textures de la vue 3D à sa taille (et à sa moitié) ; recréées, PostRenderer et CloudRenderer refont leurs groupes.
         std::expected<void, std::string> ResizeViewTargets(RHI::Extent extent) {
             auto resized = graph.ResizeTextures(*device, RenderGraph::TextureSize::View, extent);
-            if (!resized || !*resized) {
-                return resized ? std::expected<void, std::string>{} : std::unexpected(resized.error());
+            if (!resized) {
+                return std::unexpected(resized.error());
             }
+            auto halfResized = graph.ResizeTextures(*device, RenderGraph::TextureSize::HalfView,
+                                                    {(extent.width + 1) / 2, (extent.height + 1) / 2});
+            if (!halfResized) {
+                return std::unexpected(halfResized.error());
+            }
+            if (!*resized && !*halfResized) {
+                return {};
+            }
+            clouds->Bind({.sceneDepth = graph.GetTexture(targets.sceneDepth),
+                          .light = graph.GetTexture(targets.cloudLight),
+                          .distances = graph.GetTexture(targets.cloudDistances),
+                          .history = {graph.GetCopy(targets.cloudHistory, 0), graph.GetCopy(targets.cloudHistory, 1)}});
             return post->Bind({.scene = graph.GetTexture(targets.sceneColor),
                                .depth = graph.GetTexture(targets.sceneDepth),
                                .motion = graph.GetTexture(targets.motion),
@@ -249,6 +267,9 @@ namespace Flux {
                                                           assetsDirectory, frameIndex);
                 exposure = lighting.exposure;
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
+                if (!meshes->HasClouds() || !temporal.continuous) {
+                    clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
+                }
                 thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
                 tracers->Prepare(projectiles, impacts, camera, aspect, static_cast<float>(scene3d.height), temporal.jitter, frameIndex);
                 const OcclusionCulling::Stats occlusion = meshes->GetOcclusionStats();
@@ -338,6 +359,13 @@ namespace Flux {
             targets.history = graph.CreateTexture("historique de l'anticrénelage", Lifetime::Previous, {PostRenderer::SceneFormat});
             targets.windowDepth = graph.CreateTexture("profondeur de la fenêtre", Lifetime::Frame,
                                                       {DepthFormat, TextureSize::Window, false});
+            // Nuages, à la moitié de la vue : ce qu'en voit cette image, puis mêlé à l'historique.
+            targets.cloudLight = graph.CreateTexture("nuages", Lifetime::Frame,
+                                                     {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
+            targets.cloudDistances = graph.CreateTexture("distances des nuages", Lifetime::Frame,
+                                                         {Planetology::CloudRenderer::DistanceFormat, TextureSize::HalfView});
+            targets.cloudHistory = graph.CreateTexture("historique des nuages", Lifetime::Previous,
+                                                       {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
             const auto sceneColor = targets.sceneColor;
             const auto motion = targets.motion;
             const auto sceneDepth = targets.sceneDepth;
@@ -403,8 +431,85 @@ namespace Flux {
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
                 .Step("fond du ciel", [this](RHI::CommandList& commands) { sky->Draw(commands, frame.index); })
-                .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); })
-                .Step("nuages", [this](RHI::CommandList& commands) { meshes->DrawClouds(commands, frame.index); })
+                .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); });
+            // Nuages : ils lisent la profondeur de la scène opaque (le relief, les vaisseaux les arrêtent), hors de sa passe.
+            const auto hasClouds = [this] { return sceneVisible && meshes->HasClouds(); };
+            const auto cloudLight = targets.cloudLight;
+            const auto cloudDistances = targets.cloudDistances;
+            const auto cloudHistory = targets.cloudHistory;
+            const auto halfViewport = [this](RHI::CommandList& commands) {
+                const RHI::Extent half = graph.GetTexture(targets.cloudLight)->GetExtent();
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(half.width), static_cast<float>(half.height)});
+                commands.SetScissor({0, 0, half.width, half.height});
+            };
+            graph.AddPass("nuages")
+                .When(hasClouds)
+                .Reads(cpu)
+                .Reads(sceneDepth)
+                .Writes(cloudLight)
+                .Writes(cloudDistances)
+                .Begin([this, halfViewport](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.cloudLight),
+                                              .secondColorTarget = graph.GetTexture(targets.cloudDistances)});
+                    halfViewport(commands);
+                })
+                .Step("nuages", [this](RHI::CommandList& commands) { clouds->DrawMarch(commands, frame.index); });
+            graph.AddPass("historique des nuages")
+                .When(hasClouds)
+                .Reads(cpu)
+                .Reads(cloudLight)
+                .Reads(cloudDistances)
+                .Reads(cloudHistory)
+                .Writes(cloudHistory)
+                .Begin([this, halfViewport](RHI::CommandList& commands) {
+                    frame.cloudCopy = graph.GetWriteCopy(targets.cloudHistory);
+                    commands.BeginRenderPass({.colorTarget = graph.GetCopy(targets.cloudHistory, frame.cloudCopy)});
+                    halfViewport(commands);
+                })
+                .Step("historique des nuages", [this](RHI::CommandList& commands) {
+                    clouds->DrawResolve(commands, frame.index, frame.cloudCopy);
+                });
+            const auto sceneViewport = [this](RHI::CommandList& commands) {
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
+                commands.SetScissor({0, 0, frame.scene3d.width, frame.scene3d.height});
+            };
+            graph.AddPass("composition des nuages")
+                .When(hasClouds)
+                .Reads(cpu)
+                .Reads(sceneDepth)
+                .Reads(cloudDistances)
+                .Reads(cloudHistory)
+                .Writes(sceneColor)
+                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.sceneColor), .loadColor = true});
+                    sceneViewport(commands);
+                })
+                .Step("composition des nuages", [this](RHI::CommandList& commands) {
+                    clouds->DrawComposite(commands, frame.index, frame.cloudCopy);
+                });
+            // La scène reprise là où elle en était (couleur, mouvement et profondeur gardés) : ce qui reste est devant les
+            // nuages ou mêlé à eux, dans l'ordre où il se recouvre.
+            graph.AddPass("transparents")
+                .When(scene)
+                .Reads(cpu)
+                .Reads(tiles)
+                .Reads(culled)
+                .Reads(shadowMap)
+                .Reads(skyBackground)
+                .Reads(skyRayleigh)
+                .Reads(skyMie)
+                .Reads(airRayleigh)
+                .Reads(airMie)
+                .Writes(sceneColor)
+                .Writes(motion)
+                .Writes(sceneDepth)
+                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.depth = graph.GetTexture(targets.sceneDepth),
+                                              .colorTarget = graph.GetTexture(targets.sceneColor),
+                                              .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true,
+                                              .loadDepth = true, .loadColor = true});
+                    sceneViewport(commands);
+                })
                 .Step("transparents", [this](RHI::CommandList& commands) {
                     meshes->DrawTransparent(commands, frame.index);
                     commands.BeginStep("flammes des réacteurs");
@@ -486,6 +591,11 @@ namespace Flux {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
+        auto clouds = Planetology::CloudRenderer::Create(*impl->device, *impl->meshes, sceneFormat);
+        if (!clouds) {
+            return std::unexpected(clouds.error());
+        }
+        impl->clouds = std::move(*clouds);
         auto thrusters = ThrusterRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
         if (!thrusters) {
             return std::unexpected(thrusters.error());

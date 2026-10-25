@@ -104,8 +104,8 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 ```
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan, nuages,
-transparents), pyramide de profondeur, anticrénelage, bloom, image finale (scène, grille, interface). Chaque passe
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan), nuages en demi-résolution
+(marche, historique, composition), transparents, pyramide de profondeur, anticrénelage, bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
 gardé de l'image précédente ou rempli par le CPU). Le panneau Moteur affiche une ligne par passe et par étape, sans
 liste à tenir à part.
@@ -186,7 +186,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    (`MoveShadowCascade`). Redessinée quand même si le soleil a tourné ou si la caméra a bougé de 10 % de son rayon.
 4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
    (textures du graphe, lues par `PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
-   ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans, nuages, transparents,
+   ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans ; puis les nuages (voir plus bas), transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
    Les matériaux opaques sans seuil d'alpha passent par `fragmentOpaque`, qui ne jette aucun pixel : le GPU teste la
    profondeur avant le programme et n'éclaire pas ce qu'un objet plus proche cache.
@@ -365,19 +365,27 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   appliquées à la lecture : le halo du soleil reste net. Le ciel, et l'air du sol, de l'eau, des arbres (par sommet),
   des modèles et des nuages (par pixel), y lisent au lieu de marcher le long du regard ; vu de l'espace, ou pour un
   point hors de la table (derrière la caméra), la marche d'avant.
-- Nuages (`CloudsComponent`) : une couche épaisse entre deux sphères (base et sommet), sans maillage. Un triangle
-  plein écran (`fragmentClouds`) cherche l'entrée et la sortie de la couche sur le rayon de chaque pixel. Près de la
-  caméra, il marche en 8 pas dans le volume (forme en cumulus, érosion, lumière du soleil traversée vers le haut) ;
-  au loin et vu de l'espace, il lit une seule colonne de densité, moins d'octaves et moins d'érosion selon la
-  taille d'un pixel, pour éviter le grain. Il écrit la profondeur du premier nuage touché, jamais plus près que la
-  couche (`SV_DepthLessEqual`, le triangle posé à cette distance) : testée contre la scène sans être enregistrée, et
-  les pixels cachés par le relief sont écartés avant le shader. La couverture s'arrête de lire ses octaves dès
-  qu'elles ne peuvent plus donner de nuage. Leur ombre (`CloudShadow`) multiplie le soleil de tout ce qui est éclairé
+- Nuages (`CloudsComponent`, `Planetology/CloudRenderer`, `shaders/Clouds.slang`) : une couche épaisse entre deux
+  sphères (base et sommet), sans maillage, marchée par le GPU dans trois passes du graphe placées après la scène
+  opaque, qui coupent la passe « scène » en deux (le graphe garde ce qu'elle a écrit : `Pass::continued`, et
+  `RenderPassDesc::loadColor` pour la reprendre) :
+  1. « nuages », en demi-résolution (`TextureSize::HalfView`) : 64 pas au plus le long du rayon dans la couche,
+     resserrés près de l'entrée quand la caméra y est, départ décalé au hasard à chaque image. Densité : carte
+     météo (`CloudWeather`, la couverture de toujours) x profil en hauteur (base plate, sommet plus haut pour un
+     cumulus que pour un stratus) x forme lue dans le bruit 3D (`Planetology/CloudNoise`, `shaders/CloudNoise.slang` :
+     forme 128³ Perlin-Worley et trois Worley, détail 32³ trois Worley, calculés une fois par le GPU avec leurs mips),
+     bords rongés par le détail. Le mip suit la taille d'un pixel ; au loin, la forme devient sa moyenne et le détail
+     s'efface (sinon des bords en escalier vus de l'espace). Lumière : 6 pas vers le soleil (ombre interne), trois
+     ordres de diffusion multiple (Wrenninge), phase à deux lobes, « powder », intégration de Hillaire par pas.
+     Sorties : lumière prémultipliée + opacité, et les distances (premier nuage, nuage moyen, fin du rayon).
+  2. « historique des nuages » : l'image d'avant reprojetée à la distance du nuage moyen, ramenée dans la boîte
+     3 x 3 des valeurs actuelles, mêlée à l'image actuelle : le grain des pas s'efface.
+  3. « composition des nuages », en pleine résolution : les 4 pixels de demi-résolution voisins, pondérés en
+     bilinéaire et par la ressemblance de profondeur (bord d'une montagne), mélangés sur la scène ; un pixel plus
+     proche que le premier nuage (moyenne des seuls voisins qui en voient un) n'en reçoit pas.
+  Leur ombre (`CloudShadow`, Mesh.slang) lit la même carte météo et multiplie le soleil de tout ce qui est éclairé
   (objets, sol, eau) ; calculée par sommet pour le sol (ses taches font des centaines de mètres), au pixel ailleurs.
-  Bruit 3D des nuages volumétriques à venir (`Planetology/CloudNoise`, `shaders/CloudNoise.slang`) : deux textures 3D
-  qui se répètent sans couture, calculées une fois par le GPU au démarrage avec leurs mips (forme 128³ : Perlin-Worley
-  et trois Worley ; détail 32³ : trois Worley), à lire en marchant le long du rayon au lieu de recalculer le bruit
-  à chaque pas. Le RHI y gagne les textures 3D (`CreateVolumeTexture`), leur écriture par compute shader
+  Le RHI y a gagné les textures 3D (`CreateVolumeTexture`), leur écriture par compute shader
   (`BindingType::StorageTexture`, `TextureAccess::Storage`) et `CommandList::GenerateMipmaps`.
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine ses tuiles par bandes de distance (chacune deux fois plus loin que la précédente), puis par page :
