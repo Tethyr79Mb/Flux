@@ -1745,7 +1745,7 @@ CloudVertexOutput vertexClouds(uint vertexId : SV_VulkanVertexID)
     const float2 jitter = float2(f.cameraRight.w, f.cameraUp.w);
     float corner = 0.0;
     for (uint c = 0; c < 4; ++c) {
-        const float2 at = float2(c & 1u ? 1.0 : -1.0, c & 2u ? 1.0 : -1.0) - jitter;
+        const float2 at = float2((c & 1u) != 0u ? 1.0 : -1.0, (c & 2u) != 0u ? 1.0 : -1.0) - jitter;
         corner = max(corner, length(f.cameraForward.xyz + f.cameraRight.xyz * at.x - f.cameraUp.xyz * at.y));
     }
     const float viewDepth = nearest / corner;
