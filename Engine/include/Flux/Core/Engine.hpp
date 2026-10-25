@@ -71,7 +71,7 @@ namespace Flux {
         float volume = 1.0f; // volume général, 0 à 1
     };
 
-    // État du jeu : l'éditeur démarre à l'arrêt (on édite la scène), Game.exe démarre en cours.
+    // État du jeu : l'éditeur démarre à l'arrêt (on édite la scène), Ars Solaris.exe démarre en cours.
     enum class GameState {
         Stopped, // mise à jour du jeu non appelée : ni animation, ni panneaux du jeu
         Running,

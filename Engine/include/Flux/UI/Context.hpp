@@ -302,7 +302,7 @@ namespace Flux::UI {
         // puis à chaque frame, avant les panneaux :
         //     const Rect view = ui.DockSpace(zone);
         // Un panneau ancré garde son BeginPanel / EndPanel : sa position et sa taille viennent de sa zone, et
-        // BeginPanel retourne false quand un autre onglet est affiché. Sans DockSpace dans la frame (Game.exe),
+        // BeginPanel retourne false quand un autre onglet est affiché. Sans DockSpace dans la frame (Ars Solaris.exe),
         // tous les panneaux flottent.
         struct DockSplit
         {

@@ -57,7 +57,7 @@ FLUX_GAME_MODULE_EXPORT std::uint32_t FluxGameApiVersion() {
 }
 
 FLUX_GAME_MODULE_EXPORT void FluxRegisterGame(Flux::Engine& engine) {
-    // Les scènes sont chargées ensuite par l'hôte (Game.exe ou l'éditeur) : elles peuvent utiliser ces composants.
+    // Les scènes sont chargées ensuite par l'hôte (Ars Solaris.exe ou l'éditeur) : elles peuvent utiliser ces composants.
     engine.GetComponents()
         .Register<SpinComponent>("spin", "Rotation continue")
         .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})

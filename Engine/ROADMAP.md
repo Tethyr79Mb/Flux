@@ -163,7 +163,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔨 Gameplay hors du moteur (Bruno, 2026-10-19 : « pour les missions, le jeu pourrait s'en charger » ; audit : `/mnt/project-files/Recherche/audit-moteur-2026-10-19.md`). Fait : systèmes du jeu enregistrables à une étape de l'image (`Engine::AddGameSystem` : Interaction, BeforePhysics, AfterPhysics, Hud, Reset) ; missions, choix de la cible de l'IA de combat et commandes des armes du joueur (verrou, groupes, tir auto, leur affichage) dans GameModule.dll. Reste : warp et quais ; `MissionGiverComponent` reste dans le moteur (l'éditeur le pose depuis Placer).
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
-- ✅ Réglages enregistrés pour Game.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, volume, panneau Moteur).
+- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, volume, panneau Moteur).
+- ✅ Exe du jeu nommé « Ars Solaris.exe » (cible CMake `Game`) : les pilotes comme AMD Adrenalin le reconnaissent comme un jeu.
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
 - 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.
 - ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
@@ -222,7 +223,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   (comme l'inspecteur et la sauvegarde), positions en secteurs + double, prédiction du joueur et interpolation des
   autres. Les mondes physiques par vaisseau tournent sur le serveur.
 - ⬜ Mises à jour, gérées par le moteur : manifeste de version (liste des fichiers et de leurs empreintes) publié en HTTPS, seuls les fichiers
-  changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Game.exe
+  changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Ars Solaris.exe
   vérifie au démarrage qu'il est à jour.
 - ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :

@@ -677,7 +677,7 @@ namespace Flux {
     };
 
     // Passe à une autre scène après un délai ou sur confirmation du joueur (écran de démarrage) : voir SceneChange.
-    // Seulement pendant le jeu (Game.exe, ou le mode Jouer de l'éditeur).
+    // Seulement pendant le jeu (Ars Solaris.exe, ou le mode Jouer de l'éditeur).
     struct SceneChangeComponent
     {
         std::string scene;     // scène à charger, relative au dossier des assets (scenes/Demo.scene.json)

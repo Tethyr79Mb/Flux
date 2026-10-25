@@ -921,7 +921,7 @@ namespace FluxEditor {
         const std::string name = Platform::ToUtf8(path.filename());
         if (IsStartupScene(engine, path)) {
             Platform::ShowError(window, "Supprimer", "« " + name + " » est la scène de démarrage du projet : "
-                                                     "Game.exe ne pourrait plus démarrer.");
+                                                     "Ars Solaris.exe ne pourrait plus démarrer.");
             return;
         }
         // Un exemplaire se refait depuis son prefab : sans lui, les scènes qui en ont ne s'ouvrent plus (jusqu'à ce
