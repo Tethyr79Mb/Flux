@@ -57,9 +57,10 @@ namespace Flux {
 
         // Planètes dessinées au plus dans une image (leur sol) : au-delà, les suivantes prennent la première.
         constexpr std::size_t MaxPlanets = 4;
-        // Cime des forêts vue de loin : couleur moyenne (linéaire) de l'imposteur de Modeles/Arbre/Arbre-loin.glb,
-        // assombrie par l'ombre entre les arbres. À revoir avec d'autres espèces.
-        constexpr Math::LinearColor ForestColor{0.036f, 0.064f, 0.011f, 1.0f};
+        // Cime des forêts vue de loin : couleur moyenne (linéaire) de l'imposteur de l'épicéa par défaut
+        // (Modeles/Coniferes/Epicea-1-loin.glb), assombrie par l'ombre entre les arbres (x 0,85). À tirer des modèles
+        // de la végétation quand il y aura plusieurs espèces.
+        constexpr Math::LinearColor ForestColor{0.020f, 0.043f, 0.011f, 1.0f};
 
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
