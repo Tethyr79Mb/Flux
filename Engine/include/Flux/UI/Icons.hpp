@@ -65,6 +65,14 @@ namespace Flux::UI {
         // Ajoutés ensuite (à la fin : les valeurs d'avant ne changent pas pour le module du jeu).
         Tree,      // sapin : espèce d'arbre (fichier .espece.json)
         Biome,     // sapin et feuillu sur une colline : biome (fichier .biome.json)
+        // Onglets de l'inspecteur (groupes de réglages d'une planète...).
+        Mountain,    // deux sommets enneigés : relief
+        Ground,      // couches de sol (herbe, terre, roche) : couleurs et textures du sol
+        Thermometer, // climat (températures, humidité)
+        Wave,        // vagues : océan
+        Atmosphere,  // planète entourée d'un halo bleu
+        Cloud,
+        Orbit,       // soleil et planète sur son ellipse
     };
 
     // Dessine l'icône dans le carré [min, min + size].

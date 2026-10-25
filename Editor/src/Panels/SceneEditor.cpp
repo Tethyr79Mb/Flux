@@ -111,7 +111,37 @@ namespace FluxEditor {
             if (key == "transform") {
                 return UI::Icon::None;
             }
+            if (key == "clouds") {
+                return UI::Icon::Cloud;
+            }
+            if (key == "vegetation") {
+                return UI::Icon::Biome;
+            }
+            if (key == "orbit") {
+                return UI::Icon::Orbit;
+            }
             return UI::Icon::Component;
+        }
+
+        const std::string ObjectTabLabel = "Objet";
+
+        // Pictogramme d'un onglet de l'inspecteur : « Objet » (info nullptr), un groupe de champs ou un composant.
+        UI::Icon TabIcon(const ComponentInfo* info, int group) {
+            if (!info) {
+                return UI::Icon::Inspector;
+            }
+            if (group >= 0 && info->key == "planet") {
+                constexpr std::pair<std::string_view, UI::Icon> PlanetGroups[] = {
+                    {"relief", UI::Icon::Mountain}, {"ground", UI::Icon::Ground}, {"climate", UI::Icon::Thermometer},
+                    {"ocean", UI::Icon::Wave},      {"atmosphere", UI::Icon::Atmosphere},
+                };
+                for (const auto& [key, icon] : PlanetGroups) {
+                    if (info->groups[group].key == key) {
+                        return icon;
+                    }
+                }
+            }
+            return ComponentIcon(info->key);
         }
 
         // Groupe d'une racine (et icône de toute entité) : sa catégorie ; sinon le nom de son premier composant (ceux
@@ -382,10 +412,12 @@ namespace FluxEditor {
 
     void SceneEditor::DrawInspector(Engine& engine, Scene& scene, Entity selected) {
         UI::Context& ui = engine.GetUi();
-        const float screenWidth = static_cast<float>(engine.GetWindow().GetSize().x);
-        // Position sans ancrage (l'éditeur l'ancre à droite) : à droite de la vue.
+        const Math::Vector2f screen{static_cast<float>(engine.GetWindow().GetSize().x),
+                                    static_cast<float>(engine.GetWindow().GetSize().y)};
+        // Position sans ancrage (l'éditeur l'ancre à droite) : à droite de la vue. Hauteur fixe : la colonne
+        // d'onglets et les réglages vont jusqu'en bas, chacun avec son défilement.
         ui.SetNextPanelIcon(UI::Icon::Inspector);
-        if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screenWidth - 752.0f), 8.0f}, 368.0f)) {
+        if (ui.BeginPanel("Inspecteur", {std::max(316.0f, screen.x - 752.0f), 8.0f}, 368.0f, std::max(300.0f, screen.y - 16.0f))) {
             m_overrides = {};
             if (selected == NullEntity) {
                 ui.TextDisabled("Aucune entité sélectionnée.\nCliquer sur une entité dans l'onglet Scènes.");
@@ -405,77 +437,65 @@ namespace FluxEditor {
                     m_angles.clear();
                     m_anglesFor = id;
                 }
-                ui.PushId(id.value); // un champ en cours de saisie ne passe pas d'une entité à l'autre
-                ui.BeginDisabled(m_readOnly);
 
-                m_modified |= ui.InputText(m_overrides.name ? "» Nom###nom" : "Nom###nom", scene.Get<NameComponent>(selected).name);
-                ui.LabelText("Identifiant", id.ToString());
-                const Entity parent = scene.GetParent(selected);
-                ui.LabelText("Parent", parent == NullEntity ? "(racine)" : DisplayName(scene, parent));
-                if (parent == NullEntity) {
-                    // Seules les racines ont un secteur ; secteur 0 = pas de composant (fichier plus lisible).
-                    const auto* sectorComponent = scene.TryGet<SectorComponent>(selected);
-                    Math::Vector3i64 sector = sectorComponent ? sectorComponent->sector : Math::Vector3i64{};
-                    if (ui.DragInt3("Secteur", sector)) {
-                        m_modified = true;
-                        if (sector == Math::Vector3i64{}) {
-                            scene.Remove<SectorComponent>(selected);
-                        } else {
-                            scene.Add<SectorComponent>(selected, sector);
-                        }
-                    }
-                }
-                ui.EndDisabled();
-                DrawPrefab(engine, scene, selected);
-
-                // Composants enregistrés (moteur puis jeu) : champs générés à partir de leur description.
+                // Composants enregistrés (moteur puis jeu) : un onglet chacun, ou un par groupe de champs ; ceux
+                // qu'on ne peut pas retirer (la transformation) vont dans l'onglet « Objet ».
                 const ComponentRegistry& components = engine.GetComponents();
                 m_inspected = selected;
-                std::vector<const ComponentInfo*> present;
-                std::vector<const ComponentInfo*> missing;
-                const bool wasPlayer = IsPlayer(scene, selected);
+                m_present.clear();
+                m_missing.clear();
+                m_tabs.clear();
+                m_tabs.push_back({});
+                std::size_t shown = 0;
                 for (std::size_t i = 0; i < components.GetCount(); ++i) {
                     const ComponentInfo& info = components.Get(i);
-                    if (void* component = info.get(scene.GetRegistry(), selected)) {
-                        DrawComponent(engine, info, component);
-                        present.push_back(&info);
-                    } else if (info.removable) {
-                        missing.push_back(&info);
-                    }
-                }
-                // Un seul personnage dirigé par le joueur : cocher la case sur celui-ci la décoche sur les autres.
-                if (!wasPlayer && IsPlayer(scene, selected) && !m_readOnly) {
-                    m_pendingAction = Action::ClaimPlayer;
-                }
-                // Mélange venu d'une ancienne scène (l'inspecteur ne le permet plus) : dire lequel est ignoré.
-                for (const ComponentInfo* info : present) {
-                    for (const ComponentInfo* other : present) {
-                        if (info < other && info->Excludes(*other)) {
-                            ui.Separator();
-                            ui.TextDisabled("« " + info->label + " » et « " + other->label + " » ne vont pas ensemble :\n"
-                                            "en retirer un (la physique en ignore un).");
+                    void* component = info.get(scene.GetRegistry(), selected);
+                    if (!component) {
+                        if (info.removable) {
+                            m_missing.push_back(&info);
                         }
+                        continue;
                     }
-                }
-                if (const auto* unknown = scene.TryGet<UnknownComponentsComponent>(selected)) {
-                    ui.Separator();
-                    for (const auto& [key, text] : unknown->components) {
-                        ui.TextDisabled("« " + key + " » : type inconnu, conservé tel quel");
+                    m_present.push_back(&info);
+                    if (!info.removable) {
+                        continue;
+                    }
+                    const int groups = static_cast<int>(info.groups.size());
+                    for (int group = groups > 0 ? 0 : -1; group < groups; ++group) {
+                        if (info.key == m_tabComponent && (group < 0 ? m_tabGroup.empty() : info.groups[group].key == m_tabGroup)) {
+                            shown = m_tabs.size();
+                        }
+                        m_tabs.push_back({&info, component, group});
                     }
                 }
 
-                if (!missing.empty() && !m_readOnly) {
-                    ui.Separator();
-                    // Un seul bouton, et la liste des composants qui manquent dans un menu.
-                    if (ui.Button("Ajouter un composant", UI::Icon::Plus, true)) {
+                // Colonne d'onglets, hors de la portée de l'entité : les réglages de chaque onglet gardent leur
+                // défilement d'une entité à l'autre.
+                ui.BeginChild("onglets", ui.GetIconTabWidth(), 0.0f);
+                for (std::size_t i = 0; i < m_tabs.size(); ++i) {
+                    const InspectorTab& tab = m_tabs[i];
+                    ui.PushId(static_cast<std::uint64_t>(i));
+                    const std::string& label = !tab.info ? ObjectTabLabel
+                                             : tab.group < 0 ? tab.info->label
+                                                             : tab.info->groups[tab.group].label;
+                    if (ui.IconTab(label, TabIcon(tab.info, tab.group), i == shown)) {
+                        shown = i;
+                        m_tabComponent = tab.info ? tab.info->key : std::string();
+                        m_tabGroup = tab.info && tab.group >= 0 ? tab.info->groups[tab.group].key : std::string();
+                    }
+                    ui.PopId();
+                }
+                if (!m_missing.empty() && !m_readOnly) {
+                    // La liste des composants qui manquent dans un menu, au bout de la colonne.
+                    if (ui.IconTab("Ajouter un composant", UI::Icon::Plus, false)) {
                         ui.OpenPopupMenu("ajouter");
                     }
                     if (ui.BeginPopupMenu("ajouter")) {
-                        for (const ComponentInfo* info : missing) {
-                            const auto blocker = std::ranges::find_if(present, [&](const ComponentInfo* other) {
+                        for (const ComponentInfo* info : m_missing) {
+                            const auto blocker = std::ranges::find_if(m_present, [&](const ComponentInfo* other) {
                                 return info->Excludes(*other);
                             });
-                            if (blocker != present.end()) {
+                            if (blocker != m_present.end()) {
                                 ui.MenuItem(info->label + " (pas avec « " + (*blocker)->label + " »)##" + info->key, {}, false,
                                             ComponentIcon(info->key));
                             } else if (ui.MenuItem(info->label + "##" + info->key, {}, true, ComponentIcon(info->key))) {
@@ -486,10 +506,78 @@ namespace FluxEditor {
                         ui.EndMenu();
                     }
                 }
+                ui.EndChild();
+
+                const InspectorTab& tab = m_tabs[shown];
+                ui.SameLine();
+                ui.PushId(tab.info ? tab.info->key : std::string_view("objet"));
+                ui.PushId(static_cast<std::uint64_t>(tab.group + 1));
+                ui.BeginChild("réglages", 0.0f, 0.0f, false);
+                ui.PushId(id.value); // un champ en cours de saisie ne passe pas d'une entité à l'autre
+                const bool wasPlayer = IsPlayer(scene, selected);
+                if (tab.info) {
+                    DrawComponent(engine, *tab.info, tab.component, tab.group);
+                } else {
+                    DrawObjectTab(engine, scene, selected);
+                }
+                // Un seul personnage dirigé par le joueur : cocher la case sur celui-ci la décoche sur les autres.
+                if (!wasPlayer && IsPlayer(scene, selected) && !m_readOnly) {
+                    m_pendingAction = Action::ClaimPlayer;
+                }
+                ui.PopId();
+                ui.EndChild();
+                ui.PopId();
                 ui.PopId();
             }
         }
         ui.EndPanel();
+    }
+
+    void SceneEditor::DrawObjectTab(Engine& engine, Scene& scene, Entity selected) {
+        UI::Context& ui = engine.GetUi();
+        const Uuid id = scene.GetId(selected);
+        ui.BeginDisabled(m_readOnly);
+        m_modified |= ui.InputText(m_overrides.name ? "» Nom###nom" : "Nom###nom", scene.Get<NameComponent>(selected).name);
+        ui.LabelText("Identifiant", id.ToString());
+        const Entity parent = scene.GetParent(selected);
+        ui.LabelText("Parent", parent == NullEntity ? "(racine)" : DisplayName(scene, parent));
+        if (parent == NullEntity) {
+            // Seules les racines ont un secteur ; secteur 0 = pas de composant (fichier plus lisible).
+            const auto* sectorComponent = scene.TryGet<SectorComponent>(selected);
+            Math::Vector3i64 sector = sectorComponent ? sectorComponent->sector : Math::Vector3i64{};
+            if (ui.DragInt3("Secteur", sector)) {
+                m_modified = true;
+                if (sector == Math::Vector3i64{}) {
+                    scene.Remove<SectorComponent>(selected);
+                } else {
+                    scene.Add<SectorComponent>(selected, sector);
+                }
+            }
+        }
+        ui.EndDisabled();
+        DrawPrefab(engine, scene, selected);
+
+        for (const ComponentInfo* info : m_present) {
+            if (!info->removable) {
+                DrawComponent(engine, *info, info->get(scene.GetRegistry(), selected));
+            }
+        }
+        // Mélange venu d'une ancienne scène (l'inspecteur ne le permet plus) : dire lequel est ignoré.
+        for (const ComponentInfo* info : m_present) {
+            for (const ComponentInfo* other : m_present) {
+                if (info < other && info->Excludes(*other)) {
+                    ui.Separator();
+                    ui.TextDisabled("« " + info->label + " » et « " + other->label + " » ne vont pas ensemble :\n"
+                                    "en retirer un (la physique en ignore un).");
+                }
+            }
+        }
+        if (const auto* unknown = scene.TryGet<UnknownComponentsComponent>(selected)) {
+            ui.Separator();
+            for (const auto& [key, text] : unknown->components) {
+                ui.TextDisabled("« " + key + " » : type inconnu, conservé tel quel");
+            }
+        }
     }
 
     void SceneEditor::DrawPrefab(Engine& engine, Scene& scene, Entity selected) {
@@ -551,13 +639,15 @@ namespace FluxEditor {
         return true;
     }
 
-    void SceneEditor::DrawComponent(Engine& engine, const ComponentInfo& info, void* component) {
+    void SceneEditor::DrawComponent(Engine& engine, const ComponentInfo& info, void* component, int group) {
         UI::Context& ui = engine.GetUi();
         ui.PushId(info.key); // deux composants peuvent avoir des champs de même libellé
         // Pièce de prefab : section marquée si elle diffère du prefab (identifiant fixe : elle reste dépliée).
         const bool added = std::ranges::contains(m_overrides.added, info.key);
         const bool changed = std::ranges::any_of(m_overrides.fields, [&](const auto& field) { return field.first == info.key; });
-        const std::string header = info.label + (added ? " (ajouté)" : changed ? " (modifié)" : "") + "###en-tête";
+        // Onglet d'un groupe : « Planète · Relief » ; la croix et « Revenir au prefab » portent sur tout le composant.
+        const std::string title = group < 0 ? info.label : info.label + " · " + info.groups[group].label;
+        const std::string header = title + (added ? " (ajouté)" : changed ? " (modifié)" : "") + "###en-tête";
         // Croix au bout du titre pour retirer le composant (pas la transformation, ni pendant le jeu).
         bool remove = false;
         if (ui.CollapsingHeader(header, true, ComponentIcon(info.key), info.removable && !m_readOnly ? &remove : nullptr)) {
@@ -567,7 +657,10 @@ namespace FluxEditor {
             }
             ui.BeginDisabled(m_readOnly); // l'en-tête reste repliable
             for (const FieldInfo& field : info.fields) {
-                m_modified |= DrawField(engine, info, field, field.access(component));
+                // Champ hors groupe d'un composant qui en a : dans le premier onglet.
+                if (group < 0 || field.group == group || (field.group < 0 && group == 0)) {
+                    m_modified |= DrawField(engine, info, field, field.access(component));
+                }
             }
             ui.EndDisabled();
         }

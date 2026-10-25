@@ -867,6 +867,46 @@ namespace {
         return true;
     }
 
+    // Colonne d'onglets à icônes (inspecteur) : à gauche des réglages, un clic change d'onglet, info-bulle du libellé.
+    bool RunIconTabTests(const UI::Font& font) {
+        Harness harness(font);
+        int tab = 0;
+        Vector2f firstMin;
+        Vector2f secondMin;
+        float tabWidth = 0.0f;
+        Vector2f contentMin;
+        const auto describe = [&](UI::Context& ui) {
+            if (ui.BeginPanel("Inspecteur", {0.0f, 0.0f}, 300.0f, 300.0f)) {
+                tabWidth = ui.GetIconTabWidth();
+                ui.BeginChild("onglets", tabWidth, 0.0f);
+                if (ui.IconTab("Relief", UI::Icon::Mountain, tab == 0)) {
+                    tab = 0;
+                }
+                firstMin = ui.GetItemRect().min;
+                if (ui.IconTab("Océan", UI::Icon::Wave, tab == 1)) {
+                    tab = 1;
+                }
+                secondMin = ui.GetItemRect().min;
+                ui.EndChild();
+                ui.SameLine();
+                ui.BeginChild("réglages", 0.0f, 0.0f, false);
+                ui.Button(tab == 0 ? "Rayon" : "Niveau de la mer");
+                contentMin = ui.GetItemRect().min;
+                ui.EndChild();
+            }
+            ui.EndPanel();
+        };
+        harness.Frame([] {}, describe);
+        // Les onglets l'un sous l'autre, les réglages à droite de la colonne et en haut.
+        CHECK(secondMin.x == firstMin.x && secondMin.y > firstMin.y);
+        CHECK(contentMin.x >= firstMin.x + tabWidth - 8.0f && contentMin.y < secondMin.y);
+        harness.Click(secondMin + Vector2f{5.0f, 5.0f}, describe);
+        CHECK(tab == 1);
+        harness.Click(firstMin + Vector2f{5.0f, 5.0f}, describe);
+        CHECK(tab == 0);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -894,5 +934,5 @@ bool RunUiTests() {
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
         && RunChoiceTests(**font) && RunPopupTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
-        && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font) && RunHelperTests(**font);
+        && RunIconTabTests(**font) && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font) && RunHelperTests(**font);
 }

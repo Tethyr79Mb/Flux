@@ -74,6 +74,7 @@ namespace Flux {
         FieldType type = FieldType::Float;
         FieldOptions options;
         AssetType asset = AssetType::None; // String seulement
+        int group = -1; // index dans ComponentInfo::groups, -1 : aucun groupe
         // Adresse du champ dans une instance du composant.
         std::function<void*(void*)> access;
         // Enum seulement : valeurs possibles, et lecture / écriture de la valeur en entier.
@@ -92,6 +93,14 @@ namespace Flux {
         // ajouter ensemble. Il suffit de le déclarer d'un côté.
         std::vector<std::string> excludes;
         std::vector<FieldInfo> fields;
+        // Groupes de champs (ComponentBuilder::Group) : l'inspecteur montre chacun dans son onglet. Sans groupe, le
+        // composant a un seul onglet.
+        struct FieldGroup
+        {
+            std::string key; // unique dans le composant
+            std::string label;
+        };
+        std::vector<FieldGroup> groups;
         // Champs retirés ou renommés (clés) : ignorés à la lecture, pour que les scènes déjà enregistrées s'ouvrent
         // encore ; un autre champ inconnu reste une erreur (faute de frappe dans un fichier écrit à la main).
         std::vector<std::string> removedFields;
@@ -175,7 +184,19 @@ namespace Flux {
             field.type = Detail::FieldTypeOf<T>::Value;
             field.options = options;
             field.access = [member](void* instance) -> void* { return &(static_cast<C*>(instance)->*member); };
+            field.group = m_group;
             m_info->fields.push_back(std::move(field));
+            return *this;
+        }
+
+        // Les champs décrits ensuite vont dans ce groupe (un onglet de l'inspecteur), jusqu'au prochain Group. Une clé
+        // déjà donnée reprend son groupe : l'ordre des champs dans le fichier n'a pas à suivre les onglets.
+        ComponentBuilder& Group(std::string key, std::string label) {
+            const auto found = std::ranges::find(m_info->groups, key, &ComponentInfo::FieldGroup::key);
+            m_group = static_cast<int>(found - m_info->groups.begin());
+            if (found == m_info->groups.end()) {
+                m_info->groups.push_back({std::move(key), std::move(label)});
+            }
             return *this;
         }
 
@@ -200,6 +221,7 @@ namespace Flux {
             }
             field.getEnum = [](const void* value) { return static_cast<std::int64_t>(*static_cast<const E*>(value)); };
             field.setEnum = [](void* value, std::int64_t number) { *static_cast<E*>(value) = static_cast<E>(number); };
+            field.group = m_group;
             m_info->fields.push_back(std::move(field));
             return *this;
         }
@@ -230,6 +252,7 @@ namespace Flux {
 
         private:
         ComponentInfo* m_info;
+        int m_group = -1;
     };
 
     // Composants connus du moteur et du jeu, dans l'ordre d'enregistrement (ordre du fichier et de l'inspecteur).
