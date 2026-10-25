@@ -8,11 +8,13 @@
 
 namespace Flux::Planetology {
     namespace {
-        // Nœuds gardés par planète au plus : au-delà, les moins récemment utilisés sont oubliés (environ 70 Ko de
-        // sommets par tuile, soit environ 70 Mo de mémoire vidéo).
+        // Nœuds gardés par planète au plus, au détail Normal : au-delà, les moins récemment utilisés sont oubliés
+        // (environ 70 Ko de sommets par tuile, soit environ 70 Mo de mémoire vidéo). Autant de fois plus que de
+        // tuiles en plus aux détails plus fins (carré du facteur de coupe).
         constexpr std::size_t MaxNodes = 1024;
-        // Le sol est découpé comme si la caméra était déjà là où elle sera dans ce temps-là (s) : à pied, quelques
-        // mètres, rien ne change ; en vaisseau, des kilomètres, les tuiles sont prêtes quand il arrive.
+        // Les tuiles sont demandées en avance pour là où la caméra sera dans ce temps-là (s) : à pied, quelques mètres,
+        // rien ne change ; en vaisseau, des kilomètres, les tuiles sont prêtes quand il arrive. Elles ne sont dessinées
+        // qu'à leur distance : le détail à l'écran ne dépend pas de la vitesse (sinon il retombe à l'arrêt).
         constexpr double LookAhead = 2.0;
         // Au-delà (m/s), la caméra a sauté (téléportation, autre scène) : pas de vitesse.
         constexpr double MaxCameraSpeed = 100000.0;
@@ -101,6 +103,15 @@ namespace Flux::Planetology {
         return node;
     }
 
+    bool PlanetRenderer::IsTileReady(Entity entity, TileKey key) const {
+        const auto state = m_planets.find(entity);
+        if (state == m_planets.end()) {
+            return false;
+        }
+        const auto node = state->second.nodes.find(key.Pack());
+        return node != state->second.nodes.end() && node->second.tile != NoTile;
+    }
+
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                                  const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                                  std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange) {
@@ -184,14 +195,11 @@ namespace Flux::Planetology {
             return;
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
-        // Découpée aussi pour là où va la caméra : les enfants sont demandés en avance, et dessinés plus fins que
-        // nécessaire en attendant, mais à la forme de leur parente (glissement de AddTile), donc sans différence.
-        const double pathDistance = DistanceToPath(visit.camera, visit.ahead, node.bounds.center) - node.bounds.radius;
         const Terrain& terrain = *visit.state.terrain;
         if (visit.plains && key.level == visit.plainLevel && distance < visit.plainRange) {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
-        if (key.level < terrain.GetMaxLevel() && pathDistance < GetSplitDistance(terrain, key.level)) {
+        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level, m_splitFactor)) {
             // Les enfants visibles et prêts sont dessinés ; à la place de ceux qui ne le sont pas encore (demandés), le
             // quart de cette tuile qu'ils couvrent. Toute la tuile à leur place : quand la caméra tournait, un enfant
             // qui entrait dans le champ remettait pour une image tout le sol grossier, jusque sous la caméra.
@@ -211,7 +219,7 @@ namespace Flux::Planetology {
                 if (children[c]->tile != NoTile) {
                     ++ready;
                 } else {
-                    const double childDistance = DistanceToPath(visit.camera, visit.ahead, children[c]->bounds.center) - children[c]->bounds.radius;
+                    const double childDistance = Math::Length(visit.camera - children[c]->bounds.center) - children[c]->bounds.radius;
                     visit.state.requests.push_back({childKey, std::max(childDistance, 0.0)});
                 }
             }
@@ -231,9 +239,36 @@ namespace Flux::Planetology {
             if (visible == 0) {
                 return;
             }
+        } else {
+            Prefetch(visit, key, node);
         }
         if (node.tile != NoTile) {
             AddTile(visit, key, node, node.bounds, 4);
+        }
+    }
+
+    // Tuile dessinée entière : ses descendants que demande le trajet de la caméra (LookAhead) sont calculés en avance,
+    // sans être dessinés.
+    void PlanetRenderer::Prefetch(Visit& visit, TileKey key, Node& node) {
+        const Terrain& terrain = *visit.state.terrain;
+        if (key.level >= terrain.GetMaxLevel()
+            || DistanceToPath(visit.camera, visit.ahead, node.bounds.center) - node.bounds.radius
+                   >= GetSplitDistance(terrain, key.level, m_splitFactor)) {
+            return;
+        }
+        for (std::uint32_t c = 0; c < 4; ++c) {
+            const TileKey childKey = key.Child(c);
+            Node& child = GetNode(visit.state, childKey, &node);
+            child.lastUsed = m_frame;
+            if (IsCulled(visit, child)) {
+                continue;
+            }
+            if (child.tile == NoTile) {
+                const double childDistance = DistanceToPath(visit.camera, visit.ahead, child.bounds.center) - child.bounds.radius;
+                visit.state.requests.push_back({childKey, std::max(childDistance, 0.0), true});
+            } else {
+                Prefetch(visit, childKey, child);
+            }
         }
     }
 
@@ -260,7 +295,7 @@ namespace Flux::Planetology {
         float morphStart = 1.0e30f;
         float morphScale = 0.0f;
         if (key.level > 0) {
-            const double end = GetSplitDistance(terrain, key.level - 1u);
+            const double end = GetSplitDistance(terrain, key.level - 1u, m_splitFactor);
             morphStart = static_cast<float>(MorphStart * end);
             morphScale = static_cast<float>(1.0 / ((1.0 - MorphStart) * end));
         }
@@ -354,8 +389,12 @@ namespace Flux::Planetology {
                 pending.push_back({&state, request});
             }
         }
-        m_pendingTiles = static_cast<std::uint32_t>(pending.size());
+        // Celles demandées en avance ne retiennent pas l'écran de chargement, et passent après celles à dessiner.
+        m_pendingTiles = static_cast<std::uint32_t>(std::ranges::count_if(pending, [](const Pending& p) { return !p.request.ahead; }));
         std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
+            if (a.request.ahead != b.request.ahead) {
+                return !a.request.ahead;
+            }
             return a.request.key.level != b.request.key.level ? a.request.key.level < b.request.key.level
                                                               : a.request.distance < b.request.distance;
         });
@@ -378,8 +417,10 @@ namespace Flux::Planetology {
             }
         }
         // Trop de nœuds : les moins récemment visités (jamais ceux de cette image, ni les racines) sont oubliés.
+        const double normalFactor = GetSplitFactor(GroundDetail::Normal);
+        const auto maxNodes = static_cast<std::size_t>(static_cast<double>(MaxNodes) * (m_splitFactor * m_splitFactor) / (normalFactor * normalFactor));
         for (auto& [entity, state] : m_planets) {
-            if (state.nodes.size() <= MaxNodes) {
+            if (state.nodes.size() <= maxNodes) {
                 continue;
             }
             std::vector<std::pair<std::uint64_t, std::uint64_t>> old; // dernière visite, clé
@@ -388,7 +429,7 @@ namespace Flux::Planetology {
                     old.emplace_back(node.lastUsed, key);
                 }
             }
-            const std::size_t excess = std::min(state.nodes.size() - MaxNodes, old.size());
+            const std::size_t excess = std::min(state.nodes.size() - maxNodes, old.size());
             std::ranges::nth_element(old, old.begin() + static_cast<std::ptrdiff_t>(excess));
             for (std::size_t i = 0; i < excess; ++i) {
                 auto node = state.nodes.find(old[i].second);

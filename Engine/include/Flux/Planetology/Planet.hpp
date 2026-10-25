@@ -27,9 +27,6 @@ namespace Flux::Planetology {
     constexpr std::uint32_t TileMeshletCount = TileMeshletSide * TileMeshletSide;
     // Niveau le plus fin possible (au-delà, les coordonnées de la grille ne tiennent plus sur 32 bits).
     constexpr std::uint32_t MaxLevel = 24;
-    // Une tuile est coupée en 4 quand la caméra est à moins de LodSplitFactor fois la longueur de son bord (voir
-    // GetSplitDistance) : ses sommets restent espacés de quelques pixels à l'écran.
-    constexpr double LodSplitFactor = 3.0;
     // Fraction de la distance de coupe de la parente où une tuile commence à glisser vers la forme de sa parente.
     constexpr double MorphStart = 0.7;
 
@@ -129,8 +126,8 @@ namespace Flux::Planetology {
     // Distance (de la caméra à la sphère englobante d'une tuile) en deçà de laquelle une tuile de ce niveau est coupée
     // en 4. La même pour toutes les tuiles d'un niveau (la projection tangente donne le même angle à toutes les
     // tuiles le long des axes d'une face) : deux voisines changent de niveau à la même distance, ce qui permet le
-    // glissement d'une forme à l'autre sans fente.
-    FLUX_API double GetSplitDistance(const Terrain& terrain, std::uint32_t level);
+    // glissement d'une forme à l'autre sans fente. `splitFactor` : GetSplitFactor (Flux/Planetology/GroundDetail.hpp).
+    FLUX_API double GetSplitDistance(const Terrain& terrain, std::uint32_t level, double splitFactor);
 
     // Sphère englobante (dans le repère de la planète) et longueur d'un bord d'une tuile, sans la générer.
     struct TileBounds

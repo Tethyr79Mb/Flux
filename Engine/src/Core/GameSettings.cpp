@@ -64,6 +64,14 @@ namespace Flux::GameSettingsFile {
         }
         Read(document, "vsync", settings.vsync, IsBool, warnings);
         Read(document, "temporalAA", settings.temporalAA, IsBool, warnings);
+        if (const auto detail = document.find("groundDetail"); detail != document.end()) {
+            const auto found = detail->is_string() ? std::ranges::find(GroundDetailKeys, detail->get<std::string>()) : GroundDetailKeys.end();
+            if (found != GroundDetailKeys.end()) {
+                settings.groundDetail = static_cast<GroundDetail>(found - GroundDetailKeys.begin());
+            } else if (warnings) {
+                warnings->push_back("« groundDetail » ignoré (valeur non valide)");
+            }
+        }
         Read(document, "volume", settings.volume, IsNumber, warnings);
         settings.volume = std::clamp(settings.volume, 0.0f, 1.0f);
         Read(document, "engineStats", settings.showEngineStats, IsBool, warnings);
@@ -78,6 +86,7 @@ namespace Flux::GameSettingsFile {
                               {"fullscreen", settings.fullscreen}};
         document["vsync"] = settings.vsync;
         document["temporalAA"] = settings.temporalAA;
+        document["groundDetail"] = GroundDetailKeys[static_cast<std::size_t>(settings.groundDetail)];
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;
         return document.dump(2) + "\n";

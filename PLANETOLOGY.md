@@ -62,9 +62,16 @@ grossier jusque sous les pieds, sans arbres, et le sol clignotait.
 
 Une tuile cachée par la courbure n'est ni dessinée ni découpée. Le test prend l'horizon du sol le plus bas possible et
 le point le plus haut de cette tuile, et non le plus haut sommet de la planète : près du sol, une plaine au loin est
-écartée bien avant une montagne. Le sol est aussi découpé pour là où la caméra sera dans 2 secondes (sa vitesse dans le
-repère de la planète, lissée). À pied, cela ne change rien. En vaisseau au ras du sol, les tuiles sont prêtes quand il
-arrive. En attendant, elles sont dessinées à la forme de leur parente (glissement CDLOD), donc sans différence visible.
+écartée bien avant une montagne. Les tuiles sont aussi calculées en avance pour là où la caméra sera dans 2 secondes
+(sa vitesse dans le repère de la planète, lissée). À pied, cela ne change rien. En vaisseau au ras du sol, les tuiles
+sont prêtes quand il arrive. Elles ne sont dessinées qu'à leur distance réelle : avant, elles l'étaient tout de suite,
+le glissement CDLOD ne cachait qu'un niveau, et le sol devant la caméra devenait plus fin en mouvement puis retombait
+d'un coup à l'arrêt. Ces demandes passent après les tuiles à dessiner et ne retiennent pas l'écran de chargement.
+
+Le réglage **Détail du sol** (`GroundDetail`, Paramètres de l'éditeur, `Reglages.json` du jeu, valeur « Détail du sol »
+des interfaces) choisit la distance de coupe : une tuile est coupée en 4 à moins de 3 (Normal), 4,5 (Élevé, par défaut)
+ou 6 (Très élevé) fois son bord. Au plus loin, deux sommets voisins sont à environ 10, 6,5 ou 5 pixels l'un de l'autre ;
+le nombre de tuiles croît comme le carré du facteur.
 Avec un océan, caméra au-dessus de la mer, l'horizon est celui de la mer : rien n'est plus bas que sa surface. L'eau,
 le fond et les terres basses qui passent dessous ne sont plus gardés. Le fond vu au travers de l'eau ne le serait qu'en
 rasant la surface, où elle reflète tout (fresnel de `fragmentOcean`).

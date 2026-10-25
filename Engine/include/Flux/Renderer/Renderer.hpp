@@ -5,6 +5,7 @@
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -130,6 +131,9 @@ namespace Flux {
         // « dont sol » dans le panneau Moteur donne le coût des pixels ; le reste, celui des sommets et des triangles.
         void SetGroundGeometryOnly(bool enabled);
         bool IsGroundGeometryOnly() const;
+        // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
+        void SetGroundDetail(GroundDetail detail);
+        GroundDetail GetGroundDetail() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

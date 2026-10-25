@@ -95,6 +95,7 @@ namespace Flux {
         m_renderer = std::move(renderer.value());
         m_renderer->SetVSync(config.vsync);
         m_renderer->SetTemporalAA(config.temporalAA);
+        m_renderer->SetGroundDetail(config.groundDetail);
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
@@ -114,6 +115,11 @@ namespace Flux {
                                     }});
         m_interfaceBindings->SetEngineValue("Anticrénelage", {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
                                            .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }});
+        // 0 Normal, 1 Élevé, 2 Très élevé.
+        m_interfaceBindings->SetEngineValue("Détail du sol", {.get = [this] { return static_cast<double>(m_renderer->GetGroundDetail()); },
+                                            .set = [this](double value) {
+                                                m_renderer->SetGroundDetail(static_cast<GroundDetail>(std::clamp(std::lround(value), 0l, 2l)));
+                                            }});
         m_interfaceBindings->SetEngineValue("Volume général", {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
                                              .set = [this](double value) {
                                                  m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
@@ -281,6 +287,7 @@ namespace Flux {
                     .height = static_cast<std::uint32_t>(view.y),
                     .vsync = m_renderer->IsVSyncEnabled(),
                     .temporalAA = m_renderer->IsTemporalAAEnabled(),
+                    .groundDetail = m_renderer->GetGroundDetail(),
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
                     .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
                     .groundMeshThreads = render.groundMeshThreads,

@@ -573,9 +573,9 @@ namespace Flux::Planetology {
         return m_relief * omitted;
     }
 
-    double GetSplitDistance(const Terrain& terrain, std::uint32_t level) {
+    double GetSplitDistance(const Terrain& terrain, std::uint32_t level, double splitFactor) {
         // Angle d'une tuile le long des axes de sa face : (π/2) / 2^niveau.
-        return LodSplitFactor * 0.5 * std::numbers::pi * terrain.GetRadius() * std::ldexp(1.0, -static_cast<int>(level));
+        return splitFactor * 0.5 * std::numbers::pi * terrain.GetRadius() * std::ldexp(1.0, -static_cast<int>(level));
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {

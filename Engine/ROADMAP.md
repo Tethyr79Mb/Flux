@@ -68,7 +68,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 
 ### Planètes (Planetology)
 - ✅ Code des planètes réuni dans le domaine Planetology (`Flux::Planetology`, dossiers `Planetology/`).
-- ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU (déformation en double si le GPU a shaderFloat64 : sol affiché et collision au centimètre sur une planète comme la Terre) ; une tuile pas encore calculée ne remplace que son quart de la parente (le sol ne clignote plus quand la caméra tourne). Horizon calculé pour chaque tuile (son point le plus haut) ; sol demandé en avance là où va la caméra (2 s de sa vitesse : rien ne change à pied, tuiles prêtes en vaisseau).
+- ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU (déformation en double si le GPU a shaderFloat64 : sol affiché et collision au centimètre sur une planète comme la Terre) ; une tuile pas encore calculée ne remplace que son quart de la parente (le sol ne clignote plus quand la caméra tourne). Horizon calculé pour chaque tuile (son point le plus haut) ; sol calculé en avance là où va la caméra (2 s de sa vitesse : rien ne change à pied, tuiles prêtes en vaisseau), sans être dessiné avant d'être assez près : le détail ne retombe plus à l'arrêt de la caméra.
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
 - 🔧 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; dans l'air d'une planète, le ciel de l'espace n'éclaire plus de jour (l'atmosphère éclaire à sa place) et peu la nuit. Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour (« Lumière de contour ») aussi sur les planètes, liseré selon la sphère, vue de l'espace seulement (effacée sous deux hauteurs d'atmosphère : au sol elle voilait tout le terrain). À améliorer : pas de cycle jour / nuit.
@@ -121,7 +121,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - 🔨 Océan : tuiles plus grossières et moins nombreuses. Fait : l'eau, le fond et les terres basses sous l'horizon de la mer ne sont plus gardés (scène d'essai à 1 300 m : 20 tuiles d'eau → 10, 313 tuiles → 291). Reste : tuiles d'eau plus grossières que celles du sol ; eau cachée derrière une montagne écartée par la pyramide de profondeur seulement avec les mesh shaders.
-- ⬜ Réglage du niveau de détail des tuiles (`LodSplitFactor`).
+- 🔧 Réglage « Détail du sol » (Normal, Élevé par défaut, Très élevé : tuile coupée à 3, 4,5 ou 6 fois son bord), dans les Paramètres de l'éditeur et les réglages du jeu. Limite : choisi à la main, pas encore selon la carte graphique ni la vitesse mesurée.
 
 ### Rendu
 - 🔧 HDR + bloom (lueurs, soleil, réacteurs) ; soleil dans son propre shader (disque assombri au bord, halo, rayons en étoile ou long trait horizontal façon EVE Online, au choix du composant Soleil). Force réglable dans Paramètres > Graphiques de l'éditeur ; le jeu garde la force par défaut (réglage du jeu à venir).
