@@ -32,7 +32,7 @@ namespace {
         void UseTextures(std::span<const RHI::TextureUse> list) override {
             std::string line = "barrières";
             for (const RHI::TextureUse& use : list) {
-                constexpr std::array names{"rien", "couleur", "profondeur", "lue"};
+                constexpr std::array names{"rien", "couleur", "profondeur", "lue", "calcul"};
                 const auto* named = dynamic_cast<const NamedTexture*>(use.texture);
                 line += std::format(" {}:{}{}", named ? named->name : "?", names[static_cast<std::size_t>(use.access)],
                                     use.discard ? " jetée" : "");
@@ -56,6 +56,7 @@ namespace {
         void DrawMeshTasks(std::uint32_t) override {}
         void Dispatch(std::uint32_t, std::uint32_t, std::uint32_t) override {}
         void ComputeBarrier() override {}
+        void GenerateMipmaps(const RHI::Texture&) override {}
         void WriteTimestamp(std::uint32_t slot) override { log.push_back("heure " + std::to_string(slot)); }
         void BeginStep(const char* name) override { log.push_back(std::string("étape ") + name); }
     };

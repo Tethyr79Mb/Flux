@@ -83,6 +83,19 @@ namespace Flux::Vk {
         vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
     }
 
+    void RhiBindGroup::SetStorageTexture(std::uint32_t slot, const RHI::Texture& texture) {
+        const VkDescriptorImageInfo imageInfo{VK_NULL_HANDLE, static_cast<const RhiTexture&>(texture).GetImage().GetStorageView(),
+                                              VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_set;
+        write.dstBinding = slot;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+    }
+
     namespace {
         // Image de la swapchain seulement : les textures passent par UseTextures.
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
@@ -211,6 +224,9 @@ namespace Flux::Vk {
                             VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                                 | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | MeshStages(meshShaders),
                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, false};
+                case RHI::TextureAccess::Storage:
+                    return {VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, true};
             }
             return {VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, false};
         }
@@ -464,5 +480,77 @@ namespace Flux::Vk {
         dependency.memoryBarrierCount = 1;
         dependency.pMemoryBarriers = &barrier;
         vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+    }
+
+    void RhiCommandList::GenerateMipmaps(const RHI::Texture& texture) {
+        const auto& rhiTexture = static_cast<const RhiTexture&>(texture);
+        const Image& image = rhiTexture.GetImage();
+        const std::uint32_t levels = image.GetMipLevels();
+        const std::uint32_t layers = image.GetLayers();
+        if (levels <= 1) {
+            Use(texture, RHI::TextureAccess::Sampled);
+            return;
+        }
+        const AccessInfo before = Describe(rhiTexture.GetAccess(), m_meshShaders);
+        const AccessInfo sampled = Describe(RHI::TextureAccess::Sampled, m_meshShaders);
+        std::array<VkImageMemoryBarrier2, 2> barriers{};
+        const auto barrier = [&](std::uint32_t index, std::uint32_t level, std::uint32_t count, VkImageLayout from, VkImageLayout to,
+                                 VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
+                                 VkAccessFlags2 dstAccess) {
+            VkImageMemoryBarrier2& b = barriers[index];
+            b = {};
+            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            b.srcStageMask = srcStage;
+            b.srcAccessMask = srcAccess;
+            b.dstStageMask = dstStage;
+            b.dstAccessMask = dstAccess;
+            b.oldLayout = from;
+            b.newLayout = to;
+            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.image = image.GetHandle();
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, count, 0, layers};
+        };
+        const auto flush = [&](std::uint32_t count) {
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.imageMemoryBarrierCount = count;
+            dependency.pImageMemoryBarriers = barriers.data();
+            vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        };
+        // Le niveau 0 est lu tel quel ; les autres, réécrits en entier, perdent leur contenu d'avant.
+        barrier(0, 0, 1, before.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, before.stages,
+                before.write ? before.access : VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+        barrier(1, 1, levels - 1, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, before.stages, VK_ACCESS_2_NONE,
+                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+        flush(2);
+        const VkExtent2D extent = image.GetExtent();
+        std::int32_t width = static_cast<std::int32_t>(extent.width);
+        std::int32_t height = static_cast<std::int32_t>(extent.height);
+        std::int32_t depth = static_cast<std::int32_t>(image.GetDepth());
+        for (std::uint32_t level = 1; level < levels; ++level) {
+            const std::int32_t nextWidth = std::max(width / 2, 1);
+            const std::int32_t nextHeight = std::max(height / 2, 1);
+            const std::int32_t nextDepth = std::max(depth / 2, 1);
+            VkImageBlit blit{};
+            blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, layers};
+            blit.srcOffsets[1] = {width, height, depth};
+            blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
+            blit.dstOffsets[1] = {nextWidth, nextHeight, nextDepth};
+            vkCmdBlitImage(m_commandBuffer, image.GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.GetHandle(),
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+            // Ce niveau sera lu pour produire le suivant.
+            barrier(0, level, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                    VK_ACCESS_2_TRANSFER_READ_BIT);
+            flush(1);
+            width = nextWidth;
+            height = nextHeight;
+            depth = nextDepth;
+        }
+        barrier(0, 0, levels, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sampled.layout, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, sampled.stages, sampled.access);
+        flush(1);
+        rhiTexture.SetAccess(RHI::TextureAccess::Sampled);
     }
 }

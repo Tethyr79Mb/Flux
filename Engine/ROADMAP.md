@@ -156,6 +156,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
 - 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume près de la caméra (8 pas), en colonne au loin et vu de l'espace, avec son ombre. À améliorer : voir la ligne suivante.
 - ⬜ Nuages : plus de pas quand on vole dedans, reprojection d'une image à l'autre, formes par type (cumulus, stratus).
+- 🔨 Nuages volumétriques (3 étapes) : 1) ✅ bruit 3D (forme Perlin-Worley 128³, détail Worley 32³) calculé une fois
+  par le GPU, avec ses mips ; 2) ⬜ rendu au quart de la résolution avec reprojection, 64 pas de près, ombre interne
+  vers le soleil, diffusion multiple, carte météo ; 3) ⬜ qualité réglable (GTX 1060), mesures GPU.
 - ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 - ⬜ 2 ou 3 textures par matière, pour varier davantage le sol de près.
 

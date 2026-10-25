@@ -90,6 +90,7 @@ namespace Flux::Vk {
         void SetTexture(std::uint32_t slot, const RHI::Texture& texture, const RHI::Sampler& sampler) override;
         void SetBuffer(std::uint32_t slot, const RHI::Buffer& buffer) override;
         void SetTableTexture(std::uint32_t slot, std::uint32_t element, const RHI::Texture& texture, const RHI::Sampler& sampler) override;
+        void SetStorageTexture(std::uint32_t slot, const RHI::Texture& texture) override;
         VkDescriptorSet GetHandle() const { return m_set; }
 
         private:
@@ -144,6 +145,7 @@ namespace Flux::Vk {
         void DrawMeshTasks(std::uint32_t groups) override;
         void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
         void ComputeBarrier() override;
+        void GenerateMipmaps(const RHI::Texture& texture) override;
         void WriteTimestamp(std::uint32_t slot) override;
         void BeginStep(const char* name) override;
         // Repères de l'image qui commence (après Begin) ; sans appel, BeginStep ne fait rien.
@@ -208,6 +210,8 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeTexture(RHI::Format format, std::uint32_t size,
                                                                                     std::span<const std::uint8_t> pixels,
                                                                                     bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateVolumeTexture(RHI::Format format, RHI::Extent extent,
+                                                                                      std::uint32_t depth, bool mipmaps) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent,
                                                                                      bool sampled) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeRenderTarget(RHI::Format format,

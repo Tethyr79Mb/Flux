@@ -374,6 +374,11 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   les pixels cachés par le relief sont écartés avant le shader. La couverture s'arrête de lire ses octaves dès
   qu'elles ne peuvent plus donner de nuage. Leur ombre (`CloudShadow`) multiplie le soleil de tout ce qui est éclairé
   (objets, sol, eau) ; calculée par sommet pour le sol (ses taches font des centaines de mètres), au pixel ailleurs.
+  Bruit 3D des nuages volumétriques à venir (`Planetology/CloudNoise`, `shaders/CloudNoise.slang`) : deux textures 3D
+  qui se répètent sans couture, calculées une fois par le GPU au démarrage avec leurs mips (forme 128³ : Perlin-Worley
+  et trois Worley ; détail 32³ : trois Worley), à lire en marchant le long du rayon au lieu de recalculer le bruit
+  à chaque pas. Le RHI y gagne les textures 3D (`CreateVolumeTexture`), leur écriture par compute shader
+  (`BindingType::StorageTexture`, `TextureAccess::Storage`) et `CommandList::GenerateMipmaps`.
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine ses tuiles par bandes de distance (chacune deux fois plus loin que la précédente), puis par page :
   un `DrawIndexedIndirect` par page et par bande, de près à loin, pour que le relief proche cache le lointain avant

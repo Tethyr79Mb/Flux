@@ -65,7 +65,13 @@ namespace Flux::Vk {
         }
 
         VkDescriptorType ToVulkan(RHI::BindingType type) {
-            return type == RHI::BindingType::StorageBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            switch (type) {
+                case RHI::BindingType::StorageBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                case RHI::BindingType::StorageTexture: return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                case RHI::BindingType::Texture:
+                case RHI::BindingType::TextureTable: break;
+            }
+            return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         }
 
         VkFilter ToVulkan(RHI::Filter filter) {
@@ -313,6 +319,18 @@ namespace Flux::Vk {
             return std::unexpected(image.error());
         }
         return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
+    }
+
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateVolumeTexture(RHI::Format format, RHI::Extent extent,
+                                                                                             std::uint32_t depth, bool mipmaps) {
+        if (format != RHI::Format::RGBA8Unorm) {
+            return std::unexpected("texture 3D : format RGBA8Unorm seulement");
+        }
+        auto image = Image::CreateVolume(*m_device, ToVulkan(format), {extent.width, extent.height}, depth, mipmaps);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::None);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,

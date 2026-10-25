@@ -55,6 +55,7 @@ flux_precompile_headers(FluxEngine)
 flux_add_version(FluxEngine)
 
 flux_add_shaders(FluxShaders
+        shaders/CloudNoise.slang
         shaders/Culling.slang
         shaders/Flame.slang
         shaders/Grid.slang
