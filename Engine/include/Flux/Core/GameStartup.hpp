@@ -8,7 +8,7 @@
 namespace Flux {
     class Engine;
 
-    // Démarrage du jeu sans éditeur, pour le main de Game.exe (et plus tard du lanceur) : lit Game.fluxproject et les
+    // Démarrage du jeu sans éditeur, pour le main de Ars Solaris.exe (et plus tard du lanceur) : lit Game.fluxproject et les
     // réglages du joueur (Reglages.json) à côté de l'exe, crée le moteur avec ces réglages (fenêtre, V-Sync, volume),
     // charge le module du jeu (moduleFile, à côté de l'exe aussi), ouvre la scène de démarrage et fait tourner la
     // boucle. À la fermeture, les réglages changés en jeu (interface Paramètres, taille de la fenêtre) sont réécrits.

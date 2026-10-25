@@ -8,7 +8,7 @@
 #include <string_view>
 
 namespace Flux {
-    // Projet de jeu (fichier .fluxproject, JSON) : ce que l'éditeur ouvre, et ce que Game.exe lance.
+    // Projet de jeu (fichier .fluxproject, JSON) : ce que l'éditeur ouvre, et ce que Ars Solaris.exe lance.
     //     { "format": "flux.project", "version": 1, "name": "Flux Demo",
     //       "assets": "assets", "startupScene": "scenes/Demo.scene.json" }
     // Les chemins du fichier sont relatifs : le même projet sert dans le dépôt (éditeur) et dans bin/ (jeu).

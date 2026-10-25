@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace Flux {
-    // Réglages du joueur pour Game.exe, gardés dans Reglages.json à côté de l'exe (les touches restent dans
+    // Réglages du joueur pour Ars Solaris.exe, gardés dans Reglages.json à côté de l'exe (les touches restent dans
     // Touches.json, partagé avec l'éditeur). Lus par GameStartup avant de créer le moteur, réécrits à la fermeture.
     struct GameSettings {
         Math::Vector2i windowSize{1280, 720}; // zone de dessin de la fenêtre restaurée

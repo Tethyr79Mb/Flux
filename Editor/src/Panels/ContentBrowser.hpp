@@ -97,7 +97,7 @@ namespace FluxEditor {
         void DrawRenameWindow(Flux::Engine& engine, SceneDocument& document);
         // false (avec un message) si le nom ne convient pas ou si le fichier n'a pas pu être renommé.
         bool Rename(Flux::Engine& engine, SceneDocument& document, const std::string& name);
-        // Game.exe chargera cette scène au lancement (enregistré dans le .fluxproject, recopié dans bin/ au build).
+        // Ars Solaris.exe chargera cette scène au lancement (enregistré dans le .fluxproject, recopié dans bin/ au build).
         static void SetStartupScene(Flux::Engine& engine, const std::filesystem::path& path);
 
         std::filesystem::path m_root;
