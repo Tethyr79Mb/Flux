@@ -846,9 +846,8 @@ namespace Flux {
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
         const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
         const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-        if (m_planetTiles.empty()) {
-            return;
-        }
+        // Même sans tuile visible (regard vers le ciel), la planète entre dans m_planetData : ses nuages, leur ombre
+        // et son contour en dépendent.
         // Son sol, lu par fragmentPlanet ; sans zones, roche partout.
         const float roughness = std::clamp(planet.roughness, 0.0f, 1.0f);
         // Avec les textures du sol, la teinte de chaque matière à la place de sa couleur.
