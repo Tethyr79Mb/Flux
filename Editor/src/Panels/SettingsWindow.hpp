@@ -36,6 +36,9 @@ namespace FluxEditor {
         float m_bloom = Flux::Renderer::DefaultBloom; // force quand il est activé, 0 à 1
         bool m_bloomChanged = false; // pas encore enregistré (curseur tenu)
         bool m_temporalAA = true;
+        Flux::Upscaling m_upscaling = Flux::DefaultUpscaling;
+        float m_sharpness = Flux::DefaultSharpness;
+        bool m_sharpnessChanged = false; // pas encore enregistré (curseur tenu)
         Flux::GroundDetail m_groundDetail = Flux::DefaultGroundDetail;
     };
 }

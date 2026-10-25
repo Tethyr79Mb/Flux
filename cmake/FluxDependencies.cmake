@@ -209,3 +209,30 @@ set_target_properties(Jolt PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 # Bibliothèques statiques liées dans FluxEngine.dll.
 set_target_properties(volk vk-bootstrap PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Mise à l'échelle FSR 3.1 d'AMD (FidelityFX SDK 1.1.4, licence MIT) : la DLL Vulkan signée qu'AMD publie déjà compilée,
+# et les quatre en-têtes C de son API. Compiler le SDK nous-mêmes demanderait son compilateur de shaders, des Go de
+# sources et un long temps de compilation, pour la même DLL. Téléchargés une fois dans le dossier des dépendances
+# (empreintes vérifiées : un fichier déjà là et intact n'est pas retéléchargé) ; la DLL est copiée à côté des exe et
+# chargée au démarrage (Renderer/Vulkan/VulkanUpscaler.cpp). Sans elle, le jeu tourne en Natif.
+set(FLUX_FIDELITYFX_DIR ${FETCHCONTENT_BASE_DIR}/fidelityfx-1.1.4)
+set(FLUX_FIDELITYFX_URL https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/v1.1.4)
+set(FLUX_FIDELITYFX_FILES
+        "PrebuiltSignedDLL/amd_fidelityfx_vk.dll|amd_fidelityfx_vk.dll|a1624cc4238fef046f30c4d80ce3f47be63fc5f5373f49e3ee9edb9960f54c78"
+        "LICENSE.txt|LICENSE.txt|82cf74fc23885107c7f69249ac3f1dac55898ff68320eb2c753984cae6b2d78a"
+        "ffx-api/include/ffx_api/ffx_api.h|include/ffx_api/ffx_api.h|408b4203545e8299ed188fbb1d9ddfe0932b73ea6e8b14fe10edcf1f45771561"
+        "ffx-api/include/ffx_api/ffx_api_types.h|include/ffx_api/ffx_api_types.h|dee2782813d22047c068e0fb27d1347324f8ce79d280a4672848b3b294cb12fe"
+        "ffx-api/include/ffx_api/ffx_upscale.h|include/ffx_api/ffx_upscale.h|1155bcdcea9c10e6a95507bc9422ca062a853ac84250f0b09a637a66836b3ac1"
+        "ffx-api/include/ffx_api/vk/ffx_api_vk.h|include/ffx_api/vk/ffx_api_vk.h|a50a8d5ff5689a10a6ce378f2df5569fd880c89ec46e8356aaf35eb40512edd9")
+foreach(entry IN LISTS FLUX_FIDELITYFX_FILES)
+    string(REPLACE "|" ";" entry "${entry}")
+    list(GET entry 0 source)
+    list(GET entry 1 destination)
+    list(GET entry 2 hash)
+    file(DOWNLOAD ${FLUX_FIDELITYFX_URL}/${source} ${FLUX_FIDELITYFX_DIR}/${destination}
+            EXPECTED_HASH SHA256=${hash}
+            TLS_VERIFY ON)
+endforeach()
+file(COPY ${FLUX_FIDELITYFX_DIR}/amd_fidelityfx_vk.dll DESTINATION ${FLUX_OUTPUT_DIRECTORY})
+add_library(fidelityfx_api INTERFACE)
+target_include_directories(fidelityfx_api SYSTEM INTERFACE ${FLUX_FIDELITYFX_DIR}/include)

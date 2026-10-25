@@ -31,6 +31,8 @@ namespace Flux {
             std::uint32_t height = 0;
             bool vsync = false;
             bool temporalAA = false;
+            Upscaling upscaling = Upscaling::Native;
+            Math::Vector2i renderSize; // scène dessinée à cette taille, puis agrandie par FSR
             GroundDetail groundDetail = DefaultGroundDetail;
             bool occlusionCulling = false;  // « Objets cachés écartés »
             bool groundGeometryOnly = false; // « Sol sans pixels »
