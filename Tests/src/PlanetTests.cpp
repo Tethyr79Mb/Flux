@@ -238,7 +238,7 @@ bool RunPlanetTests() {
             CHECK(Math::Length(fromLeft - fromRight) < 0.01);
         }
         // Distances de coupe : la moitié à chaque niveau.
-        CHECK(std::abs(Planetology::GetSplitDistance(terrain, 3) - 2.0 * Planetology::GetSplitDistance(terrain, 4)) < 1.0e-6);
+        CHECK(std::abs(Planetology::GetSplitDistance(terrain, 3, 3.0) - 2.0 * Planetology::GetSplitDistance(terrain, 4, 3.0)) < 1.0e-6);
     }
 
     // Surface pour la collision : les mêmes sommets que la tuile affichée, au bit près ; la tuile d'une direction est

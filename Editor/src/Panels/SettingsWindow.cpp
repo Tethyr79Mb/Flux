@@ -62,6 +62,13 @@ namespace FluxEditor {
             m_temporalAA = temporal->get<bool>();
         }
         engine.GetRenderer().SetTemporalAA(m_temporalAA);
+        if (const auto detail = json.find("groundDetail"); detail != json.end() && detail->is_string()) {
+            const auto found = std::ranges::find(GroundDetailKeys, detail->get<std::string>());
+            if (found != GroundDetailKeys.end()) {
+                m_groundDetail = static_cast<GroundDetail>(found - GroundDetailKeys.begin());
+            }
+        }
+        engine.GetRenderer().SetGroundDetail(m_groundDetail);
     }
 
     void SettingsWindow::Save() const {
@@ -72,7 +79,8 @@ namespace FluxEditor {
                         {"volume", m_volume},
                         {"bloomEnabled", m_bloomEnabled},
                         {"bloom", m_bloom},
-                        {"temporalAA", m_temporalAA}};
+                        {"temporalAA", m_temporalAA},
+                        {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -128,6 +136,13 @@ namespace FluxEditor {
                 // Lisse les bords en escalier et le grain des nuages en mélangeant les images successives.
                 if (ui.Checkbox("Anticrénelage (TAA)", m_temporalAA)) {
                     renderer.SetTemporalAA(m_temporalAA);
+                    Save();
+                }
+                // Distance où le sol des planètes devient moins fin : plus élevé, plus de tuiles à calculer et dessiner.
+                int detail = static_cast<int>(m_groundDetail);
+                if (ui.Choice("Détail du sol", detail, GroundDetailLabels)) {
+                    m_groundDetail = static_cast<GroundDetail>(detail);
+                    renderer.SetGroundDetail(m_groundDetail);
                     Save();
                 }
                 // Le bloom fait déborder la lumière des zones très lumineuses (soleil, flammes, émissifs).

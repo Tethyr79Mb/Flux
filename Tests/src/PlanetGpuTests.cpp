@@ -92,8 +92,9 @@ namespace {
         return true;
     }
 
-    // Caméra qui file au ras du sol (vaisseau) : le sol devant elle est demandé en avance (PlanetRenderer::LookAhead),
-    // plus fin qu'à la même place sans vitesse. Sans vitesse (images à plus d'une demi-seconde d'écart), rien d'avance.
+    // Caméra qui file au ras du sol (vaisseau) : le sol devant elle est calculé en avance (PlanetRenderer::LookAhead),
+    // plus fin qu'à la même place sans vitesse, mais dessiné comme sans vitesse : sinon le détail retombe d'un coup à
+    // l'arrêt. Sans vitesse (images à plus d'une demi-seconde d'écart), rien d'avance.
     bool CheckMovingCamera(RHI::Device& device) {
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
         const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
@@ -107,7 +108,12 @@ namespace {
         };
         constexpr double Speed = 3000.0; // m/s
         constexpr int Frames = 40;
-        const auto run = [&](std::chrono::duration<double> step) -> std::expected<int, std::string> {
+        struct Ahead
+        {
+            int drawn;  // niveau dessiné 4 km devant
+            bool ready; // la tuile deux niveaux plus fine, là, est calculée
+        };
+        const auto run = [&](std::chrono::duration<double> step) -> std::expected<Ahead, std::string> {
             auto created = Planetology::PlanetRenderer::Create(device);
             if (!created) {
                 return std::unexpected(created.error());
@@ -144,7 +150,10 @@ namespace {
                     level = std::max(level, static_cast<int>(tile.key.level));
                 }
             }
-            return level;
+            if (level < 0) {
+                return std::unexpected(std::string("sol 4 km devant non dessiné"));
+            }
+            return Ahead{level, renderer.IsTileReady(static_cast<Entity>(1), Planetology::FindTile(ahead, static_cast<std::uint32_t>(level) + 2u))};
         };
         const auto flying = run(std::chrono::duration<double>(1.0 / 60.0));
         const auto jumping = run(std::chrono::duration<double>(1.0));
@@ -152,8 +161,9 @@ namespace {
             std::printf("ÉCHEC %s\n", (!flying ? flying.error() : jumping.error()).c_str());
             return false;
         }
-        if (*flying < *jumping + 2) {
-            std::printf("ÉCHEC sol 4 km devant au niveau %d en vol, %d sans vitesse\n", *flying, *jumping);
+        if (flying->drawn != jumping->drawn || !flying->ready || jumping->ready) {
+            std::printf("ÉCHEC sol 4 km devant dessiné au niveau %d en vol, %d sans vitesse ; plus fin calculé : %s en vol, %s sans vitesse\n",
+                        flying->drawn, jumping->drawn, flying->ready ? "oui" : "non", jumping->ready ? "oui" : "non");
             return false;
         }
         return true;

@@ -6,6 +6,7 @@
 #include "Flux/Graphics/FlyCameraController.hpp"
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -66,6 +67,7 @@ namespace Flux {
         bool freeCamera = true;
         bool vsync = true;
         bool temporalAA = true; // anticrénelage temporel (TAA)
+        GroundDetail groundDetail = DefaultGroundDetail;
         float volume = 1.0f; // volume général, 0 à 1
     };
 

@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/GroundDetail.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -18,6 +19,7 @@ namespace Flux {
         bool fullscreen = false; // plein écran sans bordure (Alt+Entrée ou F11 en jeu)
         bool vsync = true;
         bool temporalAA = true;    // anticrénelage temporel (TAA)
+        GroundDetail groundDetail = DefaultGroundDetail;
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)
     };

@@ -597,6 +597,14 @@ namespace Flux {
         return m_impl->meshes->IsGroundGeometryOnly();
     }
 
+    void Renderer::SetGroundDetail(GroundDetail detail) {
+        m_impl->meshes->SetGroundDetail(detail);
+    }
+
+    GroundDetail Renderer::GetGroundDetail() const {
+        return m_impl->meshes->GetGroundDetail();
+    }
+
     std::string_view Renderer::GetPresentModeName() const {
         switch (m_impl->device->GetPresentMode()) {
             case RHI::PresentMode::Fifo: return "FIFO (synchronisé)";

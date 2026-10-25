@@ -85,6 +85,8 @@ namespace Flux {
         // Mesure : le sol des planètes sans le calcul de ses pixels (voir fragmentPlanetGeometry).
         void SetGroundGeometryOnly(bool enabled) { m_groundGeometryOnly = enabled; }
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
+        void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
+        GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
         // cible (le graphe de rendu la rend ensuite lisible pour la scène).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;

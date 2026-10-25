@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Scene/Components.hpp"
@@ -94,6 +95,15 @@ namespace Flux::Planetology {
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                      std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0);
+        // Détail du sol (DefaultGroundDetail par défaut) : pris en compte au prochain Collect, les tuiles déjà calculées
+        // restent bonnes.
+        void SetGroundDetail(GroundDetail detail) {
+            m_groundDetail = detail;
+            m_splitFactor = GetSplitFactor(detail);
+        }
+        GroundDetail GetGroundDetail() const { return m_groundDetail; }
+        // La tuile `key` de la planète est calculée (ou le sera au début de l'image suivante), dessinée ou non.
+        bool IsTileReady(Entity entity, TileKey key) const;
         // Forme de la planète (après un Collect) ; nullptr si elle n'est pas dessinée.
         const Terrain* FindTerrain(Entity entity) const {
             const auto state = m_planets.find(entity);
@@ -148,6 +158,7 @@ namespace Flux::Planetology {
         {
             TileKey key;
             double distance;
+            bool ahead = false; // seulement pour là où va la caméra : après celles à dessiner maintenant
         };
         struct PlanetState
         {
@@ -161,7 +172,7 @@ namespace Flux::Planetology {
             std::vector<Request> requests;
             std::uint64_t lastUsed = 0;
             // Vitesse de la caméra dans le repère de la planète (m/s, lissée) : le sol est demandé en avance là où
-            // elle va.
+            // elle va (Prefetch).
             Math::Vector3d camera;
             Math::Vector3d velocity;
             std::chrono::steady_clock::time_point time;
@@ -187,6 +198,7 @@ namespace Flux::Planetology {
         bool IsCulled(const Visit& visit, const TileBounds& bounds) const;
         bool IsCulled(const Visit& visit, const Node& node) const { return IsCulled(visit, node.bounds); }
         void VisitNode(Visit& visit, TileKey key, Node& node);
+        void Prefetch(Visit& visit, TileKey key, Node& node);
         void AddPlains(Visit& visit, TileKey key);
         void AddTile(Visit& visit, TileKey key, const Node& node, const TileBounds& bounds, std::uint32_t quarter);
         PlanetState* FindOwner(std::uint64_t owner);
@@ -199,6 +211,8 @@ namespace Flux::Planetology {
         std::unordered_map<Entity, PlanetState> m_planets;
         std::chrono::steady_clock::time_point m_now;
         std::uint64_t m_frame = 0;
+        GroundDetail m_groundDetail = DefaultGroundDetail;
+        double m_splitFactor = GetSplitFactor(DefaultGroundDetail);
         bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
         std::uint32_t m_pendingTiles = 0;
         // Cases libérées, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
