@@ -34,6 +34,7 @@ namespace Flux::Interface {
         Tabs,     // barre d'onglets : chaque enfant est une page, nommée sur son onglet ; une seule page affichée
         ProgressBar, // remplie selon sa valeur (vie, chargement) ; le joueur ne la change pas
         ScrollArea,  // zone de défilement : ses enfants défilent à la molette ou par l'ascenseur s'ils dépassent en bas
+        Dropdown,    // liste déroulante : montre le choix fait (value), un clic déroule les autres par-dessus le reste
         Count,
     };
 
@@ -118,9 +119,12 @@ namespace Flux::Interface {
         bool pausesGame = false;    // le jeu est en pause tant qu'elle est ouverte
 
         bool checked = false; // case
-        float value = 0.5f;   // curseur, entre minimum et maximum
+        float value = 0.5f;   // curseur, entre minimum et maximum ; liste déroulante : numéro du choix (0 le premier)
         float minimum = 0.0f;
         float maximum = 1.0f;
+
+        // Liste déroulante : ses choix. Liée à une valeur qui a les siens (« Détail du sol »), ce sont ceux-là en jeu.
+        std::vector<std::string> options;
 
         ButtonAction action = ButtonAction::None; // bouton
         std::string target;                       // fenêtre, scène ou fonction visée par l'action
@@ -158,7 +162,7 @@ namespace Flux::Interface {
     struct Field
     {
         using Member = std::variant<std::string Element::*, Math::LinearColor Element::*, float Element::*, bool Element::*,
-                                    TextAlign Element::*, ButtonAction Element::*>;
+                                    TextAlign Element::*, ButtonAction Element::*, std::vector<std::string> Element::*>;
         // Texte libre, chemin d'une image (choisi dans l'explorateur), ou cible d'une action (fenêtre, scène,
         // fonction : l'éditeur propose selon l'action).
         // Liaison : nom d'une valeur (l'éditeur propose celles du moteur et du jeu).
@@ -179,6 +183,8 @@ namespace Flux::Interface {
     // Dans l'ordre d'affichage ; une clé peut revenir avec un autre libellé pour d'autres types (« Titre », « Libellé »).
     FLUX_API std::span<const Field> GetFields();
 
+    // Liste déroulante : numéro du choix fait (value arrondie, ramenée dans les choix) ; -1 sans choix.
+    FLUX_API int GetDropdownChoice(const Element& dropdown);
     // Texte affiché par l'élément : son texte, ou la valeur liée (boundText) à la place de « {} ».
     FLUX_API std::string GetShownText(const Element& element);
 
@@ -291,7 +297,9 @@ namespace Flux::Interface {
         std::uint32_t hovered = 0; // bouton, case ou curseur survolé
         std::uint32_t pressed = 0; // élément tenu depuis le clic
         std::uint32_t clicked = 0; // bouton cliqué à cette frame
-        std::uint32_t changed = 0; // case ou curseur changé par le joueur à cette frame
+        std::uint32_t changed = 0; // case, curseur ou liste changé par le joueur à cette frame
+        std::uint32_t openList = 0;  // liste déroulante dépliée
+        int hoveredOption = -1;      // son choix survolé
         bool wantsMouse = false;   // souris au-dessus de l'interface : le jeu doit ignorer ses clics
         std::uint32_t closeHovered = 0; // fenêtre dont la croix est survolée
         bool closePressed = false;      // pressed est une fenêtre tenue par sa croix (pas par sa barre de titre)

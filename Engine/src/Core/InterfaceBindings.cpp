@@ -12,11 +12,13 @@ namespace Flux {
         constexpr std::string_view KeyBindingPrefix = "Touche : ";
     }
 
-    void InterfaceBindings::SetEngineValue(std::string name, Value value) {
+    void InterfaceBindings::SetEngineValue(std::string name, std::string_view category, Value value) {
+        value.category = category;
         m_engineValues.insert_or_assign(std::move(name), std::move(value));
     }
 
     void InterfaceBindings::BindValue(std::string name, Value value) {
+        value.category = "Jeu";
         m_gameValues.insert_or_assign(std::move(name), std::move(value));
     }
 
@@ -26,20 +28,20 @@ namespace Flux {
         }
     }
 
-    std::vector<std::string> InterfaceBindings::GetValueNames(const InputActions& actions) const {
-        std::vector<std::string> names;
+    std::vector<Engine::InterfaceValueInfo> InterfaceBindings::GetValues(const InputActions& actions) const {
+        std::vector<Engine::InterfaceValueInfo> values;
         for (const auto& [name, value] : m_engineValues) {
             if (!m_gameValues.contains(name)) {
-                names.push_back(name);
+                values.push_back({name, value.category, value.options});
             }
         }
         for (const auto& [name, value] : m_gameValues) {
-            names.push_back(name);
+            values.push_back({name, value.category, value.options});
         }
         for (const InputAction& action : actions.GetActions()) {
-            names.push_back(std::string(KeyBindingPrefix) + action.name);
+            values.push_back({std::string(KeyBindingPrefix) + action.name, "Touches", {}});
         }
-        return names;
+        return values;
     }
 
     void InterfaceBindings::RegisterFunction(std::string name, Engine::InterfaceFunction function) {
@@ -88,6 +90,17 @@ namespace Flux {
                         case Interface::ElementType::Slider:
                             if (touched) {
                                 value->set(element.value);
+                            } else if (value->get) {
+                                element.value = static_cast<float>(value->get());
+                            }
+                            break;
+                        case Interface::ElementType::Dropdown:
+                            // Les choix de la valeur, s'il y en a (copiés seulement quand ils diffèrent : pas à chaque image).
+                            if (!value->options.empty() && element.options != value->options) {
+                                element.options = value->options;
+                            }
+                            if (touched) {
+                                value->set(static_cast<double>(Interface::GetDropdownChoice(element)));
                             } else if (value->get) {
                                 element.value = static_cast<float>(value->get());
                             }

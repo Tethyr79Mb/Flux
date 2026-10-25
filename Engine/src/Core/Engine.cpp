@@ -107,24 +107,28 @@ namespace Flux {
         });
 
         // Valeurs du moteur que les interfaces peuvent lier (menu Options du jeu, affichage des images/s).
-        m_interfaceBindings->SetEngineValue("V-Sync", {.get = [this] { return m_renderer->IsVSyncEnabled() ? 1.0 : 0.0; },
+        m_interfaceBindings->SetEngineValue("V-Sync", "Graphismes", {.get = [this] { return m_renderer->IsVSyncEnabled() ? 1.0 : 0.0; },
                                     .set = [this](double value) {
                                         if ((value >= 0.5) != m_renderer->IsVSyncEnabled()) {
                                             m_renderer->SetVSync(value >= 0.5); // recrée la chaîne d'images : pas à chaque image
                                         }
                                     }});
-        m_interfaceBindings->SetEngineValue("Anticrénelage", {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
+        m_interfaceBindings->SetEngineValue("Anticrénelage", "Graphismes", {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
                                            .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }});
-        // 0 Normal, 1 Élevé, 2 Très élevé.
-        m_interfaceBindings->SetEngineValue("Détail du sol", {.get = [this] { return static_cast<double>(m_renderer->GetGroundDetail()); },
-                                            .set = [this](double value) {
-                                                m_renderer->SetGroundDetail(static_cast<GroundDetail>(std::clamp(std::lround(value), 0l, 2l)));
-                                            }});
-        m_interfaceBindings->SetEngineValue("Volume général", {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
+        // Numéro dans GroundDetailLabels (0 Bas à 3 Ultra).
+        m_interfaceBindings->SetEngineValue("Détail du sol", "Graphismes",
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetGroundDetail()); },
+                                             .set = [this](double value) {
+                                                 m_renderer->SetGroundDetail(static_cast<GroundDetail>(
+                                                     std::clamp(std::lround(value), 0l, static_cast<long>(GroundDetailCount) - 1)));
+                                             },
+                                             .getText = {},
+                                             .options = {GroundDetailLabels.begin(), GroundDetailLabels.end()}});
+        m_interfaceBindings->SetEngineValue("Volume général", "Son", {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
                                              .set = [this](double value) {
                                                  m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
                                              }});
-        m_interfaceBindings->SetEngineValue("Images par seconde", {.get = [this] { return std::round(m_fps); }});
+        m_interfaceBindings->SetEngineValue("Images par seconde", "Informations", {.get = [this] { return std::round(m_fps); }});
 
         // Actions du moteur (personnage, vaisseau), puis les touches choisies par le joueur. ZQSD en AZERTY : les
         // touches sont des positions sur le clavier (Key::W est la touche Z en AZERTY).
@@ -704,12 +708,18 @@ namespace Flux {
         m_interfaceBindings->BindValue(std::move(name), {.get = {}, .set = {}, .getText = std::move(get)});
     }
 
+    void Engine::BindInterfaceChoice(std::string name, std::vector<std::string> options, std::function<double()> get,
+                                     std::function<void(double)> set) {
+        m_interfaceBindings->BindValue(std::move(name),
+                                       {.get = std::move(get), .set = std::move(set), .getText = {}, .options = std::move(options)});
+    }
+
     void Engine::UnbindInterfaceValue(std::string_view name) {
         m_interfaceBindings->UnbindValue(name);
     }
 
-    std::vector<std::string> Engine::GetInterfaceValueNames() const {
-        return m_interfaceBindings->GetValueNames(*m_inputActions);
+    std::vector<Engine::InterfaceValueInfo> Engine::GetInterfaceValues() const {
+        return m_interfaceBindings->GetValues(*m_inputActions);
     }
 
     bool Engine::SetInterfaceWindowOpen(std::string_view name, bool open) {

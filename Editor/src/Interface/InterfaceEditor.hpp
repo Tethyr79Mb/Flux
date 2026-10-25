@@ -119,6 +119,8 @@ namespace FluxEditor {
         // Cible de l'action d'un bouton : une fenêtre du document, une scène, une fonction ; true si changée.
         // Liaison d'un élément : une valeur du moteur ou du jeu, choisie par son nom.
         bool DrawBinding(Flux::Engine& engine, Flux::Interface::Element& element);
+        // Choix d'une liste déroulante : à taper, ou ceux de sa liaison.
+        bool DrawOptions(Flux::Engine& engine, Flux::Interface::Element& element);
         bool DrawActionTarget(Flux::Engine& engine, const Flux::Interface::Document& document, Flux::Interface::Element& button);
         void Add(Flux::Interface::ElementType type);
         void Duplicate();

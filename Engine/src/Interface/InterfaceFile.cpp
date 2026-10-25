@@ -21,9 +21,10 @@ namespace Flux::Interface {
         constexpr std::string_view FormatName = "flux.ui";
         constexpr int FormatVersion = 1;
         constexpr int MaxDepth = 64; // un fichier abîmé ou malveillant ne fait pas déborder la pile
+        constexpr std::size_t MaxOptions = 256; // choix d'une liste déroulante
 
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeKeys{
-            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs", "progressBar", "scrollArea"};
+            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs", "progressBar", "scrollArea", "dropdown"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorKeys{
             "topLeft", "top", "topRight", "left", "center", "right", "bottomLeft", "bottom", "bottomRight", "stretch"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(TextAlign::Count)> AlignKeys{"left", "center", "right"};
@@ -149,6 +150,11 @@ namespace Flux::Interface {
                             value = static_cast<TextAlign>(IndexOf(AlignKeys, found->template get<std::string>(), "alignement"));
                         } else if constexpr (std::is_same_v<Value, ButtonAction>) {
                             value = static_cast<ButtonAction>(IndexOf(ActionKeys, found->template get<std::string>(), "action"));
+                        } else if constexpr (std::is_same_v<Value, std::vector<std::string>>) {
+                            if (!found->is_array() || found->size() > MaxOptions) {
+                                throw std::runtime_error(std::format("« {} » : liste d'au plus {} textes attendue", field.key, MaxOptions));
+                            }
+                            value = found->template get<Value>();
                         } else {
                             value = found->template get<Value>();
                         }

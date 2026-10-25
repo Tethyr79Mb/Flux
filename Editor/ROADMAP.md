@@ -54,7 +54,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   d'aperçu « où pousse ce biome » sur une carte ; pas de bouton « Modifier » à côté des biomes dans l'inspecteur.
 
 ### Interfaces du jeu
-- ✅ Éditeur de `.fluxui` : écran à la résolution choisie, poignées, ancres, propriétés, fenêtres, boutons, liaisons, onglets, zones de défilement.
+- ✅ Éditeur de `.fluxui` : écran à la résolution choisie, poignées, ancres, propriétés, fenêtres, boutons, liaisons (catégorie puis valeur), onglets, zones de défilement, listes déroulantes.
 
 ## Prochaines étapes
 

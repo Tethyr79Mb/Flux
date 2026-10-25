@@ -321,6 +321,15 @@ namespace Flux::UI {
                 pen.Rect(0.76f, 0.22f, 0.88f, 0.5f, LinearColor::FromSrgb8(60, 200, 230)); // poignée
                 break;
             }
+            case Icon::Dropdown: {
+                pen.Rect(0.04f, 0.1f, 0.96f, 0.42f, LinearColor::FromSrgb8(40, 70, 100));
+                pen.Rect(0.12f, 0.22f, 0.6f, 0.3f, LinearColor::FromSrgb8(200, 210, 222));
+                pen.Triangle({0.7f, 0.2f}, {0.88f, 0.2f}, {0.79f, 0.32f}, LinearColor::FromSrgb8(60, 200, 230));
+                pen.Rect(0.04f, 0.48f, 0.96f, 0.92f, LinearColor::FromSrgb8(40, 52, 70));
+                pen.Rect(0.12f, 0.58f, 0.6f, 0.66f, LinearColor::FromSrgb8(150, 170, 190));
+                pen.Rect(0.12f, 0.76f, 0.6f, 0.84f, LinearColor::FromSrgb8(150, 170, 190));
+                break;
+            }
             case Icon::Play:
                 pen.Triangle({0.22f, 0.1f}, {0.9f, 0.5f}, {0.22f, 0.9f}, LinearColor::FromSrgb8(88, 200, 110));
                 break;

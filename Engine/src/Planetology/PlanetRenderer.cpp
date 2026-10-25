@@ -8,7 +8,7 @@
 
 namespace Flux::Planetology {
     namespace {
-        // Nœuds gardés par planète au plus, au détail Normal : au-delà, les moins récemment utilisés sont oubliés
+        // Nœuds gardés par planète au plus, au détail Bas : au-delà, les moins récemment utilisés sont oubliés
         // (environ 70 Ko de sommets par tuile, soit environ 70 Mo de mémoire vidéo). Autant de fois plus que de
         // tuiles en plus aux détails plus fins (carré du facteur de coupe).
         constexpr std::size_t MaxNodes = 1024;
@@ -389,12 +389,12 @@ namespace Flux::Planetology {
                 pending.push_back({&state, request});
             }
         }
-        // Celles demandées en avance ne retiennent pas l'écran de chargement, et passent après celles à dessiner.
+        // Celles demandées en avance ne retiennent pas l'écran de chargement. Elles ne passent pas après celles à
+        // dessiner : en vol rapide au ras du sol, les tuiles fines à dessiner prennent presque tout le budget de
+        // l'image, et les grossières du trajet n'arriveraient jamais ; une tuile fine qui manque laisse voir le quart
+        // de sa parente, sans trou.
         m_pendingTiles = static_cast<std::uint32_t>(std::ranges::count_if(pending, [](const Pending& p) { return !p.request.ahead; }));
         std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
-            if (a.request.ahead != b.request.ahead) {
-                return !a.request.ahead;
-            }
             return a.request.key.level != b.request.key.level ? a.request.key.level < b.request.key.level
                                                               : a.request.distance < b.request.distance;
         });
@@ -417,7 +417,7 @@ namespace Flux::Planetology {
             }
         }
         // Trop de nœuds : les moins récemment visités (jamais ceux de cette image, ni les racines) sont oubliés.
-        const double normalFactor = GetSplitFactor(GroundDetail::Normal);
+        const double normalFactor = GetSplitFactor(GroundDetail::Low);
         const auto maxNodes = static_cast<std::size_t>(static_cast<double>(MaxNodes) * (m_splitFactor * m_splitFactor) / (normalFactor * normalFactor));
         for (auto& [entity, state] : m_planets) {
             if (state.nodes.size() <= maxNodes) {

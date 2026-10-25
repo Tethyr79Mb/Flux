@@ -16,7 +16,7 @@ namespace Flux::Interface {
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeNames{
             "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets", "Barre de progression",
-            "Zone de défilement"};
+            "Zone de défilement", "Liste déroulante"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorNames{
             "En haut à gauche", "En haut",  "En haut à droite", "À gauche", "Au centre",
             "À droite",         "En bas à gauche", "En bas", "En bas à droite", "Étiré (marges)"};
@@ -38,6 +38,7 @@ namespace Flux::Interface {
         constexpr std::uint32_t O = Bit(ElementType::Tabs);
         constexpr std::uint32_t P = Bit(ElementType::ProgressBar);
         constexpr std::uint32_t D = Bit(ElementType::ScrollArea);
+        constexpr std::uint32_t L = Bit(ElementType::Dropdown);
 
         constexpr float WheelStep = 60.0f;  // pixels de référence par cran de molette
         constexpr float MinThumb = 24.0f;   // hauteur minimale de la poignée de l'ascenseur (pixels de référence)
@@ -46,8 +47,10 @@ namespace Flux::Interface {
             Field{"text", "Titre", &Element::text, W},
             Field{"text", "Texte", &Element::text, T},
             Field{"text", "Libellé", &Element::text, B | C},
-            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C | O, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
-            Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C | O},
+            Field{"options", "Choix", &Element::options, L},
+            Field{"value", "Choix fait", &Element::value, L, Field::Text::Plain, 0.05f, 0.0f, 255.0f, 0},
+            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C | O | L, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
+            Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C | O | L},
             Field{"textColor", "Poignée", &Element::textColor, S},
             Field{"align", "Alignement", &Element::align, T | B},
             Field{"image", "Image", &Element::image, I, Field::Text::Image},
@@ -59,18 +62,19 @@ namespace Flux::Interface {
             Field{"titleColor", "Onglet", &Element::titleColor, O},
             Field{"pressedColor", "Onglet affiché", &Element::pressedColor, O},
             Field{"accent", "Soulignement", &Element::accent, O},
-            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P | D},
+            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P | D | L},
             Field{"background", "Piste", &Element::background, S},
             Field{"scrollbarWidth", "Largeur de l'ascenseur", &Element::scrollbarWidth, D, Field::Text::Plain, 0.25f, 2.0f, 200.0f, 0},
             Field{"titleColor", "Piste de l'ascenseur", &Element::titleColor, D},
             Field{"accent", "Ascenseur", &Element::accent, D},
-            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O | D},
+            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O | D | L},
+            Field{"accent", "Flèche et choix fait", &Element::accent, L},
             Field{"pressedColor", "Appuyé", &Element::pressedColor, B},
             Field{"accent", "Coche", &Element::accent, C},
             Field{"accent", "Remplissage", &Element::accent, S | P},
-            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P | D},
-            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P | D, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
-            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P | D, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
+            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P | D | L},
+            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P | D | L, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
+            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P | D | L, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
             Field{"shadow", "Ombre", &Element::shadow, W},
             Field{"movable", "Déplaçable en jeu", &Element::movable, W},
             Field{"closeButton", "Croix de fermeture", &Element::closeButton, W},
@@ -80,7 +84,7 @@ namespace Flux::Interface {
             Field{"action", "Action", &Element::action, B},
             Field{"target", "Cible", &Element::target, B, Field::Text::ActionTarget},
             Field{"checked", "Cochée", &Element::checked, C},
-            Field{"binding", "Liaison", &Element::binding, C | S | T | B | P, Field::Text::Binding},
+            Field{"binding", "Liaison", &Element::binding, C | S | T | B | P | L, Field::Text::Binding},
             Field{"value", "Valeur", &Element::value, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
             Field{"minimum", "Minimum", &Element::minimum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
             Field{"maximum", "Maximum", &Element::maximum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
@@ -168,6 +172,17 @@ namespace Flux::Interface {
                     element.titleColor = Srgb(30, 40, 52);
                     element.accent = Srgb(70, 110, 140);
                     element.hoverColor = Srgb(60, 200, 230);
+                    element.radius = 4.0f;
+                    break;
+                case ElementType::Dropdown:
+                    element.size = {320.0f, 44.0f};
+                    element.options = {"Choix 1", "Choix 2", "Choix 3"};
+                    element.value = 0.0f;
+                    element.background = Srgb(30, 40, 52);
+                    element.hoverColor = Srgb(45, 60, 78);
+                    element.accent = Srgb(60, 200, 230);
+                    element.border = Srgb(90, 170, 210, 0.8f);
+                    element.borderWidth = 1.0f;
                     element.radius = 4.0f;
                     break;
                 case ElementType::Count:
@@ -287,7 +302,8 @@ namespace Flux::Interface {
 
         // Interface en jeu : les éléments qui réagissent à la souris (et la retiennent).
         bool IsInteractive(ElementType type) {
-            return type == ElementType::Button || type == ElementType::Checkbox || type == ElementType::Slider;
+            return type == ElementType::Button || type == ElementType::Checkbox || type == ElementType::Slider
+                || type == ElementType::Dropdown;
         }
 
         // Fenêtres et cadres arrêtent aussi la souris : un clic sur leur fond ne traverse pas vers le jeu.
@@ -310,6 +326,25 @@ namespace Flux::Interface {
         std::pair<float, float> SliderTrack(const Rect& rect) {
             const float knob = 0.5f * (rect.max.y - rect.min.y);
             return {rect.min.x + knob, std::max(rect.min.x + knob, rect.max.x - knob)};
+        }
+
+        // Liste déroulante dépliée : une ligne par choix, de la hauteur du champ, sous lui ; au-dessus s'il n'y a pas
+        // la place en bas de la vue (et si elle tient mieux en haut).
+        Rect DropdownList(const Element& dropdown, const Rect& field, const Rect& view) {
+            const float row = field.max.y - field.min.y;
+            const float height = row * static_cast<float>(dropdown.options.size());
+            if (field.max.y + height > view.max.y && field.min.y - view.min.y > view.max.y - field.max.y) {
+                return {{field.min.x, field.min.y - height}, {field.max.x, field.min.y}};
+            }
+            return {{field.min.x, field.max.y}, {field.max.x, field.max.y + height}};
+        }
+
+        int DropdownOptionAt(const Element& dropdown, const Rect& list, Vector2f point) {
+            if (!list.Contains(point) || dropdown.options.empty()) {
+                return -1;
+            }
+            const float row = (list.max.y - list.min.y) / static_cast<float>(dropdown.options.size());
+            return std::clamp(static_cast<int>((point.y - list.min.y) / row), 0, static_cast<int>(dropdown.options.size()) - 1);
         }
 
         // Croix d'une fenêtre qui en a une : un carré au bout de sa barre de titre.
@@ -539,6 +574,65 @@ namespace Flux::Interface {
             }
         }
 
+        // Texte d'un choix, à gauche du rectangle, centré verticalement.
+        void DrawOption(const DrawContext& context, const Element& element, const Rect& rect, std::string_view text) {
+            if (text.empty() || element.textColor.a <= 0.0f) {
+                return;
+            }
+            const float pixelSize = element.fontSize * context.scale;
+            const Vector2f size = context.list.MeasureText(text, pixelSize);
+            context.list.AddText({rect.min.x + 12.0f * context.scale, 0.5f * (rect.min.y + rect.max.y - size.y)}, text, pixelSize,
+                                 element.textColor);
+        }
+
+        // Le champ : le choix fait et une flèche à droite (vers le haut quand la liste est dépliée).
+        void DrawDropdown(const DrawContext& context, const Placed& placed, bool hovered) {
+            const Element& element = *placed.element;
+            const Rect& rect = placed.rect;
+            const Interaction* interaction = context.options.interaction;
+            const bool open = interaction && interaction->openList == element.id;
+            DrawBox(context, rect, hovered || open ? element.hoverColor : element.background, element);
+            const float height = rect.max.y - rect.min.y;
+            const float arrow = height * 0.16f;
+            const Vector2f tip{rect.max.x - height * 0.5f, 0.5f * (rect.min.y + rect.max.y) + (open ? -0.5f : 0.5f) * arrow};
+            const float back = open ? arrow : -arrow;
+            context.list.AddTriangle(tip, tip + Vector2f{-arrow, back}, tip + Vector2f{arrow, back}, element.accent);
+            const Rect text{rect.min, {rect.max.x - height, rect.max.y}};
+            const Rect clip = Intersect(placed.clip, text); // un texte long s'arrête avant la flèche
+            if (const int choice = GetDropdownChoice(element); choice >= 0 && !IsEmpty(clip)) {
+                context.list.SetClipRect(clip.min, clip.max);
+                DrawOption(context, element, text, element.options[static_cast<std::size_t>(choice)]);
+                context.list.SetClipRect(placed.clip.min, placed.clip.max);
+            }
+        }
+
+        // La liste dépliée, par-dessus tout le reste : le choix survolé, le choix fait marqué d'un trait à gauche.
+        void DrawDropdownList(const DrawContext& context, const Element& element, const Rect& list) {
+            const float radius = element.radius * context.scale;
+            context.list.AddShadow(list.min, list.max, LinearColor{0.0f, 0.0f, 0.0f, 0.5f}, radius, 10.0f * context.scale);
+            const LinearColor fill{element.background.r, element.background.g, element.background.b, 1.0f}; // jamais transparente
+            context.list.AddRoundedRect(list.min, list.max, fill, radius);
+            const float row = (list.max.y - list.min.y) / static_cast<float>(element.options.size());
+            const int chosen = GetDropdownChoice(element);
+            const int hovered = context.options.interaction ? context.options.interaction->hoveredOption : -1;
+            for (int index = 0; index < static_cast<int>(element.options.size()); ++index) {
+                const Rect rect{{list.min.x, list.min.y + row * static_cast<float>(index)},
+                                {list.max.x, list.min.y + row * static_cast<float>(index + 1)}};
+                if (index == hovered) {
+                    context.list.AddRoundedRect(rect.min, rect.max, element.hoverColor, radius);
+                }
+                if (index == chosen) {
+                    const float line = std::max(2.0f, 3.0f * context.scale);
+                    context.list.AddRect({rect.min.x, rect.min.y + row * 0.2f}, {rect.min.x + line, rect.max.y - row * 0.2f}, element.accent);
+                }
+                DrawOption(context, element, rect, element.options[static_cast<std::size_t>(index)]);
+            }
+            if (element.borderWidth > 0.0f && element.border.a > 0.0f) {
+                context.list.AddRoundedRectOutline(list.min, list.max, element.border, radius,
+                                                   std::max(1.0f, element.borderWidth * context.scale));
+            }
+        }
+
         // Fond, puis un onglet par page (son nom), l'onglet affiché souligné ; la page se dessine ensuite par-dessus.
         void DrawTabs(const DrawContext& context, const Placed& placed) {
             const Element& element = *placed.element;
@@ -636,6 +730,9 @@ namespace Flux::Interface {
                 case ElementType::ScrollArea:
                     DrawScrollArea(context, placed);
                     break;
+                case ElementType::Dropdown:
+                    DrawDropdown(context, placed, hovered);
+                    break;
                 case ElementType::Count:
                     break;
             }
@@ -673,6 +770,13 @@ namespace Flux::Interface {
 
     bool TargetsTab(ButtonAction action) {
         return action == ButtonAction::ShowTab;
+    }
+
+    int GetDropdownChoice(const Element& dropdown) {
+        if (dropdown.options.empty() || !std::isfinite(dropdown.value)) {
+            return -1;
+        }
+        return std::clamp(static_cast<int>(std::lround(dropdown.value)), 0, static_cast<int>(dropdown.options.size()) - 1);
     }
 
     std::string GetShownText(const Element& element) {
@@ -963,6 +1067,43 @@ namespace Flux::Interface {
         interaction.escapeUsed = false;
         const std::vector<Placed> placed = Arrange(document, viewMin, viewMax);
         const float scale = GetScale(viewMin, viewMax);
+        // Liste déroulante dépliée : elle retient la souris et Échap tant qu'elle l'est. Un clic sur un choix le
+        // prend, un clic ailleurs la replie (sans toucher ce qui est dessous), Échap aussi.
+        interaction.hoveredOption = -1;
+        if (interaction.openList != 0) {
+            const Placed* field = FindPlaced(placed, interaction.openList);
+            Element* dropdown = field ? Find(document, interaction.openList) : nullptr;
+            if (!dropdown || dropdown->options.empty()) {
+                interaction.openList = 0; // sa fenêtre a été fermée, ou ses choix vidés
+            } else {
+                const Rect list = DropdownList(*dropdown, field->rect, {viewMin, viewMax});
+                if (pointer.enabled) {
+                    interaction.hoveredOption = DropdownOptionAt(*dropdown, list, pointer.position);
+                }
+                if (pointer.escape) {
+                    interaction.openList = 0;
+                    interaction.escapeUsed = true;
+                } else if (pointer.pressed) {
+                    if (interaction.hoveredOption >= 0 && static_cast<float>(interaction.hoveredOption) != dropdown->value) {
+                        dropdown->value = static_cast<float>(interaction.hoveredOption);
+                        interaction.changed = dropdown->id;
+                    }
+                    interaction.openList = 0;
+                }
+                interaction.hovered = 0;
+                interaction.pressed = 0;
+                interaction.closeHovered = 0;
+                interaction.closePressed = false;
+                interaction.hoveredTab = -1;
+                interaction.pressedTab = -1;
+                interaction.thumbHovered = 0;
+                interaction.thumbPressed = false;
+                interaction.wantsMouse = true;
+                interaction.pausesGame = IsPausingGame(document);
+                return;
+            }
+        }
+
         // Fenêtres à mettre devant les autres, à la fin (réordonner les racines déplace les éléments) ; la dernière
         // finit devant.
         std::vector<std::uint32_t> raise;
@@ -1056,6 +1197,8 @@ namespace Flux::Interface {
                 } else if (pressed->type == ElementType::Checkbox) {
                     pressed->checked = !pressed->checked;
                     interaction.changed = pressed->id;
+                } else if (pressed->type == ElementType::Dropdown && !pressed->options.empty()) {
+                    interaction.openList = pressed->id;
                 } else if (pressed->type == ElementType::Tabs && interaction.pressedTab >= 0
                            && interaction.pressedTab == interaction.hoveredTab
                            && interaction.pressedTab < static_cast<int>(pressed->children.size())) {
@@ -1116,6 +1259,15 @@ namespace Flux::Interface {
             }
             list.SetClipRect(item.clip.min, item.clip.max);
             DrawElement(context, item);
+        }
+        // Liste déroulante dépliée : par-dessus tout, découpée à la vue seulement (elle déborde de sa fenêtre).
+        if (options.interaction && options.interaction->openList != 0) {
+            const Placed* field = FindPlaced(placed, options.interaction->openList);
+            if (field && !field->element->options.empty()) {
+                const Rect view = options.clip ? Intersect({viewMin, viewMax}, *options.clip) : Rect{viewMin, viewMax};
+                list.SetClipRect(view.min, view.max);
+                DrawDropdownList(context, *field->element, DropdownList(*field->element, field->rect, {viewMin, viewMax}));
+            }
         }
         list.ResetClipRect();
     }

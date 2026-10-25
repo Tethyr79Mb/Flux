@@ -40,6 +40,7 @@ namespace FluxEditor {
                 case ElementType::Tabs: return UI::Icon::Tabs;
                 case ElementType::ProgressBar: return UI::Icon::ProgressBar;
                 case ElementType::ScrollArea: return UI::Icon::ScrollArea;
+                case ElementType::Dropdown: return UI::Icon::Dropdown;
                 case ElementType::Count: break;
             }
             return UI::Icon::None;
@@ -325,29 +326,100 @@ namespace FluxEditor {
 
     bool InterfaceEditor::DrawBinding(Engine& engine, Interface::Element& element) {
         UI::Context& ui = engine.GetUi();
-        // Les valeurs du moteur et celles du jeu chargé ; une liaison inconnue (jeu pas encore compilé, valeur
-        // renommée) reste affichée comme telle.
-        const std::vector<std::string> names = engine.GetInterfaceValueNames();
-        const auto found = std::ranges::find(names, element.binding);
-        const bool unknown = !element.binding.empty() && found == names.end();
-        std::vector<std::string_view> options{"(aucune)"};
-        std::string unknownLabel;
+        // Les valeurs du moteur et celles du jeu chargé, par catégorie (Graphismes, Son... Touches) : d'abord la
+        // catégorie, puis la valeur dedans. Une liaison inconnue (jeu pas encore compilé, valeur renommée) reste
+        // affichée comme telle.
+        const std::vector<Engine::InterfaceValueInfo> values = engine.GetInterfaceValues();
+        const auto found = std::ranges::find(values, element.binding, &Engine::InterfaceValueInfo::name);
+        const bool unknown = !element.binding.empty() && found == values.end();
+        std::vector<std::string_view> categories{"(aucune)"};
+        for (const Engine::InterfaceValueInfo& value : values) {
+            if (std::ranges::find(categories, value.category) == categories.end()) {
+                categories.push_back(value.category);
+            }
+        }
+        const std::string unknownLabel = unknown ? "« " + element.binding + " » inconnue" : std::string{};
         if (unknown) {
-            unknownLabel = "« " + element.binding + " » inconnue";
-            options.push_back(unknownLabel);
+            categories.push_back(unknownLabel);
         }
-        options.insert(options.end(), names.begin(), names.end());
-        const int first = unknown ? 2 : 1;
-        int index = element.binding.empty() ? 0 : unknown ? 1 : first + static_cast<int>(found - names.begin());
+        const std::string_view current = element.binding.empty() ? categories.front()
+                                       : unknown              ? std::string_view(unknownLabel)
+                                                              : found->category;
+        int category = static_cast<int>(std::ranges::find(categories, current) - categories.begin());
         bool changed = false;
-        if (ui.Choice("Liaison", index, options) && !(unknown && index == 1)) {
-            element.binding = index == 0 ? std::string{} : names[static_cast<std::size_t>(index - first)];
+        const auto bind = [&](const Engine::InterfaceValueInfo& value) {
+            element.binding = value.name;
+            // Une liste déroulante prend les choix de la valeur : l'éditeur les montre, le fichier les garde.
+            if (element.type == ElementType::Dropdown && !value.options.empty()) {
+                element.options = value.options;
+            }
             changed = true;
+        };
+        if (ui.Choice("Catégorie de liaison", category, categories) && categories[static_cast<std::size_t>(category)] != current) {
+            const std::string_view chosen = categories[static_cast<std::size_t>(category)];
+            const auto first = std::ranges::find(values, chosen, &Engine::InterfaceValueInfo::category);
+            if (category == 0 || first == values.end()) {
+                element.binding.clear();
+                changed = true;
+            } else {
+                bind(*first); // la première de la catégorie, à changer ensuite
+            }
         }
-        ui.SetItemTooltip("Valeur du moteur ou du jeu affichée par l'élément en jeu (le jeu ajoute les siennes avec "
-                          "Engine::BindInterfaceValue).");
+        ui.SetItemTooltip("Valeurs du moteur (Graphismes, Son, Informations), du jeu (Engine::BindInterfaceValue) et touches "
+                          "des actions.");
+        if (!element.binding.empty() && !unknown) {
+            std::vector<const Engine::InterfaceValueInfo*> inCategory;
+            std::vector<std::string_view> names;
+            for (const Engine::InterfaceValueInfo& value : values) {
+                if (value.category == found->category) {
+                    inCategory.push_back(&value);
+                    names.push_back(value.name);
+                }
+            }
+            int index = static_cast<int>(std::ranges::find(inCategory, &*found) - inCategory.begin());
+            if (ui.Choice("Liaison", index, names)) {
+                bind(*inCategory[static_cast<std::size_t>(index)]);
+            }
+            ui.SetItemTooltip("Valeur affichée par l'élément en jeu, et changée quand le joueur le touche.");
+        }
         if (!element.binding.empty() && element.type == ElementType::Text) {
             ui.TextDisabled("« {} » dans le texte : remplacé par la valeur.");
+        }
+        return changed;
+    }
+
+    bool InterfaceEditor::DrawOptions(Engine& engine, Interface::Element& element) {
+        UI::Context& ui = engine.GetUi();
+        // Liée à une valeur qui a ses choix : ce sont les siens, en jeu comme ici.
+        const std::vector<Engine::InterfaceValueInfo> values = engine.GetInterfaceValues();
+        const auto bound = std::ranges::find(values, element.binding, &Engine::InterfaceValueInfo::name);
+        if (!element.binding.empty() && bound != values.end() && !bound->options.empty()) {
+            std::string list;
+            for (const std::string& option : bound->options) {
+                list += (list.empty() ? "" : ", ") + option;
+            }
+            ui.TextDisabled("Choix de la liaison : " + list);
+            return false;
+        }
+        ui.TextDisabled("Choix (numéro 0 pour le premier)");
+        bool changed = false;
+        std::optional<std::size_t> removed;
+        for (std::size_t index = 0; index < element.options.size(); ++index) {
+            ui.PushId(static_cast<std::uint64_t>(index));
+            changed |= ui.InputText(std::format("Choix {}", index), element.options[index]);
+            ui.SameLine();
+            if (ui.Button("Retirer")) {
+                removed = index;
+            }
+            ui.PopId();
+        }
+        if (removed) {
+            element.options.erase(element.options.begin() + static_cast<std::ptrdiff_t>(*removed));
+            changed = true;
+        }
+        if (ui.Button("Ajouter un choix")) {
+            element.options.push_back(std::format("Choix {}", element.options.size() + 1));
+            changed = true;
         }
         return changed;
     }
@@ -460,6 +532,8 @@ namespace FluxEditor {
                                 } else {
                                     changed |= ui.InputText(field.label, value);
                                 }
+                            } else if constexpr (std::is_same_v<Value, std::vector<std::string>>) {
+                                changed |= DrawOptions(engine, *element);
                             } else if constexpr (std::is_same_v<Value, LinearColor>) {
                                 changed |= ui.ColorEdit4(field.label, value);
                             } else if constexpr (std::is_same_v<Value, float>) {
@@ -485,6 +559,9 @@ namespace FluxEditor {
                 // « Échap l'ouvre » vient d'être coché : un menu pause est fermé au démarrage du jeu.
                 if (element->openOnEscape && !openedOnEscape) {
                     element->visible = false;
+                }
+                if (element->type == ElementType::Dropdown) {
+                    element->value = std::max(0.0f, std::round(element->value)); // un numéro de choix
                 }
                 if (element->type == ElementType::Slider) {
                     const float low = std::min(element->minimum, element->maximum);

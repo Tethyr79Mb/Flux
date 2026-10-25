@@ -428,7 +428,10 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   shader (taille d'atlas, étendue de distance, mode). `DrawList::AddText(FontRef...)` : le texte passe dans une
   commande à part (un appel de dessin de plus par changement de police).
 - Interfaces du jeu : fichiers `.fluxui` (`Flux::Interface`, mode retenu) éditées dans l'éditeur, chargées par
-  `InterfaceLibrary`, liées aux valeurs du jeu (`BindInterfaceValue`) et aux fonctions C++ du module.
+  `InterfaceLibrary`, liées aux valeurs du jeu (`BindInterfaceValue`, `BindInterfaceChoice` pour une liste déroulante)
+  et aux fonctions C++ du module. Chaque valeur a sa catégorie dans l'éditeur (Graphismes, Son, Informations, Jeu,
+  Touches). Une liste déroulante dépliée retient souris et Échap jusqu'au choix ou au clic ailleurs
+  (`Interaction::openList`), et se dessine après tout le reste.
 
 ## Éditeur
 
