@@ -158,7 +158,7 @@ namespace Flux::Planetology {
         {
             TileKey key;
             double distance;
-            bool ahead = false; // seulement pour là où va la caméra : après celles à dessiner maintenant
+            bool ahead = false; // seulement pour là où va la caméra : ne retient pas l'écran de chargement
         };
         struct PlanetState
         {
