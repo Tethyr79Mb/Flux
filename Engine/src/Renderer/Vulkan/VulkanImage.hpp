@@ -16,9 +16,10 @@ namespace Flux::Vk {
         Single, // image 2D
         Cube,   // 6 faces, lue par direction
         Array,  // tableau d'images 2D de même taille, lues par indice (Sampler2DArray)
+        Volume, // image 3D (Sampler3D), de `layerCount` pixels de profondeur
     };
 
-    // Image 2D (ou cube : 6 faces, ou tableau) allouée par VMA, avec sa vue (tous les niveaux de mip) : texture ou attachment de rendu.
+    // Image 2D (ou cube : 6 faces, ou tableau, ou 3D) allouée par VMA, avec sa vue (tous les niveaux de mip) : texture ou attachment de rendu.
     class Image {
         public:
         // Image vierge (contenu indéfini), par exemple un tampon de profondeur.
@@ -28,6 +29,11 @@ namespace Flux::Vk {
         // Texture cube vierge dont chaque face a sa propre vue 2D (GetFaceView), pour y dessiner.
         static std::expected<Image, std::string> CreateCubeAttachment(const Device& device, VkFormat format, std::uint32_t size,
                                                                       VkImageUsageFlags usage);
+
+        // Image 3D vierge écrite par les compute shaders (vue du niveau 0 : GetStorageView), puis lue ; mipmaps : tous
+        // ses niveaux jusqu'à 1 pixel, à remplir par blit (RhiCommandList::GenerateMipmaps).
+        static std::expected<Image, std::string> CreateVolume(const Device& device, VkFormat format, VkExtent2D extent,
+                                                              std::uint32_t depth, bool mipmaps);
 
         // Crée l'image et y copie pixels (via un buffer intermédiaire) ; attend la fin de la copie.
         // mipmaps : réductions successives calculées par le GPU (filtre linéaire), pour une texture vue de loin
@@ -57,7 +63,11 @@ namespace Flux::Vk {
         VkImageView GetView() const { return m_view; }
         // Face i d'une image de CreateCubeAttachment (VK_NULL_HANDLE sinon).
         VkImageView GetFaceView(std::uint32_t face) const { return face < m_faceViews.size() ? m_faceViews[face] : VK_NULL_HANDLE; }
+        // Niveau 0 seul, pour l'écriture par les compute shaders (une vue d'image de stockage n'a qu'un niveau).
+        VkImageView GetStorageView() const { return m_storageView != VK_NULL_HANDLE ? m_storageView : m_view; }
         VkExtent2D GetExtent() const { return m_extent; }
+        std::uint32_t GetDepth() const { return m_depth; } // 1 sauf image 3D
+        std::uint32_t GetLayers() const { return m_layers; }
         std::uint32_t GetMipLevels() const { return m_mipLevels; }
 
         private:
@@ -73,7 +83,10 @@ namespace Flux::Vk {
         VmaAllocation m_allocation = VK_NULL_HANDLE;
         VkImageView m_view = VK_NULL_HANDLE;
         std::array<VkImageView, 6> m_faceViews{}; // CreateCubeAttachment seulement
+        VkImageView m_storageView = VK_NULL_HANDLE; // CreateVolume avec plusieurs niveaux seulement
         VkExtent2D m_extent{};
+        std::uint32_t m_depth = 1;
+        std::uint32_t m_layers = 1;
         std::uint32_t m_mipLevels = 1;
     };
 }

@@ -153,7 +153,9 @@ namespace Flux::RHI {
     // dessin, lu et écrit par les compute shaders), ou table de textures (`count` cases, `Sampler2D t[]` dans les
     // shaders) : toutes les images des matériaux dans un seul groupe, choisies par indice dans le shader. Les cases non
     // remplies ne doivent pas être lues ; une case que le GPU ne lit pas peut être remplie pendant qu'il dessine.
-    enum class BindingType : std::uint8_t { Texture, StorageBuffer, TextureTable };
+    // StorageTexture : texture écrite (et lue) pixel par pixel par les compute shaders, son niveau 0 seulement
+    // (`RWTexture3D` dans les shaders ; CreateVolumeTexture), sans sampler.
+    enum class BindingType : std::uint8_t { Texture, StorageBuffer, TextureTable, StorageTexture };
 
     struct Binding
     {
@@ -265,6 +267,7 @@ namespace Flux::RHI {
         ColorTarget, // cible de couleur d'une passe de dessin
         DepthTarget, // tampon de profondeur d'une passe de dessin
         Sampled,     // lue par les shaders (sommets, pixels, calcul)
+        Storage,     // écrite par les compute shaders (BindingType::StorageTexture)
     };
 
     // `discard` : le contenu d'avant ne sert plus (la passe efface tout ou réécrit tout), le GPU peut le jeter.
@@ -293,6 +296,9 @@ namespace Flux::RHI {
         virtual void SetBuffer(std::uint32_t slot, const Buffer& buffer) = 0;
         // Case `element` d'une table de textures (BindingType::TextureTable).
         virtual void SetTableTexture(std::uint32_t slot, std::uint32_t element, const Texture& texture, const Sampler& sampler) = 0;
+        // Niveau 0 d'une texture écrite par les compute shaders (BindingType::StorageTexture), en TextureAccess::Storage
+        // quand ils la lisent.
+        virtual void SetStorageTexture(std::uint32_t slot, const Texture& texture) = 0;
     };
 
     class Pipeline {
@@ -360,6 +366,9 @@ namespace Flux::RHI {
         // Les buffers écrits par les Dispatch précédents deviennent lisibles par la suite : sommets, index, shaders,
         // et CPU (Readback). Hors d'une passe.
         virtual void ComputeBarrier() = 0;
+        // Chaque niveau de mip de la texture recalculé par réduction de moitié du précédent, à partir du niveau 0 (écrit
+        // par un compute shader, par exemple) ; la texture finit lue par les shaders (Sampled). Hors d'une passe.
+        virtual void GenerateMipmaps(const Texture& texture) = 0;
         // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
         // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
         virtual void WriteTimestamp(std::uint32_t slot) = 0;
@@ -454,6 +463,13 @@ namespace Flux::RHI {
                                                                                               std::uint32_t layers,
                                                                                               std::uint32_t levels,
                                                                                               std::span<const std::uint8_t> pixels) = 0;
+        // Texture 3D vierge de extent x depth pixels, remplie par les compute shaders (BindingType::StorageTexture,
+        // TextureAccess::Storage) puis lue par position (Sampler3D dans les shaders) : bruit des nuages. mipmaps : de
+        // quoi la réduire jusqu'à 1 pixel (CommandList::GenerateMipmaps). Format RGBA8Unorm seulement : le seul que
+        // tous les GPU savent écrire ainsi et réduire.
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateVolumeTexture(Format format, Extent extent,
+                                                                                         std::uint32_t depth,
+                                                                                         bool mipmaps = false) = 0;
         // Cible de rendu vierge : tampon de profondeur, ou couleur (RenderPassDesc::colorTarget). sampled : lue
         // ensuite par les shaders (carte d'ombres, image de la scène avant le bloom).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
