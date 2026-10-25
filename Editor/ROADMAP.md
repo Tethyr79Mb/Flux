@@ -10,6 +10,8 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 ### Fenêtre et panneaux
 - ✅ Panneaux ancrés en onglets avec glisser-déposer, panneaux flottants redimensionnables, disposition enregistrée.
 - ✅ Thèmes : Sombre (gris neutres et accent bleu, façon Unreal / Unity), Clair, Graphite, Ars Solaris.
+- 🔧 Taille de l'interface (Paramètres > Interface, 80 % à 200 %) : texte, marges, boutons et arrondis. À améliorer :
+  les largeurs fixées par le code (panneaux à leur première ouverture, vignettes du Contenu) ne suivent pas.
 - ✅ Barre de menus (Fichier, Édition…), dialogues Windows natifs, étoile dans le titre si la scène est modifiée.
 - ✅ Barre d'outils : nouvelle scène, ouvrir, enregistrer, annuler / rétablir, Jouer et Pause au milieu, Paramètres à droite.
 - ✅ Paramètres : graphiques (GPU, version de Vulkan, V-Sync, anticrénelage, bloom et son intensité), interface, son, touches.
@@ -39,6 +41,13 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 ### Contenu (assets)
 - 🔧 Explorateur de fichiers : arbre de dossiers, vignettes avec icônes Windows, nouveau dossier, renommer, déplacer (les références des scènes suivent), corbeille. À améliorer : pas d'aperçu des images et des modèles, `.gltf` refusé.
 - ✅ Copie des assets à côté de l'exe, rechargement à chaud des images, modèles et textures du sol.
+- 🔧 Panneau « Végétation » : régler un biome (zones du relief, altitude, température, humidité, forêts, espèces et
+  leur part) ou une espèce d'arbre (variantes et leurs 3 modèles, taille, pente, teinte, couleur des cimes), ouvert par
+  un double-clic dans le Contenu ; clic droit « Nouveau biome... » / « Nouvelle espèce... ». Les planètes suivent en
+  direct (une dizaine d'aperçus par seconde pendant un glisser), Ctrl+S enregistre, fermer sans enregistrer revient au
+  fichier, Ctrl+Z / Ctrl+Y quand la souris est sur le panneau. Les espèces désignées par les biomes suivent un
+  déplacement. À améliorer : un fichier ouvert à la fois ; clés inconnues du fichier perdues à l'enregistrement ; pas
+  d'aperçu « où pousse ce biome » sur une carte ; pas de bouton « Modifier » à côté des biomes dans l'inspecteur.
 
 ### Interfaces du jeu
 - ✅ Éditeur de `.fluxui` : écran à la résolution choisie, poignées, ancres, propriétés, fenêtres, boutons, liaisons, onglets, zones de défilement.

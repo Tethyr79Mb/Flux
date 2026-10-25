@@ -19,6 +19,7 @@
 #include "Panels/CameraPanel.hpp"
 #include "Panels/ConsolePanel.hpp"
 #include "Panels/ContentBrowser.hpp"
+#include "Panels/VegetationPanel.hpp"
 #include "Panels/PlacePanel.hpp"
 #include "Panels/SceneEditor.hpp"
 #include "Panels/SceneViewport.hpp"
@@ -168,6 +169,7 @@ int main(int argc, char** argv) {
     FluxEditor::UndoHistory history;
     FluxEditor::PlacePanel placePanel;
     FluxEditor::InterfaceEditor interfaceEditor;
+    FluxEditor::VegetationPanel vegetationPanel;
     FluxEditor::ConsolePanel console;
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
@@ -175,6 +177,7 @@ int main(int argc, char** argv) {
     engine.SetGameState(Flux::GameState::Stopped); // on édite : le jeu ne tourne qu'avec « Jouer »
     settings.Load(engine); // thème de l'interface choisi la dernière fois
     contentBrowser.SetInterfaceEditor(&interfaceEditor);
+    contentBrowser.SetVegetationPanel(&vegetationPanel);
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
         playMode.HandleShortcuts(e);
@@ -182,12 +185,18 @@ int main(int argc, char** argv) {
             interfaceEditor.ShowScene(); // le jeu se joue dans la vue de la scène
         }
         document.SetLocked(playMode.IsPlaying());
-        // Raccourcis de l'interface affichée, sinon ceux de la scène.
+        // Raccourcis du panneau Végétation (Ctrl+Z quand la souris est dessus), puis de l'interface affichée, sinon
+        // ceux de la scène.
+        const bool vegetationShortcut = vegetationPanel.HandleShortcuts(e);
         if (interfaceEditor.IsActive()) {
-            interfaceEditor.HandleShortcuts(e);
+            if (!vegetationShortcut) {
+                interfaceEditor.HandleShortcuts(e);
+            }
         } else {
             document.HandleShortcuts(e);
-            HandleEditShortcuts(e, history, sceneEditor);
+            if (!vegetationShortcut) {
+                HandleEditShortcuts(e, history, sceneEditor);
+            }
         }
         Flux::UI::Context& ui = e.GetUi();
         if (ui.BeginMainMenuBar()) {
@@ -237,6 +246,7 @@ int main(int argc, char** argv) {
             viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
         }
         interfaceEditor.Update(e, view);
+        vegetationPanel.Update(e);
         contentBrowser.Update(e, document, deltaSeconds);
         FluxEditor::DrawCameraPanel(e);
         console.Update(e);
@@ -259,7 +269,7 @@ int main(int argc, char** argv) {
     engine.SetGameQuitHandler([&](Flux::Engine& e) { playMode.Stop(e); });
     engine.SetCloseRequestHandler([&](Flux::Engine& e) {
         playMode.Stop(e); // la question porte sur la scène éditée, pas sur sa copie en jeu
-        return document.ConfirmClose(e) && interfaceEditor.ConfirmClose(e);
+        return document.ConfirmClose(e) && interfaceEditor.ConfirmClose(e) && vegetationPanel.ConfirmClose(e);
     });
 
     // Sans projet, l'éditeur démarre quand même, sur une scène vide : on peut toujours ouvrir un fichier.

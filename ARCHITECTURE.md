@@ -384,7 +384,8 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   les tuiles d'un niveau fixe (bord de 200 à 400 m) que `PlanetRenderer` visite en vue. Chacune est semée une fois
   (`computeTrees` dans `PlanetTile.slang`, avec le même `Height` que le sol au détail le plus fin) : 64×64 places, le
   hasard tiré de la place sur la face (mêmes arbres à chaque passage), gardées selon les biomes de la planète
-  (`VegetationLibrary` lit les `.biome.json` et `.espece.json` ; `BiomeFit` dans `PlanetClimate.slang`, partagé avec
+  (`VegetationLibrary` lit les `.biome.json` et `.espece.json`, décrits par `Flux/Planetology/Vegetation.hpp` qui les lit
+  et les écrit pour l'éditeur, ou l'aperçu d'un réglage en cours, `SetVegetationPreview` ; `BiomeFit` dans `PlanetClimate.slang`, partagé avec
   le sol : zones du relief `Terrain::Zones`, altitude, climat ; chaque biome prend ce que les précédents laissent),
   leurs forêts et la pente de l'espèce tirée dans le biome. 256 plaines restent semées en mémoire vidéo. À chaque
   image, `Vegetation.slang` range les arbres des plaines en vue en listes (détaillé, simplifié, imposteur selon la

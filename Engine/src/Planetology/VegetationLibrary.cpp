@@ -3,157 +3,46 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
-#include <format>
+#include <atomic>
+#include <mutex>
 #include <numeric>
 
 namespace Flux::Planetology {
     namespace {
         constexpr auto CheckInterval = std::chrono::seconds(1);
 
-        using Json = nlohmann::json;
-
-        // Lit document[key] dans value s'il y est ; faux s'il n'est pas du bon type.
-        bool ReadNumber(const Json& document, const char* key, float& value, std::string& error) {
-            const auto found = document.find(key);
-            if (found == document.end()) {
-                return true;
-            }
-            if (!found->is_number()) {
-                error = std::format("« {} » doit être un nombre", key);
-                return false;
-            }
-            value = found->get<float>();
-            return true;
-        }
-
-        // [min, max] : deux nombres.
-        bool ReadRange(const Json& document, const char* key, float& low, float& high, std::string& error) {
-            const auto found = document.find(key);
-            if (found == document.end()) {
-                return true;
-            }
-            if (!found->is_array() || found->size() != 2 || !(*found)[0].is_number() || !(*found)[1].is_number()) {
-                error = std::format("« {} » doit être [minimum, maximum]", key);
-                return false;
-            }
-            low = (*found)[0].get<float>();
-            high = (*found)[1].get<float>();
-            return true;
-        }
-
-        bool ReadString(const Json& document, const char* key, std::string& value, std::string& error) {
-            const auto found = document.find(key);
-            if (found == document.end()) {
-                return true;
-            }
-            if (!found->is_string()) {
-                error = std::format("« {} » doit être un texte", key);
-                return false;
-            }
-            value = found->get<std::string>();
-            return true;
-        }
-
-        std::expected<Json, std::string> ParseObject(std::string_view text) {
-            Json document = Json::parse(text.begin(), text.end(), nullptr, false);
-            if (document.is_discarded() || !document.is_object()) {
-                return std::unexpected("JSON illisible (attendu : un objet { ... })");
-            }
-            return document;
-        }
+        // Aperçus de l'éditeur, communs à toutes les bibliothèques (une par moteur de rendu). Le compteur se lit sans
+        // verrou à chaque Get ; le verrou ne sert qu'aux relectures.
+        std::mutex s_previewMutex;
+        std::map<std::string, std::string, std::less<>> s_previews;
+        std::atomic<std::uint64_t> s_previewRevision{0};
     }
 
-    std::expected<TreeSpecies, std::string> ParseTreeSpecies(std::string_view text) {
-        auto document = ParseObject(text);
-        if (!document) {
-            return std::unexpected(document.error());
-        }
-        TreeSpecies species;
-        std::string error;
-        const auto variants = document->find("variants");
-        if (variants == document->end() || !variants->is_array() || variants->empty()) {
-            return std::unexpected("« variants » doit lister au moins une variante { \"model\": ... }");
-        }
-        for (const Json& entry : *variants) {
-            TreeSpecies::Variant variant;
-            if (!entry.is_object() || !ReadString(entry, "model", variant.model, error) || !ReadString(entry, "lodModel", variant.lodModel, error)
-                || !ReadString(entry, "farModel", variant.farModel, error)) {
-                return std::unexpected(error.empty() ? "variante : un objet { \"model\": ... } attendu" : error);
+    void SetVegetationPreview(std::string_view path, std::string text) {
+        {
+            const std::scoped_lock lock(s_previewMutex);
+            if (text.empty()) {
+                const auto found = s_previews.find(path);
+                if (found == s_previews.end()) {
+                    return;
+                }
+                s_previews.erase(found);
+            } else {
+                s_previews.insert_or_assign(std::string(path), std::move(text));
             }
-            if (variant.model.empty()) {
-                return std::unexpected("variante sans « model »");
-            }
-            // Sans simplifié ni lointain : le précédent sert.
-            if (variant.lodModel.empty()) {
-                variant.lodModel = variant.model;
-            }
-            if (variant.farModel.empty()) {
-                variant.farModel = variant.lodModel;
-            }
-            species.variants.push_back(std::move(variant));
         }
-        if (!ReadNumber(*document, "minScale", species.minScale, error) || !ReadNumber(*document, "maxScale", species.maxScale, error)
-            || !ReadNumber(*document, "maxSlope", species.maxSlope, error) || !ReadNumber(*document, "tint", species.tint, error)) {
-            return std::unexpected(error);
-        }
-        if (const auto color = document->find("canopyColor"); color != document->end()) {
-            if (!color->is_array() || color->size() != 3 || !std::ranges::all_of(*color, [](const Json& c) { return c.is_number(); })) {
-                return std::unexpected("« canopyColor » doit être [rouge, vert, bleu] (linéaire, 0 à 1)");
-            }
-            species.canopyColor = {(*color)[0].get<float>(), (*color)[1].get<float>(), (*color)[2].get<float>(), 1.0f};
-        }
-        species.minScale = std::clamp(species.minScale, 0.05f, 20.0f);
-        species.maxScale = std::clamp(species.maxScale, species.minScale, 20.0f);
-        species.maxSlope = std::clamp(species.maxSlope, 0.0f, 90.0f);
-        species.tint = std::clamp(species.tint, 0.0f, 0.5f);
-        return species;
+        ++s_previewRevision;
     }
 
-    std::expected<VegetationBiome, std::string> ParseVegetationBiome(std::string_view text) {
-        auto document = ParseObject(text);
-        if (!document) {
-            return std::unexpected(document.error());
-        }
-        VegetationBiome biome;
-        std::string error;
-        if (const auto zones = document->find("zones"); zones != document->end()) {
-            if (!zones->is_object() || !ReadNumber(*zones, "plains", biome.plains, error) || !ReadNumber(*zones, "hills", biome.hills, error)
-                || !ReadNumber(*zones, "mountains", biome.mountains, error)) {
-                return std::unexpected(error.empty() ? "« zones » doit être { \"plains\": 1, \"hills\": 1, \"mountains\": 1 }" : error);
-            }
-        }
-        if (!ReadRange(*document, "altitude", biome.minAltitude, biome.maxAltitude, error)
-            || !ReadRange(*document, "temperature", biome.minTemperature, biome.maxTemperature, error)
-            || !ReadRange(*document, "humidity", biome.minHumidity, biome.maxHumidity, error)
-            || !ReadNumber(*document, "cover", biome.cover, error) || !ReadNumber(*document, "density", biome.density, error)
-            || !ReadNumber(*document, "scale", biome.scale, error)) {
-            return std::unexpected(error);
-        }
-        if (const auto species = document->find("species"); species != document->end()) {
-            if (!species->is_array()) {
-                return std::unexpected("« species » doit lister [{ \"species\": \"….espece.json\", \"share\": 50 }, ...]");
-            }
-            for (const Json& entry : *species) {
-                VegetationBiome::Share share;
-                if (!entry.is_object() || !ReadString(entry, "species", share.species, error) || !ReadNumber(entry, "share", share.share, error)
-                    || share.species.empty()) {
-                    return std::unexpected(error.empty() ? "espèce : { \"species\": \"….espece.json\", \"share\": 50 } attendu" : error);
-                }
-                if (biome.species.size() == VegetationSet::MaxSharesPerBiome) {
-                    return std::unexpected(std::format("{} espèces au plus par biome", VegetationSet::MaxSharesPerBiome));
-                }
-                share.share = std::max(share.share, 0.0f);
-                biome.species.push_back(std::move(share));
-            }
-        }
-        for (float* zone : {&biome.plains, &biome.hills, &biome.mountains, &biome.cover, &biome.density}) {
-            *zone = std::clamp(*zone, 0.0f, 1.0f);
-        }
-        biome.scale = std::clamp(biome.scale, 0.05f, 20.0f);
-        return biome;
+    std::optional<std::string> FindVegetationPreview(std::string_view path) {
+        const std::scoped_lock lock(s_previewMutex);
+        const auto found = s_previews.find(path);
+        return found == s_previews.end() ? std::nullopt : std::optional<std::string>(found->second);
+    }
+
+    std::uint64_t GetVegetationPreviewRevision() {
+        return s_previewRevision.load(std::memory_order_relaxed);
     }
 
     const VegetationSet& VegetationLibrary::Get(const std::filesystem::path& assetsDirectory, const VegetationComponent& vegetation) {
@@ -179,6 +68,8 @@ namespace Flux::Planetology {
             m_entries.push_back(std::move(created));
             entry = m_entries.end() - 1;
             rebuild = true;
+        } else if (entry->previews != GetVegetationPreviewRevision()) {
+            rebuild = true; // réglage en cours dans l'éditeur : suivi image par image
         } else if (now - entry->checked >= CheckInterval) {
             entry->checked = now;
             rebuild = Changed(*entry);
@@ -186,6 +77,7 @@ namespace Flux::Planetology {
         entry->lastUsed = m_calls;
         if (rebuild) {
             entry->checked = now;
+            entry->previews = GetVegetationPreviewRevision();
             Rebuild(*entry);
             entry->set.revision = ++m_revision;
         }
@@ -216,6 +108,10 @@ namespace Flux::Planetology {
             std::error_code error;
             auto time = std::filesystem::last_write_time(full, error);
             entry.files[path] = error ? std::filesystem::file_time_type::min() : time;
+            if (std::optional<std::string> preview = FindVegetationPreview(path)) {
+                text = std::move(*preview);
+                return true;
+            }
             std::vector<std::uint8_t> bytes;
             if (!Platform::ReadFileBytes(full, bytes)) {
                 Log::Error("Végétation : {} introuvable", path);

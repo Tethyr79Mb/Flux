@@ -128,6 +128,21 @@ namespace Flux::UI {
         return style;
     }
 
+    Style Style::Scaled(float scale) const {
+        Style scaled = *this;
+        scale = std::clamp(scale, 0.5f, 3.0f);
+        // Arrondi au pixel : des marges fractionnaires feraient des bords flous.
+        const auto size = [scale](float value) { return std::round(value * scale); };
+        scaled.fontSize = fontSize * scale;
+        scaled.panelPadding = size(panelPadding);
+        scaled.framePadding = {size(framePadding.x), size(framePadding.y)};
+        scaled.itemSpacing = size(itemSpacing);
+        scaled.panelRounding = size(panelRounding);
+        scaled.frameRounding = size(frameRounding);
+        scaled.shadowSize = size(shadowSize);
+        return scaled;
+    }
+
     Style Style::FromTheme(Theme theme) {
         switch (theme) {
             case Theme::Light:
@@ -322,6 +337,11 @@ namespace Flux::UI {
 
     bool Context::WantsKeyboard() const {
         return m_impl->editingId != 0;
+    }
+
+    bool Context::IsPanelHovered() const {
+        const Impl& ui = *m_impl;
+        return ui.panelId != 0 && ui.panelId == ui.hoveredPanel;
     }
 
     bool Context::IsInteracting() const {

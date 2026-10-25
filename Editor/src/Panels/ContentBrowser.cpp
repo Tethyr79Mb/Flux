@@ -2,6 +2,7 @@
 
 #include "Document/SceneDocument.hpp"
 #include "Interface/InterfaceEditor.hpp"
+#include "Panels/VegetationPanel.hpp"
 #include "Search.hpp"
 
 #include <Flux/Audio/AudioSystem.hpp>
@@ -11,6 +12,7 @@
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Icons.hpp>
 #include <Flux/Platform/Window.hpp>
+#include <Flux/Planetology/Vegetation.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
@@ -263,6 +265,16 @@ namespace FluxEditor {
                         m_requestPath = m_folder;
                         m_requestName = "Nouvelle interface";
                     }
+                    if (m_vegetation && ui.MenuItem("Nouveau biome...", {}, !document.IsLocked())) {
+                        m_request = NameRequest::NewBiome;
+                        m_requestPath = m_folder;
+                        m_requestName = "Nouveau biome";
+                    }
+                    if (m_vegetation && ui.MenuItem("Nouvelle espèce...", {}, !document.IsLocked())) {
+                        m_request = NameRequest::NewSpecies;
+                        m_requestPath = m_folder;
+                        m_requestName = "Nouvelle espèce";
+                    }
                     if (ui.MenuItem("Afficher dans l'explorateur")) {
                         Platform::ShowInExplorer(m_folder);
                     }
@@ -320,6 +332,8 @@ namespace FluxEditor {
         m_scenes.clear();
         m_prefabs.clear();
         m_interfaceFiles.clear();
+        m_biomeFiles.clear();
+        m_speciesFiles.clear();
         struct Trees
         {
             std::vector<Entry> assets;
@@ -350,6 +364,10 @@ namespace FluxEditor {
                 } else {
                     if (IsInterface(entry.path)) {
                         m_interfaceFiles.push_back(entry.path);
+                    } else if (VegetationPanel::IsBiome(entry.path)) {
+                        m_biomeFiles.push_back(entry.path);
+                    } else if (VegetationPanel::IsSpecies(entry.path)) {
+                        m_speciesFiles.push_back(entry.path);
                     } else if (IsPrefab(entry.path)) {
                         m_prefabs.push_back(entry.path);
                     }
@@ -461,15 +479,20 @@ namespace FluxEditor {
                                                           : Badge(entry);
             const bool interfaceFile = !entry.directory && IsInterface(entry.path);
             const bool prefab = !entry.directory && IsPrefab(entry.path);
+            const bool biome = !entry.directory && VegetationPanel::IsBiome(entry.path);
+            const bool species = !entry.directory && VegetationPanel::IsSpecies(entry.path);
             const UI::Icon icon = entry.directory ? UI::Icon::Folder
                                 : scene           ? UI::Icon::Scene
                                 : interfaceFile   ? UI::Icon::Window
                                 : prefab          ? UI::Icon::Prefab
+                                : biome           ? UI::Icon::Biome
+                                : species         ? UI::Icon::Tree
                                                   : UI::Icon::File;
+            const bool ownIcon = scene || interfaceFile || prefab || biome || species;
             const bool selected = scene ? entry.path.lexically_normal() == openScene : entry.path == m_selected;
             ui.PushId(entry.name);
             const UI::Context::TileResult tile = ui.Tile(scene ? SceneName(entry.path) : entry.name, icon, badge, color, selected,
-                                                         TileWidth, scene || interfaceFile || prefab ? nullptr : GetIcon(engine, entry));
+                                                         TileWidth, ownIcon ? nullptr : GetIcon(engine, entry));
             if (tile.clicked && !scene) {
                 m_selected = entry.path;
             }
@@ -487,6 +510,9 @@ namespace FluxEditor {
             }
             if (tile.doubleClicked && interfaceFile && m_interfaces) {
                 m_interfaces->Open(engine, entry.path);
+            }
+            if (tile.doubleClicked && (biome || species) && m_vegetation) {
+                m_vegetation->Open(engine, entry.path);
             }
             if (tile.doubleClicked && !entry.directory && IsSound(entry.path) && engine.GetProject()) {
                 // Écouter le son, une fois.
@@ -575,6 +601,10 @@ namespace FluxEditor {
         if (!entry.directory && IsInterface(entry.path) && m_interfaces && ui.MenuItem("Ouvrir dans l'éditeur d'interface")) {
             m_interfaces->Open(engine, entry.path);
         }
+        if (!entry.directory && (VegetationPanel::IsBiome(entry.path) || VegetationPanel::IsSpecies(entry.path)) && m_vegetation
+            && ui.MenuItem("Régler dans le panneau Végétation")) {
+            m_vegetation->Open(engine, entry.path);
+        }
         if (!entry.directory && IsPrefab(entry.path)
             && ui.MenuItem("Ouvrir le prefab", {},
                            !document.IsLocked() && entry.path.lexically_normal() != document.GetPath().lexically_normal())) {
@@ -602,9 +632,11 @@ namespace FluxEditor {
         UI::Context& ui = engine.GetUi();
         const Math::Vector2i screen = engine.GetWindow().GetSize();
         const float width = 400.0f;
-        const bool create = m_request == NameRequest::NewFolder || m_request == NameRequest::NewInterface;
+        const bool create = m_request != NameRequest::Rename;
         const std::string_view title = m_request == NameRequest::NewFolder      ? "Nouveau dossier"
                                        : m_request == NameRequest::NewInterface ? "Nouvelle interface"
+                                       : m_request == NameRequest::NewBiome     ? "Nouveau biome"
+                                       : m_request == NameRequest::NewSpecies   ? "Nouvelle espèce"
                                                                                 : "Renommer";
         if (ui.BeginPanel(title, {(static_cast<float>(screen.x) - width) * 0.5f,
                                                                     static_cast<float>(screen.y) * 0.3f},
@@ -618,6 +650,10 @@ namespace FluxEditor {
                 const Window& window = engine.GetWindow();
                 if (!IsValidName(m_requestName)) {
                     Platform::ShowError(window, "Nom", "Nom invalide : il ne doit pas être vide ni contenir \\ / : * ? \" < > |");
+                } else if (m_request == NameRequest::NewBiome || m_request == NameRequest::NewSpecies) {
+                    if (CreateVegetationFile(engine)) {
+                        m_request = NameRequest::None;
+                    }
                 } else if (m_request == NameRequest::NewInterface) {
                     // Extension ajoutée d'office ; une interface vide, ouverte aussitôt dans l'éditeur.
                     std::string name = m_requestName;
@@ -659,6 +695,49 @@ namespace FluxEditor {
             }
         }
         ui.EndPanel();
+    }
+
+    bool ContentBrowser::CreateVegetationFile(Engine& engine) {
+        const bool biome = m_request == NameRequest::NewBiome;
+        const std::string_view title = biome ? "Nouveau biome" : "Nouvelle espèce";
+        const std::string_view extension = biome ? ".biome.json" : ".espece.json";
+        std::string name = m_requestName;
+        if (!name.ends_with(extension)) {
+            name += extension;
+        }
+        const std::filesystem::path file = m_requestPath / Platform::PathFromUtf8(name);
+        std::error_code error;
+        if (std::filesystem::exists(file, error)) {
+            Platform::ShowError(engine.GetWindow(), title, "« " + name + " » existe déjà.");
+            return false;
+        }
+        // Un biome commence sans arbres ; une espèce reprend la première du projet (une espèce sans modèle ne se
+        // relirait pas), à changer ensuite dans le panneau.
+        std::string text = Planetology::WriteVegetationBiome({});
+        if (!biome) {
+            Planetology::TreeSpecies species;
+            for (const std::filesystem::path& path : m_speciesFiles) {
+                std::vector<std::uint8_t> bytes;
+                if (Platform::ReadFileBytes(path, bytes)) {
+                    if (auto parsed = Planetology::ParseTreeSpecies(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()))) {
+                        species = std::move(*parsed);
+                        break;
+                    }
+                }
+            }
+            if (species.variants.empty()) {
+                species.variants.push_back({}); // modèles à choisir : le panneau le dira
+            }
+            text = Planetology::WriteTreeSpecies(species);
+        }
+        if (auto written = SceneSerializer::WriteFile(file, text); !written) {
+            Platform::ShowError(engine.GetWindow(), title, written.error());
+            return false;
+        }
+        m_sinceScan = ScanInterval;
+        m_selected = file;
+        m_vegetation->Open(engine, file);
+        return true;
     }
 
     bool ContentBrowser::Move(Engine& engine, SceneDocument& document, const std::filesystem::path& from,
@@ -760,6 +839,28 @@ namespace FluxEditor {
         if (m_interfaces) {
             m_interfaces->FileMoved(from, to, oldReference, newReference);
         }
+        // Espèces désignées par les biomes (réécrits seulement s'ils en désignent une qui a bougé).
+        for (const std::filesystem::path& biomePath : m_biomeFiles) {
+            const std::filesystem::path path = moved(biomePath).value_or(biomePath);
+            std::vector<std::uint8_t> bytes;
+            auto biome = Platform::ReadFileBytes(path, bytes)
+                             ? Planetology::ParseVegetationBiome(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()))
+                             : std::unexpected(std::string());
+            if (!biome) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+                continue;
+            }
+            bool changed = false;
+            for (Planetology::VegetationBiome::Share& share : biome->species) {
+                changed |= ReplacePath(share.species, oldReference, newReference);
+            }
+            if (changed && !SceneSerializer::WriteFile(path, Planetology::WriteVegetationBiome(*biome))) {
+                failures.push_back(Platform::ToUtf8(path.filename()));
+            }
+        }
+        if (m_vegetation) {
+            m_vegetation->FileMoved(from, to, oldReference, newReference);
+        }
         ReplaceReferences(engine.GetScene(), components, oldReference, newReference);
         if (const std::optional<std::filesystem::path> openScene = moved(document.GetPath())) {
             document.FileRenamed(document.GetPath(), *openScene);
@@ -838,6 +939,9 @@ namespace FluxEditor {
         document.ForgetFile(path);
         if (m_interfaces) {
             m_interfaces->FileDeleted(path);
+        }
+        if (m_vegetation) {
+            m_vegetation->FileDeleted(path);
         }
         m_sinceScan = ScanInterval; // relu à la prochaine frame
     }

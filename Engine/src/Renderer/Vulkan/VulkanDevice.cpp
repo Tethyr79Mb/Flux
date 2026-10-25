@@ -1,6 +1,7 @@
 #include "Renderer/Vulkan/VulkanDevice.hpp"
 
 #include "Flux/Core/Log.hpp"
+#include "Flux/Platform/Environment.hpp"
 
 #include <windows.h>
 
@@ -8,6 +9,8 @@
 #include <array>
 #include <cstdlib>
 #include <format>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -120,12 +123,8 @@ namespace Flux::Vk {
         // Mesh shaders : le sol des planètes en paquets de triangles que le GPU écarte lui-même (shaders/PlanetMesh.slang).
         // RTX 20, RX 6000, Arc et plus récentes ; sans eux (GTX 1060, RX 5700), le chemin des sommets.
         // FLUX_MESH_SHADERS=0 les ignore : diagnostic d'un pilote fautif, et comparaison des deux chemins.
-#ifdef _MSC_VER
-#pragma warning(suppress : 4996) // getenv : lu avant tout fil
-#endif
-        const char* meshSetting = std::getenv("FLUX_MESH_SHADERS");
-        if (device->m_physicalDevice.is_extension_present(VK_EXT_MESH_SHADER_EXTENSION_NAME)
-            && !(meshSetting && std::string_view(meshSetting) == "0")) {
+        const std::optional<std::string> meshSetting = Platform::ReadEnvironment("FLUX_MESH_SHADERS");
+        if (device->m_physicalDevice.is_extension_present(VK_EXT_MESH_SHADER_EXTENSION_NAME) && meshSetting != "0") {
             VkPhysicalDeviceMeshShaderFeaturesEXT mesh{};
             mesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
             mesh.taskShader = VK_TRUE;

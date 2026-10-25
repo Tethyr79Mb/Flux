@@ -64,6 +64,35 @@ bool RunVegetationTests() {
     CHECK(library.Get(assets, fewer).biomes.size() == 5);
     CHECK(library.Get(assets, vegetation).revision == revision); // la première planète est gardée
 
+    // Écrits par l'éditeur : relus à l'identique, chemins accentués et guillemets compris.
+    Planetology::VegetationBiome written;
+    written.plains = 0.25f;
+    written.minTemperature = -3.5f;
+    written.maxHumidity = 0.7f;
+    written.species = {{"Végétation/a \"b\".espece.json", 60.0f}, {"c.espece.json", 40.0f}};
+    auto reread = Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome(written));
+    CHECK(reread && reread->plains == 0.25f && reread->minTemperature == -3.5f && reread->maxHumidity == 0.7f);
+    CHECK(reread->species.size() == 2 && reread->species[0].species == written.species[0].species && reread->species[1].share == 40.0f);
+    CHECK(Planetology::WriteVegetationBiome(*reread) == Planetology::WriteVegetationBiome(written));
+    CHECK(Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome({}))); // sans espèce : un désert
+    Planetology::TreeSpecies tree;
+    tree.variants = {{"a.glb", "a1.glb", "a2.glb"}, {"b.glb", "b.glb", "b.glb"}};
+    tree.maxSlope = 42.5f;
+    tree.canopyColor = {0.023f, 0.051f, 0.013f, 1.0f};
+    auto rereadTree = Planetology::ParseTreeSpecies(Planetology::WriteTreeSpecies(tree));
+    CHECK(rereadTree && rereadTree->variants.size() == 2 && rereadTree->variants[0].farModel == "a2.glb");
+    CHECK(rereadTree->maxSlope == 42.5f && rereadTree->canopyColor.g == 0.051f);
+    CHECK(Planetology::WriteTreeSpecies(*rereadTree) == Planetology::WriteTreeSpecies(tree));
+
+    // Aperçu de l'éditeur : lu à la place du fichier dès l'appel suivant, puis le fichier redevient la référence.
+    Planetology::VegetationBiome bare = *Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome({}));
+    bare.plains = 0.5f;
+    Planetology::SetVegetationPreview(vegetation.biome3, Planetology::WriteVegetationBiome(bare));
+    const Planetology::VegetationSet& previewed = library.Get(assets, vegetation);
+    CHECK(previewed.revision != revision && previewed.biomes[2].zones[0] == 0.5f);
+    Planetology::SetVegetationPreview(vegetation.biome3, {});
+    CHECK(library.Get(assets, vegetation).biomes[2].zones[0] == 0.0f);
+
     // Zones du relief : de 0 à 1, sans changer la hauteur ; des montagnes et des plaines sur une planète.
     const Planetology::Terrain terrain(60000.0, 800.0, 5);
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
