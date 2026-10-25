@@ -133,6 +133,23 @@ bool RunRenderGraphTests() {
             "barrières couleur:lue", "étape fin"};
         CHECK(recorded.log == expected);
 
+        // Scène coupée en deux par une passe qui la lit (les nuages) : seule la première écriture de l'image jette le
+        // contenu, la seconde reprend ce que la première a dessiné.
+        RenderGraph split;
+        const auto splitColor = split.AddTexture("couleur", Lifetime::Frame, [&] { return &colorTexture; });
+        const auto splitDepth = split.AddTexture("profondeur", Lifetime::Frame, [&] { return &depthTexture; });
+        split.AddPass("scène").Writes(splitColor).Writes(splitDepth).Step("scène", [](RHI::CommandList&) {});
+        split.AddPass("nuages").Reads(splitDepth).Step("nuages", [](RHI::CommandList&) {});
+        split.AddPass("transparents").Writes(splitColor).Writes(splitDepth).Step("transparents", [](RHI::CommandList&) {});
+        CHECK(split.Compile().has_value());
+        RecordingCommands splitRecorded;
+        split.Execute(splitRecorded, false);
+        const std::vector<std::string> splitExpected{
+            "barrières couleur:couleur jetée profondeur:profondeur jetée", "étape scène",
+            "barrières profondeur:lue", "étape nuages",
+            "barrières couleur:couleur profondeur:profondeur", "étape transparents"};
+        CHECK(splitRecorded.log == splitExpected);
+
         // Une même texture lue et écrite par une passe : refusé (un seul usage à la fois).
         RenderGraph both;
         const auto feedback = both.AddTexture("historique", Lifetime::Previous, [&] { return &colorTexture; });

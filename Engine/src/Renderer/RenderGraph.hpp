@@ -50,6 +50,7 @@ namespace Flux {
         enum class TextureSize : std::uint8_t {
             View,   // la vue 3D (scène, mouvement, profondeur, historique)
             Window, // la fenêtre (profondeur de l'image finale)
+            HalfView, // la moitié de la vue 3D, arrondie au-dessus (nuages)
         };
         struct TextureDesc
         {
@@ -136,6 +137,8 @@ namespace Flux {
             const char* name;
             std::vector<ResourceId> reads;
             std::vector<ResourceId> writes;
+            // Textures de l'image déjà écrites par une passe d'avant (Compile) : gardées, la passe continue leur dessin.
+            std::vector<ResourceId> continued;
             Record begin;
             Condition condition;
             std::vector<Step> steps;

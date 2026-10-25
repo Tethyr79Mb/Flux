@@ -285,9 +285,9 @@ namespace Flux {
     };
 
     // Nuages d'une planète (sur l'entité de son PlanetComponent) : une couche de `thickness` mètres d'épaisseur à
-    // partir de `altitude` mètres au-dessus du niveau zéro, traversée en quelques pas par pixel (shaders/Mesh.slang,
-    // fragmentClouds) : vus du sol comme de l'espace, ils font de l'ombre au sol, à l'eau et aux objets. Ils dérivent
-    // vers l'est (autour de l'axe y de la planète). Trop peu de pas pour voler dedans de façon crédible.
+    // partir de `altitude` mètres au-dessus du niveau zéro, marchée en volume par le GPU (Planetology/CloudRenderer,
+    // shaders/Clouds.slang) : vus du sol comme de l'espace, ils font de l'ombre au sol, à l'eau et aux objets. Ils
+    // dérivent vers l'est (autour de l'axe y de la planète).
     struct CloudsComponent
     {
         float altitude = 4000.0f;  // m au-dessus du niveau zéro du relief : la base des nuages

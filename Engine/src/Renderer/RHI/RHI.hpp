@@ -324,9 +324,12 @@ namespace Flux::RHI {
         const Texture* secondColorTarget = nullptr;
         // Tampon de profondeur gardé après la passe, pour être lu ensuite (CreateRenderTarget sampled).
         bool keepDepth = false;
-        // Sans couleur seulement : la profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a
-        // déjà remplie) ; CommandList::ClearDepth efface les parties à redessiner.
+        // La profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a déjà remplie) ; sans
+        // couleur, CommandList::ClearDepth efface les parties à redessiner.
         bool loadDepth = false;
+        // Avec colorTarget seulement : la couleur d'avant (et la seconde) est gardée au lieu d'être effacée, la passe
+        // continue ce qu'une précédente a dessiné.
+        bool loadColor = false;
     };
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.

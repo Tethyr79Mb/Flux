@@ -564,22 +564,7 @@ namespace Flux {
                 m_modelMesh = {};
             }
         }
-        // Nuages : la profondeur du point touché est écrite par le shader (SV_Depth) et testée contre celle de la
-        // scène, sans être enregistrée : le sol, les montagnes et les vaisseaux devant eux les cachent.
-        RHI::PipelineDesc clouds;
-        clouds.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
-        clouds.vertexEntryPoint = "vertexClouds";
-        clouds.fragmentEntryPoint = "fragmentClouds";
-        clouds.bindGroupLayouts = layouts;
-        clouds.pushConstantsSize = sizeof(DrawParams);
-        clouds.colorFormat = colorFormat;
-        clouds.secondColorFormat = motionFormat;
-        clouds.depthFormat = depthFormat;
-        clouds.depthTest = true;
-        clouds.depthWrite = false;
-        clouds.depthCompare = RHI::CompareOp::GreaterOrEqual;
-        clouds.blend = RHI::BlendMode::Alpha;
-        return create(m_clouds, clouds);
+        return {};
     }
 
     const RHI::Pipeline& MeshRenderer::ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material) {
@@ -861,9 +846,8 @@ namespace Flux {
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
         const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f});
         const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 1.0f});
-        if (m_planetTiles.empty()) {
-            return;
-        }
+        // Même sans tuile visible (regard vers le ciel), la planète entre dans m_planetData : ses nuages, leur ombre
+        // et son contour en dépendent.
         // Son sol, lu par fragmentPlanet ; sans zones, roche partout.
         const float roughness = std::clamp(planet.roughness, 0.0f, 1.0f);
         // Avec les textures du sol, la teinte de chaque matière à la place de sa couleur.
@@ -1845,16 +1829,14 @@ namespace Flux {
         DrawTiles(commands, state, frameIndex, OceanPass, *m_ocean.transparent);
     }
 
-    void MeshRenderer::DrawClouds(RHI::CommandList& commands, std::uint32_t frameIndex) const {
-        if (!m_hasClouds) {
-            return;
-        }
-        BindState state;
-        BindPipeline(commands, state, frameIndex, *m_clouds);
+    std::array<const RHI::BindGroupLayout*, 3> MeshRenderer::GetSceneLayouts() const {
+        return {&m_models->GetGroundLayout(), m_frameLayout.get(), &m_models->GetSceneLayout()};
+    }
+
+    void MeshRenderer::BindScene(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         commands.SetBindGroup(0, m_models->GetWhiteGroup());
-        const DrawParams params{};
-        commands.PushConstants(&params, sizeof(params));
-        commands.Draw(3, 0);
+        commands.SetBindGroup(1, *m_frameGroups[frameIndex]);
+        commands.SetBindGroup(2, m_models->GetSceneGroup());
     }
 
     void MeshRenderer::DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const {

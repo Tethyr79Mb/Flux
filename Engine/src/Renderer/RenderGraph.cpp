@@ -116,6 +116,7 @@ namespace Flux {
         for (std::size_t r = 0; r < m_resources.size(); ++r) {
             written[r] = m_resources[r].lifetime != Lifetime::Frame;
         }
+        std::vector<bool> drawn(m_resources.size(), false); // texture de l'image déjà écrite par une passe
         m_stepCount = 0;
         m_timings.clear();
         for (const Resource& resource : m_resources) {
@@ -125,8 +126,9 @@ namespace Flux {
             }
         }
         std::size_t uses = 0;
-        for (const Pass& pass : m_passes) {
+        for (Pass& pass : m_passes) {
             uses = std::max(uses, pass.reads.size() + pass.writes.size());
+            pass.continued.clear();
             if (pass.steps.empty()) {
                 return std::unexpected(std::format("graphe de rendu : la passe « {} » n'a aucune étape", pass.name));
             }
@@ -153,6 +155,10 @@ namespace Flux {
                                                        pass.name, m_resources[resource].name));
                 }
                 written[resource] = true;
+                if (drawn[resource]) {
+                    pass.continued.push_back(resource);
+                }
+                drawn[resource] = true;
             }
             m_stepCount += static_cast<std::uint32_t>(pass.steps.size());
             m_timings.push_back({pass.name, -1.0, false});
@@ -212,13 +218,15 @@ namespace Flux {
                 m_uses.push_back({texture, RHI::TextureAccess::Sampled, false});
             }
         }
-        // Contenu jeté : texture de l'image, ou exemplaire d'historique qui ne tient que l'avant-dernière image.
+        // Contenu jeté : texture de l'image à sa première écriture, ou exemplaire d'historique qui ne tient que
+        // l'avant-dernière image.
         for (const ResourceId resource : pass.writes) {
             const Resource& r = m_resources[resource];
             if (const RHI::Texture* texture = WriteTexture(r)) {
                 const bool depth = texture->GetFormat() == RHI::Format::D32Float;
+                const bool first = r.lifetime == Lifetime::Frame && !std::ranges::contains(pass.continued, resource);
                 m_uses.push_back({texture, depth ? RHI::TextureAccess::DepthTarget : RHI::TextureAccess::ColorTarget,
-                                  r.lifetime == Lifetime::Frame || r.IsHistory()});
+                                  first || r.IsHistory()});
             }
         }
         if (!m_uses.empty()) {
