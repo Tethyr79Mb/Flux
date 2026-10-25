@@ -1214,6 +1214,7 @@ namespace Flux {
         PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()),
                               .stored = m_planets->GetStoredTileCount(),
                               .pending = m_planets->GetPendingTileCount(),
+                              .computed = m_planets->GetScheduledTileCount(),
                               .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading(),
                               .meshThreads = m_planetMesh ? m_planetMeshThreads : 0u};
         for (const TileDraw& draw : m_tileDraws) {
@@ -1766,9 +1767,19 @@ namespace Flux {
         }
     }
 
-    void MeshRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
+    void MeshRenderer::ComputeTiles(RHI::CommandList& commands, std::uint32_t frameIndex) {
         m_planets->Compute(commands, frameIndex);
-        m_vegetation->Compute(commands, frameIndex);
+    }
+
+    void MeshRenderer::SowTrees(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        m_vegetation->Sow(commands, frameIndex);
+    }
+
+    void MeshRenderer::CullTrees(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        m_vegetation->Cull(commands, frameIndex);
+    }
+
+    void MeshRenderer::CullHidden(RHI::CommandList& commands, std::uint32_t frameIndex) {
         m_occlusion->Record(commands, frameIndex);
     }
 

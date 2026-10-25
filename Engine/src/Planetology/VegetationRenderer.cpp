@@ -12,7 +12,8 @@
 
 namespace Flux::Planetology {
     namespace {
-        // Doit correspondre à Constants dans shaders/PlanetTile.slang (le semis y lit job seulement).
+        // Doit correspondre à Constants dans shaders/PlanetTile.slang (le semis y lit job seulement : la plaine, ou leur
+        // nombre pour clearTreeCounts).
         struct SowConstants
         {
             std::uint32_t job;
@@ -86,15 +87,19 @@ namespace Flux::Planetology {
         const std::filesystem::path shaders = Platform::GetExecutableDirectory() / "shaders";
         const std::array<const RHI::BindGroupLayout*, 1> sowLayouts{renderer->m_sowLayout.get()};
         const std::array<const RHI::BindGroupLayout*, 1> cullLayouts{renderer->m_cullLayout.get()};
-        auto sow = device.CreateComputePipeline({shaders / (device.HasFloat64() ? "PlanetTile64.spv" : "PlanetTile.spv"), "computeTrees", sowLayouts, sizeof(SowConstants)});
+        const std::filesystem::path tileShader = shaders / (device.HasFloat64() ? "PlanetTile64.spv" : "PlanetTile.spv");
+        auto sow = device.CreateComputePipeline({tileShader, "computeTrees", sowLayouts, sizeof(SowConstants)});
+        auto clearCounts = device.CreateComputePipeline({tileShader, "clearTreeCounts", sowLayouts, sizeof(SowConstants)});
         auto cull = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeCull", cullLayouts, 0});
         auto finalize = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeFinalize", cullLayouts, 0});
         auto scatter = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeScatter", cullLayouts, 0});
-        if (!sow || !cull || !finalize || !scatter) {
-            return std::unexpected(!sow ? sow.error() : !cull ? cull.error() : !finalize ? finalize.error() : scatter.error());
+        if (!sow || !clearCounts || !cull || !finalize || !scatter) {
+            return std::unexpected(!sow ? sow.error() : !clearCounts ? clearCounts.error() : !cull ? cull.error()
+                                   : !finalize ? finalize.error() : scatter.error());
         }
         renderer->m_scatter = std::move(*scatter);
         renderer->m_sow = std::move(*sow);
+        renderer->m_clearCounts = std::move(*clearCounts);
         renderer->m_cull = std::move(*cull);
         renderer->m_finalize = std::move(*finalize);
 
@@ -270,6 +275,7 @@ namespace Flux::Planetology {
         }
         m_stats.plains = 0;
         m_stats.pending = 0;
+        m_stats.sown = 0;
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
         if (!m_terrain || m_visible.empty()) {
             return;
@@ -316,6 +322,7 @@ namespace Flux::Planetology {
             frame.vegetation->Write(&m_sowVegetation, sizeof(m_sowVegetation));
         }
         frame.sown = static_cast<std::uint32_t>(m_jobs.size());
+        m_stats.sown = frame.sown;
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
         const auto loaded = [](const Models& m) { return m.near && m.middle && m.far; };
         if (m_cells.empty() || std::ranges::none_of(models, loaded)) {
@@ -398,18 +405,31 @@ namespace Flux::Planetology {
         return true;
     }
 
-    void VegetationRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
-        Frame& frame = m_frames[frameIndex];
-        if (frame.sown > 0) {
-            commands.BindPipeline(*m_sow);
-            commands.SetBindGroup(0, *frame.sowGroup);
-            for (std::uint32_t job = 0; job < frame.sown; ++job) {
-                const SowConstants constants{job};
-                commands.PushConstants(&constants, sizeof(constants));
-                commands.Dispatch(1);
-            }
-            commands.ComputeBarrier();
+    void VegetationRenderer::Sow(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        const Frame& frame = m_frames[frameIndex];
+        if (frame.sown == 0) {
+            return;
         }
+        // Compteurs des plaines à zéro, puis TreesPerPlain / 256 groupes par plaine (une place par thread) : sans
+        // barrière entre les plaines, le GPU les mène de front.
+        commands.BindPipeline(*m_clearCounts);
+        commands.SetBindGroup(0, *frame.sowGroup);
+        const SowConstants count{frame.sown};
+        commands.PushConstants(&count, sizeof(count));
+        commands.Dispatch(1);
+        commands.ComputeBarrier();
+        commands.BindPipeline(*m_sow);
+        commands.SetBindGroup(0, *frame.sowGroup);
+        for (std::uint32_t job = 0; job < frame.sown; ++job) {
+            const SowConstants constants{job};
+            commands.PushConstants(&constants, sizeof(constants));
+            commands.Dispatch(SowGroupsPerPlain);
+        }
+        commands.ComputeBarrier();
+    }
+
+    void VegetationRenderer::Cull(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        Frame& frame = m_frames[frameIndex];
         if (frame.culled == 0) {
             return;
         }

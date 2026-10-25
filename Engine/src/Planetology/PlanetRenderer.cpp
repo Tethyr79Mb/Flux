@@ -398,10 +398,14 @@ namespace Flux::Planetology {
             return a.request.key.level != b.request.key.level ? a.request.key.level < b.request.key.level
                                                               : a.request.distance < b.request.distance;
         });
+        m_scheduledTiles = 0;
         for (const Pending& item : pending) {
             Node& node = GetNode(*item.state, item.request.key);
-            if (node.tile == NoTile && !Schedule(*item.state, item.request.key, node, frameIndex)) {
-                break;
+            if (node.tile == NoTile) {
+                if (!Schedule(*item.state, item.request.key, node, frameIndex)) {
+                    break;
+                }
+                ++m_scheduledTiles;
             }
         }
 
