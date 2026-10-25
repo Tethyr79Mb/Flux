@@ -39,8 +39,9 @@ Ordre conseillé des réglages, du plus grand au plus fin :
    prenant les pentes. La neige commence à `Neige à partir de` (% du relief) : baisser le relief la fait descendre.
 7. **Atmosphère.** Densité (1 = Terre), hauteur et couleur du ciel. Elle règle aussi la vitesse permise au vaisseau :
    le mode voyage est bridé à mesure que l'air s'épaissit.
-8. **Nuages, puis végétation.** Les arbres ne poussent que là où pousserait l'herbe : pente douce, assez humide, ni
-   plage, ni neige, ni gel.
+8. **Nuages, puis végétation.** Les biomes de la planète (8 au plus, dans l'ordre : le premier qui convient prend le
+   sol) décident des forêts et des espèces : zone du relief (plaines, collines, montagnes et leurs piémonts),
+   altitude, température, humidité. Jamais sur la plage, sous la neige ni sur une pente trop raide pour l'espèce.
 
 ## 2. Ce que fait le moteur
 

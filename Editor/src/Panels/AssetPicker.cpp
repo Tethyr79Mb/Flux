@@ -43,6 +43,9 @@ namespace FluxEditor {
             if (type == AssetType::Prefab) {
                 return {{"Prefabs Flux", ".prefab.json"}, "Choisir un prefab", "Prefabs"};
             }
+            if (type == AssetType::Biome) {
+                return {{"Biomes Flux", ".biome.json"}, "Choisir un biome", "Vegetation/Biomes"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 

@@ -22,13 +22,18 @@ namespace Flux::Planetology {
 
         // Bord des tuiles qui servent de plaines, au plus (m).
         constexpr double MaxPlainEdge = 400.0;
-        constexpr std::uint32_t CounterOffset = VegetationRenderer::MaxCommands * 5; // en entiers, dans les commandes
+        // Compteurs, après les commandes (en entiers) : arbres de chaque liste, puis de chaque espèce de chaque liste,
+        // puis la place suivante de chaque espèce dans sa liste (computeScatter).
+        constexpr std::uint32_t CounterOffset = VegetationRenderer::MaxCommands * 5;
+        constexpr std::uint32_t SpeciesLists = VegetationRenderer::ListCount * VegetationRenderer::MaxSpecies;
+        constexpr std::uint32_t CounterCount = VegetationRenderer::ListCount + 2 * SpeciesLists;
 
         // Emplacements du groupe du semis (shaders/PlanetTile.slang) et du tri (shaders/Vegetation.slang).
         constexpr std::uint32_t SowInputsSlot = 0;
         constexpr std::uint32_t SowJobsSlot = 2;
         constexpr std::uint32_t SowTreesSlot = 3;
         constexpr std::uint32_t SowCountsSlot = 4;
+        constexpr std::uint32_t SowVegetationSlot = 5;
         constexpr std::uint32_t CullFrameSlot = 0;
         constexpr std::uint32_t CullCellsSlot = 1;
         constexpr std::uint32_t CullTreesSlot = 2;
@@ -36,6 +41,7 @@ namespace Flux::Planetology {
         constexpr std::uint32_t CullInstancesSlot = 4;
         constexpr std::uint32_t CullCommandsSlot = 5;
         constexpr std::uint32_t CullStatsSlot = 6;
+        constexpr std::uint32_t CullStagedSlot = 7;
 
         constexpr std::uint32_t InstanceCount() {
             std::uint32_t total = 0;
@@ -60,14 +66,16 @@ namespace Flux::Planetology {
         constexpr std::array sowBindings{RHI::Binding{SowInputsSlot, RHI::BindingType::StorageBuffer, compute},
                                          RHI::Binding{SowJobsSlot, RHI::BindingType::StorageBuffer, compute},
                                          RHI::Binding{SowTreesSlot, RHI::BindingType::StorageBuffer, compute},
-                                         RHI::Binding{SowCountsSlot, RHI::BindingType::StorageBuffer, compute}};
+                                         RHI::Binding{SowCountsSlot, RHI::BindingType::StorageBuffer, compute},
+                                         RHI::Binding{SowVegetationSlot, RHI::BindingType::StorageBuffer, compute}};
         constexpr std::array cullBindings{RHI::Binding{CullFrameSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullCellsSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullTreesSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullCountsSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullInstancesSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullCommandsSlot, RHI::BindingType::StorageBuffer, compute},
-                                          RHI::Binding{CullStatsSlot, RHI::BindingType::StorageBuffer, compute}};
+                                          RHI::Binding{CullStatsSlot, RHI::BindingType::StorageBuffer, compute},
+                                          RHI::Binding{CullStagedSlot, RHI::BindingType::StorageBuffer, compute}};
         auto sowLayout = device.CreateBindGroupLayout({sowBindings, RHI::FramesInFlight});
         auto cullLayout = device.CreateBindGroupLayout({cullBindings, RHI::FramesInFlight});
         if (!sowLayout || !cullLayout) {
@@ -81,9 +89,11 @@ namespace Flux::Planetology {
         auto sow = device.CreateComputePipeline({shaders / (device.HasFloat64() ? "PlanetTile64.spv" : "PlanetTile.spv"), "computeTrees", sowLayouts, sizeof(SowConstants)});
         auto cull = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeCull", cullLayouts, 0});
         auto finalize = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeFinalize", cullLayouts, 0});
-        if (!sow || !cull || !finalize) {
-            return std::unexpected(!sow ? sow.error() : !cull ? cull.error() : finalize.error());
+        auto scatter = device.CreateComputePipeline({shaders / "Vegetation.spv", "computeScatter", cullLayouts, 0});
+        if (!sow || !cull || !finalize || !scatter) {
+            return std::unexpected(!sow ? sow.error() : !cull ? cull.error() : !finalize ? finalize.error() : scatter.error());
         }
+        renderer->m_scatter = std::move(*scatter);
         renderer->m_sow = std::move(*sow);
         renderer->m_cull = std::move(*cull);
         renderer->m_finalize = std::move(*finalize);
@@ -100,22 +110,26 @@ namespace Flux::Planetology {
         for (Frame& frame : renderer->m_frames) {
             auto inputs = device.CreateBuffer({MaxSownPerFrame * sizeof(TileGpuInputs), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
             auto jobs = device.CreateBuffer({MaxSownPerFrame * sizeof(TreeJob), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
+            auto vegetation = device.CreateBuffer({sizeof(SowVegetation), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
             auto cullFrame = device.CreateBuffer({sizeof(CullFrame), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
             auto cells = device.CreateBuffer({MaxVisiblePlains * sizeof(CullCell), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
-            auto commandBuffer = device.CreateBuffer({(CounterOffset + ListCount) * sizeof(std::uint32_t),
+            auto commandBuffer = device.CreateBuffer({(CounterOffset + CounterCount) * sizeof(std::uint32_t),
                                                       RHI::BufferUsage::Storage | RHI::BufferUsage::Indirect, RHI::MemoryType::Upload});
+            auto staged = device.CreateBuffer({std::uint64_t{InstanceCount()} * 32, RHI::BufferUsage::Storage});
             auto instances = device.CreateBuffer({std::uint64_t{InstanceCount()} * 32, RHI::BufferUsage::Storage});
             auto stats = device.CreateBuffer({ListCount * sizeof(std::uint32_t), RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
-            for (const auto* created : {&inputs, &jobs, &cullFrame, &cells, &commandBuffer, &instances, &stats}) {
+            for (const auto* created : {&inputs, &jobs, &vegetation, &cullFrame, &cells, &commandBuffer, &staged, &instances, &stats}) {
                 if (!*created) {
                     return std::unexpected(created->error());
                 }
             }
             frame.inputs = std::move(*inputs);
             frame.jobs = std::move(*jobs);
+            frame.vegetation = std::move(*vegetation);
             frame.cullFrame = std::move(*cullFrame);
             frame.cells = std::move(*cells);
             frame.commands = std::move(*commandBuffer);
+            frame.staged = std::move(*staged);
             frame.instances = std::move(*instances);
             frame.stats = std::move(*stats);
             frame.sowGroup = device.CreateBindGroup(*renderer->m_sowLayout);
@@ -127,6 +141,7 @@ namespace Flux::Planetology {
             frame.sowGroup->SetBuffer(SowJobsSlot, *frame.jobs);
             frame.sowGroup->SetBuffer(SowTreesSlot, *renderer->m_trees);
             frame.sowGroup->SetBuffer(SowCountsSlot, *renderer->m_treeCounts);
+            frame.sowGroup->SetBuffer(SowVegetationSlot, *frame.vegetation);
             frame.cullGroup->SetBuffer(CullFrameSlot, *frame.cullFrame);
             frame.cullGroup->SetBuffer(CullCellsSlot, *frame.cells);
             frame.cullGroup->SetBuffer(CullTreesSlot, *renderer->m_trees);
@@ -134,6 +149,7 @@ namespace Flux::Planetology {
             frame.cullGroup->SetBuffer(CullInstancesSlot, *frame.instances);
             frame.cullGroup->SetBuffer(CullCommandsSlot, *frame.commands);
             frame.cullGroup->SetBuffer(CullStatsSlot, *frame.stats);
+            frame.cullGroup->SetBuffer(CullStagedSlot, *frame.staged);
         }
         return renderer;
     }
@@ -157,30 +173,42 @@ namespace Flux::Planetology {
     }
 
     void VegetationRenderer::SetPlanet(Entity entity, const Terrain& terrain, const PlanetComponent& planet,
-                                       const VegetationComponent& vegetation, const Math::Quaternionf& rotation,
-                                       std::span<const PlanetRenderer::Plain> plains) {
+                                       const VegetationComponent& vegetation, const VegetationSet& biomes,
+                                       const Math::Quaternionf& rotation, std::span<const PlanetRenderer::Plain> plains) {
         if (m_entity != NullEntity) {
             return;
         }
         const float relief = std::max(planet.relief, 0.0f);
         const float seaAltitude = planet.seaLevel * 0.01f * relief;
-        const float minScale = std::clamp(vegetation.minScale, 0.05f, 20.0f);
-        const float maxScale = std::clamp(vegetation.maxScale, minScale, 20.0f);
-        const float slope = std::clamp(vegetation.maxSlope, 0.0f, 90.0f) * (std::numbers::pi_v<float> / 180.0f);
         TreeJob job{};
         job.options = {0, static_cast<std::uint32_t>(planet.seed) * 0x9e3779b1u, 0, 0};
-        job.placement = {std::clamp(vegetation.density, 0.0f, 1.0f), std::clamp(vegetation.cover, 0.0f, 1.0f), std::cos(slope), 0.0f};
-        job.scale = {minScale, maxScale, 0.0f, 0.0f};
         job.shape = {static_cast<float>(terrain.GetRadius()), relief, planet.snowLevel * 0.01f * relief,
                      seaAltitude + std::max(planet.beachHeight, 0.0f)};
         job.climate = {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                        planet.ocean ? static_cast<float>(terrain.GetRadius()) + seaAltitude : 0.0f};
-        // Autre forme, autres réglages : chaque plaine est à resemer.
-        const std::array<float, 12> signature{job.placement[0], job.placement[1], job.placement[2], job.scale[0], job.scale[1],
-                                              job.shape[0], job.shape[1], job.shape[2], job.shape[3], job.climate[0],
-                                              job.climate[1], job.climate[2] + job.climate[3] + static_cast<float>(planet.seed)};
+        // Autre forme, autres réglages, autres biomes : chaque plaine est à resemer.
+        const std::array<float, 10> signature{job.shape[0], job.shape[1], job.shape[2], job.shape[3], job.climate[0],
+                                              job.climate[1], job.climate[2], job.climate[3], static_cast<float>(planet.seed),
+                                              static_cast<float>(biomes.revision)};
         if (entity != m_sownPlanet || signature != m_signature) {
             Forget();
+            m_sowVegetation = {};
+            const std::size_t count = std::min<std::size_t>(biomes.biomes.size(), VegetationSet::MaxBiomes);
+            for (std::size_t b = 0; b < count; ++b) {
+                m_sowVegetation.biomes[b] = biomes.biomes[b];
+                m_sowVegetation.biomeSpecies[b] = biomes.biomeSpecies[b];
+                m_sowVegetation.biomeShares[b] = biomes.biomeShares[b];
+            }
+            for (std::size_t s = 0; s < std::min<std::size_t>(biomes.species.size(), MaxSpecies); ++s) {
+                const VegetationSet::Species& species = biomes.species[s];
+                m_sowVegetation.species[s] = {species.minScale, species.maxScale,
+                                              std::cos(species.maxSlope * (std::numbers::pi_v<float> / 180.0f)), 0.0f};
+            }
+            m_sowVegetation.counts = {static_cast<std::uint32_t>(count), 0, 0, 0};
+            m_tints = {};
+            for (std::size_t s = 0; s < std::min<std::size_t>(biomes.species.size(), MaxSpecies); ++s) {
+                m_tints[s] = biomes.species[s].tint;
+            }
         }
         m_entity = entity;
         m_sownPlanet = entity;
@@ -233,7 +261,7 @@ namespace Flux::Planetology {
 
     void VegetationRenderer::EndFrame(std::uint32_t frameIndex, const View& view,
                                       const std::array<ShadowCascade, ShadowCascadeCount>& cascades,
-                                      const ShadowReceivers& receivers, const Models& models) {
+                                      const ShadowReceivers& receivers, std::span<const Models> models) {
         Frame& frame = m_frames[frameIndex];
         frame.sown = 0;
         frame.culled = 0;
@@ -285,34 +313,43 @@ namespace Flux::Planetology {
         }
         if (!m_jobs.empty()) {
             frame.jobs->Write(m_jobs.data(), m_jobs.size() * sizeof(TreeJob));
+            frame.vegetation->Write(&m_sowVegetation, sizeof(m_sowVegetation));
         }
         frame.sown = static_cast<std::uint32_t>(m_jobs.size());
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
-        if (m_cells.empty() || !models.near || !models.middle || !models.far) {
+        const auto loaded = [](const Models& m) { return m.near && m.middle && m.far; };
+        if (m_cells.empty() || std::ranges::none_of(models, loaded)) {
             return;
         }
         frame.culled = static_cast<std::uint32_t>(m_cells.size());
         m_stats.plains = frame.culled;
         frame.cells->Write(m_cells.data(), m_cells.size() * sizeof(CullCell));
 
-        // Commandes : une par primitive du modèle de chaque liste, à 0 arbre ; le GPU les remplit.
+        // Commandes : une par primitive du modèle de chaque espèce dans chaque liste, à 0 arbre ; le GPU écrit leur
+        // nombre d'arbres et leur premier (computeFinalize). Une espèce pas encore chargée n'en a pas : ses arbres sont
+        // triés mais pas dessinés.
         CullFrame data{};
         m_commands.clear();
         std::uint32_t firstInstance = 0;
         for (std::uint32_t list = 0; list < ListCount; ++list) {
-            const GpuModel& model = list == Near ? *models.near : list == Far ? *models.far : *models.middle;
             data.firstInstances[list] = firstInstance;
             data.capacities[list] = Capacities[list];
-            for (std::uint32_t p = 0; p < model.primitives.size() && m_commands.size() < MaxCommands; ++p) {
-                const ModelPrimitive& primitive = model.primitives[p];
-                data.commandLists[m_commands.size()] = list;
-                m_lists[list].push_back({&model, p, static_cast<std::uint32_t>(m_commands.size())});
-                m_commands.push_back({primitive.indexCount, 0, primitive.firstIndex,
-                                      static_cast<std::int32_t>(model.resources.firstVertex), firstInstance});
+            for (std::uint32_t species = 0; species < std::min<std::size_t>(models.size(), MaxSpecies); ++species) {
+                if (!loaded(models[species])) {
+                    continue;
+                }
+                const GpuModel& model = list == Near ? *models[species].near : list == Far ? *models[species].far : *models[species].middle;
+                for (std::uint32_t p = 0; p < model.primitives.size() && m_commands.size() < MaxCommands; ++p) {
+                    const ModelPrimitive& primitive = model.primitives[p];
+                    data.commandLists[m_commands.size()] = list * MaxSpecies + species;
+                    m_lists[list].push_back({&model, p, static_cast<std::uint32_t>(m_commands.size())});
+                    m_commands.push_back({primitive.indexCount, 0, primitive.firstIndex,
+                                          static_cast<std::int32_t>(model.resources.firstVertex), 0});
+                }
             }
             firstInstance += Capacities[list];
         }
-        std::array<std::uint32_t, CounterOffset + ListCount> words{};
+        std::array<std::uint32_t, CounterOffset + CounterCount> words{};
         std::memcpy(words.data(), m_commands.data(), m_commands.size() * sizeof(RHI::DrawIndexedCommand));
         frame.commands->Write(words.data(), sizeof(words));
 
@@ -321,9 +358,16 @@ namespace Flux::Planetology {
         data.right = vector(view.right, view.tanY);
         data.up = vector(view.up, 1.0f / std::sqrt(1.0f + view.tanX * view.tanX));
         data.distances = {m_lodDistance, m_farDistance, m_range, 1.0f / std::sqrt(1.0f + view.tanY * view.tanY)};
-        // Sphère du modèle détaillé : les autres ont la même silhouette.
-        const Math::Vector3f half = models.near->bounds.GetSize() * 0.5f;
-        data.sphere = vector(models.near->bounds.GetCenter(), Math::Length(half));
+        // Sphère du modèle détaillé de chaque espèce : les autres ont la même silhouette. Pas chargée : celle d'un
+        // arbre de 30 m, assez pour le tri.
+        for (std::uint32_t species = 0; species < MaxSpecies; ++species) {
+            data.spheres[species] = {0.0f, 15.0f, 0.0f, 16.0f};
+            if (species < models.size() && models[species].near) {
+                const Math::Vector3f half = models[species].near->bounds.GetSize() * 0.5f;
+                data.spheres[species] = vector(models[species].near->bounds.GetCenter(), Math::Length(half));
+            }
+        }
+        data.tints = m_tints;
         data.rotation = {m_rotation.x, m_rotation.y, m_rotation.z, m_rotation.w};
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
             data.cascades[c] = cascades[c].lightViewProjection;
@@ -376,6 +420,11 @@ namespace Flux::Planetology {
         commands.BindPipeline(*m_finalize);
         commands.SetBindGroup(0, *frame.cullGroup);
         commands.Dispatch(1);
+        commands.ComputeBarrier();
+        // Rangement par espèce : un fil par place de liste, ceux au-delà des arbres retenus s'arrêtent tout de suite.
+        commands.BindPipeline(*m_scatter);
+        commands.SetBindGroup(0, *frame.cullGroup);
+        commands.Dispatch((InstanceCount() + 255) / 256);
         commands.ComputeBarrier();
         frame.counted = true;
     }

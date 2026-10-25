@@ -43,10 +43,10 @@ struct PlanetData
     float4 cloudShape;        // x : couverture ; y : opacité ; z : 1 / taille des formations (1/m) ; w : angle de dérive
     float4 cloudColor;        // rgb : couleur linéaire ; w : épaisseur de la couche (m)
     // Forêts (VegetationComponent), vues comme une couleur du sol là où les arbres s'espacent puis s'arrêtent :
-    // x : part couverte ; y : densité (0 : pas de forêts) ; z : cosinus de la pente maximale ; w : distance où la
-    // couleur commence (m), entière au double.
+    // x : nombre de biomes ; y : 1 s'il y a des forêts ; z : cosinus de la pente maximale (celle des espèces qui
+    // montent le plus haut) ; w : distance où la couleur commence (m), entière au double.
     float4 forest;
-    float4 forestColor;       // rgb : couleur linéaire de la cime des arbres
+    Biome biomes[MaxBiomes];  // où vont les forêts, et leur couleur
 };
 
 static const uint MaxPlanets = 4;
@@ -319,7 +319,9 @@ float3 TreeRotate(float4 q, float3 v)
 
 float3 TreePosition(float4 placement, float3 position, out float4 rotation, uint instance)
 {
+    // Rotation rangée sans w (positif, voir computeScatter) : w porte la teinte de l'arbre (TreeTint).
     rotation = treeInstances[instance * 2 + 1];
+    rotation.w = sqrt(saturate(1.0 - dot(rotation.xyz, rotation.xyz)));
     // Phase propre à chaque arbre (sa taille est tirée au hasard) : la forêt ne bat pas en mesure.
     const float phase = frac(placement.w * 97.31) * 6.2831853;
     const float time = frame[0].cameraForward.w;
@@ -339,7 +341,16 @@ struct TreeVertexOutput
     float3 airTransmittance : AIR_TRANSMITTANCE;
     float3 airScattered : AIR_SCATTERED;
     float clouds : CLOUDS; // ombre des nuages (CloudShadow), par sommet comme pour le sol
+    nointerpolation float3 tint : TINT; // de l'arbre (TreeTint)
 };
+
+// Teinte d'un arbre : écart de -0,5 à 0,5 tiré par computeCull (TreeSpecies::tint) ; plus clair et plus jaune d'un
+// côté, plus sombre et plus bleu de l'autre.
+float3 TreeTint(uint instance)
+{
+    const float v = treeInstances[instance * 2 + 1].w;
+    return float3(1.0 + 0.9 * v, 1.0 + 0.6 * v, 1.0 - 0.1 * v);
+}
 
 // Position à l'écran d'un sommet d'arbre : la même suite de calculs pour la pré-passe de profondeur (vertexTreeDepth)
 // et l'éclairage (vertexTree), qui ne garde que les pixels de même profondeur.
@@ -366,6 +377,7 @@ TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstance
     tree.base = output;
     tree.airScattered = AirTo(output.worldPosition, tree.airTransmittance);
     tree.clouds = CloudShadow(output.worldPosition);
+    tree.tint = TreeTint(instance);
     return tree;
 }
 
@@ -441,9 +453,10 @@ struct PlanetVertexOutput
     float3 groundPosition : GROUND;
     // Sol : température (°C) et humidité (0 à 1) sans les taches de moins de 400 m (voir PlanetClimate).
     float2 climate : CLIMATE;
-    // Forêt (0 à 1) selon ses taches et le climat, sans la pente ni l'altitude (vues au pixel). Par sommet : ses
-    // taches font des centaines de mètres.
+    // Forêt (0 à 1) selon ses taches et les biomes, sans la pente ni la neige (vues au pixel), et la couleur de ses
+    // cimes. Par sommet : ses taches font des centaines de mètres.
     float forest : FOREST;
+    float3 forestColor : FOREST_COLOR;
     // L'air entre la caméra et le sommet (voir AirTo) : calculé par sommet, pas par pixel. Il varie doucement avec la
     // distance, et les tuiles gardent à peu près la même taille à l'écran : la différence ne se voit pas, et le pixel
     // n'a plus ses 16 pas de marche dans l'air.
@@ -501,15 +514,35 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
     output.base = ToPlanetSurface(Output(draw, position, lerp(input.normal, input.morphNormal, morph), float2(0.0)));
     output.planetPosition = draws[draw].rim.xyz + position;
     output.groundPosition = draws[draw].ground.xyz + position;
-    const PlanetData planet = frame[0].planets[asuint(draws[draw].rim.w)];
+    const uint planetIndex = asuint(draws[draw].rim.w);
+    const PlanetData planet = frame[0].planets[planetIndex];
     output.climate = PlanetClimate(planet, output.planetPosition);
     output.forest = 0.0;
+    output.forestColor = float3(0.0);
     if (planet.forest.y > 0.0) {
         // Les sommets s'espacent avec la distance (quelques pixels à l'écran) : les taches de 150 m puis de 600 m
         // s'effacent avant de tomber entre deux sommets.
         const float distance = length(output.base.worldPosition);
         const float2 blur = saturate(float2(distance / 3000.0, distance / 12000.0) - 1.0);
-        output.forest = ForestAt(normalize(output.planetPosition) * planet.shape.x, planet.forest.x, blur) * TreeClimate(output.climate);
+        const float noise = ForestNoise(normalize(output.planetPosition) * planet.shape.x, blur);
+        // Comme computeTrees, sans le hasard de chaque arbre : chaque biome selon son poids, sa forêt et sa densité.
+        // Les zones du relief sont dans uv (PlanetTile.slang, Write).
+        const float3 zoneShares = ZoneShares(input.uv);
+        const float altitude = (length(output.planetPosition) - planet.shape.x) / max(planet.shape.y, 1.0);
+        const uint count = min(uint(planet.forest.x), MaxBiomes);
+        float remaining = 1.0;
+        float forest = 0.0;
+        float3 color = float3(0.0);
+        for (uint b = 0; b < count; ++b) {
+            const Biome biome = frame[0].planets[planetIndex].biomes[b];
+            const float weight = BiomeFit(biome, zoneShares, altitude, output.climate) * remaining;
+            remaining -= weight;
+            const float amount = weight * ForestMask(noise, biome.zones.w, blur) * saturate(biome.humidity.z * 1.5);
+            forest += amount;
+            color += biome.color.rgb * amount;
+        }
+        output.forest = forest;
+        output.forestColor = color / max(forest, 1.0e-6);
     }
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.clouds = CloudShadow(output.base.worldPosition);
@@ -1200,7 +1233,8 @@ SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
 {
     const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition + input.airTransmittance
                              + input.airScattered, float3(1.0))
-                       + input.climate.x + input.climate.y + input.forest + input.clouds + float(input.base.draw);
+                       + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0)) + input.clouds
+                       + float(input.base.draw);
     SceneOutput output;
     output.color = float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0);
     output.motion = float2(0.0);
@@ -1354,10 +1388,10 @@ float4 PlanetColor(PlanetVertexOutput input)
     // s'arrêtent. Mêmes limites que computeTrees : pente, plage, neige, roche.
     if (planet.forest.y > 0.0 && input.forest > 0.0) {
         const float treeLine = planet.shape.z - 0.1 * relief;
-        const float canopy = input.forest * saturate(planet.forest.y * 1.5) * smoothstep(planet.forest.w, planet.forest.w * 2.0, distance)
+        const float canopy = input.forest * smoothstep(planet.forest.w, planet.forest.w * 2.0, distance)
                            * smoothstep(planet.forest.z - 0.03, planet.forest.z + 0.03, flatness)
                            * smoothstep(treeLine, treeLine - 0.02 * relief, altitude) * (1.0 - beach) * (1.0 - snow) * (1.0 - rock);
-        surface.diffuse = lerp(surface.diffuse, planet.forestColor.rgb, canopy);
+        surface.diffuse = lerp(surface.diffuse, input.forestColor, canopy);
         surface.roughness = lerp(surface.roughness, 0.8, canopy);
     }
     surface.normal = normal;
@@ -1536,7 +1570,7 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true);
+    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true, input.tint);
     output.motion = Motion(input.base);
     return output;
 }
@@ -1546,22 +1580,24 @@ SceneOutput fragmentTree(TreeVertexOutput input)
 SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
     SceneOutput output;
-    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds);
+    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds, false,
+                             input.tint);
     output.motion = Motion(input.base);
     return output;
 }
 
 // alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
 // airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
-// calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage).
+// calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage). tint :
+// multiplie la couleur (TreeTint).
 [ForceInline]
 float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airGiven = false,
                  float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0,
-                 bool foliage = false)
+                 bool foliage = false, float3 tint = float3(1.0))
 {
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
-    float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint;
+    float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
     if (alphaTest && base.a < material.alphaCutoff) {
         discard;
     }

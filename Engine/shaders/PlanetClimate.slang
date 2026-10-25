@@ -1,6 +1,6 @@
-// Climat et forêts des planètes, partagés par le sol (shaders/Mesh.slang, fragmentPlanet) et les arbres
-// (shaders/PlanetTile.slang, computeTrees) : les arbres poussent là où le sol est de l'herbe, et au-delà des arbres
-// le sol prend la couleur des forêts aux mêmes endroits.
+// Climat, forêts et biomes des planètes, partagés par le sol (shaders/Mesh.slang, fragmentPlanet) et les arbres
+// (shaders/PlanetTile.slang, computeTrees) : les arbres poussent selon les biomes, et au-delà des arbres le sol prend
+// la couleur des forêts aux mêmes endroits.
 
 // Bruit de valeur 3D (de 0 à 1), lisse : hachage des coins entiers, interpolés.
 float PlanetHash(float3 p)
@@ -38,19 +38,62 @@ float2 ClimateAt(float radius, float relief, float3 climate, float waterRadius, 
 }
 
 // Forêts : taches de 150 m à 1 km sur la sphère du rayon de la planète (flatPoint, m, repère de la planète), que le
-// relief ne déplace pas. cover : part du sol couverte. 1 en forêt, 0 ailleurs. blur (0 à 1) : vu de loin, les taches
+// relief ne déplace pas. ForestNoise ne dépend que du point ; ForestMask en tire la forêt (1) ou non (0) pour une part
+// couverte cover, ce qui permet une couverture par biome sans refaire le bruit. blur (0 à 1) : vu de loin, les taches
 // plus petites que l'écart des points calculés (les sommets) s'effacent vers leur moyenne, au lieu de scintiller.
-float ForestAt(float3 flatPoint, float cover, float2 blur = float2(0.0))
+float ForestNoise(float3 flatPoint, float2 blur = float2(0.0))
 {
-    const float noise = 0.5 + (PlanetNoise(flatPoint * (1.0 / 600.0)) - 0.5) * 0.65 * (1.0 - blur.y)
-                      + (PlanetNoise(flatPoint * (1.0 / 150.0) + 7.0) - 0.5) * 0.35 * (1.0 - blur.x);
+    return 0.5 + (PlanetNoise(flatPoint * (1.0 / 600.0)) - 0.5) * 0.65 * (1.0 - blur.y)
+         + (PlanetNoise(flatPoint * (1.0 / 150.0) + 7.0) - 0.5) * 0.35 * (1.0 - blur.x);
+}
+
+float ForestMask(float noise, float cover, float2 blur = float2(0.0))
+{
     const float threshold = 0.8 - 0.6 * cover;
     const float width = 0.03 + 0.3 * blur.y;
     return smoothstep(threshold - width, threshold + width, noise);
 }
 
-// Climat où poussent les arbres (température °C, humidité) : celui de l'herbe, sans gel.
-float TreeClimate(float2 climate)
+// --- Biomes (Planetology::VegetationLibrary) ---
+
+static const uint MaxBiomes = 8; // VegetationLibrary::MaxBiomes
+
+// Doit correspondre à Planetology::BiomeGpu : où pousse un biome, et ses forêts vues de loin.
+struct Biome
 {
-    return smoothstep(0.38, 0.55, climate.y) * smoothstep(0.0, 4.0, climate.x);
+    float4 zones;    // x, y, z : part prise dans les plaines, les collines, les montagnes ; w : part couverte de forêts
+    float4 ranges;   // x, y : altitude (fraction du relief, au-dessus du niveau zéro) ; z, w : température (°C)
+    float4 humidity; // x, y : humidité ; z : densité des forêts ; w : taille des arbres (x celle de l'espèce)
+    float4 color;    // rgb : couleur linéaire des cimes (moyenne de ses espèces)
+};
+
+// 1 entre low et high, 0 au-delà de soft de part et d'autre.
+float BiomeBand(float x, float low, float high, float soft)
+{
+    return smoothstep(low - soft, low + soft, x) * (1.0 - smoothstep(high - soft, high + soft, x));
+}
+
+// Part du point dans les plaines, les collines et les montagnes (zones : Terrain::Zones, collines et montagnes).
+float3 ZoneShares(float2 zones)
+{
+    return float3((1.0 - zones.x) * (1.0 - zones.y), zones.x * (1.0 - zones.y), zones.y);
+}
+
+// Convenance du biome au point (0 à 1) : zoneShares (ZoneShares), altitude (fraction du relief), climat (température,
+// humidité, voir ClimateAt). Les biomes passent dans l'ordre de la planète : chacun prend sa convenance de ce que les
+// précédents ont laissé (le premier qui convient prend tout), les plus particuliers d'abord. Là où aucun ne convient,
+// rien ne pousse.
+float BiomeFit(Biome biome, float3 zoneShares, float altitude, float2 climate)
+{
+    return saturate(dot(biome.zones.xyz, zoneShares)) * BiomeBand(altitude, biome.ranges.x, biome.ranges.y, 0.02)
+         * BiomeBand(climate.x, biome.ranges.z, biome.ranges.w, 2.0) * BiomeBand(climate.y, biome.humidity.x, biome.humidity.y, 0.05);
+}
+
+// Pour les arbres : les conditions décalées au hasard d'un arbre à l'autre (jitter de 0 à 1), les frontières se mêlent
+// au lieu de suivre une ligne.
+void JitterBiomeConditions(float jitter, inout float altitude, inout float2 climate)
+{
+    const float shift = (jitter - 0.5) * 2.0;
+    altitude += shift * 0.02;
+    climate += shift * float2(2.0, 0.05);
 }

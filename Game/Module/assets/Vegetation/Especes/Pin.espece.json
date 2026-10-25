@@ -1,0 +1,19 @@
+{
+  "variants": [
+    {
+      "model": "Modeles/Coniferes/Pin-1.glb",
+      "lodModel": "Modeles/Coniferes/Pin-1-lod1.glb",
+      "farModel": "Modeles/Coniferes/Pin-1-loin.glb"
+    },
+    {
+      "model": "Modeles/Coniferes/Pin-2.glb",
+      "lodModel": "Modeles/Coniferes/Pin-2-lod1.glb",
+      "farModel": "Modeles/Coniferes/Pin-2-loin.glb"
+    }
+  ],
+  "minScale": 0.7,
+  "maxScale": 1.3,
+  "maxSlope": 30,
+  "tint": 0.15,
+  "canopyColor": [0.044, 0.05, 0.013]
+}

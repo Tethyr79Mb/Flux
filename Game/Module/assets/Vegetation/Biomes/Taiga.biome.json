@@ -1,0 +1,10 @@
+{
+  "zones": {"plains": 1, "hills": 1, "mountains": 1},
+  "temperature": [-10, 3],
+  "humidity": [0.35, 2],
+  "cover": 0.7,
+  "density": 0.5,
+  "species": [
+    {"species": "Vegetation/Especes/Epicea.espece.json", "share": 100}
+  ]
+}

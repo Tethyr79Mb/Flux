@@ -133,15 +133,19 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Arbres en mesh shaders (Bruno, 2026-10-22, à voir après la mesure du sol) : modèles découpés en paquets à l'import (meshoptimizer), paquets cachés écartés par le GPU et détail choisi paquet par paquet (façon Nanite) au lieu des 3 niveaux fixes : plus de détail de près pour le même temps GPU, transitions moins visibles.
 - ⬜ Ray tracing pour l'éclairage et les reflets (Bruno, 2026-10-22) : beaucoup plus tard, une fois le moteur abouti et stable ; facultatif et détecté au démarrage comme les mesh shaders (la configuration minimum n'en a pas).
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents, vraies montagnes : sommets placés un par un, aux versants de pentes différentes, creusés de ravines en arbre (bruit d'érosion), largeur des montagnes en mètres quel que soit le rayon (réglage « Largeur des montagnes »). À améliorer : la raideur dépend du rapport relief / largeur (trop de relief = aiguilles) ; pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire) ; contreforts encore réguliers, pas de rochers posés sur les versants.
-- 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : forêts sur l'herbe des plaines, 3 niveaux de détail
-  (détaillé, simplifié qui fait aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des
-  forêts sur le sol (visible de haut et de l'espace). Conifères générés (épicéa par défaut, sapin et pin, deux
-  variantes chacun, `Modeles/Coniferes`) en plus du feuillu ; plan de la forêt façon Star Citizen en 4 étapes
-  (`/mnt/project-files/Plans/arbres-realistes.md`). À améliorer : une seule espèce à la fois par planète (couleur des
-  forêts fixe, prise de l'imposteur de l'épicéa) ; imposteurs en 3 quads croisés (plats vus d'en haut) ; passage d'un
-  niveau de détail à l'autre sans fondu ;
-  arbres hors du champ sans ombre ; pas de collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé
-  sur le relief fin peut flotter ou s'enfoncer un peu sur le sol plus grossier.
+- 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
+  aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des forêts sur le sol (visible de
+  haut et de l'espace). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
+  du feuillu ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
+  Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud) :
+  une planète liste jusqu'à 8 biomes, chacun avec ses conditions (plaines, collines, montagnes et piémonts, altitude,
+  température, humidité), ses forêts et jusqu'à 4 espèces avec leur part ; le premier qui convient prend le sol.
+  Livrés : marais, désert, montagne (épicéas et sapins), taïga, pinède, plaine (feuillus). Teinte propre à chaque
+  arbre, couleur des forêts lointaines selon le biome. À améliorer : pas encore de panneau pour les biomes et les
+  espèces (étape 2b, éditeur) ; 8 variantes d'arbres au plus par planète ; imposteurs en 3 quads croisés (plats vus
+  d'en haut) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas de
+  collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
+  s'enfoncer un peu sur le sol plus grossier.
 - ⬜ Canyons (demande de Bruno du 2026-10-21) : gorges creusées dans le relief, parois raides en strates, fond plat ou
   sinueux, sur les planètes sèches comme le long des rivières. À faire dans `Terrain::GetHeight` et `Height`
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.

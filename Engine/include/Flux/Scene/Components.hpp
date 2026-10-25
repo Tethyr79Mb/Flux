@@ -264,15 +264,17 @@ namespace Flux {
     // la couleur des forêts sur le sol. Pas de collision.
     struct VegetationComponent
     {
-        // Épicéa par défaut (Modeles/Coniferes : aussi sapin et pin, deux variantes chacun ; feuillu dans Modeles/Arbre).
-        std::string model = "Modeles/Coniferes/Epicea-1.glb";
-        std::string lodModel = "Modeles/Coniferes/Epicea-1-lod1.glb";
-        std::string farModel = "Modeles/Coniferes/Epicea-1-loin.glb";
-        float density = 0.4f;     // part des places possibles occupée dans une forêt (une tous les 5,7 m au plus)
-        float cover = 0.5f;       // part des plaines couverte de forêts
-        float maxSlope = 25.0f;   // degrés : au-delà, pas d'arbre
-        float minScale = 0.7f;    // taille de chaque arbre, tirée entre les deux (x le modèle)
-        float maxScale = 1.3f;
+        // Biomes de la planète (fichiers .biome.json, 8 au plus) : chacun dit où il pousse (zone du relief, altitude,
+        // climat), ses forêts et ses espèces d'arbres (.espece.json). Dans l'ordre : chacun prend ce que les précédents
+        // laissent là où il convient, les plus particuliers d'abord. Vide : case inutilisée.
+        std::string biome1 = "Vegetation/Biomes/Marais.biome.json";
+        std::string biome2 = "Vegetation/Biomes/Desert.biome.json";
+        std::string biome3 = "Vegetation/Biomes/Montagne.biome.json";
+        std::string biome4 = "Vegetation/Biomes/Taiga.biome.json";
+        std::string biome5 = "Vegetation/Biomes/Pinede.biome.json";
+        std::string biome6 = "Vegetation/Biomes/Plaine.biome.json";
+        std::string biome7;
+        std::string biome8;
         float lodDistance = 60.0f; // m
         float farDistance = 300.0f;
         float range = 3000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)

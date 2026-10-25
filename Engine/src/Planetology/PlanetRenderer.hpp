@@ -4,6 +4,7 @@
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
+#include "Planetology/VegetationLibrary.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
@@ -36,12 +37,12 @@ namespace Flux::Planetology {
         std::array<float, 4> cloudRotation{0.0f, 0.0f, 0.0f, 1.0f};
         std::array<float, 4> cloudShape{};
         std::array<float, 4> cloudColor{};
-        // Forêts (VegetationComponent) : part couverte, densité (0 : aucune), cosinus de la pente maximale, distance
-        // où leur couleur commence sur le sol ; couleur linéaire de la cime.
+        // Forêts (VegetationComponent) : nombre de biomes, 1 s'il y a des forêts, cosinus de la pente maximale, distance
+        // où leur couleur commence sur le sol ; les biomes (VegetationLibrary).
         std::array<float, 4> forest{};
-        std::array<float, 4> forestColor{};
+        std::array<BiomeGpu, VegetationSet::MaxBiomes> biomes{};
     };
-    static_assert(sizeof(PlanetGpu) == 256);
+    static_assert(sizeof(PlanetGpu) == 240 + 64 * VegetationSet::MaxBiomes);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Planetology/Planet.hpp). Les tuiles manquantes sont calculées

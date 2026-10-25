@@ -71,6 +71,7 @@ struct Constants
 
 groupshared uint permutation[512];
 groupshared float wideHeights[Wide * Wide];
+groupshared uint wideZones[Wide * Wide]; // Terrain::Zones, deux demi-floats (f32tof16)
 groupshared float coarseHeights[Coarse * Coarse];
 groupshared float lowestShared[GroupSize];
 groupshared float radiusShared[GroupSize];
@@ -84,6 +85,7 @@ static const float DetailHills = 0.03;
 static const float DetailMountains = 0.065;
 static const float ChainStart = 0.75;
 static const float ChainEnd = 0.95;
+static const float Foothills = 0.2;
 static const float ChainBase = 0.2;
 static const float PeakHeight = 0.85;
 static const uint PeakChance = 218;
@@ -397,9 +399,10 @@ Precise3 Warp(Precise3 delta, Precise3 direction, uint layer, Precise amount)
     return warp;
 }
 
-// Terrain::GetHeight.
-float Height(Precise3 delta, uint octaves)
+// Terrain::GetHeight ; zones : Terrain::Zones (collines, montagnes et piémonts).
+float Height(Precise3 delta, uint octaves, out float2 zones)
 {
+    zones = float2(0.0);
     const float relief = tile.axisS.w;
     if (relief <= 0.0) { return 0.0; }
     const float toSlope = relief / tile.axisN.w;
@@ -412,6 +415,7 @@ float Height(Precise3 delta, uint octaves)
     const float hillZone = smoothstep(0.05, 0.4, Fbm(large, direction, 2, octaves, 0.0));
     const float chains = 1.0 - abs(Fbm(large, direction, 1, octaves, 0.0));
     const float mountainZone = smoothstep(ChainStart, ChainEnd, chains) * smoothstep(0.0, 0.2, continents);
+    zones = float2(hillZone, smoothstep(ChainStart - Foothills, ChainEnd, chains) * smoothstep(0.0, 0.2, continents));
     float peaks = 0.0;
     float gullies = 0.0;
     if (mountainZone > 0.0) {
@@ -425,6 +429,12 @@ float Height(Precise3 delta, uint octaves)
     const float height = -0.4 + 0.45 * land + 0.15 * continents + MountainWeight * mountainZone * (ChainBase + PeakHeight * peaks)
                        + gullies + HillWeight * hillZone * hills + roughness * detail;
     return relief * clamp(height, -1.0, 1.0);
+}
+
+float Height(Precise3 delta, uint octaves)
+{
+    float2 zones;
+    return Height(delta, octaves, zones);
 }
 
 // Écart δ entre la direction du point (colonne ci, ligne cj de inputs.columns) et celle du centre, sans soustraire
@@ -470,6 +480,12 @@ struct TileVertex
 };
 
 // Sommet (i, j) de la tuile (0 à TileQuads) et son glissement, comme BuildTile.
+float2 WideZones(uint i, uint j)
+{
+    const uint packed = wideZones[(j + 1) * Wide + (i + 1)];
+    return float2(f16tof32(packed & 0xFFFFu), f16tof32(packed >> 16));
+}
+
 TileVertex BuildVertex(uint i, uint j)
 {
     TileVertex vertex;
@@ -501,7 +517,8 @@ TileVertex BuildVertex(uint i, uint j)
     return vertex;
 }
 
-void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal)
+// zones : Terrain::Zones, dans les coordonnées de texture (lues par vertexPlanet pour les biomes).
+void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones)
 {
     index += constants.firstVertex;
     const uint v = index * 8;
@@ -511,8 +528,8 @@ void Write(uint index, float3 position, float3 normal, float3 morphOffset, float
     vertices[v + 3] = normal.x;
     vertices[v + 4] = normal.y;
     vertices[v + 5] = normal.z;
-    vertices[v + 6] = 0.0;
-    vertices[v + 7] = 0.0;
+    vertices[v + 6] = zones.x;
+    vertices[v + 7] = zones.y;
     const uint m = index * 6;
     morph[m + 0] = morphOffset.x;
     morph[m + 1] = morphOffset.y;
@@ -580,7 +597,9 @@ void computeMain(uint thread : SV_GroupIndex)
         if (p < Wide * Wide) {
             const uint i = p % Wide;
             const uint j = p / Wide;
-            wideHeights[p] = Height(PreciseDelta(i + 1, j + 1), tile.options.x);
+            float2 zones;
+            wideHeights[p] = Height(PreciseDelta(i + 1, j + 1), tile.options.x, zones);
+            wideZones[p] = f32tof16(zones.x) | (f32tof16(zones.y) << 16);
         } else {
             const uint c = p - Wide * Wide;
             const uint ci = c % Coarse;
@@ -595,7 +614,7 @@ void computeMain(uint thread : SV_GroupIndex)
     float radius = 0.0;
     for (uint v = thread; v < TileSide * TileSide; v += GroupSize) {
         const TileVertex vertex = BuildVertex(v % TileSide, v / TileSide);
-        Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal);
+        Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(v % TileSide, v / TileSide));
         const float3 target = vertex.position + vertex.morphOffset;
         AddToMeshlets(v % TileSide, v / TileSide, vertex.position);
         AddToMeshlets(v % TileSide, v / TileSide, target);
@@ -615,7 +634,7 @@ void computeMain(uint thread : SV_GroupIndex)
         const TileVertex vertex = BuildVertex(at.x, at.y);
         const float3 direction = tile.center.xyz + Delta(at.x + 2, at.y + 2);
         const float3 position = vertex.position - direction * tile.axisT.w;
-        Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal);
+        Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(at.x, at.y));
         radius = max(radius, length(position + vertex.morphOffset));
         AddToMeshlets(at.x, at.y, position);
         AddToMeshlets(at.x, at.y, position + vertex.morphOffset);
@@ -658,17 +677,28 @@ struct TreeJob
 {
     uint4 cell;      // face, niveau, x, y de la tuile (le hasard en dépend : mêmes arbres à chaque fois)
     uint4 options;   // x : case de la plaine (premier arbre : x * TreeGrid²) ; y : graine
-    float4 placement; // x : densité ; y : part couverte de forêts ; z : cosinus de la pente maximale
-    float4 scale;    // x, y : tailles extrêmes
     float4 shape;    // x : rayon ; y : relief ; z : altitude de la neige ; w : haut de la plage (m)
     float4 climate;  // xyz : températures à l'équateur, aux pôles, humidité ; w : rayon de l'océan (0 : aucun)
 };
 
+static const uint MaxSpecies = 8; // VegetationLibrary::MaxSpecies
+
+// Doit correspondre à VegetationRenderer::SowVegetation : biomes et espèces de la planète.
+struct SowVegetation
+{
+    Biome biomes[MaxBiomes];
+    uint4 biomeSpecies[MaxBiomes]; // espèces de chaque biome, 4 au plus : première variante (dans species) | nombre << 8
+    float4 biomeShares[MaxBiomes]; // leurs parts cumulées (la dernière à 1)
+    float4 species[MaxSpecies];    // x, y : tailles extrêmes (x le modèle) ; z : cosinus de la pente maximale
+    uint4 counts;                  // x : biomes
+};
+
 [[vk::binding(2, 0)]] StructuredBuffer<TreeJob> treeJobs;
 // Deux float4 par arbre : position relative au point de référence de la tuile, taille ; direction du haut (repère de la
-// planète), angle autour du haut (radians).
+// planète), espèce x 8 + angle autour du haut (radians, moins de 8).
 [[vk::binding(3, 0)]] RWStructuredBuffer<float4> trees;
 [[vk::binding(4, 0)]] RWStructuredBuffer<uint> treeCounts; // un par case
+[[vk::binding(5, 0)]] StructuredBuffer<SowVegetation> sowVegetation;
 
 groupshared uint treeCount;
 
@@ -735,38 +765,72 @@ void computeTrees(uint thread : SV_GroupIndex)
         const float u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
         const float v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
         const float keep = TreeRandom(state);
+        const float pick = TreeRandom(state);
+        const float jitter = TreeRandom(state);
         const float3 delta = TreeDelta(u, v);
-        // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas). Quelques arbres isolés
-        // ailleurs. Le tri se fait avant le relief, cher.
-        const float forest = max(ForestAt((tile.center.xyz + delta) * radius, job.placement.y), 0.03);
-        if (keep >= job.placement.x * forest) {
+        // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas), plus ou moins couvrantes
+        // selon le biome. Quelques arbres isolés ailleurs. Le tri se fait avant le relief, cher, sur la forêt la plus
+        // dense des biomes.
+        const float noise = ForestNoise((tile.center.xyz + delta) * radius);
+        const uint biomeCount = min(sowVegetation[0].counts.x, MaxBiomes);
+        float densest = 0.0;
+        for (uint b = 0; b < biomeCount; ++b) {
+            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w), 0.03));
+        }
+        if (keep >= densest) {
             continue;
         }
-        const float height = Height(Precise3(delta), octaves);
+        float2 zones;
+        const float height = Height(Precise3(delta), octaves, zones);
         // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
         if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
             continue;
         }
         const float3 position = Local(delta, height);
         const float3 local = tile.center.xyz * tile.axisN.w + position;
-        // Climat comme le sol (fragmentPlanet) : il faut de l'herbe, pas de gel.
-        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
-        if (keep >= job.placement.x * forest * TreeClimate(climate)) {
+        // Biome : tiré au hasard selon son poids au point (BiomeFit, dans l'ordre de la planète), sa densité et sa forêt
+        // (le même nombre décide s'il y a un arbre), puis l'espèce selon les parts du biome.
+        float altitude = height / relief;
+        float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
+        JitterBiomeConditions(jitter, altitude, climate);
+        const float3 zoneShares = ZoneShares(zones);
+        uint biome = MaxBiomes;
+        float remaining = 1.0;
+        float total = 0.0;
+        for (uint b = 0; b < biomeCount; ++b) {
+            const Biome candidate = sowVegetation[0].biomes[b];
+            const float weight = BiomeFit(candidate, zoneShares, altitude, climate) * remaining;
+            remaining -= weight;
+            total += weight * candidate.humidity.z * max(ForestMask(noise, candidate.zones.w), 0.03);
+            if (biome == MaxBiomes && keep < total) {
+                biome = b;
+            }
+        }
+        if (biome == MaxBiomes) {
             continue;
         }
+        const float4 shares = sowVegetation[0].biomeShares[biome];
+        const uint choice = pick < shares.x ? 0 : pick < shares.y ? 1 : pick < shares.z ? 2 : 3;
+        // Puis la variante, avec ce qui reste du même nombre dans la part de l'espèce.
+        const float low = choice == 0 ? 0.0 : shares[choice - 1];
+        const uint entry = sowVegetation[0].biomeSpecies[biome][choice];
+        const uint variants = max(entry >> 8, 1u);
+        const uint variant = min(uint((pick - low) / max(shares[choice] - low, 1.0e-6) * float(variants)), variants - 1);
+        const uint species = min((entry & 255u) + variant, MaxSpecies - 1);
+        const float4 traits = sowVegetation[0].species[species];
         // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
         const float e = 0.25;
         const float3 du = Local(TreeDelta(u + e, v), Height(Precise3(TreeDelta(u + e, v)), octaves)) - position;
         const float3 dv = Local(TreeDelta(u, v + e), Height(Precise3(TreeDelta(u, v + e)), octaves)) - position;
         const float3 up = normalize(local);
-        if (abs(dot(normalize(cross(du, dv)), up)) < job.placement.z) {
+        if (abs(dot(normalize(cross(du, dv)), up)) < traits.z) {
             continue;
         }
         uint slot;
         InterlockedAdd(treeCount, 1u, slot);
-        const float scale = lerp(job.scale.x, job.scale.y, TreeRandom(state));
+        const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * sowVegetation[0].biomes[biome].humidity.w;
         trees[(first + slot) * 2 + 0] = float4(position, scale);
-        trees[(first + slot) * 2 + 1] = float4(up, TreeRandom(state) * 6.2831853);
+        trees[(first + slot) * 2 + 1] = float4(up, float(species) * 8.0 + TreeRandom(state) * 6.2831853);
     }
     GroupMemoryBarrierWithGroupSync();
     if (thread == 0) {

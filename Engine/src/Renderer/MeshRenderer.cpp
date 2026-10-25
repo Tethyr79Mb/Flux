@@ -60,7 +60,6 @@ namespace Flux {
         // Cime des forêts vue de loin : couleur moyenne (linéaire) de l'imposteur de l'épicéa par défaut
         // (Modeles/Coniferes/Epicea-1-loin.glb), assombrie par l'ombre entre les arbres (x 0,85). À tirer des modèles
         // de la végétation quand il y aura plusieurs espèces.
-        constexpr Math::LinearColor ForestColor{0.020f, 0.043f, 0.011f, 1.0f};
 
         // Doit correspondre à FrameData dans shaders/Mesh.slang.
         struct FrameData
@@ -666,7 +665,8 @@ namespace Flux {
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
                 AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity),
-                          scene.TryGet<CloudsComponent>(transform.entity), scene.TryGet<VegetationComponent>(transform.entity), view);
+                          scene.TryGet<CloudsComponent>(transform.entity), scene.TryGet<VegetationComponent>(transform.entity), view,
+                          assetsDirectory);
             }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
@@ -838,9 +838,13 @@ namespace Flux {
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
     void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
-                                 const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view) {
+                                 const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view,
+                                 const std::filesystem::path& assetsDirectory) {
         m_planetTiles.clear();
         m_plains.clear();
+        static const Planetology::VegetationSet NoBiomes;
+        const Planetology::VegetationSet& biomes = vegetation && !assetsDirectory.empty()
+                                                       ? m_vegetationLibrary.Get(assetsDirectory, *vegetation) : NoBiomes;
         // Arbres sur la première planète qui en a. Le niveau des plaines vient de la forme connue de la planète : à la
         // première image (ou quand elle change), pas d'arbres avant la suivante.
         const Planetology::Terrain* known = m_planets->FindTerrain(transform.entity);
@@ -851,7 +855,7 @@ namespace Flux {
                            trees ? static_cast<double>(vegetation->range) : 0.0);
         if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
             m_vegetationComponent = vegetation;
-            m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, transform.rotation, m_plains);
+            m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains);
         }
         const Math::Matrix4f rotation = transform.rotation.ToMatrix();
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
@@ -895,12 +899,17 @@ namespace Flux {
                 m_planetData[index].rim = {rim->color.r * intensity, rim->color.g * intensity, rim->color.b * intensity,
                                            std::max(rim->sharpness, 0.5f)};
             }
-            if (vegetation && vegetation->density > 0.0f) {
-                // Les forêts sur le sol à partir des imposteurs, où les arbres s'espacent (voir computeCull).
-                const float slope = std::clamp(vegetation->maxSlope, 0.0f, 90.0f) * (std::numbers::pi_v<float> / 180.0f);
-                m_planetData[index].forest = {std::clamp(vegetation->cover, 0.0f, 1.0f), std::clamp(vegetation->density, 0.0f, 1.0f),
-                                              std::cos(slope), std::max(vegetation->farDistance, 1.0f)};
-                m_planetData[index].forestColor = {ForestColor.r, ForestColor.g, ForestColor.b, 0.0f};
+            if (vegetation && !biomes.biomes.empty()) {
+                // Les forêts sur le sol à partir des imposteurs, où les arbres s'espacent (voir computeCull), selon les
+                // biomes ; elles s'arrêtent sur les pentes trop raides pour toutes les espèces.
+                float slope = 0.0f;
+                for (const Planetology::VegetationSet::Species& species : biomes.species) {
+                    slope = std::max(slope, species.maxSlope);
+                }
+                const auto count = std::min<std::size_t>(biomes.biomes.size(), Planetology::VegetationSet::MaxBiomes);
+                m_planetData[index].forest = {static_cast<float>(count), 1.0f, std::cos(slope * (std::numbers::pi_v<float> / 180.0f)),
+                                              std::max(vegetation->farDistance, 1.0f)};
+                std::copy_n(biomes.biomes.begin(), count, m_planetData[index].biomes.begin());
             }
             if (clouds) {
                 AddClouds(m_planetData[index], transform, planet, *clouds);
@@ -941,21 +950,25 @@ namespace Flux {
     // plaines à semer et à trier par le GPU.
     void MeshRenderer::PrepareVegetation(const Camera& camera, float aspect, const std::filesystem::path& assetsDirectory,
                                          std::uint32_t frameIndex) {
-        Planetology::VegetationRenderer::Models models;
+        // Les trois modèles de chaque espèce des biomes de la planète.
+        m_treeModels.clear();
         if (m_vegetationComponent && !assetsDirectory.empty()) {
-            const VegetationComponent& vegetation = *m_vegetationComponent;
-            models.near = vegetation.model.empty() ? nullptr : m_models->Find(assetsDirectory, vegetation.model);
-            models.middle = vegetation.lodModel.empty() ? models.near : m_models->Find(assetsDirectory, vegetation.lodModel);
-            models.far = vegetation.farModel.empty() ? models.middle : m_models->Find(assetsDirectory, vegetation.farModel);
-            // Modèles animés (os) : pas lus par vertexTree.
-            for (const GpuModel* model : {models.near, models.middle, models.far}) {
-                if (model && model->IsAnimated()) {
-                    models = {};
+            for (const Planetology::VegetationSet::Species& species : m_vegetationLibrary.Get(assetsDirectory, *m_vegetationComponent).species) {
+                Planetology::VegetationRenderer::Models models;
+                models.near = m_models->Find(assetsDirectory, species.models.model);
+                models.middle = m_models->Find(assetsDirectory, species.models.lodModel);
+                models.far = m_models->Find(assetsDirectory, species.models.farModel);
+                // Modèles animés (os) : pas lus par vertexTree.
+                for (const GpuModel* model : {models.near, models.middle, models.far}) {
+                    if (model && model->IsAnimated()) {
+                        models = {};
+                    }
                 }
+                m_treeModels.push_back(models);
             }
         }
         const float tanY = std::tan(0.5f * camera.verticalFov);
-        m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, m_shadowReceivers, models);
+        m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, m_shadowReceivers, m_treeModels);
         // surface.zw : éclairage du feuillage (ShadeFoliage), du composant.
         const VegetationComponent leaves = m_vegetationComponent ? *m_vegetationComponent : VegetationComponent{};
         m_treeDraw = static_cast<std::uint32_t>(m_drawData.size());

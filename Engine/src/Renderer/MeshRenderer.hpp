@@ -324,7 +324,8 @@ namespace Flux {
         const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
         void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
-                       const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view);
+                       const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view,
+                       const std::filesystem::path& assetsDirectory);
         void PrepareVegetation(const Camera& camera, float aspect, const std::filesystem::path& assetsDirectory,
                                std::uint32_t frameIndex);
         // Les nuages d'une planète (ses PlanetGpu::cloud*), dans FrameData.
@@ -367,6 +368,8 @@ namespace Flux {
         std::unique_ptr<ModelCache> m_models;
         std::unique_ptr<Planetology::PlanetRenderer> m_planets;
         std::unique_ptr<Planetology::VegetationRenderer> m_vegetation;
+        Planetology::VegetationLibrary m_vegetationLibrary; // biomes des planètes
+        std::vector<Planetology::VegetationRenderer::Models> m_treeModels; // de chaque espèce, à cette image
         std::unique_ptr<OcclusionCulling> m_occlusion;
         bool m_occlusionActive = false; // les entités de la passe principale de l'image sont testées
         Pipelines m_static;
