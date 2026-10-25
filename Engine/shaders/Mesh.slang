@@ -1726,7 +1726,9 @@ CloudVertexOutput vertexClouds(uint vertexId : SV_VulkanVertexID)
 {
     const float2 clip = float2((vertexId << 1) & 2, vertexId & 2) * 2.0 - 1.0;
     // Le triangle est placé à la profondeur du nuage le plus proche possible : la distance jusqu'à la couche, ramenée
-    // au plan de vue par le cosinus du coin de l'écran (le pixel le plus de biais). Le fragment n'écrit jamais plus
+    // au plan de vue par le cosinus du coin de l'écran le plus de biais (rayon le plus long des quatre coins, décalage
+    // de l'anticrénelage compris). Trop loin, le relief plus proche que ce plan cacherait les nuages devant lui (un
+    // disque sur la planète, qui grandissait en tournant la caméra). Le fragment n'écrit jamais plus
     // près (SV_DepthLessEqual) : le GPU peut écarter d'avance les pixels cachés par le relief ou un vaisseau plus
     // proche, sans lancer le shader. Dans la couche : distance nulle, rien n'est écarté.
     const FrameData f = frame[0];
@@ -1740,7 +1742,13 @@ CloudVertexOutput vertexClouds(uint vertexId : SV_VulkanVertexID)
         const float top = planet.clouds.w + max(planet.cloudColor.w, 1.0);
         nearest = min(nearest, max(max(distance - top, planet.clouds.w - distance), 0.0));
     }
-    const float viewDepth = nearest / length(f.cameraForward.xyz + abs(f.cameraRight.xyz) + abs(f.cameraUp.xyz));
+    const float2 jitter = float2(f.cameraRight.w, f.cameraUp.w);
+    float corner = 0.0;
+    for (uint c = 0; c < 4; ++c) {
+        const float2 at = float2(c & 1u ? 1.0 : -1.0, c & 2u ? 1.0 : -1.0) - jitter;
+        corner = max(corner, length(f.cameraForward.xyz + f.cameraRight.xyz * at.x - f.cameraUp.xyz * at.y));
+    }
+    const float viewDepth = nearest / corner;
     float depth = 1.0;
     if (viewDepth > 1.0e-3 && viewDepth < 1.0e30) {
         const float4 plane = Transform(f.viewProjection, f.cameraForward.xyz * viewDepth);
