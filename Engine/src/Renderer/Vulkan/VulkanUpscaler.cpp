@@ -10,6 +10,8 @@
 
 #include <cfloat>
 #include <format>
+#include <string>
+#include <string_view>
 
 namespace Flux::Vk {
     namespace {
@@ -23,6 +25,32 @@ namespace Flux::Vk {
             } else {
                 Log::Warning("FSR : {}", text);
             }
+        }
+
+        void VKAPI_CALL IgnoreCommand() {}
+
+        // Ce que FSR obtient pour chercher ses fonctions Vulkan. Il demande certaines fonctions sous leur ancien nom
+        // d'extension (vkGetBufferMemoryRequirements2KHR) : sur un device 1.3 qui n'active pas l'extension, le pilote
+        // rend nul, et FSR l'appelait quand même (plantage chez Bruno, 2026-10-25). On rend alors la fonction du cœur
+        // de Vulkan, de même signature ; un repère de débogage (vkCmd…EXT) absent devient une commande vide.
+        PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice device, const char* name) {
+            if (const PFN_vkVoidFunction function = vkGetDeviceProcAddr(device, name)) {
+                return function;
+            }
+            const std::string_view text(name);
+            for (const std::string_view suffix : {"KHR", "EXT", "AMD"}) {
+                if (text.ends_with(suffix)) {
+                    const std::string core(text.substr(0, text.size() - suffix.size()));
+                    if (const PFN_vkVoidFunction function = vkGetDeviceProcAddr(device, core.c_str())) {
+                        return function;
+                    }
+                }
+            }
+            if (text.starts_with("vkCmd")) {
+                return IgnoreCommand; // ne rend rien : ses paramètres sont ignorés sans risque
+            }
+            Log::Warning("FSR : fonction Vulkan {} absente", text);
+            return nullptr;
         }
 
         // Une texture du RHI telle que FSR la décrit : son image Vulkan, sans vue (FSR crée les siennes).
@@ -71,7 +99,7 @@ namespace Flux::Vk {
                 backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK;
                 backend.vkDevice = device.GetHandle();
                 backend.vkPhysicalDevice = device.GetPhysicalDevice();
-                backend.vkDeviceProcAddr = vkGetDeviceProcAddr; // celui de volk, déjà chargé
+                backend.vkDeviceProcAddr = GetDeviceProcAddr;
                 ffxCreateContextDescUpscale create{};
                 create.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
                 create.header.pNext = &backend.header;
