@@ -230,6 +230,8 @@ planète donne directement le sien comme indice d'instance.
 - Chaque composant est déclaré une fois dans `ComponentRegistry.cpp` : nom de sauvegarde, libellé, champs et bornes.
   L'inspecteur de l'éditeur et la sauvegarde JSON (`flux.scene`) en sont générés. Le jeu enregistre les siens de la
   même façon.
+  `.Group(clé, libellé)` range les champs suivants dans un groupe, un onglet de l'inspecteur (sans effet sur le
+  fichier) ; les icônes des onglets sont choisies par l'éditeur (`TabIcon` dans `SceneEditor.cpp`).
 - Le mode Jouer de l'éditeur copie la scène (aller-retour JSON) et la remet à la fin.
 - Chaque scène et chaque prefab notent la version du moteur qui les a écrits (`"engine"` = `GameModuleApiVersion`). Un
   fichier plus récent que le moteur, d'un format plus récent ou avec un champ inconnu (autre branche) est refusé

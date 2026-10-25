@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace Flux {
     class Engine;
@@ -90,12 +91,15 @@ namespace FluxEditor {
         void DrawNode(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene, Flux::Entity entity);
         void DrawSearchResults(Flux::UI::Context& ui, Flux::Engine& engine, Flux::Scene& scene);
         void DrawInspector(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
+        // Onglet « Objet » : nom, parent, secteur, prefab, composants qu'on ne peut pas retirer (transformation).
+        void DrawObjectTab(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         // Prefab de l'entité : exemplaire (ouvrir, délier), pièce, ou bouton pour en créer un ; composants retirés.
         void DrawPrefab(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         // Pièce d'un exemplaire de prefab qu'on ne peut ni supprimer ni sortir de son exemplaire (le prefab la
         // referait au chargement) : message et true.
         bool RefuseMemberChange(Flux::Engine& engine, const Flux::Scene& scene, Flux::Entity entity, std::string_view what);
-        void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component);
+        // group : groupe de champs (onglet) à dessiner, -1 pour tous.
+        void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component, int group = -1);
         bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
         bool DrawAnimationChoice(Flux::Engine& engine, const std::string& label, std::string& text);
         void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected, UndoHistory& history);
@@ -127,5 +131,21 @@ namespace FluxEditor {
         };
         Flux::Uuid m_anglesFor;
         std::unordered_map<std::string, Angles> m_angles;
+
+        // Onglets de l'inspecteur (colonne d'icônes à gauche) : « Objet » (info nullptr), puis un par composant
+        // présent, ou un par groupe de champs (ComponentInfo::groups). Refaits à chaque frame, capacité gardée.
+        struct InspectorTab
+        {
+            const Flux::ComponentInfo* info = nullptr;
+            void* component = nullptr;
+            int group = -1;
+        };
+        std::vector<InspectorTab> m_tabs;
+        std::vector<const Flux::ComponentInfo*> m_present;
+        std::vector<const Flux::ComponentInfo*> m_missing;
+        // Onglet choisi (clé du composant, clé du groupe ; vides : « Objet »). Gardé quand l'entité inspectée ne l'a
+        // pas : en revenant à une planète, on retrouve son onglet « Atmosphère ».
+        std::string m_tabComponent;
+        std::string m_tabGroup;
     };
 }

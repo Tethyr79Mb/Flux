@@ -128,10 +128,12 @@ namespace Flux {
             .Field("angle", "Angle (°)", &OrbitComponent::angle, {.speed = 0.1, .min = -360.0, .max = 360.0, .decimals = 2})
             .Field("inclination", "Inclinaison (°)", &OrbitComponent::inclination, {.speed = 0.1, .min = -90.0, .max = 90.0, .decimals = 2});
         registry.Register<PlanetComponent>("planet", "Planète")
+            .Group("relief", "Relief")
             .Field("radius", "Rayon (m)", &PlanetComponent::radius, {.speed = 100.0, .min = 100.0, .max = 1.0e7, .decimals = 0})
             .Field("relief", "Relief (m)", &PlanetComponent::relief, {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
             .Field("mountainWidth", "Largeur des montagnes (m)", &PlanetComponent::mountainWidth, {.speed = 100.0, .min = 1000.0, .max = 1.0e6, .decimals = 0})
             .Field("seed", "Graine", &PlanetComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            .Group("ground", "Sol")
             .Field("color", "Couleur de la roche", &PlanetComponent::color, {.alpha = false})
             .Field("roughness", "Rugosité de la roche", &PlanetComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("zones", "Herbe, sable et neige", &PlanetComponent::zones)
@@ -144,6 +146,7 @@ namespace Flux {
             .Field("soilTint", "Teinte de la texture de terre", &PlanetComponent::soilTint, {.alpha = false})
             .Field("sandTint", "Teinte de la texture de sable", &PlanetComponent::sandTint, {.alpha = false})
             .Field("snowTint", "Teinte de la texture de neige", &PlanetComponent::snowTint, {.alpha = false})
+            .Group("climate", "Climat")
             .Field("temperature", "Température à l'équateur (°C)", &PlanetComponent::temperature, {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})
             .Field("poleTemperature", "Température aux pôles (°C)", &PlanetComponent::poleTemperature, {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})
             .Field("humidity", "Humidité", &PlanetComponent::humidity, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
@@ -158,10 +161,13 @@ namespace Flux {
             .ConvertedField("sandLevel", [](PlanetComponent& planet, double sandLevel) {
                 planet.beachHeight = std::max(static_cast<float>((sandLevel - planet.seaLevel) * 0.01 * planet.relief), 0.0f);
             })
+            .Group("ocean", "Océan")
             .Field("ocean", "Océan", &PlanetComponent::ocean)
             .Field("seaLevel", "Niveau de la mer (% du relief)", &PlanetComponent::seaLevel, {.speed = 0.1, .min = -100.0, .max = 100.0, .decimals = 2})
             .Field("waterColor", "Couleur de l'eau", &PlanetComponent::waterColor, {.alpha = false})
+            .Group("relief", "Relief")
             .Field("gravity", "Gravité (m/s²)", &PlanetComponent::gravity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Group("atmosphere", "Atmosphère")
             .Field("atmosphere", "Atmosphère", &PlanetComponent::atmosphere, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
             .Field("atmosphereHeight", "Hauteur de l'atmosphère (m)", &PlanetComponent::atmosphereHeight,
                    {.speed = 10.0, .min = 100.0, .max = 1.0e6, .decimals = 0})

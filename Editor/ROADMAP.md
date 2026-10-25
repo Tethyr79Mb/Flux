@@ -22,6 +22,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 ### Scène
 - ✅ Onglet « Scènes » : scènes en vignettes rangées en dossiers, objets regroupés par type avec icônes, glisser-déposer pour l'ordre et la hiérarchie.
 - ✅ Inspecteur généré depuis les composants (listes déroulantes, couleurs avec sélecteur Windows, choix de fichiers).
+- 🔧 Inspecteur en onglets à icônes, comme les Propriétés de Blender : une colonne à gauche (Objet, puis un onglet
+  par composant, ou par groupe de réglages avec `.Group` : Relief, Sol, Climat, Océan, Atmosphère pour la planète),
+  un seul onglet affiché, retenu d'une entité à l'autre. Limites : seule la planète a des groupes (le ciel en
+  mériterait), les composants du jeu partagent la même icône, la colonne prend environ 40 pixels aux libellés.
 - ✅ Barre d'outils « Texte » : poser un texte à l'écran, choisir sa police (dossier `Polices/` du projet, « Ajouter
   une police... » la copie), sa taille et sa couleur ; sur le texte sélectionné (annulable), sinon pour le prochain.
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…

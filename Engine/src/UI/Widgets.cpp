@@ -318,6 +318,36 @@ namespace Flux::UI {
         return interaction.clicked;
     }
 
+    float Context::GetIconTabWidth() const {
+        // Carré d'un onglet et marges de la zone (BeginChild) de chaque côté.
+        return m_impl->ToolBarHeight() + 8.0f;
+    }
+
+    bool Context::IconTab(std::string_view label, Icon icon, bool selected) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const float side = std::max(1.0f, std::min(ui.RowWidth(), ui.ToolBarHeight()));
+        const Vector2f min = ui.ItemRect({side, side}, 2.0f);
+        const Vector2f max = min + Vector2f{side, side};
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+
+        // Comme les onglets en rangée : fond plus clair et trait d'accent (ici à gauche) pour l'onglet affiché.
+        if (selected) {
+            ui.FrameRect(min, max, style.frameActive);
+            ui.panel->content.AddRect(min, {min.x + 2.0f, max.y}, style.checkMark);
+        } else if (interaction.hovered) {
+            ui.FrameRect(min, max, style.frameHovered);
+        }
+        const float iconSize = std::round(side * 0.6f);
+        const float offset = std::round(0.5f * (side - iconSize));
+        DrawIcon(ui.panel->content, icon, min + Vector2f{offset, offset}, iconSize);
+        SetItemTooltip(VisibleLabel(label));
+        return interaction.clicked;
+    }
+
     bool Context::Checkbox(std::string_view label, bool& value) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

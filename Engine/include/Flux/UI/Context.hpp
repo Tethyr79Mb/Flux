@@ -173,6 +173,17 @@ namespace Flux::UI {
         //     if (ui.Tab("Graphiques", tab == 0)) tab = 0;
         // Vrai au clic.
         bool Tab(std::string_view label, bool selected);
+        // Onglet vertical à pictogramme (colonne d'onglets à gauche d'un panneau, comme les Propriétés de Blender) :
+        // un carré sur toute la largeur de la zone en cours, le libellé en info-bulle. Les suivants dessous.
+        //     ui.BeginChild("onglets", ui.GetIconTabWidth(), 0.0f);
+        //     if (ui.IconTab("Relief", Icon::Mountain, tab == 0)) tab = 0;
+        //     ui.EndChild();
+        //     ui.SameLine();
+        //     ui.BeginChild("réglages", 0.0f, 0.0f, false); ... ui.EndChild();
+        // Vrai au clic.
+        bool IconTab(std::string_view label, Icon icon, bool selected);
+        // Largeur d'une zone (BeginChild) qui tient une colonne d'IconTab.
+        float GetIconTabWidth() const;
         // Retourne true quand la valeur vient de changer.
         bool Checkbox(std::string_view label, bool& value);
 
@@ -350,7 +361,8 @@ namespace Flux::UI {
         // colonnes qui défilent chacune de leur côté, par exemple. width ou height <= 0 : tout ce qui reste de la
         // ligne ou du panneau. Décrire son contenu puis appeler EndChild ; elle compte ensuite comme un widget
         // (SameLine, BeginContextMenu pour un clic droit dans son fond).
-        void BeginChild(std::string_view id, float width, float height);
+        // background false : pas de fond (la zone prolonge le panneau).
+        void BeginChild(std::string_view id, float width, float height, bool background = true);
         void EndChild();
         // La zone en cours (BeginChild) défilera jusqu'en bas : une console qui suit ses nouvelles lignes.
         void SetScrollToEnd();

@@ -248,7 +248,7 @@ namespace Flux::UI {
         m_impl->nextPanelIcon = icon;
     }
 
-    void Context::BeginChild(std::string_view label, float width, float height) {
+    void Context::BeginChild(std::string_view label, float width, float height, bool background) {
         Impl& ui = *m_impl;
         if (!ui.panel) {
             return;
@@ -275,7 +275,9 @@ namespace Flux::UI {
         }
         scroll.scrollY = std::clamp(scroll.scrollY, 0.0f, maxScroll);
 
-        ui.panel->content.AddRoundedRect(min, max, style.frame, style.frameRounding);
+        if (background) {
+            ui.panel->content.AddRoundedRect(min, max, style.frame, style.frameRounding);
+        }
         ui.childStack.push_back({ui.SaveLayout(), id, min, max, min.y + padding});
         ui.idStack.push_back(id);
         const float scrollbarWidth = maxScroll > 0.0f ? 8.0f : 0.0f;

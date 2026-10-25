@@ -31,7 +31,9 @@ namespace {
     };
 
     void RegisterTestComponent(ComponentRegistry& components) {
+        // Groupes (onglets de l'inspecteur) : sans effet sur le fichier ; « simple » repris pour l'humeur.
         components.Register<TestComponent>("test", "Test")
+            .Group("simple", "Simples")
             .Field("flag", "Drapeau", &TestComponent::flag)
             .Field("count", "Nombre", &TestComponent::count)
             .Field("ratio", "Rapport", &TestComponent::ratio)
@@ -39,8 +41,10 @@ namespace {
             .Field("direction", "Direction", &TestComponent::direction)
             .Field("target", "Cible", &TestComponent::target)
             .Field("orientation", "Orientation", &TestComponent::orientation)
+            .Group("other", "Autres")
             .Field("tint", "Teinte", &TestComponent::tint)
             .Field("label", "Libellé", &TestComponent::label)
+            .Group("simple", "Simples")
             .Enum("mood", "Humeur", &TestComponent::mood, {{"calm", "Calme", Mood::Calm}, {"angry", "Fâché", Mood::Angry}});
     }
 
@@ -98,6 +102,14 @@ bool RunSceneSerializerTests() {
     ComponentRegistry components;
     RegisterEngineComponents(components);
     RegisterTestComponent(components);
+    {
+        const ComponentInfo& info = *components.Find("test");
+        CHECK(info.groups.size() == 2 && info.groups[1].key == "other");
+        CHECK(info.FindField("flag")->group == 0 && info.FindField("tint")->group == 1 && info.FindField("mood")->group == 0);
+        CHECK(components.Find("transform")->groups.empty() && components.Find("transform")->fields[0].group == -1);
+        // Tous les champs de la planète ont un onglet.
+        CHECK(std::ranges::none_of(components.Find("planet")->fields, [](const FieldInfo& field) { return field.group < 0; }));
+    }
 
     Scene scene;
     const Entity root = scene.CreateEntity("Système « accentué »");

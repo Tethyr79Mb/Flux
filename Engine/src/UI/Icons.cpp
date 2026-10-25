@@ -514,6 +514,75 @@ namespace Flux::UI {
                 pen.Disc(0.7f, 0.42f, 0.17f, LinearColor::FromSrgb8(96, 170, 72)); // feuillu
                 break;
             }
+            case Icon::Mountain: {
+                const LinearColor rock = LinearColor::FromSrgb8(128, 118, 108);
+                const LinearColor snow = LinearColor::FromSrgb8(236, 240, 246);
+                pen.Triangle({0.62f, 0.3f}, {0.98f, 0.9f}, {0.26f, 0.9f}, Shade(rock, 0.8f)); // sommet du fond
+                pen.Triangle({0.62f, 0.3f}, {0.71f, 0.45f}, {0.53f, 0.45f}, Shade(snow, 0.85f));
+                pen.Triangle({0.36f, 0.12f}, {0.74f, 0.9f}, {0.02f, 0.9f}, rock);
+                pen.Triangle({0.36f, 0.12f}, {0.47f, 0.34f}, {0.25f, 0.34f}, snow);
+                break;
+            }
+            case Icon::Ground:
+                pen.Rect(0.08f, 0.2f, 0.92f, 0.36f, LinearColor::FromSrgb8(96, 170, 72));  // herbe
+                pen.Rect(0.08f, 0.36f, 0.92f, 0.6f, LinearColor::FromSrgb8(130, 90, 56)); // terre
+                pen.Rect(0.08f, 0.6f, 0.92f, 0.84f, LinearColor::FromSrgb8(120, 120, 126)); // roche
+                break;
+            case Icon::Thermometer: {
+                const LinearColor glass = LinearColor::FromSrgb8(206, 212, 222);
+                const LinearColor red = LinearColor::FromSrgb8(222, 70, 60);
+                pen.Rect(0.4f, 0.08f, 0.6f, 0.7f, glass);
+                pen.Disc(0.5f, 0.76f, 0.17f, glass);
+                pen.Rect(0.46f, 0.36f, 0.54f, 0.72f, red); // colonne
+                pen.Disc(0.5f, 0.76f, 0.11f, red);
+                pen.Line(0.62f, 0.2f, 0.74f, 0.2f, glass, 0.05f); // graduations
+                pen.Line(0.62f, 0.34f, 0.74f, 0.34f, glass, 0.05f);
+                pen.Line(0.62f, 0.48f, 0.74f, 0.48f, glass, 0.05f);
+                break;
+            }
+            case Icon::Wave: {
+                const float pi = std::numbers::pi_v<float>;
+                const LinearColor light = LinearColor::FromSrgb8(90, 170, 230);
+                // Trois rangées de vagues : deux arcs par rangée, plus sombres vers le bas.
+                for (int row = 0; row < 3; ++row) {
+                    const float y = 0.32f + 0.22f * static_cast<float>(row);
+                    const LinearColor color = Shade(light, 1.0f - 0.18f * static_cast<float>(row));
+                    Arc(pen, {0.28f, y}, 0.2f, 0.0f, pi, color, 0.07f);
+                    Arc(pen, {0.72f, y}, 0.2f, 0.0f, pi, color, 0.07f);
+                }
+                break;
+            }
+            case Icon::Atmosphere: {
+                const LinearColor halo = LinearColor::FromSrgb8(110, 170, 240);
+                pen.Disc(0.5f, 0.5f, 0.46f, Shade(halo, 0.55f));
+                pen.Disc(0.5f, 0.5f, 0.4f, halo);
+                pen.Disc(0.5f, 0.5f, 0.32f, LinearColor::FromSrgb8(60, 120, 90)); // planète
+                pen.Disc(0.42f, 0.44f, 0.12f, LinearColor::FromSrgb8(96, 160, 90));
+                break;
+            }
+            case Icon::Cloud: {
+                const LinearColor white = LinearColor::FromSrgb8(226, 232, 240);
+                pen.Disc(0.34f, 0.58f, 0.18f, white);
+                pen.Disc(0.56f, 0.46f, 0.24f, white);
+                pen.Disc(0.74f, 0.62f, 0.16f, white);
+                pen.Rect(0.18f, 0.6f, 0.86f, 0.76f, white); // base plate
+                break;
+            }
+            case Icon::Orbit: {
+                const float pi = std::numbers::pi_v<float>;
+                const LinearColor path = LinearColor::FromSrgb8(150, 160, 176);
+                // Ellipse : un cercle aplati, tracé point par point.
+                constexpr int Segments = 24;
+                for (int i = 0; i < Segments; ++i) {
+                    const float a0 = 2.0f * pi * static_cast<float>(i) / Segments;
+                    const float a1 = 2.0f * pi * static_cast<float>(i + 1) / Segments;
+                    pen.Line(0.5f + 0.42f * std::cos(a0), 0.5f + 0.24f * std::sin(a0), 0.5f + 0.42f * std::cos(a1),
+                             0.5f + 0.24f * std::sin(a1), path, 0.05f);
+                }
+                pen.Disc(0.5f, 0.5f, 0.13f, LinearColor::FromSrgb8(250, 200, 70));  // soleil
+                pen.Disc(0.86f, 0.42f, 0.09f, LinearColor::FromSrgb8(90, 150, 220)); // planète
+                break;
+            }
         }
     }
 }
