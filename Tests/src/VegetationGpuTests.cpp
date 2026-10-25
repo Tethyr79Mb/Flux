@@ -74,7 +74,10 @@ namespace {
         (*renderer)->BeginFrame(0);
         (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, VegetationComponent{}, biomes, Math::Quaternionf{}, plains);
         (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, {});
-        CHECK(device.Submit([&](RHI::CommandList& commands) { (*renderer)->Compute(commands, 0); }));
+        CHECK(device.Submit([&](RHI::CommandList& commands) {
+            (*renderer)->Sow(commands, 0);
+            (*renderer)->Cull(commands, 0);
+        }));
         trees.assign(keys.size(), {});
         for (std::size_t k = 0; k < keys.size(); ++k) {
             CHECK((*renderer)->ReadTrees(keys[k], trees[k]));

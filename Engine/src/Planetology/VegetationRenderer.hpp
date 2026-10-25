@@ -86,8 +86,9 @@ namespace Flux::Planetology {
         // VegetationSet::species.
         void EndFrame(std::uint32_t frameIndex, const View& view, const std::array<ShadowCascade, ShadowCascadeCount>& cascades,
                       const ShadowReceivers& receivers, std::span<const Models> models);
-        // Semis puis tri, hors d'une passe et avant les dessins.
-        void Compute(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Semis puis tri, hors d'une passe et avant les dessins ; séparés pour que le panneau Moteur mesure chacun.
+        void Sow(RHI::CommandList& commands, std::uint32_t frameIndex);
+        void Cull(RHI::CommandList& commands, std::uint32_t frameIndex);
 
         // Un appel de dessin : une primitive du modèle d'une espèce dans sa liste, sa commande dans GetCommands.
         struct Draw
@@ -106,6 +107,7 @@ namespace Flux::Planetology {
             std::uint32_t plains = 0;   // triées à la dernière image
             std::uint32_t stored = 0;   // semées, en mémoire
             std::uint32_t pending = 0;  // en vue, pas encore semées
+            std::uint32_t sown = 0;     // semées à cette image (au plus MaxSownPerFrame)
         };
         Stats GetStats() const { return m_stats; }
 

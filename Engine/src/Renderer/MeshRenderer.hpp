@@ -52,6 +52,7 @@ namespace Flux {
             std::uint32_t ocean = 0;
             std::uint32_t stored = 0;
             std::uint32_t pending = 0;  // demandées, pas encore prêtes
+            std::uint32_t computed = 0; // confiées au GPU à cette image
             bool groundLoading = false; // textures du sol en cours de lecture
             std::uint32_t meshThreads = 0; // threads par groupe des mesh shaders du sol (0 : par les sommets)
         };
@@ -64,8 +65,12 @@ namespace Flux {
 
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const TemporalView& temporal, const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
-        // Calculs sur le GPU préparés par Prepare (tuiles des planètes, entités cachées écartées), avant toute passe.
-        void Compute(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Calculs sur le GPU préparés par Prepare, avant toute passe et dans cet ordre : tuiles des planètes, arbres
+        // semés, arbres triés, entités cachées écartées. Une étape chacun pour le panneau Moteur.
+        void ComputeTiles(RHI::CommandList& commands, std::uint32_t frameIndex);
+        void SowTrees(RHI::CommandList& commands, std::uint32_t frameIndex);
+        void CullTrees(RHI::CommandList& commands, std::uint32_t frameIndex);
+        void CullHidden(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Après la passe principale (sa profondeur lisible), de taille `size` : de quoi écarter à l'image suivante ce
         // qui sera caché (OcclusionCulling).
         void BuildDepthPyramid(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::Texture& depth, RHI::Extent size);

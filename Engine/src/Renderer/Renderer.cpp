@@ -263,6 +263,7 @@ namespace Flux {
                 timings.planetOceanTiles = tiles.ocean;
                 timings.planetStoredTiles = tiles.stored;
                 timings.planetPendingTiles = tiles.pending;
+                timings.planetComputedTiles = tiles.computed;
                 timings.groundMeshThreads = tiles.meshThreads;
                 timings.groundTexturesLoading = tiles.groundLoading;
                 timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
@@ -277,6 +278,7 @@ namespace Flux {
                 }
                 timings.treePlains = vegetation.plains;
                 timings.pendingTreePlains = vegetation.pending;
+                timings.sownTreePlains = vegetation.sown;
             }
 
             const Clock::time_point recordStart = Clock::now();
@@ -354,7 +356,10 @@ namespace Flux {
                 .Reads(pyramid)
                 .Writes(tiles)
                 .Writes(culled)
-                .Step("calculs", [this](RHI::CommandList& commands) { meshes->Compute(commands, frame.index); });
+                .Step("tuiles de planète", [this](RHI::CommandList& commands) { meshes->ComputeTiles(commands, frame.index); })
+                .Step("semis des arbres", [this](RHI::CommandList& commands) { meshes->SowTrees(commands, frame.index); })
+                .Step("tri des arbres", [this](RHI::CommandList& commands) { meshes->CullTrees(commands, frame.index); })
+                .Step("objets cachés", [this](RHI::CommandList& commands) { meshes->CullHidden(commands, frame.index); });
             graph.AddPass("tables de l'air")
                 .When([this] { return sceneVisible && sky->TablesPending(); })
                 .Reads(cpu)

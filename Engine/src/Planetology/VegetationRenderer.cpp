@@ -270,6 +270,7 @@ namespace Flux::Planetology {
         }
         m_stats.plains = 0;
         m_stats.pending = 0;
+        m_stats.sown = 0;
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
         if (!m_terrain || m_visible.empty()) {
             return;
@@ -316,6 +317,7 @@ namespace Flux::Planetology {
             frame.vegetation->Write(&m_sowVegetation, sizeof(m_sowVegetation));
         }
         frame.sown = static_cast<std::uint32_t>(m_jobs.size());
+        m_stats.sown = frame.sown;
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
         const auto loaded = [](const Models& m) { return m.near && m.middle && m.far; };
         if (m_cells.empty() || std::ranges::none_of(models, loaded)) {
@@ -398,18 +400,23 @@ namespace Flux::Planetology {
         return true;
     }
 
-    void VegetationRenderer::Compute(RHI::CommandList& commands, std::uint32_t frameIndex) {
-        Frame& frame = m_frames[frameIndex];
-        if (frame.sown > 0) {
-            commands.BindPipeline(*m_sow);
-            commands.SetBindGroup(0, *frame.sowGroup);
-            for (std::uint32_t job = 0; job < frame.sown; ++job) {
-                const SowConstants constants{job};
-                commands.PushConstants(&constants, sizeof(constants));
-                commands.Dispatch(1);
-            }
-            commands.ComputeBarrier();
+    void VegetationRenderer::Sow(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        const Frame& frame = m_frames[frameIndex];
+        if (frame.sown == 0) {
+            return;
         }
+        commands.BindPipeline(*m_sow);
+        commands.SetBindGroup(0, *frame.sowGroup);
+        for (std::uint32_t job = 0; job < frame.sown; ++job) {
+            const SowConstants constants{job};
+            commands.PushConstants(&constants, sizeof(constants));
+            commands.Dispatch(1);
+        }
+        commands.ComputeBarrier();
+    }
+
+    void VegetationRenderer::Cull(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        Frame& frame = m_frames[frameIndex];
         if (frame.culled == 0) {
             return;
         }

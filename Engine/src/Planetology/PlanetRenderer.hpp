@@ -125,6 +125,8 @@ namespace Flux::Planetology {
         // Tuiles demandées à la dernière image et pas encore prêtes (0 : le sol est au détail voulu partout où on le
         // voit). Sert à l'écran de chargement.
         std::uint32_t GetPendingTileCount() const { return m_pendingTiles; }
+        // Tuiles confiées au GPU à la dernière image (au plus PlanetTileCompute::MaxTilesPerFrame), pour le panneau Moteur.
+        std::uint32_t GetScheduledTileCount() const { return m_scheduledTiles; }
 
         // Rayon de la surface de l'océan (seaLevel : en % du relief autour du rayon).
         static double GetSeaRadius(const PlanetComponent& planet) {
@@ -215,6 +217,7 @@ namespace Flux::Planetology {
         double m_splitFactor = GetSplitFactor(DefaultGroundDetail);
         bool m_poolFullLogged = false; // « trop de tuiles » signalé une seule fois
         std::uint32_t m_pendingTiles = 0;
+        std::uint32_t m_scheduledTiles = 0;
         // Cases libérées, réutilisables quand le GPU ne les lit plus (image `frame` + FramesInFlight).
         struct FreeTile
         {

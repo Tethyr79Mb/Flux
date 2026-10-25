@@ -53,6 +53,7 @@ namespace Flux {
         std::uint32_t planetOceanTiles = 0;  // dont redessinées en eau
         std::uint32_t planetStoredTiles = 0; // gardées en mémoire vidéo
         std::uint32_t planetTileCapacity = 0; // au plus, en mémoire vidéo
+        std::uint32_t planetComputedTiles = 0; // calculées par le GPU à cette image
         // Threads par groupe des mesh shaders du sol, 0 : par les sommets (choisi au démarrage selon le GPU).
         std::uint32_t groundMeshThreads = 0;
         // Arbres des planètes deux images plus tôt : dessinés (détaillés, simplifiés, lointains) et dans les ombres ;
@@ -61,6 +62,7 @@ namespace Flux {
         std::uint32_t shadowTrees = 0;
         std::uint32_t treePlains = 0;
         std::uint32_t pendingTreePlains = 0;
+        std::uint32_t sownTreePlains = 0; // semées à cette image
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
         // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
         std::uint32_t planetPendingTiles = 0;
