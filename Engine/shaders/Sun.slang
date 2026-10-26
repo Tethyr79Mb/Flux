@@ -110,7 +110,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         // Vu à travers l'air : caché par le sol, puis atténué par l'air traversé jusqu'à l'espace (rougi bas sur
         // l'horizon), comme le fond du ciel derrière lui.
         const float3 position = -s.atmosphere.center.xyz;
-        const float2 ground = AtmosphereRaySphere(position, direction, s.atmosphere.center.w);
+        const float2 ground = AtmosphereRaySphere(position, direction, AtmosphereGround(s.atmosphere));
         if (ground.x <= ground.y && ground.x > 0.0) {
             discard;
         }

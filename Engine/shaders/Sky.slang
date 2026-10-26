@@ -229,10 +229,12 @@ TableOutput skyTableFragment(float4 position : SV_Position)
     const AtmosphereData a = sky[0].atmosphere;
     const float3 origin = -a.center.xyz;
     const float3 direction = AtmosphereSkyDirection(a, origin, position.xy / float2(AtmosphereSkySize), sky[0].toSun.xyz);
-    const float2 ground = AtmosphereRaySphere(origin, direction, a.center.w);
+    const float2 ground = AtmosphereRaySphere(origin, direction, AtmosphereGround(a));
     const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
-    // 32 pas : la table est petite, le ciel y gagne en finesse à travers le bord de l'air.
-    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, -1.0e30);
+    // 32 pas : la table est petite, le ciel y gagne en finesse à travers le bord de l'air. Un regard qui frôle une
+    // plaine plus basse que le rayon de la planète passe sous lui : la densité n'y monte plus, comme dans la table de
+    // l'air (sans quoi le ciel et le sol lointain n'auraient pas la même brume).
+    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, 0.0);
     TableOutput output;
     AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
     return output;
@@ -296,7 +298,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
 
     if (HasAtmosphere(s.atmosphere)) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
-        const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, s.atmosphere.center.w);
+        const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, AtmosphereGround(s.atmosphere));
         const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
         float3 transmittance;
         float3 scattered;

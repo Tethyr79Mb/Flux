@@ -13,6 +13,7 @@ namespace Flux::Planetology {
         std::array<float, 4> rayleigh{}; // rgb : diffusion au sol ; w : 1 / hauteur d'échelle
         std::array<float, 4> mie{};      // x : diffusion au sol ; y : 1 / hauteur d'échelle ; z : g ; w : rayon du haut
         // x : intensité de la lumière diffusée ; y : 1 si la caméra est dans l'air (tables de l'air calculées) ;
+        // z : rayon du sol le plus bas possible (creux du relief, ou la mer) : seul un regard qui le touche finit au sol ;
         // w : log(1 + distance la plus longue dans l'air / AtmosphereAirNear), pour les tranches de la table de l'air
         std::array<float, 4> scale{};
         std::array<std::array<float, 4>, AtmosphereAmbientSize> ambient{}; // rgb (ComputeAtmosphereAmbient)
