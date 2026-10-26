@@ -47,6 +47,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   principal, rechargement d'un fichier retouché qui attend le GPU, file de transfert dédiée.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
+- ⬜ Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
+  semis des arbres, bruit et historique des nuages) qui tournent pendant le dessin, dans les trous qu'il laisse (gain
+  habituel de 5 à 15 %, surtout sur AMD). Le render graph décide quelles passes y partent et place les sémaphores et
+  les transferts de propriété. À mesurer avant (temps du GPU par passe) ; facultatif, le chemin à une file reste.
 
 ### Rendu
 - ✅ Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`Renderer/RHI`) : un autre backend (DX12) reste possible.
@@ -237,7 +241,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
   - 🔧 3. Textures de travail créées et redimensionnées par le graphe (HDR, mouvement, profondeurs, historique à deux exemplaires échangés par le graphe). Limites : niveaux du bloom encore créés par `PostRenderer` ; pas de partage de mémoire (aliasing), une dizaine de Mo à gagner seulement aujourd'hui (seul le mouvement ne vit pas jusqu'à l'image finale).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
-  - Pas de calcul asynchrone (seconde file) tant que les mesures ne le demandent pas.
+  - Calcul asynchrone (seconde file) : ligne à part, plus haut (« Chargement et rendu communs »).
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).
 - ⬜ Backend DX12.
 
