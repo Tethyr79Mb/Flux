@@ -85,6 +85,13 @@ namespace Flux {
             return std::unexpected(temporal.error());
         }
         post->m_temporal = std::move(*temporal);
+        temporalDesc.fragmentEntryPoint = "fragmentMotion";
+        temporalDesc.colorFormat = MotionFormat;
+        auto motion = device.CreatePipeline(temporalDesc);
+        if (!motion) {
+            return std::unexpected(motion.error());
+        }
+        post->m_motion = std::move(*motion);
 
         constexpr RHI::Binding gridBinding{0, RHI::BindingType::Texture, RHI::ShaderStage::Fragment};
         auto gridLayout = device.CreateBindGroupLayout({.bindings = {&gridBinding, 1}, .maxGroups = 1});
@@ -118,7 +125,7 @@ namespace Flux {
     }
 
     std::expected<void, std::string> PostRenderer::Bind(const Targets& targets) {
-        const RHI::Extent extent = targets.scene->GetExtent();
+        const RHI::Extent extent = targets.history[0]->GetExtent();
         // Groupes libérés avant les textures qu'ils désignent, et tout libéré avant d'allouer à la nouvelle taille.
         for (std::uint32_t o = 0; o < OutputCount; ++o) {
             m_compositeGroups[o].reset();
@@ -138,6 +145,7 @@ namespace Flux {
             m_up[i].reset();
         }
         m_extent = extent;
+        m_sceneExtent = targets.scene->GetExtent();
         m_targets = targets;
 
         // Niveaux : la moitié de la vue, puis la moitié de la moitié... tant que le petit côté garde MinLevelSize.
@@ -256,7 +264,7 @@ namespace Flux {
         }
         const TemporalParams params{reprojection,
                                     {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height),
-                                     CurrentWeight, history && m_historyValid ? 1.0f : 0.0f}};
+                                     CurrentWeight, history && m_historyValid && m_extent == m_sceneExtent ? 1.0f : 0.0f}};
         commands.BeginRenderPass({.colorTarget = m_targets.history[target]});
         commands.SetViewport({0.0f, 0.0f, static_cast<float>(m_extent.width), static_cast<float>(m_extent.height)});
         commands.SetScissor({0, 0, m_extent.width, m_extent.height});
@@ -267,6 +275,23 @@ namespace Flux {
         commands.EndRenderPass();
         m_historyValid = true;
         m_output = 1 + target;
+    }
+
+    void PostRenderer::DrawMotion(RHI::CommandList& commands, const Math::Matrix4f& reprojection) {
+        const TemporalParams params{reprojection, {}};
+        commands.BeginRenderPass({.colorTarget = m_targets.fullMotion});
+        commands.SetViewport({0.0f, 0.0f, static_cast<float>(m_sceneExtent.width), static_cast<float>(m_sceneExtent.height)});
+        commands.SetScissor({0, 0, m_sceneExtent.width, m_sceneExtent.height});
+        commands.BindPipeline(*m_motion);
+        commands.SetBindGroup(0, *m_temporalGroups[0]);
+        commands.PushConstants(&params, sizeof(params));
+        commands.Draw(3, 0);
+        commands.EndRenderPass();
+    }
+
+    void PostRenderer::UseUpscaled(std::uint32_t target) {
+        m_output = 1 + target;
+        m_historyValid = false; // l'anticrénelage, s'il reprend, ne repart pas d'une image de FSR
     }
 
     void PostRenderer::DrawBloom(RHI::CommandList& commands, float strength) {

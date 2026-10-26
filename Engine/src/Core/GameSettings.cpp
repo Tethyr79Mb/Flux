@@ -72,6 +72,16 @@ namespace Flux::GameSettingsFile {
                 warnings->push_back("« groundDetail » ignoré (valeur non valide)");
             }
         }
+        if (const auto upscaling = document.find("upscaling"); upscaling != document.end()) {
+            const auto found = upscaling->is_string() ? std::ranges::find(UpscalingKeys, upscaling->get<std::string>()) : UpscalingKeys.end();
+            if (found != UpscalingKeys.end()) {
+                settings.upscaling = static_cast<Upscaling>(found - UpscalingKeys.begin());
+            } else if (warnings) {
+                warnings->push_back("« upscaling » ignoré (valeur non valide)");
+            }
+        }
+        Read(document, "sharpness", settings.sharpness, IsNumber, warnings);
+        settings.sharpness = std::clamp(settings.sharpness, 0.0f, 1.0f);
         Read(document, "volume", settings.volume, IsNumber, warnings);
         settings.volume = std::clamp(settings.volume, 0.0f, 1.0f);
         Read(document, "engineStats", settings.showEngineStats, IsBool, warnings);
@@ -87,6 +97,8 @@ namespace Flux::GameSettingsFile {
         document["vsync"] = settings.vsync;
         document["temporalAA"] = settings.temporalAA;
         document["groundDetail"] = GroundDetailKeys[static_cast<std::size_t>(settings.groundDetail)];
+        document["upscaling"] = UpscalingKeys[static_cast<std::size_t>(settings.upscaling)];
+        document["sharpness"] = std::round(settings.sharpness * 100.0) / 100.0;
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;
         return document.dump(2) + "\n";

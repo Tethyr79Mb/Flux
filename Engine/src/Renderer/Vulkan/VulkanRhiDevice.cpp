@@ -2,6 +2,7 @@
 
 #include "Flux/Core/Version.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Renderer/Vulkan/VulkanUpscaler.hpp"
 
 #include <algorithm>
 #include <array>
@@ -334,18 +335,25 @@ namespace Flux::Vk {
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,
-                                                                                            bool sampled) {
+                                                                                            bool sampled, bool storage) {
         const bool depth = format == RHI::Format::D32Float;
         const VkImageAspectFlags aspect = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
         VkImageUsageFlags usage = depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         if (sampled) {
             usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
         }
+        if (storage && !depth) {
+            usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+        }
         auto image = Image::CreateAttachment(*m_device, ToVulkan(format), {extent.width, extent.height}, usage, aspect);
         if (!image) {
             return std::unexpected(image.error());
         }
         return std::make_unique<RhiTexture>(std::move(*image), format, aspect, RHI::TextureAccess::None);
+    }
+
+    std::expected<std::unique_ptr<RHI::Upscaler>, std::string> RhiDevice::CreateUpscaler(RHI::Extent outputSize) {
+        return CreateFsrUpscaler(*m_device, outputSize);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeRenderTarget(RHI::Format format,

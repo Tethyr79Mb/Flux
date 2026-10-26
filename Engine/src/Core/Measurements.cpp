@@ -132,6 +132,9 @@ namespace Flux {
         text += std::format("Image : {} x {}, V-Sync {}, anticrénelage {}, détail du sol {}\n", context.width, context.height,
                             context.vsync ? "oui" : "non", context.temporalAA ? "oui" : "non",
                             GroundDetailLabels[static_cast<std::size_t>(context.groundDetail)]);
+        text += std::format("Mise à l'échelle : {}, scène dessinée en {} x {}\n",
+                            UpscalingLabels[static_cast<std::size_t>(context.upscaling)], context.renderSize.x,
+                            context.renderSize.y);
         text += std::format("Objets cachés écartés {}, sol sans pixels {}, sol dessiné par {}\n",
                             context.occlusionCulling ? "oui" : "non", context.groundGeometryOnly ? "oui" : "non",
                             context.groundMeshThreads > 0 ? std::format("mesh shaders ({} threads)", context.groundMeshThreads)

@@ -25,6 +25,7 @@ namespace Flux::Vk {
         Device& operator=(const Device&) = delete;
 
         VkDevice GetHandle() const { return m_device.device; }
+        VkPhysicalDevice GetPhysicalDevice() const { return m_physicalDevice.physical_device; }
         const vkb::Device& GetBootstrapDevice() const { return m_device; }
         VkSurfaceKHR GetSurface() const { return m_surface; }
         const std::string& GetName() const { return m_physicalDevice.name; }
