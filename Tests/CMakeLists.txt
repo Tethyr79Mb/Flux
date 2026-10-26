@@ -1,7 +1,7 @@
 # Tests automatiques du moteur, tous dans un exe lancé par ctest (ou directement depuis CLion).
 add_executable(FluxTests)
 flux_add_sources(FluxTests src)
-target_link_libraries(FluxTests PRIVATE Flux::Engine bc7enc) # bc7enc : décodeur BC7 des tests
+target_link_libraries(FluxTests PRIVATE Flux::Engine bc7enc meshoptimizer) # bc7enc : décodeur BC7 des tests ; meshoptimizer : modèles compressés
 # Les tests du RHI (calculs sur le GPU) voient les en-têtes internes du moteur ; seul RHI::Device::Create* est exporté.
 target_include_directories(FluxTests PRIVATE ${PROJECT_SOURCE_DIR}/Engine/src)
 # Les biomes livrés avec le jeu sont lus là où ils sont rangés (VegetationTests.cpp).

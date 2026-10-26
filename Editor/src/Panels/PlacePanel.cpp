@@ -36,6 +36,7 @@ namespace FluxEditor {
         constexpr double ShipDistance = 25.0; // la maquette fait 16 m de long : la voir en entier
         constexpr double FighterDistance = 32.0; // le chasseur fait 20 m de long et 15 m d'envergure
         constexpr double StationDistance = 250.0; // la station fait 142 x 31 x 119 m
+        constexpr double OrbitalStationDistance = 600.0; // de la porte du hangar du joueur ; la tour fait 4 km de haut
         constexpr double PlanetDistance = 3.0;   // rayons de la planète, de la caméra à son centre
         constexpr double SunDistance = 1.496e11; // mètres : de la Terre au Soleil, orbite d'une nouvelle planète
 
@@ -178,6 +179,22 @@ namespace FluxEditor {
                     arms.color = {1.0f, 0.85f, 0.6f};
                 }
             }
+        }
+
+        // Station orbitale (modèle du projet, dans Modeles/Station) : l'enveloppe extérieure seule, 4 km de haut. Son
+        // origine est le seuil de la porte du hangar du joueur, qui regarde vers -z ; la tour est derrière, vers +z.
+        // L'intérieur (hangar, cabine, promenade) sera une scène à part, chargée en passant le champ bleu de la porte.
+        void AddOrbitalStation(Scene& scene, Entity station) {
+            ModelComponent& model = scene.Add<ModelComponent>(station);
+            model.model = "Modeles/Station/Station.glb";
+            model.farModel = "Modeles/Station/Station-loin.glb"; // 130 000 triangles au lieu de 2,1 millions
+            model.farDistance = 2000.0f;
+            ColliderComponent& collider = scene.Add<ColliderComponent>(station);
+            collider.shape = ColliderShape::Mesh;
+            collider.mesh = "Modeles/Station/Station-collision.glb";
+            RimLightComponent& rim = scene.Add<RimLightComponent>(station);
+            rim.intensity = 0.5f;
+            rim.sharpness = 4.0f;
         }
 
         // Station en maquette de cubes, dans son repère (le sol du hangar à y = 0, l'entrée vers -z) : un hangar de
@@ -406,7 +423,8 @@ namespace FluxEditor {
                                            {"Planète", "Planète", UI::Icon::Planet},
                                            {"Soleil", "Soleil", UI::Icon::Light},
                                            {"Prefab", "Prefab", UI::Icon::Prefab},
-                                           {"Station (maquette)", "Station", UI::Icon::Ship}};
+                                           {"Station (maquette)", "Station", UI::Icon::Ship},
+                                           {"Station orbitale", "Station orbitale", UI::Icon::Ship}};
             return Infos[item];
         }
 
@@ -490,7 +508,7 @@ namespace FluxEditor {
             ui.BeginDisabled(playing);
             category("Formes", {Item::Empty, Item::Cube, Item::Model});
             category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior});
-            category("Espace", {Item::Planet}); // Monde : bouton de la barre de menus
+            category("Espace", {Item::Planet, Item::OrbitalStation}); // Monde : bouton de la barre de menus
             category("Physique (en mode Jouer)", {Item::Character, Item::Ship, Item::Fighter, Item::Station, Item::Target});
             category("Interface", {Item::ScreenImage, Item::Interface});
             category("Son", {Item::Sound});
@@ -689,6 +707,8 @@ namespace FluxEditor {
                 ship.fallsWithoutPilot = false;
                 ship.warpSpeed = 0.0f;
                 AddStation(scene, entity);
+            } else if (item == Item::OrbitalStation) {
+                AddOrbitalStation(scene, entity);
             } else if (item == Item::Sound) {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);
             } else if (item == Item::Interior) {
@@ -720,19 +740,20 @@ namespace FluxEditor {
             Math::Vector3d direction = drop ? ScreenProjection(camera, view.min, view.max).GetRay(*drop).direction
                                                   : Math::Vector3d(camera.GetForward());
             Math::WorldPosition position = camera.position;
-            if (item == Item::Station && !drop) {
+            if ((item == Item::Station || item == Item::OrbitalStation) && !drop) {
                 // À l'horizontale, l'entrée du hangar face à la caméra et à sa hauteur : regardée d'en haut, la
-                // station s'enfoncerait dans le sol de la scène.
+                // station s'enfoncerait dans le sol de la scène. Porte de la station orbitale : 34 m de haut.
                 direction = Math::Vector3d(direction.x, 0.0, direction.z);
                 direction = Math::Length(direction) > 1.0e-6 ? Math::Normalize(direction) : Math::Vector3d(0.0, 0.0, -1.0);
-                position += Math::Vector3d(0.0, -12.0, 0.0);
+                position += Math::Vector3d(0.0, item == Item::Station ? -12.0 : -17.0, 0.0);
                 scene.Get<TransformComponent>(entity).rotation = Math::Quaternionf::FromAxisAngle(
                     {0.0f, 1.0f, 0.0f}, static_cast<float>(std::atan2(direction.x, direction.z)));
             }
             // Un prefab de vaisseau est vu comme le chasseur : en entier.
             const bool bigPrefab = item == Item::Prefab && scene.TryGet<ShipComponent>(entity);
             double distance = item == Item::Ship ? ShipDistance : item == Item::Fighter || bigPrefab ? FighterDistance
-                                                                            : item == Item::Station ? StationDistance : PlaceDistance;
+                                                                            : item == Item::Station ? StationDistance
+                                                                            : item == Item::OrbitalStation ? OrbitalStationDistance : PlaceDistance;
             if (item == Item::Planet) {
                 // Assez loin pour la voir en entier.
                 distance = PlanetDistance * static_cast<double>(scene.Get<PlanetComponent>(entity).radius);
@@ -742,7 +763,7 @@ namespace FluxEditor {
             if (position.sector != Math::Vector3i64{}) {
                 scene.Add<SectorComponent>(entity, position.sector);
             }
-            if (dropToGround && item != Item::Planet) {
+            if (dropToGround && item != Item::Planet && item != Item::OrbitalStation) {
                 // Posé sur ce qui est dessous. Les rayons partent au moins de la hauteur de la caméra : un objet mis
                 // devant elle quand elle regarde le sol, donc sous lui, remonte dessus.
                 std::vector<RelativeTransform> transforms;

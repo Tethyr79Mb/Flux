@@ -769,6 +769,61 @@ namespace Flux {
             return parsed;
         }
 
+        // EXT_meshopt_compression (fichiers passés par gltfpack -c, 6 fois plus petits) : chaque vue compressée est
+        // décodée une fois dans sa propre mémoire (cgltf_buffer_view::data), que cgltf lit ensuite à la place du
+        // buffer et libère dans cgltf_free (d'où malloc, son allocateur par défaut).
+        std::expected<void, std::string> DecodeMeshopt(cgltf_data& gltf) {
+            for (cgltf_size i = 0; i < gltf.buffer_views_count; ++i) {
+                cgltf_buffer_view& view = gltf.buffer_views[i];
+                if (!view.has_meshopt_compression) {
+                    continue;
+                }
+                const cgltf_meshopt_compression& compression = view.meshopt_compression;
+                if (!compression.buffer || !compression.buffer->data || compression.stride == 0
+                    || compression.offset + compression.size > compression.buffer->size) {
+                    return std::unexpected("données compressées absentes");
+                }
+                const auto* source = static_cast<const unsigned char*>(compression.buffer->data) + compression.offset;
+                void* decoded = std::malloc(compression.count * compression.stride);
+                if (!decoded) {
+                    return std::unexpected("mémoire insuffisante");
+                }
+                view.data = decoded;
+                int result = -1;
+                switch (compression.mode) {
+                case cgltf_meshopt_compression_mode_attributes:
+                    result = meshopt_decodeVertexBuffer(decoded, compression.count, compression.stride, source, compression.size);
+                    break;
+                case cgltf_meshopt_compression_mode_triangles:
+                    result = meshopt_decodeIndexBuffer(decoded, compression.count, compression.stride, source, compression.size);
+                    break;
+                case cgltf_meshopt_compression_mode_indices:
+                    result = meshopt_decodeIndexSequence(decoded, compression.count, compression.stride, source, compression.size);
+                    break;
+                default:
+                    break;
+                }
+                if (result != 0) {
+                    return std::unexpected("données compressées illisibles");
+                }
+                // Filtres : normales en octaèdre, rotations en quaternion, positions en exposant partagé.
+                switch (compression.filter) {
+                case cgltf_meshopt_compression_filter_octahedral:
+                    meshopt_decodeFilterOct(decoded, compression.count, compression.stride);
+                    break;
+                case cgltf_meshopt_compression_filter_quaternion:
+                    meshopt_decodeFilterQuat(decoded, compression.count, compression.stride);
+                    break;
+                case cgltf_meshopt_compression_filter_exponential:
+                    meshopt_decodeFilterExp(decoded, compression.count, compression.stride);
+                    break;
+                default:
+                    break;
+                }
+            }
+            return {};
+        }
+
         cgltf_options FileOptions() {
             cgltf_options options{};
             options.file.read = &ReadFile;
@@ -789,9 +844,10 @@ namespace Flux {
             const std::string_view extension = gltf->extensions_required[i];
             // Extensions sans effet sur ce qu'on lit, ou lues directement par cgltf (entiers normalisés).
             if (extension != "KHR_mesh_quantization" && extension != "KHR_texture_transform"
-                && extension != "KHR_materials_unlit" && extension != "KHR_materials_emissive_strength") {
+                && extension != "KHR_materials_unlit" && extension != "KHR_materials_emissive_strength"
+                && extension != "EXT_meshopt_compression") {
                 return std::unexpected("« " + fileName + " » : extension " + std::string(extension)
-                                       + " non gérée (réexporter sans compression)");
+                                       + " non gérée (réexporter sans elle)");
             }
         }
         // Chemin UTF-8 : cgltf y colle le nom des .bin, puis nous le rend dans ReadFile.
@@ -802,6 +858,10 @@ namespace Flux {
         result = cgltf_validate(gltf);
         if (result != cgltf_result_success) {
             return std::unexpected("« " + fileName + " » : " + Describe(result));
+        }
+        // Après la validation : elle vérifie le pas des sommets compressés, que meshoptimizer exige.
+        if (auto decoded = DecodeMeshopt(*gltf); !decoded) {
+            return std::unexpected("« " + fileName + " » : " + decoded.error());
         }
 
         Loader loader{.gltf = *gltf, .directory = path.parent_path(), .images = images};

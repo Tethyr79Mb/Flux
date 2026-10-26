@@ -15,6 +15,8 @@
 #include <string_view>
 #include <vector>
 
+#include <meshoptimizer.h>
+
 using namespace Flux;
 using Math::Vector3f;
 
@@ -204,6 +206,46 @@ namespace {
         return true;
     }
 
+    // EXT_meshopt_compression (gltfpack -c) : sommets et indices compressés par meshoptimizer, décodés au chargement.
+    // Le buffer 1 (« fallback ») n'a pas de fichier : seules les vues décodées le remplissent.
+    bool RunMeshoptTests(const std::filesystem::path& directory) {
+        const std::array<float, 9> positions{0, 0, 0, 1, 0, 0, 0, 1, 0};
+        const std::array<unsigned int, 3> indices{0, 1, 2};
+        std::vector<std::uint8_t> vertexBytes(meshopt_encodeVertexBufferBound(3, 12));
+        vertexBytes.resize(meshopt_encodeVertexBuffer(vertexBytes.data(), vertexBytes.size(), positions.data(), 3, 12));
+        std::vector<std::uint8_t> indexBytes(meshopt_encodeIndexBufferBound(3, 3));
+        indexBytes.resize(meshopt_encodeIndexBuffer(indexBytes.data(), indexBytes.size(), indices.data(), 3));
+        std::vector<std::uint8_t> bytes = vertexBytes;
+        bytes.resize((bytes.size() + 3) / 4 * 4, 0);
+        const std::size_t indexOffset = bytes.size();
+        bytes.insert(bytes.end(), indexBytes.begin(), indexBytes.end());
+        const std::string json = R"({"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+            "extensionsUsed": ["EXT_meshopt_compression"], "extensionsRequired": ["EXT_meshopt_compression"],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+            "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]},
+                          {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}],
+            "bufferViews": [
+                {"buffer": 1, "byteOffset": 0, "byteLength": 36, "byteStride": 12, "extensions": {"EXT_meshopt_compression": {
+                    "buffer": 0, "byteOffset": 0, "byteLength": )" + std::to_string(vertexBytes.size()) + R"(,
+                    "byteStride": 12, "count": 3, "mode": "ATTRIBUTES"}}},
+                {"buffer": 1, "byteOffset": 36, "byteLength": 6, "extensions": {"EXT_meshopt_compression": {
+                    "buffer": 0, "byteOffset": )" + std::to_string(indexOffset) + R"(, "byteLength": )" + std::to_string(indexBytes.size()) + R"(,
+                    "byteStride": 2, "count": 3, "mode": "TRIANGLES"}}}],
+            "buffers": [{"byteLength": )" + std::to_string(bytes.size()) + R"(, "uri": "compresse.bin"},
+                        {"byteLength": 44, "extensions": {"EXT_meshopt_compression": {"fallback": true}}}]})";
+        WriteFile(directory / "compresse.bin", bytes.data(), bytes.size());
+        WriteFile(directory / "compresse.gltf", json.data(), json.size());
+
+        const auto model = LoadModelFile(directory / "compresse.gltf");
+        if (!model) {
+            std::printf("  %s\n", model.error().c_str());
+        }
+        CHECK(model);
+        CHECK(model->vertices.size() == 3 && model->indices == (std::vector<std::uint32_t>{0, 1, 2}));
+        CHECK(Near(model->vertices[1].position, {1, 0, 0}) && Near(model->vertices[2].position, {0, 1, 0}));
+        return true;
+    }
+
     bool RunErrorTests(const std::filesystem::path& directory) {
         CHECK(!LoadModelFile(directory / "absent.glb"));
 
@@ -220,6 +262,18 @@ namespace {
         WriteFile(directory / "draco.gltf", json.data(), json.size());
         const auto draco = LoadModelFile(directory / "draco.gltf");
         CHECK(!draco && draco.error().find("KHR_draco_mesh_compression") != std::string::npos);
+
+        // Compression meshoptimizer illisible (octets abîmés) : refusée plutôt que lue de travers.
+        const std::string broken = R"({"asset": {"version": "2.0"}, "extensionsUsed": ["EXT_meshopt_compression"],
+            "extensionsRequired": ["EXT_meshopt_compression"], "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+            "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+            "bufferViews": [{"buffer": 1, "byteLength": 36, "byteStride": 12, "extensions": {"EXT_meshopt_compression": {
+                "buffer": 0, "byteLength": 36, "byteStride": 12, "count": 3, "mode": "ATTRIBUTES"}}}],
+            "buffers": [{"byteLength": 36, "uri": "abime.bin"}, {"byteLength": 36, "extensions": {"EXT_meshopt_compression": {"fallback": true}}}]})";
+        WriteFile(directory / "abime.bin", buffer.data(), 36);
+        WriteFile(directory / "abime.gltf", broken.data(), broken.size());
+        const auto damaged = LoadModelFile(directory / "abime.gltf");
+        CHECK(!damaged && damaged.error().find("illisibles") != std::string::npos);
 
         // .bin manquant.
         const std::string missing = TriangleJson(true, buffer.size(), R"(, "uri": "introuvable.bin")", "", "");
@@ -403,7 +457,7 @@ bool RunModelTests() {
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
     const bool passed = RunPrepareTests() && RunMeshletTests() && RunTextGltfTests(directory) && RunBinaryGltfTests(directory)
-                     && RunErrorTests(directory);
+                     && RunMeshoptTests(directory) && RunErrorTests(directory);
     std::filesystem::remove_all(directory, error);
     return passed;
 }
