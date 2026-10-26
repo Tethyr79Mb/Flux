@@ -82,7 +82,7 @@ namespace Flux {
         float metallic = 1.0f;
         float roughness = 0.3f;
         // Version allégée (facultative), affichée quand la caméra est à plus de farDistance mètres de la sphère
-        // englobant le modèle : une station de 1,1 million de triangles n'en garde que 125 000 vue de loin. Les deux
+        // englobant le modèle : une station de 780 000 triangles n'en garde que 107 000 vue de loin. Les deux
         // sont chargées ; tant que le modèle complet ne l'est pas, la version lointaine le remplace même de près.
         std::string farModel;
         float farDistance = 2000.0f;
