@@ -4,6 +4,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Planetology/PlanetRenderer.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -375,6 +376,7 @@ namespace Flux {
         Planetology::AtmosphereGpu gpu;
         std::optional<Planetology::AtmosphereParameters> chosen;
         Math::Vector3d chosenCenter;
+        double chosenGround = 0.0;
         double best = MaxDistance;
         for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
             if (scene.GetShip(entity) != NullEntity) {
@@ -390,6 +392,13 @@ namespace Flux {
                 best = gap;
                 chosen = parameters;
                 chosenCenter = center;
+                // Le sol le plus bas possible (la mer, caméra au-dessus d'elle) : le rayon du ciel n'est pas le sol. Sous
+                // l'horizon de ce rayon, une plaine plus basse laissait voir le ciel peint en sol noir, en bande.
+                chosenGround = std::max(static_cast<double>(parameters.radius) - planet.relief, 1.0);
+                if (const double sea = Planetology::PlanetRenderer::GetSeaRadius(planet);
+                    planet.ocean && sea > chosenGround && Math::Length(center) > sea) {
+                    chosenGround = sea;
+                }
             }
         }
         if (!chosen) {
@@ -410,7 +419,7 @@ namespace Flux {
         const double ground = static_cast<double>(a.radius);
         const bool inAir = Math::Length(chosenCenter) < top;
         const double longest = 2.0 * std::sqrt(std::max(top * top - ground * ground, 1.0)); // le long du sol, d'un bord à l'autre
-        gpu.scale = {a.intensity, inAir ? 1.0f : 0.0f, 0.0f, static_cast<float>(std::log1p(longest / AirNear))};
+        gpu.scale = {a.intensity, inAir ? 1.0f : 0.0f, static_cast<float>(chosenGround), static_cast<float>(std::log1p(longest / AirNear))};
         for (std::size_t i = 0; i < m_ambientTable.size(); ++i) {
             gpu.ambient[i] = ToArray(m_ambientTable[i]);
         }

@@ -15,13 +15,20 @@ struct AtmosphereData
     float4 center;   // xyz : centre de la planète relatif à la caméra ; w : rayon du sol (m)
     float4 rayleigh; // rgb : diffusion de Rayleigh au sol (1/m) ; w : 1 / hauteur d'échelle
     float4 mie;      // x : diffusion de Mie au sol ; y : 1 / hauteur d'échelle ; z : g ; w : rayon du haut (0 : aucune)
-    float4 scale;    // x : intensité de la lumière diffusée
+    float4 scale;    // x : intensité de la lumière diffusée ; z : rayon du sol le plus bas (AtmosphereGround)
     float4 ambient[AtmosphereAmbientSize]; // lumière du ciel au sol selon le cosinus du soleil (de -1 à 1)
 };
 
 bool HasAtmosphere(AtmosphereData a)
 {
     return a.mie.w > 0.0;
+}
+
+// Sphère sous laquelle un regard finit forcément au sol : le creux le plus bas du relief, ou la mer. Pas center.w
+// (le rayon de la planète, base de l'air) : une plaine plus basse se voit au-delà de son horizon. 0 : center.w.
+float AtmosphereGround(AtmosphereData a)
+{
+    return a.scale.z > 0.0 ? a.scale.z : a.center.w;
 }
 
 // Entrée et sortie de la sphère de centre l'origine (x > y : manquée).
@@ -252,8 +259,9 @@ float3 AtmosphereSunSide(float3 up, float3 toSun)
 // Angle (radians) entre le zénith et l'horizon du sol vu à `radius` du centre, et sa part sous l'horizontale.
 float2 AtmosphereHorizon(AtmosphereData a, float radius)
 {
-    const float r = max(radius, a.center.w + 1.0);
-    const float beta = acos(saturate(sqrt((r - a.center.w) * (r + a.center.w)) / r));
+    const float ground = AtmosphereGround(a);
+    const float r = max(radius, ground + 1.0);
+    const float beta = acos(saturate(sqrt((r - ground) * (r + ground)) / r));
     return float2(AtmospherePi - beta, beta);
 }
 
