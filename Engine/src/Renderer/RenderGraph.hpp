@@ -48,15 +48,17 @@ namespace Flux {
 
         // Taille d'une texture de travail.
         enum class TextureSize : std::uint8_t {
-            View,   // la vue 3D (scène, mouvement, profondeur, historique)
+            Render, // la scène dessinée (couleur, mouvement, profondeur) : la vue 3D, ou moins quand FSR l'agrandit
+            View,   // la vue 3D (historique, résultat de FSR)
             Window, // la fenêtre (profondeur de l'image finale)
-            HalfView, // la moitié de la vue 3D, arrondie au-dessus (nuages)
+            HalfView, // la moitié de la taille de rendu, arrondie au-dessus (nuages)
         };
         struct TextureDesc
         {
             RHI::Format format = RHI::Format::Undefined;
             TextureSize size = TextureSize::View;
-            bool sampled = true; // lue par des shaders, pas seulement cible
+            bool sampled = true;  // lue par des shaders, pas seulement cible
+            bool storage = false; // aussi écrite par les compute shaders (Writes avec TextureAccess::Storage)
         };
 
         RenderGraph() = default;
@@ -68,6 +70,8 @@ namespace Flux {
             public:
             PassBuilder& Reads(ResourceId resource);
             PassBuilder& Writes(ResourceId resource);
+            // Écriture d'une texture autrement que comme cible de la passe (Storage : par les compute shaders).
+            PassBuilder& Writes(ResourceId resource, RHI::TextureAccess access);
             // Commence la passe de dessin (BeginRenderPass, viewport…) ; le graphe la termine après la dernière étape.
             PassBuilder& Begin(Record begin);
             // Passe jouée seulement quand `condition` est vraie (vérifiée à chaque image).
@@ -137,6 +141,7 @@ namespace Flux {
             const char* name;
             std::vector<ResourceId> reads;
             std::vector<ResourceId> writes;
+            std::vector<RHI::TextureAccess> writeAccess; // None : cible de couleur ou de profondeur selon le format
             // Textures de l'image déjà écrites par une passe d'avant (Compile) : gardées, la passe continue leur dessin.
             std::vector<ResourceId> continued;
             Record begin;

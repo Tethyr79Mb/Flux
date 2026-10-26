@@ -115,6 +115,18 @@ namespace Flux::Vk {
         VkPhysicalDeviceFeatures compression{};
         compression.textureCompressionBC = VK_TRUE;
         device->m_textureCompressionBC = device->m_physicalDevice.enable_features_if_present(compression);
+        // FSR (mise à l'échelle) choisit ses shaders selon ce que le GPU sait faire : calculs en demi-précision et
+        // taille des groupes de threads imposée (wave64 des Radeon). Activés quand ils y sont (tous les GPU de bureau
+        // récents) ; sinon FSR prend ses variantes simples.
+        VkPhysicalDeviceVulkan12Features half{};
+        half.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        half.shaderFloat16 = VK_TRUE;
+        device->m_physicalDevice.enable_extension_features_if_present(half);
+        VkPhysicalDeviceVulkan13Features subgroups{};
+        subgroups.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        subgroups.subgroupSizeControl = VK_TRUE;
+        subgroups.computeFullSubgroups = VK_TRUE;
+        device->m_physicalDevice.enable_extension_features_if_present(subgroups);
         // Doubles dans les shaders : la déformation du relief des grandes planètes (PlanetTile64.slang). GTX 1060 et
         // RX 5700 les ont ; sans eux, les tuiles restent en float.
         VkPhysicalDeviceFeatures float64{};

@@ -6,6 +6,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
+#include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -121,6 +122,17 @@ namespace Flux {
         // aux précédentes ; les bords en escalier et le grain des nuages s'effacent.
         void SetTemporalAA(bool enabled);
         bool IsTemporalAAEnabled() const;
+        // Mise à l'échelle (DefaultUpscaling par défaut). Un mode FSR sans FSR disponible (DLL d'AMD absente, GPU
+        // refusé) donne Natif : GetUpscaling rend le réglage demandé, IsUpscalingAvailable dit si FSR tourne. En FSR,
+        // SetTemporalAA ne change rien : FSR fait aussi l'anticrénelage.
+        void SetUpscaling(Upscaling upscaling);
+        Upscaling GetUpscaling() const;
+        bool IsUpscalingAvailable() const;
+        // Netteté ajoutée par FSR (0 à 1, DefaultSharpness par défaut).
+        void SetSharpness(float sharpness);
+        float GetSharpness() const;
+        // Taille à laquelle la scène est dessinée à la dernière image (plus petite que la vue en FSR).
+        Math::Vector2i GetRenderSize() const;
         // Entités cachées derrière d'autres écartées par le GPU (activé par défaut), d'après la profondeur de l'image
         // précédente. Désactivable pour comparer.
         void SetOcclusionCulling(bool enabled);
