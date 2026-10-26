@@ -69,6 +69,7 @@ namespace Flux::RHI {
         RGBA16Uint,
         RGBA16Float, // couleur au-delà de 1 (lumières, ciel) sans perte
         RG16Float,   // deux valeurs signées (déplacement des pixels d'une image à l'autre)
+        R8Unorm,     // une valeur de 0 à 1 (masque)
         // Compressés par blocs de 4 x 4 pixels, 16 octets chacun (1 octet par pixel au lieu de 4) : textures lues
         // souvent (sol des planètes). Device::HasTextureCompressionBC.
         BC7Unorm,
@@ -341,6 +342,9 @@ namespace Flux::RHI {
         const Texture* color = nullptr;  // la scène, HDR linéaire
         const Texture* depth = nullptr;  // reverse-Z infini
         const Texture* motion = nullptr; // où chaque pixel était à l'image précédente, moins où il est (en uv)
+        // Facultatif : 0 à 1, où l'image du moment compte plus que l'historique (nuages, flammes : ce que le mouvement
+        // ne décrit pas).
+        const Texture* reactive = nullptr;
         const Texture* output = nullptr;
         Extent renderSize;               // partie dessinée de color, depth et motion
         float jitterX = 0.0f;            // décalage de la projection en pixels de rendu (x vers la droite, y vers le bas)

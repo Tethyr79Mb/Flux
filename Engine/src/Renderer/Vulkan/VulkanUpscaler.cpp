@@ -132,6 +132,9 @@ namespace Flux::Vk {
                 dispatch.depth = Describe(*inputs.depth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
                 dispatch.motionVectors = Describe(*inputs.motion, FFX_API_RESOURCE_STATE_COMPUTE_READ);
                 dispatch.output = Describe(*inputs.output, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
+                if (inputs.reactive) {
+                    dispatch.reactive = Describe(*inputs.reactive, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+                }
                 dispatch.jitterOffset = {inputs.jitterX, inputs.jitterY};
                 // Mouvement en fraction de l'image (uv) : FSR le veut en pixels de rendu.
                 dispatch.motionVectorScale = {static_cast<float>(inputs.renderSize.width),

@@ -27,7 +27,8 @@ namespace Flux {
 
     std::expected<std::unique_ptr<TracerRenderer>, std::string> TracerRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
                                                                                         RHI::Format motionFormat,
-                                                                                        RHI::Format depthFormat) {
+                                                                                        RHI::Format depthFormat,
+                                                                                        RHI::Format reactiveFormat) {
         std::unique_ptr<TracerRenderer> renderer(new TracerRenderer());
         constexpr std::array bindings{RHI::Binding{DataSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex}};
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
@@ -63,6 +64,14 @@ namespace Flux {
             return std::unexpected(pipeline.error());
         }
         renderer->m_pipeline = std::move(*pipeline);
+        desc.fragmentEntryPoint = "fragmentReactive";
+        desc.colorFormat = reactiveFormat;
+        desc.secondColorFormat = RHI::Format::Undefined;
+        auto reactive = device.CreatePipeline(desc);
+        if (!reactive) {
+            return std::unexpected(reactive.error());
+        }
+        renderer->m_reactive = std::move(*reactive);
         renderer->m_tracers.reserve(MaxTracers);
         return renderer;
     }
@@ -117,10 +126,18 @@ namespace Flux {
     }
 
     void TracerRenderer::Draw(RHI::CommandList& commands) const {
+        Draw(commands, *m_pipeline);
+    }
+
+    void TracerRenderer::DrawReactive(RHI::CommandList& commands) const {
+        Draw(commands, *m_reactive);
+    }
+
+    void TracerRenderer::Draw(RHI::CommandList& commands, const RHI::Pipeline& pipeline) const {
         if (m_tracers.empty()) {
             return;
         }
-        commands.BindPipeline(*m_pipeline);
+        commands.BindPipeline(pipeline);
         commands.SetBindGroup(0, *m_groups[m_frameIndex]);
         commands.PushConstants(&m_params, sizeof(m_params));
         commands.Draw(static_cast<std::uint32_t>(m_tracers.size()) * 6, 0);

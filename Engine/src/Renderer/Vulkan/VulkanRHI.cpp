@@ -19,6 +19,7 @@ namespace Flux::Vk {
             case RHI::Format::RGBA16Uint: return VK_FORMAT_R16G16B16A16_UINT;
             case RHI::Format::RGBA16Float: return VK_FORMAT_R16G16B16A16_SFLOAT;
             case RHI::Format::RG16Float: return VK_FORMAT_R16G16_SFLOAT;
+            case RHI::Format::R8Unorm: return VK_FORMAT_R8_UNORM;
             case RHI::Format::BC7Unorm: return VK_FORMAT_BC7_UNORM_BLOCK;
             case RHI::Format::BC7Srgb: return VK_FORMAT_BC7_SRGB_BLOCK;
         }

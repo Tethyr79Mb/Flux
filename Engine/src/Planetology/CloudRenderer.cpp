@@ -25,7 +25,8 @@ namespace Flux::Planetology {
     }
 
     std::expected<std::unique_ptr<CloudRenderer>, std::string> CloudRenderer::Create(RHI::Device& device, const MeshRenderer& meshes,
-                                                                                    RHI::Format sceneFormat) {
+                                                                                    RHI::Format sceneFormat,
+                                                                                    RHI::Format reactiveFormat) {
         auto noise = CloudNoise::Create(device);
         if (!noise) {
             return std::unexpected(noise.error());
@@ -79,6 +80,11 @@ namespace Flux::Planetology {
         desc.blend = RHI::BlendMode::Alpha;
         if (created) {
             created = create(renderer->m_composite, "fragmentCloudComposite");
+        }
+        desc.colorFormat = reactiveFormat;
+        desc.blend = RHI::BlendMode::Additive; // ajouté aux flammes et traçantes déjà dans le masque
+        if (created) {
+            created = create(renderer->m_reactive, "fragmentCloudReactive");
         }
         if (!created) {
             return std::unexpected(created.error());
@@ -138,5 +144,9 @@ namespace Flux::Planetology {
 
     void CloudRenderer::DrawComposite(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t target) const {
         Draw(commands, frameIndex, *m_composite, *m_compositeGroups[target], 0.0f);
+    }
+
+    void CloudRenderer::DrawReactive(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t target) const {
+        Draw(commands, frameIndex, *m_reactive, *m_compositeGroups[target], 0.0f);
     }
 }

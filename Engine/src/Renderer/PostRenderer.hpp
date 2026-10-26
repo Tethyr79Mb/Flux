@@ -32,6 +32,8 @@ namespace Flux {
         static constexpr RHI::Format DepthFormat = RHI::Format::D32Float;
         // Seconde cible de la passe de la scène : le mouvement propre de ce qu'on voit (voir Motion dans Mesh.slang).
         static constexpr RHI::Format MotionFormat = RHI::Format::RG16Float;
+        // Masque réactif de FSR (UpscaleInputs::reactive) : nuages, flammes et traçantes l'écrivent en s'additionnant.
+        static constexpr RHI::Format ReactiveFormat = RHI::Format::R8Unorm;
 
         // Textures du graphe de rendu : à la taille de rendu, sauf l'historique (taille de la vue 3D). En Natif, les
         // deux tailles sont égales.

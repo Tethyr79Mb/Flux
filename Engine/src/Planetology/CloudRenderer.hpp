@@ -30,9 +30,11 @@ namespace Flux::Planetology {
         static constexpr RHI::Format LightFormat = RHI::Format::RGBA16Float;
         static constexpr RHI::Format DistanceFormat = RHI::Format::RGBA32Float;
 
-        // `sceneFormat` : celui de l'image de la scène (DrawComposite y dessine).
+        // `sceneFormat` : celui de l'image de la scène (DrawComposite y dessine) ; `reactiveFormat` : celui du masque
+        // réactif de FSR (DrawReactive).
         static std::expected<std::unique_ptr<CloudRenderer>, std::string> Create(RHI::Device& device, const MeshRenderer& meshes,
-                                                                                 RHI::Format sceneFormat);
+                                                                                 RHI::Format sceneFormat,
+                                                                                 RHI::Format reactiveFormat);
 
         // Textures du graphe de rendu : la profondeur de la scène (pleine résolution), les autres en demi-résolution.
         struct Targets
@@ -55,6 +57,8 @@ namespace Flux::Planetology {
         void DrawMarch(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawResolve(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t target);
         void DrawComposite(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t target) const;
+        // En FSR, après DrawComposite, vers le masque réactif (gardé) : l'opacité des nuages qui y ont été mêlés.
+        void DrawReactive(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t target) const;
 
         private:
         CloudRenderer(RHI::Device& device, const MeshRenderer& meshes, CloudNoise noise)
@@ -72,6 +76,7 @@ namespace Flux::Planetology {
         std::unique_ptr<RHI::Pipeline> m_march;
         std::unique_ptr<RHI::Pipeline> m_resolve;
         std::unique_ptr<RHI::Pipeline> m_composite;
+        std::unique_ptr<RHI::Pipeline> m_reactive; // mêmes groupes que la composition
         Targets m_targets;
         std::unique_ptr<RHI::BindGroup> m_marchGroup;
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_resolveGroups;   // [i] : écrit history[i], lit l'autre

@@ -105,8 +105,8 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
 (tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan), nuages en demi-résolution
-(marche, historique, composition), transparents, pyramide de profondeur, anticrénelage ou FSR (mouvement complet puis
-agrandissement), bloom, image finale (scène, grille, interface). Chaque passe
+(marche, historique, composition), transparents, masque réactif (en FSR), pyramide de profondeur, anticrénelage ou FSR
+(mouvement complet puis agrandissement), bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
 gardé de l'image précédente ou rempli par le CPU). Le panneau Moteur affiche une ligne par passe et par étape, sans
 liste à tenir à part.
@@ -201,7 +201,9 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
 5. Mise à l'échelle (Paramètres > Graphiques, `Upscaling`) : en FSR, la scène de l'étape 4 est dessinée plus petite
    (67 % de chaque côté en Qualité, 50 % en Performance), avec autant de sous-pixels que FSR en demande (8 fois le
    rapport au carré). `Temporal.slang` (`fragmentMotion`) réunit le mouvement de la caméra et celui des objets en un
-   mouvement complet, puis la DLL d'AMD (`Renderer/Vulkan/VulkanUpscaler`, derrière `RHI::Upscaler`) agrandit
+   mouvement complet. Les flammes, les traçantes et les nuages écrivent aussi un masque réactif (`ReactiveFormat`, R8) :
+   là où l'image change sans que le mouvement le dise, FSR suit l'image du moment au lieu de les faire trembler ou
+   traîner. Puis la DLL d'AMD (`Renderer/Vulkan/VulkanUpscaler`, derrière `RHI::Upscaler`) agrandit
    l'image à la taille de la vue dans l'historique, qu'elle écrit par ses compute shaders ; elle garde son propre
    historique et pose ses propres barrières. Sans DLL ou si le GPU la refuse : Natif, dit une fois dans le journal.
    En Natif, anticrénelage temporel (`Temporal.slang`, activé par défaut) : chaque pixel est retrouvé
