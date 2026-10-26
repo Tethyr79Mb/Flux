@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 
@@ -23,6 +24,7 @@ namespace Flux {
         Upscaling upscaling = DefaultUpscaling;
         float sharpness = DefaultSharpness; // netteté ajoutée par FSR, 0 à 1
         GroundDetail groundDetail = DefaultGroundDetail;
+        CloudQuality cloudQuality = DefaultCloudQuality;
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)
     };

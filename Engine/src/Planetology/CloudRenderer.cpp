@@ -7,12 +7,16 @@ namespace Flux::Planetology {
     namespace {
         // Doit correspondre à DrawParams dans shaders/Mesh.slang (MeshRenderer.cpp), dont Clouds.slang lit ses réglages :
         // color.xy, 1 / taille de la demi-résolution ; color.z, 1 si l'historique est valable ; color.w, part de
-        // l'image actuelle ; emissive.xy, taille de la pleine résolution ; emissive.zw, de la demi-résolution.
+        // l'image actuelle ; emissive.xy, taille de la pleine résolution ; emissive.zw, de la demi-résolution ;
+        // cascade et transparent, pas le long du rayon et vers le soleil (CloudQuality).
         struct CloudParams
         {
             std::array<float, 4> color;
             std::array<float, 4> emissive;
-            std::array<std::uint32_t, 12> unused;
+            std::uint32_t steps;      // DrawParams::cascade
+            float unused0;            // DrawParams::alphaCutoff
+            std::uint32_t lightSteps; // DrawParams::transparent
+            std::array<std::uint32_t, 9> unused;
         };
         static_assert(sizeof(CloudParams) == 80);
 
@@ -112,6 +116,9 @@ namespace Flux::Planetology {
         const CloudParams params{{1.0f / static_cast<float>(half.width), 1.0f / static_cast<float>(half.height), historyValid, CurrentWeight},
                                  {static_cast<float>(full.width), static_cast<float>(full.height), static_cast<float>(half.width),
                                   static_cast<float>(half.height)},
+                                 GetCloudSteps(m_quality).view,
+                                 0.0f,
+                                 GetCloudSteps(m_quality).light,
                                  {}};
         commands.BindPipeline(pipeline);
         m_meshes.BindScene(commands, frameIndex);

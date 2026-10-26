@@ -121,6 +121,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - 🔨 Océan : tuiles plus grossières et moins nombreuses. Fait : l'eau, le fond et les terres basses sous l'horizon de la mer ne sont plus gardés (scène d'essai à 1 300 m : 20 tuiles d'eau → 10, 313 tuiles → 291). Reste : tuiles d'eau plus grossières que celles du sol ; eau cachée derrière une montagne écartée par la pyramide de profondeur seulement avec les mesh shaders.
+- ✅ Réglage « Qualité des nuages » (Bas, Moyen, Élevé par défaut : pas le long du rayon et vers le soleil), aux mêmes endroits que « Détail du sol ».
 - 🔧 Réglage « Détail du sol » (Bas, Moyen, Élevé par défaut, Ultra : tuile coupée à 3, 4, 5 ou 6 fois son bord), dans les Paramètres de l'éditeur, les réglages du jeu et les listes déroulantes des interfaces. Limite : choisi à la main, pas encore selon la carte graphique ni la vitesse mesurée.
 
 ### Rendu
@@ -156,10 +157,11 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
 - ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
-- 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume (64 pas en demi-résolution, reprojetés d'une image à l'autre), cumulus et stratus, avec leur ombre au sol. À améliorer : qualité réglable et coût mesuré (étape 3 ci-dessous).
+- 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume (64 pas en demi-résolution au plus, allongés entre les nuages, reprojetés d'une image à l'autre), cumulus et stratus, avec leur ombre au sol. Coût mesuré chez Bruno (RX 7700 XT, 1080p, ciel plein écran) : 2,1 ms avant les pas allongés. Limites : pas de masque réactif pour FSR, qualité choisie à la main.
 - 🔨 Nuages volumétriques (3 étapes) : 1) ✅ bruit 3D (forme Perlin-Worley 128³, détail Worley 32³) calculé une fois
   par le GPU, avec ses mips ; 2) ✅ rendu en demi-résolution avec reprojection, 64 pas, ombre interne
-  vers le soleil, diffusion multiple, cumulus et stratus ; 3) ⬜ qualité réglable (GTX 1060), mesures GPU.
+  vers le soleil, diffusion multiple, cumulus et stratus ; 3) ✅ pas allongés dans le vide (environ 45 % de
+  calcul en moins) et réglage « Qualité des nuages » (Bas 32/4 pas, Moyen 48/5, Élevé 64/6).
 - ⬜ Remplacer la texture de sable (aerial_beach_01), trop marron.
 - ⬜ 2 ou 3 textures par matière, pour varier davantage le sol de près.
 

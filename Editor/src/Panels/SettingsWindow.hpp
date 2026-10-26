@@ -40,5 +40,6 @@ namespace FluxEditor {
         float m_sharpness = Flux::DefaultSharpness;
         bool m_sharpnessChanged = false; // pas encore enregistré (curseur tenu)
         Flux::GroundDetail m_groundDetail = Flux::DefaultGroundDetail;
+        Flux::CloudQuality m_cloudQuality = Flux::DefaultCloudQuality;
     };
 }

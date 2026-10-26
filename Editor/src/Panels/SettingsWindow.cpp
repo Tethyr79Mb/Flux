@@ -81,6 +81,13 @@ namespace FluxEditor {
             }
         }
         engine.GetRenderer().SetGroundDetail(m_groundDetail);
+        if (const auto quality = json.find("cloudQuality"); quality != json.end() && quality->is_string()) {
+            const auto found = std::ranges::find(CloudQualityKeys, quality->get<std::string>());
+            if (found != CloudQualityKeys.end()) {
+                m_cloudQuality = static_cast<CloudQuality>(found - CloudQualityKeys.begin());
+            }
+        }
+        engine.GetRenderer().SetCloudQuality(m_cloudQuality);
     }
 
     void SettingsWindow::Save() const {
@@ -94,7 +101,8 @@ namespace FluxEditor {
                         {"temporalAA", m_temporalAA},
                         {"upscaling", UpscalingKeys[static_cast<std::size_t>(m_upscaling)]},
                         {"sharpness", m_sharpness},
-                        {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]}};
+                        {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]},
+                        {"cloudQuality", CloudQualityKeys[static_cast<std::size_t>(m_cloudQuality)]}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -182,6 +190,13 @@ namespace FluxEditor {
                 if (ui.Choice("Détail du sol", detail, GroundDetailLabels)) {
                     m_groundDetail = static_cast<GroundDetail>(detail);
                     renderer.SetGroundDetail(m_groundDetail);
+                    Save();
+                }
+                // Pas des nuages le long du regard et vers le soleil : plus bas, moins de calcul et plus de grain.
+                int clouds = static_cast<int>(m_cloudQuality);
+                if (ui.Choice("Qualité des nuages", clouds, CloudQualityLabels)) {
+                    m_cloudQuality = static_cast<CloudQuality>(clouds);
+                    renderer.SetCloudQuality(m_cloudQuality);
                     Save();
                 }
                 // Le bloom fait déborder la lumière des zones très lumineuses (soleil, flammes, émissifs).

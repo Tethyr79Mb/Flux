@@ -6,6 +6,7 @@
 #include "Flux/Graphics/FlyCameraController.hpp"
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Vector2.hpp"
+#include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -71,6 +72,7 @@ namespace Flux {
         Upscaling upscaling = DefaultUpscaling;
         float sharpness = DefaultSharpness;
         GroundDetail groundDetail = DefaultGroundDetail;
+        CloudQuality cloudQuality = DefaultCloudQuality;
         float volume = 1.0f; // volume général, 0 à 1
     };
 

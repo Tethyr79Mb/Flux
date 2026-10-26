@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Planetology/CloudQuality.hpp"
 #include "Planetology/CloudNoise.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
@@ -19,8 +20,8 @@ namespace Flux::Planetology {
     // la composition dans l'image de la scène à pleine résolution (DrawComposite), avant les transparents. Les
     // textures de travail sont au graphe de rendu (Targets) ; ici, le bruit 3D (CloudNoise), les pipelines et les
     // groupes qui les désignent. Les données de l'image (planètes, soleil, air) sont celles de MeshRenderer.
-    // Coût : la marche, jusqu'à 64 pas par pixel (6 de plus vers le soleil là où il y a du nuage), au quart du nombre
-    // de pixels de la vue ; puis deux passes plein écran légères. Mémoire vidéo : 9,7 Mo de bruit, et 18 Mo de
+    // Coût : la marche, jusqu'à 64 pas par pixel (6 de plus vers le soleil là où il y a du nuage) en qualité Élevée,
+    // moins dans le vide entre deux nuages (pas allongés), au quart du nombre de pixels de la vue ; puis deux passes plein écran légères. Mémoire vidéo : 9,7 Mo de bruit, et 18 Mo de
     // textures de travail en 1440p.
     class CloudRenderer {
         public:
@@ -45,6 +46,8 @@ namespace Flux::Planetology {
         void Bind(const Targets& targets);
         // L'historique ne vaut plus rien (image sans nuages, saut de la caméra) : la prochaine image repart de zéro.
         void ResetHistory() { m_historyValid = false; }
+        void SetQuality(CloudQuality quality) { m_quality = quality; }
+        CloudQuality GetQuality() const { return m_quality; }
 
         // Chacune dans une passe de dessin déjà commencée, viewport compris : DrawMarch vers `light` et `distances`,
         // DrawResolve vers l'exemplaire `target` de l'historique (RenderGraph::GetWriteCopy, l'autre est lu),
@@ -74,5 +77,6 @@ namespace Flux::Planetology {
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_resolveGroups;   // [i] : écrit history[i], lit l'autre
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_compositeGroups; // [i] : lit history[i]
         bool m_historyValid = false;
+        CloudQuality m_quality = DefaultCloudQuality;
     };
 }

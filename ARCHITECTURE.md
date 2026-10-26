@@ -377,13 +377,15 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   sphères (base et sommet), sans maillage, marchée par le GPU dans trois passes du graphe placées après la scène
   opaque, qui coupent la passe « scène » en deux (le graphe garde ce qu'elle a écrit : `Pass::continued`, et
   `RenderPassDesc::loadColor` pour la reprendre) :
-  1. « nuages », en demi-résolution (`TextureSize::HalfView`) : 64 pas au plus le long du rayon dans la couche,
-     resserrés près de l'entrée quand la caméra y est, départ décalé au hasard à chaque image. Densité : carte
+  1. « nuages », en demi-résolution (`TextureSize::HalfView`) : 32 à 64 pas au plus le long du rayon dans la
+     couche selon `CloudQuality` (réglage « Qualité des nuages », qui fixe aussi les 4 à 6 pas vers le soleil),
+     resserrés près de l'entrée quand la caméra y est, allongés (x2 puis x3) après deux pas vides, départ décalé
+     au hasard à chaque image. Densité : carte
      météo (`CloudWeather`, la couverture de toujours) x profil en hauteur (base plate, sommet plus haut pour un
      cumulus que pour un stratus) x forme lue dans le bruit 3D (`Planetology/CloudNoise`, `shaders/CloudNoise.slang` :
      forme 128³ Perlin-Worley et trois Worley, détail 32³ trois Worley, calculés une fois par le GPU avec leurs mips),
      bords rongés par le détail. Le mip suit la taille d'un pixel ; au loin, la forme devient sa moyenne et le détail
-     s'efface (sinon des bords en escalier vus de l'espace). Lumière : 6 pas vers le soleil (ombre interne), trois
+     s'efface (sinon des bords en escalier vus de l'espace). Lumière : pas vers le soleil (ombre interne), trois
      ordres de diffusion multiple (Wrenninge), phase à deux lobes, « powder », intégration de Hillaire par pas.
      Sorties : lumière prémultipliée + opacité, et les distances (premier nuage, nuage moyen, fin du rayon).
   2. « historique des nuages » : l'image d'avant reprojetée à la distance du nuage moyen, ramenée dans la boîte

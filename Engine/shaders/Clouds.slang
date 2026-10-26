@@ -3,7 +3,7 @@
 //    long de son rayon, jusqu'au relief ou au vaisseau qui l'arrête (profondeur de la scène). À chaque pas, la densité
 //    vient des textures 3D de bruit (CloudNoise.slang) : la carte météo dit où sont les formations et leur type
 //    (stratus plats, cumulus en tours), la texture de forme y sculpte des masses arrondies, celle de détail en ronge
-//    les bords. Le soleil qui arrive à chaque point est suivi en 6 pas vers lui (l'ombre du nuage sur lui-même, ce qui
+//    les bords. Le soleil qui arrive à chaque point est suivi en 4 à 6 pas vers lui (l'ombre du nuage sur lui-même, ce qui
 //    donne le volume), avec une diffusion multiple approchée (le cœur d'un nuage épais reste lumineux, les bords à
 //    contre-jour s'argentent).
 // 2. fragmentCloudResolve : mêlé à l'historique (la même chose à l'image précédente, retrouvée là où était le nuage),
@@ -27,8 +27,11 @@
 
 // Les réglages arrivent par DrawParams (Mesh.slang, une seule constante poussée par shader) :
 // color.xy : 1 / taille de la demi-résolution ; color.z : 1 si l'historique est valable ; color.w : part de l'image
-// actuelle ; emissive.xy : taille de la pleine résolution ; emissive.zw : de la demi-résolution (pixels).
+// actuelle ; emissive.xy : taille de la pleine résolution ; emissive.zw : de la demi-résolution (pixels) ; cascade :
+// pas le long du rayon, transparent : pas vers le soleil (qualité des nuages, CloudQuality).
 float2 CloudHalfTexel() { return params.color.xy; }
+int CloudSteps() { return int(params.cascade); }
+int CloudLightSteps() { return int(params.transparent); }
 float2 CloudFullSize() { return params.emissive.xy; }
 float2 CloudHalfSize() { return params.emissive.zw; }
 
@@ -42,8 +45,8 @@ static const float CloudShapeMean = 0.75;
 static const float CloudExtinction = 0.03;
 // Longueur traversée au plus (m) : de biais, la couche peut faire des centaines de km ; au-delà, l'air voile tout.
 static const float CloudMaxPath = 60000.0;
-static const int CloudSteps = 64;
-static const int CloudLightSteps = 6;
+// Jusqu'où (en épaisseurs de couche) les pas vers le soleil cherchent ce qui le cache, quel que soit leur nombre.
+static const float CloudLightReach = 1.2;
 // Distance qui veut dire « rien » (le ciel, pas de nuage) : finie, pour les comparaisons.
 static const float CloudFar = 1.0e9;
 
@@ -247,7 +250,14 @@ CloudMarchOutput fragmentCloudMarch(CloudVertexOutput input)
 
     // Pas plus serrés près de l'entrée quand la caméra est dans la couche ou juste à côté (on y voit les détails) :
     // t = début + longueur x u^k, k de 1 (loin) à 2 (dedans). Départ décalé au hasard par pixel et par image (nombre
-    // d'or) : du grain au lieu de strates, effacé par l'historique.
+    // d'or) : du grain au lieu de strates, effacé par l'historique. Hors des nuages, après deux pas vides, les pas
+    // doublent puis triplent : le vide entre deux nuages coûte moins de lectures (un petit nuage peut être sauté, mais
+    // pas à la même place d'une image à l'autre : l'historique le retrouve).
+    const int steps = CloudSteps();
+    const float fine = 1.0 / float(steps);
+    const int lightSteps = CloudLightSteps();
+    // Premier pas vers le soleil : les suivants grandissent de 1,8 fois et l'ensemble couvre CloudLightReach couches.
+    const float firstLightStep = c.thickness * CloudLightReach * 0.8 / (pow(1.8, float(lightSteps)) - 1.0);
     const float span = end - start;
     const float k = lerp(1.0, 2.0, saturate(1.0 - start / c.thickness));
     const float shift = float(f.lightCount.w % 1024u) * 0.61803398875;
@@ -267,25 +277,30 @@ CloudMarchOutput fragmentCloudMarch(CloudVertexOutput input)
     float weighted = 0.0;
     float weights = 0.0;
     float previous = start;
-    for (int s = 0; s < CloudSteps; ++s) {
-        const float u = (float(s) + jitter) / float(CloudSteps);
+    float u = jitter * fine;
+    int empty = 0;
+    for (int s = 0; s < steps && u < 1.0; ++s) {
         const float t = start + span * pow(u, k);
         const float stepLength = t - previous;
         previous = t;
         const float3 fromCenter = direction * t - c.planet.clouds.xyz;
         const float density = CloudDensity(c, fromCenter, lod, octaves, true) * opacity;
         if (density <= 0.002) {
+            ++empty;
+            u += fine * float(clamp(empty - 1, 1, 3));
             continue;
         }
+        empty = 0;
+        u += fine;
         const float sigma = density * CloudExtinction;
         const float3 up = normalize(fromCenter);
         const float h = saturate((length(fromCenter) - c.baseRadius) / c.thickness);
 
-        // Le soleil jusqu'ici : 6 pas vers lui, de plus en plus longs, sur deux épaisseurs de couche au plus.
+        // Le soleil jusqu'ici : quelques pas vers lui (CloudLightSteps), de plus en plus longs.
         float depthToSun = 0.0;
-        float lightStep = c.thickness * 0.03;
+        float lightStep = firstLightStep;
         float along = 0.0;
-        for (int l = 0; l < CloudLightSteps; ++l) {
+        for (int l = 0; l < lightSteps; ++l) {
             along += lightStep * 0.5;
             depthToSun += CloudDensity(c, fromCenter + toSun * along, lod + 1.0, 1.0, false) * lightStep;
             along += lightStep * 0.5;
