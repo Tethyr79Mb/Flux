@@ -677,6 +677,8 @@ namespace Flux {
             float metallic = 1.0f;
             float roughness = 1.0f;
             bool materialOverride = false;
+            const GpuModel* farModel = nullptr;
+            float farDistance = 0.0f;
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 model = &m_models->GetCube();
                 tint = renderer->color;
@@ -686,6 +688,13 @@ namespace Flux {
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
                        component && !component->model.empty() && !assetsDirectory.empty()) {
                 model = m_models->Find(assetsDirectory, component->model);
+                if (!component->farModel.empty()) {
+                    farModel = m_models->Find(assetsDirectory, component->farModel);
+                    farDistance = component->farDistance;
+                    if (!model) {
+                        std::swap(model, farModel); // complet pas encore chargé : la version lointaine, même de près
+                    }
+                }
                 tint = component->tint;
                 if (component->overrideMaterial) {
                     materialOverride = true;
@@ -709,6 +718,11 @@ namespace Flux {
             };
             // Celle de tout le modèle (un modèle animé peut sortir de sa boîte : ombre coupée au pire).
             const auto [relativeCenter, radius] = sphereOf(model->bounds);
+            // Loin du modèle (de sa sphère, pas de son centre : une station de 4 km), sa version allégée. Même place et
+            // même taille : la sphère du modèle complet sert aux deux.
+            if (farModel && Math::Length(relativeCenter) - radius > farDistance) {
+                model = farModel;
+            }
             // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
             const bool inView = view.Contains(relativeCenter, model->IsAnimated() ? 1.5f * radius : radius);
             // Ni en vue ni dans une ombre : rien à dessiner, ni pose à calculer (personnage loin derrière la caméra).
