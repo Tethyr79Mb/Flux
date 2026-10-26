@@ -56,10 +56,11 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`Renderer/RHI`) : un autre backend (DX12) reste possible.
 - ✅ Shaders Slang compilés par CMake.
 - ✅ Caméra en reverse-Z, plan lointain infini, rendu relatif à la caméra (mondes géants).
-- 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 32 à 4,8 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.
+- 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 34 à 5,1 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.
 - 🔧 Niveau de détail des modèles : une version lointaine par modèle (« Version lointaine » du Modèle 3D), affichée au-delà d'une distance à sa sphère englobante. À améliorer : un seul palier, bascule sans fondu ; les deux versions restent chargées.
 - 🔧 Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre). À améliorer : les lumières traversent les murs (pas d'ombre).
 - 🔧 Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour. À améliorer : reflets flous, ciel seulement (pas la scène).
+- ⬜ Lumière renvoyée par la planète proche (remarque de Bruno du 2026-10-26) : dans l'espace, la face d'un objet à l'ombre du soleil ne reçoit que l'ambiante d'un ciel noir et paraît grise ; une lueur bleutée venue de la planète (selon sa taille apparente et sa face éclairée) éclairerait les dessous comme dans les rendus de la station.
 - ⬜ Matériaux multicouches (remarque de Bruno du 2026-10-26) : une matière de base (peinture, métal nu) et des couches mélangées par masque (usure, saleté, bandes), comme les « layer blends » de Star Citizen. Aujourd'hui : un seul jeu de textures par matériau.
 - ⬜ Décalcomanies (idée de Bruno du 2026-10-26) : images projetées sur les modèles (numéros, logos, bandes), posées dans l'éditeur. En attendant, plaques texturées dans le modèle.
 - ⬜ Ciel plus fin (nébuleuse en 2048 ou 4096, compressée BC6H) réglable dans les détails des options graphiques (idée de Bruno).
@@ -230,8 +231,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   de 1,6 km au symbole de Flux doré, double anneau bas, 48 portes de hangar aux halos bleus. Extérieur et intérieur en deux
   zones séparées : l'intérieur (hangar XL d'un vaisseau à la fois, console pour en changer, cabine du joueur, promenade
   des marchands et des PNJ de mission) sera une scène isolée, chargée en passant le champ bleu de la porte du joueur.
-  Fait : extérieur dans le jeu (Placer > Station orbitale), peinture blanche lisse, 780 000 triangles, version lointaine
-  de 107 000, collision simplifiée. Détails et décalcomanies à ajouter au cas par cas (choix de Bruno). À faire : entrée dans l'intérieur par le pilote automatique, hangar, cabine, promenade, console.
+  Fait : extérieur dans le jeu (Placer > Station orbitale), peinture blanche lisse, modules des anneaux fondus dans la coque, 850 000
+  triangles, version lointaine de 110 000, collision simplifiée. Détails et décalcomanies à ajouter au cas par cas (choix de Bruno). À faire : entrée dans l'intérieur par le pilote automatique, hangar, cabine, promenade, console.
 - ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.

@@ -187,7 +187,7 @@ namespace FluxEditor {
         void AddOrbitalStation(Scene& scene, Entity station) {
             ModelComponent& model = scene.Add<ModelComponent>(station);
             model.model = "Modeles/Station/Station.glb";
-            model.farModel = "Modeles/Station/Station-loin.glb"; // 107 000 triangles au lieu de 780 000
+            model.farModel = "Modeles/Station/Station-loin.glb"; // 110 000 triangles au lieu de 850 000
             model.farDistance = 2000.0f;
             ColliderComponent& collider = scene.Add<ColliderComponent>(station);
             collider.shape = ColliderShape::Mesh;
