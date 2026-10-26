@@ -39,6 +39,12 @@ namespace Flux {
         // Faux si la scène de démarrage du projet a changé depuis la sauvegarde (ou si la sauvegarde ne le dit pas).
         static bool MatchesStartupScene(const Project& project);
 
+        // État des systèmes du jeu (nom, texte donné par leur save), et sa reprise après le chargement d'une scène
+        // (dans l'ordre d'ajout des systèmes). Servent aussi aux passages entre scènes (Engine::TakePassage).
+        using SystemsState = std::vector<std::pair<std::string, std::string>>;
+        SystemsState SaveSystems(Engine& engine) const;
+        void LoadSystems(Engine& engine, const SystemsState& state) const;
+
         // Scène, siège du joueur, systèmes du jeu ; l'erreur en texte.
         std::expected<void, std::string> Write(Engine& engine, Entity player) const;
         // Après le chargement de la scène sauvegardée : joueur remis sur son siège, systèmes du jeu repris.

@@ -433,6 +433,7 @@ namespace Flux {
             m_loadingScreen->Update(m_renderer->GetTimings(), deltaSeconds);
             // Avant le changement de scène : une fonction peut en demander un.
             m_interfaceBindings->RunActions(*this, m_gameQuitHandler);
+            TakePassage();
             LoadRequestedScene();
             RunQuickSave(); // après le changement de scène : F9 l'emporte sur une scène demandée à la même image
         }
@@ -557,6 +558,7 @@ namespace Flux {
         Warp::Update(m_scene, deltaSeconds); // après le pilote, comme le pilote automatique
         RunGameSystems(GameStage::BeforePhysics, deltaSeconds); // IA de combat du jeu : comme Ships::Update
         m_physics->Update(m_scene, deltaSeconds, character);
+        CheckPassages(pilotedShip); // à sa place de cette image ; pris à la fin de l'image (TakePassage)
         // Projectiles après la physique, avant les armes du jeu (étape AfterPhysics) : les vaisseaux sont à leur place
         // de cette image, les nouveaux tirs partent de la bouche des canons (avant, ils naîtraient en retard d'une
         // image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
@@ -601,6 +603,8 @@ namespace Flux {
             return loaded;
         }
         m_physics.reset(); // les corps de l'ancienne scène
+        m_outsideScene.reset(); // autre scène : plus de retour par un passage
+        m_requestedPassage.reset();
         m_projectiles.clear();
         m_impacts.clear();
         ResetGameState();
@@ -620,6 +624,8 @@ namespace Flux {
         }
         if (state == GameState::Stopped) {
             m_physics.reset();
+            m_outsideScene.reset();
+            m_requestedPassage.reset();
             m_projectiles.clear();
             m_impacts.clear();
             ResetGameState();

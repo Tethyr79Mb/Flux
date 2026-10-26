@@ -29,6 +29,10 @@ namespace Flux {
         // Amarré : posé sur son quai, enfant de sa station.
         FLUX_API bool IsDocked(const Scene& scene, Entity ship);
 
+        // Pose tout de suite le vaisseau sur ce quai (arrivée par un passage dans le hangar d'une station) : quai
+        // réservé, vaisseau amarré et immobile. false si le quai n'est pas libre ou n'appartient à aucune station.
+        FLUX_API bool Dock(Scene& scene, Entity ship, Entity dock);
+
         // Étape en cours pour les infos de vol (« Pilote auto : vers Quai 2 », « Amarré : Quai 2 »), vide sinon.
         FLUX_API std::string Describe(const Scene& scene, Entity ship);
     }

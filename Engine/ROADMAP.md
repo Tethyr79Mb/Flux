@@ -232,7 +232,12 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   zones séparées : l'intérieur (hangar XL d'un vaisseau à la fois, console pour en changer, cabine du joueur, promenade
   des marchands et des PNJ de mission) sera une scène isolée, chargée en passant le champ bleu de la porte du joueur.
   Fait : extérieur dans le jeu (Placer > Station orbitale), peinture blanche lisse, modules des anneaux fondus dans la coque, 850 000
-  triangles, version lointaine de 110 000, collision simplifiée. Détails et décalcomanies à ajouter au cas par cas (choix de Bruno). À faire : entrée dans l'intérieur par le pilote automatique, hangar, cabine, promenade, console.
+  triangles, version lointaine de 110 000, collision simplifiée. Détails et décalcomanies à ajouter au cas par cas (choix de Bruno). Entrée dans le
+  hangar : L conduit à la porte du joueur (ou à la main), le champ bleu (composant « Passage vers une scène ») charge
+  `Station-hangar.scene.json` avec un fondu, vaisseau et joueur assis posés sur la plateforme ; L dans le hangar
+  ressort par la porte et la station revient telle qu'on l'a laissée, devant la porte. Missions gardées au passage. À
+  faire : cabine, promenade, console ; trajet du pilote automatique en ligne droite (peut buter sur la tour en arrivant
+  de derrière).
 - ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.

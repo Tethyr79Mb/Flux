@@ -183,8 +183,34 @@ namespace FluxEditor {
 
         // Station orbitale (modèle du projet, dans Modeles/Station) : l'enveloppe extérieure seule, 4 km de haut. Son
         // origine est le seuil de la porte du hangar du joueur, qui regarde vers -z ; la tour est derrière, vers +z.
-        // L'intérieur (hangar, cabine, promenade) sera une scène à part, chargée en passant le champ bleu de la porte.
+        // L'intérieur est une autre scène (scenes/Station-hangar.scene.json) : le champ bleu au fond du sas de la
+        // porte y mène le vaisseau (PassageComponent). La porte est un quai pour le pilote automatique (L), qui y
+        // conduit le vaisseau et lui fait passer le champ.
         void AddOrbitalStation(Scene& scene, Entity station) {
+            // Immobile (vaisseau sans moteur, comme la maquette) : ses quais servent au pilote automatique.
+            ShipComponent& ship = scene.Add<ShipComponent>(station);
+            ship.maxSpeed = 0.0f;
+            ship.acceleration = 0.0f;
+            ship.turnRate = 0.0f;
+            ship.strafeSpeed = 0.0f;
+            ship.levelAssist = false;
+            ship.fallsWithoutPilot = false;
+            ship.warpSpeed = 0.0f;
+            // Sas de 97 x 35 m, 14 m de profondeur, fermé au fond par le champ bleu (z = 13,8 m).
+            const Entity door = scene.CreateEntity("Porte du joueur", station);
+            scene.Get<TransformComponent>(door).position = {0.0, 14.0, 10.0};
+            DockComponent& dock = scene.Add<DockComponent>(door);
+            dock.approach = 250.0f;
+            dock.hover = 0.0f;
+            dock.clearance = 2100.0f; // au-dessus de la tête de la tour
+            const Entity field = scene.CreateEntity("Champ bleu", station);
+            scene.Get<TransformComponent>(field).position = {0.0, 17.0, 8.0};
+            PassageComponent& passage = scene.Add<PassageComponent>(field);
+            passage.scene = "scenes/Station-hangar.scene.json";
+            passage.arrival = "Plateforme";
+            passage.size = {96.0f, 34.0f, 12.0f};
+            passage.exitDistance = 150.0f;
+
             ModelComponent& model = scene.Add<ModelComponent>(station);
             model.model = "Modeles/Station/Station.glb";
             model.farModel = "Modeles/Station/Station-loin.glb"; // 110 000 triangles au lieu de 850 000
@@ -796,7 +822,7 @@ namespace FluxEditor {
         history.Push(std::string("Placer : ") + (item == Item::Prefab ? name : std::string(info.label)), scene.GetId(entity), {},
                      UndoHistory::Capture(engine, scene.GetId(entity),
                                           item == Item::Ship || item == Item::Fighter || item == Item::Station ||
-                                              item == Item::Prefab));
+                                              item == Item::OrbitalStation || item == Item::Prefab));
         if (item == Item::Character) {
             sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
         }

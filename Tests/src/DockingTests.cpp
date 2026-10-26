@@ -3,7 +3,9 @@
 #include "Check.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
+#include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Docking.hpp"
+#include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Scene.hpp"
 
 #include <cmath>
@@ -191,6 +193,65 @@ namespace {
     }
 }
 
+namespace {
+    // Passage vers le hangar d'une station et retour : le vaisseau, avec le joueur assis à bord, est écrit, retiré de
+    // la scène quittée, recréé (mêmes identifiants) dans l'autre, posé sur le quai d'arrivée ; la scène quittée,
+    // gardée en texte, revient telle quelle.
+    bool RunPassageTests() {
+        ComponentRegistry components;
+        RegisterEngineComponents(components);
+        Scene scene;
+        const Entity outsideStation = scene.CreateEntity("Station");
+        scene.Add<ShipComponent>(outsideStation, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity field = scene.CreateEntity("Champ bleu", outsideStation);
+        scene.Add<PassageComponent>(field, PassageComponent{.scene = "hangar", .arrival = "Plateforme"});
+        const Entity ship = AddFighter(scene, "Chasseur", {0.0, 0.0, 50.0});
+        const Entity seat = scene.CreateEntity("Siège", ship);
+        scene.Add<SeatComponent>(seat).pilot = true;
+        const Entity player = scene.CreateEntity("Joueur", ship);
+        scene.Add<CharacterComponent>(player).player = true;
+        const Uuid shipId = scene.GetId(ship);
+        const Uuid seatId = scene.GetId(seat);
+        const Uuid playerId = scene.GetId(player);
+
+        // Le hangar : sa station, son quai.
+        Scene hangarScene;
+        const Entity hangar = hangarScene.CreateEntity("Station - hangar");
+        hangarScene.Add<ShipComponent>(hangar, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity platform = hangarScene.CreateEntity("Plateforme", hangar);
+        hangarScene.Get<TransformComponent>(platform).position = {0.0, 2.3, 0.0};
+        hangarScene.Add<DockComponent>(platform);
+        const std::string hangarText = SceneSerializer::SaveToString(hangarScene, components);
+
+        // Entrée.
+        const std::string shipText = SceneSerializer::SaveEntity(scene, components, ship, true);
+        scene.DestroyEntity(ship);
+        const std::string outside = SceneSerializer::SaveToString(scene, components);
+        CHECK(SceneSerializer::LoadFromString(scene, components, hangarText).has_value());
+        CHECK(SceneSerializer::RestoreEntity(scene, components, shipText).has_value());
+        const Entity inside = scene.FindById(shipId);
+        CHECK(inside != NullEntity && scene.GetParent(inside) == NullEntity);
+        CHECK(scene.GetParent(scene.FindById(playerId)) == inside && scene.GetParent(scene.FindById(seatId)) == inside);
+        const Entity dock = scene.FindByName("Plateforme");
+        CHECK(Docking::Dock(scene, inside, dock));
+        CHECK(Docking::IsDocked(scene, inside) && scene.GetParent(inside) == scene.FindByName("Station - hangar"));
+        CHECK(Math::Length(scene.Get<TransformComponent>(inside).position - Math::Vector3d{0.0, 2.3, 0.0}) < 1e-6);
+        CHECK(!Docking::Dock(scene, AddFighter(scene, "Autre", {}), dock)); // quai pris
+
+        // Sortie : le vaisseau quitte le hangar, la scène d'origine revient avec sa station et son champ.
+        scene.SetParent(inside, NullEntity);
+        const std::string backText = SceneSerializer::SaveEntity(scene, components, inside, true);
+        scene.DestroyEntity(inside);
+        CHECK(SceneSerializer::LoadFromString(scene, components, outside).has_value());
+        CHECK(SceneSerializer::RestoreEntity(scene, components, backText).has_value());
+        CHECK(scene.FindById(shipId) != NullEntity && scene.FindById(playerId) != NullEntity);
+        const Entity backField = scene.FindByName("Champ bleu");
+        CHECK(backField != NullEntity && scene.Get<PassageComponent>(backField).arrival == "Plateforme");
+        CHECK(scene.FindByName("Plateforme") == NullEntity);
+        return true;
+    }
+}
+
 bool RunDockingAutopilotTests() {
-    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests();
+    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests() && RunPassageTests();
 }

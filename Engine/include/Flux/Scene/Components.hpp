@@ -545,6 +545,17 @@ namespace Flux {
         Entity ship = NullEntity;
     };
 
+    // Passage vers une autre scène (champ bleu à la porte d'un hangar de station) : le vaisseau piloté par le joueur
+    // dont l'origine entre dans sa boîte y est emmené, avec tout ce qu'il porte (le joueur compris). La scène quittée
+    // est gardée en mémoire telle quelle, avec l'état des systèmes du jeu (missions), et rendue au retour.
+    struct PassageComponent
+    {
+        std::string scene;   // scène où il mène, relative aux assets ; vide : retour à la scène d'où l'on est venu
+        std::string arrival; // entité de la scène d'arrivée où apparaît le vaisseau (un quai : il y est posé)
+        Math::Vector3f size{100.0f, 40.0f, 10.0f}; // boîte du passage (m), centrée sur l'entité
+        float exitDistance = 100.0f; // retour par ce passage : le vaisseau ressort à cette distance devant lui (-z)
+    };
+
     // État d'un vaisseau mené par l'IA de combat (CombatAI).
     enum class CombatState : std::uint8_t {
         Patrol, // tourne autour de son point de départ, en attendant de voir la cible

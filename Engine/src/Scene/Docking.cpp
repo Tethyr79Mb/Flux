@@ -240,6 +240,21 @@ namespace Flux::Docking {
         return station != NullEntity && scene.GetParent(ship) == station;
     }
 
+    bool Dock(Scene& scene, Entity entity, Entity dockEntity) {
+        auto* ship = scene.IsValid(entity) ? scene.TryGet<ShipComponent>(entity) : nullptr;
+        auto* dock = scene.IsValid(dockEntity) ? scene.TryGet<DockComponent>(dockEntity) : nullptr;
+        const Entity station = dock ? scene.GetShip(dockEntity) : NullEntity;
+        if (!ship || !dock || station == NullEntity || station == entity || !IsFree(scene, *dock, entity)) {
+            return false;
+        }
+        Release(scene, *ship);
+        dock->ship = entity;
+        ship->dock = dockEntity;
+        Attach(scene, entity, *ship, station);
+        Hold(*ship);
+        return true;
+    }
+
     ToggleResult Toggle(Scene& scene, Entity entity) {
         auto* ship = scene.IsValid(entity) ? scene.TryGet<ShipComponent>(entity) : nullptr;
         if (!ship) {

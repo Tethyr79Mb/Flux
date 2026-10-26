@@ -1,0 +1,279 @@
+{
+  "format": "flux.scene",
+  "version": 2,
+  "engine": 59,
+  "entities": [
+    {
+      "id": "d26b1cfc3f371ed0",
+      "name": "Ciel",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "sky": {
+        "image": "",
+        "brightness": 1.0,
+        "ambient": 3.0,
+        "seed": 1,
+        "nebulaColor": [0.3, 0.1, 0.45, 1.0],
+        "nebulaColor2": [0.05, 0.25, 0.45, 1.0],
+        "nebula": 0.6,
+        "galaxy": 0.5,
+        "stars": 0.5,
+        "starBrightness": 1.0,
+        "sunElevation": 63.0,
+        "sunAzimuth": 53.0,
+        "sunColor": [1.0, 0.96, 0.9, 1.0],
+        "sunIntensity": 1.45,
+        "sunSize": 1.5
+      },
+      "world": {
+        "gravity": 0.0,
+        "air": 0.0,
+        "terminalSpeed": 55.0
+      }
+    },
+    {
+      "id": "f8f0e83ee17bce45",
+      "name": "Station - hangar",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Station/Hangar.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Station/Hangar-collision.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      },
+      "ship": {
+        "gravity": 9.81,
+        "velocity": [0.0, 0.0, 0.0],
+        "angularVelocity": [0.0, 0.0, 0.0],
+        "maxSpeed": 0.0,
+        "acceleration": 0.0,
+        "turnRate": 0.0,
+        "turnAcceleration": 360.0,
+        "strafeSpeed": 0.0,
+        "levelAssist": false,
+        "levelRate": 1.5,
+        "airGrip": 2.0,
+        "boost": 2.0,
+        "travelFactor": 10.0,
+        "travelSpoolTime": 3.0,
+        "warpSpeed": 0.0,
+        "fallsWithoutPilot": false
+      }
+    },
+    {
+      "id": "236eefa18ce295b9",
+      "name": "Plateforme",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [0.0, 2.3, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "dock": {
+        "approach": 120.0,
+        "hover": 8.0,
+        "clearance": 30.0
+      }
+    },
+    {
+      "id": "7660f397ee9b2b23",
+      "name": "Sortie",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [0.0, 17.0, -80.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "passage": {
+        "scene": "",
+        "arrival": "",
+        "size": [96.0, 34.0, 6.0],
+        "exitDistance": 100.0
+      }
+    },
+    {
+      "id": "b9343e34efb21004",
+      "name": "Intérieur du hangar",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [0.0, 20.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "interior": {
+        "size": [110.0, 40.0, 150.0],
+        "ambient": [0.25, 0.25, 0.27, 1.0],
+        "intensity": 1.0,
+        "fade": 2.0
+      }
+    },
+    {
+      "id": "f4e49ad1b5e628a8",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [-30.0, 36.0, -55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "1ee801fa58dbd75d",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [-30.0, 36.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "9171894a9861c4ce",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [-30.0, 36.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "7a7a5a9109a6074b",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [-30.0, 36.0, 55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "b805958ffaf4134a",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [30.0, 36.0, -55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "40508841ecb94bd5",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [30.0, 36.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "cdef3428c8008eb8",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [30.0, 36.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "a0354e5f46d5205f",
+      "name": "Plafonnier",
+      "parent": "f8f0e83ee17bce45",
+      "transform": {
+        "position": [30.0, 36.0, 55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "intensity": 900.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    }
+  ]
+}
