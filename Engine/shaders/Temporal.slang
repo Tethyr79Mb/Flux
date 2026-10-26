@@ -106,6 +106,28 @@ float3 ClipToBox(float3 value, float3 low, float3 high)
     return largest > 1.0 ? center + offset / largest : value;
 }
 
+// Clip space à l'image précédente du point vu en `uv` à la profondeur `d` (le déplacement dû à la caméra).
+float4 PreviousClip(float2 uv, float d)
+{
+    const float2 ndc = uv * 2.0 - 1.0;
+    const float4 m[4] = temporal.reprojection;
+    return m[0] * ndc.x + m[1] * ndc.y + m[2] * d + m[3];
+}
+
+// Mouvement complet pour FSR (PostRenderer::DrawMotion) : où chaque pixel était à l'image précédente moins où il est,
+// en uv, caméra (par la profondeur) et mouvement propre des objets réunis. FSR élargit lui-même le mouvement des bords
+// d'objets : pas de recherche du pixel le plus proche ici. Derrière l'ancienne caméra : rien de mieux que zéro.
+[shader("fragment")]
+float2 fragmentMotion(VertexOutput input) : SV_Target
+{
+    const float2 uv = input.uv;
+    const float4 previous = PreviousClip(uv, depth.SampleLevel(uv, 0.0).r);
+    if (previous.w <= 0.0) {
+        return float2(0.0);
+    }
+    return previous.xy / previous.w * 0.5 + 0.5 + motion.SampleLevel(uv, 0.0).rg - uv;
+}
+
 [shader("fragment")]
 float4 fragmentTemporal(VertexOutput input) : SV_Target
 {
@@ -142,9 +164,7 @@ float4 fragmentTemporal(VertexOutput input) : SV_Target
 
     // Où ce point était à l'image précédente : le déplacement du pixel le plus proche, dû à la caméra (par la
     // profondeur) plus le mouvement propre de l'objet, appliqué à ce pixel-ci.
-    const float2 ndc = closestUv * 2.0 - 1.0;
-    const float4 m[4] = temporal.reprojection;
-    const float4 previous = m[0] * ndc.x + m[1] * ndc.y + m[2] * closest + m[3];
+    const float4 previous = PreviousClip(closestUv, closest);
     const float2 velocity = previous.xy / previous.w * 0.5 + 0.5 + motion.SampleLevel(closestUv, 0.0).rg - closestUv;
     const float2 previousUv = uv + velocity;
     const bool inside = previous.w > 0.0 && all(previousUv >= 0.0) && all(previousUv <= 1.0);

@@ -8,6 +8,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
+#include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -67,7 +68,9 @@ namespace Flux {
         // Le jeu arrive directement sur le personnage ; sans personnage (écran titre), la caméra ne bouge pas.
         bool freeCamera = true;
         bool vsync = true;
-        bool temporalAA = true; // anticrénelage temporel (TAA)
+        bool temporalAA = true; // anticrénelage temporel (TAA), en Natif
+        Upscaling upscaling = DefaultUpscaling;
+        float sharpness = DefaultSharpness;
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
         float volume = 1.0f; // volume général, 0 à 1

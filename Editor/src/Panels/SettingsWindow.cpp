@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 #include <string_view>
 #include <fstream>
 
@@ -62,6 +63,17 @@ namespace FluxEditor {
             m_temporalAA = temporal->get<bool>();
         }
         engine.GetRenderer().SetTemporalAA(m_temporalAA);
+        if (const auto upscaling = json.find("upscaling"); upscaling != json.end() && upscaling->is_string()) {
+            const auto found = std::ranges::find(UpscalingKeys, upscaling->get<std::string>());
+            if (found != UpscalingKeys.end()) {
+                m_upscaling = static_cast<Upscaling>(found - UpscalingKeys.begin());
+            }
+        }
+        engine.GetRenderer().SetUpscaling(m_upscaling);
+        if (const auto sharpness = json.find("sharpness"); sharpness != json.end() && sharpness->is_number()) {
+            m_sharpness = std::clamp(sharpness->get<float>(), 0.0f, 1.0f);
+        }
+        engine.GetRenderer().SetSharpness(m_sharpness);
         if (const auto detail = json.find("groundDetail"); detail != json.end() && detail->is_string()) {
             const auto found = std::ranges::find(GroundDetailKeys, detail->get<std::string>());
             if (found != GroundDetailKeys.end()) {
@@ -87,6 +99,8 @@ namespace FluxEditor {
                         {"bloomEnabled", m_bloomEnabled},
                         {"bloom", m_bloom},
                         {"temporalAA", m_temporalAA},
+                        {"upscaling", UpscalingKeys[static_cast<std::size_t>(m_upscaling)]},
+                        {"sharpness", m_sharpness},
                         {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]},
                         {"cloudQuality", CloudQualityKeys[static_cast<std::size_t>(m_cloudQuality)]}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
@@ -141,8 +155,33 @@ namespace FluxEditor {
                 }
                 ui.LabelText("Présentation", renderer.GetPresentModeName());
                 ui.Separator();
-                // Lisse les bords en escalier et le grain des nuages en mélangeant les images successives.
-                if (ui.Checkbox("Anticrénelage (TAA)", m_temporalAA)) {
+                // FSR dessine la scène plus petite puis l'agrandit (plus d'images/s quand le GPU limite) ; il lisse
+                // aussi les bords, à la place de l'anticrénelage.
+                int upscaling = static_cast<int>(m_upscaling);
+                if (ui.Choice("Mise à l'échelle", upscaling, UpscalingLabels)) {
+                    m_upscaling = static_cast<Upscaling>(upscaling);
+                    renderer.SetUpscaling(m_upscaling);
+                    Save();
+                }
+                if (IsFsr(m_upscaling)) {
+                    if (!renderer.IsUpscalingAvailable()) {
+                        ui.LabelText("FSR", "indisponible (voir le journal) : rendu en Natif");
+                    }
+                    const Math::Vector2i size = renderer.GetRenderSize();
+                    ui.LabelText("Scène dessinée en", std::format("{} x {}", size.x, size.y));
+                    float percent = m_sharpness * 100.0f;
+                    if (ui.DragFloat("Netteté FSR (%)", percent, 0.5f, 0.0, 100.0, 0)) {
+                        m_sharpness = percent / 100.0f;
+                        renderer.SetSharpness(m_sharpness);
+                        m_sharpnessChanged = true;
+                    }
+                    // Enregistré au lâcher, pas à chaque pixel glissé.
+                    if (m_sharpnessChanged && !ui.IsItemActive()) {
+                        m_sharpnessChanged = false;
+                        Save();
+                    }
+                } else if (ui.Checkbox("Anticrénelage (TAA)", m_temporalAA)) {
+                    // Lisse les bords en escalier et le grain des nuages en mélangeant les images successives.
                     renderer.SetTemporalAA(m_temporalAA);
                     Save();
                 }

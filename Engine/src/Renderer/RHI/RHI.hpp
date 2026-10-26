@@ -332,6 +332,39 @@ namespace Flux::RHI {
         bool loadColor = false;
     };
 
+    class CommandList;
+
+    // Ce que l'agrandisseur temporel (Upscaler) reçoit à chaque image. Textures lisibles (Sampled) à la taille de
+    // rendu, sauf output : écrite par les compute shaders, à la taille de la vue (CreateRenderTarget storage).
+    struct UpscaleInputs
+    {
+        const Texture* color = nullptr;  // la scène, HDR linéaire
+        const Texture* depth = nullptr;  // reverse-Z infini
+        const Texture* motion = nullptr; // où chaque pixel était à l'image précédente, moins où il est (en uv)
+        const Texture* output = nullptr;
+        Extent renderSize;               // partie dessinée de color, depth et motion
+        float jitterX = 0.0f;            // décalage de la projection en pixels de rendu (x vers la droite, y vers le bas)
+        float jitterY = 0.0f;
+        float sharpness = 0.0f;          // 0 à 1
+        float frameMilliseconds = 16.7f; // depuis l'image précédente
+        float nearPlane = 0.1f;
+        float verticalFov = 1.0f;        // radians
+        bool reset = false;              // rien à reprendre des images précédentes (saut de la caméra)
+    };
+
+    // Agrandisseur temporel (FSR 3.1 d'AMD pour Vulkan) : la scène dessinée petite, décalée d'une fraction de pixel
+    // différente à chaque image, devient une image à la taille de la vue. Garde son propre historique : un par taille
+    // de vue (Device::CreateUpscaler à nouveau quand elle change).
+    class Upscaler {
+        public:
+        virtual ~Upscaler() = default;
+        // Nombre de décalages différents avant de recommencer (plus la scène est réduite, plus il en faut).
+        virtual std::uint32_t GetJitterPhaseCount(std::uint32_t renderWidth) const = 0;
+        // Hors de toute passe, les entrées déjà lisibles (Sampled) et output prête à l'écriture (Storage). Les barrières
+        // internes à FSR sont posées et défaites par lui : les textures sortent dans l'usage où elles sont entrées.
+        virtual void Dispatch(CommandList& commands, const UpscaleInputs& inputs) = 0;
+    };
+
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
     class CommandList {
         public:
@@ -474,9 +507,11 @@ namespace Flux::RHI {
                                                                                          std::uint32_t depth,
                                                                                          bool mipmaps = false) = 0;
         // Cible de rendu vierge : tampon de profondeur, ou couleur (RenderPassDesc::colorTarget). sampled : lue
-        // ensuite par les shaders (carte d'ombres, image de la scène avant le bloom).
+        // ensuite par les shaders (carte d'ombres, image de la scène avant le bloom) ; storage : aussi écrite par les
+        // compute shaders (TextureAccess::Storage), couleur seulement.
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
-                                                                                        bool sampled = false) = 0;
+                                                                                        bool sampled = false,
+                                                                                        bool storage = false) = 0;
         // Texture cube vierge dont chaque face est une cible de rendu (RenderPassDesc::colorTarget), lue ensuite par
         // direction comme CreateCubeTexture. Un seul niveau de mip.
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeRenderTarget(Format format, std::uint32_t size) = 0;
@@ -486,6 +521,9 @@ namespace Flux::RHI {
         virtual std::unique_ptr<BindGroup> CreateBindGroup(const BindGroupLayout& layout) = 0;
         virtual std::expected<std::unique_ptr<Pipeline>, std::string> CreatePipeline(const PipelineDesc& desc) = 0;
         virtual std::expected<std::unique_ptr<Pipeline>, std::string> CreateComputePipeline(const ComputePipelineDesc& desc) = 0;
+        // Agrandisseur temporel pour une vue de `outputSize` (la taille de rendu peut aller jusqu'à elle). Erreur si
+        // la bibliothèque d'AMD manque ou si le GPU la refuse : le rendu reste alors en Natif.
+        virtual std::expected<std::unique_ptr<Upscaler>, std::string> CreateUpscaler(Extent outputSize) = 0;
         // Enregistre des commandes hors des images (calculs, sans passe vers la swapchain), les envoie et attend que le
         // GPU les ait finies : bloque le CPU, réservé au chargement et aux tests.
         virtual bool Submit(const std::function<void(CommandList&)>& record) = 0;

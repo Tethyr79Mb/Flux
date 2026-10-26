@@ -29,6 +29,8 @@ namespace Flux {
         // dans le pixel, puis on recommence. Plus de points lisseraient un peu mieux les bords presque droits, au prix
         // d'un scintillement plus lent à disparaître.
         constexpr std::uint32_t JitterPhases = 8;
+        // Durée d'une image annoncée à FSR quand il n'y a pas d'image précédente (ms).
+        constexpr float DefaultFrameMilliseconds = 1000.0f / 60.0f;
         // Au-delà (m) d'une image à l'autre, la caméra a sauté (changement de scène, téléportation) : rien à reprendre.
         // En vol à 100 km/s, elle avance de 2 km par image : la reprojection suit encore.
         constexpr double MaxTemporalJump = 1.0e5;
@@ -89,7 +91,8 @@ namespace Flux {
     }
 
     // Une image : la carte d'ombres, puis la scène (opaques, fond du ciel et soleil, océan, nuages, transparents, flammes)
-    // dans une image HDR à la taille de sa zone, son anticrénelage, son bloom, et la passe principale vers la fenêtre : la scène avec la
+    // dans une image HDR à la taille de rendu (sa zone, ou moins quand FSR l'agrandit), son anticrénelage ou FSR, son
+    // bloom, et la passe principale vers la fenêtre : la scène avec la
     // courbe de tons dans sa zone (PostRenderer), puis l'interface (OverlayRenderer) sur toute la fenêtre. Aucune API
     // graphique ici : tout passe par le RHI.
     struct Renderer::Impl {
@@ -105,11 +108,19 @@ namespace Flux {
         std::unique_ptr<OverlayRenderer> overlay;
         std::unique_ptr<PostRenderer> post;
         std::unique_ptr<Planetology::CloudRenderer> clouds;
+        // FSR : créé pour la taille de la vue quand un mode FSR est choisi, libéré en Natif (sa mémoire vidéo).
+        std::unique_ptr<RHI::Upscaler> upscaler;
+        RHI::Extent upscalerExtent;
+        bool upscalerFailed = false; // DLL absente ou GPU refusé : Natif jusqu'à la fermeture, dit une fois
         std::filesystem::path assetsDirectory;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
         float bloom = Renderer::DefaultBloom; // 0 : sans bloom
         bool temporalAA = true;
+        Upscaling upscaling = DefaultUpscaling;
+        float sharpness = DefaultSharpness;
+        RHI::Extent renderExtent; // de la dernière image
+        Clock::time_point previousFrame;
         bool detailedTimings = false; // heures du GPU demandées pour cette image seulement
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
@@ -127,11 +138,14 @@ namespace Flux {
         {
             std::uint32_t index = 0;
             RHI::Rect scene3d;
+            RHI::Extent render; // taille de rendu
             float exposure = 1.0f;
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             PostRenderer::GridParams gridParams{};
             std::uint32_t cloudCopy = 0; // exemplaire de l'historique des nuages écrit à cette image
+            bool fsr = false;           // FSR agrandit cette image (sinon anticrénelage, ou rien)
+            RHI::UpscaleInputs upscale; // ses paramètres, textures remplies par sa passe
         };
         FrameState frame;
         // Textures de travail du graphe.
@@ -139,6 +153,7 @@ namespace Flux {
         {
             RenderGraph::ResourceId sceneColor = 0;
             RenderGraph::ResourceId motion = 0;
+            RenderGraph::ResourceId fullMotion = 0;
             RenderGraph::ResourceId sceneDepth = 0;
             RenderGraph::ResourceId history = 0;
             RenderGraph::ResourceId windowDepth = 0;
@@ -161,18 +176,23 @@ namespace Flux {
             return {static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y)};
         }
 
-        // Textures de la vue 3D à sa taille (et à sa moitié) ; recréées, PostRenderer et CloudRenderer refont leurs groupes.
-        std::expected<void, std::string> ResizeViewTargets(RHI::Extent extent) {
-            auto resized = graph.ResizeTextures(*device, RenderGraph::TextureSize::View, extent);
-            if (!resized) {
-                return std::unexpected(resized.error());
+        // Textures de la vue 3D, de rendu et de sa moitié (nuages) à leur taille ; recréées, PostRenderer et
+        // CloudRenderer refont leurs groupes.
+        std::expected<void, std::string> ResizeViewTargets(RHI::Extent view, RHI::Extent render) {
+            auto viewResized = graph.ResizeTextures(*device, RenderGraph::TextureSize::View, view);
+            if (!viewResized) {
+                return std::unexpected(viewResized.error());
+            }
+            auto renderResized = graph.ResizeTextures(*device, RenderGraph::TextureSize::Render, render);
+            if (!renderResized) {
+                return std::unexpected(renderResized.error());
             }
             auto halfResized = graph.ResizeTextures(*device, RenderGraph::TextureSize::HalfView,
-                                                    {(extent.width + 1) / 2, (extent.height + 1) / 2});
+                                                    {(render.width + 1) / 2, (render.height + 1) / 2});
             if (!halfResized) {
                 return std::unexpected(halfResized.error());
             }
-            if (!*resized && !*halfResized) {
+            if (!*viewResized && !*renderResized && !*halfResized) {
                 return {};
             }
             clouds->Bind({.sceneDepth = graph.GetTexture(targets.sceneDepth),
@@ -182,7 +202,30 @@ namespace Flux {
             return post->Bind({.scene = graph.GetTexture(targets.sceneColor),
                                .depth = graph.GetTexture(targets.sceneDepth),
                                .motion = graph.GetTexture(targets.motion),
+                               .fullMotion = graph.GetTexture(targets.fullMotion),
                                .history = {graph.GetCopy(targets.history, 0), graph.GetCopy(targets.history, 1)}});
+        }
+
+        // FSR prêt pour une vue de `view` si un mode FSR est choisi (créé, ou recréé quand la vue change de taille),
+        // libéré sinon. false : Natif à cette image.
+        bool PrepareUpscaler(RHI::Extent view) {
+            const bool wanted = IsFsr(upscaling) && !upscalerFailed;
+            if (upscaler && (!wanted || upscalerExtent != view)) {
+                device->WaitIdle(); // les images en vol s'en servent peut-être encore
+                upscaler.reset();
+            }
+            if (!wanted || upscaler) {
+                return wanted;
+            }
+            auto created = device->CreateUpscaler(view);
+            if (!created) {
+                Log::Warning("FSR indisponible ({}) : rendu en Natif", created.error());
+                upscalerFailed = true;
+                return false;
+            }
+            upscaler = std::move(*created);
+            upscalerExtent = view;
+            return true;
         }
 
         // Rectangle de la scène (en pixels entiers), borné à la fenêtre : la vue 3D de l'éditeur, ou toute la fenêtre.
@@ -228,6 +271,17 @@ namespace Flux {
                 return false;
             }
             const RHI::Rect scene3d = SceneRect();
+            const RHI::Extent view{scene3d.width, scene3d.height};
+            const bool fsr = sceneVisible && PrepareUpscaler(view);
+            // Comme FSR la calcule : la vue divisée par le rapport du mode, arrondie en dessous.
+            const float scale = fsr ? GetRenderScale(upscaling) : 1.0f;
+            const RHI::Extent render{std::max(1u, static_cast<std::uint32_t>(static_cast<float>(view.width) * scale)),
+                                     std::max(1u, static_cast<std::uint32_t>(static_cast<float>(view.height) * scale))};
+            const Clock::time_point now = Clock::now();
+            const float frameMilliseconds = previousFrame == Clock::time_point{}
+                                                ? DefaultFrameMilliseconds
+                                                : static_cast<float>(Milliseconds(now - previousFrame));
+            previousFrame = now;
             const float aspect = static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height);
             float exposure = 1.0f;
             const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
@@ -236,7 +290,7 @@ namespace Flux {
             if (sceneVisible) {
                 const Math::Vector3d moved = Math::Delta(previousPosition, camera.position);
                 temporal.continuous = hasPrevious && Math::Length(moved) < MaxTemporalJump;
-                temporal.history = temporalAA && temporal.continuous;
+                temporal.history = (temporalAA || fsr) && temporal.continuous;
                 if (temporal.continuous) {
                     temporal.previousViewProjection = previousViewProjection;
                     temporal.cameraDelta = Math::Vector3f(moved);
@@ -244,26 +298,33 @@ namespace Flux {
                     reprojection = previousViewProjection * Math::Matrix4f::Translation(temporal.cameraDelta)
                                  * InverseViewProjection(camera, aspect);
                 }
-                if (temporalAA) {
+                if (temporalAA || fsr) {
                     ++temporalFrame;
-                    const std::uint32_t phase = temporalFrame % JitterPhases + 1; // Halton(0) vaut 0 : sauté
-                    temporal.jitter = {(2.0f * Halton(phase, 2) - 1.0f) / static_cast<float>(scene3d.width),
-                                       (2.0f * Halton(phase, 3) - 1.0f) / static_cast<float>(scene3d.height)};
+                    // FSR veut plus de décalages quand l'image est plus réduite (8 fois le rapport au carré).
+                    const std::uint32_t phases = fsr ? upscaler->GetJitterPhaseCount(render.width) : JitterPhases;
+                    const std::uint32_t phase = temporalFrame % phases + 1; // Halton(0) vaut 0 : sauté
+                    // En pixels de rendu, x vers la droite, y vers le bas (comme les uv et le clip space de Vulkan).
+                    const float jitterX = Halton(phase, 2) - 0.5f;
+                    const float jitterY = Halton(phase, 3) - 0.5f;
+                    temporal.jitter = {2.0f * jitterX / static_cast<float>(render.width),
+                                       2.0f * jitterY / static_cast<float>(render.height)};
                     temporal.noiseFrame = temporalFrame;
+                    frame.upscale.jitterX = jitterX;
+                    frame.upscale.jitterY = jitterY;
                 }
             }
             hasPrevious = sceneVisible;
             previousViewProjection = viewProjection;
             previousPosition = camera.position;
             if (sceneVisible) {
-                if (auto resized = ResizeViewTargets({scene3d.width, scene3d.height}); !resized) {
+                if (auto resized = ResizeViewTargets(view, render); !resized) {
                     Log::Error("{}", resized.error());
                     return false;
                 }
-                if (!temporalAA) {
+                if (!temporalAA && !fsr) {
                     post->SkipTemporal();
                 }
-                const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(scene3d.height),
+                const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(render.height),
                                                           assetsDirectory, frameIndex);
                 exposure = lighting.exposure;
                 meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
@@ -271,7 +332,7 @@ namespace Flux {
                     clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
                 }
                 thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
-                tracers->Prepare(projectiles, impacts, camera, aspect, static_cast<float>(scene3d.height), temporal.jitter, frameIndex);
+                tracers->Prepare(projectiles, impacts, camera, aspect, static_cast<float>(render.height), temporal.jitter, frameIndex);
                 const OcclusionCulling::Stats occlusion = meshes->GetOcclusionStats();
                 timings.occlusionTested = occlusion.tested;
                 timings.occlusionHidden = occlusion.hidden;
@@ -306,6 +367,15 @@ namespace Flux {
             timings.prepare = Milliseconds(recordStart - prepareStart);
             frame.index = frameIndex;
             frame.scene3d = scene3d;
+            frame.render = render;
+            renderExtent = render;
+            frame.fsr = fsr;
+            frame.upscale.renderSize = render;
+            frame.upscale.sharpness = sharpness;
+            frame.upscale.frameMilliseconds = frameMilliseconds;
+            frame.upscale.nearPlane = camera.nearPlane;
+            frame.upscale.verticalFov = camera.verticalFov;
+            frame.upscale.reset = !temporal.continuous;
             frame.exposure = exposure;
             frame.temporal = temporal;
             frame.reprojection = reprojection;
@@ -355,10 +425,13 @@ namespace Flux {
             // Textures de travail, créées par le graphe à la taille de la vue 3D. Profondeur lisible : l'anticrénelage
             // y retrouve où était chaque point. L'historique a deux exemplaires : l'anticrénelage lit l'un, écrit l'autre.
             using TextureSize = RenderGraph::TextureSize;
-            targets.sceneColor = graph.CreateTexture("image de la scène", Lifetime::Frame, {PostRenderer::SceneFormat});
-            targets.motion = graph.CreateTexture("mouvement", Lifetime::Frame, {PostRenderer::MotionFormat});
-            targets.sceneDepth = graph.CreateTexture("profondeur de la scène", Lifetime::Frame, {DepthFormat});
-            targets.history = graph.CreateTexture("historique de l'anticrénelage", Lifetime::Previous, {PostRenderer::SceneFormat});
+            // La scène à la taille de rendu ; l'historique, résultat de l'anticrénelage ou de FSR, à celle de la vue.
+            targets.sceneColor = graph.CreateTexture("image de la scène", Lifetime::Frame, {PostRenderer::SceneFormat, TextureSize::Render});
+            targets.motion = graph.CreateTexture("mouvement", Lifetime::Frame, {PostRenderer::MotionFormat, TextureSize::Render});
+            targets.fullMotion = graph.CreateTexture("mouvement complet", Lifetime::Frame, {PostRenderer::MotionFormat, TextureSize::Render});
+            targets.sceneDepth = graph.CreateTexture("profondeur de la scène", Lifetime::Frame, {DepthFormat, TextureSize::Render});
+            targets.history = graph.CreateTexture("historique de l'anticrénelage", Lifetime::Previous,
+                                                  {PostRenderer::SceneFormat, TextureSize::View, true, true});
             targets.windowDepth = graph.CreateTexture("profondeur de la fenêtre", Lifetime::Frame,
                                                       {DepthFormat, TextureSize::Window, false});
             // Nuages, à la moitié de la vue : ce qu'en voit cette image, puis mêlé à l'historique.
@@ -370,6 +443,7 @@ namespace Flux {
                                                        {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
             const auto sceneColor = targets.sceneColor;
             const auto motion = targets.motion;
+            const auto fullMotion = targets.fullMotion;
             const auto sceneDepth = targets.sceneDepth;
             const auto history = targets.history;
             const auto windowDepth = targets.windowDepth;
@@ -429,8 +503,8 @@ namespace Flux {
                                               .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
                                               .colorTarget = graph.GetTexture(targets.sceneColor),
                                               .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true});
-                    commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
-                    commands.SetScissor({0, 0, frame.scene3d.width, frame.scene3d.height});
+                    commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
+                    commands.SetScissor({0, 0, frame.render.width, frame.render.height});
                 })
                 .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); })
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
@@ -475,8 +549,8 @@ namespace Flux {
                     clouds->DrawResolve(commands, frame.index, frame.cloudCopy);
                 });
             const auto sceneViewport = [this](RHI::CommandList& commands) {
-                commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
-                commands.SetScissor({0, 0, frame.scene3d.width, frame.scene3d.height});
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
+                commands.SetScissor({0, 0, frame.render.width, frame.render.height});
             };
             graph.AddPass("composition des nuages")
                 .When(hasClouds)
@@ -528,12 +602,11 @@ namespace Flux {
                 .Reads(sceneDepth)
                 .Writes(pyramid)
                 .Step("pyramide", [this](RHI::CommandList& commands) {
-                    meshes->BuildDepthPyramid(commands, frame.index, *graph.GetTexture(targets.sceneDepth),
-                                              {frame.scene3d.width, frame.scene3d.height});
+                    meshes->BuildDepthPyramid(commands, frame.index, *graph.GetTexture(targets.sceneDepth), frame.render);
                 });
-            // Coupé (réglage) : la passe ne joue pas, l'historique garde son dernier exemplaire écrit.
+            // Coupé (réglage), ou FSR à la place : la passe ne joue pas, l'historique garde son dernier exemplaire écrit.
             graph.AddPass("anticrénelage")
-                .When([this] { return sceneVisible && temporalAA; })
+                .When([this] { return sceneVisible && temporalAA && !frame.fsr; })
                 .Reads(sceneColor)
                 .Reads(motion)
                 .Reads(sceneDepth)
@@ -541,6 +614,29 @@ namespace Flux {
                 .Writes(history)
                 .Step("anticrénelage", [this](RHI::CommandList& commands) {
                     post->ResolveTemporal(commands, graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history);
+                });
+            const auto upscaled = [this] { return sceneVisible && frame.fsr; };
+            graph.AddPass("mouvement complet")
+                .When(upscaled)
+                .Reads(motion)
+                .Reads(sceneDepth)
+                .Writes(fullMotion)
+                .Step("mouvement complet", [this](RHI::CommandList& commands) { post->DrawMotion(commands, frame.reprojection); });
+            // FSR écrit l'historique (taille de la vue) par ses compute shaders ; il garde son propre historique.
+            graph.AddPass("FSR")
+                .When(upscaled)
+                .Reads(sceneColor)
+                .Reads(fullMotion)
+                .Reads(sceneDepth)
+                .Writes(history, RHI::TextureAccess::Storage)
+                .Step("FSR", [this](RHI::CommandList& commands) {
+                    const std::uint32_t target = graph.GetWriteCopy(targets.history);
+                    frame.upscale.color = graph.GetTexture(targets.sceneColor);
+                    frame.upscale.depth = graph.GetTexture(targets.sceneDepth);
+                    frame.upscale.motion = graph.GetTexture(targets.fullMotion);
+                    frame.upscale.output = graph.GetCopy(targets.history, target);
+                    upscaler->Dispatch(commands, frame.upscale);
+                    post->UseUpscaled(target);
                 });
             graph.AddPass("bloom")
                 .When(scene)
@@ -686,6 +782,30 @@ namespace Flux {
 
     bool Renderer::IsTemporalAAEnabled() const {
         return m_impl->temporalAA;
+    }
+
+    void Renderer::SetUpscaling(Upscaling upscaling) {
+        m_impl->upscaling = upscaling; // FSR créé ou libéré au début de la prochaine image
+    }
+
+    Upscaling Renderer::GetUpscaling() const {
+        return m_impl->upscaling;
+    }
+
+    bool Renderer::IsUpscalingAvailable() const {
+        return !m_impl->upscalerFailed;
+    }
+
+    void Renderer::SetSharpness(float sharpness) {
+        m_impl->sharpness = std::clamp(sharpness, 0.0f, 1.0f);
+    }
+
+    float Renderer::GetSharpness() const {
+        return m_impl->sharpness;
+    }
+
+    Math::Vector2i Renderer::GetRenderSize() const {
+        return {static_cast<int>(m_impl->renderExtent.width), static_cast<int>(m_impl->renderExtent.height)};
     }
 
     void Renderer::SetGridVisible(bool visible) {

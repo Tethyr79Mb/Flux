@@ -95,6 +95,8 @@ namespace Flux {
         m_renderer = std::move(renderer.value());
         m_renderer->SetVSync(config.vsync);
         m_renderer->SetTemporalAA(config.temporalAA);
+        m_renderer->SetUpscaling(config.upscaling);
+        m_renderer->SetSharpness(config.sharpness);
         m_renderer->SetGroundDetail(config.groundDetail);
         m_renderer->SetCloudQuality(config.cloudQuality);
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
@@ -116,6 +118,17 @@ namespace Flux {
                                     }});
         m_interfaceBindings->SetEngineValue("Anticrénelage", "Graphismes", {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
                                            .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }});
+        // Numéro dans UpscalingLabels (0 Natif à 5 FSR Ultra Performance).
+        m_interfaceBindings->SetEngineValue("Mise à l'échelle", "Graphismes",
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetUpscaling()); },
+                                             .set = [this](double value) {
+                                                 m_renderer->SetUpscaling(static_cast<Upscaling>(
+                                                     std::clamp(std::lround(value), 0l, static_cast<long>(UpscalingCount) - 1)));
+                                             },
+                                             .getText = {},
+                                             .options = {UpscalingLabels.begin(), UpscalingLabels.end()}});
+        m_interfaceBindings->SetEngineValue("Netteté FSR", "Graphismes", {.get = [this] { return static_cast<double>(m_renderer->GetSharpness()); },
+                                             .set = [this](double value) { m_renderer->SetSharpness(static_cast<float>(value)); }});
         // Numéro dans GroundDetailLabels (0 Bas à 3 Ultra).
         m_interfaceBindings->SetEngineValue("Détail du sol", "Graphismes",
                                             {.get = [this] { return static_cast<double>(m_renderer->GetGroundDetail()); },
@@ -301,6 +314,8 @@ namespace Flux {
                     .height = static_cast<std::uint32_t>(view.y),
                     .vsync = m_renderer->IsVSyncEnabled(),
                     .temporalAA = m_renderer->IsTemporalAAEnabled(),
+                    .upscaling = m_renderer->IsUpscalingAvailable() ? m_renderer->GetUpscaling() : Upscaling::Native,
+                    .renderSize = m_renderer->GetRenderSize(),
                     .groundDetail = m_renderer->GetGroundDetail(),
                     .cloudQuality = m_renderer->GetCloudQuality(),
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),

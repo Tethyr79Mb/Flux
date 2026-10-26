@@ -127,6 +127,8 @@ namespace Flux::Vk {
         void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent, VkQueryPool queryPool);
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
         void TransitionToPresent();
+        // Pour une bibliothèque qui enregistre elle-même ses commandes (FSR).
+        VkCommandBuffer GetHandle() const { return m_commandBuffer; }
 
         void UseTextures(std::span<const RHI::TextureUse> uses) override;
         void BeginRenderPass(const RHI::RenderPassDesc& desc) override;
@@ -213,7 +215,7 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateVolumeTexture(RHI::Format format, RHI::Extent extent,
                                                                                       std::uint32_t depth, bool mipmaps) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent,
-                                                                                     bool sampled) override;
+                                                                                     bool sampled, bool storage) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeRenderTarget(RHI::Format format,
                                                                                             std::uint32_t size) override;
         std::expected<std::unique_ptr<RHI::Sampler>, std::string> CreateSampler(const RHI::SamplerDesc& desc) override;
@@ -221,6 +223,7 @@ namespace Flux::Vk {
         std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;
         std::expected<std::unique_ptr<RHI::Pipeline>, std::string> CreatePipeline(const RHI::PipelineDesc& desc) override;
         std::expected<std::unique_ptr<RHI::Pipeline>, std::string> CreateComputePipeline(const RHI::ComputePipelineDesc& desc) override;
+        std::expected<std::unique_ptr<RHI::Upscaler>, std::string> CreateUpscaler(RHI::Extent outputSize) override;
         bool Submit(const std::function<void(RHI::CommandList&)>& record) override;
 
         bool ResizeSwapchain(RHI::Extent extent, bool vsync) override;

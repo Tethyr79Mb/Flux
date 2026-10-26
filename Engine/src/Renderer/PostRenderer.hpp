@@ -12,10 +12,11 @@
 
 namespace Flux {
     // Image de la scène en HDR et ce qui la transforme en image de la fenêtre : anticrénelage temporel
-    // (shaders/Temporal.slang), bloom puis courbe de tons (shaders/Post.slang). La scène est dessinée dans sa cible
-    // (lumière linéaire, sans plafond), son mouvement propre dans la sienne, avec son propre tampon de profondeur, tous
-    // trois à la taille de la vue 3D et créés par le graphe de rendu (Targets) ; Composite l'écrit ensuite dans la
-    // passe principale. Seuls les niveaux du bloom sont créés ici.
+    // (shaders/Temporal.slang) ou mouvement complet pour FSR, bloom puis courbe de tons (shaders/Post.slang). La scène
+    // est dessinée dans sa cible (lumière linéaire, sans plafond), son mouvement propre dans la sienne, avec son propre
+    // tampon de profondeur, tous trois à la taille de rendu (celle de la vue 3D, ou moins en FSR) et créés par le graphe
+    // de rendu (Targets) ; l'historique est à la taille de la vue. Composite l'écrit ensuite dans la passe principale.
+    // Seuls les niveaux du bloom sont créés ici.
     // Coût de l'anticrénelage : une passe plein écran (25 lectures de texture par pixel, la plupart dans le même
     // voisinage 3 x 3), et 40 Mo environ de mémoire vidéo en 1080p (deux historiques HDR et le mouvement).
     // Coût du bloom : une demi-douzaine de petites passes plein écran (la première à la moitié de la taille de la vue),
@@ -32,13 +33,15 @@ namespace Flux {
         // Seconde cible de la passe de la scène : le mouvement propre de ce qu'on voit (voir Motion dans Mesh.slang).
         static constexpr RHI::Format MotionFormat = RHI::Format::RG16Float;
 
-        // Textures du graphe de rendu, toutes à la taille de la vue 3D.
+        // Textures du graphe de rendu : à la taille de rendu, sauf l'historique (taille de la vue 3D). En Natif, les
+        // deux tailles sont égales.
         struct Targets
         {
             const RHI::Texture* scene = nullptr;
             const RHI::Texture* depth = nullptr;
             const RHI::Texture* motion = nullptr;
-            std::array<const RHI::Texture*, 2> history{}; // les deux exemplaires de l'historique
+            const RHI::Texture* fullMotion = nullptr; // écrit par DrawMotion
+            std::array<const RHI::Texture*, 2> history{}; // les deux exemplaires de l'historique (sortie de FSR)
         };
         // Quand le graphe les a recréées (le GPU déjà attendu) : refait les niveaux du bloom et les groupes.
         std::expected<void, std::string> Bind(const Targets& targets);
@@ -50,6 +53,11 @@ namespace Flux {
         void ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection, bool history);
         // Anticrénelage coupé à cette image : le bloom et l'image finale lisent la scène telle quelle.
         void SkipTemporal();
+        // Hors de toute passe, après la scène : le mouvement complet de chaque pixel (caméra et objets) dans
+        // fullMotion, ce que FSR demande. `reprojection` : comme pour ResolveTemporal.
+        void DrawMotion(RHI::CommandList& commands, const Math::Matrix4f& reprojection);
+        // FSR a écrit l'exemplaire `target` de l'historique : le bloom et l'image finale le lisent.
+        void UseUpscaled(std::uint32_t target);
 
         // Hors de toute passe, après la scène : réductions et remontées du bloom. Rien si `strength` vaut 0. Les niveaux
         // sont internes (barrières posées ici) ; le résultat est laissé lisible pour Composite, même non dessiné.
@@ -109,11 +117,13 @@ namespace Flux {
         std::unique_ptr<RHI::Sampler> m_pointSampler; // profondeur et mouvement : lus tels quels
         std::unique_ptr<RHI::BindGroupLayout> m_temporalLayout;
         std::unique_ptr<RHI::Pipeline> m_temporal;
+        std::unique_ptr<RHI::Pipeline> m_motion; // même groupe que l'anticrénelage
         std::unique_ptr<RHI::BindGroupLayout> m_gridLayout;
         std::unique_ptr<RHI::Pipeline> m_grid;
         std::unique_ptr<RHI::BindGroup> m_gridGroup; // la profondeur de la scène
 
-        RHI::Extent m_extent;
+        RHI::Extent m_extent;      // de la vue (historique, bloom)
+        RHI::Extent m_sceneExtent; // de rendu (scène, profondeur, mouvement)
         Targets m_targets;
         // Résultats de l'anticrénelage, en alternance : celui de cette image est écrit en lisant l'autre.
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_temporalGroups; // [i] : écrit history[i]

@@ -57,6 +57,8 @@ namespace Flux {
                        .freeCamera = false,
                        .vsync = settings.vsync,
                        .temporalAA = settings.temporalAA,
+                       .upscaling = settings.upscaling,
+                       .sharpness = settings.sharpness,
                        .groundDetail = settings.groundDetail,
                        .cloudQuality = settings.cloudQuality,
                        .volume = settings.volume});
@@ -105,6 +107,8 @@ namespace Flux {
         }
         settings.vsync = engine.GetRenderer().IsVSyncEnabled();
         settings.temporalAA = engine.GetRenderer().IsTemporalAAEnabled();
+        settings.upscaling = engine.GetRenderer().GetUpscaling();
+        settings.sharpness = engine.GetRenderer().GetSharpness();
         settings.groundDetail = engine.GetRenderer().GetGroundDetail();
         settings.cloudQuality = engine.GetRenderer().GetCloudQuality();
         settings.volume = engine.GetAudio().GetMasterVolume();

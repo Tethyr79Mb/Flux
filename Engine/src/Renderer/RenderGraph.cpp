@@ -10,7 +10,12 @@ namespace Flux {
     }
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::Writes(ResourceId resource) {
+        return Writes(resource, RHI::TextureAccess::None);
+    }
+
+    RenderGraph::PassBuilder& RenderGraph::PassBuilder::Writes(ResourceId resource, RHI::TextureAccess access) {
         m_graph.m_passes[m_pass].writes.push_back(resource);
+        m_graph.m_passes[m_pass].writeAccess.push_back(access);
         return *this;
     }
 
@@ -68,7 +73,7 @@ namespace Flux {
                 continue;
             }
             for (std::uint32_t copy = 0; copy < (resource.IsHistory() ? 2u : 1u); ++copy) {
-                auto created = device.CreateRenderTarget(resource.desc->format, extent, resource.desc->sampled);
+                auto created = device.CreateRenderTarget(resource.desc->format, extent, resource.desc->sampled, resource.desc->storage);
                 if (!created) {
                     return std::unexpected(std::format("graphe de rendu : « {} » : {}", resource.name, created.error()));
                 }
@@ -220,13 +225,16 @@ namespace Flux {
         }
         // Contenu jeté : texture de l'image à sa première écriture, ou exemplaire d'historique qui ne tient que
         // l'avant-dernière image.
-        for (const ResourceId resource : pass.writes) {
+        for (std::size_t w = 0; w < pass.writes.size(); ++w) {
+            const ResourceId resource = pass.writes[w];
             const Resource& r = m_resources[resource];
             if (const RHI::Texture* texture = WriteTexture(r)) {
                 const bool depth = texture->GetFormat() == RHI::Format::D32Float;
                 const bool first = r.lifetime == Lifetime::Frame && !std::ranges::contains(pass.continued, resource);
-                m_uses.push_back({texture, depth ? RHI::TextureAccess::DepthTarget : RHI::TextureAccess::ColorTarget,
-                                  first || r.IsHistory()});
+                const RHI::TextureAccess access = pass.writeAccess[w] != RHI::TextureAccess::None ? pass.writeAccess[w]
+                                                : depth ? RHI::TextureAccess::DepthTarget
+                                                        : RHI::TextureAccess::ColorTarget;
+                m_uses.push_back({texture, access, first || r.IsHistory()});
             }
         }
         if (!m_uses.empty()) {

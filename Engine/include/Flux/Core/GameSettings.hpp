@@ -4,6 +4,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
+#include "Flux/Renderer/Upscaling.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -19,7 +20,9 @@ namespace Flux {
         bool maximized = false;
         bool fullscreen = false; // plein écran sans bordure (Alt+Entrée ou F11 en jeu)
         bool vsync = true;
-        bool temporalAA = true;    // anticrénelage temporel (TAA)
+        bool temporalAA = true;    // anticrénelage temporel (TAA), en Natif
+        Upscaling upscaling = DefaultUpscaling;
+        float sharpness = DefaultSharpness; // netteté ajoutée par FSR, 0 à 1
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
         float volume = 1.0f;       // volume général, 0 à 1

@@ -89,6 +89,10 @@ namespace Flux::Planetology {
     void CloudRenderer::Bind(const Targets& targets) {
         m_targets = targets;
         m_historyValid = false;
+        // Les anciens groupes rendus d'abord : le pool n'en tient que cinq, les nouveaux n'y entreraient pas.
+        m_marchGroup.reset();
+        m_resolveGroups = {};
+        m_compositeGroups = {};
         m_marchGroup = m_device.CreateBindGroup(*m_layout);
         m_marchGroup->SetTexture(0, m_noise.GetShape(), *m_noiseSampler);
         m_marchGroup->SetTexture(1, m_noise.GetDetail(), *m_noiseSampler);
