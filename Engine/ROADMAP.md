@@ -60,6 +60,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Niveau de détail des modèles : une version lointaine par modèle (« Version lointaine » du Modèle 3D), affichée au-delà d'une distance à sa sphère englobante. À améliorer : un seul palier, bascule sans fondu ; les deux versions restent chargées.
 - 🔧 Ombres du soleil en 4 cascades ; lumières ponctuelles et spots (256 max, sans ombre). À améliorer : les lumières traversent les murs (pas d'ombre).
 - 🔧 Ciel spatial généré ou panorama, reflets et ambiante tirés du ciel ; volumes « Intérieur » ; lumière de contour. À améliorer : reflets flous, ciel seulement (pas la scène).
+- ⬜ Matériaux multicouches (remarque de Bruno du 2026-10-26) : une matière de base (peinture, métal nu) et des couches mélangées par masque (usure, saleté, bandes), comme les « layer blends » de Star Citizen. Aujourd'hui : un seul jeu de textures par matériau.
 - ⬜ Décalcomanies (idée de Bruno du 2026-10-26) : images projetées sur les modèles (numéros, logos, bandes), posées dans l'éditeur. En attendant, plaques texturées dans le modèle.
 - ⬜ Ciel plus fin (nébuleuse en 2048 ou 4096, compressée BC6H) réglable dans les détails des options graphiques (idée de Bruno).
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur en sections repliables : temps par passe du graphe de rendu, étapes, scène, mémoire) et de la mémoire (RAM du processus, mémoire vidéo).
