@@ -11,7 +11,7 @@
 //    pixel avait fait dix fois plus de pas. Ramené dans les couleurs du voisinage pour ne pas laisser de traînées.
 // 3. fragmentCloudComposite, à pleine résolution : mélangé à la scène, chaque pixel prenant les pixels voisins de la
 //    demi-résolution dont la profondeur ressemble à la sienne (pas de halo autour des montagnes), et rien devant un
-//    objet plus proche que le premier nuage.
+//    objet plus proche que le premier nuage. En FSR, fragmentCloudReactive écrit aussi leur opacité dans son masque.
 // Coût : surtout la passe 1, une poignée de lectures de texture par pas, pas éclairés seulement là où il y a du nuage ;
 // au quart du nombre de pixels de l'image.
 
@@ -409,8 +409,8 @@ float4 fragmentCloudResolve(CloudVertexOutput input) : SV_Target
     return float4(CloudExpand(result.rgb), result.a);
 }
 
-[shader("fragment")]
-float4 fragmentCloudComposite(CloudVertexOutput input) : SV_Target
+// Le nuage de ce pixel à pleine résolution (non prémultiplié) ; opacité 0 : aucun devant la scène.
+float4 CloudAtPixel(CloudVertexOutput input)
 {
     const FrameData f = frame[0];
     const float2 uv = input.uv;
@@ -445,7 +445,32 @@ float4 fragmentCloudComposite(CloudVertexOutput input) : SV_Target
     const float4 cloud = sum / max(total, 1.0e-6);
     // Un objet plus proche que le premier nuage n'en a aucun devant lui (une antenne, un arbre fins devant le ciel).
     if (cloud.a < 0.004 || scene < first / max(firstWeights, 1.0e-6) * 0.97) {
+        return float4(0.0);
+    }
+    return float4(cloud.rgb / cloud.a, cloud.a);
+}
+
+[shader("fragment")]
+float4 fragmentCloudComposite(CloudVertexOutput input) : SV_Target
+{
+    const float4 cloud = CloudAtPixel(input);
+    if (cloud.a <= 0.0) {
         discard;
     }
-    return float4(cloud.rgb / cloud.a, cloud.a); // non prémultiplié : le mélange multiplie par alpha
+    return cloud; // non prémultiplié : le mélange multiplie par alpha
+}
+
+// Masque réactif de FSR (seulement en FSR, ajouté à celui des flammes) : les nuages changent d'une image à l'autre
+// sans que le mouvement de la scène le dise (leur bruit, leur propre historique) ; FSR y suit davantage l'image du
+// moment au lieu de les faire trembler. Pas jusqu'à 1 : FSR garde un peu de son lissage.
+static const float CloudReactive = 0.8;
+
+[shader("fragment")]
+float4 fragmentCloudReactive(CloudVertexOutput input) : SV_Target
+{
+    const float opacity = CloudAtPixel(input).a;
+    if (opacity <= 0.0) {
+        discard;
+    }
+    return float4(opacity * CloudReactive, 0.0, 0.0, 0.0);
 }

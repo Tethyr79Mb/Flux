@@ -154,6 +154,7 @@ namespace Flux {
             RenderGraph::ResourceId sceneColor = 0;
             RenderGraph::ResourceId motion = 0;
             RenderGraph::ResourceId fullMotion = 0;
+            RenderGraph::ResourceId reactive = 0;
             RenderGraph::ResourceId sceneDepth = 0;
             RenderGraph::ResourceId history = 0;
             RenderGraph::ResourceId windowDepth = 0;
@@ -429,6 +430,7 @@ namespace Flux {
             targets.sceneColor = graph.CreateTexture("image de la scène", Lifetime::Frame, {PostRenderer::SceneFormat, TextureSize::Render});
             targets.motion = graph.CreateTexture("mouvement", Lifetime::Frame, {PostRenderer::MotionFormat, TextureSize::Render});
             targets.fullMotion = graph.CreateTexture("mouvement complet", Lifetime::Frame, {PostRenderer::MotionFormat, TextureSize::Render});
+            targets.reactive = graph.CreateTexture("masque réactif", Lifetime::Frame, {PostRenderer::ReactiveFormat, TextureSize::Render});
             targets.sceneDepth = graph.CreateTexture("profondeur de la scène", Lifetime::Frame, {DepthFormat, TextureSize::Render});
             targets.history = graph.CreateTexture("historique de l'anticrénelage", Lifetime::Previous,
                                                   {PostRenderer::SceneFormat, TextureSize::View, true, true});
@@ -444,6 +446,7 @@ namespace Flux {
             const auto sceneColor = targets.sceneColor;
             const auto motion = targets.motion;
             const auto fullMotion = targets.fullMotion;
+            const auto reactive = targets.reactive;
             const auto sceneDepth = targets.sceneDepth;
             const auto history = targets.history;
             const auto windowDepth = targets.windowDepth;
@@ -596,6 +599,40 @@ namespace Flux {
                     commands.BeginStep("traçantes");
                     tracers->Draw(commands);
                 });
+            // Masque réactif de FSR : là où l'image change sans que le mouvement le dise (gaz des flammes, traçantes plus
+            // rapides que l'historique, nuages et leur propre historique), FSR suit l'image du moment au lieu de laisser
+            // des traînées ou de faire trembler. Les flammes et traçantes redessinées (deux appels de plus), cachées par
+            // la profondeur de la scène ; puis une passe plein écran pour les nuages. Rien de tout cela en Natif.
+            const auto upscaled = [this] { return sceneVisible && frame.fsr; };
+            graph.AddPass("masque réactif")
+                .When(upscaled)
+                .Reads(cpu)
+                .Writes(reactive)
+                .Writes(sceneDepth)
+                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.depth = graph.GetTexture(targets.sceneDepth),
+                                              .colorTarget = graph.GetTexture(targets.reactive), .keepDepth = true,
+                                              .loadDepth = true});
+                    sceneViewport(commands);
+                })
+                .Step("masque réactif", [this](RHI::CommandList& commands) {
+                    thrusters->DrawReactive(commands);
+                    tracers->DrawReactive(commands);
+                });
+            graph.AddPass("masque des nuages")
+                .When([this, upscaled, hasClouds] { return upscaled() && hasClouds(); })
+                .Reads(cpu)
+                .Reads(sceneDepth)
+                .Reads(cloudDistances)
+                .Reads(cloudHistory)
+                .Writes(reactive)
+                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.reactive), .loadColor = true});
+                    sceneViewport(commands);
+                })
+                .Step("masque des nuages", [this](RHI::CommandList& commands) {
+                    clouds->DrawReactive(commands, frame.index, frame.cloudCopy);
+                });
             // La profondeur de la scène réduite, pour écarter à l'image suivante ce qui sera caché.
             graph.AddPass("pyramide")
                 .When(scene)
@@ -615,7 +652,6 @@ namespace Flux {
                 .Step("anticrénelage", [this](RHI::CommandList& commands) {
                     post->ResolveTemporal(commands, graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history);
                 });
-            const auto upscaled = [this] { return sceneVisible && frame.fsr; };
             graph.AddPass("mouvement complet")
                 .When(upscaled)
                 .Reads(motion)
@@ -627,6 +663,7 @@ namespace Flux {
                 .When(upscaled)
                 .Reads(sceneColor)
                 .Reads(fullMotion)
+                .Reads(reactive)
                 .Reads(sceneDepth)
                 .Writes(history, RHI::TextureAccess::Storage)
                 .Step("FSR", [this](RHI::CommandList& commands) {
@@ -634,6 +671,7 @@ namespace Flux {
                     frame.upscale.color = graph.GetTexture(targets.sceneColor);
                     frame.upscale.depth = graph.GetTexture(targets.sceneDepth);
                     frame.upscale.motion = graph.GetTexture(targets.fullMotion);
+                    frame.upscale.reactive = graph.GetTexture(targets.reactive);
                     frame.upscale.output = graph.GetCopy(targets.history, target);
                     upscaler->Dispatch(commands, frame.upscale);
                     post->UseUpscaled(target);
@@ -692,17 +730,18 @@ namespace Flux {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
-        auto clouds = Planetology::CloudRenderer::Create(*impl->device, *impl->meshes, sceneFormat);
+        auto clouds = Planetology::CloudRenderer::Create(*impl->device, *impl->meshes, sceneFormat,
+                                                       PostRenderer::ReactiveFormat);
         if (!clouds) {
             return std::unexpected(clouds.error());
         }
         impl->clouds = std::move(*clouds);
-        auto thrusters = ThrusterRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        auto thrusters = ThrusterRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat, PostRenderer::ReactiveFormat);
         if (!thrusters) {
             return std::unexpected(thrusters.error());
         }
         impl->thrusters = std::move(*thrusters);
-        auto tracers = TracerRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        auto tracers = TracerRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat, PostRenderer::ReactiveFormat);
         if (!tracers) {
             return std::unexpected(tracers.error());
         }

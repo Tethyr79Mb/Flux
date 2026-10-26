@@ -63,8 +63,7 @@ VertexOutput vertexMain(uint vertexId : SV_VulkanVertexID)
     return output;
 }
 
-[shader("fragment")]
-float4 fragmentMain(VertexOutput input) : SV_Target
+float4 TracerLight(VertexOutput input)
 {
     if (input.round > 0.5) {
         // Éclat : disque doux, sans queue.
@@ -76,4 +75,19 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     const float across = 1.0 - input.uv.x * input.uv.x;
     const float fade = lerp(1.0, 0.15, input.uv.y);
     return float4(input.color * (across * across * fade), 0.0);
+}
+
+[shader("fragment")]
+float4 fragmentMain(VertexOutput input) : SV_Target
+{
+    return TracerLight(input);
+}
+
+// Masque réactif de FSR (TracerRenderer::DrawReactive) : une traçante file plus vite que ce que l'historique peut
+// suivre ; là où elle brille, FSR prend l'image du moment au lieu d'en laisser une traînée.
+[shader("fragment")]
+float4 fragmentReactive(VertexOutput input) : SV_Target
+{
+    const float3 light = TracerLight(input).rgb;
+    return float4(saturate(max(light.r, max(light.g, light.b))) * 0.9, 0.0, 0.0, 0.0);
 }

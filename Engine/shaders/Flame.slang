@@ -113,8 +113,7 @@ float3 InverseToneMap(float3 c)
     return (-b + sqrt(b * b + 4.0 * a * 0.14 * c)) / (2.0 * a) / 0.6;
 }
 
-[shader("fragment")]
-float4 fragmentMain(VertexOutput input) : SV_Target
+float4 FlameLight(VertexOutput input)
 {
     // Rayon de la caméra à travers la boîte (repère normalisé : une transformation affine garde les droites).
     const float3 origin = flame.camera.xyz;
@@ -159,4 +158,19 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     // bleu plafonne en premier, puis le vert et le rouge, d'où un cœur blanc entouré de bleu.
     const float3 light = (flame.color.rgb * (0.45 * sum.y + 0.8 * sum.x) + float3(0.75, 0.85, 1.0) * sum.x * sum.x * 0.6) * flame.options.y;
     return float4(InverseToneMap(1.0 - exp(-light)), 0.0);
+}
+
+[shader("fragment")]
+float4 fragmentMain(VertexOutput input) : SV_Target
+{
+    return FlameLight(input);
+}
+
+// Masque réactif de FSR (ThrusterRenderer::DrawReactive) : le gaz remue d'une image à l'autre sans que le mouvement de
+// la scène le dise ; là où la flamme brille, FSR suit l'image du moment au lieu d'en laisser une traînée.
+[shader("fragment")]
+float4 fragmentReactive(VertexOutput input) : SV_Target
+{
+    const float3 light = FlameLight(input).rgb;
+    return float4(saturate(max(light.r, max(light.g, light.b))) * 0.9, 0.0, 0.0, 0.0);
 }

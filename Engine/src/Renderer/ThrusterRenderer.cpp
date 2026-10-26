@@ -23,7 +23,8 @@ namespace Flux {
 
     std::expected<std::unique_ptr<ThrusterRenderer>, std::string> ThrusterRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
                                                                                             RHI::Format motionFormat,
-                                                                                            RHI::Format depthFormat) {
+                                                                                            RHI::Format depthFormat,
+                                                                                            RHI::Format reactiveFormat) {
         std::unique_ptr<ThrusterRenderer> renderer(new ThrusterRenderer());
         // Caché par ce qui est devant (test de profondeur), sans cacher ce qui est derrière (pas d'écriture). Les
         // deux faces : caméra dans la boîte, seules celles du fond sont vues (le shader garde celles où le rayon
@@ -43,6 +44,14 @@ namespace Flux {
             return std::unexpected(pipeline.error());
         }
         renderer->m_pipeline = std::move(*pipeline);
+        desc.fragmentEntryPoint = "fragmentReactive";
+        desc.colorFormat = reactiveFormat;
+        desc.secondColorFormat = RHI::Format::Undefined;
+        auto reactive = device.CreatePipeline(desc);
+        if (!reactive) {
+            return std::unexpected(reactive.error());
+        }
+        renderer->m_reactive = std::move(*reactive);
         return renderer;
     }
 
@@ -98,10 +107,18 @@ namespace Flux {
     }
 
     void ThrusterRenderer::Draw(RHI::CommandList& commands) const {
+        Draw(commands, *m_pipeline);
+    }
+
+    void ThrusterRenderer::DrawReactive(RHI::CommandList& commands) const {
+        Draw(commands, *m_reactive);
+    }
+
+    void ThrusterRenderer::Draw(RHI::CommandList& commands, const RHI::Pipeline& pipeline) const {
         if (m_flames.empty()) {
             return;
         }
-        commands.BindPipeline(*m_pipeline);
+        commands.BindPipeline(pipeline);
         for (const FlameParams& flame : m_flames) {
             commands.PushConstants(&flame, sizeof(flame));
             commands.Draw(36, 0);
