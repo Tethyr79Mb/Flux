@@ -1,5 +1,6 @@
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Core/GameModule.hpp"
+#include "Flux/Core/Log.hpp"
 
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -12,6 +13,7 @@
 #include <charconv>
 #include <format>
 #include <functional>
+#include <iterator>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -32,31 +34,50 @@ namespace Flux::SceneSerializer {
 
         // Version du moteur qui a écrit le fichier : GameModuleApiVersion, augmentée à chaque PR qui change un
         // composant. Un fichier plus récent que ce moteur peut avoir des composants ou des champs qu'il ne connaît pas :
-        // refusé plutôt qu'ouvert à moitié. Absente (fichiers d'avant son ajout) : plus ancien, lu et converti.
+        // lu avec un avertissement, ces composants gardés tels quels. Absente (fichiers d'avant son ajout) : plus ancien,
+        // lu et converti.
         constexpr std::string_view EngineVersionKey = "engine";
 
-        // Fichier écrit par une autre version du moteur (plus récente, ou une autre branche) : message de refus commun
-        // (FormatIncompatible), quel que soit l'endroit où il est découvert (prefab d'un exemplaire compris).
+        // Fichier d'un format plus récent que ce moteur : message de refus commun (FormatIncompatible), quel que soit
+        // l'endroit où il est découvert (prefab d'un exemplaire compris).
         struct IncompatibleError : std::runtime_error
         {
             using std::runtime_error::runtime_error;
         };
+
+        // Ce qui n'a pas pu être chargé sans empêcher le reste de l'être (composant illisible, prefab introuvable),
+        // écrit au journal à la fin du chargement. Absent (nullptr) : lecture silencieuse, pour ce qui relit souvent le
+        // même fichier (l'inspecteur compare une pièce à son prefab à chaque image).
+        using Warnings = std::vector<std::string>;
+
+        void Warn(Warnings* warnings, std::string text) {
+            if (warnings && !std::ranges::contains(*warnings, text)) { // un prefab abîmé, placé dix fois : un message
+                warnings->push_back(std::move(text));
+            }
+        }
+
+        // Au journal (panneau Console de l'éditeur), une fois le fichier chargé.
+        void WriteWarnings(std::string_view what, const Warnings& warnings) {
+            for (const std::string& warning : warnings) {
+                Log::Warning("{} : {}", what, warning);
+            }
+        }
 
         std::string FormatIncompatible(std::string_view format, std::string_view detail) {
             return std::format("{} non chargé{} car non compatible avec la version actuelle du moteur.\n\n{}",
                                format == PrefabFormatName ? "Prefab" : "Scène", format == PrefabFormatName ? "" : "e", detail);
         }
 
-        void CheckVersions(const Json& document) {
+        void CheckVersions(const Json& document, Warnings* warnings) {
             const int version = document.at("version").get<int>();
             if (version < 1 || version > FormatVersion) {
                 throw IncompatibleError(std::format("Fichier au format {}, ce moteur lit jusqu'au format {}.", version, FormatVersion));
             }
             const auto found = document.find(EngineVersionKey);
             if (found != document.end() && found->get<std::int64_t>() > static_cast<std::int64_t>(GameModuleApiVersion)) {
-                throw IncompatibleError(std::format("Fichier enregistré par la version {} du moteur, celui-ci est en version {} : "
-                                                    "mettre le moteur à jour pour l'ouvrir.",
-                                                    found->get<std::int64_t>(), GameModuleApiVersion));
+                Warn(warnings, std::format("fichier enregistré par la version {} du moteur, celui-ci est en version {} : "
+                                           "ce qu'il ne sait pas lire est gardé tel quel",
+                                           found->get<std::int64_t>(), GameModuleApiVersion));
             }
         }
 
@@ -294,17 +315,24 @@ namespace Flux::SceneSerializer {
             std::string prefab;
             Uuid source;
             Uuid instance;
+            // Exemplaire dont le prefab est illisible : ses différences telles quelles (MissingPrefabComponent).
+            std::optional<std::string> missingPrefab;
         };
 
-        EntityData ReadEntity(const ComponentRegistry& components, const Json& json, std::size_t index);
+        EntityData ReadEntity(const ComponentRegistry& components, const Json& json, std::size_t index, Warnings* warnings);
+
+        // Nom d'une entité dans un avertissement : son identifiant si elle n'en a pas.
+        std::string Label(const EntityData& data) {
+            return data.name.empty() ? data.id.ToString() : data.name;
+        }
 
         // Lecture d'un prefab (texte d'un .prefab.json) : ses entités, la racine d'abord. Lève une erreur.
-        std::vector<EntityData> ReadPrefab(const ComponentRegistry& components, std::string_view text) {
+        std::vector<EntityData> ReadPrefab(const ComponentRegistry& components, std::string_view text, Warnings* warnings) {
             const Json document = Json::parse(text);
             if (document.value("format", std::string{}) != PrefabFormatName) {
                 throw std::runtime_error(std::format("ce n'est pas un prefab Flux (« format » différent de « {} »)", PrefabFormatName));
             }
-            CheckVersions(document);
+            CheckVersions(document, warnings);
             const Json& list = document.at("entities");
             std::vector<EntityData> entities;
             entities.reserve(list.size());
@@ -312,7 +340,7 @@ namespace Flux::SceneSerializer {
                 if (list[i].is_object() && (list[i].contains("prefab") || list[i].contains("prefabSource"))) {
                     throw std::runtime_error("un prefab dans un prefab n'est pas encore géré");
                 }
-                entities.push_back(ReadEntity(components, list[i], i));
+                entities.push_back(ReadEntity(components, list[i], i, warnings));
             }
             // Une racine, puis ses descendants : chacun après son parent.
             if (entities.empty() || entities[0].parent) {
@@ -362,7 +390,7 @@ namespace Flux::SceneSerializer {
                 return baseline;
             }
             try {
-                for (const EntityData& data : ReadPrefab(components, *text)) {
+                for (const EntityData& data : ReadPrefab(components, *text, nullptr)) {
                     Json json = Json::object();
                     for (const ComponentData& component : data.components) {
                         json[component.info->key] = ComponentToJson(*component.info, component.instance.get());
@@ -487,7 +515,15 @@ namespace Flux::SceneSerializer {
             if (const auto* sector = scene.TryGet<SectorComponent>(entity); sector && sector->sector != Math::Vector3i64{}) {
                 json["sector"] = ToJson(sector->sector);
             }
-            if (mode == WriteMode::Snapshot) {
+            // Exemplaire dont le prefab était illisible au chargement : son lien et ses différences, tels quels ; ses
+            // composants (une place par défaut) n'en sont pas, le fichier ne change pas.
+            const auto* missing = mode != WriteMode::Prefab ? scene.TryGet<MissingPrefabComponent>(entity) : nullptr;
+            if (missing) {
+                json["prefab"] = scene.Get<PrefabInstanceComponent>(entity).prefab;
+                if (!missing->overrides.empty()) {
+                    json["overrides"] = Json::parse(missing->overrides);
+                }
+            } else if (mode == WriteMode::Snapshot) {
                 if (const auto* instance = scene.TryGet<PrefabInstanceComponent>(entity)) {
                     json["prefab"] = instance->prefab;
                 }
@@ -496,7 +532,9 @@ namespace Flux::SceneSerializer {
                     json["prefabInstance"] = scene.GetId(link->instance).ToString();
                 }
             }
-            WriteComponents(scene, components, entity, json);
+            if (!missing) {
+                WriteComponents(scene, components, entity, json);
+            }
             entities.push_back(std::move(json));
 
             if (withDescendants) {
@@ -524,20 +562,83 @@ namespace Flux::SceneSerializer {
             }
         }
 
+        // Champs d'un composant lus dans `instance`. Lève une erreur : pas un objet, champ inconnu (fichier d'une version
+        // plus récente du moteur ou d'une autre branche), valeur invalide. Les champs absents gardent leur valeur.
+        // Avec `skipped`, un champ illisible y est noté et garde sa valeur, sans erreur.
+        void ReadComponentFields(const ComponentInfo& info, const Json& value, void* instance,
+                                 std::vector<std::string>* skipped = nullptr) {
+            if (!value.is_object()) {
+                throw std::runtime_error("un objet { ... } est attendu");
+            }
+            ConvertedValues converted;
+            for (const auto& [fieldKey, fieldValue] : value.items()) {
+                const FieldInfo* field = info.FindField(fieldKey);
+                if (!field && std::ranges::contains(info.removedFields, fieldKey)) {
+                    continue; // ancienne version : sa valeur est perdue, le champ reprend sa valeur par défaut
+                }
+                if (!field && KeepConverted(info, fieldKey, fieldValue, converted)) {
+                    continue;
+                }
+                try {
+                    if (!field) {
+                        throw std::runtime_error(std::format("pas de champ « {} » dans ce moteur", fieldKey));
+                    }
+                    ReadField(*field, fieldValue, field->access(instance));
+                } catch (const std::exception& error) {
+                    if (!skipped) {
+                        throw;
+                    }
+                    skipped->emplace_back(error.what());
+                }
+            }
+            ApplyConverted(converted, instance);
+        }
+
+        // Composant présent sur toutes les entités (NotRemovable : la transformation) : jamais mis de côté, il serait
+        // remplacé par celui par défaut à l'enregistrement. Seuls ses champs illisibles gardent leur valeur.
+        bool ReadRequiredComponent(const ComponentInfo& info, const Json& value, void* instance, const EntityData& data,
+                                   Warnings* warnings) {
+            if (info.removable || !value.is_object()) {
+                return false;
+            }
+            std::vector<std::string> skipped;
+            ReadComponentFields(info, value, instance, &skipped);
+            for (const std::string& error : skipped) {
+                Warn(warnings, std::format("« {} », {} : {}, ignoré",
+                                           Label(data), info.key, error));
+            }
+            return true;
+        }
+
+        // Composant illisible : pas chargé, mais gardé tel quel (comme un composant inconnu) et réécrit à
+        // l'enregistrement, pour ne rien perdre. Il revient quand le moteur sait de nouveau le lire.
+        void KeepUnreadable(EntityData& data, const std::string& key, const Json& value, std::string_view error,
+                            Warnings* warnings) {
+            Warn(warnings, std::format("« {} » : composant « {} » non chargé, gardé tel quel ({})",
+                                       Label(data), key, error));
+            std::erase_if(data.unknown.components, [&](const auto& c) { return c.first == key; });
+            data.unknown.components.emplace_back(key, value.dump());
+        }
+
         // Applique à une pièce ce qu'un exemplaire change de son prefab (voir Differences).
-        void ApplyOverrides(const ComponentRegistry& components, EntityData& data, const Json& overrides, bool root) {
+        void ApplyOverrides(const ComponentRegistry& components, EntityData& data, const Json& overrides, bool root,
+                            Warnings* warnings) {
             if (!overrides.is_object()) {
-                throw std::runtime_error(std::format("« overrides » de « {} » : un objet {{ ... }} est attendu", data.name));
+                Warn(warnings, std::format("« {} » : différences avec le prefab illisibles, ignorées", Label(data)));
+                return;
             }
             for (const auto& [key, value] : overrides.items()) {
                 if (key == "name") {
-                    if (!root) {
+                    if (!root && value.is_string()) {
                         data.name = value.get<std::string>();
                     }
                     continue;
                 }
                 if (key == "removed") {
                     for (const Json& removed : value) {
+                        if (!removed.is_string()) {
+                            continue;
+                        }
                         const std::string component = removed.get<std::string>();
                         std::erase_if(data.components, [&](const ComponentData& c) { return c.info->key == component; });
                         std::erase_if(data.unknown.components, [&](const auto& c) { return c.first == component; });
@@ -550,41 +651,33 @@ namespace Flux::SceneSerializer {
                     data.unknown.components.emplace_back(key, value.dump());
                     continue;
                 }
-                if (!value.is_object()) {
-                    throw std::runtime_error(std::format("« {} » de « {} » doit être un objet {{ ... }}", key, data.name));
-                }
                 auto component = std::ranges::find(data.components, info, &ComponentData::info);
+                if (component != data.components.end()
+                    && ReadRequiredComponent(*info, value, component->instance.get(), data, warnings)) {
+                    continue;
+                }
+                // Vérifié à part d'abord : une erreur ne laisse pas le composant du prefab à moitié changé.
+                try {
+                    ReadComponentFields(*info, value, info->create().get());
+                } catch (const std::exception& error) {
+                    std::erase_if(data.components, [&](const ComponentData& c) { return c.info == info; });
+                    KeepUnreadable(data, key, value, error.what(), warnings);
+                    continue;
+                }
+                component = std::ranges::find(data.components, info, &ComponentData::info);
                 if (component == data.components.end()) {
                     data.components.push_back({info, info->create()});
                     component = data.components.end() - 1;
                 }
-                ConvertedValues converted;
-                for (const auto& [fieldKey, fieldValue] : value.items()) {
-                    const FieldInfo* field = info->FindField(fieldKey);
-                    if (!field && std::ranges::contains(info->removedFields, fieldKey)) {
-                        continue;
-                    }
-                    if (!field && KeepConverted(*info, fieldKey, fieldValue, converted)) {
-                        continue;
-                    }
-                    if (!field) {
-                        throw IncompatibleError(std::format("« {} » n'a pas de champ « {} »", key, fieldKey));
-                    }
-                    try {
-                        ReadField(*field, fieldValue, field->access(component->instance.get()));
-                    } catch (const std::exception& error) {
-                        throw std::runtime_error(std::format("« {} », {} : {}", data.name, key, error.what()));
-                    }
-                }
-                ApplyConverted(converted, component->instance.get());
+                ReadComponentFields(*info, value, component->instance.get());
             }
         }
 
         // Entités d'un exemplaire de prefab : celles du prefab, avec les identifiants de l'exemplaire et ses
         // différences. `root` : la racine telle que lue dans la scène (identifiant, nom, parent, secteur).
-        void ExpandInstance(const ComponentRegistry& components, const std::string& text, EntityData root,
-                            const Json* overrides, std::vector<EntityData>& out) {
-            std::vector<EntityData> entities = ReadPrefab(components, text);
+        void ExpandInstance(const ComponentRegistry& components, const std::string& text, const EntityData& root,
+                            const Json* overrides, std::vector<EntityData>& out, Warnings* warnings) {
+            std::vector<EntityData> entities = ReadPrefab(components, text, warnings);
             const Uuid rootSource = entities[0].id;
             for (std::size_t i = 0; i < entities.size(); ++i) {
                 EntityData& data = entities[i];
@@ -603,14 +696,14 @@ namespace Flux::SceneSerializer {
                 data.instance = root.id;
                 if (overrides) {
                     if (const auto found = overrides->find(source.ToString()); found != overrides->end()) {
-                        ApplyOverrides(components, data, *found, i == 0);
+                        ApplyOverrides(components, data, *found, i == 0, warnings);
                     }
                 }
                 out.push_back(std::move(data));
             }
         }
 
-        EntityData ReadEntity(const ComponentRegistry& components, const Json& json, std::size_t index) {
+        EntityData ReadEntity(const ComponentRegistry& components, const Json& json, std::size_t index, Warnings* warnings) {
             const auto fail = [&](std::string_view message) {
                 return std::runtime_error(std::format("entité n°{} : {}", index + 1, message));
             };
@@ -655,58 +748,56 @@ namespace Flux::SceneSerializer {
                     data.unknown.components.emplace_back(key, value.dump());
                     continue;
                 }
-                if (!value.is_object()) {
-                    throw fail(std::format("« {} » doit être un objet {{ ... }}", key));
-                }
                 // Champs absents : valeurs par défaut du composant, pour pouvoir écrire une scène à la main sans tout préciser.
                 ComponentData component{info, info->create()};
-                ConvertedValues converted;
-                for (const auto& [fieldKey, fieldValue] : value.items()) {
-                    const FieldInfo* field = info->FindField(fieldKey);
-                    if (!field && std::ranges::contains(info->removedFields, fieldKey)) {
-                        continue; // ancienne version : sa valeur est perdue, le champ reprend sa valeur par défaut
-                    }
-                    if (!field && KeepConverted(*info, fieldKey, fieldValue, converted)) {
-                        continue;
-                    }
-                    if (!field) {
-                        throw IncompatibleError(fail(std::format("« {} » n'a pas de champ « {} »", key, fieldKey)).what());
-                    }
-                    try {
-                        ReadField(*field, fieldValue, field->access(component.instance.get()));
-                    } catch (const std::exception& error) {
-                        throw fail(std::format("{} : {}", key, error.what()));
-                    }
+                if (ReadRequiredComponent(*info, value, component.instance.get(), data, warnings)) {
+                    data.components.push_back(std::move(component));
+                    continue;
                 }
-                ApplyConverted(converted, component.instance.get());
+                try {
+                    ReadComponentFields(*info, value, component.instance.get());
+                } catch (const std::exception& error) {
+                    KeepUnreadable(data, key, value, error.what(), warnings);
+                    continue;
+                }
                 data.components.push_back(std::move(component));
             }
             return data;
         }
 
         // Liste d'entités d'un fichier (scène ou prefab), exemplaires de prefabs dépliés.
-        std::vector<EntityData> ReadEntities(const ComponentRegistry& components, const Json& list, PrefabTexts& prefabs) {
+        std::vector<EntityData> ReadEntities(const ComponentRegistry& components, const Json& list, PrefabTexts& prefabs,
+                                             Warnings* warnings) {
             std::vector<EntityData> entities;
             entities.reserve(list.size());
             for (std::size_t i = 0; i < list.size(); ++i) {
-                EntityData data = ReadEntity(components, list[i], i);
+                EntityData data = ReadEntity(components, list[i], i, warnings);
                 if (data.prefab.empty()) {
                     entities.push_back(std::move(data));
                     continue;
                 }
                 const std::string path = data.prefab;
-                const auto& text = prefabs.Get(path);
-                if (!text) {
-                    throw std::runtime_error(std::format("« {} » : prefab {} illisible : {}", data.name, path, text.error()));
-                }
                 const auto overrides = list[i].find("overrides");
-                try {
-                    ExpandInstance(components, *text, std::move(data), overrides != list[i].end() ? &*overrides : nullptr, entities);
-                } catch (const IncompatibleError& error) {
-                    throw IncompatibleError(std::format("prefab {} : {}", path, error.what()));
-                } catch (const std::exception& error) {
-                    throw std::runtime_error(std::format("prefab {} : {}", path, error.what()));
+                const auto& text = prefabs.Get(path);
+                std::string error = text ? std::string{} : text.error();
+                if (text) {
+                    // Déplié à part : une erreur au milieu ne laisse pas d'exemplaire à moitié ajouté.
+                    std::vector<EntityData> expanded;
+                    try {
+                        ExpandInstance(components, *text, data, overrides != list[i].end() ? &*overrides : nullptr, expanded,
+                                       warnings);
+                        std::ranges::move(expanded, std::back_inserter(entities));
+                        continue;
+                    } catch (const std::exception& e) {
+                        error = e.what();
+                    }
                 }
+                // Prefab introuvable ou illisible : l'exemplaire reste, vide, avec son lien et ses différences, réécrits
+                // tels quels. Il revient en entier quand le prefab revient.
+                Warn(warnings, std::format("« {} » : prefab {} illisible ({}), gardé vide jusqu'au retour du fichier",
+                                           Label(data), path, error));
+                data.missingPrefab = overrides != list[i].end() ? overrides->dump() : std::string{};
+                entities.push_back(std::move(data));
             }
             return entities;
         }
@@ -732,6 +823,9 @@ namespace Flux::SceneSerializer {
                 }
                 if (!data.prefab.empty()) {
                     scene.Add<PrefabInstanceComponent>(entity, data.prefab);
+                }
+                if (data.missingPrefab) {
+                    scene.Add<MissingPrefabComponent>(entity, std::move(*data.missingPrefab));
                 }
                 if (data.source) {
                     scene.Add<PrefabLinkComponent>(entity, scene.FindById(data.instance), data.source);
@@ -787,54 +881,67 @@ namespace Flux::SceneSerializer {
         return CompactNumberArrays(document.dump(2)) + '\n';
     }
 
-    std::expected<void, std::string> LoadFromString(Scene& scene, const ComponentRegistry& components, std::string_view text,
-                                                    const PrefabReader& prefabs) {
-        PrefabTexts texts(prefabs);
-        std::vector<EntityData> entities;
-        try {
-            const Json document = Json::parse(text);
-            const std::string format = document.value("format", std::string{});
-            if (format != FormatName && format != PrefabFormatName) {
-                return std::unexpected(std::format("ce n'est pas une scène Flux (« format » différent de « {} »)", FormatName));
-            }
+    namespace {
+        // `origin` : ce qui est lu (nom du fichier), au début des avertissements.
+        std::expected<void, std::string> LoadDocument(Scene& scene, const ComponentRegistry& components, std::string_view text,
+                                                      const PrefabReader& prefabs, std::string_view origin) {
+            PrefabTexts texts(prefabs);
+            std::vector<EntityData> entities;
+            Warnings warnings;
             try {
-                CheckVersions(document);
-                entities = ReadEntities(components, document.at("entities"), texts);
-            } catch (const IncompatibleError& error) {
-                return std::unexpected(FormatIncompatible(format, error.what()));
+                const Json document = Json::parse(text);
+                const std::string format = document.value("format", std::string{});
+                if (format != FormatName && format != PrefabFormatName) {
+                    return std::unexpected(std::format("ce n'est pas une scène Flux (« format » différent de « {} »)", FormatName));
+                }
+                try {
+                    CheckVersions(document, &warnings);
+                    entities = ReadEntities(components, document.at("entities"), texts, &warnings);
+                } catch (const IncompatibleError& error) {
+                    return std::unexpected(FormatIncompatible(format, error.what()));
+                }
+            } catch (const std::exception& error) {
+                return std::unexpected(std::string(error.what()));
             }
-        } catch (const std::exception& error) {
-            return std::unexpected(std::string(error.what()));
-        }
 
-        // Vérifie les références avant de toucher à la scène.
-        std::unordered_map<Uuid, std::size_t> indexById;
-        for (std::size_t i = 0; i < entities.size(); ++i) {
-            if (!indexById.emplace(entities[i].id, i).second) {
-                return std::unexpected(std::format("identifiant {} utilisé deux fois", entities[i].id.ToString()));
-            }
-        }
-        for (const EntityData& data : entities) {
-            if (data.parent && !indexById.contains(*data.parent)) {
-                return std::unexpected(std::format("« {} » a pour parent {}, absent du fichier", data.name, data.parent->ToString()));
-            }
-            if (data.source && !indexById.contains(data.instance)) {
-                return std::unexpected(std::format("« {} » est la pièce d'un prefab absent du fichier", data.name));
-            }
-        }
-        // Un parent qui serait son propre ancêtre rendrait la hiérarchie infinie.
-        for (const EntityData& data : entities) {
-            std::size_t steps = 0;
-            for (std::optional<Uuid> ancestor = data.parent; ancestor; ancestor = entities[indexById.at(*ancestor)].parent) {
-                if (++steps > entities.size()) {
-                    return std::unexpected(std::format("boucle dans la hiérarchie autour de « {} »", data.name));
+            // Vérifie les références avant de toucher à la scène.
+            std::unordered_map<Uuid, std::size_t> indexById;
+            for (std::size_t i = 0; i < entities.size(); ++i) {
+                if (!indexById.emplace(entities[i].id, i).second) {
+                    return std::unexpected(std::format("identifiant {} utilisé deux fois", entities[i].id.ToString()));
                 }
             }
-        }
+            for (EntityData& data : entities) {
+                // Parent absent (pièce d'un prefab illisible, fichier modifié à la main) : l'entité reste, à la racine.
+                if (data.parent && !indexById.contains(*data.parent)) {
+                    Warn(&warnings, std::format("« {} » a pour parent {}, absent du fichier : placé à la racine de la scène",
+                                                Label(data), data.parent->ToString()));
+                    data.parent.reset();
+                }
+                if (data.source && !indexById.contains(data.instance)) {
+                    return std::unexpected(std::format("« {} » est la pièce d'un prefab absent du fichier", data.name));
+                }
+            }
+            // Un parent qui serait son propre ancêtre rendrait la hiérarchie infinie.
+            for (const EntityData& data : entities) {
+                std::size_t steps = 0;
+                for (std::optional<Uuid> ancestor = data.parent; ancestor; ancestor = entities[indexById.at(*ancestor)].parent) {
+                    if (++steps > entities.size()) {
+                        return std::unexpected(std::format("boucle dans la hiérarchie autour de « {} »", data.name));
+                    }
+                }
+            }
 
-        scene.Clear();
-        CreateEntities(scene, entities);
-        return {};
+            scene.Clear();
+            CreateEntities(scene, entities);
+            WriteWarnings(origin, warnings);
+            return {};
+        }
+    }
+
+    std::expected<void, std::string> LoadFromString(Scene& scene, const ComponentRegistry& components, std::string_view text,
+                                                    const PrefabReader& prefabs) {
+        return LoadDocument(scene, components, text, prefabs, "scène");
     }
 
     std::string SaveEntity(const Scene& scene, const ComponentRegistry& components, Entity entity, bool withDescendants) {
@@ -862,7 +969,11 @@ namespace Flux::SceneSerializer {
             }
             const Json& list = snapshot.at("entities");
             for (std::size_t i = 0; i < list.size(); ++i) {
-                entities.push_back(ReadEntity(components, list[i], i));
+                EntityData& data = entities.emplace_back(ReadEntity(components, list[i], i, nullptr));
+                if (!data.prefab.empty() && !data.source) { // exemplaire dont le prefab était illisible
+                    const auto overrides = list[i].find("overrides");
+                    data.missingPrefab = overrides != list[i].end() ? overrides->dump() : std::string{};
+                }
             }
         } catch (const std::exception& error) {
             return std::unexpected(std::string(error.what()));
@@ -925,6 +1036,11 @@ namespace Flux::SceneSerializer {
                 scene.Remove<PrefabInstanceComponent>(entity);
             } else {
                 scene.Add<PrefabInstanceComponent>(entity, data.prefab);
+            }
+            if (data.missingPrefab) {
+                scene.Add<MissingPrefabComponent>(entity, std::move(*data.missingPrefab));
+            } else {
+                scene.Remove<MissingPrefabComponent>(entity);
             }
         }
         // Liens aux prefabs une fois toutes les entités là : la racine de l'exemplaire peut suivre ses pièces.
@@ -1000,6 +1116,7 @@ namespace Flux::SceneSerializer {
             return std::unexpected(text.error());
         }
         std::vector<EntityData> entities;
+        Warnings warnings;
         try {
             EntityData root;
             root.id = Uuid::Generate();
@@ -1007,7 +1124,7 @@ namespace Flux::SceneSerializer {
             if (parent != NullEntity) {
                 root.parent = scene.GetId(parent);
             }
-            ExpandInstance(components, *text, std::move(root), nullptr, entities);
+            ExpandInstance(components, *text, root, nullptr, entities, &warnings);
         } catch (const IncompatibleError& error) {
             return std::unexpected(FormatIncompatible(PrefabFormatName, std::format("{} : {}", path, error.what())));
         } catch (const std::exception& error) {
@@ -1015,7 +1132,7 @@ namespace Flux::SceneSerializer {
         }
         // Le nom de la racine du prefab (ExpandInstance garde celui de l'exemplaire, ici vide).
         try {
-            entities[0].name = ReadPrefab(components, *text)[0].name;
+            entities[0].name = ReadPrefab(components, *text, nullptr)[0].name;
         } catch (const std::exception&) {
         }
         for (const EntityData& data : entities) {
@@ -1024,6 +1141,7 @@ namespace Flux::SceneSerializer {
             }
         }
         CreateEntities(scene, entities);
+        WriteWarnings(std::format("prefab {}", path), warnings);
         return scene.FindById(entities[0].id);
     }
 
@@ -1117,6 +1235,7 @@ namespace Flux::SceneSerializer {
 
     void UnlinkPrefab(Scene& scene, Entity root) {
         scene.Remove<PrefabInstanceComponent>(root);
+        scene.Remove<MissingPrefabComponent>(root); // ses différences avec un prefab qui n'est plus le sien
         std::function<void(Entity)> unlink = [&](Entity entity) {
             if (!IsMember(scene, entity, root)) {
                 return;
@@ -1157,7 +1276,7 @@ namespace Flux::SceneSerializer {
         }
         std::ostringstream text;
         text << file.rdbuf();
-        if (auto loaded = LoadFromString(scene, components, text.str(), prefabs); !loaded) {
+        if (auto loaded = LoadDocument(scene, components, text.str(), prefabs, Platform::ToUtf8(path.filename())); !loaded) {
             return std::unexpected(Platform::ToUtf8(path.filename()) + " : " + loaded.error());
         }
         return {};

@@ -77,9 +77,24 @@ bool RunPrefabTests() {
     CHECK(loaded.Get<TransformComponent>(loaded.FindById(shipId)).position == (Math::Vector3d{100.0, 2.0, -50.0}));
     CHECK(loaded.Get<PrefabInstanceComponent>(loaded.FindById(shipId)).prefab == path);
     CHECK(SceneSerializer::SaveToString(loaded, components, reader) == saved); // fichier stable
-    // Sans de quoi lire le prefab : refusé, la scène n'est pas touchée.
-    CHECK(!SceneSerializer::LoadFromString(loaded, components, saved).has_value());
-    CHECK(loaded.GetEntityCount() == 3);
+    // Prefab introuvable : l'exemplaire reste, vide, avec son lien et ses différences ; réécrit tel quel, il revient
+    // en entier avec le prefab. Annuler / refaire le garde aussi.
+    {
+        Scene missing;
+        CHECK(SceneSerializer::LoadFromString(missing, components, saved).has_value());
+        const Entity placeholder = missing.FindById(shipId);
+        CHECK(missing.GetEntityCount() == 1 && placeholder != NullEntity);
+        CHECK(missing.Get<PrefabInstanceComponent>(placeholder).prefab == path);
+        CHECK(missing.TryGet<MissingPrefabComponent>(placeholder) != nullptr);
+        CHECK(SceneSerializer::SaveToString(missing, components) == saved);
+        const std::string snapshot = SceneSerializer::SaveEntity(missing, components, placeholder, true);
+        missing.DestroyEntity(placeholder);
+        CHECK(SceneSerializer::RestoreEntity(missing, components, snapshot).has_value());
+        CHECK(SceneSerializer::SaveToString(missing, components) == saved);
+        CHECK(SceneSerializer::LoadFromString(missing, components, SceneSerializer::SaveToString(missing, components), reader));
+        CHECK(missing.GetEntityCount() == 3 && missing.TryGet<MissingPrefabComponent>(missing.FindById(shipId)) == nullptr);
+        CHECK(missing.Get<TransformComponent>(missing.FindById(shipId)).position == (Math::Vector3d{100.0, 2.0, -50.0}));
+    }
 
     // Réglages changés sur l'exemplaire : seuls ces champs sont gardés ; une entité et un composant ajoutés, un
     // composant retiré.
@@ -91,6 +106,13 @@ bool RunPrefabTests() {
     const std::string edited = SceneSerializer::SaveToString(scene, components, reader);
     CHECK(edited.find("\"reach\": 5") != std::string::npos && edited.find("\"pilot\"") == std::string::npos);
     CHECK(edited.find("Plafonnier") != std::string::npos && edited.find("\"removed\": [\n") != std::string::npos);
+    // Sans le prefab, l'entité ajoutée sous une pièce perd son parent : gardée, à la racine.
+    {
+        Scene missing;
+        CHECK(SceneSerializer::LoadFromString(missing, components, edited).has_value());
+        const Entity orphan = missing.FindById(scene.GetId(added));
+        CHECK(missing.GetEntityCount() == 2 && orphan != NullEntity && missing.GetParent(orphan) == NullEntity);
+    }
 
     // Le prefab change : ses nouveaux réglages arrivent, ceux changés sur l'exemplaire restent.
     {

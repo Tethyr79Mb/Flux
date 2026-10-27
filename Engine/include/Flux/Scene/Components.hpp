@@ -700,6 +700,14 @@ namespace Flux {
         std::string prefab; // relatif aux assets
     };
 
+    // Exemplaire dont le prefab était introuvable ou illisible au chargement de la scène : gardé vide, avec son
+    // PrefabInstanceComponent. Ses différences avec le prefab (texte JSON, vide s'il n'y en a pas) sont réécrites
+    // telles quelles à l'enregistrement : il revient en entier quand le fichier du prefab revient.
+    struct MissingPrefabComponent
+    {
+        std::string overrides;
+    };
+
     // Pièce d'un exemplaire de prefab (sa racine comprise) : l'entité du prefab dont elle vient. Son identifiant dans
     // la scène est tiré de celui de l'exemplaire et de `source` : le même à chaque chargement.
     struct PrefabLinkComponent

@@ -1,5 +1,6 @@
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/GameModule.hpp>
+#include <Flux/Core/Log.hpp>
 #include <Flux/Core/Project.hpp>
 #include <Flux/Platform/Console.hpp>
 #include <Flux/Platform/Dialogs.hpp>
@@ -289,11 +290,16 @@ int main(int argc, char** argv) {
         return 1;
     }
     game->Register(engine); // composants du jeu d'abord : la scène de démarrage peut les utiliser
-    if (project) {
+    // Scène de démarrage absente ou refusée : l'éditeur démarre sur une scène vide, le projet reste ouvert. Écran de
+    // démarrage fermé avant : toujours au-dessus, il cacherait le message d'erreur et l'éditeur paraîtrait bloqué.
+    splash.Close();
+    if (project && !std::filesystem::exists(project->GetStartupScenePath())) {
+        Flux::Log::Warning("scène de démarrage introuvable : {}, scène vide ouverte",
+                           Flux::Platform::ToUtf8(project->GetStartupScenePath()));
+    } else if (project) {
         document.Load(engine, project->GetStartupScenePath());
     }
 
-    splash.Close();
     const int exitCode = engine.Run();
     layout.Save(engine);
     return exitCode;
