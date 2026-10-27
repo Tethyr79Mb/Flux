@@ -92,9 +92,14 @@ namespace Flux {
         Renderer(const Renderer&) = delete;
         Renderer& operator=(const Renderer&) = delete;
 
-        // Retourne false sur une erreur irrécupérable (device perdu, etc.).
+        // Une image : BeginFrame, Render puis EndFrame, appelés à la suite après les mises à jour de la scène (BeginFrame
+        // attend le GPU : plus tôt, le CPU attendrait au lieu de travailler). Chacun retourne false sur une erreur
+        // irrécupérable (device perdu, etc.). Fenêtre réduite ou swapchain recréée : l'image est sautée, Render et
+        // EndFrame ne font rien, mais EndFrame vide quand même l'overlay.
+        bool BeginFrame();
         // `hidden` et ses descendants ne sont pas dessinés : le personnage quand la caméra est dans sa tête.
-        bool RenderFrame(const Scene& scene, const Camera& camera, Entity hidden = NullEntity);
+        bool Render(const Scene& scene, const Camera& camera, Entity hidden = NullEntity);
+        bool EndFrame();
 
         void SetClearColor(Math::LinearColor color);
 
@@ -106,7 +111,7 @@ namespace Flux {
         // Flammes des réacteurs montrées à pleine poussée, quels que soient les moteurs : dans l'éditeur, jeu arrêté,
         // pour les voir et les régler (sinon, au ralenti, elles sont à peine visibles).
         void SetThrusterPreview(bool preview);
-        // Projectiles à dessiner en traçantes, et éclats d'impact, aux prochains RenderFrame (Weapons). Les tableaux
+        // Projectiles à dessiner en traçantes, et éclats d'impact, aux prochains Render (Weapons). Les tableaux
         // ne sont pas copiés : ils doivent rester valides jusqu'au prochain appel (vides : rien).
         void SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts = {});
 
@@ -155,7 +160,7 @@ namespace Flux {
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 
-        // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé après chaque RenderFrame.
+        // Overlay 2D de la frame en cours, dessiné par-dessus la scène puis vidé par chaque EndFrame.
         UI::DrawList& GetOverlay();
 
         // Image (PNG, JPEG, TGA, BMP) à dessiner dans l'overlay (DrawList::AddImage), chargée au premier appel puis

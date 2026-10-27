@@ -70,8 +70,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    scène est quand même rendue, pour que les tuiles des planètes se calculent, jusqu'à ce que le rendu n'attende plus
    ni tuile, ni texture du sol, ni modèle pendant 10 images (`RenderTimings::planetPendingTiles`,
    `groundTexturesLoading`, `modelsLoading`).
-6. Rendu (`Renderer::RenderFrame`), puis actions des interfaces, changement de scène et sauvegarde rapide (F8 / F9,
-   `Engine::RunQuickSave`) en fin d'image.
+6. Rendu (`Renderer::BeginFrame` qui attend le GPU, `Render` qui prépare et enregistre l'image, `EndFrame` qui la
+   présente), puis actions des interfaces, changement de scène et sauvegarde rapide (F8 / F9, `Engine::RunQuickSave`)
+   en fin d'image.
 
 `Engine` orchestre l'image ; le détail est dans des classes privées de `Engine/src/Core` qu'elle possède (pointeurs
 vers des types seulement déclarés dans `Engine.hpp`, pour que les changer ne recompile ni l'éditeur ni le jeu) :

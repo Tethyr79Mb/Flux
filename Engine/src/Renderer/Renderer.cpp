@@ -121,6 +121,10 @@ namespace Flux {
         float sharpness = DefaultSharpness;
         RHI::Extent renderExtent; // de la dernière image
         Clock::time_point previousFrame;
+        // Image en cours, entre BeginFrame et EndFrame : false si BeginFrame l'a sautée.
+        bool frameBegun = false;
+        Clock::time_point prepareStart;
+        Clock::time_point recordStart;
         bool detailedTimings = false; // heures du GPU demandées pour cette image seulement
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
@@ -132,7 +136,7 @@ namespace Flux {
         bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
         bool grid = false;        // grille au sol de l'éditeur
         RenderTimings timings;
-        // L'image décrite une fois (BuildGraph), jouée à chaque RenderFrame avec l'état de l'image ci-dessous.
+        // L'image décrite une fois (BuildGraph), jouée à chaque image avec l'état de l'image ci-dessous.
         RenderGraph graph;
         struct FrameState
         {
@@ -245,7 +249,10 @@ namespace Flux {
             return {x0, y0, static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0)};
         }
 
-        bool RenderFrame(const Scene& scene, const Camera& camera, Entity hidden) {
+        // Attend que le GPU libère les ressources de l'image (Device::BeginFrame). false sur une erreur irrécupérable ;
+        // fenêtre réduite ou swapchain recréée : true, mais Render et EndFrame ne font rien à cette image.
+        bool BeginFrame() {
+            frameBegun = false;
             const RHI::Extent extent = WindowExtent();
             if (extent.width == 0 || extent.height == 0) {
                 return true; // fenêtre réduite : rien à présenter
@@ -258,137 +265,171 @@ namespace Flux {
                 Log::Error("{}", resized.error());
                 return false;
             }
-
             switch (device->BeginFrame()) {
                 case RHI::FrameStatus::Ready: break;
                 case RHI::FrameStatus::Skip: return true;
                 case RHI::FrameStatus::Error: return false;
             }
-            const Clock::time_point prepareStart = Clock::now();
+            frameBegun = true;
+            prepareStart = Clock::now();
             ReadTimings();
+            return true;
+        }
+
+        // Prépare les renderers pour la caméra, puis enregistre les commandes de l'image (le graphe).
+        bool Render(const Scene& scene, const Camera& camera, Entity hidden) {
+            if (!frameBegun) {
+                return true;
+            }
             const std::uint32_t frameIndex = device->GetFrameIndex();
             timings.fontsLoading = overlay->GetFontsLoading();
             if (!overlay->Upload(frameIndex)) {
                 return false;
             }
-            const RHI::Rect scene3d = SceneRect();
-            const RHI::Extent view{scene3d.width, scene3d.height};
-            const bool fsr = sceneVisible && PrepareUpscaler(view);
-            // Comme FSR la calcule : la vue divisée par le rapport du mode, arrondie en dessous.
-            const float scale = fsr ? GetRenderScale(upscaling) : 1.0f;
-            const RHI::Extent render{std::max(1u, static_cast<std::uint32_t>(static_cast<float>(view.width) * scale)),
-                                     std::max(1u, static_cast<std::uint32_t>(static_cast<float>(view.height) * scale))};
-            const Clock::time_point now = Clock::now();
-            const float frameMilliseconds = previousFrame == Clock::time_point{}
-                                                ? DefaultFrameMilliseconds
-                                                : static_cast<float>(Milliseconds(now - previousFrame));
-            previousFrame = now;
-            const float aspect = static_cast<float>(scene3d.width) / static_cast<float>(scene3d.height);
-            float exposure = 1.0f;
+            PrepareView();
+            const float aspect = static_cast<float>(frame.scene3d.width) / static_cast<float>(frame.scene3d.height);
             const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
-            TemporalView temporal;
-            Math::Matrix4f reprojection = Math::Matrix4f::Identity();
+            PrepareTemporal(camera, aspect, viewProjection);
+            frame.exposure = 1.0f;
             if (sceneVisible) {
-                const Math::Vector3d moved = Math::Delta(previousPosition, camera.position);
-                temporal.continuous = hasPrevious && Math::Length(moved) < MaxTemporalJump;
-                temporal.history = (temporalAA || fsr) && temporal.continuous;
-                if (temporal.continuous) {
-                    temporal.previousViewProjection = previousViewProjection;
-                    temporal.cameraDelta = Math::Vector3f(moved);
-                    // Un pixel et sa profondeur -> relatif à la caméra -> relatif à l'ancienne -> son clip d'alors.
-                    reprojection = previousViewProjection * Math::Matrix4f::Translation(temporal.cameraDelta)
-                                 * InverseViewProjection(camera, aspect);
-                }
-                if (temporalAA || fsr) {
-                    ++temporalFrame;
-                    // FSR veut plus de décalages quand l'image est plus réduite (8 fois le rapport au carré).
-                    const std::uint32_t phases = fsr ? upscaler->GetJitterPhaseCount(render.width) : JitterPhases;
-                    const std::uint32_t phase = temporalFrame % phases + 1; // Halton(0) vaut 0 : sauté
-                    // En pixels de rendu, x vers la droite, y vers le bas (comme les uv et le clip space de Vulkan).
-                    const float jitterX = Halton(phase, 2) - 0.5f;
-                    const float jitterY = Halton(phase, 3) - 0.5f;
-                    temporal.jitter = {2.0f * jitterX / static_cast<float>(render.width),
-                                       2.0f * jitterY / static_cast<float>(render.height)};
-                    temporal.noiseFrame = temporalFrame;
-                    frame.upscale.jitterX = jitterX;
-                    frame.upscale.jitterY = jitterY;
-                }
-            }
-            hasPrevious = sceneVisible;
-            previousViewProjection = viewProjection;
-            previousPosition = camera.position;
-            if (sceneVisible) {
-                if (auto resized = ResizeViewTargets(view, render); !resized) {
-                    Log::Error("{}", resized.error());
+                if (!PrepareScene(scene, camera, aspect, hidden, frameIndex)) {
                     return false;
                 }
-                if (!temporalAA && !fsr) {
-                    post->SkipTemporal();
+                CollectStats();
+                if (grid) {
+                    frame.gridParams = MakeGridParams(camera, aspect, viewProjection);
                 }
-                const SkyLighting lighting = sky->Prepare(scene, camera, aspect, static_cast<float>(render.height),
-                                                          assetsDirectory, frameIndex);
-                exposure = lighting.exposure;
-                meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
-                if (!meshes->HasClouds() || !temporal.continuous) {
-                    clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
-                }
-                thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
-                tracers->Prepare(projectiles, impacts, camera, aspect, static_cast<float>(render.height), temporal.jitter, frameIndex);
-                const OcclusionCulling::Stats occlusion = meshes->GetOcclusionStats();
-                timings.occlusionTested = occlusion.tested;
-                timings.occlusionHidden = occlusion.hidden;
-                const MeshRenderer::MeshletStats meshlets = meshes->GetMeshletStats();
-                timings.modelMeshlets = meshlets.sent;
-                timings.modelMeshletsDrawn = meshlets.drawn;
-                timings.modelMeshShaders = meshlets.meshShaders;
-                const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
-                timings.planetTiles = tiles.drawn;
-                timings.planetOceanTiles = tiles.ocean;
-                timings.planetStoredTiles = tiles.stored;
-                timings.planetPendingTiles = tiles.pending;
-                timings.planetComputedTiles = tiles.computed;
-                timings.groundMeshThreads = tiles.meshThreads;
-                timings.groundTexturesLoading = tiles.groundLoading;
-                timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
-                timings.planetTileCapacity = Planetology::PlanetTileCompute::MaxPages * Planetology::PlanetTileCompute::TilesPerPage;
-                using Planetology::VegetationRenderer;
-                const VegetationRenderer::Stats vegetation = meshes->GetVegetationStats();
-                timings.trees = {vegetation.trees[VegetationRenderer::Near], vegetation.trees[VegetationRenderer::Middle],
-                                 vegetation.trees[VegetationRenderer::Far]};
-                timings.shadowTrees = 0;
-                for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
-                    timings.shadowTrees += vegetation.trees[VegetationRenderer::Shadow + c];
-                }
-                timings.treePlains = vegetation.plains;
-                timings.pendingTreePlains = vegetation.pending;
-                timings.sownTreePlains = vegetation.sown;
             }
-
-            const Clock::time_point recordStart = Clock::now();
+            recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
             frame.index = frameIndex;
-            frame.scene3d = scene3d;
-            frame.render = render;
-            renderExtent = render;
-            frame.fsr = fsr;
-            frame.upscale.renderSize = render;
-            frame.upscale.sharpness = sharpness;
-            frame.upscale.frameMilliseconds = frameMilliseconds;
             frame.upscale.nearPlane = camera.nearPlane;
             frame.upscale.verticalFov = camera.verticalFov;
-            frame.upscale.reset = !temporal.continuous;
-            frame.exposure = exposure;
-            frame.temporal = temporal;
-            frame.reprojection = reprojection;
-            if (sceneVisible && grid) {
-                frame.gridParams = MakeGridParams(camera, aspect, viewProjection);
-            }
             graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false));
+            return true;
+        }
+
+        // Envoie l'image au GPU et la présente.
+        bool EndFrame() {
+            if (!std::exchange(frameBegun, false)) {
+                return true;
+            }
             const bool presented = device->EndFrame();
             // Présentation exclue : mesurée à part par le RHI.
             timings.record = Milliseconds(Clock::now() - recordStart) - device->GetWaitTimes().present;
             timings.present = device->GetWaitTimes().present;
             return presented;
+        }
+
+        // Zone de la scène dans la fenêtre, FSR et taille de rendu de l'image.
+        void PrepareView() {
+            frame.scene3d = SceneRect();
+            const RHI::Extent view{frame.scene3d.width, frame.scene3d.height};
+            frame.fsr = sceneVisible && PrepareUpscaler(view);
+            // Comme FSR la calcule : la vue divisée par le rapport du mode, arrondie en dessous.
+            const float scale = frame.fsr ? GetRenderScale(upscaling) : 1.0f;
+            frame.render = {std::max(1u, static_cast<std::uint32_t>(static_cast<float>(view.width) * scale)),
+                            std::max(1u, static_cast<std::uint32_t>(static_cast<float>(view.height) * scale))};
+            renderExtent = frame.render;
+            const Clock::time_point now = Clock::now();
+            frame.upscale.renderSize = frame.render;
+            frame.upscale.sharpness = sharpness;
+            frame.upscale.frameMilliseconds = previousFrame == Clock::time_point{}
+                                                  ? DefaultFrameMilliseconds
+                                                  : static_cast<float>(Milliseconds(now - previousFrame));
+            previousFrame = now;
+        }
+
+        // Anticrénelage et FSR : décalage de l'image d'une fraction de pixel, et reprojection vers l'image précédente.
+        void PrepareTemporal(const Camera& camera, float aspect, const Math::Matrix4f& viewProjection) {
+            TemporalView& temporal = frame.temporal;
+            temporal = {};
+            frame.reprojection = Math::Matrix4f::Identity();
+            if (sceneVisible) {
+                const Math::Vector3d moved = Math::Delta(previousPosition, camera.position);
+                temporal.continuous = hasPrevious && Math::Length(moved) < MaxTemporalJump;
+                temporal.history = (temporalAA || frame.fsr) && temporal.continuous;
+                if (temporal.continuous) {
+                    temporal.previousViewProjection = previousViewProjection;
+                    temporal.cameraDelta = Math::Vector3f(moved);
+                    // Un pixel et sa profondeur -> relatif à la caméra -> relatif à l'ancienne -> son clip d'alors.
+                    frame.reprojection = previousViewProjection * Math::Matrix4f::Translation(temporal.cameraDelta)
+                                       * InverseViewProjection(camera, aspect);
+                }
+                if (temporalAA || frame.fsr) {
+                    ++temporalFrame;
+                    // FSR veut plus de décalages quand l'image est plus réduite (8 fois le rapport au carré).
+                    const std::uint32_t phases = frame.fsr ? upscaler->GetJitterPhaseCount(frame.render.width) : JitterPhases;
+                    const std::uint32_t phase = temporalFrame % phases + 1; // Halton(0) vaut 0 : sauté
+                    // En pixels de rendu, x vers la droite, y vers le bas (comme les uv et le clip space de Vulkan).
+                    const float jitterX = Halton(phase, 2) - 0.5f;
+                    const float jitterY = Halton(phase, 3) - 0.5f;
+                    temporal.jitter = {2.0f * jitterX / static_cast<float>(frame.render.width),
+                                       2.0f * jitterY / static_cast<float>(frame.render.height)};
+                    temporal.noiseFrame = temporalFrame;
+                    frame.upscale.jitterX = jitterX;
+                    frame.upscale.jitterY = jitterY;
+                }
+            }
+            frame.upscale.reset = !temporal.continuous;
+            hasPrevious = sceneVisible;
+            previousViewProjection = viewProjection;
+            previousPosition = camera.position;
+        }
+
+        // Ciel, objets, nuages, flammes et traçantes préparés pour la caméra (envois au GPU, calculs de l'image).
+        bool PrepareScene(const Scene& scene, const Camera& camera, float aspect, Entity hidden, std::uint32_t frameIndex) {
+            const RHI::Extent view{frame.scene3d.width, frame.scene3d.height};
+            if (auto resized = ResizeViewTargets(view, frame.render); !resized) {
+                Log::Error("{}", resized.error());
+                return false;
+            }
+            const TemporalView& temporal = frame.temporal;
+            if (!temporalAA && !frame.fsr) {
+                post->SkipTemporal();
+            }
+            const float renderHeight = static_cast<float>(frame.render.height);
+            const SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frameIndex);
+            frame.exposure = lighting.exposure;
+            meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
+            if (!meshes->HasClouds() || !temporal.continuous) {
+                clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
+            }
+            thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
+            tracers->Prepare(projectiles, impacts, camera, aspect, renderHeight, temporal.jitter, frameIndex);
+            return true;
+        }
+
+        // Compteurs des renderers recopiés pour le panneau Moteur.
+        void CollectStats() {
+            const OcclusionCulling::Stats occlusion = meshes->GetOcclusionStats();
+            timings.occlusionTested = occlusion.tested;
+            timings.occlusionHidden = occlusion.hidden;
+            const MeshRenderer::MeshletStats meshlets = meshes->GetMeshletStats();
+            timings.modelMeshlets = meshlets.sent;
+            timings.modelMeshletsDrawn = meshlets.drawn;
+            timings.modelMeshShaders = meshlets.meshShaders;
+            const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
+            timings.planetTiles = tiles.drawn;
+            timings.planetOceanTiles = tiles.ocean;
+            timings.planetStoredTiles = tiles.stored;
+            timings.planetPendingTiles = tiles.pending;
+            timings.planetComputedTiles = tiles.computed;
+            timings.groundMeshThreads = tiles.meshThreads;
+            timings.groundTexturesLoading = tiles.groundLoading;
+            timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
+            timings.planetTileCapacity = Planetology::PlanetTileCompute::MaxPages * Planetology::PlanetTileCompute::TilesPerPage;
+            using Planetology::VegetationRenderer;
+            const VegetationRenderer::Stats vegetation = meshes->GetVegetationStats();
+            timings.trees = {vegetation.trees[VegetationRenderer::Near], vegetation.trees[VegetationRenderer::Middle],
+                             vegetation.trees[VegetationRenderer::Far]};
+            timings.shadowTrees = 0;
+            for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
+                timings.shadowTrees += vegetation.trees[VegetationRenderer::Shadow + c];
+            }
+            timings.treePlains = vegetation.plains;
+            timings.pendingTreePlains = vegetation.pending;
+            timings.sownTreePlains = vegetation.sown;
         }
 
         // Attentes de BeginFrame et heures du GPU relues pour l'image qu'il vient de finir.
@@ -767,8 +808,16 @@ namespace Flux {
 
     Renderer::~Renderer() = default;
 
-    bool Renderer::RenderFrame(const Scene& scene, const Camera& camera, Entity hidden) {
-        const bool ok = m_impl->RenderFrame(scene, camera, hidden);
+    bool Renderer::BeginFrame() {
+        return m_impl->BeginFrame();
+    }
+
+    bool Renderer::Render(const Scene& scene, const Camera& camera, Entity hidden) {
+        return m_impl->Render(scene, camera, hidden);
+    }
+
+    bool Renderer::EndFrame() {
+        const bool ok = m_impl->EndFrame();
         m_impl->overlay->GetDrawList().Clear(); // même si l'image n'a pas été présentée (fenêtre réduite, swapchain recréée)
         return ok;
     }
