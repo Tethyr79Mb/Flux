@@ -294,6 +294,16 @@ namespace Flux::Docking {
             return Toggle(scene, entity);
         }
         DockComponent& dock = scene.Get<DockComponent>(best);
+        // Garé ailleurs dans la station (sur le sol d'un hangar) : il sort tout droit par ce quai, sans monter
+        // par-dessus la station ni s'y poser.
+        if (scene.GetParent(entity) == scene.GetShip(best)) {
+            Detach(scene, entity);
+            dock.ship = entity;
+            ship->dock = best;
+            ship->autopilot = AutopilotStage::Exit;
+            ship->grounded = false;
+            return ToggleResult::Leaving;
+        }
         dock.ship = entity;
         ship->dock = best;
         // Devant le point d'approche : droit dessus. Plus bas que la station (sous son sol), par-dessous. Ailleurs (à

@@ -230,6 +230,14 @@ namespace {
             CHECK(!Docking::IsDocked(parkedScene, parked));
             CHECK(Docking::Toggle(parkedScene, parked) == Docking::ToggleResult::Leaving);
             CHECK(parkedScene.Get<ShipComponent>(parked).autopilot == AutopilotStage::Rise);
+            // Garé plus loin sur le sol du hangar, enfant de la station : il sort tout droit, sans monter.
+            const Entity aside = AddFighter(parkedScene, "À côté", {25.0, 2.0, 30.0});
+            parkedScene.SetParent(aside, parkedScene.FindByName("Station - hangar"));
+            CHECK(Docking::Toggle(parkedScene, aside) == Docking::ToggleResult::NoDock); // quai pris par le premier
+            parkedScene.DestroyEntity(parked);
+            CHECK(Docking::Toggle(parkedScene, aside) == Docking::ToggleResult::Leaving);
+            CHECK(parkedScene.Get<ShipComponent>(aside).autopilot == AutopilotStage::Exit);
+            CHECK(parkedScene.GetParent(aside) == NullEntity);
         }
 
         // Entrée.
