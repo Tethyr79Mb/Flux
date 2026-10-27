@@ -1,7 +1,9 @@
-// Tests de la sauvegarde : aller-retour exact, ordre des enfants, fichiers invalides refusés sans rien casser.
+// Tests de la sauvegarde : aller-retour exact, ordre des enfants, fichiers inutilisables refusés sans rien casser,
+// composants illisibles gardés tels quels sans bloquer le reste.
 #include "Check.hpp"
 
 #include "Flux/Core/GameModule.hpp"
+#include "Flux/Core/Log.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -9,6 +11,7 @@
 #include <cmath>
 #include <format>
 #include <string>
+#include <vector>
 
 using namespace Flux;
 
@@ -141,33 +144,59 @@ bool RunSceneSerializerTests() {
     loaded.ForEachChild(loaded.FindById(scene.GetId(root)), [&](Entity child) { children[count++] = child; });
     CHECK(count == 2 && loaded.GetId(children[0]) == scene.GetId(first) && loaded.GetId(children[1]) == scene.GetId(second));
 
-    // Fichiers invalides : erreur explicite, et la scène déjà chargée reste intacte.
+    // Fichiers inutilisables : erreur explicite, et la scène déjà chargée reste intacte.
     const char* invalid[] = {
         "pas du json",
         R"({"format": "autre", "version": 1, "entities": []})",
         R"({"format": "flux.scene", "version": 99, "entities": []})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "parent": "0000000000000002"}]})",
         R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001"}, {"id": "0000000000000001"}]})",
         R"({"format": "flux.scene", "version": 1, "entities": [
             {"id": "0000000000000001", "parent": "0000000000000002"},
             {"id": "0000000000000002", "parent": "0000000000000001"}]})",
-        // Champ inconnu, types incorrects, valeur d'énumération inconnue, composant qui n'est pas un objet.
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"colour": 1}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"flag": 1}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"count": 1.5}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"count": 3000000000}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"label": 3}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"direction": [1, "2", 3]}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": {"mood": "joyeux"}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "test": 5}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "meshRenderer": {"mesh": "théière"}}]})",
-        R"({"format": "flux.scene", "version": 1, "entities": [{"id": "0000000000000001", "transform": {"position": [1, 2]}}]})",
     };
     for (const char* text : invalid) {
         const auto result = SceneSerializer::LoadFromString(loaded, components, text);
         CHECK(!result.has_value() && !result.error().empty());
         CHECK(SameScene(scene, loaded));
     }
+
+    // Composant illisible (champ inconnu, types incorrects, valeur d'énumération inconnue, pas un objet) : le reste
+    // est chargé, lui pas ; gardé tel quel et réécrit à l'enregistrement, avec un avertissement qui dit pourquoi.
+    const char* unreadable[] = {
+        R"({"colour": 1})", R"({"flag": 1})", R"({"count": 1.5})", R"({"count": 3000000000})", R"({"label": 3})",
+        R"({"direction": [1, "2", 3]})", R"({"mood": "joyeux"})", "5",
+    };
+    for (const char* component : unreadable) {
+        std::vector<LogEntry> logged;
+        const std::uint64_t before = Log::Read(0, logged);
+        const std::string text = std::format(R"({{"format": "flux.scene", "version": 1, "entities": [
+            {{"id": "0000000000000001", "name": "Boîte", "transform": {{"position": [1, 2, 3]}}, "test": {}}}]}})", component);
+        CHECK(SceneSerializer::LoadFromString(loaded, components, text).has_value());
+        const Entity box = loaded.FindById(Uuid{1});
+        CHECK(box != NullEntity && loaded.TryGet<TestComponent>(box) == nullptr);
+        CHECK(loaded.Get<TransformComponent>(box).position == (Math::Vector3d{1.0, 2.0, 3.0}));
+        const std::string resaved = SceneSerializer::SaveToString(loaded, components);
+        CHECK(resaved.find(R"("test": )") != std::string::npos);
+        logged.clear();
+        Log::Read(before, logged);
+        CHECK(!logged.empty() && logged.back().level == LogLevel::Warning && logged.back().text.find("« test »") != std::string::npos);
+        // Relu tel quel : toujours gardé, le fichier ne change plus.
+        CHECK(SceneSerializer::LoadFromString(loaded, components, resaved).has_value());
+        CHECK(SceneSerializer::SaveToString(loaded, components) == resaved);
+    }
+    // Ajouté de nouveau dans l'éditeur : la version à jour remplace l'illisible.
+    CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
+        {"id": "0000000000000001", "test": {"colour": 1}}]})").has_value());
+    loaded.Add<TestComponent>(loaded.FindById(Uuid{1})).count = 4;
+    CHECK(SceneSerializer::SaveToString(loaded, components).find("colour") == std::string::npos);
+    // Modèle 3D d'un type inconnu, position à deux nombres : ces composants seuls manquent.
+    CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
+        {"id": "0000000000000001", "meshRenderer": {"mesh": "théière"}, "transform": {"position": [1, 2]}}]})").has_value());
+    CHECK(loaded.TryGet<MeshRendererComponent>(loaded.FindById(Uuid{1})) == nullptr);
+    // Parent absent : l'entité va à la racine.
+    CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
+        {"id": "0000000000000001", "parent": "0000000000000002"}]})").has_value());
+    CHECK(loaded.GetEntityCount() == 1 && loaded.GetParent(loaded.FindById(Uuid{1})) == NullEntity);
 
     // Écriture minimale à la main : les champs absents prennent leur valeur par défaut.
     CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
@@ -177,26 +206,31 @@ bool RunSceneSerializerTests() {
     CHECK(loaded.Get<TransformComponent>(cube).scale == (Math::Vector3f{1.0f, 1.0f, 1.0f}));
     CHECK(loaded.TryGet<MeshRendererComponent>(cube) != nullptr);
 
-    // Le message d'une valeur d'énumération inconnue cite les valeurs possibles.
-    const auto badMood = SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1,
-        "entities": [{"id": "0000000000000001", "test": {"mood": "joyeux"}}]})");
-    CHECK(!badMood && badMood.error().find("« angry »") != std::string::npos);
+    // L'avertissement d'une valeur d'énumération inconnue cite les valeurs possibles.
+    {
+        std::vector<LogEntry> logged;
+        const std::uint64_t before = Log::Read(0, logged);
+        CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1,
+            "entities": [{"id": "0000000000000001", "test": {"mood": "joyeux"}}]})"));
+        logged.clear();
+        Log::Read(before, logged);
+        CHECK(!logged.empty() && logged.back().text.find("« angry »") != std::string::npos);
+    }
 
-    // Version du moteur notée à l'enregistrement. Fichier d'une version plus récente (ou champ inconnu : une autre
-    // branche) : refusé avec le message « non compatible », la scène en cours intacte. Plus ancienne ou absente : lue.
+    // Version du moteur notée à l'enregistrement. Fichier d'une version plus récente : lu avec un avertissement (ce qu'il
+    // a de nouveau est gardé tel quel). Format plus récent : refusé (« non compatible »), la scène en cours intacte.
     CHECK(saved.find(std::format("\"engine\": {}", GameModuleApiVersion)) != std::string::npos);
     CHECK(SceneSerializer::LoadFromString(loaded, components, saved).has_value());
-    const auto newer = SceneSerializer::LoadFromString(loaded, components, std::format(R"({{"format": "flux.scene",
-        "version": 2, "engine": {}, "entities": []}})", GameModuleApiVersion + 1));
-    CHECK(!newer && newer.error().starts_with("Scène non chargée car non compatible avec la version actuelle"));
-    CHECK(newer.error().find(std::to_string(GameModuleApiVersion + 1)) != std::string::npos && SameScene(scene, loaded));
-    const auto unknownField = SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1,
-        "entities": [{"id": "0000000000000001", "test": {"colour": 1}}]})");
-    CHECK(!unknownField && unknownField.error().find("non compatible") != std::string::npos && SameScene(scene, loaded));
-    CHECK(unknownField.error().find("« colour »") != std::string::npos);
+    CHECK(SceneSerializer::LoadFromString(loaded, components, std::format(R"({{"format": "flux.scene",
+        "version": 2, "engine": {}, "entities": [{{"id": "0000000000000001", "test": {{"count": 2, "colour": 1}},
+        "transform": {{"position": [1, 2, 3], "wobble": 1}}}}]}})", GameModuleApiVersion + 1)).has_value());
+    CHECK(loaded.GetEntityCount() == 1 && loaded.TryGet<TestComponent>(loaded.FindById(Uuid{1})) == nullptr);
+    // La transformation, présente sur toute entité, n'est jamais mise de côté : seul son champ inconnu est ignoré.
+    CHECK(loaded.Get<TransformComponent>(loaded.FindById(Uuid{1})).position == (Math::Vector3d{1.0, 2.0, 3.0}));
+    CHECK(SceneSerializer::LoadFromString(loaded, components, saved).has_value());
     const auto newerFormat = SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 99,
         "entities": []})");
-    CHECK(!newerFormat && newerFormat.error().find("non compatible") != std::string::npos);
+    CHECK(!newerFormat && newerFormat.error().find("non compatible") != std::string::npos && SameScene(scene, loaded));
     CHECK(SceneSerializer::LoadFromString(loaded, components, std::format(R"({{"format": "flux.scene", "version": 2,
         "engine": {}, "entities": []}})", GameModuleApiVersion - 1)).has_value());
     CHECK(SceneSerializer::LoadFromString(loaded, components, saved).has_value()); // retour à la scène de départ

@@ -73,7 +73,8 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 
 ### Prefabs
 - 🔧 Créer un prefab depuis l'inspecteur, le placer depuis « Placer », l'ouvrir pour le modifier (double-clic dans
-  Contenu) ; champs modifiés marqués, « Revenir au prefab », « Délier ». À améliorer : pas encore « Appliquer au prefab ».
+  Contenu) ; champs modifiés marqués, « Revenir au prefab », « Délier ». Prefab introuvable : exemplaire gardé vide,
+  signalé dans l'inspecteur. À améliorer : pas encore « Appliquer au prefab ».
 - ⬜ « Appliquer au prefab » : envoyer les modifications d'un exemplaire dans le prefab sans l'ouvrir.
 - ⬜ Glisser un prefab du Contenu dans la vue.
 - ⬜ Remplacer les vaisseaux codés en dur dans « Placer » par des prefabs.

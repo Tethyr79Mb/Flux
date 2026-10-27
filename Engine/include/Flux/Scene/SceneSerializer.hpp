@@ -38,9 +38,12 @@ namespace Flux {
         // le fichier reste juste, juste plus gros.
         FLUX_API std::string SaveToString(const Scene& scene, const ComponentRegistry& components,
                                           const PrefabReader& prefabs = {});
-        // Remplace tout le contenu de scene. En cas d'erreur, scene n'est pas modifiée. Lit aussi un prefab (ses
-        // entités, à ouvrir pour le modifier). Un exemplaire de prefab sans lecteur, ou dont le prefab est
-        // introuvable, est une erreur.
+        // Remplace tout le contenu de scene. Lit aussi un prefab (ses entités, à ouvrir pour le modifier).
+        // Ce qui est abîmé ne bloque pas le reste, avec un avertissement au journal pour chacun : un composant illisible
+        // (champ inconnu, valeur invalide) n'est pas chargé mais gardé tel quel, un exemplaire dont le prefab est
+        // introuvable reste vide (MissingPrefabComponent), une entité dont le parent manque va à la racine.
+        // Erreur seulement pour un fichier inutilisable (pas du JSON, autre format, identifiants en double, boucle dans
+        // la hiérarchie) : scene n'est alors pas modifiée.
         FLUX_API std::expected<void, std::string> LoadFromString(Scene& scene, const ComponentRegistry& components,
                                                                  std::string_view json, const PrefabReader& prefabs = {});
 

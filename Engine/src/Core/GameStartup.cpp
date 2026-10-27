@@ -74,10 +74,10 @@ namespace Flux {
             }
             game->Register(engine); // enregistre les composants du jeu : la scène de démarrage peut les utiliser
 
+            // Scène absente ou refusée : le jeu démarre quand même, sur une scène vide (ou la partie sauvegardée).
             if (auto loaded = engine.LoadScene(project->GetStartupScenePath()); !loaded) {
                 Log::Error("Scène de démarrage : {}", loaded.error());
                 Platform::ShowError(engine.GetWindow(), "Scène de démarrage", loaded.error()); // le journal n'est pas visible
-                return 1;
             }
             // Partie sauvegardée (F8) : reprise là où elle était, la scène de démarrage reste si elle est illisible.
             engine.ResumeQuickSave();

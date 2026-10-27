@@ -586,7 +586,9 @@ namespace FluxEditor {
         const auto* link = scene.TryGet<PrefabLinkComponent>(selected);
         if (const auto* instance = scene.TryGet<PrefabInstanceComponent>(selected)) {
             ui.LabelText("Prefab", instance->prefab);
-            if (!m_readOnly && !m_overrides.known) {
+            if (scene.TryGet<MissingPrefabComponent>(selected)) {
+                ui.TextDisabled("Prefab introuvable : gardé vide, réglages conservés."); // revient en rouvrant la scène
+            } else if (!m_readOnly && !m_overrides.known) {
                 ui.TextDisabled("Prefab illisible : les pièces gardent leurs réglages.");
             }
             if (ui.Button("Ouvrir le prefab")) {
