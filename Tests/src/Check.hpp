@@ -31,6 +31,7 @@ inline bool GpuMissing(const char* group, const char* error) {
 bool RunSceneTests();
 bool RunRenderGraphTests();
 bool RunSceneSerializerTests();
+bool RunSceneMergeTests();
 bool RunPrefabTests();
 bool RunUiTests();
 bool RunProjectTests();

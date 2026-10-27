@@ -4,8 +4,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <cstdint>
-#include <format>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -18,18 +16,12 @@ namespace Flux {
         std::filesystem::path QuickSavePlayerFile() {
             return QuickSaveDirectory() / "rapide.joueur.json";
         }
-        // Empreinte du contenu d'une scène (FNV-1a 64 bits, en hexadécimal) : la date du fichier ne dit rien, la
-        // génération le recopie à chaque fois qu'un asset change.
-        std::optional<std::string> FileDigest(const std::filesystem::path& path) {
+        std::optional<std::string> ReadText(const std::filesystem::path& path) {
             std::ifstream file(path, std::ios::binary);
             if (!file) {
                 return std::nullopt;
             }
-            std::uint64_t hash = 14695981039346656037ull;
-            for (std::istreambuf_iterator<char> it(file), end; it != end; ++it) {
-                hash = (hash ^ static_cast<std::uint8_t>(*it)) * 1099511628211ull;
-            }
-            return std::format("{:016x}", hash);
+            return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
         }
         // Fichier du joueur absent ou illisible : un JSON vide (pas un objet).
         nlohmann::json ReadPlayerFile() {
@@ -59,6 +51,39 @@ namespace Flux {
         return QuickSaveDirectory() / "rapide.scene.json";
     }
 
+    std::filesystem::path QuickSave::GetBaseSceneFile() {
+        return QuickSaveDirectory() / "rapide.depart.json";
+    }
+
+    void QuickSave::SetScene(std::filesystem::path path, std::string text) {
+        m_scenePath = std::move(path);
+        m_sceneText = std::move(text);
+    }
+
+    void QuickSave::SetScene(const std::filesystem::path& path) {
+        std::optional<std::string> text = ReadText(path);
+        SetScene(text ? path : std::filesystem::path{}, text ? std::move(*text) : std::string{});
+    }
+
+    std::optional<QuickSave::Source> QuickSave::ReadSource(const Project* project) {
+        const nlohmann::json player = ReadPlayerFile();
+        if (!player.is_object() || !player.contains("scene") || !player["scene"].is_string()) {
+            return std::nullopt; // sauvegarde du mode Jouer de l'éditeur, ou d'avant la fusion
+        }
+        std::filesystem::path path = Platform::PathFromUtf8(player["scene"].get<std::string>());
+        if (path.is_relative() && project) {
+            path = project->assetsDirectory / path;
+        }
+        std::optional<std::string> text = ReadText(GetBaseSceneFile());
+        if (!text) {
+            return std::nullopt;
+        }
+        // Scène disparue depuis : la sauvegarde seule, comme avant.
+        const std::optional<std::string> current = ReadText(path);
+        const bool changed = current && *current != *text;
+        return Source{.path = std::move(path), .text = std::move(*text), .changed = changed};
+    }
+
     bool QuickSave::Exists() {
         std::error_code error;
         return std::filesystem::exists(GetSceneFile(), error);
@@ -68,17 +93,8 @@ namespace Flux {
         std::error_code error;
         const bool removed = std::filesystem::remove(GetSceneFile(), error);
         std::filesystem::remove(QuickSavePlayerFile(), error);
+        std::filesystem::remove(GetBaseSceneFile(), error);
         return removed;
-    }
-
-    bool QuickSave::MatchesStartupScene(const Project& project) {
-        // Une sauvegarde d'avant cette empreinte compte comme changée.
-        const std::optional<std::string> scene = FileDigest(project.GetStartupScenePath());
-        if (!scene) {
-            return true;
-        }
-        const nlohmann::json player = ReadPlayerFile();
-        return player.is_object() && player.contains("startupScene") && player["startupScene"] == *scene;
     }
 
     std::expected<void, std::string> QuickSave::Write(Engine& engine, Entity player) const {
@@ -104,9 +120,19 @@ namespace Flux {
         if (!systems.empty()) {
             file["systems"] = std::move(systems);
         }
-        const Project* project = engine.GetProject();
-        if (std::optional<std::string> startup = project ? FileDigest(project->GetStartupScenePath()) : std::nullopt) {
-            file["startupScene"] = std::move(*startup); // pour ne pas la reprendre si la scène change (ResumeQuickSave)
+        // Scène de départ telle qu'au chargement (même si l'éditeur l'a modifiée depuis) : la fusion compare la partie
+        // à elle. Chemin relatif aux assets : le dossier du jeu peut être déplacé.
+        if (!m_scenePath.empty()) {
+            if (auto copied = SceneSerializer::WriteFile(GetBaseSceneFile(), m_sceneText); !copied) {
+                return copied;
+            }
+            const Project* project = engine.GetProject();
+            const std::filesystem::path relative = project ? m_scenePath.lexically_relative(project->assetsDirectory)
+                                                           : std::filesystem::path{};
+            const bool inAssets = !relative.empty() && *relative.begin() != "..";
+            file["scene"] = Platform::ToGenericUtf8(inAssets ? relative : m_scenePath);
+        } else {
+            std::filesystem::remove(GetBaseSceneFile(), error);
         }
         return SceneSerializer::WriteFile(QuickSavePlayerFile(), file.dump(2));
     }

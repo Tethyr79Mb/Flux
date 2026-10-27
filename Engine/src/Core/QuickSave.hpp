@@ -1,13 +1,16 @@
 #pragma once
 
 // Sauvegarde rapide (F8 / F9, F7 l'efface) : une seule, à côté de l'exécutable. La scène est un fichier de scène
-// ordinaire (on peut l'ouvrir dans l'éditeur) ; à côté, ce qu'elle ne garde pas : le siège où est assis le joueur et
-// l'état des systèmes du jeu (Engine::AddGameSaveData). Engine décide quand sauvegarder et charge la scène.
+// ordinaire (on peut l'ouvrir dans l'éditeur) ; à côté, ce qu'elle ne garde pas : le siège où est assis le joueur,
+// l'état des systèmes du jeu (Engine::AddGameSaveData) et la scène d'où la partie était partie, telle qu'elle était
+// (fusion avec la scène modifiée depuis dans l'éditeur, voir SceneMerge). Engine décide quand sauvegarder et charge
+// la scène.
 
 #include "Flux/Core/Engine.hpp"
 
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -36,8 +39,22 @@ namespace Flux {
         static bool Exists();
         // false s'il n'y avait pas de sauvegarde.
         static bool Delete();
-        // Faux si la scène de démarrage du projet a changé depuis la sauvegarde (ou si la sauvegarde ne le dit pas).
-        static bool MatchesStartupScene(const Project& project);
+        // Copie de la scène d'où la partie était partie (SetScene), à fusionner avec sa version actuelle.
+        static std::filesystem::path GetBaseSceneFile();
+
+        // Fichier de la scène chargée (Engine::LoadScene) : son texte est gardé tel qu'au chargement, pour la fusion
+        // si l'éditeur la modifie ensuite. Vide : scène sans fichier (mode Jouer de l'éditeur), pas de fusion.
+        void SetScene(std::filesystem::path path, std::string text);
+        void SetScene(const std::filesystem::path& path);
+        // Scène d'où partait la partie sauvegardée, si la sauvegarde le dit et que sa copie est lisible : son fichier,
+        // son texte d'alors, et si le fichier a changé depuis.
+        struct Source
+        {
+            std::filesystem::path path;
+            std::string text;
+            bool changed = false;
+        };
+        static std::optional<Source> ReadSource(const Project* project);
 
         // Scène, siège du joueur, systèmes du jeu ; l'erreur en texte.
         std::expected<void, std::string> Write(Engine& engine, Entity player) const;
@@ -53,5 +70,7 @@ namespace Flux {
         };
         std::vector<Data> m_data;
         Requests m_requests;
+        std::filesystem::path m_scenePath;
+        std::string m_sceneText;
     };
 }
