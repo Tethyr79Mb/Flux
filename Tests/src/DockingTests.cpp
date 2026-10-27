@@ -5,6 +5,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/Ships.hpp"
 
 #include <cmath>
 #include <numbers>
@@ -217,6 +218,10 @@ namespace {
         CHECK(Docking::Toggle(scene, aside) == Docking::ToggleResult::Leaving);
         CHECK(scene.Get<ShipComponent>(aside).autopilot == AutopilotStage::Exit);
         CHECK(scene.GetParent(aside) == NullEntity);
+        // Aux commandes, sans gaz : le pilote ne freine pas le pilote automatique.
+        scene.Get<ShipComponent>(aside).velocity = {0.0f, 0.0f, -20.0f};
+        Ships::Update(scene, aside, Frame, {});
+        CHECK(scene.Get<ShipComponent>(aside).velocity.z == -20.0f);
         return true;
     }
 }

@@ -186,8 +186,10 @@ namespace Flux::Ships {
 
     void Update(Scene& scene, Entity piloted, double deltaSeconds, const ShipInput& input) {
         if (piloted != NullEntity && scene.IsValid(piloted)) {
-            // En warp, Warp le mène.
-            if (auto* ship = scene.TryGet<ShipComponent>(piloted); ship && ship->warp == WarpStage::Off) {
+            // En warp, Warp le mène ; sous pilote automatique, Docking (sinon le pilote, sans gaz, le freinait plus fort
+            // que le pilote automatique n'accélère : il sortait d'un hangar au pas).
+            if (auto* ship = scene.TryGet<ShipComponent>(piloted);
+                ship && ship->warp == WarpStage::Off && ship->autopilot == AutopilotStage::Off) {
                 Pilot(*ship, scene.GetWorldRotation(piloted), deltaSeconds, input);
             }
         }
