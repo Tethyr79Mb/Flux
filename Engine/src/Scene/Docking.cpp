@@ -307,10 +307,11 @@ namespace Flux::Docking {
         }
         dock.ship = entity;
         ship->dock = best;
-        // Devant le point d'approche : droit dessus. Plus bas que la station (sous son sol), par-dessous. Ailleurs (à
-        // côté, derrière), par-dessus.
+        // Devant le quai (au-delà du point d'approche, ou dans le cône de 45° qui s'ouvre devant lui : juste sorti, ou
+        // entre le quai et son point d'approche) : droit sur le point d'approche. Plus bas que la station (sous son
+        // sol), par-dessous. Ailleurs (à côté, derrière), par-dessus.
         const Math::Vector3d local = ToLocal(GetFrame(scene, best), position);
-        if (local.z <= -static_cast<double>(dock.approach)) {
+        if (local.z <= -static_cast<double>(dock.approach) || (local.z < 0.0 && std::abs(local.x) <= -local.z)) {
             ship->autopilot = AutopilotStage::Approach;
         } else if (local.y < -static_cast<double>(dock.hover)) {
             ship->autopilot = AutopilotStage::Under;

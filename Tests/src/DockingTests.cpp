@@ -222,6 +222,17 @@ namespace {
         scene.Get<ShipComponent>(aside).velocity = {0.0f, 0.0f, -20.0f};
         Ships::Update(scene, aside, Frame, {});
         CHECK(scene.Get<ShipComponent>(aside).velocity.z == -20.0f);
+
+        // De retour devant le quai, un peu en deçà de son point d'approche (juste sorti) : droit dessus, sans passer
+        // par-dessus la station. À côté d'elle : par-dessus.
+        scene.DestroyEntity(aside);
+        const Entity back = AddFighter(scene, "Revenu", {5.0, 8.0, -97.0});
+        CHECK(Docking::Toggle(scene, back) == Docking::ToggleResult::Docking);
+        CHECK(scene.Get<ShipComponent>(back).autopilot == AutopilotStage::Approach);
+        scene.DestroyEntity(back);
+        const Entity beside = AddFighter(scene, "À côté de la station", {300.0, 8.0, -50.0});
+        CHECK(Docking::Toggle(scene, beside) == Docking::ToggleResult::Docking);
+        CHECK(scene.Get<ShipComponent>(beside).autopilot == AutopilotStage::Climb);
         return true;
     }
 }
