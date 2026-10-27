@@ -18,6 +18,7 @@
 #include "Flux/Renderer/Renderer.hpp"
 #include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/SceneChange.hpp"
+#include "Flux/Scene/SceneMerge.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/Orbits.hpp"
 #include "Flux/Scene/Picking.hpp"
@@ -600,6 +601,12 @@ namespace Flux {
         if (auto loaded = SceneSerializer::Load(m_scene, m_components, path, GetPrefabReader()); !loaded) {
             return loaded;
         }
+        m_quickSave->SetScene(path);
+        SceneLoaded();
+        return {};
+    }
+
+    void Engine::SceneLoaded() {
         m_physics.reset(); // les corps de l'ancienne scène
         m_projectiles.clear();
         m_impacts.clear();
@@ -608,7 +615,6 @@ namespace Flux {
             StartPhysics();
             m_loadingScreen->Begin();
         }
-        return {};
     }
 
     void Engine::SetGameState(GameState state) {
@@ -627,6 +633,7 @@ namespace Flux {
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceBindings->ClearActions();
             m_interfacePaused = m_interfacePausedNow = false;
+            m_quickSave->SetScene({}, {}); // la scène éditée reprend, sans fichier (pas de fusion pour F8)
         }
     }
 
@@ -659,13 +666,6 @@ namespace Flux {
 
     bool Engine::ResumeQuickSave() {
         if (!QuickSave::Exists()) {
-            return false;
-        }
-        // Scène de démarrage changée depuis la sauvegarde (dans l'éditeur, puis recopiée à côté du jeu par la
-        // génération) : la sauvegarde cacherait ce qui vient d'être modifié. Gardée pour F9.
-        if (m_project && !QuickSave::MatchesStartupScene(*m_project)) {
-            Log::Info("sauvegarde rapide faite avec une autre scène de démarrage : non reprise");
-            m_flightHud->ShowNotice("Scène modifiée depuis la sauvegarde : partie repartie du début (F9 pour la reprendre)");
             return false;
         }
         m_quickSave->RequestLoad(true); // à la fin de la première image, comme F9
@@ -701,17 +701,48 @@ namespace Flux {
             m_flightHud->ShowNotice("Aucune sauvegarde rapide");
             return;
         }
-        if (auto loaded = LoadScene(QuickSave::GetSceneFile()); !loaded) {
+        // Scène modifiée dans l'éditeur depuis la sauvegarde (puis recopiée à côté du jeu par la génération) : la
+        // scène actuelle, avec ce que la partie avait changé. La sauvegarde seule cacherait la modification.
+        const std::optional<QuickSave::Source> source = QuickSave::ReadSource(GetProject());
+        const bool merges = source && source->changed;
+        if (auto loaded = merges ? LoadMergedQuickSave(source->path) : LoadScene(QuickSave::GetSceneFile()); !loaded) {
             Log::Error("chargement rapide : {}", loaded.error());
             // Sauvegarde d'une version du moteur qui ne la lit plus, par exemple : la partie continue sur la scène
-            // en cours (LoadScene ne l'a pas touchée).
+            // en cours (rien n'a été touché).
             m_flightHud->ShowNotice("Sauvegarde non chargée : " + loaded.error());
             return;
+        }
+        // Une prochaine sauvegarde part de la même scène que celle-ci (pas du fichier de la sauvegarde).
+        if (merges) {
+            m_quickSave->SetScene(source->path);
+        } else if (source) {
+            m_quickSave->SetScene(source->path, source->text);
+        } else {
+            m_quickSave->SetScene({}, {});
         }
         m_audio->StopAll();
         m_playerCamera->Snap();
         m_quickSave->Restore(*this, m_physics ? m_physics->GetPlayer() : NullEntity);
-        m_flightHud->ShowNotice(resumes ? "Partie reprise (F7 : effacer la sauvegarde)" : "Partie chargée");
+        m_flightHud->ShowNotice(merges ? "Partie reprise dans la scène modifiée (F7 : effacer la sauvegarde)"
+                                : resumes ? "Partie reprise (F7 : effacer la sauvegarde)"
+                                          : "Partie chargée");
+    }
+
+    std::expected<void, std::string> Engine::LoadMergedQuickSave(const std::filesystem::path& scenePath) {
+        // Toutes lues avant la fusion : une erreur laisse la scène en cours intacte.
+        Scene base;
+        Scene saved;
+        for (auto [scene, path] : {std::pair{&base, QuickSave::GetBaseSceneFile()}, std::pair{&saved, QuickSave::GetSceneFile()},
+                                   std::pair{&m_scene, scenePath}}) {
+            if (auto loaded = SceneSerializer::Load(*scene, m_components, path, GetPrefabReader()); !loaded) {
+                return std::unexpected(std::format("{} : {}", Platform::ToGenericUtf8(path.filename()), loaded.error()));
+            }
+        }
+        for (const std::string& problem : SceneMerge::ApplyChanges(m_scene, base, saved, m_components)) {
+            Log::Warning("reprise de la partie, non repris : {}", problem);
+        }
+        SceneLoaded();
+        return {};
     }
 
     void Engine::RegisterInterfaceFunction(std::string name, InterfaceFunction function) {

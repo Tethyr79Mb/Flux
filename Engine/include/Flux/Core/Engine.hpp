@@ -199,8 +199,8 @@ namespace Flux {
         // est préparé aussitôt (voir PhysicsWorld::Prepare). En cas d'échec, la scène actuelle reste.
         std::expected<void, std::string> LoadScene(const std::filesystem::path& path);
         // Sauvegarde rapide (F8) : reprise à la fin de l'image au lancement du jeu, joueur remis sur son siège ; false
-        // sans sauvegarde, ou si la scène de démarrage du projet a changé depuis (la scène modifiée dans l'éditeur
-        // l'emporte ; F9 la recharge quand même). Effacée par DeleteQuickSave (F7).
+        // sans sauvegarde. Si la scène a été modifiée dans l'éditeur depuis, c'est sa version actuelle qui est chargée,
+        // avec ce que la partie y avait changé (vaisseaux, joueur ; voir SceneMerge). Effacée par DeleteQuickSave (F7).
         bool ResumeQuickSave();
         void DeleteQuickSave();
 
@@ -344,6 +344,11 @@ namespace Flux {
         void RunQuickSave();
         // Recharge la sauvegarde rapide, joueur remis sur son siège s'il y était.
         void QuickLoad(bool resumes);
+        // Scène modifiée depuis la sauvegarde : sa version actuelle fusionnée avec la partie (scène en cours intacte
+        // en cas d'erreur).
+        std::expected<void, std::string> LoadMergedQuickSave(const std::filesystem::path& scenePath);
+        // Nouvelle scène en place : ancien monde physique, projectiles et état du jeu oubliés, nouveau monde préparé.
+        void SceneLoaded();
         // Nouveau monde physique pour la scène actuelle, corps déjà créés.
         void StartPhysics();
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
