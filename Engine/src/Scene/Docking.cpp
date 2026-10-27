@@ -17,8 +17,9 @@ namespace Flux::Docking {
         constexpr double ParkedDistance = 1.5; // m : un vaisseau garé à moins de ça d'un quai libre y est amarré par L
         constexpr float AlignTolerance = 2.0f; // °, demi-tour au-dessus du quai terminé
         constexpr float EnterSpeed = 15.0f;    // m/s dans la station
-        constexpr float DescendSpeed = 2.0f;   // m/s en se posant et en décollant du quai
-        constexpr float ExitSpeed = 30.0f;     // m/s en sortant, vitesse gardée quand le pilote reprend la main
+        constexpr float DescendSpeed = 2.0f;   // m/s en se posant sur le quai
+        constexpr float RiseSpeed = 5.0f;      // m/s en décollant du quai
+        constexpr float ExitSpeed = 60.0f;     // m/s en sortant, vitesse gardée quand le pilote reprend la main
         constexpr double FacingDistance = 20.0; // m : plus loin, on se tourne vers le point avant d'y foncer
 
         struct Frame
@@ -209,7 +210,7 @@ namespace Flux::Docking {
                 }
                 break;
             case AutopilotStage::Rise:
-                if (hold(hoverPoint, DescendSpeed, angle) < StopTolerance) {
+                if (hold(hoverPoint, RiseSpeed, angle) < StopTolerance) {
                     ship.autopilot = AutopilotStage::Exit;
                 }
                 break;
