@@ -5,6 +5,7 @@
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/Ships.hpp"
 
 #include <cmath>
 #include <numbers>
@@ -191,6 +192,51 @@ namespace {
     }
 }
 
+namespace {
+    // Vaisseaux garés dans le hangar d'une station au début de la partie, sans y être amarrés : L les en fait sortir.
+    // Sur le quai, il y est amarré puis s'élève et sort ; ailleurs sur le sol, il sort tout droit, sans monter.
+    bool RunHangarParkingTests() {
+        Scene scene;
+        const Entity station = scene.CreateEntity("Station");
+        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity platform = scene.CreateEntity("Plateforme", station);
+        scene.Get<TransformComponent>(platform).position = {0.0, 2.3, 0.0};
+        scene.Add<DockComponent>(platform);
+
+        const Entity parked = AddFighter(scene, "Garé", {0.3, 2.0, 0.2});
+        CHECK(!Docking::IsDocked(scene, parked));
+        CHECK(!Docking::Dock(scene, station, platform)); // la station elle-même
+        CHECK(Docking::Toggle(scene, parked) == Docking::ToggleResult::Leaving);
+        CHECK(scene.Get<ShipComponent>(parked).autopilot == AutopilotStage::Rise);
+        CHECK(scene.Get<DockComponent>(platform).ship == parked);
+
+        const Entity aside = AddFighter(scene, "À côté", {25.0, 2.0, 30.0});
+        scene.SetParent(aside, station);
+        CHECK(!Docking::Dock(scene, aside, platform));                                  // quai pris
+        CHECK(Docking::Toggle(scene, aside) == Docking::ToggleResult::NoDock);
+        scene.DestroyEntity(parked);
+        CHECK(Docking::Toggle(scene, aside) == Docking::ToggleResult::Leaving);
+        CHECK(scene.Get<ShipComponent>(aside).autopilot == AutopilotStage::Exit);
+        CHECK(scene.GetParent(aside) == NullEntity);
+        // Aux commandes, sans gaz : le pilote ne freine pas le pilote automatique.
+        scene.Get<ShipComponent>(aside).velocity = {0.0f, 0.0f, -20.0f};
+        Ships::Update(scene, aside, Frame, {});
+        CHECK(scene.Get<ShipComponent>(aside).velocity.z == -20.0f);
+
+        // De retour devant le quai, un peu en deçà de son point d'approche (juste sorti) : droit dessus, sans passer
+        // par-dessus la station. À côté d'elle : par-dessus.
+        scene.DestroyEntity(aside);
+        const Entity back = AddFighter(scene, "Revenu", {5.0, 8.0, -97.0});
+        CHECK(Docking::Toggle(scene, back) == Docking::ToggleResult::Docking);
+        CHECK(scene.Get<ShipComponent>(back).autopilot == AutopilotStage::Approach);
+        scene.DestroyEntity(back);
+        const Entity beside = AddFighter(scene, "À côté de la station", {300.0, 8.0, -50.0});
+        CHECK(Docking::Toggle(scene, beside) == Docking::ToggleResult::Docking);
+        CHECK(scene.Get<ShipComponent>(beside).autopilot == AutopilotStage::Climb);
+        return true;
+    }
+}
+
 bool RunDockingAutopilotTests() {
-    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests();
+    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests() && RunHangarParkingTests();
 }

@@ -980,6 +980,12 @@ namespace Flux {
         if (light.range <= 0.0f || light.intensity <= 0.0f || !InView(camera, aspect, position, light.range)) {
             return;
         }
+        // Très loin pour sa portée, elle n'éclaire que quelques pixels : ignorée (plafonniers d'une station vue de
+        // l'espace).
+        constexpr float FarRanges = 30.0f;
+        if (Math::Length(position) > FarRanges * light.range) {
+            return;
+        }
         const Math::Vector3f color{light.color.r * light.intensity, light.color.g * light.intensity, light.color.b * light.intensity};
         LightData data{ToArray(position, light.range), ToArray(color, light.type == LightType::Spot ? 1.0f : 0.0f), {}, {}};
         if (light.type == LightType::Spot) {

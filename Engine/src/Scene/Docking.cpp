@@ -14,10 +14,12 @@ namespace Flux::Docking {
         constexpr double PassTolerance = 3.0;
         constexpr double StopTolerance = 0.3;
         constexpr double DockTolerance = 0.05;
+        constexpr double ParkedDistance = 1.5; // m : un vaisseau garé à moins de ça d'un quai libre y est amarré par L
         constexpr float AlignTolerance = 2.0f; // °, demi-tour au-dessus du quai terminé
         constexpr float EnterSpeed = 15.0f;    // m/s dans la station
-        constexpr float DescendSpeed = 2.0f;   // m/s en se posant et en décollant du quai
-        constexpr float ExitSpeed = 30.0f;     // m/s en sortant, vitesse gardée quand le pilote reprend la main
+        constexpr float DescendSpeed = 2.0f;   // m/s en se posant sur le quai
+        constexpr float RiseSpeed = 5.0f;      // m/s en décollant du quai
+        constexpr float ExitSpeed = 60.0f;     // m/s en sortant, vitesse gardée quand le pilote reprend la main
         constexpr double FacingDistance = 20.0; // m : plus loin, on se tourne vers le point avant d'y foncer
 
         struct Frame
@@ -208,7 +210,7 @@ namespace Flux::Docking {
                 }
                 break;
             case AutopilotStage::Rise:
-                if (hold(hoverPoint, DescendSpeed, angle) < StopTolerance) {
+                if (hold(hoverPoint, RiseSpeed, angle) < StopTolerance) {
                     ship.autopilot = AutopilotStage::Exit;
                 }
                 break;
@@ -238,6 +240,21 @@ namespace Flux::Docking {
         }
         const Entity station = scene.GetShip(component->dock);
         return station != NullEntity && scene.GetParent(ship) == station;
+    }
+
+    bool Dock(Scene& scene, Entity entity, Entity dockEntity) {
+        auto* ship = scene.IsValid(entity) ? scene.TryGet<ShipComponent>(entity) : nullptr;
+        auto* dock = scene.IsValid(dockEntity) ? scene.TryGet<DockComponent>(dockEntity) : nullptr;
+        const Entity station = dock ? scene.GetShip(dockEntity) : NullEntity;
+        if (!ship || !dock || station == NullEntity || station == entity || !IsFree(scene, *dock, entity)) {
+            return false;
+        }
+        Release(scene, *ship);
+        dock->ship = entity;
+        ship->dock = dockEntity;
+        Attach(scene, entity, *ship, station);
+        Hold(*ship);
+        return true;
     }
 
     ToggleResult Toggle(Scene& scene, Entity entity) {
@@ -273,13 +290,28 @@ namespace Flux::Docking {
         if (best == NullEntity) {
             return ToggleResult::NoDock;
         }
+        // Déjà posé dessus (garé là dans la scène, au début de la partie) : il en repart.
+        if (bestDistance < ParkedDistance && Dock(scene, entity, best)) {
+            return Toggle(scene, entity);
+        }
         DockComponent& dock = scene.Get<DockComponent>(best);
+        // Garé ailleurs dans la station (sur le sol d'un hangar) : il sort tout droit par ce quai, sans monter
+        // par-dessus la station ni s'y poser.
+        if (scene.GetShip(entity) == scene.GetShip(best)) {
+            Detach(scene, entity);
+            dock.ship = entity;
+            ship->dock = best;
+            ship->autopilot = AutopilotStage::Exit;
+            ship->grounded = false;
+            return ToggleResult::Leaving;
+        }
         dock.ship = entity;
         ship->dock = best;
-        // Devant le point d'approche : droit dessus. Plus bas que la station (sous son sol), par-dessous. Ailleurs (à
-        // côté, derrière), par-dessus.
+        // Devant le quai (au-delà du point d'approche, ou dans le cône de 45° qui s'ouvre devant lui : juste sorti, ou
+        // entre le quai et son point d'approche) : droit sur le point d'approche. Plus bas que la station (sous son
+        // sol), par-dessous. Ailleurs (à côté, derrière), par-dessus.
         const Math::Vector3d local = ToLocal(GetFrame(scene, best), position);
-        if (local.z <= -static_cast<double>(dock.approach)) {
+        if (local.z <= -static_cast<double>(dock.approach) || (local.z < 0.0 && std::abs(local.x) <= -local.z)) {
             ship->autopilot = AutopilotStage::Approach;
         } else if (local.y < -static_cast<double>(dock.hover)) {
             ship->autopilot = AutopilotStage::Under;
