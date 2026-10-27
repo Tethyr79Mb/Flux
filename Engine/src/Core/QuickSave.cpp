@@ -4,7 +4,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <algorithm>
 #include <cstdint>
 #include <format>
 #include <fstream>
@@ -97,8 +96,10 @@ namespace Flux {
             file["seat"] = scene.GetId(character->seat).ToString();
         }
         nlohmann::json systems = nlohmann::json::object();
-        for (auto& [name, text] : SaveSystems(engine)) {
-            systems[name] = std::move(text);
+        for (const Data& data : m_data) {
+            if (std::string text = data.save ? data.save(engine) : std::string{}; !text.empty()) {
+                systems[data.name] = std::move(text);
+            }
         }
         if (!systems.empty()) {
             file["systems"] = std::move(systems);
@@ -129,34 +130,14 @@ namespace Flux {
                 }
             }
         }
+        // Systèmes du jeu : chacun reprend son état (une copie : un load peut en ajouter ou en retirer un autre).
         if (file.is_object() && file.contains("systems") && file["systems"].is_object()) {
-            SystemsState state;
-            for (const auto& [name, text] : file["systems"].items()) {
-                if (text.is_string()) {
-                    state.emplace_back(name, text.get<std::string>());
+            const std::vector<Data> handlers = m_data;
+            const nlohmann::json& systems = file["systems"];
+            for (const Data& data : handlers) {
+                if (const auto found = systems.find(data.name); found != systems.end() && found->is_string() && data.load) {
+                    data.load(engine, found->get_ref<const std::string&>());
                 }
-            }
-            LoadSystems(engine, state);
-        }
-    }
-
-    QuickSave::SystemsState QuickSave::SaveSystems(Engine& engine) const {
-        SystemsState state;
-        for (const Data& data : m_data) {
-            if (std::string text = data.save ? data.save(engine) : std::string{}; !text.empty()) {
-                state.emplace_back(data.name, std::move(text));
-            }
-        }
-        return state;
-    }
-
-    void QuickSave::LoadSystems(Engine& engine, const SystemsState& state) const {
-        // Chacun reprend son état (une copie : un load peut en ajouter ou en retirer un autre).
-        const std::vector<Data> handlers = m_data;
-        for (const Data& data : handlers) {
-            const auto found = std::ranges::find(state, data.name, &SystemsState::value_type::first);
-            if (found != state.end() && data.load) {
-                data.load(engine, found->second);
             }
         }
     }

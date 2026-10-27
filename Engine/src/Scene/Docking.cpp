@@ -296,7 +296,7 @@ namespace Flux::Docking {
         DockComponent& dock = scene.Get<DockComponent>(best);
         // Garé ailleurs dans la station (sur le sol d'un hangar) : il sort tout droit par ce quai, sans monter
         // par-dessus la station ni s'y poser.
-        if (scene.GetParent(entity) == scene.GetShip(best)) {
+        if (scene.GetShip(entity) == scene.GetShip(best)) {
             Detach(scene, entity);
             dock.ship = entity;
             ship->dock = best;

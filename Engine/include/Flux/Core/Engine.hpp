@@ -337,25 +337,6 @@ namespace Flux {
         int m_warpAim = -1;
         std::string m_warpName;
 
-        // Passages entre scènes (EnginePassage.cpp, PassageComponent) : celui que le vaisseau piloté a franchi à cette
-        // image, pris à la fin de l'image ; la scène quittée, gardée telle quelle pour le retour, avec l'état des
-        // systèmes du jeu (missions) et le passage par lequel on en est sorti.
-        struct PassageRequest
-        {
-            Entity passage = NullEntity;
-            Entity ship = NullEntity;
-        };
-        struct OutsideScene
-        {
-            std::string scene; // texte de la scène, sans le vaisseau parti
-            Uuid passage;
-            std::vector<std::pair<std::string, std::string>> systems;
-        };
-        std::optional<PassageRequest> m_requestedPassage;
-        std::optional<OutsideScene> m_outsideScene;
-        void CheckPassages(Entity ship);
-        void TakePassage();
-
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
         void LoadRequestedScene();
