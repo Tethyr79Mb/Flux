@@ -428,7 +428,8 @@ namespace Flux {
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
             m_renderer->SetProjectiles(m_projectiles, m_impacts);
-            if (!m_renderer->RenderFrame(m_scene, m_camera, m_playerCamera->GetHiddenPlayer())) {
+            if (!m_renderer->BeginFrame() || !m_renderer->Render(m_scene, m_camera, m_playerCamera->GetHiddenPlayer())
+                || !m_renderer->EndFrame()) {
                 return 1;
             }
             m_loadingScreen->Update(m_renderer->GetTimings(), deltaSeconds);

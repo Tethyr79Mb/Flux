@@ -261,6 +261,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   - 🔧 3. Textures de travail créées et redimensionnées par le graphe (HDR, mouvement, profondeurs, historique à deux exemplaires échangés par le graphe). Limites : niveaux du bloom encore créés par `PostRenderer` ; pas de partage de mémoire (aliasing), une dizaine de Mo à gagner seulement aujourd'hui (seul le mouvement ne vit pas jusqu'à l'image finale).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Calcul asynchrone (seconde file) : ligne à part, plus haut (« Chargement et rendu communs »).
+- ✅ Image du Renderer découpée (demande de Bruno, 2026-10-27) : `BeginFrame` (attente du GPU), `Render` (vue, anticrénelage, préparation des renderers, graphe), `EndFrame` (présentation), appelés à la suite après les mises à jour de la scène. Pas de fil de rendu séparé (comme CryEngine) tant que les mesures ne montrent pas le CPU limitant.
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).
 - ⬜ Backend DX12.
 
