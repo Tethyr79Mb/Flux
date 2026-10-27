@@ -552,6 +552,9 @@ namespace Flux {
     {
         std::string scene;   // scène où il mène, relative aux assets ; vide : retour à la scène d'où l'on est venu
         std::string arrival; // entité de la scène d'arrivée où apparaît le vaisseau (un quai : il y est posé)
+        // Retour quand la partie a commencé de ce côté (réveil dans la cabine) : scène de dehors, chargée depuis son
+        // fichier ; le vaisseau sort devant son entité « arrival » (le passage d'entrée).
+        std::string outsideScene;
         Math::Vector3f size{100.0f, 40.0f, 10.0f}; // boîte du passage (m), centrée sur l'entité
         float exitDistance = 100.0f; // retour par ce passage : le vaisseau ressort à cette distance devant lui (-z)
     };

@@ -222,6 +222,15 @@ namespace {
         hangarScene.Get<TransformComponent>(platform).position = {0.0, 2.3, 0.0};
         hangarScene.Add<DockComponent>(platform);
         const std::string hangarText = SceneSerializer::SaveToString(hangarScene, components);
+        // Garé sur le quai dans la scène (début de partie), sans y être amarré : L l'en fait partir.
+        {
+            Scene parkedScene;
+            CHECK(SceneSerializer::LoadFromString(parkedScene, components, hangarText).has_value());
+            const Entity parked = AddFighter(parkedScene, "Garé", {0.3, 2.0, 0.2});
+            CHECK(!Docking::IsDocked(parkedScene, parked));
+            CHECK(Docking::Toggle(parkedScene, parked) == Docking::ToggleResult::Leaving);
+            CHECK(parkedScene.Get<ShipComponent>(parked).autopilot == AutopilotStage::Rise);
+        }
 
         // Entrée.
         const std::string shipText = SceneSerializer::SaveEntity(scene, components, ship, true);

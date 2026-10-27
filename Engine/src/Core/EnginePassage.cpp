@@ -66,13 +66,16 @@ namespace Flux {
         const PassageComponent passage = m_scene.Get<PassageComponent>(request->passage);
         const Uuid passageId = m_scene.GetId(request->passage);
         const bool back = passage.scene.empty();
-        if (back && !m_outsideScene) {
+        // Retour sans scène gardée (la partie a commencé ici) : le dehors est lu dans son fichier.
+        const bool backFromFile = back && !m_outsideScene;
+        if (backFromFile && passage.outsideScene.empty()) {
             Log::Warning("« {} » : aucune scène où revenir (le jeu a commencé ici)", NameOf(m_scene, request->passage));
             return;
         }
-        if (!back && !m_project) {
+        if ((!back || backFromFile) && !m_project) {
             return;
         }
+        const std::string& file = back ? passage.outsideScene : passage.scene;
 
         // Le vaisseau, avec ce qu'il porte, écrit puis retiré de la scène quittée. Le siège du joueur n'est pas gardé
         // par la scène : repris par identifiant, comme pour la sauvegarde rapide.
@@ -91,13 +94,14 @@ namespace Flux {
         std::string outside = back ? std::string{} : SceneSerializer::SaveToString(m_scene, m_components, GetPrefabReader());
 
         const std::expected<void, std::string> loaded =
-            back ? SceneSerializer::LoadFromString(m_scene, m_components, m_outsideScene->scene, GetPrefabReader())
-                 : SceneSerializer::Load(m_scene, m_components, m_project->assetsDirectory / Platform::PathFromUtf8(passage.scene),
-                                         GetPrefabReader());
+            back && !backFromFile
+                ? SceneSerializer::LoadFromString(m_scene, m_components, m_outsideScene->scene, GetPrefabReader())
+                : SceneSerializer::Load(m_scene, m_components, m_project->assetsDirectory / Platform::PathFromUtf8(file),
+                                        GetPrefabReader());
         if (!loaded) {
             // Scène inchangée : le vaisseau y revient, là où il était.
-            Log::Error("passage vers {} : {}", back ? std::string("la scène quittée") : passage.scene, loaded.error());
-            Platform::ShowError(GetWindow(), passage.scene, loaded.error());
+            Log::Error("passage vers {} : {}", backFromFile || !back ? file : std::string("la scène quittée"), loaded.error());
+            Platform::ShowError(GetWindow(), file, loaded.error());
         }
         if (auto restored = SceneSerializer::RestoreEntity(m_scene, m_components, shipText); !restored) {
             Log::Error("passage : vaisseau perdu ({})", restored.error());
@@ -107,13 +111,15 @@ namespace Flux {
         if (loaded && ship != NullEntity) {
             if (back) {
                 // Devant le passage par lequel on était entré, le nez vers le dehors, lancé à sa vitesse de sortie.
-                const Entity entry = m_scene.FindById(m_outsideScene->passage);
+                const Entity entry = backFromFile ? m_scene.FindByName(passage.arrival) : m_scene.FindById(m_outsideScene->passage);
                 if (entry != NullEntity) {
                     const auto* component = m_scene.TryGet<PassageComponent>(entry);
                     const Math::Quaternionf rotation = m_scene.GetWorldRotation(entry);
                     Math::WorldPosition position = m_scene.GetWorldPosition(entry);
                     position += Math::Vector3d(rotation.Rotate(Math::Vector3f{0.0f, 0.0f, component ? -component->exitDistance : 0.0f}));
                     PlaceRoot(m_scene, ship, position, rotation);
+                } else {
+                    Log::Warning("passage : entrée « {} » introuvable dehors", passage.arrival);
                 }
                 ShipComponent& component = m_scene.Get<ShipComponent>(ship);
                 component.cruiseSpeed = std::max(-component.velocity.z, 0.0f);
@@ -148,8 +154,8 @@ namespace Flux {
         StartPhysics();
         m_loadingScreen->Begin();
         m_audio->StopAll();
-        if (!loaded) {
-            m_quickSave->LoadSystems(*this, systems); // la scène n'a pas changé : rien n'est oublié
+        if (!loaded || backFromFile) {
+            m_quickSave->LoadSystems(*this, systems); // missions en cours gardées
         } else if (back) {
             m_quickSave->LoadSystems(*this, m_outsideScene->systems); // missions reprises telles qu'au départ
             m_outsideScene.reset();

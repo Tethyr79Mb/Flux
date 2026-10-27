@@ -268,6 +268,7 @@ namespace Flux {
         registry.Register<PassageComponent>("passage", "Passage vers une scène")
             .Asset("scene", "Scène (vide : retour)", &PassageComponent::scene, AssetType::Scene)
             .Field("arrival", "Arrivée (nom d'entité)", &PassageComponent::arrival)
+            .Asset("outsideScene", "Dehors si la partie commence ici", &PassageComponent::outsideScene, AssetType::Scene)
             .Field("size", "Taille (m)", &PassageComponent::size, {.speed = 0.1, .min = 0.0, .max = 1.0e4})
             .Field("exitDistance", "Sortie devant au retour (m)", &PassageComponent::exitDistance, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1});
         registry.Register<MissionGiverComponent>("missionGiver", "Donneur de missions")

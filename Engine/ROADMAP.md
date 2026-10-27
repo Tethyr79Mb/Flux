@@ -235,8 +235,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   triangles, version lointaine de 110 000, collision simplifiée. Détails et décalcomanies à ajouter au cas par cas (choix de Bruno). Entrée dans le
   hangar : L conduit à la porte du joueur (ou à la main), le champ bleu (composant « Passage vers une scène ») charge
   `Station-hangar.scene.json` avec un fondu, vaisseau et joueur assis posés sur la plateforme ; L dans le hangar
-  ressort par la porte et la station revient telle qu'on l'a laissée, devant la porte. Missions gardées au passage. À
-  faire : cabine, promenade, console ; trajet du pilote automatique en ligne droite (peut buter sur la tour en arrivant
+  ressort par la porte et la station revient telle qu'on l'a laissée, devant la porte. Missions gardées au passage. Partie
+  commencée dans le hangar : la sortie charge la scène de dehors indiquée sur son passage, devant le champ bleu ; un
+  vaisseau garé sur un quai en repart avec L. La partie commencera dans la cabine du joueur (choix de Bruno du
+  2026-10-27). À faire : cabine, promenade, console ; trajet du pilote automatique en ligne droite (peut buter sur la tour en arrivant
   de derrière).
 - ⬜ Vol sous un surplomb, entrée dans un hangar étroit (enveloppe convexe du vaisseau aujourd'hui).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).

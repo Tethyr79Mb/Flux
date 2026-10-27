@@ -14,6 +14,7 @@ namespace Flux::Docking {
         constexpr double PassTolerance = 3.0;
         constexpr double StopTolerance = 0.3;
         constexpr double DockTolerance = 0.05;
+        constexpr double ParkedDistance = 1.5; // m : un vaisseau garé à moins de ça d'un quai libre y est amarré par L
         constexpr float AlignTolerance = 2.0f; // °, demi-tour au-dessus du quai terminé
         constexpr float EnterSpeed = 15.0f;    // m/s dans la station
         constexpr float DescendSpeed = 2.0f;   // m/s en se posant et en décollant du quai
@@ -287,6 +288,10 @@ namespace Flux::Docking {
         }
         if (best == NullEntity) {
             return ToggleResult::NoDock;
+        }
+        // Déjà posé dessus (garé là dans la scène, au début de la partie) : il en repart.
+        if (bestDistance < ParkedDistance && Dock(scene, entity, best)) {
+            return Toggle(scene, entity);
         }
         DockComponent& dock = scene.Get<DockComponent>(best);
         dock.ship = entity;

@@ -110,7 +110,8 @@
       },
       "passage": {
         "scene": "",
-        "arrival": "",
+        "arrival": "Champ bleu",
+        "outsideScene": "",
         "size": [96.0, 34.0, 6.0],
         "exitDistance": 100.0
       }
