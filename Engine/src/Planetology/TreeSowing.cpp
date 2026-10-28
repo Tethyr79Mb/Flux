@@ -113,6 +113,15 @@ namespace Flux::Planetology {
             state = TreeHash(state + 0x9e3779b9u);
             return static_cast<double>(state >> 8) * (1.0 / 16777216.0);
         }
+
+        // Le bloc de côté side qui contient la place (x, y) de la face la garde-t-il ? state : son hasard, qui place
+        // l'arbre dans le bloc.
+        bool TreeBlockKeeps(std::uint32_t seed, std::uint32_t face, std::uint32_t x, std::uint32_t y, std::uint32_t side,
+                            std::uint32_t& state) {
+            state = TreeHash(seed ^ TreeHash(face * 0x632be5abu ^ TreeHash((x / side) * 0x27d4eb2fu + side)
+                                             ^ TreeHash(y / side) * 0x85ebca6bu) ^ 0x165667b1u);
+            return x % side == state % side && y % side == (state >> 16) % side;
+        }
     }
 
     std::uint32_t GetPlainLevel(const Terrain& terrain) {
@@ -134,6 +143,29 @@ namespace Flux::Planetology {
         return settings;
     }
 
+    TreeBlocks GetTreeBlocks(const Terrain& terrain, const VegetationSet& set) {
+        // Côté d'une place : celui d'une plaine (comme GetPlainLevel) sur TreeGrid.
+        const double cell = 0.5 * std::numbers::pi * terrain.GetRadius() / std::ldexp(1.0, static_cast<int>(GetPlainLevel(terrain)))
+                          / TreeGrid;
+        TreeBlocks blocks;
+        for (std::size_t b = 0; b < std::min<std::size_t>(set.biomes.size(), VegetationSet::MaxBiomes); ++b) {
+            const double factor = b < set.biomeSpacing.size() ? set.biomeSpacing[b] : 1.0;
+            for (std::size_t s = 0; s < VegetationSet::MaxSpecies; ++s) {
+                const double spacing = s < set.species.size() ? set.species[s].spacing * factor : 0.0;
+                const auto side = static_cast<std::uint32_t>(std::clamp(std::round(spacing / cell), 1.0, static_cast<double>(MaxTreeBlock)));
+                blocks.sides[b] |= side << (4 * s);
+                // Seules les espèces que le biome peut tirer comptent pour écarter des places.
+                for (std::uint32_t e : set.biomeSpecies[b]) {
+                    if (s >= (e & 255u) && s < (e & 255u) + std::max(e >> 8, 1u)) {
+                        blocks.used |= 1u << side;
+                        break;
+                    }
+                }
+            }
+        }
+        return blocks;
+    }
+
     void SowPlain(const Terrain& terrain, const SowSettings& settings, const VegetationSet& set, TileKey plain,
                   std::vector<SownTree>& trees) {
         trees.clear();
@@ -146,6 +178,7 @@ namespace Flux::Planetology {
         const double planetRadius = terrain.GetRadius();
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         constexpr double step = static_cast<double>(TileQuads) / static_cast<double>(TreeGrid);
+        const TreeBlocks blocks = GetTreeBlocks(terrain, set);
         // Le sol à la place (u, v) de la grille de la plaine (repère de la planète).
         const auto ground = [&](double u, double v) {
             const Math::Vector3d direction = DirectionInTile(plain, u, v);
@@ -154,14 +187,24 @@ namespace Flux::Planetology {
         for (std::uint32_t c = 0; c < TreeGrid * TreeGrid; ++c) {
             const std::uint32_t gi = c % TreeGrid;
             const std::uint32_t gj = c / TreeGrid;
-            std::uint32_t state = TreeHash(settings.seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(plain.x * TreeGrid + gi)
-                                                                    ^ TreeHash(plain.y * TreeGrid + gj) * 0x85ebca6bu));
-            const double u = (gi + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
-            const double v = (gj + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
+            const std::uint32_t x = plain.x * TreeGrid + gi;
+            const std::uint32_t y = plain.y * TreeGrid + gj;
+            bool candidate = false;
+            for (std::uint32_t side = 1; side <= MaxTreeBlock && !candidate; ++side) {
+                std::uint32_t unused;
+                candidate = (blocks.used >> side & 1u) != 0 && (side == 1 || TreeBlockKeeps(settings.seed, plain.face, x, y, side, unused));
+            }
+            if (!candidate) {
+                continue;
+            }
+            std::uint32_t state = TreeHash(settings.seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
+            // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
+            double u = (gi + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+            double v = (gj + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
             const double keep = TreeRandom(state);
             const double pick = TreeRandom(state);
             const double jitter = TreeRandom(state);
-            const Math::Vector3d direction = DirectionInTile(plain, u, v);
+            Math::Vector3d direction = DirectionInTile(plain, u, v);
             const double noise = ForestNoise(direction * radius);
             double densest = 0.0;
             for (std::uint32_t b = 0; b < biomeCount; ++b) {
@@ -171,11 +214,11 @@ namespace Flux::Planetology {
                 continue;
             }
             Terrain::Zones zones;
-            const double height = terrain.GetHeight(direction, octaves, &zones);
+            double height = terrain.GetHeight(direction, octaves, &zones);
             if (height < settings.shape[3] + 2.0 || height > settings.shape[2] - 0.1 * relief) {
                 continue;
             }
-            const Math::Vector3d local = direction * (planetRadius + height);
+            Math::Vector3d local = direction * (planetRadius + height);
             double altitude = height / relief;
             Climate climate = ClimateAt(radius, relief, settings.climate, local);
             const double shift = (jitter - 0.5) * 2.0;
@@ -208,6 +251,25 @@ namespace Flux::Planetology {
             const std::uint32_t species = std::min((entry & 255u) + variant, VegetationSet::MaxSpecies - 1);
             if (species >= set.species.size()) {
                 continue; // le GPU lui donne une taille nulle
+            }
+            // Espacement : seule la place gardée par le bloc de l'espèce a l'arbre, posé au hasard dans le bloc
+            // (biome et espèce restent ceux de la place).
+            const std::uint32_t side = blocks.sides[biome] >> (4 * species) & 15u;
+            if (side > 1) {
+                std::uint32_t blockState;
+                if (!TreeBlockKeeps(settings.seed, plain.face, x, y, side, blockState)) {
+                    continue;
+                }
+                const double i = static_cast<double>(static_cast<std::int32_t>(x / side * side - plain.x * TreeGrid));
+                const double j = static_cast<double>(static_cast<std::int32_t>(y / side * side - plain.y * TreeGrid));
+                u = std::clamp((i + side * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+                v = std::clamp((j + side * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+                direction = DirectionInTile(plain, u, v);
+                height = terrain.GetHeight(direction, octaves);
+                if (height < settings.shape[3] + 2.0 || height > settings.shape[2] - 0.1 * relief) {
+                    continue;
+                }
+                local = direction * (planetRadius + height);
             }
             const VegetationSet::Species& traits = set.species[species];
             // Comme VegetationRenderer::SetPlanet : le cosinus en float.

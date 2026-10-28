@@ -17,6 +17,7 @@
 #include <utility>
 #include <iterator>
 #include <memory>
+#include <numbers>
 #include <span>
 #include <vector>
 
@@ -27,8 +28,9 @@ namespace {
     using Planetology::VegetationSet;
 
     // Une espèce de tailles [minScale, maxScale].
-    VegetationSet::Species Species(float minScale, float maxScale, float maxSlope) {
-        return {{"a.glb", "a.glb", "a.glb"}, minScale, maxScale, maxSlope, 0.0f, 0.3f, 10.0f};
+    // Espacement d'1 m : chaque place de la grille peut avoir son arbre.
+    VegetationSet::Species Species(float minScale, float maxScale, float maxSlope, float spacing = 1.0f) {
+        return {{"a.glb", "a.glb", "a.glb"}, minScale, maxScale, maxSlope, 0.0f, 0.3f, 10.0f, spacing};
     }
 
     // Un biome partout (zones, climat et altitude sans limite), de couverture et densité données ; ses espèces (une
@@ -232,6 +234,32 @@ bool RunVegetationGpuTests() {
     }
     const double part = static_cast<double>(large) / static_cast<double>(std::max<std::size_t>(total, 1));
     CHECK(total > 1000 && part > 0.72 && part < 0.78);
+
+    // Espacement par espèce (12 et 20 m), x 1,5 pour le biome : un arbre par bloc au plus, deux arbres d'une même
+    // espèce jamais plus près que 40 % du côté de leur bloc (un peu moins : les cases rétrécissent vers les coins
+    // de la face).
+    VegetationSet spaced;
+    spaced.species = {Species(0.7f, 1.3f, 90.0f, 12.0f), Species(0.7f, 1.3f, 90.0f, 20.0f)};
+    AddBiome(spaced, {1.0f, 1.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}, {1, 1.0f}});
+    spaced.biomeSpacing = {1.5f};
+    const Planetology::TreeBlocks blocks = Planetology::GetTreeBlocks(terrain, spaced);
+    const double cell = 0.5 * std::numbers::pi * terrain.GetRadius() / std::ldexp(1.0, static_cast<int>(level)) / Planetology::TreeGrid;
+    const std::array<std::uint32_t, 2> sides{blocks.sides[0] & 15u, blocks.sides[0] >> 4 & 15u};
+    CHECK(sides[0] >= 2 && sides[1] > sides[0]);
+    CHECK(Sow(**device, terrain, planet, spaced, keys, second));
+    CHECK(SameAsCpu(terrain, planet, spaced, keys, second, "espacement"));
+    for (std::size_t k = 0; k < keys.size(); ++k) {
+        CHECK(!second[k].empty() && second[k].size() < first[k].size() / 3);
+        for (std::size_t a = 0; a < second[k].size(); ++a) {
+            for (std::size_t b = a + 1; b < second[k].size(); ++b) {
+                const std::uint32_t species = SpeciesOf(second[k][a]);
+                if (species == SpeciesOf(second[k][b])) {
+                    const double distance = Math::Length(Math::Vector3d(second[k][a].position - second[k][b].position));
+                    CHECK(distance > 0.3 * sides[species] * cell);
+                }
+            }
+        }
+    }
 
     // Zones du relief : une espèce des montagnes, une des plaines, sur des plaines plus ou moins au pied d'une chaîne
     // (cherchées avec Terrain::Zones, sans collines). Chaque arbre est dans une zone de son biome, et chaque biome

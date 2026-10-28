@@ -202,7 +202,11 @@ namespace Flux::Planetology {
                 m_sowVegetation.species[s] = {species.minScale, species.maxScale,
                                               std::cos(species.maxSlope * (std::numbers::pi_v<float> / 180.0f)), 0.0f};
             }
-            m_sowVegetation.counts = {static_cast<std::uint32_t>(count), 0, 0, 0};
+            const TreeBlocks blocks = GetTreeBlocks(terrain, biomes);
+            m_sowVegetation.counts = {static_cast<std::uint32_t>(count), blocks.used, 0, 0};
+            for (std::size_t b = 0; b < VegetationSet::MaxBiomes; ++b) {
+                m_sowVegetation.blocks[b / 4][b % 4] = blocks.sides[b];
+            }
             m_tints = {};
             for (std::size_t s = 0; s < std::min<std::size_t>(biomes.species.size(), MaxSpecies); ++s) {
                 m_tints[s] = biomes.species[s].tint;

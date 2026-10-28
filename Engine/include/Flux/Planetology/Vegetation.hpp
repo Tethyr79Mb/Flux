@@ -24,6 +24,9 @@ namespace Flux::Planetology {
         float tint = 0.1f;                      // écart de teinte d'un arbre à l'autre (0 : aucun)
         // Tronc pour la collision (capsule droite du pied jusqu'à trunkHeight), en mètres à la taille du modèle.
         float trunkRadius = 0.35f, trunkHeight = 20.0f;
+        // Distance voulue entre deux arbres (m) : une place sur k×k de la grille du semis garde un arbre, arrondi à
+        // la case la plus proche (environ 6 m, Planetology/TreeSowing).
+        float spacing = 12.0f;
         Math::LinearColor canopyColor{0.02f, 0.045f, 0.012f, 1.0f}; // cimes vues de loin
     };
 
@@ -38,6 +41,7 @@ namespace Flux::Planetology {
         float cover = 0.5f;   // part couverte de forêts
         float density = 0.4f; // part des places occupée dans une forêt
         float scale = 1.0f;   // taille des arbres, x celle de l'espèce
+        float spacing = 1.0f; // espacement des arbres, x celui de l'espèce
         struct Share
         {
             std::string species; // chemin du .espece.json

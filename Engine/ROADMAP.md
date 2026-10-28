@@ -160,8 +160,12 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   température, humidité), ses forêts et jusqu'à 4 espèces avec leur part ; le premier qui convient prend le sol.
   Livrés : marais, désert, montagne (épicéas et sapins), taïga, pinède, plaine (feuillus). Teinte propre à chaque
   arbre, couleur des forêts lointaines selon le biome. Humidité en bandes de latitude comme sur Terre (déserts vers
-  25-30°, taïga vers 55-65°, toundra au-delà). À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
-  pluie derrière les montagnes ; 8 variantes d'arbres au plus par planète ; imposteurs en 3 quads croisés (plats vus
+  25-30°, taïga vers 55-65°, toundra au-delà). Espacement par espèce (m) et facteur par biome (demande de Bruno du
+  2026-10-28) : une place sur k×k de la grille garde l'arbre, posé au hasard dans son bloc ; deux arbres d'une même
+  espèce restent à 40 % de l'espacement au moins, et les places qu'aucun bloc ne garde sont écartées avant le relief.
+  À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
+  pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m) et pas garanti entre deux
+  espèces d'espacements différents ; 8 variantes d'arbres au plus par planète ; imposteurs en 3 quads croisés (plats vus
   d'en haut) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas
   d'occlusion (un arbre derrière une montagne ou derrière d'autres arbres est quand même dessiné : prochaine étape,
   avec la pyramide de profondeur des objets) ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou

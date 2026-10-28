@@ -364,9 +364,11 @@ namespace FluxEditor {
             changed |= ui.DragFloat("Couverture", biome.cover, 0.01f, 0.0, 1.0, 2);
             ui.SetItemTooltip("Part du sol couverte de forêts");
             changed |= ui.DragFloat("Densité", biome.density, 0.01f, 0.0, 1.0, 2);
-            ui.SetItemTooltip("Part des places occupée par un arbre dans une forêt");
+            ui.SetItemTooltip("Part des places occupée par un arbre dans une forêt (une place par espacement)");
             changed |= ui.DragFloat("Taille des arbres", biome.scale, 0.01f, 0.05, 20.0, 2);
             ui.SetItemTooltip("x la taille de l'espèce");
+            changed |= ui.DragFloat("Espacement des arbres", biome.spacing, 0.01f, 0.25, 8.0, 2);
+            ui.SetItemTooltip("x l'espacement de l'espèce");
         }
         if (ui.CollapsingHeader("Espèces")) {
             float total = 0.0f;
@@ -447,6 +449,9 @@ namespace FluxEditor {
             changed |= DrawRange(ui, "Taille (x le modèle)", species.minScale, species.maxScale, 0.01f, 0.05, 20.0, 2);
             ui.SetItemTooltip("Minimum, maximum : chaque arbre prend une taille entre les deux");
             changed |= ui.DragFloat("Pente maximale (°)", species.maxSlope, 0.5f, 0.0, 90.0, 1);
+            changed |= ui.DragFloat("Espacement (m)", species.spacing, 0.1f, 1.0, 100.0, 1);
+            ui.SetItemTooltip("Distance voulue entre deux arbres, arrondie à la case du semis (environ 6 m) ; deux "
+                              "voisins restent à 40 % de l'espacement au moins");
             changed |= ui.DragFloat("Écart de teinte", species.tint, 0.005f, 0.0, 0.5, 3);
             ui.SetItemTooltip("D'un arbre à l'autre (0 : tous pareils)");
             changed |= ui.ColorEdit3("Couleur des cimes", species.canopyColor);

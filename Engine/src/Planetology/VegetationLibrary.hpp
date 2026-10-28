@@ -36,6 +36,7 @@ namespace Flux::Planetology {
             TreeSpecies::Variant models;
             float minScale, maxScale, maxSlope, tint;
             float trunkRadius = 0.0f, trunkHeight = 0.0f; // collision (Planetology/TreeSowing)
+            float spacing = 12.0f;                        // m (TreeSpecies::spacing)
         };
         std::vector<Species> species;
         std::vector<BiomeGpu> biomes;
@@ -43,6 +44,7 @@ namespace Flux::Planetology {
         // cumulées (la dernière à 1).
         std::vector<std::array<std::uint32_t, 4>> biomeSpecies;
         std::vector<std::array<float, 4>> biomeShares;
+        std::vector<float> biomeSpacing; // VegetationBiome::spacing
         std::uint64_t revision = 0; // change avec un fichier lu
     };
 
