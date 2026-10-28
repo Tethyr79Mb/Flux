@@ -164,7 +164,7 @@ namespace Flux::Planetology {
                     first = placed.emplace(share.species, static_cast<std::uint32_t>(set.species.size())).first;
                     for (const TreeSpecies::Variant& variant : species.variants) {
                         set.species.push_back({variant, species.minScale, species.maxScale, species.maxSlope, species.tint,
-                                               species.trunkRadius, species.trunkHeight});
+                                               species.trunkRadius, species.trunkHeight, species.spacing});
                     }
                 }
                 entries[used] = first->second | (static_cast<std::uint32_t>(species.variants.size()) << 8);
@@ -195,6 +195,7 @@ namespace Flux::Planetology {
                                     {canopy.r, canopy.g, canopy.b, 0.0f}});
             set.biomeSpecies.push_back(entries);
             set.biomeShares.push_back(cumulative);
+            set.biomeSpacing.push_back(biome->spacing);
         }
     }
 }

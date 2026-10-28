@@ -775,7 +775,8 @@ struct SowVegetation
     uint4 biomeSpecies[MaxBiomes]; // espèces de chaque biome, 4 au plus : première variante (dans species) | nombre << 8
     float4 biomeShares[MaxBiomes]; // leurs parts cumulées (la dernière à 1)
     float4 species[MaxSpecies];    // x, y : tailles extrêmes (x le modèle) ; z : cosinus de la pente maximale
-    uint4 counts;                  // x : biomes
+    uint4 counts;                  // x : biomes ; y : côtés de blocs employés (bit k)
+    uint4 blocks[MaxBiomes / 4];   // côté des blocs de chaque espèce de chaque biome, 4 bits chacune (TreeBlocks)
 };
 
 [[vk::binding(2, 0)]] StructuredBuffer<TreeJob> treeJobs;
@@ -801,6 +802,17 @@ float TreeRandom(inout uint state)
 {
     state = TreeHash(state + 0x9e3779b9u);
     return float(state >> 8) * (1.0 / 16777216.0);
+}
+
+static const uint MaxTreeBlock = 8; // Planetology::MaxTreeBlock
+
+// Le bloc de côté side qui contient la place (x, y) de la face la garde-t-il ? state : son hasard, qui place l'arbre
+// dans le bloc. Comme TreeBlockKeeps (Planetology/TreeSowing.cpp).
+bool TreeBlockKeeps(uint seed, uint face, uint x, uint y, uint side, out uint state)
+{
+    state = TreeHash(seed ^ TreeHash(face * 0x632be5abu ^ TreeHash((x / side) * 0x27d4eb2fu + side)
+                                     ^ TreeHash(y / side) * 0x85ebca6bu) ^ 0x165667b1u);
+    return x % side == state % side && y % side == (state >> 16) % side;
 }
 
 // Delta entre deux colonnes et deux lignes (u, v : position dans la grille de la tuile, de 0 à TileQuads) : a et b
@@ -841,15 +853,27 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
     const float step = float(TileQuads) / float(TreeGrid);
     const uint gi = c % TreeGrid;
     const uint gj = c / TreeGrid;
+    const uint x = job.cell.z * TreeGrid + gi;
+    const uint y = job.cell.w * TreeGrid + gj;
+    // Espacement : une place qu'aucun bloc employé ne garde n'aura pas d'arbre, écartée avant le relief.
+    const uint used = sowVegetation[0].counts.y;
+    bool candidate = false;
+    for (uint side = 1; side <= MaxTreeBlock && !candidate; ++side) {
+        uint unused;
+        candidate = ((used >> side) & 1u) != 0 && (side == 1 || TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, unused));
+    }
+    if (!candidate) {
+        return false;
+    }
     // Hasard tiré de la place sur la face (et de la graine), pas de la case : mêmes arbres à chaque visite.
-    uint state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(job.cell.z * TreeGrid + gi)
-                                                   ^ TreeHash(job.cell.w * TreeGrid + gj) * 0x85ebca6bu));
-    const float u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
-    const float v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.9) * step;
+    uint state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
+    // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
+    float u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+    float v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
     const float keep = TreeRandom(state);
     const float pick = TreeRandom(state);
     const float jitter = TreeRandom(state);
-    const float3 delta = TreeDelta(u, v);
+    float3 delta = TreeDelta(u, v);
     // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas), plus ou moins couvrantes
     // selon le biome. Quelques arbres isolés ailleurs. Le tri se fait avant le relief, cher, sur la forêt la plus
     // dense des biomes.
@@ -863,13 +887,13 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         return false;
     }
     float2 zones;
-    const float height = Height(delta, octaves, zones);
+    float height = Height(delta, octaves, zones);
     // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
     if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
         return false;
     }
-    const float3 position = Local(delta, height);
-    const float3 local = tile.center.xyz * tile.axisN.w + position;
+    float3 position = Local(delta, height);
+    float3 local = tile.center.xyz * tile.axisN.w + position;
     // Biome : tiré au hasard selon son poids au point (BiomeFit, dans l'ordre de la planète), sa densité et sa forêt
     // (le même nombre décide s'il y a un arbre), puis l'espèce selon les parts du biome.
     float altitude = height / relief;
@@ -899,6 +923,26 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
     const uint variants = max(entry >> 8, 1u);
     const uint variant = min(uint((pick - low) / max(shares[choice] - low, 1.0e-6) * float(variants)), variants - 1);
     const uint species = min((entry & 255u) + variant, MaxSpecies - 1);
+    // Espacement : seule la place gardée par le bloc de l'espèce a l'arbre, posé au hasard dans le bloc (biome et
+    // espèce restent ceux de la place).
+    const uint side = (sowVegetation[0].blocks[biome / 4][biome % 4] >> (4 * species)) & 15u;
+    if (side > 1) {
+        uint blockState;
+        if (!TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, blockState)) {
+            return false;
+        }
+        const float i = float(int(x / side * side - job.cell.z * TreeGrid));
+        const float j = float(int(y / side * side - job.cell.w * TreeGrid));
+        u = clamp((i + float(side) * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
+        v = clamp((j + float(side) * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
+        delta = TreeDelta(u, v);
+        height = Height(delta, octaves, zones);
+        if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
+            return false;
+        }
+        position = Local(delta, height);
+        local = tile.center.xyz * tile.axisN.w + position;
+    }
     const float4 traits = sowVegetation[0].species[species];
     // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
     const float e = 0.25;

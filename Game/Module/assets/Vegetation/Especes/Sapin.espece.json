@@ -17,5 +17,6 @@
   "tint": 0.1,
   "trunkRadius": 0.32,
   "trunkHeight": 22,
+  "spacing": 12,
   "canopyColor": [0.016, 0.042, 0.013]
 }

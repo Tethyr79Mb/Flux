@@ -27,6 +27,18 @@ namespace Flux::Planetology {
     };
     FLUX_API SowSettings GetSowSettings(const Terrain& terrain, const PlanetComponent& planet);
 
+    // Espacement des arbres : côté (en places de la grille, 1 à MaxTreeBlock) des blocs dont une seule place garde un
+    // arbre, pour chaque espèce (4 bits chacune, dans l'ordre de VegetationSet::species) de chaque biome ; et les côtés
+    // employés (bit k), qui écartent les autres places avant le relief. Calculé une fois par le CPU, pour le GPU
+    // (SowVegetation) et SowPlain : le même arrondi des deux côtés.
+    constexpr std::uint32_t MaxTreeBlock = 8;
+    struct TreeBlocks
+    {
+        std::array<std::uint32_t, VegetationSet::MaxBiomes> sides{};
+        std::uint32_t used = 0;
+    };
+    FLUX_API TreeBlocks GetTreeBlocks(const Terrain& terrain, const VegetationSet& set);
+
     struct SownTree
     {
         Math::Vector3d position;   // pied, repère de la planète (centre à l'origine) ; il pousse vers le haut (radial)

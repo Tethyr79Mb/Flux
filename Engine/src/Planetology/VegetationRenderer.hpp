@@ -144,6 +144,7 @@ namespace Flux::Planetology {
             std::array<std::array<float, 4>, VegetationSet::MaxBiomes> biomeShares;
             std::array<std::array<float, 4>, MaxSpecies> species;
             std::array<std::uint32_t, 4> counts;
+            std::array<std::array<std::uint32_t, 4>, VegetationSet::MaxBiomes / 4> blocks;
         };
         // Doit correspondre à CullCell dans shaders/Vegetation.slang.
         struct CullCell
