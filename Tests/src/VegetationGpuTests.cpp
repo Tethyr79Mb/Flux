@@ -15,6 +15,7 @@
 #include <cmath>
 #include <initializer_list>
 #include <utility>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <vector>
@@ -305,7 +306,14 @@ bool RunVegetationGpuTests() {
         const double r = std::sqrt(1.0 - y * y);
         world.push_back(Planetology::FindTile(Math::Vector3d{r * std::cos(a), y, r * std::sin(a)}, level));
     }
-    CHECK(Sow(**device, terrain, earth, climates, world, second));
+    // Par 4 : le renderer n'en sème pas plus par image (MaxSownPerFrame).
+    second.clear();
+    for (std::size_t start = 0; start < world.size(); start += VegetationRenderer::MaxSownPerFrame) {
+        std::vector<std::vector<VegetationRenderer::Tree>> batch;
+        const std::size_t count = std::min<std::size_t>(VegetationRenderer::MaxSownPerFrame, world.size() - start);
+        CHECK(Sow(**device, terrain, earth, climates, std::span(world).subspan(start, count), batch));
+        std::ranges::move(batch, std::back_inserter(second));
+    }
     std::size_t sown = 0;
     for (const auto& plain : second) {
         sown += plain.size();
