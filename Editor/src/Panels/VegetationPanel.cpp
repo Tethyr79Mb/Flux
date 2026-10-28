@@ -452,6 +452,12 @@ namespace FluxEditor {
             changed |= ui.ColorEdit3("Couleur des cimes", species.canopyColor);
             ui.SetItemTooltip("Couleur des forêts vues de loin, sur le sol");
         }
+        if (ui.CollapsingHeader("Collision")) {
+            changed |= ui.DragFloat("Rayon du tronc (m)", species.trunkRadius, 0.01f, 0.0, 10.0, 2);
+            ui.SetItemTooltip("À la taille du modèle (0 : pas de collision)");
+            changed |= ui.DragFloat("Hauteur du tronc (m)", species.trunkHeight, 0.1f, 0.0, 200.0, 1);
+            ui.SetItemTooltip("Du pied jusqu'où le tronc arrête un vaisseau ou un personnage, à la taille du modèle");
+        }
         return changed;
     }
 

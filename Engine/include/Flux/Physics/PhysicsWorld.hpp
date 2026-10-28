@@ -91,6 +91,8 @@ namespace Flux {
         int GetBodyCount() const;
         // Tuiles du sol des planètes déjà faites, pour les tests.
         int GetGroundTileCount() const;
+        // Troncs d'arbres des planètes déjà dans le monde, pour les tests.
+        int GetGroundTreeCount() const;
 
         private:
         struct Impl;

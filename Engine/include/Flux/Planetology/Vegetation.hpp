@@ -22,6 +22,8 @@ namespace Flux::Planetology {
         float minScale = 0.7f, maxScale = 1.3f; // x le modèle
         float maxSlope = 30.0f;                 // degrés
         float tint = 0.1f;                      // écart de teinte d'un arbre à l'autre (0 : aucun)
+        // Tronc pour la collision (capsule droite du pied jusqu'à trunkHeight), en mètres à la taille du modèle.
+        float trunkRadius = 0.35f, trunkHeight = 20.0f;
         Math::LinearColor canopyColor{0.02f, 0.045f, 0.012f, 1.0f}; // cimes vues de loin
     };
 

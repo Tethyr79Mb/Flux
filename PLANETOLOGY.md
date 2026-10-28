@@ -14,7 +14,7 @@ entité. **Placer > Espace > Planète** la pose à trois rayons devant la camér
 | Composant | Rôle |
 |---|---|
 | Planète | forme (rayon, relief, montagnes, graine), sol, climat, mer, gravité, atmosphère |
-| Végétation | arbres semés par le GPU autour de la caméra |
+| Végétation | arbres semés par le GPU autour de la caméra ; leurs troncs ont une collision (semis refait par le CPU) |
 | Nuages | une couche de nuages en volume (cumulus, stratus) qui dérive et fait de l'ombre |
 | Orbite | place la planète autour de son étoile |
 
@@ -100,6 +100,12 @@ Le relief est une formule : la hauteur dans une direction donnée. Rien n'est st
 
 **Toute modification va dans les deux.** `PlanetGpuTests` vérifie qu'ils restent égaux, sur trois planètes : 60 km,
 200 km et la Terre.
+
+Le semis des arbres a lui aussi deux exemplaires : `SowPlace` (`PlanetTile.slang`, avec `ClimateAt`, `ForestNoise` et
+`BiomeFit` de `PlanetClimate.slang`) pour l'image, et `Planetology::SowPlain` (`TreeSowing.cpp`) pour la collision des
+troncs. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
+(`PlanetHash`, gardé pour l'aspect du sol et des nuages) change d'un pilote à l'autre. `VegetationGpuTests` vérifie
+qu'ils donnent les mêmes arbres (0,5 % d'écart au plus, au ras d'un seuil, le relief du GPU étant en float).
 
 ### Les couches de bruit
 

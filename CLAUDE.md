@@ -49,6 +49,9 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   (`Engine/include/Flux/Core/GameModule.hpp`), une seule fois par PR.
 - Relief des planètes en deux exemplaires : `Terrain::GetHeight` (C++) et `Height` dans `shaders/PlanetTile.slang`.
   Toute modification va dans les deux ; `PlanetGpuTests` vérifie qu'ils restent égaux.
+- Semis des arbres en deux exemplaires : `SowPlace` (`shaders/PlanetTile.slang`, avec le climat et les biomes de
+  `shaders/PlanetClimate.slang`) et `Planetology::SowPlain` (`TreeSowing.cpp`, collision) ; `VegetationGpuTests` les
+  compare.
 - Bruit du ciel en deux exemplaires : `Graphics/Sky.cpp` et `shaders/Sky.slang`, à modifier ensemble.
 - Performances : pas d'allocation ni de copie par image dans le code chaud ; dire dans la PR ce qui coûte (appels de
   dessin un par un, parcours quadratiques) ; mesurer (panneau Moteur, timestamps GPU) avant d'optimiser.

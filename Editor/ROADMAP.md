@@ -46,7 +46,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - 🔧 Explorateur de fichiers : arbre de dossiers, vignettes avec icônes Windows, nouveau dossier, renommer, déplacer (les références des scènes suivent), corbeille. À améliorer : pas d'aperçu des images et des modèles, `.gltf` refusé.
 - ✅ Copie des assets à côté de l'exe, rechargement à chaud des images, modèles et textures du sol.
 - 🔧 Panneau « Végétation » : régler un biome (zones du relief, altitude, température, humidité, forêts, espèces et
-  leur part) ou une espèce d'arbre (variantes et leurs 3 modèles, taille, pente, teinte, couleur des cimes), ouvert par
+  leur part) ou une espèce d'arbre (variantes et leurs 3 modèles, taille, pente, teinte, couleur des cimes, rayon et hauteur du tronc pour la collision), ouvert par
   un double-clic dans le Contenu ; clic droit « Nouveau biome... » / « Nouvelle espèce... ». Les planètes suivent en
   direct (une dizaine d'aperçus par seconde pendant un glisser), Ctrl+S enregistre, fermer sans enregistrer revient au
   fichier, Ctrl+Z / Ctrl+Y quand la souris est sur le panneau. Les espèces désignées par les biomes suivent un

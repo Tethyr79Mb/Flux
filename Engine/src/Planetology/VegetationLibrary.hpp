@@ -35,6 +35,7 @@ namespace Flux::Planetology {
         {
             TreeSpecies::Variant models;
             float minScale, maxScale, maxSlope, tint;
+            float trunkRadius = 0.0f, trunkHeight = 0.0f; // collision (Planetology/TreeSowing)
         };
         std::vector<Species> species;
         std::vector<BiomeGpu> biomes;

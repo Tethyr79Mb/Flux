@@ -304,7 +304,8 @@ planète donne directement le sien comme indice d'instance.
   d'Unreal). L'air freine les objets simulés et la chute des personnages (dv/dt = -k·densité·|v|·v, k tiré de la
   vitesse de chute limite) et porte les vaisseaux ; dans l'atmosphère d'une planète, sa densité remplace celle du monde.
 - Sol des planètes (`PlanetGround`) : tuiles de maillage au niveau de détail le plus fin, calculées sur le CPU en
-  `double` autour des objets (sondes), sur un fil à part.
+  `double` autour des objets (sondes), sur 1 à 4 fils. Les arbres aussi : les plaines proches sont resemées par le CPU
+  (`Planetology::SowPlain`, copie de `SowPlace` de `PlanetTile.slang`), une capsule par tronc dans un corps par plaine.
 
 ## Armes (`Weapons`)
 
@@ -416,7 +417,8 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   dessine chaque paquet en deux moitiés de 8×4 à 64 threads.
   `ShaderStage::Vertex` couvre alors aussi tâche et maillage, pour que les layouts restent les mêmes sur les deux
   chemins.
-- Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU, le CPU ne voit aucun arbre. Les plaines sont
+- Arbres (`VegetationComponent`, `VegetationRenderer`), tout sur le GPU pour l'image (la collision refait le semis sur
+  le CPU, voir `PlanetGround`). Les plaines sont
   les tuiles d'un niveau fixe (bord de 200 à 400 m) que `PlanetRenderer` visite en vue. Chacune est semée une fois
   (`computeTrees` dans `PlanetTile.slang`, avec le même `Height` que le sol au détail le plus fin) : 64×64 places, le
   hasard tiré de la place sur la face (mêmes arbres à chaque passage), gardées selon les biomes de la planète
