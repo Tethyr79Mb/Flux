@@ -282,8 +282,10 @@ bool RunPlanetGpuTests() {
         Planetology::TileMesh mesh;
         Planetology::BuildTile(*c.terrain, c.key, mesh);
         (*compute)->ReadTile(tiles[n], vertices.data(), morph.data());
-        // Erreur permise : le float de la position (sa taille), celui du relief, et le millimètre.
-        const double tolerance = 0.005 + 1.0e-6 * mesh.radius + 4.0e-6 * c.terrain->GetRelief();
+        // Erreur permise : le float du relief, le millimètre, et celui de la position et de la déformation, relatifs au
+        // centre de la tuile : quelques 1e-5 de sa taille aux pointes des sommets (30 cm sur une tuile de 20 km d'une
+        // Terre, vue de plus de 20 km ; un millimètre sur celles du sol, où se fait la collision).
+        const double tolerance = 0.005 + 3.0e-5 * mesh.radius + 4.0e-6 * c.terrain->GetRelief();
         double worst = 0.0;
         for (std::uint32_t v = 0; v < Planetology::TileVertexCount; ++v) {
             const double error = Math::Length(Math::Vector3d(vertices[v].position) - Math::Vector3d(mesh.vertices[v].position));

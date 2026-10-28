@@ -1,11 +1,13 @@
 // Tuiles des planètes calculées par le GPU : un groupe de threads par tuile écrit ses sommets (ModelVertex) et leur
 // glissement vers la forme de la parente (MorphVertex), les mêmes que Planetology::BuildTile sur le CPU, qui sert de
 // référence (Tests/src/PlanetGpuTests.cpp vérifie qu'ils s'accordent). Le travail en double (directions, points de
-// départ du bruit) est fait par Planetology::PrepareTileGpu : ici presque tout est en float, relatif au centre de la tuile.
-// Exception, la déformation (Warp) : 0,06 radian, multiplié ensuite par la fréquence des sommets (plusieurs milliers sur
-// une planète comme la Terre), il lui faut une précision de 1e-10 radian que le float n'a pas (écart de 1 à 2,5 m avec la
-// collision). PlanetTile64.slang compile ce fichier avec FLUX_FLOAT64 : la déformation et les points du bruit y sont en
-// double (Precise) ; sans shaderFloat64, Precise reste un float.
+// départ du bruit, déformation au centre de la tuile) est fait par Planetology::PrepareTileGpu : ici tout est en float,
+// relatif au centre de la tuile. La déformation (Warp) vaut 0,06 radian, multipliée ensuite par la fréquence des sommets
+// (plusieurs milliers sur une planète comme la Terre) : il lui faut 1e-10 radian, que le float n'a pas sur sa valeur
+// entière. Sa valeur au centre est donc calculée en double sur le CPU et rangée dans les points des couches déformées ;
+// le GPU ne calcule que son changement depuis le centre (WarpChange), petit : le millimètre près du sol, quelques 1e-5
+// de la taille de la tuile sur les plus grandes. Plus de doubles sur le GPU : ils vont 16 à 32 fois moins vite que les
+// floats sur les cartes de jeu.
 // Le relief (Height) doit rester le même que Terrain::GetHeight dans Engine/src/Planetology/Planet.cpp.
 // Arbres (computeTrees) : un groupe par plaine de VegetationRenderer sème ses arbres sur ce même relief, au détail le
 // plus fin (celui du sol vu de près).
@@ -24,29 +26,17 @@ static const uint MeshletQuads = 8;                                 // TileMeshl
 static const uint MeshletSide = TileQuads / MeshletQuads;
 static const uint MeshletCount = MeshletSide * MeshletSide;
 
-#ifdef FLUX_FLOAT64
-typealias Precise = double;
-typealias Precise3 = vector<double, 3>;
-#define PRECISE(x) x##l
-#else
-typealias Precise = float;
-typealias Precise3 = float3;
-#define PRECISE(x) x
-#endif
-
 // Doit correspondre à Planetology::TileGpuInputs.
 struct TileInputs
 {
     float4 center; // xyz : direction du centre ; w : |v_c|
-    float4 centerLow; // xyz : reste de la direction du centre (d_c - center.xyz)
     float4 axisN;  // xyz : normale de la face ; w : rayon
     float4 axisS;  // xyz : axe s ; w : relief
     float4 axisT;  // xyz : axe t ; w : profondeur des jupes
     uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalage des couches à la largeur des montagnes
     float4 columns[Columns];
     int4 cells[OctaveCount];
-    float4 fractions[OctaveCount];
-    float4 fractionsLow[OctaveCount]; // reste de fractions (position et fréquence)
+    float4 fractions[OctaveCount]; // couches déformées : au point déformé du centre
     uint4 permutation[32];
 };
 
@@ -113,8 +103,8 @@ static const float GullyJitter = 0.5;
 static const float GullySharpness = 4.0;
 static const float MountainWeight = 0.85;
 static const float HillWeight = 0.15;
-static const Precise WarpLarge = PRECISE(0.06);
-static const Precise WarpSmall = PRECISE(0.012);
+static const float WarpLarge = 0.06;
+static const float WarpSmall = 0.012;
 
 // Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, à la largeur des montagnes,
 // octaves perdues plus tôt, érosion et octaves dont la pente compte.
@@ -140,10 +130,8 @@ static const Layer Layers[9] = {
     { 3, 7, 0.5, true, true, 0.0, 0 },     // ravines
 };
 
-__generic<T : __BuiltinFloatingPointType>
-T Fade(T t) { return t * t * t * (t * (t * T(6.0) - T(15.0)) + T(10.0)); }
-__generic<T : __BuiltinFloatingPointType>
-T FadeSlope(T t) { return T(30.0) * t * t * (t * (t - T(2.0)) + T(1.0)); }
+float Fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+float FadeSlope(float t) { return 30.0 * t * t * (t * (t - 2.0) + 1.0); }
 
 // Vecteur du gradient de Perlin choisi par hash (GradientVector dans Planet.cpp).
 float3 GradientVector(uint hash)
@@ -157,12 +145,11 @@ float3 GradientVector(uint hash)
     return g;
 }
 
-// Bruit de Perlin dans la maille `cell` (non masquée) en f (0 à 1) : x la valeur, yzw sa pente (Terrain::Noise). En
-// float pour le relief, en Precise pour la déformation.
-__generic<T : __BuiltinFloatingPointType>
-vector<T, 4> Noise(int3 cell, vector<T, 3> f)
+// Bruit de Perlin dans la maille `cell` (non masquée) en f (0 à 1) : x la valeur, yzw sa pente (Terrain::Noise).
+float4 Noise(int3 cell, float3 f)
 {
-    typealias V = vector<T, 3>;
+    typealias V = float3;
+    typealias T = float;
     const int3 c = cell & 255;
     const V u = V(Fade(f.x), Fade(f.y), Fade(f.z));
     const V du = V(FadeSlope(f.x), FadeSlope(f.y), FadeSlope(f.z));
@@ -194,14 +181,114 @@ vector<T, 4> Noise(int3 cell, vector<T, 3> f)
     return vector<T, 4>(value, gradient.x, gradient.y, gradient.z);
 }
 
-// Octave o au point `point` (écart à la direction du centre de la tuile) : sa maille (cell, non masquée) et la place
-// dedans (f), en Precise. `shift` 0,5 : la maille la plus proche plutôt que celle d'en dessous.
-void Lattice(uint o, Precise3 point, Precise shift, out int3 cell, out Precise3 f)
+// Valeur au point de départ (v) et son changement jusqu'au point d'arrivée (d) : les opérations ne mêlent jamais les
+// deux, si bien que le changement reste précis par rapport à lui-même même quand la valeur est grande (WarpChange).
+struct Shifted
+{
+    float v;
+    float d;
+};
+struct Shifted3
+{
+    float3 v;
+    float3 d;
+};
+Shifted MakeShifted(float v, float d) { Shifted r; r.v = v; r.d = d; return r; }
+Shifted3 MakeShifted3(float3 v, float3 d) { Shifted3 r; r.v = v; r.d = d; return r; }
+Shifted operator+(Shifted a, Shifted b) { return MakeShifted(a.v + b.v, a.d + b.d); }
+Shifted operator-(Shifted a, Shifted b) { return MakeShifted(a.v - b.v, a.d - b.d); }
+Shifted operator+(Shifted a, float b) { return MakeShifted(a.v + b, a.d); }
+Shifted operator*(Shifted a, float b) { return MakeShifted(a.v * b, a.d * b); }
+Shifted operator*(Shifted a, Shifted b) { return MakeShifted(a.v * b.v, a.v * b.d + a.d * (b.v + b.d)); }
+Shifted3 operator+(Shifted3 a, Shifted3 b) { return MakeShifted3(a.v + b.v, a.d + b.d); }
+Shifted3 operator-(Shifted3 a, Shifted3 b) { return MakeShifted3(a.v - b.v, a.d - b.d); }
+Shifted3 operator-(Shifted3 a, float3 b) { return MakeShifted3(a.v - b, a.d); }
+Shifted3 operator*(float3 a, Shifted b) { return MakeShifted3(a * b.v, a * b.d); }
+Shifted3 operator*(Shifted3 a, Shifted b) { return MakeShifted3(a.v * b.v, a.v * b.d + a.d * (b.v + b.d)); }
+Shifted Dot(float3 a, Shifted3 b) { return MakeShifted(dot(a, b.v), dot(a, b.d)); }
+Shifted Dot(Shifted3 a, Shifted3 b) { return MakeShifted(dot(a.v, b.v), dot(a.v, b.d) + dot(a.d, b.v + b.d)); }
+Shifted At(Shifted3 a, uint i) { return MakeShifted(a.v[i], a.d[i]); }
+Shifted3 Join(Shifted x, Shifted y, Shifted z) { return MakeShifted3(float3(x.v, y.v, z.v), float3(x.d, y.d, z.d)); }
+Shifted Fade(Shifted t) { return t * t * t * ((t * (t * 6.0 + -15.0)) + 10.0); }
+Shifted FadeSlope(Shifted t) { return t * t * ((t * (t + -2.0)) + 1.0) * 30.0; }
+
+// Pente du bruit (Noise) dans la maille `cell` au point f et son changement jusqu'à f + e, sur les mêmes formules.
+Shifted3 GradientChange(int3 cell, float3 f, float3 e)
+{
+    const int3 c = cell & 255;
+    const Shifted3 p = MakeShifted3(f, e);
+    const Shifted ux = Fade(At(p, 0)), uy = Fade(At(p, 1)), uz = Fade(At(p, 2));
+    const Shifted dux = FadeSlope(At(p, 0)), duy = FadeSlope(At(p, 1)), duz = FadeSlope(At(p, 2));
+    const uint A = permutation[c.x] + uint(c.y);
+    const uint AA = permutation[A] + uint(c.z);
+    const uint AB = permutation[A + 1] + uint(c.z);
+    const uint B = permutation[c.x + 1] + uint(c.y);
+    const uint BA = permutation[B] + uint(c.z);
+    const uint BB = permutation[B + 1] + uint(c.z);
+    const float3 ga = GradientVector(permutation[AA]), gb = GradientVector(permutation[BA]);
+    const float3 gc = GradientVector(permutation[AB]), gd = GradientVector(permutation[BB]);
+    const float3 ge = GradientVector(permutation[AA + 1]), gf = GradientVector(permutation[BA + 1]);
+    const float3 gg = GradientVector(permutation[AB + 1]), gh = GradientVector(permutation[BB + 1]);
+    const float3 x = float3(1.0, 0.0, 0.0), y = float3(0.0, 1.0, 0.0), z = float3(0.0, 0.0, 1.0);
+    const Shifted va = Dot(ga, p), vb = Dot(gb, p - x), vc = Dot(gc, p - y);
+    const Shifted vd = Dot(gd, p - (x + y)), ve = Dot(ge, p - z), vf = Dot(gf, p - (x + z));
+    const Shifted vg = Dot(gg, p - (y + z)), vh = Dot(gh, p - (x + y + z));
+    const Shifted k1 = vb - va, k2 = vc - va, k3 = ve - va;
+    const Shifted k4 = va - vb - vc + vd, k5 = va - vc - ve + vg, k6 = va - vb - ve + vf;
+    const Shifted k7 = vb + vc - vd + ve - vf - vg + vh - va;
+    const Shifted xy = ux * uy, yz = uy * uz, zx = uz * ux;
+    Shifted3 gradient = MakeShifted3(ga, float3(0.0)) + (gb - ga) * ux + (gc - ga) * uy + (ge - ga) * uz
+                      + (ga - gb - gc + gd) * xy + (ga - gc - ge + gg) * yz + (ga - gb - ge + gf) * zx
+                      + (-ga + gb + gc - gd + ge - gf - gg + gh) * (xy * uz);
+    gradient = gradient + Join(dux * (k1 + uy * k4 + uz * k6 + yz * k7),
+                               duy * (k2 + uz * k5 + ux * k4 + zx * k7),
+                               duz * (k3 + ux * k6 + uy * k5 + xy * k7));
+    return gradient;
+}
+
+// Pente du bruit au point f0 de la maille `cell` (d'une octave de la déformation, au centre de la tuile) et son
+// changement jusqu'à f0 + e. Quand le trajet change de maille, il passe par la face commune, où les deux mailles donnent
+// la même pente : chaque bout reste un petit changement dans une seule maille. Au-delà d'une maille d'écart (grandes
+// tuiles, dont les sommets sont loin les uns des autres), les deux pentes directement.
+Shifted3 NoiseGradientChange(int3 cell, float3 f0, float3 e)
+{
+    const float3 crossing = floor(f0 + e);
+    if (any(abs(crossing) > 1.0)) {
+        const float3 start = Noise(cell, f0).yzw;
+        const float3 f = f0 + e;
+        const float3 floored = floor(f);
+        return MakeShifted3(start, Noise(cell + int3(floored), f - floored).yzw - start);
+    }
+    Shifted3 change = GradientChange(cell, f0, float3(0.0));
+    int3 at = cell;
+    float3 from = f0;
+    float3 step = float3(0.0);
+    for (uint axis = 0; axis < 3; ++axis) {
+        if (crossing[axis] == 0.0) {
+            step[axis] = e[axis];
+            continue;
+        }
+        // Jusqu'à la face (soustraction exacte : f0 est près d'elle), puis le reste de l'autre côté.
+        const float face = crossing[axis] > 0.0 ? 1.0 : 0.0;
+        step[axis] = face - from[axis];
+        change.d += GradientChange(at, from, step).d;
+        from += step;
+        from[axis] = 1.0 - face;
+        step = float3(0.0);
+        step[axis] = (f0[axis] - face) + e[axis];
+        at[axis] += int(crossing[axis]);
+    }
+    change.d += GradientChange(at, from, step).d;
+    return change;
+}
+
+// Octave o au point `point` (écart au point du centre de la tuile) : sa maille (cell, non masquée) et la place dedans
+// (f). `shift` 0,5 : la maille la plus proche plutôt que celle d'en dessous.
+void Lattice(uint o, float3 point, float shift, out int3 cell, out float3 f)
 {
     const float4 fraction = tile.fractions[o];
-    const float4 low = tile.fractionsLow[o];
-    const Precise3 q = Precise3(fraction.xyz) + Precise3(low.xyz) + point * (Precise(fraction.w) + Precise(low.w));
-    const Precise3 floored = floor(q + shift);
+    const float3 q = fraction.xyz + point * fraction.w;
+    const float3 floored = floor(q + shift);
     cell = tile.cells[o].xyz + int3(floored);
     f = q - floored;
 }
@@ -216,7 +303,7 @@ uint FirstOctaveIndex(uint layer)
 float3 Tangent(float3 v, float3 direction) { return v - direction * dot(v, direction); }
 
 // Terrain::Fbm : `point` = direction (déformée ou non) - direction du centre de la tuile.
-float Fbm(Precise3 point, float3 direction, uint layer, uint octaves, float slopeScale)
+float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeScale)
 {
     const Layer L = Layers[layer];
     const float total = (1.0 - pow(L.gain, float(L.last - L.first))) / (1.0 - L.gain);
@@ -230,9 +317,9 @@ float Fbm(Precise3 point, float3 direction, uint layer, uint octaves, float slop
     for (uint k = L.first; k < last; ++k) {
         const uint o = base + k - L.first;
         int3 cell;
-        Precise3 f;
+        float3 f;
         Lattice(o, point, 0.0, cell, f);
-        const float4 n = Noise(cell, float3(f));
+        const float4 n = Noise(cell, f);
         if (k - L.first < L.erodedOctaves) {
             slope += Tangent(n.yzw, direction) * (tile.fractions[o].w * amplitude);
         }
@@ -250,7 +337,7 @@ float3 PeakVector(uint h, uint index)
 }
 
 // Terrain::Peaks : hauteur des sommets (0 à 1) et sa pente `slope` (par radian, tangente).
-float Peaks(Precise3 point, float3 direction, uint octaves, out float3 slope)
+float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
 {
     const Layer L = Layers[3];
     const uint last = min(L.last, octaves > tile.options.w ? octaves - tile.options.w : 0);
@@ -262,9 +349,8 @@ float Peaks(Precise3 point, float3 direction, uint octaves, out float3 slope)
         const uint o = base + k - L.first;
         const float4 fraction = tile.fractions[o];
         int3 cell;
-        Precise3 precise;
-        Lattice(o, point, 0.0, cell, precise);
-        const float3 f = float3(precise);
+        float3 f;
+        Lattice(o, point, 0.0, cell, f);
         for (int i = -1; i <= 1; ++i) {
             for (int j = -1; j <= 1; ++j) {
                 for (int l = -1; l <= 1; ++l) {
@@ -330,7 +416,7 @@ float Peaks(Precise3 point, float3 direction, uint octaves, out float3 slope)
 }
 
 // Terrain::Gullies : ravines sur la pente `slope` (m/m), fraction du relief.
-float Gullies(Precise3 point, float3 direction, uint octaves, float3 slope, float amount)
+float Gullies(float3 point, float3 direction, uint octaves, float3 slope, float amount)
 {
     const Layer L = Layers[8];
     const uint last = min(L.last, octaves > tile.options.w ? octaves - tile.options.w : 0);
@@ -347,9 +433,8 @@ float Gullies(Precise3 point, float3 direction, uint octaves, float3 slope, floa
         if (fade > 0.0) {
             const float3 along = cross(direction, slope) / steep;
             int3 cell;
-            Precise3 precise;
-            Lattice(o, point, 0.5, cell, precise);
-            const float3 f = float3(precise);
+            float3 f;
+            Lattice(o, point, 0.5, cell, f);
             float value = 0.0, change = 0.0, weights = 0.0;
             for (int i = -1; i <= 1; ++i) {
                 for (int j = -1; j <= 1; ++j) {
@@ -374,42 +459,44 @@ float Gullies(Precise3 point, float3 direction, uint octaves, float3 slope, floa
     return sum;
 }
 
-// Terrain::Warp : toutes les octaves de la couche, en radians, en Precise.
-Precise3 Warp(Precise3 delta, Precise3 direction, uint layer, Precise amount)
+// Terrain::Warp au point moins sa valeur au centre de la tuile (déjà comptée dans les points des couches déformées),
+// en radians.
+float3 WarpChange(float3 delta, uint layer, float amount)
 {
     const Layer L = Layers[layer];
     const uint base = FirstOctaveIndex(layer);
     // Somme des amplitudes par multiplications (exacte avec un gain de 0,5), pas par pow.
-    Precise total = 0.0;
-    Precise amplitude = 1.0;
+    float total = 0.0;
+    float amplitude = 1.0;
     for (uint k = L.first; k < L.last; ++k) {
         total += amplitude;
-        amplitude *= Precise(L.gain);
+        amplitude *= L.gain;
     }
-    Precise3 warp = Precise3(0.0, 0.0, 0.0);
+    // Direction du point : celle du centre, plus δ.
+    const Shifted3 direction = MakeShifted3(tile.center.xyz, delta);
+    float3 change = float3(0.0);
     amplitude = amount / total;
     for (uint k = L.first; k < L.last; ++k) {
-        int3 cell;
-        Precise3 f;
-        Lattice(base + k - L.first, delta, 0.0, cell, f);
-        const Precise3 slope = Noise(cell, f).yzw;
-        warp += (slope - direction * dot(slope, direction)) * amplitude;
-        amplitude *= Precise(L.gain);
+        const uint o = base + k - L.first;
+        const float4 fraction = tile.fractions[o];
+        const Shifted3 slope = NoiseGradientChange(tile.cells[o].xyz, fraction.xyz, delta * fraction.w);
+        change += (slope - direction * Dot(slope, direction)).d * amplitude;
+        amplitude *= L.gain;
     }
-    return warp;
+    return change;
 }
 
 // Terrain::GetHeight ; zones : Terrain::Zones (collines, montagnes et piémonts).
-float Height(Precise3 delta, uint octaves, out float2 zones)
+float Height(float3 delta, uint octaves, out float2 zones)
 {
     zones = float2(0.0);
     const float relief = tile.axisS.w;
     if (relief <= 0.0) { return 0.0; }
     const float toSlope = relief / tile.axisN.w;
-    const Precise3 exact = normalize(Precise3(tile.center.xyz) + Precise3(tile.centerLow.xyz) + delta);
-    const float3 direction = float3(exact);
-    const Precise3 large = delta + Warp(delta, exact, 6, WarpLarge);
-    const Precise3 small = large + Warp(delta, exact, 7, WarpSmall);
+    const float3 direction = tile.center.xyz + delta;
+    // Points déformés, relatifs à ceux du centre de la tuile (Terrain::GetWarpedPoints).
+    const float3 large = delta + WarpChange(delta, 6, WarpLarge);
+    const float3 small = large + WarpChange(delta, 7, WarpSmall);
     const float continents = Fbm(large, direction, 0, octaves, 0.0);
     const float land = smoothstep(-0.26, 0.06, continents);
     const float hillZone = smoothstep(0.05, 0.4, Fbm(large, direction, 2, octaves, 0.0));
@@ -431,27 +518,25 @@ float Height(Precise3 delta, uint octaves, out float2 zones)
     return relief * clamp(height, -1.0, 1.0);
 }
 
-float Height(Precise3 delta, uint octaves)
+float Height(float3 delta, uint octaves)
 {
     float2 zones;
     return Height(delta, octaves, zones);
 }
 
 // Écart δ entre la direction du point (colonne ci, ligne cj de inputs.columns) et celle du centre, sans soustraire
-// deux vecteurs unitaires voisins : v = v_c + Δv, |v|² = |v_c|² + Δa(a + a_c) + Δb(b + b_c). En Precise pour le relief
-// (multiplié par la fréquence des sommets comme la déformation), en float pour les positions.
-Precise3 PreciseDelta(uint ci, uint cj)
+// deux vecteurs unitaires voisins : v = v_c + Δv, |v|² = |v_c|² + Δa(a + a_c) + Δb(b + b_c).
+float3 Delta(uint ci, uint cj)
 {
     const float4 column = tile.columns[ci];
     const float4 row = tile.columns[cj];
-    const Precise3 dv = Precise3(tile.axisS.xyz) * Precise(column.x) + Precise3(tile.axisT.xyz) * Precise(row.z);
-    const Precise growth = Precise(column.x) * Precise(column.y) + Precise(row.z) * Precise(row.w);
-    const Precise lc = Precise(tile.center.w);
-    const Precise l = sqrt(lc * lc + growth);
-    const Precise3 vc = (Precise3(tile.center.xyz) + Precise3(tile.centerLow.xyz)) * lc;
+    const float3 dv = tile.axisS.xyz * column.x + tile.axisT.xyz * row.z;
+    const float growth = column.x * column.y + row.z * row.w;
+    const float lc = tile.center.w;
+    const float l = sqrt(lc * lc + growth);
+    const float3 vc = tile.center.xyz * lc;
     return dv / l - vc * (growth / (l * lc * (l + lc)));
 }
-float3 Delta(uint ci, uint cj) { return float3(PreciseDelta(ci, cj)); }
 
 // Position relative au centre de la tuile : d.(R + h) - d_c.R = d_c.h + δ.(R + h).
 float3 Local(float3 delta, float height)
@@ -598,13 +683,13 @@ void computeMain(uint thread : SV_GroupIndex)
             const uint i = p % Wide;
             const uint j = p / Wide;
             float2 zones;
-            wideHeights[p] = Height(PreciseDelta(i + 1, j + 1), tile.options.x, zones);
+            wideHeights[p] = Height(Delta(i + 1, j + 1), tile.options.x, zones);
             wideZones[p] = f32tof16(zones.x) | (f32tof16(zones.y) << 16);
         } else {
             const uint c = p - Wide * Wide;
             const uint ci = c % Coarse;
             const uint cj = c / Coarse;
-            coarseHeights[c] = Height(PreciseDelta(2 * ci, 2 * cj), tile.options.y);
+            coarseHeights[c] = Height(Delta(2 * ci, 2 * cj), tile.options.y);
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -778,7 +863,7 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         return false;
     }
     float2 zones;
-    const float height = Height(Precise3(delta), octaves, zones);
+    const float height = Height(delta, octaves, zones);
     // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
     if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
         return false;
@@ -817,8 +902,8 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
     const float4 traits = sowVegetation[0].species[species];
     // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
     const float e = 0.25;
-    const float3 du = Local(TreeDelta(u + e, v), Height(Precise3(TreeDelta(u + e, v)), octaves)) - position;
-    const float3 dv = Local(TreeDelta(u, v + e), Height(Precise3(TreeDelta(u, v + e)), octaves)) - position;
+    const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
+    const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
     const float3 up = normalize(local);
     if (abs(dot(normalize(cross(du, dv)), up)) < traits.z) {
         return false;
