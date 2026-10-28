@@ -60,8 +60,8 @@ namespace Flux::Planetology {
         }
     }
 
-    // Fil qui fait les tuiles : file remplacée à chaque mise à jour par les tuiles manquantes, les plus proches
-    // d'abord ; la tuile en cours finit toujours.
+    // Fils qui font les tuiles : file remplacée à chaque mise à jour par les tuiles manquantes, les plus proches
+    // d'abord ; une tuile en cours finit toujours. Plusieurs fils : le sol de collision suit un vol bas et rapide.
     struct PlanetGround::Worker {
         struct Job
         {
@@ -81,7 +81,21 @@ namespace Flux::Planetology {
         std::condition_variable_any wake;
         std::deque<Job> jobs;
         std::vector<Done> done;
-        std::jthread thread{[this](std::stop_token stop) { Run(stop); }}; // en dernier : arrêté avant le reste
+        // Tuiles en cours (une par fil) : pas remises dans la file, qu'un autre fil referait pour rien.
+        std::vector<Job> running;
+        std::vector<std::jthread> threads; // en dernier : arrêtés avant le reste
+
+        Worker() {
+            // Un quart des cœurs, de 1 à 4 : le reste pour Jolt et le fil principal.
+            const unsigned count = std::clamp(std::thread::hardware_concurrency() / 4, 1u, 4u);
+            for (unsigned i = 0; i < count; ++i) {
+                threads.emplace_back([this](std::stop_token stop) { Run(stop); });
+            }
+        }
+
+        static bool Same(const Job& a, std::uint64_t owner, TileKey key) {
+            return a.owner == owner && a.key == key;
+        }
 
         void Run(std::stop_token stop) {
             while (true) {
@@ -93,10 +107,12 @@ namespace Flux::Planetology {
                     }
                     job = std::move(jobs.front());
                     jobs.pop_front();
+                    running.push_back(job);
                 }
                 Done result{job.owner, job.key, {}, nullptr};
                 result.shape = BuildShape(*job.terrain, job.key, result.center);
                 std::scoped_lock lock(mutex);
+                std::erase_if(running, [&](const Job& other) { return Same(other, job.owner, job.key); });
                 done.push_back(std::move(result));
             }
         }
@@ -104,10 +120,15 @@ namespace Flux::Planetology {
         void Replace(std::vector<Job>& next) {
             {
                 std::scoped_lock lock(mutex);
+                // Ni celles en cours, ni celles finies depuis Collect : elles arrivent à la prochaine mise à jour.
+                std::erase_if(next, [&](const Job& job) {
+                    return std::ranges::any_of(running, [&](const Job& other) { return Same(other, job.owner, job.key); })
+                        || std::ranges::any_of(done, [&](const Done& other) { return other.owner == job.owner && other.key == job.key; });
+                });
                 jobs.assign(std::make_move_iterator(next.begin()), std::make_move_iterator(next.end()));
             }
             next.clear();
-            wake.notify_one();
+            wake.notify_all();
         }
 
         void Collect(std::vector<Done>& results) {

@@ -77,7 +77,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Planètes (Planetology)
 - ✅ Code des planètes réuni dans le domaine Planetology (`Flux::Planetology`, dossiers `Planetology/`).
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU, tout en float (déformation au centre de la tuile calculée en double par le CPU, le GPU n'en calcule que le changement : sol affiché et collision au millimètre près du sol sur une planète comme la Terre, plus de doubles lents sur le GPU) ; une tuile pas encore calculée ne remplace que son quart de la parente (le sol ne clignote plus quand la caméra tourne). Horizon calculé pour chaque tuile (son point le plus haut) ; sol calculé en avance là où va la caméra (2 s de sa vitesse : rien ne change à pied, tuiles prêtes en vaisseau), sans être dessiné avant d'être assez près : le détail ne retombe plus à l'arrêt de la caméra.
-- ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets.
+- ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets. Tuiles de collision construites sur 1 à 4 fils (un quart des cœurs), les plus proches d'abord, sans refaire une tuile en cours (environ 2,5 ms par tuile mesurées sur un Xeon à 2,1 GHz).
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
 - 🔧 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; dans l'air d'une planète, le ciel de l'espace n'éclaire plus de jour (l'atmosphère éclaire à sa place) et peu la nuit. Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour (« Lumière de contour ») aussi sur les planètes, liseré selon la sphère, vue de l'espace seulement (effacée sous deux hauteurs d'atmosphère : au sol elle voilait tout le terrain). À améliorer : pas de cycle jour / nuit.
 - ✅ Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
@@ -119,6 +119,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Tests (FluxTests), CI MSVC Debug + Release, tests GPU sur GPU logiciel (lavapipe).
 - ✅ Debug utilisable : Jolt optimisé en Debug, préréglage « Release + débogage », petits mondes physiques sans fils.
 - ✅ Version affichée dans le jeu : numéro + commit Git.
+- ✅ Instructions AVX2 (processeur minimum : Intel Haswell 2013, AMD Ryzen 2017 ; Bruno, 2026-10-28) pour tout le projet, Jolt compris (il restait en SSE2 avec Ninja), sans FMA implicite (relief C++ identique au shader). Pas de SIMD écrit à la main : à envisager pour le bruit des tuiles de collision (`Terrain::GetHeight`, 4 points à la fois) seulement si une mesure le justifie (mesuré : 2,5 ms par tuile, -13 % avec la seule option AVX2).
 - 🔧 Classe `Engine` allégée (demande de Bruno du 2026-10-25) : ses services sont des classes privées de `src/Core` qu'elle possède (caméra du joueur, sauvegarde rapide, liaisons des interfaces, infos de vol, écran de chargement, panneau Moteur) ; les changer ne recompile ni l'éditeur ni le jeu. À améliorer : `Engine::Run` et `UpdateGameSystems` restent longues ; le warp est encore dans `Engine` (`EngineWarp.cpp`) ; les infos de vol iront peut-être dans le module du jeu.
 
 ## Prochaines étapes
@@ -266,6 +267,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Backend DX12.
 
 ## Dettes et limites connues
+- Un processeur sans AVX2 s'arrête net au lancement, sans message (à ajouter avec la configuration de distribution).
 - Les lumières sont parcourues pixel par pixel, sans tuiles (lent au-delà de quelques dizaines).
 - Les reflets viennent seulement du ciel, pas de la scène.
 - L'atlas de police est régénéré au démarrage et limité au Latin-1.

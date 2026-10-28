@@ -27,6 +27,16 @@ if(MSVC)
     add_compile_options(/utf-8 /Zc:__cplusplus)
 endif()
 
+# Processeur minimum : AVX2 (Intel Haswell 2013, AMD Ryzen 2017), pour tout le projet et ses dépendances (décision de
+# Bruno du 2026-10-28). Jolt ne le met lui-même qu'avec le générateur Visual Studio, pas avec Ninja : il restait en SSE2.
+# Pas de multiplication-addition fusionnée implicite (FMA) : elle changerait les doubles du relief, que PlanetGpuTests
+# compare au shader. MSVC n'en génère pas sans /fp:contract ; GCC, lui, est forcé avec -ffp-contract=off.
+if(MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/arch:AVX2>)
+else()
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-march=x86-64-v3> $<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=off>)
+endif()
+
 if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
     # Ninja apprend de quels en-têtes dépend chaque .cpp en lisant les lignes « inclusion du fichier » de /showIncludes.
     # Un MSVC en français les écrit avec des espaces insécables, dans un encodage qui change avec /utf-8 : Ninja ne les
