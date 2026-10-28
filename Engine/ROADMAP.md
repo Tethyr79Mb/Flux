@@ -162,9 +162,18 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   arbre, couleur des forêts lointaines selon le biome. Humidité en bandes de latitude comme sur Terre (déserts vers
   25-30°, taïga vers 55-65°, toundra au-delà). À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; 8 variantes d'arbres au plus par planète ; imposteurs en 3 quads croisés (plats vus
-  d'en haut) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas de
-  collision ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
+  d'en haut) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas
+  d'occlusion (un arbre derrière une montagne ou derrière d'autres arbres est quand même dessiné : prochaine étape,
+  avec la pyramide de profondeur des objets) ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
   s'enfoncer un peu sur le sol plus grossier.
+- 🔧 Collision des arbres : les plaines autour de ce qui peut les toucher (vaisseaux, personnages, objets simulés) sont
+  resemées par le CPU en double (`Planetology/TreeSowing`, copie du semis du GPU, mêmes arbres à 0,5 % près, vérifié
+  par `VegetationGpuTests`) sur les fils des tuiles de collision, une capsule Jolt par tronc (rayon et hauteur par
+  espèce, panneau Végétation), un corps par plaine ; les 32 dernières plaines restent gardées (allers-retours sans
+  refaire). Hasard du climat et des forêts haché sur des entiers (le même sur tous les GPU et le CPU ; les forêts ont
+  changé de place). À améliorer : environ 20 ms de fil par plaine semée (mesuré sur un Xeon à 2,1 GHz, 600 arbres) ;
+  troncs droits sans branches (un vaisseau passe dans les cimes) ; arbres qu'on ne peut ni couper ni planter (le jour
+  venu : enregistrer seulement les changements, plaine + place, façon Minecraft, lus par les deux semis).
 - ⬜ Canyons (demande de Bruno du 2026-10-21) : gorges creusées dans le relief, parois raides en strates, fond plat ou
   sinueux, sur les planètes sèches comme le long des rivières. À faire dans `Terrain::GetHeight` et `Height`
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.

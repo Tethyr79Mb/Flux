@@ -6,6 +6,8 @@
 #include "Flux/Math/Quaternion.hpp"
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/Scene/Components.hpp"
+#include "Planetology/TreeSowing.hpp"
+#include "Planetology/VegetationLibrary.hpp"
 
 #include <Jolt/Jolt.h>
 
@@ -14,6 +16,7 @@
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <unordered_map>
@@ -32,6 +35,8 @@ namespace Flux::Planetology {
     // du niveau le plus fin, celles que la caméra voit de près (BuildTileSurface), en maillages Jolt immobiles.
     // Les tuiles sont faites sur un fil à part, sans arrêter le jeu ; celle juste sous un objet tout près du sol est
     // faite tout de suite s'il n'y en a pas encore (apparition, téléportation), pour qu'il ne passe jamais au travers.
+    // Les arbres (VegetationComponent) aussi : les plaines proches sont semées par le CPU (SowPlain, les mêmes arbres
+    // que ceux du GPU), un corps immobile par plaine, une capsule par tronc (TreeSpecies::trunkRadius, trunkHeight).
     class PlanetGround {
         public:
         // Ce qui peut toucher le sol : sa position (relative à l'ancre du monde) et la distance où il lui faut du sol
@@ -50,8 +55,9 @@ namespace Flux::Planetology {
 
         // Planètes de la scène (hors vaisseaux), tuiles finies ajoutées, tuiles demandées autour des sondes, tuiles
         // plus utilisées retirées. wait : toutes les tuiles demandées sont faites tout de suite (chargement de la scène).
+        // assetsDirectory : d'où sont lus les biomes et les espèces d'arbres (vide : pas d'arbres).
         void Update(const Scene& scene, const Math::WorldPosition& anchor, std::span<const Probe> probes, JPH::PhysicsSystem& system,
-                    bool wait);
+                    const std::filesystem::path& assetsDirectory, bool wait);
         // L'ancre du monde a bougé : tout se décale de `shift`.
         void Shift(JPH::PhysicsSystem& system, const Math::Vector3d& shift);
         // Retire tous les corps (fin du monde).
@@ -66,17 +72,23 @@ namespace Flux::Planetology {
         bool HasPlanets() const { return !m_planets.empty(); }
         // Tuiles de sol dans le monde (pour les tests).
         int GetTileCount() const;
+        // Troncs d'arbres dans le monde (pour les tests).
+        int GetTreeCount() const;
 
         private:
+        // Une tuile de sol, ou une plaine d'arbres.
         struct Tile
         {
-            JPH::BodyID body; // invalide : demandée, pas encore faite
+            JPH::BodyID body; // invalide : demandée, pas encore faite (ou plaine sans arbre, si built)
             std::uint64_t lastUsed = 0;
+            int trees = 0;
+            bool built = false;
         };
         struct PlanetState
         {
             std::shared_ptr<const Terrain> terrain;
             std::uint64_t owner = 0;
+            std::uint64_t plainOwner = 0; // des plaines d'arbres
             float radius = 0.0f;
             float relief = -1.0f;
             std::int32_t seed = 0;
@@ -87,18 +99,28 @@ namespace Flux::Planetology {
             Math::Vector3d position; // centre, relatif à l'ancre
             Math::Quaternionf rotation;
             std::unordered_map<std::uint64_t, Tile> tiles;
+            // Arbres : biomes et espèces (nullptr : aucun), réglages du semis, plaines semées.
+            std::shared_ptr<const VegetationSet> vegetation;
+            SowSettings sow;
+            std::uint32_t plainLevel = 0;
+            double treeTop = 0.0; // plus haut tronc possible (m)
+            std::unordered_map<std::uint64_t, Tile> plains;
             bool seen = false;
         };
         struct Worker;
 
         void RemoveTiles(JPH::PhysicsSystem& system, PlanetState& state);
+        void RemovePlains(JPH::PhysicsSystem& system, PlanetState& state);
         void AddTile(JPH::PhysicsSystem& system, Entity entity, PlanetState& state, TileKey key, const Math::Vector3d& center,
-                     const JPH::Shape& shape);
-        void Request(const PlanetState& state, const Probe& probe, std::vector<TileKey>& keys, bool& underMissing,
-                     TileKey& under) const;
+                     const JPH::Shape* shape, int trees, bool plain);
+        void UpdateVegetation(const Scene& scene, Entity entity, const PlanetComponent& planet, PlanetState& state,
+                              const std::filesystem::path& assetsDirectory, JPH::PhysicsSystem& system);
+        void Request(const PlanetState& state, const Probe& probe, std::vector<TileKey>& keys, std::vector<TileKey>& plains,
+                     bool& underMissing, TileKey& under) const;
 
         JPH::ObjectLayer m_layer;
         std::unordered_map<Entity, PlanetState> m_planets;
+        VegetationLibrary m_vegetation;
         std::unique_ptr<Worker> m_worker;
         std::uint64_t m_update = 0;
         std::uint64_t m_nextOwner = 1;

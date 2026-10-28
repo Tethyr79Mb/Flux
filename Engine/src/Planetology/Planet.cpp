@@ -788,6 +788,18 @@ namespace Flux::Planetology {
         }
     }
 
+    Math::Vector3d DirectionInTile(TileKey key, double u, double v) {
+        const Face& f = Faces[key.face % 6];
+        const auto tangent = [&](std::uint32_t first, double at) {
+            const std::uint32_t cell = std::min(static_cast<std::uint32_t>(std::max(at, 0.0)), TileQuads - 1);
+            const auto index = static_cast<std::int64_t>(first) * TileQuads + cell;
+            const double a = std::tan(GridToFace(index, key.level) * QuarterPi);
+            const double b = std::tan(GridToFace(index + 1, key.level) * QuarterPi);
+            return a + (b - a) * (at - static_cast<double>(cell));
+        };
+        return Math::Normalize(f.normal + f.s * tangent(key.x, u) + f.t * tangent(key.y, v));
+    }
+
     void BuildTileSurface(const Terrain& terrain, TileKey key, Math::Vector3d& center, std::vector<Math::Vector3f>& positions) {
         // Mêmes calculs que BuildTile, dans le même ordre : mêmes doubles, donc mêmes floats.
         const double R = terrain.GetRadius();

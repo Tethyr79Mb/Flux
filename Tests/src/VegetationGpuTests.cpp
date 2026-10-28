@@ -1,10 +1,12 @@
 // Arbres semés par le GPU (computeTrees dans shaders/PlanetTile.slang) : posés sur le relief de la référence du CPU
 // (Terrain::GetHeight au détail le plus fin), droits, aux mêmes places d'une fois à l'autre, absents là où la pente
 // les refuse, chacun d'une espèce de son biome (zones du relief, parts des espèces). Ignorés (réussis) sans GPU
-// Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
+// Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe). Le semis refait par le CPU pour la collision
+// (Planetology::SowPlain) retrouve les mêmes arbres.
 #include "Check.hpp"
 
 #include "Flux/Planetology/Planet.hpp"
+#include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationRenderer.hpp"
 #include "Renderer/RHI/RHI.hpp"
 
@@ -13,7 +15,9 @@
 #include <cmath>
 #include <initializer_list>
 #include <utility>
+#include <iterator>
 #include <memory>
+#include <span>
 #include <vector>
 
 using namespace Flux;
@@ -24,13 +28,15 @@ namespace {
 
     // Une espèce de tailles [minScale, maxScale].
     VegetationSet::Species Species(float minScale, float maxScale, float maxSlope) {
-        return {{"a.glb", "a.glb", "a.glb"}, minScale, maxScale, maxSlope, 0.0f};
+        return {{"a.glb", "a.glb", "a.glb"}, minScale, maxScale, maxSlope, 0.0f, 0.3f, 10.0f};
     }
 
     // Un biome partout (zones, climat et altitude sans limite), de couverture et densité données ; ses espèces (une
     // variante chacune) et leurs parts.
+    // ranges : altitude (fraction du relief) et température ; humidity : humidité.
     void AddBiome(VegetationSet& set, std::array<float, 3> zones, float cover, float density,
-                  std::initializer_list<std::pair<std::uint32_t, float>> species) {
+                  std::initializer_list<std::pair<std::uint32_t, float>> species,
+                  std::array<float, 4> ranges = {-10.0f, 10.0f, -1000.0f, 1000.0f}, std::array<float, 2> humidity = {-10.0f, 10.0f}) {
         std::array<std::uint32_t, 4> entries{};
         std::array<float, 4> shares{1.0f, 1.0f, 1.0f, 1.0f};
         float total = 0.0f;
@@ -49,7 +55,7 @@ namespace {
             entries[s] = entries[used - 1];
             shares[s] = 1.0f;
         }
-        set.biomes.push_back({{zones[0], zones[1], zones[2], cover}, {-10.0f, 10.0f, -1000.0f, 1000.0f}, {-10.0f, 10.0f, density, 1.0f}, {}});
+        set.biomes.push_back({{zones[0], zones[1], zones[2], cover}, ranges, {humidity[0], humidity[1], density, 1.0f}, {}});
         set.biomeSpecies.push_back(entries);
         set.biomeShares.push_back(shares);
         ++set.revision;
@@ -84,6 +90,51 @@ namespace {
         }
         return true;
     }
+
+    // Le semis du CPU (SowPlain) retrouve les arbres du GPU : mêmes places (à 5 cm), espèces et tailles. Seuls
+    // quelques-uns au ras d'un seuil (plage, neige, pente, bord d'une forêt ou d'un biome) peuvent manquer d'un côté,
+    // le relief du GPU étant en float : 0,5 % au plus.
+    bool SameAsCpu(const Planetology::Terrain& terrain, const PlanetComponent& planet, const VegetationSet& biomes,
+                   std::span<const Planetology::TileKey> keys, const std::vector<std::vector<VegetationRenderer::Tree>>& gpu,
+                   const char* name) {
+        const Planetology::SowSettings settings = Planetology::GetSowSettings(terrain, planet);
+        std::vector<Planetology::SownTree> cpu;
+        std::size_t total = 0;
+        std::size_t missing = 0;
+        for (std::size_t k = 0; k < keys.size(); ++k) {
+            Planetology::SowPlain(terrain, settings, biomes, keys[k], cpu);
+            const Math::Vector3d origin = Planetology::GetTileBounds(terrain, keys[k]).origin;
+            std::vector<VegetationRenderer::Tree> sorted = gpu[k];
+            std::ranges::sort(sorted, {}, [](const VegetationRenderer::Tree& t) { return t.position.x; });
+            std::vector<bool> used(sorted.size(), false);
+            std::size_t matched = 0;
+            for (const Planetology::SownTree& tree : cpu) {
+                const Math::Vector3d local = tree.position - origin;
+                auto it = std::ranges::lower_bound(sorted, local.x - 0.05, {}, [](const VegetationRenderer::Tree& t) { return t.position.x; });
+                for (; it != sorted.end() && it->position.x <= local.x + 0.05; ++it) {
+                    const auto index = static_cast<std::size_t>(it - sorted.begin());
+                    if (!used[index] && Math::Length(Math::Vector3d(it->position) - local) < 0.05) {
+                        used[index] = true;
+                        ++matched;
+                        if (SpeciesOf(*it) != tree.species || std::abs(it->scale - tree.scale) > 1.0e-3f) {
+                            std::printf("ÉCHEC %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
+                                        SpeciesOf(*it), it->scale, tree.species, tree.scale);
+                            return false;
+                        }
+                        break;
+                    }
+                }
+            }
+            total += std::max(cpu.size(), sorted.size());
+            missing += cpu.size() + sorted.size() - 2 * matched;
+        }
+        std::printf("  %s : %zu arbres, %zu d'un seul côté (CPU ou GPU)\n", name, total, missing);
+        if (static_cast<double>(missing) > 0.005 * static_cast<double>(total) + 2.0) {
+            std::printf("ÉCHEC %s : trop d'arbres différents entre le CPU et le GPU\n", name);
+            return false;
+        }
+        return true;
+    }
 }
 
 bool RunVegetationGpuTests() {
@@ -113,6 +164,7 @@ bool RunVegetationGpuTests() {
 
     std::vector<std::vector<VegetationRenderer::Tree>> first;
     CHECK(Sow(**device, terrain, planet, everywhere, keys, first));
+    CHECK(SameAsCpu(terrain, planet, everywhere, keys, first, "partout"));
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
     for (std::size_t k = 0; k < keys.size(); ++k) {
         // Forêt partout et densité 1 : presque toutes les places.
@@ -167,6 +219,7 @@ bool RunVegetationGpuTests() {
     mixed.species = {Species(0.7f, 1.3f, 90.0f), Species(2.0f, 3.0f, 90.0f)};
     AddBiome(mixed, {1.0f, 1.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}, {1, 3.0f}});
     CHECK(Sow(**device, terrain, planet, mixed, keys, second));
+    CHECK(SameAsCpu(terrain, planet, mixed, keys, second, "deux espèces"));
     std::size_t total = 0;
     std::size_t large = 0;
     for (const auto& plain : second) {
@@ -208,6 +261,7 @@ bool RunVegetationGpuTests() {
     }
     CHECK(edges.size() == buckets.size());
     CHECK(Sow(**device, terrain, planet, zoned, edges, second));
+    CHECK(SameAsCpu(terrain, planet, zoned, edges, second, "zones"));
     for (std::size_t k = 0; k < edges.size(); ++k) {
         const Math::Vector3d origin = Planetology::GetTileBounds(terrain, edges[k]).origin;
         std::size_t mountain = 0;
@@ -228,5 +282,43 @@ bool RunVegetationGpuTests() {
             return false;
         }
     }
+
+    // Une planète comme celle du jeu : océan, plages, neige, climat en bandes de latitude, forêts à moitié, des biomes
+    // selon la température et l'humidité, des pentes refusées. Le semis du CPU suit celui du GPU sur toutes les plaines.
+    PlanetComponent earth = planet;
+    earth.temperature = 22.0f;
+    earth.poleTemperature = -25.0f;
+    earth.humidity = 0.4f;
+    earth.ocean = true;
+    earth.seaLevel = 0.0f;
+    earth.beachHeight = 4.0f;
+    earth.snowLevel = 55.0f;
+    VegetationSet climates;
+    climates.species = {Species(0.7f, 1.3f, 30.0f), Species(0.8f, 1.4f, 40.0f), Species(1.5f, 2.5f, 25.0f), Species(0.6f, 1.0f, 50.0f)};
+    AddBiome(climates, {0.0f, 0.3f, 1.0f}, 0.6f, 0.7f, {{0, 1.0f}, {3, 1.0f}}, {0.2f, 0.9f, -1000.0f, 1000.0f});
+    AddBiome(climates, {1.0f, 1.0f, 0.5f}, 0.4f, 0.6f, {{1, 1.0f}}, {-10.0f, 10.0f, -40.0f, 5.0f});
+    AddBiome(climates, {1.0f, 1.0f, 1.0f}, 0.7f, 0.8f, {{2, 2.0f}, {0, 1.0f}}, {-10.0f, 10.0f, 5.0f, 45.0f}, {0.45f, 10.0f});
+    AddBiome(climates, {1.0f, 1.0f, 1.0f}, 0.3f, 0.4f, {{3, 1.0f}}, {-10.0f, 10.0f, 5.0f, 45.0f}, {-10.0f, 0.45f});
+    std::vector<Planetology::TileKey> world;
+    for (int i = 0; i < 12; ++i) {
+        const double a = i * 2.399963;
+        const double y = 0.95 - 1.9 * (i + 0.5) / 12.0;
+        const double r = std::sqrt(1.0 - y * y);
+        world.push_back(Planetology::FindTile(Math::Vector3d{r * std::cos(a), y, r * std::sin(a)}, level));
+    }
+    // Par 4 : le renderer n'en sème pas plus par image (MaxSownPerFrame).
+    second.clear();
+    for (std::size_t start = 0; start < world.size(); start += VegetationRenderer::MaxSownPerFrame) {
+        std::vector<std::vector<VegetationRenderer::Tree>> batch;
+        const std::size_t count = std::min<std::size_t>(VegetationRenderer::MaxSownPerFrame, world.size() - start);
+        CHECK(Sow(**device, terrain, earth, climates, std::span(world).subspan(start, count), batch));
+        std::ranges::move(batch, std::back_inserter(second));
+    }
+    std::size_t sown = 0;
+    for (const auto& plain : second) {
+        sown += plain.size();
+    }
+    CHECK(sown > 2000);
+    CHECK(SameAsCpu(terrain, earth, climates, world, second, "climats"));
     return true;
 }

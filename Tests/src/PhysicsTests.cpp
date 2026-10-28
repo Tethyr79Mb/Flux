@@ -7,6 +7,8 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
+#include "Planetology/TreeSowing.hpp"
+#include "Planetology/VegetationLibrary.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1194,9 +1197,85 @@ namespace {
     }
 }
 
+namespace {
+    // Arbres d'une planète (VegetationComponent) : semés par le CPU près de ce qui peut les toucher, leur tronc arrête
+    // un tir (et tout le reste) ; sans dossier des assets, pas d'arbre.
+    bool RunPlanetTreeTests() {
+        const std::filesystem::path assets = std::filesystem::temp_directory_path() / "FluxTreeTests";
+        std::filesystem::create_directories(assets / "Vegetation");
+        std::ofstream(assets / "Vegetation" / "Foret.biome.json")
+            << R"({"cover": 1, "density": 0.03, "species": [{"species": "Vegetation/Arbre.espece.json", "share": 1}]})";
+        std::ofstream(assets / "Vegetation" / "Arbre.espece.json")
+            << R"({"variants": [{"model": "a.glb"}], "minScale": 1, "maxScale": 1, "maxSlope": 90, "trunkRadius": 0.5, "trunkHeight": 12})";
+
+        Scene scene;
+        const Entity planet = scene.CreateEntity("Planète");
+        const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
+        VegetationComponent& vegetation = scene.Add<VegetationComponent>(planet);
+        vegetation = VegetationComponent{};
+        vegetation.biome1 = "Vegetation/Foret.biome.json";
+        vegetation.biome2 = vegetation.biome3 = vegetation.biome4 = vegetation.biome5 = vegetation.biome6 = "";
+        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth);
+        Planetology::VegetationLibrary library;
+        const Planetology::VegetationSet& set = library.Get(assets, vegetation);
+        CHECK(set.biomes.size() == 1 && set.species.size() == 1 && set.species[0].trunkRadius == 0.5f);
+
+        // Un arbre à plus de 8 m de tout autre, sur une plaine qui en a.
+        const std::uint32_t level = Planetology::GetPlainLevel(terrain);
+        std::vector<Planetology::SownTree> trees;
+        std::optional<Planetology::SownTree> lonely;
+        for (int i = 0; i < 64 && !lonely; ++i) {
+            const double a = i * 2.399963;
+            const double y = 0.9 - 1.8 * (i + 0.5) / 64.0;
+            const double r = std::sqrt(1.0 - y * y);
+            const Planetology::TileKey plain = Planetology::FindTile(Math::Vector3d{r * std::cos(a), y, r * std::sin(a)}, level);
+            Planetology::SowPlain(terrain, Planetology::GetSowSettings(terrain, planetComponent), set, plain, trees);
+            for (const Planetology::SownTree& tree : trees) {
+                const bool alone = std::ranges::none_of(trees, [&](const Planetology::SownTree& other) {
+                    return &other != &tree && Math::Length(other.position - tree.position) < 8.0;
+                });
+                if (alone) {
+                    lonely = tree;
+                    break;
+                }
+            }
+        }
+        CHECK(lonely.has_value());
+        const Math::Vector3d up = Math::Normalize(lonely->position);
+        const Math::Vector3d side = Math::Normalize(Math::Cross(up, Math::Vector3d{0.0, 1.0, 0.0}));
+
+        // Un vaisseau (sans coque) 30 m au-dessus : le sol et les arbres autour de lui.
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Get<TransformComponent>(ship).position = lonely->position + up * 30.0;
+        scene.Add<ShipComponent>(ship);
+        const auto shoot = [&](PhysicsWorld& world) {
+            Math::WorldPosition from{};
+            from += lonely->position + up * 2.0 + side * 6.0;
+            return world.CastRay(scene, from, Math::Vector3f(side * -12.0));
+        };
+        {
+            PhysicsWorld world;
+            world.SetAssetsDirectory(assets);
+            world.Prepare(scene);
+            CHECK(world.GetGroundTreeCount() > 0);
+            const auto hit = shoot(world);
+            CHECK(hit && hit->entity == planet);
+            // Le tronc (0,5 m de rayon) à 6 m.
+            CHECK(std::abs(hit->fraction * 12.0f - 5.5f) < 0.05f);
+        }
+        {
+            PhysicsWorld world;
+            world.Prepare(scene);
+            CHECK(world.GetGroundTreeCount() == 0 && !shoot(world));
+        }
+        std::filesystem::remove_all(assets);
+        return true;
+    }
+}
+
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunSlopeTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
         && RunShipCollisionTests() && RunShipFallTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
-        && RunFarPlanetTests() && RunWorldTests();
+        && RunFarPlanetTests() && RunPlanetTreeTests() && RunWorldTests();
 }

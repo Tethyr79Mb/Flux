@@ -1433,7 +1433,7 @@ namespace Flux {
             }
             // Le sol des planètes autour de tout ce qui peut le toucher, sans attendre : rien ne tombe au travers.
             CollectProbes(scene);
-            planetGround.Update(scene, anchor, probes, *grids.front()->system, true);
+            planetGround.Update(scene, anchor, probes, *grids.front()->system, shared.assetsDirectory, true);
         }
 
         void Update(Scene& scene, double deltaSeconds, const CharacterInput& input) {
@@ -1448,7 +1448,7 @@ namespace Flux {
             ComputeTransforms(scene);
             Synchronize(scene);
             CollectProbes(scene);
-            planetGround.Update(scene, anchor, probes, *grids.front()->system, false);
+            planetGround.Update(scene, anchor, probes, *grids.front()->system, shared.assetsDirectory, false);
 
             pendingJump = pendingJump || input.jump;
             accumulator = std::min(accumulator + deltaSeconds, static_cast<double>(StepSeconds * MaxStepsPerUpdate));
@@ -1676,6 +1676,10 @@ namespace Flux {
 
     int PhysicsWorld::GetGroundTileCount() const {
         return m_impl->planetGround.GetTileCount();
+    }
+
+    int PhysicsWorld::GetGroundTreeCount() const {
+        return m_impl->planetGround.GetTreeCount();
     }
 
     float PhysicsWorld::CastCamera(const Scene& scene, Entity player, const Math::WorldPosition& from,

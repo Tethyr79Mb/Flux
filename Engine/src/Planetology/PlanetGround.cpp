@@ -4,13 +4,16 @@
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <numbers>
 #include <stop_token>
@@ -26,6 +29,9 @@ namespace Flux::Planetology {
         // posé à la limite garderait sinon un bas penché vers la planète).
         constexpr double GravityReach = 2.0;
         constexpr double GravityBlend = 1.5;
+        // Plaines d'arbres gardées après leur dernière demande (les plus récentes) : un aller-retour ne les refait pas.
+        // Quelques centaines de Ko chacune.
+        constexpr std::size_t KeptPlains = 32;
         // Rayon au plus du disque de tuiles autour d'une sonde, en mètres.
         constexpr double MaxProbeDisc = 200.0;
 
@@ -58,6 +64,39 @@ namespace Flux::Planetology {
             const JPH::ShapeSettings::ShapeResult result = JPH::MeshShapeSettings(std::move(vertices), std::move(triangles)).Create();
             return result.IsValid() ? result.Get() : nullptr;
         }
+
+        // Troncs des arbres d'une plaine (SowPlain), relatifs à `center` (repère de la planète) : une capsule chacun,
+        // du pied jusqu'à sa hauteur, droite (vers le haut de la planète). nullptr sans arbre.
+        JPH::RefConst<JPH::Shape> BuildTrees(const Terrain& terrain, const SowSettings& sow, const VegetationSet& set, TileKey key,
+                                             Math::Vector3d& center, int& count) {
+            thread_local std::vector<SownTree> trees;
+            SowPlain(terrain, sow, set, key, trees);
+            center = DirectionInTile(key, 0.5 * TileQuads, 0.5 * TileQuads) * terrain.GetRadius();
+            count = 0;
+            JPH::StaticCompoundShapeSettings compound;
+            for (const SownTree& tree : trees) {
+                const VegetationSet::Species& species = set.species[tree.species];
+                const float radius = species.trunkRadius * tree.scale;
+                const float height = species.trunkHeight * tree.scale;
+                if (radius < 0.01f || height < 2.0f * radius) {
+                    continue;
+                }
+                const Math::Vector3d up = Math::Normalize(tree.position);
+                const Math::Vector3d middle = tree.position + up * (0.5 * height) - center;
+                // Rotation qui amène +y (l'axe des capsules de Jolt) sur le haut, comme Align dans shaders/Vegetation.slang.
+                const JPH::Quat rotation = up.y < -0.9999 ? JPH::Quat(1.0f, 0.0f, 0.0f, 0.0f)
+                                                          : JPH::Quat(static_cast<float>(up.z), 0.0f, static_cast<float>(-up.x),
+                                                                      static_cast<float>(1.0 + up.y)).Normalized();
+                compound.AddShape(JPH::Vec3(static_cast<float>(middle.x), static_cast<float>(middle.y), static_cast<float>(middle.z)),
+                                  rotation, new JPH::CapsuleShape(0.5f * height - radius, radius));
+                ++count;
+            }
+            if (count == 0) {
+                return nullptr;
+            }
+            const JPH::ShapeSettings::ShapeResult result = compound.Create();
+            return result.IsValid() ? result.Get() : nullptr;
+        }
     }
 
     // Fils qui font les tuiles : file remplacée à chaque mise à jour par les tuiles manquantes, les plus proches
@@ -68,13 +107,17 @@ namespace Flux::Planetology {
             std::shared_ptr<const Terrain> terrain;
             std::uint64_t owner = 0;
             TileKey key;
+            std::shared_ptr<const VegetationSet> vegetation; // plaine d'arbres, sinon tuile de sol
+            SowSettings sow;
         };
         struct Done
         {
             std::uint64_t owner = 0;
             TileKey key;
+            bool plain = false;
             Math::Vector3d center;
             JPH::RefConst<JPH::Shape> shape;
+            int trees = 0;
         };
 
         std::mutex mutex;
@@ -93,8 +136,8 @@ namespace Flux::Planetology {
             }
         }
 
-        static bool Same(const Job& a, std::uint64_t owner, TileKey key) {
-            return a.owner == owner && a.key == key;
+        static bool Same(const Job& a, std::uint64_t owner, TileKey key, bool plain) {
+            return a.owner == owner && a.key == key && (a.vegetation != nullptr) == plain;
         }
 
         void Run(std::stop_token stop) {
@@ -109,10 +152,11 @@ namespace Flux::Planetology {
                     jobs.pop_front();
                     running.push_back(job);
                 }
-                Done result{job.owner, job.key, {}, nullptr};
-                result.shape = BuildShape(*job.terrain, job.key, result.center);
+                Done result{job.owner, job.key, job.vegetation != nullptr, {}, nullptr, 0};
+                result.shape = job.vegetation ? BuildTrees(*job.terrain, job.sow, *job.vegetation, job.key, result.center, result.trees)
+                                              : BuildShape(*job.terrain, job.key, result.center);
                 std::scoped_lock lock(mutex);
-                std::erase_if(running, [&](const Job& other) { return Same(other, job.owner, job.key); });
+                std::erase_if(running, [&](const Job& other) { return Same(other, job.owner, job.key, result.plain); });
                 done.push_back(std::move(result));
             }
         }
@@ -122,8 +166,11 @@ namespace Flux::Planetology {
                 std::scoped_lock lock(mutex);
                 // Ni celles en cours, ni celles finies depuis Collect : elles arrivent à la prochaine mise à jour.
                 std::erase_if(next, [&](const Job& job) {
-                    return std::ranges::any_of(running, [&](const Job& other) { return Same(other, job.owner, job.key); })
-                        || std::ranges::any_of(done, [&](const Done& other) { return other.owner == job.owner && other.key == job.key; });
+                    const bool plain = job.vegetation != nullptr;
+                    return std::ranges::any_of(running, [&](const Job& other) { return Same(other, job.owner, job.key, plain); })
+                        || std::ranges::any_of(done, [&](const Done& other) {
+                               return other.owner == job.owner && other.key == job.key && other.plain == plain;
+                           });
                 });
                 jobs.assign(std::make_move_iterator(next.begin()), std::make_move_iterator(next.end()));
             }
@@ -150,25 +197,70 @@ namespace Flux::Planetology {
             }
         }
         state.tiles.clear();
+        RemovePlains(system, state);
         state.owner = m_nextOwner++; // les tuiles encore en cours seront ignorées
     }
 
+    void PlanetGround::RemovePlains(JPH::PhysicsSystem& system, PlanetState& state) {
+        JPH::BodyInterface& bodies = system.GetBodyInterface();
+        for (const auto& [packed, plain] : state.plains) {
+            if (!plain.body.IsInvalid()) {
+                bodies.RemoveBody(plain.body);
+                bodies.DestroyBody(plain.body);
+            }
+        }
+        state.plains.clear();
+        state.plainOwner = m_nextOwner++; // les plaines encore en cours seront ignorées
+    }
+
     void PlanetGround::AddTile(JPH::PhysicsSystem& system, Entity entity, PlanetState& state, TileKey key,
-                               const Math::Vector3d& center, const JPH::Shape& shape) {
-        const auto found = state.tiles.find(key.Pack());
-        if (found == state.tiles.end() || !found->second.body.IsInvalid()) {
+                               const Math::Vector3d& center, const JPH::Shape* shape, int trees, bool plain) {
+        auto& tiles = plain ? state.plains : state.tiles;
+        const auto found = tiles.find(key.Pack());
+        if (found == tiles.end() || found->second.built) {
             return; // plus demandée, ou déjà faite (tout de suite, pendant qu'elle était en cours)
         }
+        found->second.built = true;
+        found->second.trees = trees;
+        if (!shape) {
+            return; // plaine sans arbre
+        }
         const Math::Quaternionf& r = state.rotation;
-        JPH::BodyCreationSettings settings(&shape, ToJolt(state.position + r.Rotate(center)), JPH::Quat(r.x, r.y, r.z, r.w).Normalized(),
+        JPH::BodyCreationSettings settings(shape, ToJolt(state.position + r.Rotate(center)), JPH::Quat(r.x, r.y, r.z, r.w).Normalized(),
                                            JPH::EMotionType::Static, m_layer);
         settings.mUserData = static_cast<JPH::uint64>(entt::to_integral(entity));
-        settings.mFriction = 0.8f; // terre, rochers
+        settings.mFriction = plain ? 0.6f : 0.8f; // écorce ; terre, rochers
         found->second.body = system.GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
     }
 
-    void PlanetGround::Request(const PlanetState& state, const Probe& probe, std::vector<TileKey>& keys, bool& underMissing,
-                               TileKey& under) const {
+    void PlanetGround::UpdateVegetation(const Scene& scene, Entity entity, const PlanetComponent& planet, PlanetState& state,
+                                        const std::filesystem::path& assetsDirectory, JPH::PhysicsSystem& system) {
+        const VegetationComponent* component = scene.GetRegistry().try_get<VegetationComponent>(entity);
+        const VegetationSet* set = component && !assetsDirectory.empty() ? &m_vegetation.Get(assetsDirectory, *component) : nullptr;
+        const SowSettings sow = GetSowSettings(*state.terrain, planet);
+        const bool none = !set || set->biomes.empty();
+        if (none ? !state.vegetation : (state.vegetation && state.vegetation->revision == set->revision && state.sow == sow)) {
+            return;
+        }
+        // Autres biomes, espèces ou réglages : les arbres sont à resemer (ceux en cours seront ignorés).
+        RemovePlains(system, state);
+        state.vegetation = none ? nullptr : std::make_shared<const VegetationSet>(*set);
+        state.sow = sow;
+        state.plainLevel = GetPlainLevel(*state.terrain);
+        state.treeTop = 0.0;
+        if (state.vegetation) {
+            float scale = 0.0f;
+            for (const BiomeGpu& biome : state.vegetation->biomes) {
+                scale = std::max(scale, biome.humidity[3]);
+            }
+            for (const VegetationSet::Species& species : state.vegetation->species) {
+                state.treeTop = std::max(state.treeTop, static_cast<double>(species.trunkHeight * species.maxScale * scale));
+            }
+        }
+    }
+
+    void PlanetGround::Request(const PlanetState& state, const Probe& probe, std::vector<TileKey>& keys, std::vector<TileKey>& plains,
+                               bool& underMissing, TileKey& under) const {
         underMissing = false;
         const Terrain& terrain = *state.terrain;
         const Math::Vector3d local = state.rotation.Conjugate().Rotate(probe.position - state.position);
@@ -180,13 +272,13 @@ namespace Flux::Planetology {
         const std::uint32_t level = terrain.GetMaxLevel();
         const double radius = terrain.GetRadius();
         const double altitude = distance - (radius + terrain.GetHeight(direction, terrain.GetOctaves(level)));
-        if (altitude > probe.reach) {
-            return; // trop haut : rien à toucher avant longtemps
+        if (altitude > probe.reach + state.treeTop) {
+            return; // trop haut : rien à toucher avant longtemps, ni le sol ni la cime d'un arbre
         }
         under = FindTile(direction, level);
         const auto found = state.tiles.find(under.Pack());
         // Tout près du sol et sans rien dessous : la tuile ne peut pas attendre le fil (il passerait au travers).
-        underMissing = (found == state.tiles.end() || found->second.body.IsInvalid()) && altitude < 3.0 + 0.25 * probe.speed;
+        underMissing = (found == state.tiles.end() || !found->second.built) && altitude < 3.0 + 0.25 * probe.speed;
         keys.push_back(under);
 
         // Les tuiles autour, dans le rayon `reach` : des points du plan tangent, plus serrés que les tuiles (dont le
@@ -218,10 +310,20 @@ namespace Flux::Planetology {
         for (const auto& [square, key] : samples) {
             keys.push_back(key);
         }
+        // Les plaines d'arbres qui contiennent ces tuiles (des plus proches aux plus lointaines aussi).
+        if (state.vegetation) {
+            const std::uint32_t shift = level - state.plainLevel;
+            for (const TileKey& key : keys) {
+                const TileKey plain{key.face, static_cast<std::uint8_t>(state.plainLevel), key.x >> shift, key.y >> shift};
+                if (std::ranges::find(plains, plain) == plains.end()) {
+                    plains.push_back(plain);
+                }
+            }
+        }
     }
 
     void PlanetGround::Update(const Scene& scene, const Math::WorldPosition& anchor, std::span<const Probe> probes,
-                              JPH::PhysicsSystem& system, bool wait) {
+                              JPH::PhysicsSystem& system, const std::filesystem::path& assetsDirectory, bool wait) {
         ++m_update;
         for (auto& [entity, state] : m_planets) {
             state.seen = false;
@@ -242,7 +344,7 @@ namespace Flux::Planetology {
             }
             const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
-            if (!state.tiles.empty() && (Math::Length(position - state.position) > 1.0e-3 || !(rotation == state.rotation))) {
+            if ((!state.tiles.empty() || !state.plains.empty()) && (Math::Length(position - state.position) > 1.0e-3 || !(rotation == state.rotation))) {
                 RemoveTiles(system, state); // la planète a bougé : son sol est à refaire
             }
             state.position = position;
@@ -250,6 +352,7 @@ namespace Flux::Planetology {
             state.gravity = planet.gravity;
             state.atmosphere = planet.atmosphere;
             state.atmosphereHeight = planet.atmosphereHeight;
+            UpdateVegetation(scene, entity, planet, state, assetsDirectory, system);
             state.seen = true;
         }
         std::erase_if(m_planets, [&](auto& entry) {
@@ -263,62 +366,103 @@ namespace Flux::Planetology {
             return;
         }
 
-        // Tuiles finies sur le fil.
+        // Tuiles et plaines finies sur les fils (une plaine sans arbre aussi : elle est faite).
         thread_local std::vector<Worker::Done> results;
         m_worker->Collect(results);
         for (const Worker::Done& done : results) {
             for (auto& [entity, state] : m_planets) {
-                if (state.owner == done.owner && done.shape) {
-                    AddTile(system, entity, state, done.key, done.center, *done.shape);
+                if (done.plain ? state.plainOwner == done.owner : state.owner == done.owner && done.shape) {
+                    AddTile(system, entity, state, done.key, done.center, done.shape.GetPtr(), done.trees, done.plain);
                 }
             }
         }
         results.clear();
 
         // Tuiles voulues autour de chaque sonde ; celle sous une sonde au ras du sol, tout de suite.
+        // Les plaines d'arbres après toutes les tuiles de sol : le sol d'abord. Au chargement (wait), tout de suite.
         thread_local std::vector<TileKey> keys;
+        thread_local std::vector<TileKey> plains;
         thread_local std::vector<Worker::Job> jobs;
+        thread_local std::vector<Worker::Job> plainJobs;
         jobs.clear();
+        plainJobs.clear();
         thread_local std::unordered_set<std::uint64_t> queued;
+        thread_local std::unordered_set<std::uint64_t> queuedPlains;
         for (auto& [entity, state] : m_planets) {
             queued.clear();
+            queuedPlains.clear();
             for (const Probe& probe : probes) {
                 keys.clear();
+                plains.clear();
                 bool underMissing = false;
                 TileKey under;
-                Request(state, probe, keys, underMissing, under);
+                Request(state, probe, keys, plains, underMissing, under);
                 for (const TileKey& key : keys) {
                     Tile& tile = state.tiles[key.Pack()];
                     tile.lastUsed = m_update;
                     const bool now = wait || (underMissing && key == under);
-                    if (tile.body.IsInvalid() && now) {
+                    if (!tile.built && now) {
                         Math::Vector3d center;
                         if (const JPH::RefConst<JPH::Shape> shape = BuildShape(*state.terrain, key, center)) {
-                            AddTile(system, entity, state, key, center, *shape);
+                            AddTile(system, entity, state, key, center, shape.GetPtr(), 0, false);
                         }
                     }
-                    if (tile.body.IsInvalid() && queued.insert(key.Pack()).second) {
-                        jobs.push_back({state.terrain, state.owner, key});
+                    if (!tile.built && queued.insert(key.Pack()).second) {
+                        jobs.push_back({state.terrain, state.owner, key, nullptr, {}});
+                    }
+                }
+                for (const TileKey& key : plains) {
+                    Tile& plain = state.plains[key.Pack()];
+                    plain.lastUsed = m_update;
+                    if (!plain.built && wait) {
+                        Math::Vector3d center;
+                        int trees = 0;
+                        const JPH::RefConst<JPH::Shape> shape = BuildTrees(*state.terrain, state.sow, *state.vegetation, key, center, trees);
+                        AddTile(system, entity, state, key, center, shape.GetPtr(), trees, true);
+                    }
+                    if (!plain.built && queuedPlains.insert(key.Pack()).second) {
+                        plainJobs.push_back({state.terrain, state.plainOwner, key, state.vegetation, state.sow});
                     }
                 }
             }
         }
+        jobs.insert(jobs.end(), std::make_move_iterator(plainJobs.begin()), std::make_move_iterator(plainJobs.end()));
+        plainJobs.clear();
         m_worker->Replace(jobs);
 
-        // Tuiles plus demandées depuis un moment.
+        // Tuiles et plaines plus demandées depuis un moment.
         JPH::BodyInterface& bodies = system.GetBodyInterface();
+        const auto unused = [&](const auto& entry) {
+            const Tile& tile = entry.second;
+            if (tile.lastUsed + KeepUpdates >= m_update) {
+                return false;
+            }
+            if (!tile.body.IsInvalid()) {
+                bodies.RemoveBody(tile.body);
+                bodies.DestroyBody(tile.body);
+            }
+            return true;
+        };
+        thread_local std::vector<std::pair<std::uint64_t, std::uint64_t>> old; // dernière demande, plaine
+        thread_local std::unordered_set<std::uint64_t> kept;
         for (auto& [entity, state] : m_planets) {
-            std::erase_if(state.tiles, [&](const auto& entry) {
-                const Tile& tile = entry.second;
-                if (tile.lastUsed + KeepUpdates >= m_update) {
-                    return false;
+            std::erase_if(state.tiles, unused);
+            // Les plaines faites restent tant qu'elles sont parmi les KeptPlains servies le plus récemment.
+            old.clear();
+            std::size_t recent = 0;
+            for (const auto& [packed, plain] : state.plains) {
+                if (plain.lastUsed + KeepUpdates >= m_update) {
+                    ++recent;
+                } else if (plain.built) {
+                    old.emplace_back(plain.lastUsed, packed);
                 }
-                if (!tile.body.IsInvalid()) {
-                    bodies.RemoveBody(tile.body);
-                    bodies.DestroyBody(tile.body);
-                }
-                return true;
-            });
+            }
+            std::ranges::sort(old, std::greater{});
+            kept.clear();
+            for (std::size_t i = 0; i < old.size() && recent + i < KeptPlains; ++i) {
+                kept.insert(old[i].second);
+            }
+            std::erase_if(state.plains, [&](const auto& entry) { return !kept.contains(entry.first) && unused(entry); });
         }
     }
 
@@ -327,9 +471,11 @@ namespace Flux::Planetology {
         const JPH::Vec3 offset(static_cast<float>(shift.x), static_cast<float>(shift.y), static_cast<float>(shift.z));
         for (auto& [entity, state] : m_planets) {
             state.position += shift;
-            for (const auto& [packed, tile] : state.tiles) {
-                if (!tile.body.IsInvalid()) {
-                    bodies.SetPosition(tile.body, bodies.GetPosition(tile.body) + offset, JPH::EActivation::DontActivate);
+            for (const auto* tiles : {&state.tiles, &state.plains}) {
+                for (const auto& [packed, tile] : *tiles) {
+                    if (!tile.body.IsInvalid()) {
+                        bodies.SetPosition(tile.body, bodies.GetPosition(tile.body) + offset, JPH::EActivation::DontActivate);
+                    }
                 }
             }
         }
@@ -396,6 +542,16 @@ namespace Flux::Planetology {
         int count = 0;
         for (const auto& [entity, state] : m_planets) {
             count += static_cast<int>(std::ranges::count_if(state.tiles, [](const auto& entry) { return !entry.second.body.IsInvalid(); }));
+        }
+        return count;
+    }
+
+    int PlanetGround::GetTreeCount() const {
+        int count = 0;
+        for (const auto& [entity, state] : m_planets) {
+            for (const auto& [packed, plain] : state.plains) {
+                count += plain.trees;
+            }
         }
         return count;
     }

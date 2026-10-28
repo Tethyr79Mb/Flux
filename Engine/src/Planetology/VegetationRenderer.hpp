@@ -6,6 +6,7 @@
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Planetology/PlanetRenderer.hpp"
+#include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationLibrary.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/RHI/RHI.hpp"
@@ -35,7 +36,7 @@ namespace Flux::Planetology {
     class FLUX_API VegetationRenderer {
         public:
         // Doivent correspondre à shaders/PlanetTile.slang et shaders/Vegetation.slang.
-        static constexpr std::uint32_t TreeGrid = 64;
+        static constexpr std::uint32_t TreeGrid = Planetology::TreeGrid;
         static constexpr std::uint32_t TreesPerPlain = TreeGrid * TreeGrid;
         // Groupes de computeTrees par plaine semée : une place par thread, 256 threads (GroupSize de PlanetTile.slang).
         static constexpr std::uint32_t SowGroupsPerPlain = TreesPerPlain / 256;
@@ -52,7 +53,7 @@ namespace Flux::Planetology {
         // Arbres au plus par liste, toutes espèces ensemble (au-delà, les suivants ne sont pas dessinés).
         static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 131072, 16384, 16384, 16384, 16384};
 
-        // Niveau des tuiles qui servent de plaines : le premier dont le bord fait au plus 400 m.
+        // Planetology::GetPlainLevel.
         static std::uint32_t GetPlainLevel(const Terrain& terrain);
 
         // memory : Readback pour relire les arbres semés sur le CPU (tests).

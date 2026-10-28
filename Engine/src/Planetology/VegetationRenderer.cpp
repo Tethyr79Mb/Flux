@@ -21,8 +21,6 @@ namespace Flux::Planetology {
         };
         static_assert(sizeof(TileGpuInputs) % 16 == 0);
 
-        // Bord des tuiles qui servent de plaines, au plus (m).
-        constexpr double MaxPlainEdge = 400.0;
         // Compteurs, après les commandes (en entiers) : arbres de chaque liste, puis de chaque espèce de chaque liste,
         // puis la place suivante de chaque espèce dans sa liste (computeScatter).
         constexpr std::uint32_t CounterOffset = VegetationRenderer::MaxCommands * 5;
@@ -54,10 +52,7 @@ namespace Flux::Planetology {
     }
 
     std::uint32_t VegetationRenderer::GetPlainLevel(const Terrain& terrain) {
-        // Bord d'une tuile de niveau n : environ (π/2) R / 2^n.
-        const double edge = 0.5 * std::numbers::pi * terrain.GetRadius();
-        const double level = std::ceil(std::log2(std::max(edge / MaxPlainEdge, 1.0)));
-        return std::min(static_cast<std::uint32_t>(level), terrain.GetMaxLevel());
+        return Planetology::GetPlainLevel(terrain);
     }
 
     std::expected<std::unique_ptr<VegetationRenderer>, std::string> VegetationRenderer::Create(RHI::Device& device,
@@ -183,14 +178,12 @@ namespace Flux::Planetology {
         if (m_entity != NullEntity) {
             return;
         }
-        const float relief = std::max(planet.relief, 0.0f);
-        const float seaAltitude = planet.seaLevel * 0.01f * relief;
+        // Les mêmes que le semis du CPU (collision des arbres, PlanetGround).
+        const SowSettings settings = GetSowSettings(terrain, planet);
         TreeJob job{};
-        job.options = {0, static_cast<std::uint32_t>(planet.seed) * 0x9e3779b1u, 0, 0};
-        job.shape = {static_cast<float>(terrain.GetRadius()), relief, planet.snowLevel * 0.01f * relief,
-                     seaAltitude + std::max(planet.beachHeight, 0.0f)};
-        job.climate = {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
-                       planet.ocean ? static_cast<float>(terrain.GetRadius()) + seaAltitude : 0.0f};
+        job.options = {0, settings.seed, 0, 0};
+        job.shape = settings.shape;
+        job.climate = settings.climate;
         // Autre forme, autres réglages, autres biomes : chaque plaine est à resemer.
         const std::array<float, 10> signature{job.shape[0], job.shape[1], job.shape[2], job.shape[3], job.climate[0],
                                               job.climate[1], job.climate[2], job.climate[3], static_cast<float>(planet.seed),

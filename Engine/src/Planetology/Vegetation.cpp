@@ -91,7 +91,9 @@ namespace Flux::Planetology {
             species.variants.push_back(std::move(variant));
         }
         if (!ReadNumber(*document, "minScale", species.minScale, error) || !ReadNumber(*document, "maxScale", species.maxScale, error)
-            || !ReadNumber(*document, "maxSlope", species.maxSlope, error) || !ReadNumber(*document, "tint", species.tint, error)) {
+            || !ReadNumber(*document, "maxSlope", species.maxSlope, error) || !ReadNumber(*document, "tint", species.tint, error)
+            || !ReadNumber(*document, "trunkRadius", species.trunkRadius, error)
+            || !ReadNumber(*document, "trunkHeight", species.trunkHeight, error)) {
             return std::unexpected(error);
         }
         if (const auto color = document->find("canopyColor"); color != document->end()) {
@@ -104,6 +106,8 @@ namespace Flux::Planetology {
         species.maxScale = std::clamp(species.maxScale, species.minScale, 20.0f);
         species.maxSlope = std::clamp(species.maxSlope, 0.0f, 90.0f);
         species.tint = std::clamp(species.tint, 0.0f, 0.5f);
+        species.trunkRadius = std::clamp(species.trunkRadius, 0.0f, 10.0f);
+        species.trunkHeight = std::clamp(species.trunkHeight, 0.0f, 200.0f);
         return species;
     }
 
@@ -175,8 +179,9 @@ namespace Flux::Planetology {
         }
         const Math::LinearColor& color = species.canopyColor;
         text += std::format("  ],\n  \"minScale\": {},\n  \"maxScale\": {},\n  \"maxSlope\": {},\n  \"tint\": {},\n"
-                            "  \"canopyColor\": [{}, {}, {}]\n}}\n",
+                            "  \"trunkRadius\": {},\n  \"trunkHeight\": {},\n  \"canopyColor\": [{}, {}, {}]\n}}\n",
                             Number(species.minScale), Number(species.maxScale), Number(species.maxSlope), Number(species.tint),
+                            Number(species.trunkRadius), Number(species.trunkHeight),
                             Number(color.r), Number(color.g), Number(color.b));
         return text;
     }

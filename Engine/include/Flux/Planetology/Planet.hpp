@@ -204,6 +204,10 @@ namespace Flux::Planetology {
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni
     // glissement), relatifs à `center`, identiques à ceux de BuildTile (le sol touché est celui qu'on voit de près).
     FLUX_API void BuildTileSurface(const Terrain& terrain, TileKey key, Math::Vector3d& center, std::vector<Math::Vector3f>& positions);
+    // Direction (unitaire) du point (u, v) de la grille d'une tuile (de 0 à TileQuads), les tangentes de la face
+    // interpolées entre deux colonnes et deux lignes, comme TreeDelta (shaders/PlanetTile.slang) : là où le GPU sème
+    // les arbres.
+    FLUX_API Math::Vector3d DirectionInTile(TileKey key, double u, double v);
     // Tuile de ce niveau où tombe une direction (unitaire).
     FLUX_API TileKey FindTile(const Math::Vector3d& direction, std::uint32_t level);
     // Indices communs à toutes les tuiles, dans le sens trigonométrique vu de dehors, rangés par quart de tuile : ceux de
