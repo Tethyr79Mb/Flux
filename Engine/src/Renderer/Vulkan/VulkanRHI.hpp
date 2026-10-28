@@ -190,7 +190,6 @@ namespace Flux::Vk {
 
         std::string_view GetName() const override { return m_device->GetName(); }
         std::string_view GetApiVersion() const override { return m_device->GetApiVersion(); }
-        bool HasFloat64() const override { return m_device->HasFloat64(); }
         bool HasMeshShaders() const override { return m_device->HasMeshShaders(); }
         std::uint32_t GetMeshPreferredThreads() const override { return m_device->GetMeshPreferredThreads(); }
         bool HasTextureCompressionBC() const override { return m_device->HasTextureCompressionBC(); }

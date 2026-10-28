@@ -87,12 +87,16 @@ Le relief est une formule : la hauteur dans une direction donnée. Rien n'est st
 - `Height` (`PlanetTile.slang`), en float, sert à l'affichage. Un compute shader calcule chaque tuile, un groupe de
   256 threads par tuile. Le CPU prépare en double ce qui en demande (`PrepareTileGpu`) : le point de départ de chaque
   octave au centre de la tuile. Le GPU garde ainsi le millimètre, même sur une planète de la taille de la Terre.
-- Sauf la déformation (`Warp`) : 0,06 radian, multiplié par la fréquence des sommets (environ 6 000 sur la Terre), il
-  lui faut 1e-10 radian, hors de portée du float (1 à 2,5 m d'écart avec la collision dans les montagnes). Quand le
-  GPU a `shaderFloat64` (GTX 1060, RX 5700 et mieux), `PlanetTile64.slang` compile le même fichier avec la déformation,
-  l'écart au centre et les points du bruit en double (`Precise`) ; `PrepareTileGpu` envoie le reste des floats du
-  centre et des octaves (`centerLow`, `fractionsLow`). Le bruit lui-même reste en float, sauf celui de la déformation.
-  Sans `shaderFloat64`, tout reste en float et l'écart revient.
+- La déformation (`Warp`) vaut 0,06 radian, multipliée par la fréquence des sommets (environ 6 000 sur la Terre) : il
+  lui faut 1e-10 radian, hors de portée du float sur sa valeur entière (1 à 2,5 m d'écart avec la collision dans les
+  montagnes). `PrepareTileGpu` la calcule donc en double au centre de la tuile (`Terrain::GetWarpedPoints`) et range
+  les points du centre déformés dans les octaves des couches déformées. Le GPU ne calcule que son changement depuis le
+  centre (`WarpChange`), petit, avec des valeurs `Shifted` (valeur au départ + changement, jamais mélangés) ; quand le
+  trajet change de maille du bruit, il passe par la face commune, où les deux mailles donnent la même pente.
+- Plus de doubles sur le GPU (ils vont 16 à 32 fois moins vite que les floats sur les cartes de jeu). Écart avec la
+  collision mesuré sur une Terre, aux sommets : du millimètre au centimètre sur les tuiles de moins de 2 km (comme
+  avec les doubles), jusqu'à quelques 1e-5 de la taille sur les plus grandes (30 cm à 90 cm sur des tuiles de 20 à
+  80 km, vues de plus de 20 km), contre quelques centimètres en double.
 
 **Toute modification va dans les deux.** `PlanetGpuTests` vérifie qu'ils restent égaux, sur trois planètes : 60 km,
 200 km et la Terre.

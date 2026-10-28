@@ -35,7 +35,7 @@ namespace Flux::Planetology {
         compute->m_pageLayout = std::move(*pageLayout);
         const std::array<const RHI::BindGroupLayout*, 2> layouts{compute->m_frameLayout.get(), compute->m_pageLayout.get()};
         auto pipeline = device.CreateComputePipeline(
-            {Platform::GetExecutableDirectory() / "shaders" / (device.HasFloat64() ? "PlanetTile64.spv" : "PlanetTile.spv"), "computeMain",
+            {Platform::GetExecutableDirectory() / "shaders" / "PlanetTile.spv", "computeMain",
              layouts, sizeof(Constants)});
         if (!pipeline) {
             return std::unexpected(pipeline.error());

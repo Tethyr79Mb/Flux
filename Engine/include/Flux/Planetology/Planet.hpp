@@ -87,6 +87,13 @@ namespace Flux::Planetology {
         // Hauteur au-dessus du rayon (m, de -relief à +relief environ) dans cette direction (unitaire) ; zones : celles
         // du point, si demandées.
         double GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones = nullptr) const;
+        // Points déformés où GetHeight lit ses couches : `large` (grandes formes, ravines), `small` (sommets, collines).
+        struct WarpedPoints
+        {
+            Math::Vector3d large;
+            Math::Vector3d small;
+        };
+        WarpedPoints GetWarpedPoints(const Math::Vector3d& direction) const;
         // Relief que les octaves omises peuvent encore ajouter (m) : profondeur minimale des jupes.
         double GetOmittedRelief(std::uint32_t octaves) const;
         // Table de permutation du bruit (tirée de la graine).
@@ -172,15 +179,15 @@ namespace Flux::Planetology {
     // qui demande du double est fait ici. Un sommet est repéré par rapport au centre de la tuile (direction d_c) :
     // d = d_c + δ, où δ se calcule sans soustraire deux grands nombres voisins grâce aux colonnes et lignes ci-dessous ;
     // et chaque octave du bruit part de son point au centre de la tuile (coordonnée entière modulo 256 du réseau,
-    // plus fraction), auquel le GPU ajoute δ x fréquence. Ainsi le float garde le millimètre même pour l'octave la plus
-    // fine d'une planète de la taille de la Terre.
+    // plus fraction), déformé pour les couches qui le sont, auquel le GPU ajoute (δ + changement de la déformation) x
+    // fréquence. Ainsi le float garde le millimètre près du sol même pour l'octave la plus fine d'une planète de la
+    // taille de la Terre (quelques 1e-5 de la taille de la tuile aux pointes des sommets).
     struct TileGpuInputs
     {
         static constexpr std::uint32_t Columns = TileSide + 4; // décalages -2 à TileQuads + 2 de la grille de la face
         static constexpr std::uint32_t Octaves = 43;            // somme des octaves de chaque couche du relief
 
         std::array<float, 4> center{}; // xyz : d_c ; w : |v_c| (v_c = normale + a_c.s + b_c.t, avant normalisation)
-        std::array<float, 4> centerLow{}; // xyz : d_c - center.xyz (le reste du double, pour la variante en double)
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
@@ -189,10 +196,9 @@ namespace Flux::Planetology {
         std::array<std::array<float, 4>, Columns> columns{};
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)
         std::array<std::array<float, 4>, Octaves> fractions{};    // xyz : position dans la maille ; w : fréquence
-        std::array<std::array<float, 4>, Octaves> fractionsLow{}; // reste de fractions (fractions + fractionsLow)
         std::array<std::uint32_t, 128> permutation{};             // 512 octets, 4 par entier
     };
-    static_assert(sizeof(TileGpuInputs) == 96 + 16 * (TileGpuInputs::Columns + 3 * TileGpuInputs::Octaves) + 512);
+    static_assert(sizeof(TileGpuInputs) == 80 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
     FLUX_API void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs);
 
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni

@@ -460,8 +460,6 @@ namespace Flux::RHI {
         // Version de l'API graphique utilisée, lisible (« 1.3 (GPU : 1.4.303) » pour Vulkan).
         virtual std::string_view GetApiVersion() const = 0;
         virtual MemoryUsage GetMemoryUsage() const = 0;
-        // Doubles permis dans les shaders (shaderFloat64) : facultatif, les tuiles de planète s'en servent quand il y est.
-        virtual bool HasFloat64() const = 0;
         // Mesh shaders (étapes de tâche et de maillage) : facultatifs, le sol des planètes s'en sert quand ils y sont.
         virtual bool HasMeshShaders() const = 0;
         // Nombre de threads par groupe de maillage que le pilote préfère (0 sans mesh shaders).

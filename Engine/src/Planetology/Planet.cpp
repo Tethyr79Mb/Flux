@@ -506,6 +506,12 @@ namespace Flux::Planetology {
         return warp;
     }
 
+    Terrain::WarpedPoints Terrain::GetWarpedPoints(const Math::Vector3d& direction) const {
+        // Grandes formes, puis montagnes et collines.
+        const Math::Vector3d large = direction + Warp(direction, WarpLargeField, WarpLarge);
+        return {large, large + Warp(direction, WarpSmallField, WarpSmall)};
+    }
+
     double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones) const {
         if (m_relief <= 0.0) {
             if (zones) {
@@ -514,9 +520,7 @@ namespace Flux::Planetology {
             return 0.0;
         }
         const double toSlope = m_relief / m_radius; // une unité de hauteur (fraction du relief) par radian, en m/m
-        // Points déformés : grandes formes, puis montagnes et collines.
-        const Math::Vector3d large = direction + Warp(direction, WarpLargeField, WarpLarge);
-        const Math::Vector3d small = large + Warp(direction, WarpSmallField, WarpSmall);
+        const auto [large, small] = GetWarpedPoints(direction);
         // Couches, des plus grandes aux plus fines (octave 0 : environ un quart du tour de la planète) :
         // - continents : terres et bassins ;
         const double continents = Fbm(large, direction, Continents, octaves, 0.0);
@@ -747,7 +751,6 @@ namespace Flux::Planetology {
                                          - DirectionFromFace(key.face, GridToFace(x0, key.level), GridToFace(y0, key.level))) * R;
         const double depth = SkirtDepth(terrain, octaves, edge);
         inputs.center = float4(dc, lc);
-        inputs.centerLow = float4(dc - Math::Vector3d(inputs.center[0], inputs.center[1], inputs.center[2]), 0.0);
         inputs.axisN = float4(f.normal, R);
         inputs.axisS = float4(f.s, terrain.GetRelief());
         inputs.axisT = float4(f.t, depth);
@@ -757,20 +760,23 @@ namespace Flux::Planetology {
             const double b = tangent(y0 + static_cast<std::int64_t>(i) - 2);
             inputs.columns[i] = {static_cast<float>(a - ac), static_cast<float>(a + ac), static_cast<float>(b - bc), static_cast<float>(b + bc)};
         }
-        // Point de chaque octave au centre de la tuile, calculé comme Fbm (doublé d'une octave à l'autre).
+        // Point de chaque octave au centre de la tuile, calculé comme Fbm (doublé d'une octave à l'autre) : déformé pour
+        // les couches lues aux points déformés, en double. Le GPU n'ajoute que le changement de la déformation.
+        const Terrain::WarpedPoints warped = terrain.GetWarpedPoints(dc);
         std::uint32_t octave = 0;
-        for (const Layer& layer : Layers) {
+        for (std::uint32_t index = 0; index < Layers.size(); ++index) {
+            const Layer& layer = Layers[index];
+            const bool small = index == PeakField || index == Hills;
+            const bool large = index == Continents || index == MountainZone || index == HillZone || index == GullyField;
+            const Math::Vector3d& point = small ? warped.small : large ? warped.large : dc;
             const double scale = layer.scaled ? terrain.GetScale() : 1.0;
-            Math::Vector3d p = dc * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * scale) + layer.offset;
+            Math::Vector3d p = point * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * scale) + layer.offset;
             for (std::uint32_t k = layer.first; k < layer.last; ++k, ++octave) {
                 const Math::Vector3d cell{std::floor(p.x), std::floor(p.y), std::floor(p.z)};
                 inputs.cells[octave] = {static_cast<std::int32_t>(static_cast<std::int64_t>(cell.x) & 255),
                                         static_cast<std::int32_t>(static_cast<std::int64_t>(cell.y) & 255),
                                         static_cast<std::int32_t>(static_cast<std::int64_t>(cell.z) & 255), 0};
                 inputs.fractions[octave] = float4(p - cell, BaseFrequency * std::ldexp(1.0, static_cast<int>(k)) * scale);
-                const auto& high = inputs.fractions[octave];
-                inputs.fractionsLow[octave] = float4(p - cell - Math::Vector3d(high[0], high[1], high[2]),
-                                                     BaseFrequency * std::ldexp(1.0, static_cast<int>(k)) * scale - high[3]);
                 p *= 2.0;
             }
         }

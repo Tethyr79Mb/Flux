@@ -68,7 +68,6 @@ flux_add_shaders(FluxShaders
         shaders/PlanetMesh.slang
         shaders/PlanetMeshSmall.slang
         shaders/PlanetTile.slang
-        shaders/PlanetTile64.slang
         shaders/Post.slang
         shaders/Sky.slang
         shaders/Sun.slang
