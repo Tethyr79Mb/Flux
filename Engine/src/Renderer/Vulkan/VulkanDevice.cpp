@@ -127,11 +127,6 @@ namespace Flux::Vk {
         subgroups.subgroupSizeControl = VK_TRUE;
         subgroups.computeFullSubgroups = VK_TRUE;
         device->m_physicalDevice.enable_extension_features_if_present(subgroups);
-        // Doubles dans les shaders : la déformation du relief des grandes planètes (PlanetTile64.slang). GTX 1060 et
-        // RX 5700 les ont ; sans eux, les tuiles restent en float.
-        VkPhysicalDeviceFeatures float64{};
-        float64.shaderFloat64 = VK_TRUE;
-        device->m_float64 = device->m_physicalDevice.enable_features_if_present(float64);
         // Mesh shaders : le sol des planètes en paquets de triangles que le GPU écarte lui-même (shaders/PlanetMesh.slang).
         // RTX 20, RX 6000, Arc et plus récentes ; sans eux (GTX 1060, RX 5700), le chemin des sommets.
         // FLUX_MESH_SHADERS=0 les ignore : diagnostic d'un pilote fautif, et comparaison des deux chemins.
