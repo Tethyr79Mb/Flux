@@ -2,7 +2,9 @@
 
 #include "Renderer/Vulkan/Vulkan.hpp"
 
+#include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 
 namespace Flux::Vk {
@@ -18,8 +20,11 @@ namespace Flux::Vk {
             Readback, // visible et mappée en permanence pour le CPU, écrite par le GPU et relue par le CPU
         };
 
+        // sharedFamilies : files qui s'en servent sans transfert de propriété (VK_SHARING_MODE_CONCURRENT), à partir de
+        // deux ; sinon le buffer appartient à une seule famille.
         static std::expected<Buffer, std::string> Create(VmaAllocator allocator, VkDeviceSize size,
-                                                         VkBufferUsageFlags usage, Memory memory);
+                                                         VkBufferUsageFlags usage, Memory memory,
+                                                         std::span<const std::uint32_t> sharedFamilies = {});
 
         Buffer() = default;
         ~Buffer();

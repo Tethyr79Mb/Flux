@@ -6,7 +6,7 @@ target_link_libraries(FluxTests PRIVATE Flux::Engine bc7enc meshoptimizer) # bc7
 target_include_directories(FluxTests PRIVATE ${PROJECT_SOURCE_DIR}/Engine/src)
 # Les biomes livrés avec le jeu sont lus là où ils sont rangés (VegetationTests.cpp).
 target_compile_definitions(FluxTests PRIVATE FLUX_GAME_ASSETS="${PROJECT_SOURCE_DIR}/Game/Module/assets")
-flux_add_shaders(FluxTestShaders shaders/ComputeTests.slang shaders/CloudNoiseTests.slang)
+flux_add_shaders(FluxTestShaders shaders/ComputeTests.slang shaders/CloudNoiseTests.slang shaders/TransferTests.slang)
 add_dependencies(FluxTests FluxTestShaders)
 flux_set_warnings(FluxTests)
 flux_precompile_headers(FluxTests)

@@ -5,12 +5,18 @@
 
 namespace Flux::Vk {
     std::expected<Buffer, std::string> Buffer::Create(VmaAllocator allocator, VkDeviceSize size,
-                                                      VkBufferUsageFlags usage, Memory memory) {
+                                                      VkBufferUsageFlags usage, Memory memory,
+                                                      std::span<const std::uint32_t> sharedFamilies) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
         bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (sharedFamilies.size() >= 2) {
+            bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+            bufferInfo.queueFamilyIndexCount = static_cast<std::uint32_t>(sharedFamilies.size());
+            bufferInfo.pQueueFamilyIndices = sharedFamilies.data();
+        }
 
         VmaAllocationCreateInfo allocationInfo{};
         allocationInfo.usage = VMA_MEMORY_USAGE_AUTO;

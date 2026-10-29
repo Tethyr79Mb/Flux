@@ -463,6 +463,29 @@ namespace Flux::Vk {
 
     // Une barrière mémoire globale : plus simple qu'une par buffer, et les pilotes ne font guère mieux avec le détail.
     // Elle attend aussi les lectures des Dispatch précédents avant les écritures suivantes (buffer réutilisé).
+    void RhiCommandList::CopyBuffer(const RHI::Buffer& source, std::uint64_t sourceOffset, RHI::Buffer& target,
+                                    std::uint64_t targetOffset, std::uint64_t size) {
+        VkMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        const VkBufferCopy region{sourceOffset, targetOffset, size};
+        vkCmdCopyBuffer(m_commandBuffer, static_cast<const RhiBuffer&>(source).GetHandle(),
+                        static_cast<RhiBuffer&>(target).GetHandle(), 1, &region);
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_HOST_READ_BIT;
+        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+    }
+
     void RhiCommandList::ComputeBarrier() {
         VkMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;

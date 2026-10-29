@@ -35,7 +35,7 @@ namespace Flux::Vk {
         static std::expected<Image, std::string> CreateVolume(const Device& device, VkFormat format, VkExtent2D extent,
                                                               std::uint32_t depth, bool mipmaps);
 
-        // Crée l'image et y copie pixels (via un buffer intermédiaire) ; attend la fin de la copie.
+        // Crée l'image et y copie pixels (Device::UploadImage : prête pour la prochaine soumission à la file graphique).
         // mipmaps : réductions successives calculées par le GPU (filtre linéaire), pour une texture vue de loin
         // sans scintillement ; format filtrable en blit requis (RGBA8 UNORM ou SRGB : toujours le cas sur PC).
         // Cube : pixels contient les 6 faces à la suite (+X, -X, +Y, -Y, +Z, -Z), vue de type cube. Array : les

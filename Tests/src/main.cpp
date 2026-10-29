@@ -30,6 +30,7 @@ int main() {
         {"actions d'entrée", RunInputTests},
         {"planètes (cube-sphère)", RunPlanetTests},
         {"calculs sur le GPU (compute)", RunComputeTests},
+        {"envois vers le GPU (file de transfert)", RunTransferTests},
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
         {"bruit 3D des nuages sur le GPU", RunCloudNoiseTests},
         {"espèces et biomes des arbres", RunVegetationTests},
