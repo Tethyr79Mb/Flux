@@ -33,8 +33,11 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 
 ## Choix d'architecture (décidés, ne pas remettre en cause sans le demander)
 - Vulkan 1.3 minimum (décision de Bruno du 2026-10-19), derrière une couche RHI (`Renderer/RHI`) ; C++23 ;
-  volk, vk-bootstrap, VMA ; shaders Slang. Ce qui dépasse 1.3 (mesh shaders…) est détecté au démarrage et
-  facultatif : le chemin de base doit tourner sur une GTX 1060 ou une RX 5700 (configuration minimum).
+  volk, vk-bootstrap, VMA ; shaders Slang.
+- Configurations (décision de Bruno du 2026-10-29) : chaque fonctionnalité est conçue d'abord pour la configuration
+  recommandée (classe RTX 3060 / RX 6700 XT : mesh shaders, calcul asynchrone…), puis reçoit un repli pour la
+  configuration minimum (GTX 1060 / RX 5700) : version allégée ou coupée, choisie seule au démarrage. Le minimum doit
+  tourner, mais ne bride jamais les fonctionnalités ni le rendu de la configuration recommandée.
 - Mondes géants : secteurs `int64` (1e9 m) + positions `double`, rendu relatif à la caméra, reverse-Z infini.
 - Scène EnTT. Chaque composant s'enregistre une fois dans `ComponentRegistry.cpp` : inspecteur et sauvegarde JSON en
   sont générés. Un champ retiré passe par `.RemovedField`, un champ remplacé par un autre de sens différent par
