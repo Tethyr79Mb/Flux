@@ -409,6 +409,10 @@ namespace Flux::RHI {
         // Chaque niveau de mip de la texture recalculé par réduction de moitié du précédent, à partir du niveau 0 (écrit
         // par un compute shader, par exemple) ; la texture finit lue par les shaders (Sampled). Hors d'une passe.
         virtual void GenerateMipmaps(const Texture& texture) = 0;
+        // Copie `size` octets d'un buffer à l'autre (GpuOnly ou Readback), après tout ce qui précède dans la liste ;
+        // le résultat est lisible par la suite et par le CPU (Readback, après Device::Submit). Hors d'une passe.
+        virtual void CopyBuffer(const Buffer& source, std::uint64_t sourceOffset, Buffer& target, std::uint64_t targetOffset,
+                                std::uint64_t size) = 0;
         // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
         // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
         virtual void WriteTimestamp(std::uint32_t slot) = 0;
@@ -470,8 +474,9 @@ namespace Flux::RHI {
         virtual void WaitIdle() = 0;
 
         // Envois vers la mémoire vidéo (CreateBuffer avec données, WriteBuffer d'un buffer GpuOnly, textures) : avec une
-        // fenêtre, soumis avec la prochaine image (avant ses commandes, après tout ce qui a été soumis avant) sans
-        // attendre le GPU ; sans fenêtre, attendus tout de suite. Une ressource envoyée doit vivre au moins jusqu'à la
+        // fenêtre, copiés par la file de transfert (la file graphique sans elle) et attendus par la prochaine image, sans
+        // attendre le GPU ; sans fenêtre, attendus tout de suite. WriteBuffer attend d'abord la fin des images déjà
+        // soumises (elles lisent peut-être ce qui est réécrit). Une ressource envoyée doit vivre au moins jusqu'à la
         // fin de la prochaine image.
         // GpuOnly : `data` (size octets) y est copié. Upload : `data` peut être nul.
         virtual std::expected<std::unique_ptr<Buffer>, std::string> CreateBuffer(const BufferDesc& desc, const void* data = nullptr) = 0;

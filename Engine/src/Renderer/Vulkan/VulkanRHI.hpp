@@ -148,6 +148,8 @@ namespace Flux::Vk {
         void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
         void ComputeBarrier() override;
         void GenerateMipmaps(const RHI::Texture& texture) override;
+        void CopyBuffer(const RHI::Buffer& source, std::uint64_t sourceOffset, RHI::Buffer& target, std::uint64_t targetOffset,
+                        std::uint64_t size) override;
         void WriteTimestamp(std::uint32_t slot) override;
         void BeginStep(const char* name) override;
         // Repères de l'image qui commence (après Begin) ; sans appel, BeginStep ne fait rien.
@@ -251,7 +253,6 @@ namespace Flux::Vk {
             std::uint32_t stepCount = 0;
             std::uint32_t serial = 0; // numéro de cette image, écrit par le GPU au début et à la fin de chaque étape
             bool submitted = false;
-            Vk::Device::UploadBatch uploads; // soumis avec l'image, rendus quand le GPU l'a finie
         };
 
         // Relit les heures de l'image dont le GPU vient de finir (après l'attente de sa barrière).

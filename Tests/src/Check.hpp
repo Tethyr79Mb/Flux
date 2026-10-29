@@ -51,6 +51,7 @@ bool RunAudioTests();
 bool RunInputTests();
 bool RunPlanetTests();
 bool RunComputeTests();
+bool RunTransferTests();
 bool RunPlanetGpuTests();
 bool RunCloudNoiseTests();
 bool RunVegetationTests();

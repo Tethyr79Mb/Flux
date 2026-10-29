@@ -76,6 +76,8 @@ namespace Flux::Vk {
         features12.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
         features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
         features12.drawIndirectCount = VK_TRUE;
+        // Sémaphores à compteur : ordre entre la file de transfert et la file graphique (VulkanTransfer).
+        features12.timelineSemaphore = VK_TRUE;
 
         VkPhysicalDeviceVulkan13Features features13{};
         features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -181,6 +183,26 @@ namespace Flux::Vk {
             }
             device->m_presentQueue = presentQueue.value();
         }
+        // File de transfert : d'une famille sans graphique ni calcul de préférence (moteur de copie des Radeon et
+        // des GeForce), sinon d'une famille sans graphique. Sans elle (ou si vk-bootstrap rend la famille graphique),
+        // les copies passent par la file graphique.
+        // FLUX_TRANSFER_QUEUE=0 l'ignore : diagnostic d'un pilote fautif, et comparaison des deux chemins.
+        Transfer::Setup transferSetup;
+        transferSetup.device = device->m_device.device;
+        transferSetup.graphicsQueue = device->m_graphicsQueue;
+        transferSetup.graphicsFamily = device->m_graphicsQueueFamily;
+        if (Platform::ReadEnvironment("FLUX_TRANSFER_QUEUE") != "0") {
+            auto queue = device->m_device.get_dedicated_queue(vkb::QueueType::transfer);
+            auto family = device->m_device.get_dedicated_queue_index(vkb::QueueType::transfer);
+            if (!queue || !family) {
+                queue = device->m_device.get_queue(vkb::QueueType::transfer);
+                family = device->m_device.get_queue_index(vkb::QueueType::transfer);
+            }
+            if (queue && family) {
+                transferSetup.transferQueue = queue.value();
+                transferSetup.transferFamily = family.value();
+            }
+        }
 
         VmaVulkanFunctions vmaFunctions{};
         vmaFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -203,6 +225,12 @@ namespace Flux::Vk {
         if (!Check(vkCreateCommandPool(device->m_device.device, &poolInfo, nullptr, &device->m_immediatePool), "vkCreateCommandPool")) {
             return std::unexpected("création du command pool de chargement");
         }
+        transferSetup.allocator = device->m_allocator;
+        auto transfer = Transfer::Create(transferSetup);
+        if (!transfer) {
+            return std::unexpected(transfer.error());
+        }
+        device->m_transfer = std::move(*transfer);
 
         // Le device ne dépasse jamais la version demandée à l'instance, même si le pilote en accepte une plus récente.
         const uint32_t supported = device->m_physicalDevice.properties.apiVersion;
@@ -219,11 +247,8 @@ namespace Flux::Vk {
         if (m_device.device != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(m_device.device);
         }
+        m_transfer.reset(); // avant l'allocateur : son anneau et ses buffers d'envoi y sont pris
         if (m_immediatePool != VK_NULL_HANDLE) {
-            if (m_uploads.commands != VK_NULL_HANDLE) {
-                vkEndCommandBuffer(m_uploads.commands);
-            }
-            ReleaseUploads(m_uploads); // avant l'allocateur : ses buffers y sont pris
             vkDestroyCommandPool(m_device.device, m_immediatePool, nullptr);
         }
         if (m_allocator != VK_NULL_HANDLE) {
@@ -293,24 +318,6 @@ namespace Flux::Vk {
         Check(vkDeviceWaitIdle(m_device.device), "vkDeviceWaitIdle");
     }
 
-    namespace {
-        // Barrière globale : tout ce qui précède (étapes `from`) avant tout ce qui suit (étapes `to`).
-        void GlobalBarrier(VkCommandBuffer commands, VkPipelineStageFlags2 from, VkAccessFlags2 fromAccess,
-                           VkPipelineStageFlags2 to, VkAccessFlags2 toAccess) {
-            VkMemoryBarrier2 barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            barrier.srcStageMask = from;
-            barrier.srcAccessMask = fromAccess;
-            barrier.dstStageMask = to;
-            barrier.dstAccessMask = toAccess;
-            VkDependencyInfo dependency{};
-            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.memoryBarrierCount = 1;
-            dependency.pMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(commands, &dependency);
-        }
-    }
-
     bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
         VkCommandBufferAllocateInfo allocateInfo{};
         allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -329,9 +336,9 @@ namespace Flux::Vk {
         record(commandBuffer);
         bool success = Check(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 
-        UploadBatch uploads = TakeUploads();
+        // Les envois en attente d'abord : ces commandes les lisent peut-être.
+        Transfer::GraphicsPart uploads = m_transfer->TakeGraphics();
         if (success) {
-            // Les envois en attente d'abord : ces commandes les lisent peut-être.
             std::array<VkCommandBufferSubmitInfo, 2> commandInfos{};
             std::uint32_t count = 0;
             for (VkCommandBuffer commands : {uploads.commands, commandBuffer}) {
@@ -341,66 +348,40 @@ namespace Flux::Vk {
                     ++count;
                 }
             }
+            const VkSemaphoreSubmitInfo wait = m_transfer->GetWait(uploads);
+            const VkSemaphoreSubmitInfo signal = m_transfer->GetSignal();
             VkSubmitInfo2 submitInfo{};
             submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+            submitInfo.waitSemaphoreInfoCount = uploads.transferValue > 0 ? 1 : 0;
+            submitInfo.pWaitSemaphoreInfos = &wait;
             submitInfo.commandBufferInfoCount = count;
             submitInfo.pCommandBufferInfos = commandInfos.data();
-            success = Check(vkQueueSubmit2(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "vkQueueSubmit2")
-                   && Check(vkQueueWaitIdle(m_graphicsQueue), "vkQueueWaitIdle");
+            submitInfo.signalSemaphoreInfoCount = 1;
+            submitInfo.pSignalSemaphoreInfos = &signal;
+            success = Check(vkQueueSubmit2(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "vkQueueSubmit2");
         }
+        m_transfer->GraphicsSubmitted(uploads, success);
+        // Seulement cette soumission (et ce qui la précède), pas toute la file comme vkQueueWaitIdle.
+        success = success && m_transfer->WaitGraphics();
         if (!success) {
-            WaitIdle(); // rien ne doit plus lire les buffers rendus ci-dessous
+            WaitIdle(); // rien ne doit plus lire le command buffer rendu ci-dessous
         }
-        ReleaseUploads(uploads);
         vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &commandBuffer);
+        m_transfer->Collect();
         return success;
     }
 
-    bool Device::Upload(const std::function<void(VkCommandBuffer)>& record, Buffer staging) {
-        if (m_uploads.commands == VK_NULL_HANDLE) {
-            VkCommandBufferAllocateInfo allocateInfo{};
-            allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            allocateInfo.commandPool = m_immediatePool;
-            allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            allocateInfo.commandBufferCount = 1;
-            if (!Check(vkAllocateCommandBuffers(m_device.device, &allocateInfo, &m_uploads.commands), "vkAllocateCommandBuffers")) {
-                m_uploads.commands = VK_NULL_HANDLE;
-                return false;
-            }
-            VkCommandBufferBeginInfo beginInfo{};
-            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            vkBeginCommandBuffer(m_uploads.commands, &beginInfo);
+    bool Device::UploadBuffer(VkBuffer target, VkDeviceSize offset, const void* data, VkDeviceSize size, bool inUse) {
+        if (!m_transfer->WriteBuffer(target, offset, data, size, inUse)) {
+            return false;
         }
-        // Une image soumise avant (ou un envoi précédent) lit ou écrit peut-être ce qui va être réécrit : table des
-        // matériaux, page de géométrie.
-        GlobalBarrier(m_uploads.commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
-                      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
-        record(m_uploads.commands);
-        m_uploads.staging.push_back(std::move(staging));
-        if (!m_deferUploads) {
-            return ImmediateSubmit([](VkCommandBuffer) {});
-        }
-        return true;
+        return m_deferUploads || ImmediateSubmit([](VkCommandBuffer) {});
     }
 
-    Device::UploadBatch Device::TakeUploads() {
-        UploadBatch batch = std::move(m_uploads);
-        m_uploads = {};
-        if (batch.commands != VK_NULL_HANDLE) {
-            GlobalBarrier(batch.commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
-                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
-            if (!Check(vkEndCommandBuffer(batch.commands), "vkEndCommandBuffer")) {
-                ReleaseUploads(batch); // jamais soumis : ses envois sont perdus (message dans la console)
-            }
+    bool Device::UploadImage(const Transfer::ImageWrite& write, std::span<const std::uint8_t> pixels) {
+        if (!m_transfer->WriteImage(write, pixels)) {
+            return false;
         }
-        return batch;
-    }
-
-    void Device::ReleaseUploads(UploadBatch& batch) {
-        if (batch.commands != VK_NULL_HANDLE) {
-            vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &batch.commands);
-        }
-        batch = {};
+        return m_deferUploads || ImmediateSubmit([](VkCommandBuffer) {});
     }
 }

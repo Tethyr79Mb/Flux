@@ -129,11 +129,17 @@ dernier écrit, sans échange à la main. Seuls les niveaux du bloom restent cr�
 de la taille). Pas de partage de mémoire entre textures (aliasing) : presque toutes vivent de la scène à l'image finale,
 seule celle du mouvement pourrait prêter la sienne au bloom, une dizaine de Mo en 1440p.
 
-Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU : ils sont
-enregistrés dans un command buffer à part (`Vk::Device::Upload`), soumis avec l'image suivante juste avant ses
-commandes, et leurs buffers intermédiaires sont rendus quand le GPU a fini cette image. Chaque envoi commence par une
-barrière sur tout ce qui a été soumis avant (une image en vol peut lire la table des matériaux qu'il réécrit). Sans
-fenêtre (tests, calculs), ils sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
+Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU
+(`Vk::Transfer`, `Renderer/Vulkan/VulkanTransfer`). Les copies partent sur la file de transfert dédiée quand la carte
+en a une (moteur de copie des Radeon et des GeForce), sinon sur la file graphique par le même chemin
+(`FLUX_TRANSFER_QUEUE=0` force ce repli). Les données passent par un anneau d'envoi de 64 Mo mappé en permanence ; un
+envoi de plus de 32 Mo a son propre buffer, rendu dès sa copie finie. Un lot de copies part dès 32 Mo, ou avec
+l'image suivante. Deux sémaphores timeline ordonnent les files : l'image attend les copies qui la précèdent, et une
+copie dans un buffer déjà en service (`WriteBuffer`) attend les images déjà soumises (elles lisent peut-être ce
+qu'elle réécrit). Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
+de file par un transfert de propriété (partagées, elles perdraient leur compression DCC sur Radeon) et leurs mipmaps
+sont calculés par la file graphique (le blit est interdit sur une file de transfert). Sans fenêtre (tests, calculs),
+les envois sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
 
 Les modèles sont rangés au chargement (`PrepareModel`, `Assets/Model.cpp`) pour se dessiner en peu d'appels quelle
 que soit la façon dont ils ont été modélisés : matériaux identiques (tout sauf le nom) réunis, une primitive par

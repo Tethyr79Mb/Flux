@@ -2,6 +2,7 @@
 
 #include "Renderer/Vulkan/Vulkan.hpp"
 #include "Renderer/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/Vulkan/VulkanTransfer.hpp"
 
 #include <VkBootstrap.h>
 
@@ -9,6 +10,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -59,23 +61,16 @@ namespace Flux::Vk {
         // soumis avec elles). Bloque le CPU : calculs dont on attend le résultat, tests.
         bool ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record);
 
-        // Envois vers la mémoire vidéo (copies, mipmaps) : enregistrés à la suite dans un command buffer soumis avec la
-        // prochaine image (TakeUploads), sans attendre le GPU. `staging` (buffer source) est gardé jusqu'à la fin de
-        // cette image. Sans envois différés (SetDeferredUploads, pas de fenêtre), soumis et attendus tout de suite.
-        // Chaque envoi attend tout ce qui a été soumis ou envoyé avant (une image en vol peut lire ce qui est réécrit),
-        // et le command buffer se termine en rendant ses écritures visibles à tout ce qui suit.
-        bool Upload(const std::function<void(VkCommandBuffer)>& record, Buffer staging);
+        // Envois vers la mémoire vidéo (VulkanTransfer) : copiés par la file de transfert, attendus par la prochaine
+        // soumission à la file graphique (image ou ImmediateSubmit), sans attendre le GPU. Sans envois différés
+        // (SetDeferredUploads, pas de fenêtre), soumis et attendus tout de suite.
+        // inUse : le buffer sert peut-être à une image déjà soumise, la copie attend qu'elle soit finie.
+        bool UploadBuffer(VkBuffer target, VkDeviceSize offset, const void* data, VkDeviceSize size, bool inUse);
+        bool UploadImage(const Transfer::ImageWrite& write, std::span<const std::uint8_t> pixels);
         void SetDeferredUploads(bool deferred) { m_deferUploads = deferred; }
-
-        // Envois enregistrés depuis le dernier appel, à soumettre avant les commandes de l'image ; à rendre par
-        // ReleaseUploads une fois l'image finie par le GPU.
-        struct UploadBatch
-        {
-            VkCommandBuffer commands = VK_NULL_HANDLE; // terminé ; VK_NULL_HANDLE : aucun envoi
-            std::vector<Buffer> staging;
-        };
-        UploadBatch TakeUploads();
-        void ReleaseUploads(UploadBatch& batch);
+        Transfer& GetTransfer() { return *m_transfer; }
+        // Familles de files qui se partagent les buffers remplis par envoi (Buffer::Create) ; vide avec une seule file.
+        std::span<const std::uint32_t> GetSharedFamilies() const { return m_transfer->GetSharedFamilies(); }
 
         private:
         Device() = default;
@@ -92,7 +87,7 @@ namespace Flux::Vk {
         VkQueue m_presentQueue = VK_NULL_HANDLE;
 
         VkCommandPool m_immediatePool = VK_NULL_HANDLE;
-        UploadBatch m_uploads; // en cours d'enregistrement
+        std::unique_ptr<Transfer> m_transfer;
         bool m_deferUploads = false;
         bool m_anisotropy = false;
         bool m_meshShaders = false;

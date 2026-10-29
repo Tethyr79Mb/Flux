@@ -41,10 +41,13 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   compteur au panneau Moteur). L'élimination hors champ reste sur le CPU (par entité et par bloc, peu coûteuse ; elle
   évite aussi de calculer la pose des personnages hors champ). Reste : ce qu'un mur découvre apparaît une image plus
   tard (seconde passe à faire), les ombres ne profitent pas du test.
-- 🔨 Chargement en arrière-plan : modèles lus et décodés sur deux fils, envoyés au GPU un par image sans attendre le
-  GPU (partis avec l'image suivante). Restent : la copie des pixels vers la mémoire d'envoi se fait encore sur le fil
-  principal (quelques dizaines de ms pour un modèle aux images 4096), images à l'écran et ciel en panorama lus sur le fil
-  principal, rechargement d'un fichier retouché qui attend le GPU, file de transfert dédiée.
+- 🔨 Chargement en arrière-plan : modèles lus et décodés sur deux fils, envoyés au GPU sans attendre le GPU. Les
+  copies passent par une file de transfert dédiée quand la carte en a une (repli : la file graphique), depuis un
+  anneau d'envoi de 64 Mo (pas d'allocation par envoi) ; mipmaps calculés par la file graphique. Restent : la copie
+  des pixels vers la mémoire d'envoi se fait encore sur le fil principal (quelques dizaines de ms pour un modèle aux
+  images 4096), l'image qui suit un envoi l'attend toujours (pas encore de ressource prête plus tard), une copie dans
+  un buffer en service (géométrie des modèles) attend la fin de l'image précédente, rechargement d'un fichier retouché
+  qui attend le GPU, images à l'écran et ciel en panorama lus sur le fil principal.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
 - ⬜ Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,

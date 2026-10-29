@@ -134,7 +134,6 @@ namespace Flux::Vk {
         m_device->WaitIdle();
         const VkDevice device = m_device->GetHandle();
         for (Frame& frame : m_frames) {
-            m_device->ReleaseUploads(frame.uploads);
             vkDestroyQueryPool(device, frame.queries, nullptr);
             vkDestroyFence(device, frame.inFlight, nullptr);
             vkDestroySemaphore(device, frame.imageAvailable, nullptr);
@@ -216,8 +215,10 @@ namespace Flux::Vk {
 
     std::expected<std::unique_ptr<RHI::Buffer>, std::string> RhiDevice::CreateBuffer(const RHI::BufferDesc& desc, const void* data) {
         const VkBufferUsageFlags usage = ToVulkan(desc.usage);
+        // Source et destination de copie (CommandList::CopyBuffer, envois) : sans coût pour le GPU.
+        const VkBufferUsageFlags copyUsage = usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         if (desc.memory == RHI::MemoryType::Readback) {
-            auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, usage, Vk::Buffer::Memory::Readback);
+            auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, copyUsage, Vk::Buffer::Memory::Readback);
             if (!buffer) {
                 return std::unexpected(buffer.error());
             }
@@ -234,26 +235,14 @@ namespace Flux::Vk {
             return std::make_unique<RhiBuffer>(std::move(*buffer));
         }
 
-        // Mémoire vidéo, remplie par une copie depuis un buffer intermédiaire, soumise avec la prochaine image.
-        auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                     Vk::Buffer::Memory::GpuOnly);
+        // Mémoire vidéo, remplie par la file de transfert (partagée avec elle : pas de transfert de propriété).
+        auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, copyUsage, Vk::Buffer::Memory::GpuOnly,
+                                         m_device->GetSharedFamilies());
         if (!buffer) {
             return std::unexpected(buffer.error());
         }
-        if (data) {
-            auto staging = Vk::Buffer::Create(m_device->GetAllocator(), desc.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Staging);
-            if (!staging) {
-                return std::unexpected(staging.error());
-            }
-            staging->Write(data, desc.size);
-            const VkBuffer source = staging->GetHandle();
-            const bool copied = m_device->Upload([&](VkCommandBuffer commandBuffer) {
-                const VkBufferCopy region{0, 0, desc.size};
-                vkCmdCopyBuffer(commandBuffer, source, buffer->GetHandle(), 1, &region);
-            }, std::move(*staging));
-            if (!copied) {
-                return std::unexpected("envoi d'un buffer au GPU");
-            }
+        if (data && !m_device->UploadBuffer(buffer->GetHandle(), 0, data, desc.size, false)) {
+            return std::unexpected("envoi d'un buffer au GPU");
         }
         return std::make_unique<RhiBuffer>(std::move(*buffer));
     }
@@ -267,16 +256,7 @@ namespace Flux::Vk {
             target.Write(data, size, offset);
             return true;
         }
-        auto staging = Vk::Buffer::Create(m_device->GetAllocator(), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Staging);
-        if (!staging) {
-            return false;
-        }
-        staging->Write(data, size);
-        const VkBuffer source = staging->GetHandle();
-        return m_device->Upload([&](VkCommandBuffer commandBuffer) {
-            const VkBufferCopy region{0, offset, size};
-            vkCmdCopyBuffer(commandBuffer, source, target.GetHandle(), 1, &region);
-        }, std::move(*staging));
+        return m_device->UploadBuffer(target.GetHandle(), offset, data, size, true);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTexture(RHI::Format format, RHI::Extent extent,
@@ -618,7 +598,7 @@ namespace Flux::Vk {
         const Clock::time_point acquireStart = Clock::now();
         m_waitTimes.frame = milliseconds(acquireStart - waitStart);
         ReadTimestamps(frame);
-        m_device->ReleaseUploads(frame.uploads); // finis avec l'image
+        m_device->GetTransfer().Collect();
 
         const VkResult acquire = vkAcquireNextImageKHR(device, m_swapchain->GetHandle(), UINT64_MAX, frame.imageAvailable,
                                                        VK_NULL_HANDLE, &m_imageIndex);
@@ -667,16 +647,20 @@ namespace Flux::Vk {
         waitInfo.semaphore = frame.imageAvailable;
         waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-        VkSemaphoreSubmitInfo signalInfo{};
-        signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfo.semaphore = renderFinished;
-        signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
         // Les envois enregistrés pendant la préparation de l'image d'abord : elle dessine peut-être ce qu'ils copient.
-        frame.uploads = m_device->TakeUploads();
+        Vk::Transfer& transfer = m_device->GetTransfer();
+        Vk::Transfer::GraphicsPart uploads = transfer.TakeGraphics();
+        std::array<VkSemaphoreSubmitInfo, 2> waitInfos{waitInfo, transfer.GetWait(uploads)};
+
+        std::array<VkSemaphoreSubmitInfo, 2> signalInfos{};
+        signalInfos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signalInfos[0].semaphore = renderFinished;
+        signalInfos[0].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        signalInfos[1] = transfer.GetSignal();
+
         std::array<VkCommandBufferSubmitInfo, 2> commandInfos{};
         std::uint32_t commandCount = 0;
-        for (VkCommandBuffer commands : {frame.uploads.commands, frame.commandBuffer}) {
+        for (VkCommandBuffer commands : {uploads.commands, frame.commandBuffer}) {
             if (commands != VK_NULL_HANDLE) {
                 commandInfos[commandCount].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
                 commandInfos[commandCount].commandBuffer = commands;
@@ -686,13 +670,15 @@ namespace Flux::Vk {
 
         VkSubmitInfo2 submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submitInfo.waitSemaphoreInfoCount = 1;
-        submitInfo.pWaitSemaphoreInfos = &waitInfo;
+        submitInfo.waitSemaphoreInfoCount = uploads.transferValue > 0 ? 2 : 1;
+        submitInfo.pWaitSemaphoreInfos = waitInfos.data();
         submitInfo.commandBufferInfoCount = commandCount;
         submitInfo.pCommandBufferInfos = commandInfos.data();
-        submitInfo.signalSemaphoreInfoCount = 1;
-        submitInfo.pSignalSemaphoreInfos = &signalInfo;
-        if (!CheckFrame(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, frame.inFlight), "vkQueueSubmit2")) {
+        submitInfo.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signalInfos.size());
+        submitInfo.pSignalSemaphoreInfos = signalInfos.data();
+        const bool submitted = CheckFrame(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, frame.inFlight), "vkQueueSubmit2");
+        transfer.GraphicsSubmitted(uploads, submitted);
+        if (!submitted) {
             return false;
         }
         frame.submitted = true;

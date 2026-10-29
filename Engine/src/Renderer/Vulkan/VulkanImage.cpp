@@ -115,12 +115,6 @@ namespace Flux::Vk {
                                                            std::span<const std::uint8_t> pixels, bool mipmaps, ImageLayers kind,
                                                            std::uint32_t layerCount) {
         const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
-        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Staging);
-        if (!staging) {
-            return std::unexpected(staging.error());
-        }
-        staging->Write(pixels.data(), pixels.size());
-
         // Jusqu'à 1 x 1 : floor(log2(plus grand côté)) + 1 niveaux.
         const std::uint32_t levels = mipmaps ? static_cast<std::uint32_t>(std::bit_width(std::max(extent.width, extent.height))) : 1u;
         VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -132,66 +126,18 @@ namespace Flux::Vk {
             return image;
         }
 
-        const VkBuffer source = staging->GetHandle();
-        const bool copied = device.Upload([&](VkCommandBuffer commandBuffer) {
-            VkImageMemoryBarrier2 barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image->m_image;
-            VkDependencyInfo dependency{};
-            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers = &barrier;
-            const auto transition = [&](std::uint32_t level, std::uint32_t count, VkImageLayout from, VkImageLayout to,
-                                        VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                                        VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
-                barrier.srcStageMask = srcStage;
-                barrier.srcAccessMask = srcAccess;
-                barrier.dstStageMask = dstStage;
-                barrier.dstAccessMask = dstAccess;
-                barrier.oldLayout = from;
-                barrier.newLayout = to;
-                barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, count, 0, layers};
-                vkCmdPipelineBarrier2(commandBuffer, &dependency);
-            };
-
-            // Tous les niveaux prêts à recevoir une copie ; le niveau 0 reçoit les pixels.
-            transition(0, levels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-            VkBufferImageCopy region{};
-            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers}; // faces à la suite dans le buffer
-            region.imageExtent = {extent.width, extent.height, 1};
-            vkCmdCopyBufferToImage(commandBuffer, source, image->m_image,
-                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-            // Chaque niveau est une réduction de moitié du précédent, qui passe ensuite en lecture.
-            std::int32_t width = static_cast<std::int32_t>(extent.width);
-            std::int32_t height = static_cast<std::int32_t>(extent.height);
-            for (std::uint32_t level = 1; level < levels; ++level) {
-                transition(level - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                           VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-                const std::int32_t nextWidth = std::max(width / 2, 1);
-                const std::int32_t nextHeight = std::max(height / 2, 1);
-                VkImageBlit blit{};
-                blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, layers};
-                blit.srcOffsets[1] = {width, height, 1};
-                blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
-                blit.dstOffsets[1] = {nextWidth, nextHeight, 1};
-                vkCmdBlitImage(commandBuffer, image->m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                               image->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
-                transition(level - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                           VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
-                           VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-                width = nextWidth;
-                height = nextHeight;
-            }
-            // Le dernier niveau n'a servi que de destination.
-            transition(levels - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        }, std::move(*staging));
+        // Faces ou couches à la suite dans pixels ; les niveaux suivants réduits par le GPU.
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers};
+        region.imageExtent = {extent.width, extent.height, 1};
+        Transfer::ImageWrite write;
+        write.image = image->m_image;
+        write.extent = extent;
+        write.levels = levels;
+        write.layers = layers;
+        write.generateMips = levels > 1;
+        write.regions = {&region, 1};
+        const bool copied = device.UploadImage(write, pixels);
         if (!copied) {
             return std::unexpected("envoi d'une texture au GPU");
         }
@@ -235,45 +181,18 @@ namespace Flux::Vk {
         if (offset != pixels.size()) {
             return std::unexpected(std::format("texture : {} octets donnés, {} attendus pour {} niveaux", pixels.size(), offset, levels));
         }
-        auto staging = Buffer::Create(device.GetAllocator(), pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Staging);
-        if (!staging) {
-            return std::unexpected(staging.error());
-        }
-        staging->Write(pixels.data(), pixels.size());
         auto image = Allocate(device, format, extent, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                               VK_IMAGE_ASPECT_COLOR_BIT, levels, kind, layerCount);
         if (!image) {
             return image;
         }
-        const VkBuffer source = staging->GetHandle();
-        const bool copied = device.Upload([&](VkCommandBuffer commandBuffer) {
-            VkImageMemoryBarrier2 barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image->m_image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
-            VkDependencyInfo dependency{};
-            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers = &barrier;
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            vkCmdPipelineBarrier2(commandBuffer, &dependency);
-            vkCmdCopyBufferToImage(commandBuffer, source, image->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                   static_cast<std::uint32_t>(regions.size()), regions.data());
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            vkCmdPipelineBarrier2(commandBuffer, &dependency);
-        }, std::move(*staging));
+        Transfer::ImageWrite write;
+        write.image = image->m_image;
+        write.extent = extent;
+        write.levels = levels;
+        write.layers = layers;
+        write.regions = regions;
+        const bool copied = device.UploadImage(write, pixels);
         if (!copied) {
             return std::unexpected("envoi d'une texture au GPU");
         }
