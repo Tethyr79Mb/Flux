@@ -594,20 +594,47 @@ float CascadeVisibility(Sampler2DShadow map, float2 cells, float2 cell, uint cas
     return lit * 0.25;
 }
 
-// Ombre du relief au loin, tranche `slice` (0 ou 1) ; 1 hors de sa carte.
-float TerrainVisibility(uint slice, float3 worldPosition, float3 normal, float sunFacing)
+// Ombre du relief, tranche `slice` (0 : jusqu'à 3 km, 1 : jusqu'à 40 km) ; négatif hors de sa carte.
+float TerrainSlice(uint slice, float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float texel = slice == 0 ? f.terrainCascades.z : f.terrainCascades.w;
-    const float lit = CascadeVisibility(terrainShadowMap, float2(2.0, 1.0), float2(float(slice), 0.0), 4 + slice, texel,
-                                        worldPosition, normal, sunFacing);
-    return lit < 0.0 ? 1.0 : lit;
+    return CascadeVisibility(terrainShadowMap, float2(2.0, 1.0), float2(float(slice), 0.0), 4 + slice, texel,
+                             worldPosition, normal, sunFacing);
 }
 
-// Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m, le plus sombre
-// des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et de la première du relief (montagnes plus
-// loin vers le soleil) ; au-delà, celles du relief seul jusqu'à 40 km. Chaque tranche se fond dans la suivante sur son
-// dernier dixième : pas de limite nette.
+// Ombre du relief. La tranche est choisie par la distance à la caméra, pas par la profondeur devant elle : un point
+// garde la même carte quand la caméra tourne (sinon, ses ombres changeaient de finesse et de décalage selon le
+// regard). Fondu dans la tranche suivante sur le dernier dixième ; l'autre carte si le point sort de la sienne.
+float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    const float distance = length(worldPosition);
+    if (distance > f.terrainCascades.y) {
+        return 1.0; // trop loin : pas d'ombre
+    }
+    const uint slice = distance > f.terrainCascades.x ? 1 : 0;
+    const float end = slice == 0 ? f.terrainCascades.x : f.terrainCascades.y;
+    float lit = TerrainSlice(slice, worldPosition, normal, sunFacing);
+    if (lit < 0.0) {
+        lit = TerrainSlice(1 - slice, worldPosition, normal, sunFacing);
+        return lit < 0.0 ? 1.0 : lit;
+    }
+    const float fade = saturate((end - distance) / (0.1 * end));
+    if (fade >= 1.0) {
+        return lit;
+    }
+    float next = 1.0;
+    if (slice == 0) {
+        next = TerrainSlice(1, worldPosition, normal, sunFacing);
+        next = next < 0.0 ? lit : next;
+    }
+    return lerp(next, lit, fade);
+}
+
+// Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
+// le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
+// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km.
 float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
@@ -616,26 +643,17 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
         ++cascade;
     }
-    if (cascade < 4) {
-        float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
-                                      f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
-        lit = lit < 0.0 ? 1.0 : lit;
-        if (cascade == 3) {
-            lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
-        }
-        return min(lit, TerrainVisibility(0, worldPosition, normal, sunFacing));
+    const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
+    if (cascade >= 4) {
+        return terrain;
     }
-    if (depth > f.terrainCascades.y) {
-        return 1.0; // trop loin : pas d'ombre
+    float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
+                                  f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
+    lit = lit < 0.0 ? 1.0 : lit;
+    if (cascade == 3) {
+        lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
     }
-    const uint slice = depth > f.terrainCascades.x ? 1 : 0;
-    const float end = slice == 0 ? f.terrainCascades.x : f.terrainCascades.y;
-    const float lit = TerrainVisibility(slice, worldPosition, normal, sunFacing);
-    const float fade = saturate((end - depth) / (0.1 * end));
-    if (fade >= 1.0) {
-        return lit;
-    }
-    return lerp(slice == 0 ? TerrainVisibility(1, worldPosition, normal, sunFacing) : 1.0, lit, fade);
+    return min(lit, terrain);
 }
 
 // Surface vue en un pixel, de quoi l'éclairer (BRDF de Cook-Torrance : GGX, Smith, Schlick, comme glTF).

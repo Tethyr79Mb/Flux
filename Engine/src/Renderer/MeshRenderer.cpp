@@ -1289,8 +1289,9 @@ namespace Flux {
         }
         const std::size_t t = pass - FirstTerrainShadowPass;
         return m_drawTerrain[t] && InShadowVolume(m_terrainCascades[t], center, radius)
-            && m_shadowReceivers.ReachesRange(center, radius, TerrainShadowCasterDistance, TerrainShadowCascadeStart(t),
-                                              TerrainShadowCascadeEnds[t]);
+            // Depuis la caméra : la tranche est choisie par la distance (SunVisibility), un point à 3,5 km sur le bord
+            // du champ n'est qu'à 2,3 km devant la caméra.
+            && m_shadowReceivers.ReachesRange(center, radius, TerrainShadowCasterDistance, 0.0f, TerrainShadowCascadeEnds[t]);
     }
 
     const MeshRenderer::ClusterDraw* MeshRenderer::FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const {

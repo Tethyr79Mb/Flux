@@ -223,8 +223,9 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    refaites à tour de rôle toutes les 30 images (`MeshRenderer::ChooseTerrainCascades`). `PlanetRenderer::Collect`
    ajoute les tuiles hors du champ dont l'ombre tombe dans une carte redessinée (`Tile::shadowOnly` : ni sol, ni
    plaines d'arbres, ni calcul en avance). `SunVisibility` (`Mesh.slang`) garde jusqu'à 200 m le plus sombre des cascades
-   proches (obstacles à 300 m au plus) et de la première du relief (montagne plus loin vers le soleil), puis le relief
-   seul ; chaque tranche fondue dans la suivante sur son dernier dixième.
+   proches (obstacles à 300 m au plus) et du relief (montagne plus loin vers le soleil), puis le relief seul. La
+   tranche du relief se choisit par la distance à la caméra, pas par la profondeur : l'ombre d'un point ne change pas
+   quand la caméra tourne ; chaque tranche fondue dans la suivante sur son dernier dixième.
 4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
    (textures du graphe, lues par `PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans ; puis les nuages (voir plus bas), transparents,
