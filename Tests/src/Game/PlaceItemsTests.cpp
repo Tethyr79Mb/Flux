@@ -6,6 +6,7 @@
 #include "MissionGiver.hpp"
 #include "Warp.hpp"
 #include "PlaceItems.hpp"
+#include "Weapons.hpp"
 
 #include "Flux/Core/EditorExtensions.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -15,6 +16,9 @@
 #include <string_view>
 
 using namespace Flux;
+using Game::HardpointComponent;
+using Game::HealthComponent;
+using Game::WeaponComponent;
 
 namespace {
     template<typename T>

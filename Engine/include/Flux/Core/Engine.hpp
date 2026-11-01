@@ -14,7 +14,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
-#include "Flux/Scene/Weapons.hpp"
+#include "Flux/Scene/Projectiles.hpp"
 #include "Flux/UI/DrawList.hpp"
 
 #include <cstdint>
@@ -26,6 +26,7 @@
 #include <optional>
 #include <utility>
 #include <string>
+#include <span>
 #include <vector>
 #include <string_view>
 
@@ -233,7 +234,7 @@ namespace Flux {
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
         // Systèmes du jeu (missions...) : fonctions du module de jeu appelées pendant le jeu à une étape précise de
-        // l'image, dans l'ordre d'ajout. Le moteur garde les briques (composants, Weapons::Update...), le jeu
+        // l'image, dans l'ordre d'ajout. Le moteur garde les briques (composants, projectiles, vol...), le jeu
         // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
         enum class GameStage {
             Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
@@ -256,9 +257,11 @@ namespace Flux {
         void RemoveGameSaveData(std::string_view name);
         // Personnage du joueur pendant le jeu, NullEntity sinon.
         Entity GetPlayer() const { return GetFollowedPlayer(); }
-        // Projectiles en vol : ceux que le jeu y ajoute (Weapons::Update, CombatAI::Fire) avancent, touchent et sont
-        // dessinés par le moteur.
+        // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent, touchent et sont dessinés par le moteur.
         std::vector<Projectile>& GetProjectiles() { return m_projectiles; }
+        // Projectiles arrivés sur un corps à cette image (l'éclat d'impact est déjà montré) : au jeu d'en retirer
+        // les dégâts, à l'étape AfterPhysics.
+        std::span<const ProjectileHit> GetProjectileHits() const { return m_projectileHits; }
         // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
         // elle est alors prise (les sièges ne la voient plus).
         bool ConsumeInteraction();
@@ -331,11 +334,10 @@ namespace Flux {
         void CaptureKeyRebinding();
         void SaveInputActions() const;
         InterfaceFunction m_gameQuitHandler;
-        // Projectiles en vol (Weapons), vidés quand le jeu s'arrête ou qu'une scène se charge.
+        // Projectiles en vol (Projectiles), vidés quand le jeu s'arrête ou qu'une scène se charge.
         std::vector<Projectile> m_projectiles;
         std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
         std::vector<Impact> m_impacts;
-        std::vector<std::string> m_destroyedNames;
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);

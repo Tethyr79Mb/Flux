@@ -5,6 +5,7 @@
 #include "Docking.hpp"
 #include "MissionGiver.hpp"
 #include "Warp.hpp"
+#include "Weapons.hpp"
 
 #include <Flux/Core/EditorExtensions.hpp>
 #include <Flux/Scene/Scene.hpp>

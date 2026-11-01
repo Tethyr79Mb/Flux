@@ -2,7 +2,7 @@
 
 #include <Flux/Math/WorldPosition.hpp>
 #include <Flux/Scene/Components.hpp>
-#include <Flux/Scene/Weapons.hpp>
+#include "Weapons.hpp"
 
 #include <cstdint>
 #include <vector>

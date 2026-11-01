@@ -90,8 +90,8 @@ namespace FluxEditor {
         // Touche Fin : la sélection descend sur ce qui est dessous.
         void DropToGround(Flux::Engine& engine, Flux::Entity selected, const Flux::RelativeTransform& selectedTransform,
                           const Flux::RelativeTransform* parentTransform);
-        // Arme lâchée au gizmo près d'un emport : s'y fixe s'il l'accepte (Hardpoints).
-        void SnapToHardpoint(Flux::Scene& scene, Flux::Entity weapon);
+        // Pièce (une arme) lâchée au gizmo près d'un support (un emport) : s'y fixe s'il l'accepte (Mounts, règle du jeu).
+        void SnapToMount(Flux::Engine& engine, Flux::Entity part);
 
         // Glissement d'un élément à l'écran (texte, image) : son décalage suit la souris.
         struct ScreenDrag

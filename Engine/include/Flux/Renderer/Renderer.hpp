@@ -111,7 +111,7 @@ namespace Flux {
         // Flammes des réacteurs montrées à pleine poussée, quels que soient les moteurs : dans l'éditeur, jeu arrêté,
         // pour les voir et les régler (sinon, au ralenti, elles sont à peine visibles).
         void SetThrusterPreview(bool preview);
-        // Projectiles à dessiner en traçantes, et éclats d'impact, aux prochains Render (Weapons). Les tableaux
+        // Projectiles à dessiner en traçantes, et éclats d'impact, aux prochains Render (Projectiles). Les tableaux
         // ne sont pas copiés : ils doivent rester valides jusqu'au prochain appel (vides : rien).
         void SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts = {});
 

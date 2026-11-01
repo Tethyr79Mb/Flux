@@ -45,5 +45,8 @@ namespace Flux {
 
         // Vaisseau du poste de pilotage où le joueur est assis, NullEntity sinon.
         FLUX_API Entity GetPilotedShip(const Scene& scene, Entity player);
+        // Vitesse (monde, m/s) d'un vaisseau, ou du vaisseau qui porte l'entité ; nulle hors de tout vaisseau (le
+        // décor ne bouge pas seul). Visée en avance des armes et des missiles.
+        FLUX_API Math::Vector3f GetWorldVelocity(const Scene& scene, Entity entity);
     }
 }

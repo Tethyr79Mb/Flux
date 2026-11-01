@@ -1,11 +1,14 @@
-// Armes des vaisseaux (Weapons) : emports, visée dans le cône, cadence, projectiles, dégâts, missiles guidés, sauvegarde.
-#include "Check.hpp"
+// Armes des vaisseaux (Weapons, code du jeu) et projectiles du moteur : emports, visée dans le cône, cadence, projectiles, dégâts, missiles guidés, sauvegarde.
+#include "../Check.hpp"
 
+#include "Weapons.hpp"
+
+#include "Flux/Core/EditorExtensions.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
-#include "Flux/Scene/Weapons.hpp"
+#include "Flux/Scene/Projectiles.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +19,7 @@
 #include <vector>
 
 using namespace Flux;
+using namespace Game;
 
 namespace {
     bool Near(double a, double b, double tolerance = 1.0e-3) {
@@ -119,13 +123,13 @@ namespace {
         missile.target = aside;
         missile.guidance = 90.0f * std::numbers::pi_v<float> / 180.0f;
         projectiles.push_back(missile);
-        Weapons::GuideMissiles(scene, projectiles, 0.1);
+        Projectiles::GuideMissiles(scene, projectiles, 0.1);
         CHECK(Near(std::acos(-projectiles[0].velocity.z / 100.0f), 9.0 * std::numbers::pi / 180.0, 1.0e-3));
         CHECK(projectiles[0].velocity.x > 0.0f && Near(Math::Length(projectiles[0].velocity), 100.0, 1.0e-3));
         double closest = 1.0e9;
         for (int i = 0; i < 200 && !projectiles.empty(); ++i) {
-            Weapons::GuideMissiles(scene, projectiles, 0.05);
-            Weapons::UpdateProjectiles(projectiles, 0.05);
+            Projectiles::GuideMissiles(scene, projectiles, 0.05);
+            Projectiles::Update(projectiles, 0.05);
             if (!projectiles.empty()) {
                 closest = std::min(closest, Math::Length(Math::Delta(projectiles[0].position, scene.GetWorldPosition(aside))));
             }
@@ -139,18 +143,18 @@ namespace {
         projectiles.assign(1, missile);
         projectiles[0].target = fleeing;
         projectiles[0].guidance = 100.0f; // vire d'un coup : on lit la direction visée
-        Weapons::GuideMissiles(scene, projectiles, 0.1);
+        Projectiles::GuideMissiles(scene, projectiles, 0.1);
         CHECK(Near(projectiles[0].velocity.x / -projectiles[0].velocity.z, 0.5, 0.05));
 
         // Cible détruite en vol : le missile continue tout droit.
         const Math::Vector3f before = projectiles[0].velocity;
         scene.DestroyEntity(fleeing);
-        Weapons::GuideMissiles(scene, projectiles, 0.1);
+        Projectiles::GuideMissiles(scene, projectiles, 0.1);
         CHECK(projectiles[0].target == NullEntity && Math::Length(projectiles[0].velocity - before) < 1.0e-4f);
 
         // Un missile qui touche : l'impact le dit (explosion plus grande).
         std::vector<ProjectileHit> hits;
-        Weapons::UpdateProjectiles(
+        Projectiles::Update(
             projectiles, 0.1,
             [&](const Math::WorldPosition&, const Math::Vector3f&, Entity) -> std::optional<std::pair<Entity, float>> {
                 return std::pair{ahead, 0.5f};
@@ -161,6 +165,7 @@ namespace {
         // Sauvegarde : le nombre emporté, pas les missiles déjà tirés.
         ComponentRegistry components;
         RegisterEngineComponents(components);
+        RegisterWeaponComponents(components);
         const std::string text = SceneSerializer::SaveToString(scene, components);
         CHECK(text.find("\"fired\"") == std::string::npos);
         Scene loaded;
@@ -219,10 +224,10 @@ namespace {
         std::vector<std::string> destroyed;
         // 20 m par image : rien les deux premières, l'impact à la troisième, sur la face avant.
         projectiles.push_back(shot);
-        Weapons::UpdateProjectiles(projectiles, 0.02, cast, &hits);
-        Weapons::UpdateProjectiles(projectiles, 0.02, cast, &hits);
+        Projectiles::Update(projectiles, 0.02, cast, &hits);
+        Projectiles::Update(projectiles, 0.02, cast, &hits);
         CHECK(hits.empty() && projectiles.size() == 1);
-        Weapons::UpdateProjectiles(projectiles, 0.02, cast, &hits);
+        Projectiles::Update(projectiles, 0.02, cast, &hits);
         CHECK(hits.size() == 1 && projectiles.empty());
         CHECK(hits[0].entity == target && Near(hits[0].position.offset.z, -48.0, 1.0e-2) && hits[0].damage == 10.0f);
         Weapons::ApplyHits(scene, hits, NullEntity, &destroyed);
@@ -244,7 +249,7 @@ namespace {
 
         // Les éclats d'impact s'éteignent.
         std::vector<Impact> impacts{{{}, {}, 0.1f}, {{}, {}, 0.3f}};
-        Weapons::UpdateImpacts(impacts, 0.2);
+        Projectiles::UpdateImpacts(impacts, 0.2);
         CHECK(impacts.size() == 1);
         return true;
     }
@@ -274,6 +279,21 @@ bool RunWeaponsTests() {
     weapon.turnRate = 90.0f;
     weapon.fireRate = 10.0f;
     weapon.muzzle = 2.0f;
+
+    // Aimant de l'éditeur, déclaré par le jeu : l'arme est une pièce, l'emport un support ; un emport occupé refuse.
+    {
+        EditorExtensions extensions;
+        RegisterWeaponMount(extensions);
+        const MountRule* rule = extensions.FindMountRule(scene, gun);
+        CHECK(rule && rule->isMount(scene, mount) && !rule->isMount(scene, ship) && !extensions.FindMountRule(scene, ship));
+        CHECK(rule->refusal(scene, gun, mount).empty());
+        const Entity spare = scene.CreateEntity("Canon de rechange");
+        scene.Add<WeaponComponent>(spare);
+        CHECK(rule->refusal(scene, spare, mount).find("porte déjà") != std::string::npos);
+        scene.DestroyEntity(spare);
+        extensions.Clear();
+        CHECK(!extensions.FindMountRule(scene, gun));
+    }
 
     std::vector<Projectile> projectiles;
     // Cible verrouillée à 45° sur la droite (un peu plus avec l'avance) : hors du cône, la tourelle s'arrête à 20°, à
@@ -327,10 +347,10 @@ bool RunWeaponsTests() {
     Weapons::Update(scene, ship, 0.01, input, projectiles);
     CHECK(projectiles.size() == 1);
     const Math::WorldPosition start = projectiles.front().position;
-    Weapons::UpdateProjectiles(projectiles, 0.5);
+    Projectiles::Update(projectiles, 0.5);
     CHECK(Near(Math::Length(Math::Delta(start, projectiles.front().position)), 0.5 * Math::Length(expected), 1.0e-2));
     CHECK(Near(projectiles.front().age, 0.5));
-    Weapons::UpdateProjectiles(projectiles, 2.0);
+    Projectiles::Update(projectiles, 2.0);
     CHECK(projectiles.empty());
 
     // Sans visée, la tourelle revient vers l'avant de l'emport.
@@ -367,6 +387,9 @@ bool RunWeaponsTests() {
     weapon.cooldown = 0.3f;
     ComponentRegistry components;
     RegisterEngineComponents(components);
+    RegisterWeaponComponents(components);
+    // Mêmes noms qu'au temps du moteur : les scènes se relisent.
+    CHECK(components.Find("hardpoint") && components.Find("weapon") && components.Find("health"));
     const std::string text = SceneSerializer::SaveToString(scene, components);
     CHECK(text.find("cooldown") == std::string::npos);
     Scene loaded;

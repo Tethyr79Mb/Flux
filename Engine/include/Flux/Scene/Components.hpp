@@ -332,58 +332,6 @@ namespace Flux {
         float light = 8.0f;      // intensité de la lumière jetée autour à pleine poussée (0 : aucune)
     };
 
-    // Ce qu'un emport accepte, et ce qu'est une arme.
-    enum class WeaponKind : std::uint8_t {
-        Gun,     // canon : tire des projectiles en rafale
-        Missile, // lance-missiles
-    };
-
-    // Point d'emport d'un vaisseau (« hardpoint ») : l'endroit du modèle où se fixe une arme, son -z vers l'avant du
-    // tir. L'arme est une entité enfant (WeaponComponent) : changer d'arme, c'est remplacer cet enfant. Une arme d'un
-    // autre genre, ou plus grande que l'emport, n'y tire pas.
-    struct HardpointComponent
-    {
-        WeaponKind kind = WeaponKind::Gun;
-        std::int32_t size = 1; // de 1 à 3 : la plus grande arme acceptée
-    };
-
-    // Arme posée sur un emport (HardpointComponent parent) d'un vaisseau. Pendant le jeu, aux commandes de ce
-    // vaisseau, elle pivote vers le point que regarde le pilote (sans sortir de son cône autour de l'avant de
-    // l'emport) et tire tant que la touche de son groupe est tenue (1 à 0 au-dessus des lettres). Son -z : le canon ; ses projectiles partent de
-    // muzzle mètres devant son origine.
-    struct WeaponComponent
-    {
-        WeaponKind kind = WeaponKind::Gun;
-        std::int32_t size = 1;
-        std::int32_t group = 1;         // groupe de tir : touche 1 à 9, 10 pour la touche 0 ; 0 : ne tire pas
-        float fireRate = 8.0f;          // tirs par seconde
-        float projectileSpeed = 1500.0f; // m/s, en plus de la vitesse du vaisseau
-        float range = 2500.0f;          // m : au-delà, le projectile disparaît
-        float damage = 10.0f;           // par projectile
-        float cone = 20.0f;             // °, débattement autour de l'avant de l'emport (0 : tir fixe)
-        float turnRate = 120.0f;        // °/s, vitesse de pivotement
-        float muzzle = 1.0f;            // m, de l'origine de l'arme à la bouche du canon
-        Math::LinearColor color{1.0f, 0.55f, 0.2f}; // couleur de la traçante
-        // Missiles : nombre emporté (0 : illimité) et virage le plus serré en vol (°/s). Verrouillage : écart autour
-        // du centre de la vue dans lequel une cible se verrouille à l'appui sur une touche de tir (°). Un missile part par appui sur la touche du groupe, du
-        // lance-missiles de ce groupe qui en a tiré le moins ; la cadence est alors son temps de rechargement.
-        std::int32_t ammo = 0;
-        float guidance = 90.0f;
-        float lockAngle = 10.0f;
-        // Pendant le jeu (non enregistrés) : temps avant le prochain tir (s), missiles déjà tirés.
-        float cooldown = 0.0f;
-        std::int32_t fired = 0;
-    };
-
-    // Points de vie d'une cible (vaisseau, décor) : les projectiles qui touchent ses corps de collision, ou ceux de
-    // ses enfants, les retirent ; à 0, elle est détruite avec ses enfants (sauf si elle porte le joueur : elle reste
-    // à 0, la fin de partie viendra plus tard). Pendant le jeu, sur la copie de la scène : le fichier garde la valeur
-    // de départ.
-    struct HealthComponent
-    {
-        float health = 100.0f;
-    };
-
     enum class ColliderShape : std::uint8_t {
         Box,     // size
         Sphere,  // radius

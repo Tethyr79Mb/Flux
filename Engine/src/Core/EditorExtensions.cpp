@@ -10,5 +10,15 @@ namespace Flux {
         return found != m_placeItems.end() ? &*found : nullptr;
     }
 
-    void EditorExtensions::Clear() { m_placeItems.clear(); }
+    void EditorExtensions::AddMountRule(MountRule rule) { m_mountRules.push_back(std::move(rule)); }
+
+    const MountRule* EditorExtensions::FindMountRule(const Scene& scene, Entity part) const {
+        const auto found = std::ranges::find_if(m_mountRules, [&](const MountRule& rule) { return rule.isPart(scene, part); });
+        return found != m_mountRules.end() ? &*found : nullptr;
+    }
+
+    void EditorExtensions::Clear() {
+        m_placeItems.clear();
+        m_mountRules.clear();
+    }
 }

@@ -9,6 +9,7 @@
 #include "PlaceItems.hpp"
 #include "PlayerWeapons.hpp"
 #include "Warp.hpp"
+#include "Weapons.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
@@ -67,6 +68,7 @@ namespace Game {
             .Register<SpinComponent>("spin", "Rotation continue")
             .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
             .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
+        RegisterWeaponComponents(engine.GetComponents());
         RegisterDock(engine.GetComponents());
         RegisterWarpDrive(engine.GetComponents());
         RegisterCombatAI(engine.GetComponents());
@@ -74,9 +76,11 @@ namespace Game {
         engine.SetGameUpdate(Update);
         RegisterNavigation(engine); // avant l'IA de combat : même ordre qu'au temps du moteur
         RegisterMissions(engine);
+        RegisterDamage(engine);        // les dégâts de l'image avant les nouveaux tirs, comme au temps du moteur
         RegisterPlayerWeapons(engine); // avant les ennemis : même ordre de tir qu'avant
         RegisterCombat(engine);
         RegisterPlaceItems(engine.GetEditorExtensions()); // retirés par le moteur au déchargement
+        RegisterWeaponMount(engine.GetEditorExtensions());
         engine.GetInputActions().Add("Saut d'une année-lumière", "Démo", Key::T);
         // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
         engine.RegisterInterfaceFunction("Exemple", [](Engine&) { Log::Info("bouton d'interface : fonction Exemple appelée"); });
@@ -92,6 +96,7 @@ namespace Game {
         UnregisterMissions(engine);
         UnregisterCombat(engine);
         UnregisterPlayerWeapons(engine);
+        UnregisterDamage(engine);
         engine.UnregisterInterfaceFunction("Exemple");
         engine.UnbindInterfaceValue("Vitesse de la démo");
         engine.GetInputActions().Remove("Saut d'une année-lumière");

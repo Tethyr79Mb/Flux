@@ -23,7 +23,7 @@
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
-#include "Flux/Scene/Weapons.hpp"
+#include "Flux/Scene/Projectiles.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -536,12 +536,12 @@ namespace Flux {
         Ships::Update(m_scene, Ships::GetPilotedShip(m_scene, player), deltaSeconds, shipInput);
         RunGameSystems(GameStage::BeforePhysics, deltaSeconds); // pilote automatique, warp et IA du jeu, après le pilote
         m_physics->Update(m_scene, deltaSeconds, character);
-        // Projectiles après la physique, avant les armes du jeu (étape AfterPhysics) : les vaisseaux sont à leur place
+        // Projectiles après la physique, avant les dégâts et les armes du jeu (étape AfterPhysics) : les vaisseaux sont à leur place
         // de cette image, les nouveaux tirs partent de la bouche des canons (avant, ils naîtraient en retard d'une
         // image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
         m_projectileHits.clear();
-        Weapons::GuideMissiles(m_scene, m_projectiles, deltaSeconds);
-        Weapons::UpdateProjectiles(
+        Projectiles::GuideMissiles(m_scene, m_projectiles, deltaSeconds);
+        Projectiles::Update(
             m_projectiles, deltaSeconds,
             [this](const Math::WorldPosition& from, const Math::Vector3f& segment, Entity ship) -> std::optional<std::pair<Entity, float>> {
                 if (const auto hit = m_physics->CastRay(m_scene, from, segment, ship)) {
@@ -550,17 +550,12 @@ namespace Flux {
                 return std::nullopt;
             },
             &m_projectileHits);
-        Weapons::UpdateImpacts(m_impacts, deltaSeconds);
+        Projectiles::UpdateImpacts(m_impacts, deltaSeconds);
         for (const ProjectileHit& hit : m_projectileHits) {
             m_impacts.push_back(hit.missile ? Impact{hit.position, hit.color, ExplosionSeconds, ExplosionSize}
                                             : Impact{hit.position, hit.color, ImpactSeconds});
         }
-        m_destroyedNames.clear();
-        Weapons::ApplyHits(m_scene, m_projectileHits, player, &m_destroyedNames);
-        for (const std::string& name : m_destroyedNames) {
-            Log::Info("« {} » détruit", name);
-        }
-        RunGameSystems(GameStage::AfterPhysics, deltaSeconds); // armes du jeu (joueur, ennemis)
+        RunGameSystems(GameStage::AfterPhysics, deltaSeconds); // dégâts (GetProjectileHits), armes du joueur et des ennemis
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
     }
 

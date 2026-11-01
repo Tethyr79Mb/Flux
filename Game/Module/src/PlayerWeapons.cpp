@@ -1,5 +1,7 @@
 #include "PlayerWeapons.hpp"
 
+#include "Weapons.hpp"
+
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Scene/Picking.hpp>
 #include <Flux/Input/InputActions.hpp>
@@ -7,7 +9,6 @@
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/Scene/Components.hpp>
 #include <Flux/Scene/Ships.hpp>
-#include <Flux/Scene/Weapons.hpp>
 #include <Flux/UI/DrawList.hpp>
 #include <Flux/UI/HudText.hpp>
 

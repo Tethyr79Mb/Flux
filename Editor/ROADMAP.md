@@ -40,6 +40,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - 🔧 Annuler / refaire (Ctrl+Z, Ctrl+Y). À améliorer : un objet à la fois, l'étoile du titre reste après une annulation.
 - ✅ Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de
   lui, s'y fixe (enfant, à sa place exacte) ; refus expliqué si l'emport ne l'accepte pas (genre, taille, déjà occupé).
+  Depuis le 2026-11-01, la règle (ce qui est arme, emport, et le refus) est déclarée par le jeu (`MountRule`).
 - 🔧 Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu. À améliorer : la scène est copiée en JSON, lent sur une grosse scène.
 - ✅ Scène de démarrage du projet.
 

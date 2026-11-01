@@ -205,4 +205,10 @@ namespace Flux::Ships {
         const Entity seat = Seats::GetPilotSeat(scene, player);
         return seat != NullEntity ? scene.GetShip(seat) : NullEntity;
     }
+
+    Math::Vector3f GetWorldVelocity(const Scene& scene, Entity entity) {
+        const Entity ship = scene.TryGet<ShipComponent>(entity) ? entity : scene.GetShip(entity);
+        const ShipComponent* component = ship != NullEntity ? scene.TryGet<ShipComponent>(ship) : nullptr;
+        return component ? scene.GetWorldRotation(ship).Rotate(component->velocity) : Math::Vector3f{};
+    }
 }

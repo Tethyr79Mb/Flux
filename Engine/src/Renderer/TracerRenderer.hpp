@@ -2,7 +2,7 @@
 
 #include "Flux/Math/Matrix4.hpp"
 #include "Flux/Math/Vector2.hpp"
-#include "Flux/Scene/Weapons.hpp"
+#include "Flux/Scene/Projectiles.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -15,7 +15,7 @@
 namespace Flux {
     struct Camera;
 
-    // Traçantes des projectiles (Weapons) : un trait lumineux par projectile (shaders/Tracer.slang), toutes en un
+    // Traçantes des projectiles (Projectiles) : un trait lumineux par projectile (shaders/Tracer.slang), toutes en un
     // seul appel de dessin dans la passe de la scène, après les flammes. Au plus MaxTracers par image : au-delà,
     // ceux du début de la liste ne sont pas dessinés.
     class TracerRenderer {

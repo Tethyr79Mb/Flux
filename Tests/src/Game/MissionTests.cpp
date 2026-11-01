@@ -3,6 +3,7 @@
 
 #include "CombatAI.hpp"
 #include "MissionGiver.hpp"
+#include "Weapons.hpp"
 
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -16,6 +17,8 @@
 using namespace Flux;
 using Game::CombatAIComponent;
 using Game::MissionGiverComponent;
+using Game::HardpointComponent;
+using Game::HealthComponent;
 namespace Missions = Game::Missions;
 
 namespace {

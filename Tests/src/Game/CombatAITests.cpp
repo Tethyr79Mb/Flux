@@ -5,6 +5,7 @@
 #include "CombatAI.hpp"
 
 #include "MissionGiver.hpp" // drone de mission (code du jeu)
+#include "Weapons.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -18,6 +19,8 @@ namespace Missions = Game::Missions;
 namespace CombatAI = Game::CombatAI;
 using Game::CombatAIComponent;
 using Game::CombatState;
+using Game::HealthComponent;
+namespace Weapons = Game::Weapons;
 
 namespace {
     constexpr double Frame = 1.0 / 60.0;
@@ -61,7 +64,7 @@ bool RunCombatAITests() {
             CombatAI::Steer(scene, Frame, player);
             world.Update(scene, Frame, {});
             hits.clear();
-            Weapons::UpdateProjectiles(
+            Projectiles::Update(
                 projectiles, Frame,
                 [&](const Math::WorldPosition& from, const Math::Vector3f& segment, Entity ship) -> std::optional<std::pair<Entity, float>> {
                     if (const auto hit = world.CastRay(scene, from, segment, ship)) {

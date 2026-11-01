@@ -29,6 +29,18 @@ namespace Flux {
         std::function<void(Scene& scene, Entity entity)> build;
     };
 
+    // Aimant de l'éditeur : une pièce (une arme) lâchée sur un support (un emport) dans l'onglet Scènes, ou déplacée au
+    // gizmo près de lui, s'y fixe : elle devient son enfant, à sa place exacte. Le jeu dit ce qui est pièce ou support,
+    // et pourquoi un support refuse une pièce ; l'éditeur cherche le support proche et fixe la pièce.
+    struct MountRule
+    {
+        std::string title; // titre de la fenêtre qui dit le refus (« Emport »)
+        std::function<bool(const Scene& scene, Entity entity)> isPart;
+        std::function<bool(const Scene& scene, Entity entity)> isMount;
+        // Pourquoi le support refuse la pièce (autre genre, trop grande, déjà occupé...), vide s'il l'accepte.
+        std::function<std::string(const Scene& scene, Entity part, Entity mount)> refusal;
+    };
+
     // Ce que le jeu ajoute à l'éditeur. Rempli par le jeu (FluxRegisterGame), vidé par GameModule::Unregister avant le
     // déchargement de la DLL : les fonctions build sont dans son code. Le client du jeu le remplit aussi, sans s'en servir.
     class FLUX_API EditorExtensions {
@@ -36,9 +48,13 @@ namespace Flux {
         void AddPlaceItem(PlaceItem item);
         std::span<const PlaceItem> GetPlaceItems() const { return m_placeItems; }
         const PlaceItem* FindPlaceItem(std::string_view label) const;
+        void AddMountRule(MountRule rule);
+        // Règle dont `part` est une pièce, nullptr sinon.
+        const MountRule* FindMountRule(const Scene& scene, Entity part) const;
         void Clear();
 
         private:
         std::vector<PlaceItem> m_placeItems;
+        std::vector<MountRule> m_mountRules;
     };
 }
