@@ -363,18 +363,22 @@ namespace Flux::Planetology {
 
     const RHI::BindGroup* GroundTextures::Get(RHI::Device& device, const ModelCache& models,
                                               const std::filesystem::path& assetsDirectory) {
-        // Décodage fini : envoyé au GPU (le seul moment où le fil principal attend, le temps de la copie).
+        // Copies finies : les nouveaux tableaux remplacent les anciens, détruits quand les images en vol sont finies.
+        if (m_pending.group && device.IsUploadReady(m_pendingTicket)) {
+            Retire(device, m_current);
+            m_current = std::move(m_pending);
+            m_pending = {};
+        }
+        // Décodage fini : envoyé au GPU, en place quelques images plus tard (le fil principal recopie encore les
+        // pixels dans la mémoire d'envoi).
         if (m_decoding.valid() && m_decoding.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             Decoded decoded = m_decoding.get();
             m_cancel.reset();
             if (!decoded.error.empty()) {
                 Log::Error("Sol des planètes : {}", decoded.error);
             } else {
-                device.WaitIdle(); // l'ancien groupe peut servir à une image en vol
-                m_group.reset();
-                if (!Upload(device, models, decoded)) {
-                    m_group.reset();
-                }
+                Retire(device, m_pending); // une version plus récente le remplace
+                Upload(device, models, decoded);
             }
         }
 
@@ -403,11 +407,8 @@ namespace Flux::Planetology {
             if (writeTime != m_writeTime) {
                 m_writeTime = writeTime;
                 if (writeTime == std::filesystem::file_time_type::min()) {
-                    device.WaitIdle(); // plus d'images : couleurs unies
-                    m_group.reset();
-                    for (auto& texture : m_textures) {
-                        texture.reset();
-                    }
+                    Retire(device, m_pending); // plus d'images : couleurs unies
+                    Retire(device, m_current);
                 } else {
                     m_cancel = std::make_shared<std::atomic<bool>>(false);
                     // Sans formats BC : pas de cache, les images en RGBA8.
@@ -421,7 +422,17 @@ namespace Flux::Planetology {
                 }
             }
         }
-        return m_group.get();
+        return m_current.group.get();
+    }
+
+    void GroundTextures::Retire(RHI::Device& device, Textures& textures) {
+        if (textures.group || textures.textures[0] || textures.textures[1]) {
+            device.Retire([old = std::move(textures)]() mutable {
+                old.group.reset(); // avant les textures qu'il référence
+                old.textures = {};
+            });
+        }
+        textures = {};
     }
 
     // La plus récente des images du dossier (aucune : la plus petite valeur ; sous Windows, une date peut être avant
@@ -454,30 +465,43 @@ namespace Flux::Planetology {
         constexpr std::array formats{RHI::Format::RGBA8Srgb, RHI::Format::RGBA8Unorm};
         constexpr std::array compressedFormats{RHI::Format::BC7Srgb, RHI::Format::BC7Unorm};
         const auto layers = static_cast<std::uint32_t>(LayerNames.size());
-        for (std::size_t i = 0; i < m_textures.size(); ++i) {
+        // Gros envoi (45 Mo en RGBA8) : asynchrone, aucune image ne l'attend.
+        Textures created;
+        device.BeginAsyncUploads();
+        const auto finish = [&](bool success) {
+            const std::uint64_t ticket = device.EndAsyncUploads();
+            if (success) {
+                m_pending = std::move(created);
+                m_pendingTicket = ticket;
+            } else {
+                Retire(device, created); // des copies vers les textures sont peut-être enregistrées
+            }
+            return success;
+        };
+        for (std::size_t i = 0; i < created.textures.size(); ++i) {
             auto texture = decoded.compressed
                                ? device.CreateTextureArrayLevels(compressedFormats[i], extent, layers, MipLevelCount(extent.width), pixels[i])
                                : device.CreateTextureArray(formats[i], extent, layers, pixels[i], true);
             if (!texture) {
-                return fail(texture.error());
+                return finish(fail(texture.error()));
             }
-            m_textures[i] = std::move(*texture);
+            created.textures[i] = std::move(*texture);
         }
         if (!m_sampler) {
             auto sampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Linear,
                                                  .address = RHI::AddressMode::Repeat, .anisotropy = 16.0f});
             if (!sampler) {
-                return fail(sampler.error());
+                return finish(fail(sampler.error()));
             }
             m_sampler = std::move(*sampler);
         }
-        m_group = device.CreateBindGroup(models.GetGroundLayout());
-        if (!m_group) {
-            return fail("plus de groupe libre pour les textures");
+        created.group = device.CreateBindGroup(models.GetGroundLayout());
+        if (!created.group) {
+            return finish(fail("plus de groupe libre pour les textures"));
         }
-        m_group->SetTexture(ModelCache::GroundColorSlot, *m_textures[0], *m_sampler);
-        m_group->SetTexture(ModelCache::GroundNormalSlot, *m_textures[1], *m_sampler);
+        created.group->SetTexture(ModelCache::GroundColorSlot, *created.textures[0], *m_sampler);
+        created.group->SetTexture(ModelCache::GroundNormalSlot, *created.textures[1], *m_sampler);
         Log::Info("Sol des planètes : {} matières en {}x{}{}", LayerNames.size(), size, size, decoded.compressed ? " (BC7)" : "");
-        return true;
+        return finish(true);
     }
 }

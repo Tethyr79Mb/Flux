@@ -67,6 +67,8 @@ namespace Flux::Vk {
         // inUse : le buffer sert peut-être à une image déjà soumise, la copie attend qu'elle soit finie.
         bool UploadBuffer(VkBuffer target, VkDeviceSize offset, const void* data, VkDeviceSize size, bool inUse);
         bool UploadImage(const Transfer::ImageWrite& write, std::span<const std::uint8_t> pixels);
+        // Depuis une mémoire d'envoi déjà remplie (Transfer::WriteImage), sans recopie.
+        bool UploadImage(const Transfer::ImageWrite& write, VkBuffer source, VkDeviceSize sourceOffset);
         void SetDeferredUploads(bool deferred) { m_deferUploads = deferred; }
         Transfer& GetTransfer() { return *m_transfer; }
         // Familles de files qui se partagent les buffers remplis par envoi (Buffer::Create) ; vide avec une seule file.

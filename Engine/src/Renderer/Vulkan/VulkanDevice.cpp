@@ -339,15 +339,13 @@ namespace Flux::Vk {
         // Les envois en attente d'abord : ces commandes les lisent peut-être.
         Transfer::GraphicsPart uploads = m_transfer->TakeGraphics();
         if (success) {
-            std::array<VkCommandBufferSubmitInfo, 2> commandInfos{};
-            std::uint32_t count = 0;
-            for (VkCommandBuffer commands : {uploads.commands, commandBuffer}) {
-                if (commands != VK_NULL_HANDLE) {
-                    commandInfos[count].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-                    commandInfos[count].commandBuffer = commands;
-                    ++count;
-                }
+            std::vector<VkCommandBufferSubmitInfo> commandInfos;
+            commandInfos.reserve(uploads.commands.size() + 1);
+            for (VkCommandBuffer commands : uploads.commands) {
+                commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
             }
+            commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commandBuffer, 0});
+            const auto count = static_cast<std::uint32_t>(commandInfos.size());
             const VkSemaphoreSubmitInfo wait = m_transfer->GetWait(uploads);
             const VkSemaphoreSubmitInfo signal = m_transfer->GetSignal();
             VkSubmitInfo2 submitInfo{};
@@ -380,6 +378,13 @@ namespace Flux::Vk {
 
     bool Device::UploadImage(const Transfer::ImageWrite& write, std::span<const std::uint8_t> pixels) {
         if (!m_transfer->WriteImage(write, pixels)) {
+            return false;
+        }
+        return m_deferUploads || ImmediateSubmit([](VkCommandBuffer) {});
+    }
+
+    bool Device::UploadImage(const Transfer::ImageWrite& write, VkBuffer source, VkDeviceSize sourceOffset) {
+        if (!m_transfer->WriteImage(write, source, sourceOffset)) {
             return false;
         }
         return m_deferUploads || ImmediateSubmit([](VkCommandBuffer) {});

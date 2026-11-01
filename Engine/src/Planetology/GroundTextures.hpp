@@ -44,8 +44,8 @@ namespace Flux::Planetology {
         // les images quand le dossier des assets change ou qu'une image est modifiée (vérifié toutes les deux
         // secondes).
         const RHI::BindGroup* Get(RHI::Device& device, const ModelCache& models, const std::filesystem::path& assetsDirectory);
-        // Images en cours de décodage (pas encore sur le GPU).
-        bool IsLoading() const { return m_decoding.valid(); }
+        // Images en cours de décodage ou de copie (pas encore sur le GPU).
+        bool IsLoading() const { return m_decoding.valid() || m_pending.group != nullptr; }
         // Rotation maximale de chaque matière (radians, dans l'ordre de GroundLayer ; FrameData::groundRotations),
         // relue avec les images quand matieres.json change (sans redécoder les images).
         const std::array<float, static_cast<std::size_t>(GroundLayer::Count)>& GetMaxAngles() const { return m_maxAngles; }
@@ -63,7 +63,16 @@ namespace Flux::Planetology {
         };
 
         private:
+        // Tableaux et groupe envoyés (m_pending), en place quand leurs copies sont finies.
         bool Upload(RHI::Device& device, const ModelCache& models, Decoded& decoded);
+        struct Textures
+        {
+            // Dans cet ordre : le groupe est rendu avant les textures qu'il référence.
+            std::array<std::unique_ptr<RHI::Texture>, 2> textures; // couleur et rugosité, normales et occlusion
+            std::unique_ptr<RHI::BindGroup> group;
+        };
+        // Détruit quand les images en vol qui s'en servent sont finies (RHI::Device::Retire), sans arrêter le GPU.
+        static void Retire(RHI::Device& device, Textures& textures);
         std::filesystem::file_time_type NewestWriteTime() const;
         void ReadSettings();
 
@@ -74,9 +83,10 @@ namespace Flux::Planetology {
         std::array<float, static_cast<std::size_t>(GroundLayer::Count)> m_maxAngles{};
         std::future<Decoded> m_decoding; // valide : décodage en cours ou fini, pas encore envoyé au GPU
         std::shared_ptr<std::atomic<bool>> m_cancel; // celui du décodage en cours : arrête les images restantes
-        // Dans cet ordre : le groupe est rendu avant les textures et le sampler qu'il référence.
+        // Dans cet ordre : les groupes sont rendus avant le sampler qu'ils référencent.
         std::unique_ptr<RHI::Sampler> m_sampler;
-        std::array<std::unique_ptr<RHI::Texture>, 2> m_textures; // couleur et rugosité, normales et occlusion
-        std::unique_ptr<RHI::BindGroup> m_group;
+        Textures m_current; // groupe nul : pas d'images
+        Textures m_pending; // envoyés, copies pas encore finies (groupe nul : rien)
+        std::uint64_t m_pendingTicket = 0;
     };
 }

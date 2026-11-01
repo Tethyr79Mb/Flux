@@ -111,9 +111,9 @@ namespace Flux::Vk {
         return image;
     }
 
-    std::expected<Image, std::string> Image::CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
-                                                           std::span<const std::uint8_t> pixels, bool mipmaps, ImageLayers kind,
-                                                           std::uint32_t layerCount) {
+    std::expected<Image, std::string> Image::CreateSampled(Device& device, VkFormat format, VkExtent2D extent, bool mipmaps,
+                                                           ImageLayers kind, std::uint32_t layerCount,
+                                                           const std::function<bool(const Transfer::ImageWrite&)>& upload) {
         const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
         // Jusqu'à 1 x 1 : floor(log2(plus grand côté)) + 1 niveaux.
         const std::uint32_t levels = mipmaps ? static_cast<std::uint32_t>(std::bit_width(std::max(extent.width, extent.height))) : 1u;
@@ -125,23 +125,34 @@ namespace Flux::Vk {
         if (!image) {
             return image;
         }
-
-        // Faces ou couches à la suite dans pixels ; les niveaux suivants réduits par le GPU.
         VkBufferImageCopy region{};
         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers};
         region.imageExtent = {extent.width, extent.height, 1};
         Transfer::ImageWrite write;
-        write.image = image->m_image;
+        write.image = image->GetHandle();
         write.extent = extent;
         write.levels = levels;
         write.layers = layers;
         write.generateMips = levels > 1;
         write.regions = {&region, 1};
-        const bool copied = device.UploadImage(write, pixels);
-        if (!copied) {
+        if (!upload(write)) {
             return std::unexpected("envoi d'une texture au GPU");
         }
         return image;
+    }
+
+    std::expected<Image, std::string> Image::CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
+                                                           std::span<const std::uint8_t> pixels, bool mipmaps, ImageLayers kind,
+                                                           std::uint32_t layerCount) {
+        return CreateSampled(device, format, extent, mipmaps, kind, layerCount,
+                             [&](const Transfer::ImageWrite& write) { return device.UploadImage(write, pixels); });
+    }
+
+    std::expected<Image, std::string> Image::CreateTexture(Device& device, VkFormat format, VkExtent2D extent, VkBuffer source,
+                                                           VkDeviceSize sourceOffset, bool mipmaps) {
+        return CreateSampled(device, format, extent, mipmaps, ImageLayers::Single, 1, [&](const Transfer::ImageWrite& write) {
+            return device.UploadImage(write, source, sourceOffset);
+        });
     }
 
     namespace {

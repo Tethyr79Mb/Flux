@@ -9,8 +9,8 @@
 // ou dans une texture.
 //
 // Durées de vie : un objet créé par le Device doit être détruit avant lui ; un BindGroup avant son BindGroupLayout.
-// Un objet ne se détruit ni ne se modifie pendant que le GPU l'utilise : après Device::WaitIdle, ou (ressources d'une
-// image en vol) une fois BeginFrame revenu sur cette image.
+// Un objet ne se détruit ni ne se modifie pendant que le GPU l'utilise : après Device::WaitIdle, une fois BeginFrame
+// revenu sur l'image qui s'en servait, ou confié à Device::Retire (détruit quand le GPU a fini, sans attendre).
 
 #include "Flux/Math/Color.hpp"
 #include "Flux/Export.hpp"
@@ -254,6 +254,17 @@ namespace Flux::RHI {
         virtual void Read(void* data, std::uint64_t size, std::uint64_t offset = 0) const = 0;
     };
 
+    // Mémoire d'envoi (Device::CreateStagingBuffer) remplie par le CPU, sur n'importe quel fil, puis copiée telle
+    // quelle dans une texture (Device::CreateTexture) : les pixels décodés sur un fil de chargement y vont directement,
+    // le fil de l'image n'a plus rien à recopier.
+    class StagingBuffer {
+        public:
+        virtual ~StagingBuffer() = default;
+        virtual std::uint64_t GetSize() const = 0;
+        // Pas pendant qu'une copie le lit (après Device::ReleaseStaging, plus rien).
+        virtual void Write(std::uint64_t offset, const void* data, std::uint64_t size) = 0;
+    };
+
     class Texture {
         public:
         virtual ~Texture() = default;
@@ -470,7 +481,7 @@ namespace Flux::RHI {
         virtual std::uint32_t GetMeshPreferredThreads() const = 0;
         // Formats compressés BC (textureCompressionBC) : tous les GPU de bureau, facultatif quand même.
         virtual bool HasTextureCompressionBC() const = 0;
-        // Attend que le GPU ait tout fini (rechargement d'une ressource en service, fermeture).
+        // Attend que le GPU ait tout fini (fermeture) ; appelle les libérations différées (Retire).
         virtual void WaitIdle() = 0;
 
         // Envois vers la mémoire vidéo (CreateBuffer avec données, WriteBuffer d'un buffer GpuOnly, textures) : avec une
@@ -481,13 +492,34 @@ namespace Flux::RHI {
         // GpuOnly : `data` (size octets) y est copié. Upload : `data` peut être nul.
         virtual std::expected<std::unique_ptr<Buffer>, std::string> CreateBuffer(const BufferDesc& desc, const void* data = nullptr) = 0;
         // Remplit une partie d'un buffer : GpuOnly par une copie (voir plus haut), Upload directement. false si la copie
-        // ne peut être préparée.
-        virtual bool WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) = 0;
+        // ne peut être préparée. inUse faux : aucune image soumise ne lit cette plage (place neuve d'un buffer
+        // partagé, rendue seulement par Retire), la copie n'attend pas leur fin.
+        virtual bool WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size, bool inUse = true) = 0;
         // Texture échantillonnée remplie de pixels (4 octets chacun) ; mipmaps : réductions successives calculées
         // par le GPU, pour une texture vue de loin sans scintillement.
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTexture(Format format, Extent extent,
                                                                                    std::span<const std::uint8_t> pixels,
                                                                                    bool mipmaps = false) = 0;
+        // La même depuis une mémoire d'envoi (RGBA8, à `offset`), sans recopie.
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTexture(Format format, Extent extent,
+                                                                                   const StagingBuffer& source, std::uint64_t offset,
+                                                                                   bool mipmaps = false) = 0;
+        // Mémoire d'envoi de `size` octets ; appelable depuis n'importe quel fil (fils de chargement).
+        virtual std::expected<std::unique_ptr<StagingBuffer>, std::string> CreateStagingBuffer(std::uint64_t size) = 0;
+        // Rend une mémoire d'envoi dont les copies sont enregistrées : détruite quand elles sont finies.
+        virtual void ReleaseStaging(std::unique_ptr<StagingBuffer> staging) = 0;
+
+        // Envois asynchrones (avec une fenêtre) : ceux faits entre BeginAsyncUploads et EndAsyncUploads ne retardent
+        // aucune image. Leurs ressources ne doivent servir qu'une fois IsUploadReady vrai pour le numéro rendu (une
+        // image ou deux plus tard) ; sans fenêtre, tout de suite. Pour les gros envois (modèles, textures du sol).
+        virtual void BeginAsyncUploads() = 0;
+        virtual std::uint64_t EndAsyncUploads() = 0;
+        virtual bool IsUploadReady(std::uint64_t ticket) const = 0;
+        // Libération différée : `release` (qui détruit une ressource remplacée, rend ses places) est appelée quand le
+        // GPU a fini ce qui a été soumis ou enregistré jusqu'ici, au début d'une image suivante, sans arrêter le GPU.
+        // Ce qu'elle touche doit vivre jusqu'à son appel (WaitIdle les appelle toutes).
+        virtual void Retire(std::move_only_function<void()> release) = 0;
+
         // Texture cube (ciel, reflets) : 6 faces carrées de `size` pixels, à la suite dans pixels, dans l'ordre +X, -X,
         // +Y, -Y, +Z, -Z ; lue par direction (TextureCube dans les shaders).
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeTexture(Format format, std::uint32_t size,

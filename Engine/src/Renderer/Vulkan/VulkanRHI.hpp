@@ -11,6 +11,8 @@
 #include "Renderer/Vulkan/VulkanSwapchain.hpp"
 
 #include <array>
+#include <deque>
+#include <functional>
 #include <vector>
 
 namespace Flux::Vk {
@@ -25,6 +27,18 @@ namespace Flux::Vk {
         bool IsMapped() const { return m_buffer.GetMappedData() != nullptr; }
         void Read(void* data, std::uint64_t size, std::uint64_t offset) const override { m_buffer.Read(data, size, offset); }
         VkBuffer GetHandle() const { return m_buffer.GetHandle(); }
+
+        private:
+        Vk::Buffer m_buffer;
+    };
+
+    class RhiStagingBuffer final : public RHI::StagingBuffer {
+        public:
+        explicit RhiStagingBuffer(Vk::Buffer buffer) : m_buffer(std::move(buffer)) {}
+        std::uint64_t GetSize() const override { return m_buffer.GetSize(); }
+        void Write(std::uint64_t offset, const void* data, std::uint64_t size) override { m_buffer.Write(data, size, offset); }
+        VkBuffer GetHandle() const { return m_buffer.GetHandle(); }
+        Vk::Buffer Take() { return std::move(m_buffer); }
 
         private:
         Vk::Buffer m_buffer;
@@ -196,13 +210,22 @@ namespace Flux::Vk {
         std::uint32_t GetMeshPreferredThreads() const override { return m_device->GetMeshPreferredThreads(); }
         bool HasTextureCompressionBC() const override { return m_device->HasTextureCompressionBC(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
-        void WaitIdle() override { m_device->WaitIdle(); }
+        void WaitIdle() override;
 
         std::expected<std::unique_ptr<RHI::Buffer>, std::string> CreateBuffer(const RHI::BufferDesc& desc, const void* data) override;
-        bool WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) override;
+        bool WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size, bool inUse) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
                                                                                 std::span<const std::uint8_t> pixels,
                                                                                 bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
+                                                                                const RHI::StagingBuffer& source,
+                                                                                std::uint64_t offset, bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::StagingBuffer>, std::string> CreateStagingBuffer(std::uint64_t size) override;
+        void ReleaseStaging(std::unique_ptr<RHI::StagingBuffer> staging) override;
+        void BeginAsyncUploads() override;
+        std::uint64_t EndAsyncUploads() override;
+        bool IsUploadReady(std::uint64_t ticket) const override;
+        void Retire(std::move_only_function<void()> release) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTextureArray(RHI::Format format, RHI::Extent extent,
                                                                                     std::uint32_t layers,
                                                                                     std::span<const std::uint8_t> pixels,
@@ -262,6 +285,9 @@ namespace Flux::Vk {
         bool CheckFrame(VkResult result, const char* call);
         void ReportDeviceLost();
 
+        // Appelle les libérations différées dont le GPU a fini (toutes : après une attente complète).
+        void RunRetired(bool all);
+
         RhiDevice() = default;
         bool CreateFrames();
         bool RecreateSwapchain();
@@ -281,5 +307,13 @@ namespace Flux::Vk {
         Vk::Buffer m_stepMarkers; // FramesInFlight x MaxSteps x (début, fin) ; vide sans VK_AMD_buffer_marker
         std::uint32_t m_frameSerial = 0;
         bool m_lostReported = false;
+        struct Retired
+        {
+            Vk::Transfer::Marks marks;
+            std::move_only_function<void()> release;
+        };
+        std::deque<Retired> m_retired;
+        bool m_asyncUploads = false; // entre BeginAsyncUploads et EndAsyncUploads, avec une fenêtre
+        std::vector<VkCommandBufferSubmitInfo> m_commandInfos; // de la soumission de l'image, réutilisé
     };
 }

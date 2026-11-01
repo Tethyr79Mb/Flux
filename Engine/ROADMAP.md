@@ -41,13 +41,15 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   compteur au panneau Moteur). L'élimination hors champ reste sur le CPU (par entité et par bloc, peu coûteuse ; elle
   évite aussi de calculer la pose des personnages hors champ). Reste : ce qu'un mur découvre apparaît une image plus
   tard (seconde passe à faire), les ombres ne profitent pas du test.
-- 🔨 Chargement en arrière-plan : modèles lus et décodés sur deux fils, envoyés au GPU sans attendre le GPU. Les
-  copies passent par une file de transfert dédiée quand la carte en a une (repli : la file graphique), depuis un
-  anneau d'envoi de 64 Mo (pas d'allocation par envoi) ; mipmaps calculés par la file graphique. Restent : la copie
-  des pixels vers la mémoire d'envoi se fait encore sur le fil principal (quelques dizaines de ms pour un modèle aux
-  images 4096), l'image qui suit un envoi l'attend toujours (pas encore de ressource prête plus tard), une copie dans
-  un buffer en service (géométrie des modèles) attend la fin de l'image précédente, rechargement d'un fichier retouché
-  qui attend le GPU, images à l'écran et ciel en panorama lus sur le fil principal.
+- 🔧 Chargement en arrière-plan : modèles lus et décodés sur deux fils, qui rangent aussi leurs images dans une
+  mémoire d'envoi ; copies par une file de transfert dédiée quand la carte en a une (repli : la file graphique), depuis
+  un anneau d'envoi de 64 Mo pour les petits envois ; mipmaps calculés par la file graphique. Les gros envois (modèles,
+  textures du sol) sont asynchrones : aucune image ne les attend, le modèle apparaît quand ses copies sont finies. Un
+  modèle ou un sol remplacé est détruit quand le GPU a fini de s'en servir (`Retire`), sans attendre le GPU. Limites :
+  les textures du sol (45 Mo) sont encore recopiées dans la mémoire d'envoi par le fil principal, la file de transfert
+  traite les lots dans l'ordre (un petit envoi attendu peut passer derrière un gros lot asynchrone de 32 Mo au plus),
+  images à l'écran et ciel en panorama lus sur le fil principal, l'écran des images attend encore le GPU quand une
+  image change.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
 - ⬜ Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
@@ -56,7 +58,14 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   les transferts de propriété. À mesurer avant (temps du GPU par passe) ; facultatif, le chemin à une file reste.
 
 ### Rendu
-- ✅ Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`Renderer/RHI`) : un autre backend (DX12) reste possible.
+- ⬜ Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
+  avant l'affichage, VK_KHR_present_wait), après les ombres.
+- 🔨 Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`Renderer/RHI`) : un autre backend (DX12) reste
+  possible. Manquent : une liste de commandes par fil (une seule aujourd'hui, sur le fil principal), plusieurs files
+  exposées au renderer (la file de transfert reste cachée dans le backend, pas de file de calcul), un cache de
+  pipelines (`VkPipelineCache` enregistré sur disque), d'autres copies que `CopyBuffer` (buffer vers texture, texture
+  vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé), le ray tracing (facultatif). Le
+  rangement des fichiers (un en-tête par interface, types communs à part) est la prochaine étape.
 - ✅ Shaders Slang compilés par CMake.
 - ✅ Caméra en reverse-Z, plan lointain infini, rendu relatif à la caméra (mondes géants).
 - 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 34 à 5,1 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.

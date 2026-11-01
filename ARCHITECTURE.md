@@ -141,6 +141,17 @@ de file par un transfert de propriété (partagées, elles perdraient leur compr
 sont calculés par la file graphique (le blit est interdit sur une file de transfert). Sans fenêtre (tests, calculs),
 les envois sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
 
+Les gros envois sont asynchrones (`BeginAsyncUploads` / `EndAsyncUploads`) : leurs copies forment un lot à part, que
+la prochaine image n'attend pas. Leur partie graphique (prise des images, mipmaps) part avec la première soumission
+qui suit la fin des copies, relevée sans attendre (`vkGetSemaphoreCounterValue`) ; le numéro rendu dit ensuite quand
+les ressources peuvent servir (`IsUploadReady`). Les fils de lecture des modèles (`ModelLoader`) rangent eux-mêmes les
+pixels dans une mémoire d'envoi (`CreateStagingBuffer`, sûre entre fils grâce à VMA), copiée telle quelle dans les
+textures : le fil principal n'enregistre plus que les commandes. Une ressource remplacée (modèle rechargé, textures du
+sol) est confiée à `RHI::Device::Retire`, appelée quand les images en vol et les copies en cours sont finies (marques
+des deux sémaphores timeline), au début d'une image suivante : plus de `WaitIdle` au rechargement. Les places d'un
+modèle dans les pages de géométrie et les tables ne sont rendues qu'à ce moment-là, si bien qu'une place neuve s'écrit
+sans attendre les images en vol (`WriteBuffer(..., inUse = false)`).
+
 Les modèles sont rangés au chargement (`PrepareModel`, `Assets/Model.cpp`) pour se dessiner en peu d'appels quelle
 que soit la façon dont ils ont été modélisés : matériaux identiques (tout sauf le nom) réunis, une primitive par
 matériau, et des primitives d'ombre qui réunissent tous les opaques sans seuil d'alpha d'une même sorte de faces (les

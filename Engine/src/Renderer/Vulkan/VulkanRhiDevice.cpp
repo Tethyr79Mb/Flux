@@ -132,6 +132,7 @@ namespace Flux::Vk {
             return;
         }
         m_device->WaitIdle();
+        RunRetired(true);
         const VkDevice device = m_device->GetHandle();
         for (Frame& frame : m_frames) {
             vkDestroyQueryPool(device, frame.queries, nullptr);
@@ -247,7 +248,7 @@ namespace Flux::Vk {
         return std::make_unique<RhiBuffer>(std::move(*buffer));
     }
 
-    bool RhiDevice::WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size) {
+    bool RhiDevice::WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size, bool inUse) {
         auto& target = static_cast<RhiBuffer&>(buffer);
         if (size == 0) {
             return true;
@@ -256,7 +257,83 @@ namespace Flux::Vk {
             target.Write(data, size, offset);
             return true;
         }
-        return m_device->UploadBuffer(target.GetHandle(), offset, data, size, true);
+        return m_device->UploadBuffer(target.GetHandle(), offset, data, size, inUse);
+    }
+
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTexture(RHI::Format format, RHI::Extent extent,
+                                                                                      const RHI::StagingBuffer& source,
+                                                                                      std::uint64_t offset, bool mipmaps) {
+        const auto& staging = static_cast<const RhiStagingBuffer&>(source);
+        if (format != RHI::Format::RGBA8Unorm && format != RHI::Format::RGBA8Srgb) {
+            return std::unexpected("texture depuis une mémoire d'envoi : RGBA8 seulement");
+        }
+        if (offset + std::uint64_t{extent.width} * extent.height * 4 > staging.GetSize()) {
+            return std::unexpected("texture depuis une mémoire d'envoi : pixels hors de la mémoire");
+        }
+        auto image = Image::CreateTexture(*m_device, ToVulkan(format), {extent.width, extent.height}, staging.GetHandle(), offset, mipmaps);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
+    }
+
+    std::expected<std::unique_ptr<RHI::StagingBuffer>, std::string> RhiDevice::CreateStagingBuffer(std::uint64_t size) {
+        // VMA est sûr entre fils (allocateur créé sans VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT).
+        auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Staging);
+        if (!buffer) {
+            return std::unexpected(buffer.error());
+        }
+        return std::make_unique<RhiStagingBuffer>(std::move(*buffer));
+    }
+
+    void RhiDevice::ReleaseStaging(std::unique_ptr<RHI::StagingBuffer> staging) {
+        // Sans fenêtre, les copies sont déjà finies (envois attendus) : rendue tout de suite.
+        if (staging && m_swapchain) {
+            m_device->GetTransfer().KeepUntilCopied(static_cast<RhiStagingBuffer&>(*staging).Take());
+        }
+    }
+
+    void RhiDevice::BeginAsyncUploads() {
+        // Sans fenêtre, chaque envoi est attendu tout de suite : rien à différer.
+        m_asyncUploads = m_swapchain != nullptr;
+        if (m_asyncUploads) {
+            m_device->GetTransfer().BeginAsync();
+        }
+    }
+
+    std::uint64_t RhiDevice::EndAsyncUploads() {
+        if (!std::exchange(m_asyncUploads, false)) {
+            return 0;
+        }
+        return m_device->GetTransfer().EndAsync();
+    }
+
+    bool RhiDevice::IsUploadReady(std::uint64_t ticket) const {
+        return m_device->GetTransfer().IsReady(ticket);
+    }
+
+    void RhiDevice::Retire(std::move_only_function<void()> release) {
+        if (!m_swapchain) {
+            // Sans fenêtre, chaque soumission est attendue : le GPU ne se sert plus de rien.
+            release();
+            return;
+        }
+        m_retired.push_back({m_device->GetTransfer().GetMarks(), std::move(release)});
+    }
+
+    void RhiDevice::RunRetired(bool all) {
+        const Vk::Transfer& transfer = m_device->GetTransfer();
+        // Dans l'ordre : les marques ne font que croître. Retirée avant l'appel, qui peut en ajouter.
+        while (!m_retired.empty() && (all || transfer.IsDone(m_retired.front().marks))) {
+            std::move_only_function<void()> release = std::move(m_retired.front().release);
+            m_retired.pop_front();
+            release();
+        }
+    }
+
+    void RhiDevice::WaitIdle() {
+        m_device->WaitIdle();
+        RunRetired(true);
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTexture(RHI::Format format, RHI::Extent extent,
@@ -518,12 +595,14 @@ namespace Flux::Vk {
     }
 
     bool RhiDevice::Submit(const std::function<void(RHI::CommandList&)>& record) {
-        return m_device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
+        const bool submitted = m_device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
             RhiCommandList commandList;
             commandList.SetMeshShaders(m_device->HasMeshShaders());
             commandList.Begin(commandBuffer, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, VK_NULL_HANDLE);
             record(commandList);
         });
+        RunRetired(false);
+        return submitted;
     }
 
     bool RhiDevice::ResizeSwapchain(RHI::Extent extent, bool vsync) {
@@ -599,6 +678,7 @@ namespace Flux::Vk {
         m_waitTimes.frame = milliseconds(acquireStart - waitStart);
         ReadTimestamps(frame);
         m_device->GetTransfer().Collect();
+        RunRetired(false);
 
         const VkResult acquire = vkAcquireNextImageKHR(device, m_swapchain->GetHandle(), UINT64_MAX, frame.imageAvailable,
                                                        VK_NULL_HANDLE, &m_imageIndex);
@@ -658,22 +738,18 @@ namespace Flux::Vk {
         signalInfos[0].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         signalInfos[1] = transfer.GetSignal();
 
-        std::array<VkCommandBufferSubmitInfo, 2> commandInfos{};
-        std::uint32_t commandCount = 0;
-        for (VkCommandBuffer commands : {uploads.commands, frame.commandBuffer}) {
-            if (commands != VK_NULL_HANDLE) {
-                commandInfos[commandCount].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-                commandInfos[commandCount].commandBuffer = commands;
-                ++commandCount;
-            }
+        m_commandInfos.clear();
+        for (VkCommandBuffer commands : uploads.commands) {
+            m_commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
         }
+        m_commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, frame.commandBuffer, 0});
 
         VkSubmitInfo2 submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submitInfo.waitSemaphoreInfoCount = uploads.transferValue > 0 ? 2 : 1;
         submitInfo.pWaitSemaphoreInfos = waitInfos.data();
-        submitInfo.commandBufferInfoCount = commandCount;
-        submitInfo.pCommandBufferInfos = commandInfos.data();
+        submitInfo.commandBufferInfoCount = static_cast<std::uint32_t>(m_commandInfos.size());
+        submitInfo.pCommandBufferInfos = m_commandInfos.data();
         submitInfo.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signalInfos.size());
         submitInfo.pSignalSemaphoreInfos = signalInfos.data();
         const bool submitted = CheckFrame(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, frame.inFlight), "vkQueueSubmit2");
