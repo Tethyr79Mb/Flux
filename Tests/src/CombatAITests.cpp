@@ -2,15 +2,18 @@
 // il passe trop près et fuit presque détruit.
 #include "Check.hpp"
 
+#include "MissionGiver.hpp" // drone de mission (code du jeu)
+
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/CombatAI.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
-#include "Flux/Scene/Missions.hpp"
 #include "Flux/Scene/Scene.hpp"
 
 #include <cmath>
 
 using namespace Flux;
+using Game::MissionGiverComponent;
+namespace Missions = Game::Missions;
 
 namespace {
     constexpr double Frame = 1.0 / 60.0;

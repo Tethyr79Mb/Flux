@@ -230,7 +230,7 @@ namespace Flux {
         // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
         // Systèmes du jeu (missions...) : fonctions du module de jeu appelées pendant le jeu à une étape précise de
-        // l'image, dans l'ordre d'ajout. Le moteur garde les briques (composants, Missions::SpawnEnemies...), le jeu
+        // l'image, dans l'ordre d'ajout. Le moteur garde les briques (composants, Weapons::Update...), le jeu
         // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
         enum class GameStage {
             Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)

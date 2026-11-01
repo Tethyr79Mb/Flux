@@ -2,6 +2,8 @@
 // Ils utilisent des composants du jeu (emports, armes, quais, missions), que l'éditeur ne connaît pas.
 #include "PlaceItems.hpp"
 
+#include "MissionGiver.hpp"
+
 #include <Flux/Core/EditorExtensions.hpp>
 #include <Flux/Scene/Scene.hpp>
 

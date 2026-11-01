@@ -1,10 +1,11 @@
 #include "Missions.hpp"
 
+#include "MissionGiver.hpp"
+
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
-#include <Flux/Scene/Missions.hpp>
 #include <Flux/Scene/Picking.hpp>
 #include <Flux/UI/Context.hpp>
 #include <Flux/UI/HudText.hpp>

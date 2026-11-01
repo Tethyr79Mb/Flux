@@ -1,6 +1,7 @@
 #include "Game.hpp"
 
 #include "Combat.hpp"
+#include "MissionGiver.hpp"
 #include "Missions.hpp"
 #include "PlaceItems.hpp"
 #include "PlayerWeapons.hpp"
@@ -62,6 +63,7 @@ namespace Game {
             .Register<SpinComponent>("spin", "Rotation continue")
             .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
             .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
+        RegisterMissionGiver(engine.GetComponents());
         engine.SetGameUpdate(Update);
         RegisterMissions(engine);
         RegisterPlayerWeapons(engine); // avant les ennemis : même ordre de tir qu'avant

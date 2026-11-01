@@ -2,6 +2,7 @@
 // sans connaître leurs composants.
 #include "../Check.hpp"
 
+#include "MissionGiver.hpp"
 #include "PlaceItems.hpp"
 
 #include "Flux/Core/EditorExtensions.hpp"
@@ -52,7 +53,7 @@ bool RunPlaceItemsTests() {
         CHECK(Build(extensions, "Station (maquette)", scene, station));
         CHECK(!scene.Get<ShipComponent>(station).fallsWithoutPilot && scene.Get<ShipComponent>(station).warpSpeed == 0.0f);
         CHECK(Count<DockComponent>(scene) == 4);
-        CHECK(Count<MissionGiverComponent>(scene) == 1);
+        CHECK(Count<Game::MissionGiverComponent>(scene) == 1);
         CHECK(extensions.FindPlaceItem("Station (maquette)")->level);
     }
     {
