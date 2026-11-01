@@ -112,7 +112,7 @@ namespace {
             ui.ToolBarSeparator();
             textTools.DrawToolBarItems(engine, sceneEditor, history, playMode.IsPlaying());
         }
-        playMode.DrawToolbar(ui, engine);
+        playMode.DrawToolbar(ui, engine, document.GetPath());
         const float right = static_cast<float>(engine.GetWindow().GetSize().x) - ui.GetStyle().panelPadding * 0.5f;
         ui.SetMenuBarCursor(right - ui.GetBarItemHeight());
         if (ui.MenuBarButton("##paramètres", false, Flux::UI::Icon::Settings)) {
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     contentBrowser.SetVegetationPanel(&vegetationPanel);
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
-        playMode.HandleShortcuts(e);
+        playMode.HandleShortcuts(e, document.GetPath());
         if (playMode.IsPlaying()) {
             interfaceEditor.ShowScene(); // le jeu se joue dans la vue de la scène
         }
