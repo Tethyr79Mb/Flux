@@ -324,7 +324,7 @@ namespace Flux::Planetology {
         }
         visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
                                visit.position + visit.rotation.Rotate(bounds.center), static_cast<float>(bounds.radius),
-                               morphStart, morphScale, node.lowest, whole ? 0u : quarter * TileQuarterIndices,
+                               static_cast<float>(node.bounds.edge), morphStart, morphScale, node.lowest, whole ? 0u : quarter * TileQuarterIndices,
                                whole ? 4u * TileQuarterIndices : TileQuarterIndices, covered, shadowOnly});
     }
 

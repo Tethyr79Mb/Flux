@@ -151,6 +151,7 @@ namespace Flux {
             std::uint32_t data;    // dans m_tileData
             Math::Vector3f center; // de sa sphère englobante, relatif à la caméra
             float radius;
+            float edge;            // côté de la tuile (PlanetRenderer::Tile::edge)
             float distance;        // au bord de sa sphère : ordre de près à loin
             bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra
             std::uint32_t firstIndex; // toute la tuile ou un quart (PlanetRenderer::Tile)
@@ -461,6 +462,7 @@ namespace Flux {
             ShadowCascade cascade;
             Math::WorldPosition eye;
             Math::Vector3f toSun;
+            std::uint64_t computedTiles = 0; // m_computedTiles quand elle a été dessinée
         };
         std::array<DrawnCascade, ShadowCascadeCount> m_drawnCascades{};
         std::array<bool, ShadowCascadeCount> m_drawCascade{}; // dessinée à cette image
@@ -475,6 +477,9 @@ namespace Flux {
         std::array<DrawnCascade, TerrainShadowCascadeCount> m_drawnTerrain{};
         std::array<bool, TerrainShadowCascadeCount> m_drawTerrain{};
         bool m_keepTerrainShadows = false;
+        // Tuiles de planète demandées depuis le lancement : une carte du relief n'est rafraîchie que s'il en est arrivé
+        // depuis son dessin.
+        std::uint64_t m_computedTiles = 0;
 
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une image à l'autre.
         std::vector<RelativeTransform> m_relativeTransforms;

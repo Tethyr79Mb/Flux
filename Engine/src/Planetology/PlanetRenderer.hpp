@@ -65,6 +65,7 @@ namespace Flux::Planetology {
             Math::Vector3d local; // son centre dans le repère de la planète
             Math::Vector3d sphere; // centre de la sphère englobante, relatif à la caméra
             float radius;
+            float edge; // côté de la tuile entière (TileBounds::edge) : écart entre ses sommets = edge / TileQuads
             // Glissement vers la forme parente (voir vertexPlanet dans shaders/Mesh.slang) : distance où il commence,
             // et 1 / sa longueur (0 : aucun).
             float morphStart;

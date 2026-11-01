@@ -819,6 +819,7 @@ namespace Flux {
         }
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         m_planets->EndFrame(frameIndex);
+        m_computedTiles += m_planets->GetScheduledTileCount();
         PrepareVegetation(camera, aspect, assetsDirectory, frameIndex);
         if (!m_boundEnvironment[frameIndex]) {
             ClearDraws(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
@@ -977,7 +978,7 @@ namespace Flux {
             const Math::Vector3f sphere(tile.sphere);
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
-            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius,
+            m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius, tile.edge,
                                    Math::Length(sphere) - tile.radius, water, tile.firstIndex, tile.indexCount, tile.shadowOnly});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
@@ -1229,7 +1230,7 @@ namespace Flux {
 
     // Le relief au loin change peu d'une image à l'autre : sa carte est gardée (recalée sur la caméra) tant que la
     // caméra reste dans la marge du carré dessiné (ComputeTerrainShadowCascades : 10 %) et que le soleil n'a pas tourné de plus d'un quart de texel au bout des obstacles. Les deux cascades sont refaites à tour de rôle
-    // toutes les m_terrainRefreshFrames images, pour les tuiles arrivées ou affinées entre-temps.
+    // toutes les m_terrainRefreshFrames images, seulement si des tuiles sont arrivées ou affinées entre-temps.
     void MeshRenderer::ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun) {
         const auto fresh = ComputeTerrainShadowCascades(camera, aspect, toSun, m_terrainShadowResolution);
         // Redessin obligé (carte qui ne couvre plus la vue, soleil tourné) ou souhaité (rafraîchi à intervalle, pour les
@@ -1249,7 +1250,7 @@ namespace Flux {
             must[t] = Math::Length(moved[t].center - fresh[t].center) >= 0.05f * fresh[t].radius
                    || sunTurn >= 0.25f * fresh[t].texelSize / TerrainShadowCasterDistance;
             const std::uint64_t phase = m_preparedFrame + t * (m_terrainRefreshFrames / 2);
-            want[t] = phase % m_terrainRefreshFrames == 0;
+            want[t] = phase % m_terrainRefreshFrames == 0 && drawn.computedTiles != m_computedTiles;
         }
         bool busy = std::ranges::any_of(must, [](bool m) { return m; });
         m_keepTerrainShadows = false;
@@ -1264,7 +1265,7 @@ namespace Flux {
             m_drawTerrain[t] = draw;
             if (draw) {
                 m_terrainCascades[t] = fresh[t];
-                m_drawnTerrain[t] = {true, fresh[t], camera.position, toSun};
+                m_drawnTerrain[t] = {true, fresh[t], camera.position, toSun, m_computedTiles};
             } else {
                 m_terrainCascades[t] = moved[t];
                 m_keepTerrainShadows = true;
@@ -1399,9 +1400,9 @@ namespace Flux {
                 if (pass >= FirstTerrainShadowPass) {
                     // Cartes du relief : un texel y couvre souvent plusieurs sommets (21 m dans celle des 40 km), la
                     // tuile y est dessinée avec un sommet sur 2 à 16 tant que l'écart reste sous 2 texels : les tuiles
-                    // fines près de la caméra n'y coûtent presque rien. Le rayon de la sphère vaut au moins la moitié
-                    // du côté : côté / 32 <= rayon / 16 (prudent, relief compris).
-                    const float spacing = draw.radius / 16.0f;
+                    // fines près de la caméra n'y coûtent presque rien. Par le côté et pas par le rayon : celui-ci
+                    // compte la hauteur du relief, et les tuiles de montagne restaient dessinées trop finement.
+                    const float spacing = draw.edge / static_cast<float>(Planetology::TileQuads);
                     const float texel = m_terrainCascades[pass - FirstTerrainShadowPass].texelSize;
                     std::uint32_t step = 1;
                     while (step < Planetology::TileQuads / 2 && spacing * static_cast<float>(2 * step) <= 2.0f * texel) {
