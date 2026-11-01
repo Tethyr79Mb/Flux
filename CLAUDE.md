@@ -32,7 +32,7 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - Juger les performances en Release seulement, jamais en Debug.
 
 ## Choix d'architecture (décidés, ne pas remettre en cause sans le demander)
-- Vulkan 1.3 minimum (décision de Bruno du 2026-10-19), derrière une couche RHI (`Renderer/RHI`) ; C++23 ;
+- Vulkan 1.3 minimum (décision de Bruno du 2026-10-19), derrière une couche RHI (`include/Flux/Renderer/RHI`) ; C++23 ;
   volk, vk-bootstrap, VMA ; shaders Slang.
 - Configurations (décision de Bruno du 2026-10-29) : chaque fonctionnalité est conçue d'abord pour la configuration
   recommandée (classe RTX 3060 / RX 6700 XT : mesh shaders, calcul asynchrone…), puis reçoit un repli pour la

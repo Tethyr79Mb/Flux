@@ -8,7 +8,7 @@
 #include "Flux/Planetology/Planet.hpp"
 #include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationRenderer.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
 #include <array>

@@ -60,12 +60,13 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Rendu
 - ⬜ Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
   avant l'affichage, VK_KHR_present_wait), après les ombres.
-- 🔨 Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`Renderer/RHI`) : un autre backend (DX12) reste
+- 🔨 Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`include/Flux/Renderer/RHI`) : un autre backend (DX12) reste
   possible. Manquent : une liste de commandes par fil (une seule aujourd'hui, sur le fil principal), plusieurs files
   exposées au renderer (la file de transfert reste cachée dans le backend, pas de file de calcul), un cache de
   pipelines (`VkPipelineCache` enregistré sur disque), d'autres copies que `CopyBuffer` (buffer vers texture, texture
-  vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé), le ray tracing (facultatif). Le
-  rangement des fichiers (un en-tête par interface, types communs à part) est la prochaine étape.
+  vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé), le ray tracing (facultatif).
+  Fichiers rangés : un en-tête par interface, types communs dans `RHITypes.hpp`, un fichier par bloc Vulkan
+  (instance, surface, choix du GPU, device, swapchain, images en vol, heures du GPU, diagnostic, envois).
 - ✅ Shaders Slang compilés par CMake.
 - ✅ Caméra en reverse-Z, plan lointain infini, rendu relatif à la caméra (mondes géants).
 - 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 34 à 5,1 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.

@@ -8,7 +8,7 @@
 #include "Renderer/OcclusionCulling.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/VegetationRenderer.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
 #include "Renderer/ThrusterRenderer.hpp"

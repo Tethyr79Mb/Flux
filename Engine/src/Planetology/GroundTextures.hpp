@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Renderer/ModelCache.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <atomic>

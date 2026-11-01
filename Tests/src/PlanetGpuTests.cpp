@@ -6,7 +6,7 @@
 #include "Flux/Planetology/Planet.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
 #include <array>

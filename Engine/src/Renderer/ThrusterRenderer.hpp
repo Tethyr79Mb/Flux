@@ -3,7 +3,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/Scene/Scene.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <chrono>
 #include <expected>
