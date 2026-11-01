@@ -96,6 +96,11 @@ namespace Flux {
         // cible (le graphe de rendu la rend ensuite lisible pour la scène).
         void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         const RHI::Texture& GetShadowMap() const { return *m_shadowMap; }
+        // Ombres du relief au loin : leur carte n'est redessinée que de temps en temps (ChooseTerrainCascades). Rien à
+        // faire à cette image si TerrainShadowsPending est faux.
+        bool TerrainShadowsPending() const;
+        void DrawTerrainShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        const RHI::Texture& GetTerrainShadowMap() const { return *m_terrainShadowMap; }
         // Passe principale, dans cet ordre (le fond du ciel entre le sol et l'eau). Le sol après les entités : ce
         // qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres transparents : vue
         // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le
@@ -150,6 +155,7 @@ namespace Flux {
             bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra
             std::uint32_t firstIndex; // toute la tuile ou un quart (PlanetRenderer::Tile)
             std::uint32_t indexCount;
+            bool shadowOnly;          // hors du champ, seulement pour son ombre (PlanetRenderer::Tile::shadowOnly)
         };
         // Appel indirect : `count` commandes de m_tileCommands à partir de `first`, toutes de la même page.
         struct TileBatch
@@ -158,10 +164,11 @@ namespace Flux {
             std::uint32_t first;
             std::uint32_t count;
         };
-        // Passes des tuiles : le sol, l'eau, puis une par cascade d'ombres.
+        // Passes des tuiles : le sol, l'eau, une par cascade d'ombres, puis une par cascade du relief au loin.
         static constexpr std::size_t GroundPass = 0;
         static constexpr std::size_t OceanPass = 1;
-        static constexpr std::size_t TilePassCount = 2 + ShadowCascadeCount;
+        static constexpr std::size_t FirstTerrainShadowPass = 2 + ShadowCascadeCount;
+        static constexpr std::size_t TilePassCount = FirstTerrainShadowPass + TerrainShadowCascadeCount;
 
         // Doit correspondre à DrawData dans shaders/Mesh.slang : matrices d'une entité, relatives à la caméra.
         struct DrawData
@@ -352,6 +359,12 @@ namespace Flux {
         // Choisit les cascades à redessiner ; les autres gardent leur carte de l'image d'avant, recalée sur la caméra.
         void ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun);
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
+        static bool InShadowVolume(const ShadowCascade& cascade, const Math::Vector3f& center, float radius);
+        // Choisit les cascades du relief à redessiner (rarement : seulement le sol, gardé plusieurs images).
+        void ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun);
+        // La tuile (sa sphère) porte une ombre dans la carte de la passe `pass` (une passe d'ombres), redessinée à
+        // cette image.
+        bool TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass) const;
         bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
@@ -447,10 +460,21 @@ namespace Flux {
             ShadowCascade cascade;
             Math::WorldPosition eye;
             Math::Vector3f toSun;
+            Math::Vector3f forward; // regard de la caméra (cascades du relief : obstacles retenus pour ce champ)
         };
         std::array<DrawnCascade, ShadowCascadeCount> m_drawnCascades{};
         std::array<bool, ShadowCascadeCount> m_drawCascade{}; // dessinée à cette image
         bool m_keepShadows = false;                            // au moins une gardée : la carte n'est pas effacée
+        // Relief au loin : 2 cascades côte à côte, de m_terrainShadowResolution texels de côté chacune. Gardées tant
+        // que la caméra et le soleil n'ont presque pas bougé, et refaites à tour de rôle toutes les
+        // m_terrainRefreshFrames images (tuiles arrivées entre-temps).
+        std::unique_ptr<RHI::Texture> m_terrainShadowMap;
+        std::uint32_t m_terrainShadowResolution = 0;
+        std::uint32_t m_terrainRefreshFrames = 0;
+        std::array<ShadowCascade, TerrainShadowCascadeCount> m_terrainCascades{};
+        std::array<DrawnCascade, TerrainShadowCascadeCount> m_drawnTerrain{};
+        std::array<bool, TerrainShadowCascadeCount> m_drawTerrain{};
+        bool m_keepTerrainShadows = false;
 
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une image à l'autre.
         std::vector<RelativeTransform> m_relativeTransforms;

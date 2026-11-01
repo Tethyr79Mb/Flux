@@ -124,5 +124,34 @@ bool RunShadowTests() {
     CHECK(!receivers.Reaches(beside, 2.0f, 5.0f, 2));
     const ShadowReceivers sideSun(camera, aspect, right);
     CHECK(sideSun.Reaches(beside, 2.0f, 250.0f, 2));
+
+    // Relief au loin : chaque carte couvre la sphère autour de la caméra jusqu'à la fin de sa tranche (la tranche se
+    // choisit par la distance), avec la marge qui laisse la carte gardée couvrir tout quand la caméra a un peu bougé.
+    const auto terrain = ComputeTerrainShadowCascades(camera, aspect, toSun, 4096);
+    for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
+        const ShadowCascade& cascade = terrain[t];
+        for (const Math::Vector3f& direction : {forward, forward * -1.0f, right, up * -1.0f, Math::Normalize(forward + right + up)}) {
+            const Math::Vector3f p = Apply(cascade.lightViewProjection, direction * TerrainShadowCascadeEnds[t]);
+            CHECK(Inside(p));
+            CHECK(std::abs(p.x) < 0.95f && std::abs(p.y) < 0.95f); // la marge de 10 %
+        }
+        // Une montagne à 30 km vers le soleil fait encore de l'ombre dans la tranche.
+        const Math::Vector3f caster = Apply(cascade.lightViewProjection, cascade.center + toSun * TerrainShadowCasterDistance);
+        CHECK(std::abs(caster.z) < 1.0e-3f);
+    }
+    CHECK(terrain[0].radius > cascades[3].radius && terrain[1].radius > terrain[0].radius);
+    // La caméra tourne : les cartes du relief ne bougent pas (leur ombre ne dépend pas du regard).
+    const auto terrainTurned = ComputeTerrainShadowCascades(turned, aspect, toSun, 4096);
+    for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
+        CHECK(Math::Length(terrainTurned[t].center - terrain[t].center) < 1.0e-3f);
+        CHECK(terrainTurned[t].radius == terrain[t].radius);
+    }
+    // Un texel de quelques mètres de 200 m à 3 km : le relief proche garde des ombres nettes.
+    CHECK(terrain[0].texelSize < 3.0f);
+    // Une montagne derrière la caméra, soleil dans le dos : son ombre longue tombe dans la tranche de 3 à 40 km.
+    const ShadowReceivers backSun(camera, aspect, -forward);
+    CHECK(backSun.ReachesRange(forward * -2000.0f, 500.0f, TerrainShadowCasterDistance, TerrainShadowCascadeStart(1),
+                               TerrainShadowCascadeEnds[1]));
+    CHECK(!backSun.ReachesRange(forward * -2000.0f, 500.0f, 1000.0f, TerrainShadowCascadeStart(1), TerrainShadowCascadeEnds[1]));
     return true;
 }

@@ -114,7 +114,8 @@ namespace Flux::Planetology {
 
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                                  const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
-                                 std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange) {
+                                 std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange,
+                                 const ViewTest* castsShadow) {
         if (!m_indices) {
             return;
         }
@@ -158,7 +159,7 @@ namespace Flux::Planetology {
         state.camera = camera;
         state.time = m_now;
         Visit visit{state, camera, position, rotation, camera + state.velocity * LookAhead, minRadius, maxRadius, inView, tiles,
-                    plains, plainLevel, plainRange};
+                    plains, plainLevel, plainRange, castsShadow};
         // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
         bool rootsReady = true;
         for (std::uint8_t face = 0; face < 6; ++face) {
@@ -185,8 +186,16 @@ namespace Flux::Planetology {
         if (IsBehindHorizon(visit.camera, bounds.center, bounds.radius, visit.minRadius, top)) {
             return true;
         }
+        if (InView(visit, bounds)) {
+            return false;
+        }
         const Math::Vector3d relative = visit.position + visit.rotation.Rotate(bounds.center);
-        return !visit.inView(Math::Vector3f(relative), static_cast<float>(bounds.radius));
+        return !visit.castsShadow || !(*visit.castsShadow)(Math::Vector3f(relative), static_cast<float>(bounds.radius));
+    }
+
+    bool PlanetRenderer::InView(const Visit& visit, const TileBounds& bounds) const {
+        const Math::Vector3d relative = visit.position + visit.rotation.Rotate(bounds.center);
+        return visit.inView(Math::Vector3f(relative), static_cast<float>(bounds.radius));
     }
 
     void PlanetRenderer::VisitNode(Visit& visit, TileKey key, Node& node) {
@@ -196,7 +205,8 @@ namespace Flux::Planetology {
         }
         const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
         const Terrain& terrain = *visit.state.terrain;
-        if (visit.plains && key.level == visit.plainLevel && distance < visit.plainRange) {
+        const bool inView = !visit.castsShadow || InView(visit, node.bounds);
+        if (visit.plains && inView && key.level == visit.plainLevel && distance < visit.plainRange) {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
         if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level, m_splitFactor)) {
@@ -239,7 +249,7 @@ namespace Flux::Planetology {
             if (visible == 0) {
                 return;
             }
-        } else {
+        } else if (inView) {
             Prefetch(visit, key, node);
         }
         if (node.tile != NoTile) {
@@ -260,7 +270,7 @@ namespace Flux::Planetology {
             const TileKey childKey = key.Child(c);
             Node& child = GetNode(visit.state, childKey, &node);
             child.lastUsed = m_frame;
-            if (IsCulled(visit, child)) {
+            if (IsCulled(visit, child) || (visit.castsShadow && !InView(visit, child.bounds))) {
                 continue;
             }
             if (child.tile == NoTile) {
@@ -279,9 +289,10 @@ namespace Flux::Planetology {
         const bool whole = quarter >= 4;
         const TileKey covered = whole ? key : key.Child(quarter);
         const double distance = Math::Length(visit.camera - bounds.center) - bounds.radius;
+        const bool shadowOnly = visit.castsShadow && !InView(visit, bounds);
         // Au plus 3 niveaux plus grossière (64 plaines) : plus haut, c'est une tuile dont les enfants ne sont pas
         // encore prêts, pas le sol au loin.
-        if (visit.plains && key.level < visit.plainLevel && key.level + 3u >= visit.plainLevel && distance < visit.plainRange) {
+        if (visit.plains && !shadowOnly && key.level < visit.plainLevel && key.level + 3u >= visit.plainLevel && distance < visit.plainRange) {
             if (whole) {
                 AddPlains(visit, key);
             } else if (covered.level == visit.plainLevel) {
@@ -302,7 +313,7 @@ namespace Flux::Planetology {
         visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
                                visit.position + visit.rotation.Rotate(bounds.center), static_cast<float>(bounds.radius),
                                morphStart, morphScale, node.lowest, whole ? 0u : quarter * TileQuarterIndices,
-                               whole ? 4u * TileQuarterIndices : TileQuarterIndices, covered});
+                               whole ? 4u * TileQuarterIndices : TileQuarterIndices, covered, shadowOnly});
     }
 
     // Plaines sous une tuile dessinée plus grossière qu'elles (loin, ou vue de haut) : les arbres ne s'arrêtent pas
@@ -313,7 +324,7 @@ namespace Flux::Planetology {
         for (std::uint32_t c = 0; c < 4; ++c) {
             const TileKey child = key.Child(c);
             const TileBounds bounds = GetTileBounds(terrain, child);
-            if (IsCulled(visit, bounds)) {
+            if (IsCulled(visit, bounds) || (visit.castsShadow && !InView(visit, bounds))) {
                 continue;
             }
             const double distance = Math::Length(visit.camera - bounds.center) - bounds.radius;

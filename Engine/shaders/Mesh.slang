@@ -56,9 +56,12 @@ struct FrameData
 {
     float4 viewProjection[4];  // décalée d'un sous-pixel pour l'anticrénelage temporel (cameraRight.w, cameraUp.w)
     float4 previousViewProjection[4]; // de l'image précédente, sans décalage, relative à sa caméra
-    float4 cascades[4 * 4];   // cascade c : colonnes [4c, 4c + 3] ; relatif caméra -> carte (xy dans [-1, 1], z dans [0, 1])
+    // Cascade c : colonnes [4c, 4c + 3] ; relatif caméra -> carte (xy dans [-1, 1], z dans [0, 1]). Les 4 premières
+    // dans shadowMap, les 2 suivantes (relief au loin) dans terrainShadowMap.
+    float4 cascades[6 * 4];
     float4 cascadeEnds;       // fin de chaque tranche, en mètres devant la caméra
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
+    float4 terrainCascades;   // relief au loin : xy fin de ses deux tranches, zw côté d'un texel (mètres)
     float4 cameraForward;     // xyz ; w : secondes écoulées (vagues), repartent de 0 toutes les heures
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
     float4 toSun;             // xyz : direction du soleil (unitaire)
@@ -168,6 +171,9 @@ struct MaterialData
 [[vk::binding(2, 1)]] StructuredBuffer<FrameData> frame;
 // Cartes des cascades, en 2 x 2 dans une seule texture (cascade c : colonne c % 2, ligne c / 2).
 [[vk::binding(3, 1)]] Sampler2DShadow shadowMap;
+// Relief au loin (cascades 4 et 5), côte à côte dans une texture deux fois plus large que haute : seul le sol des
+// planètes y est dessiné, gardé plusieurs images (MeshRenderer::ChooseTerrainCascades).
+[[vk::binding(14, 1)]] Sampler2DShadow terrainShadowMap;
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour (SkyRenderer), réduit à chaque niveau de mip : de plus en plus flou.
@@ -555,8 +561,81 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
     return PlanetVertex(draw, input);
 }
 
-// Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé).
-float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
+// Part de la lumière du soleil vue par la cascade `cascade` (cases de `cells` x 1 ou 2 x 2 dans `map`, celle-ci en
+// `cell`) ; négatif si le point sort de sa carte.
+float CascadeVisibility(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, float texel, float3 worldPosition,
+                        float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    // Décalé le long de la normale (plus sur une face rasante) : une surface ne se fait pas d'ombre à elle-même.
+    const float3 offsetPosition = worldPosition + normal * texel * (1.5 + 2.0 * (1.0 - sunFacing));
+    float4 m[4] = {f.cascades[cascade * 4 + 0], f.cascades[cascade * 4 + 1], f.cascades[cascade * 4 + 2],
+                   f.cascades[cascade * 4 + 3]};
+    const float3 light = Transform(m, offsetPosition).xyz;
+    const float2 local = light.xy * 0.5 + 0.5;
+    if (any(local < 0.0) || any(local > 1.0) || light.z > 1.0) {
+        return -1.0;
+    }
+    // Case de la cascade dans la carte, sans déborder sur la voisine (le filtre lit un texel autour).
+    uint width;
+    uint height;
+    map.GetDimensions(width, height);
+    const float2 atlasTexel = 1.0 / float2(width, height);
+    const float2 size = 1.0 / cells;
+    const float2 inside = clamp(local * size, atlasTexel * 1.5, size - atlasTexel * 1.5);
+    const float2 uv = cell * size + inside;
+    // 4 lectures filtrées (chacune compare 2 x 2 texels) : bord doux sur 3 texels environ.
+    float lit = 0.0;
+    [unroll]
+    for (int i = 0; i < 4; ++i) {
+        const float2 offset = float2((i & 1) != 0 ? 0.5 : -0.5, (i & 2) != 0 ? 0.5 : -0.5) * atlasTexel;
+        lit += map.SampleCmpLevelZero(uv + offset, light.z);
+    }
+    return lit * 0.25;
+}
+
+// Ombre du relief, tranche `slice` (0 : jusqu'à 3 km, 1 : jusqu'à 40 km) ; négatif hors de sa carte.
+float TerrainSlice(uint slice, float3 worldPosition, float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    const float texel = slice == 0 ? f.terrainCascades.z : f.terrainCascades.w;
+    return CascadeVisibility(terrainShadowMap, float2(2.0, 1.0), float2(float(slice), 0.0), 4 + slice, texel,
+                             worldPosition, normal, sunFacing);
+}
+
+// Ombre du relief. La tranche est choisie par la distance à la caméra, pas par la profondeur devant elle : un point
+// garde la même carte quand la caméra tourne (sinon, ses ombres changeaient de finesse et de décalage selon le
+// regard). Fondu dans la tranche suivante sur le dernier dixième ; l'autre carte si le point sort de la sienne.
+float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    const float distance = length(worldPosition);
+    if (distance > f.terrainCascades.y) {
+        return 1.0; // trop loin : pas d'ombre
+    }
+    const uint slice = distance > f.terrainCascades.x ? 1 : 0;
+    const float end = slice == 0 ? f.terrainCascades.x : f.terrainCascades.y;
+    float lit = TerrainSlice(slice, worldPosition, normal, sunFacing);
+    if (lit < 0.0) {
+        lit = TerrainSlice(1 - slice, worldPosition, normal, sunFacing);
+        return lit < 0.0 ? 1.0 : lit;
+    }
+    const float fade = saturate((end - distance) / (0.1 * end));
+    if (fade >= 1.0) {
+        return lit;
+    }
+    float next = 1.0;
+    if (slice == 0) {
+        next = TerrainSlice(1, worldPosition, normal, sunFacing);
+        next = next < 0.0 ? lit : next;
+    }
+    return lerp(next, lit, fade);
+}
+
+// Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
+// le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
+// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km. objectShadows faux (verres) : le relief seul.
+float SunVisibility(float3 worldPosition, float3 normal, float sunFacing, bool objectShadows = true)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
@@ -564,41 +643,17 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
         ++cascade;
     }
-    if (cascade >= 4) {
-        return 1.0; // trop loin : pas d'ombre
+    const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
+    if (cascade >= 4 || !objectShadows) {
+        return terrain;
     }
-    // Décalé le long de la normale (plus sur une face rasante) : une surface ne se fait pas d'ombre à elle-même.
-    const float texel = f.cascadeTexels[cascade];
-    const float3 offsetPosition = worldPosition + normal * texel * (1.5 + 2.0 * (1.0 - sunFacing));
-    float4 m[4] = {f.cascades[cascade * 4 + 0], f.cascades[cascade * 4 + 1], f.cascades[cascade * 4 + 2],
-                   f.cascades[cascade * 4 + 3]};
-    const float3 light = Transform(m, offsetPosition).xyz;
-    const float2 local = light.xy * 0.5 + 0.5;
-    if (any(local < 0.0) || any(local > 1.0) || light.z > 1.0) {
-        return 1.0;
-    }
-    // Carte de la cascade dans l'atlas 2 x 2, sans déborder sur la voisine (le filtre lit un texel autour).
-    uint width;
-    uint height;
-    shadowMap.GetDimensions(width, height);
-    const float2 atlasTexel = 1.0 / float2(width, height);
-    const float2 cell = float2(cascade % 2, cascade / 2);
-    const float2 inside = clamp(local * 0.5, atlasTexel * 1.5, 0.5 - atlasTexel * 1.5);
-    const float2 uv = cell * 0.5 + inside;
-    // 4 lectures filtrées (chacune compare 2 x 2 texels) : bord doux sur 3 texels environ.
-    float lit = 0.0;
-    [unroll]
-    for (int i = 0; i < 4; ++i) {
-        const float2 offset = float2((i & 1) != 0 ? 0.5 : -0.5, (i & 2) != 0 ? 0.5 : -0.5) * atlasTexel;
-        lit += shadowMap.SampleCmpLevelZero(uv + offset, light.z);
-    }
-    lit *= 0.25;
-    // La dernière cascade s'efface sur son dernier dixième : pas de limite nette au loin.
+    float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
+                                  f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
+    lit = lit < 0.0 ? 1.0 : lit;
     if (cascade == 3) {
-        const float fade = saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3]));
-        lit = lerp(1.0, lit, fade);
+        lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
     }
-    return lit;
+    return min(lit, terrain);
 }
 
 // Surface vue en un pixel, de quoi l'éclairer (BRDF de Cook-Torrance : GGX, Smith, Schlick, comme glTF).
@@ -769,8 +824,10 @@ float3 Radiance(float3 color)
 static const float GroundBounceAlbedo = 0.2;
 
 // foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
+// objectShadows faux pour les transparents : un verre laisse passer la lumière, l'ombre d'un objet proche (la tête du
+// pilote sur la verrière) y dessinait une silhouette sombre ; il garde l'ombre du relief.
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
-                    bool foliage = false, float2 leaves = float2(0.0))
+                    bool foliage = false, float2 leaves = float2(0.0), bool objectShadows = true)
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
@@ -780,7 +837,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         geometryNormal = -geometryNormal; // décalage de la lecture vers le soleil, comme pour la face éclairée
         sunFacing = -sunFacing;
     }
-    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
+    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing, objectShadows) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
@@ -1608,7 +1665,8 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
-                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw,
+                             params.transparent == 0);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;

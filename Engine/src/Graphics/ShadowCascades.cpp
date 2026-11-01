@@ -6,51 +6,73 @@
 #include <cmath>
 
 namespace Flux {
-    std::array<ShadowCascade, ShadowCascadeCount> ComputeShadowCascades(const Camera& camera, float aspect,
-                                                                        const Math::Vector3f& toSun, std::uint32_t resolution,
-                                                                        float casterDistance) {
-        // Repère de la lumière : `forward` suit les rayons (du soleil vers la scène), right et up couvrent la carte.
-        const Math::Vector3f forward = Math::Normalize(toSun) * -1.0f;
-        const Math::Vector3f reference = std::abs(forward.y) < 0.99f ? Math::Vector3f{0.0f, 1.0f, 0.0f} : Math::Vector3f{1.0f, 0.0f, 0.0f};
-        const Math::Vector3f right = Math::Normalize(Math::Cross(forward, reference));
-        const Math::Vector3f up = Math::Cross(right, forward);
+    namespace {
+        // Repère de la lumière et position de la caméra dans ce repère, communs à toutes les tranches.
+        struct LightFrame
+        {
+            Math::Vector3f forward; // suit les rayons (du soleil vers la scène) ; right et up couvrent la carte
+            Math::Vector3f right;
+            Math::Vector3f up;
+            Math::Vector3f viewForward;
+            float cornerFactor; // distance latérale² d'un coin du champ / profondeur²
+            double eyeRight;
+            double eyeUp;
+        };
 
-        const Math::Vector3f viewForward = camera.GetForward();
-        const float tanY = std::tan(camera.verticalFov * 0.5f);
-        const float tanX = tanY * aspect;
-        // Position de la caméra dans son secteur : sert à caler les cascades sur la grille du monde. Un changement de
-        // secteur déplace la grille une fois, sans conséquence visible.
-        const Math::Vector3d eye = camera.position.offset;
-        const double eyeRight = eye.x * right.x + eye.y * right.y + eye.z * right.z;
-        const double eyeUp = eye.x * up.x + eye.y * up.y + eye.z * up.z;
+        LightFrame MakeLightFrame(const Camera& camera, float aspect, const Math::Vector3f& toSun) {
+            LightFrame frame{};
+            frame.forward = Math::Normalize(toSun) * -1.0f;
+            const Math::Vector3f reference = std::abs(frame.forward.y) < 0.99f ? Math::Vector3f{0.0f, 1.0f, 0.0f} : Math::Vector3f{1.0f, 0.0f, 0.0f};
+            frame.right = Math::Normalize(Math::Cross(frame.forward, reference));
+            frame.up = Math::Cross(frame.right, frame.forward);
+            frame.viewForward = camera.GetForward();
+            const float tanY = std::tan(camera.verticalFov * 0.5f);
+            const float tanX = tanY * aspect;
+            frame.cornerFactor = tanX * tanX + tanY * tanY;
+            // Position de la caméra dans son secteur : sert à caler les cascades sur la grille du monde. Un changement
+            // de secteur déplace la grille une fois, sans conséquence visible.
+            const Math::Vector3d eye = camera.position.offset;
+            frame.eyeRight = eye.x * frame.right.x + eye.y * frame.right.y + eye.z * frame.right.z;
+            frame.eyeUp = eye.x * frame.up.x + eye.y * frame.up.y + eye.z * frame.up.z;
+            return frame;
+        }
 
-        std::array<ShadowCascade, ShadowCascadeCount> cascades{};
-        float start = camera.nearPlane;
-        for (int i = 0; i < ShadowCascadeCount; ++i) {
-            const float end = ShadowCascadeEnds[static_cast<std::size_t>(i)];
+        ShadowCascade CascadeAround(const LightFrame& frame, float centerDistance, float radius, std::uint32_t resolution,
+                                    float casterDistance);
+
+        ShadowCascade ComputeCascade(const LightFrame& frame, float start, float end, std::uint32_t resolution,
+                                     float casterDistance) {
             // Sphère de la tranche [start, end] : centre sur l'axe de la vue, là où elle touche à la fois les coins
             // proches et lointains (ou au bout, si la tranche est très évasée).
-            const float cornerFactor = tanX * tanX + tanY * tanY; // distance latérale² d'un coin / profondeur²
-            float centerDistance = 0.5f * (start + end) * (1.0f + cornerFactor);
+            float centerDistance = 0.5f * (start + end) * (1.0f + frame.cornerFactor);
             centerDistance = std::min(centerDistance, end);
             const auto cornerDistance = [&](float depth) {
                 const float along = depth - centerDistance;
-                return std::sqrt(along * along + depth * depth * cornerFactor);
+                return std::sqrt(along * along + depth * depth * frame.cornerFactor);
             };
-            float radius = std::max(cornerDistance(start), cornerDistance(end));
+            return CascadeAround(frame, centerDistance, std::max(cornerDistance(start), cornerDistance(end)), resolution,
+                                 casterDistance);
+        }
+
+        // Carte qui couvre la sphère de rayon `radius` à `centerDistance` mètres devant la caméra.
+        ShadowCascade CascadeAround(const LightFrame& frame, float centerDistance, float radius, std::uint32_t resolution,
+                                    float casterDistance) {
             // Taille arrondie au décimètre au-dessus : elle ne change pas d'une image à l'autre (redimensionnement).
             radius = std::ceil(radius * 10.0f) / 10.0f;
             const float texel = 2.0f * radius / static_cast<float>(resolution);
 
             // Centre calé sur la grille des texels, dans le repère du monde (pas de la caméra, qui bouge).
-            Math::Vector3f center = viewForward * centerDistance;
-            const double worldRight = eyeRight + static_cast<double>(Math::Dot(center, right));
-            const double worldUp = eyeUp + static_cast<double>(Math::Dot(center, up));
+            Math::Vector3f center = frame.viewForward * centerDistance;
+            const double worldRight = frame.eyeRight + static_cast<double>(Math::Dot(center, frame.right));
+            const double worldUp = frame.eyeUp + static_cast<double>(Math::Dot(center, frame.up));
             const double snappedRight = std::floor(worldRight / texel) * texel;
             const double snappedUp = std::floor(worldUp / texel) * texel;
-            center += right * static_cast<float>(snappedRight - worldRight) + up * static_cast<float>(snappedUp - worldUp);
+            center += frame.right * static_cast<float>(snappedRight - worldRight) + frame.up * static_cast<float>(snappedUp - worldUp);
 
             // x = (p - c)·right / r ; y = (p - c)·up / r ; profondeur de casterDistance devant la tranche à r derrière.
+            const Math::Vector3f& right = frame.right;
+            const Math::Vector3f& up = frame.up;
+            const Math::Vector3f& forward = frame.forward;
             const float depthRange = casterDistance + radius;
             Math::Matrix4f m;
             m.columns[0] = {right.x / radius, up.x / radius, forward.x / depthRange, 0.0f};
@@ -58,8 +80,33 @@ namespace Flux {
             m.columns[2] = {right.z / radius, up.z / radius, forward.z / depthRange, 0.0f};
             m.columns[3] = {-Math::Dot(center, right) / radius, -Math::Dot(center, up) / radius,
                             (casterDistance - Math::Dot(center, forward)) / depthRange, 1.0f};
-            cascades[static_cast<std::size_t>(i)] = {m, center, radius, texel, depthRange};
-            start = end;
+            return {m, center, radius, texel, depthRange};
+        }
+    }
+
+    std::array<ShadowCascade, ShadowCascadeCount> ComputeShadowCascades(const Camera& camera, float aspect,
+                                                                        const Math::Vector3f& toSun, std::uint32_t resolution,
+                                                                        float casterDistance) {
+        const LightFrame frame = MakeLightFrame(camera, aspect, toSun);
+        std::array<ShadowCascade, ShadowCascadeCount> cascades{};
+        float start = camera.nearPlane;
+        for (std::size_t i = 0; i < ShadowCascadeCount; ++i) {
+            cascades[i] = ComputeCascade(frame, start, ShadowCascadeEnds[i], resolution, casterDistance);
+            start = ShadowCascadeEnds[i];
+        }
+        return cascades;
+    }
+
+    std::array<ShadowCascade, TerrainShadowCascadeCount> ComputeTerrainShadowCascades(const Camera& camera, float aspect,
+                                                                                      const Math::Vector3f& toSun,
+                                                                                      std::uint32_t resolution, float margin) {
+        const LightFrame frame = MakeLightFrame(camera, aspect, toSun);
+        std::array<ShadowCascade, TerrainShadowCascadeCount> cascades{};
+        for (std::size_t i = 0; i < TerrainShadowCascadeCount; ++i) {
+            // Centrées sur la caméra, pas devant elle : la tranche se choisit par la distance (SunVisibility), une carte
+            // ne dépend ainsi que de la position de la caméra, jamais de son regard (tourner la tête faisait grandir
+            // et rétrécir les ombres des montagnes avec les obstacles retenus).
+            cascades[i] = CascadeAround(frame, 0.0f, TerrainShadowCascadeEnds[i] * margin, resolution, TerrainShadowCasterDistance);
         }
         return cascades;
     }
@@ -91,6 +138,11 @@ namespace Flux {
     }
 
     bool ShadowReceivers::Reaches(const Math::Vector3f& center, float radius, float length, std::size_t cascade) const {
+        return ReachesRange(center, radius, length, ShadowCascadeStart(cascade), ShadowCascadeEnds[cascade]);
+    }
+
+    bool ShadowReceivers::ReachesRange(const Math::Vector3f& center, float radius, float length, float sliceStart,
+                                       float sliceStop) const {
         // L'ombre balaie le segment [center, end] : elle manque la tranche si les deux bouts sont du même côté
         // extérieur d'un de ses plans (test suffisant, pas exact dans les coins : prudent).
         const Math::Vector3f end = center - m_toSun * length;
@@ -100,8 +152,8 @@ namespace Flux {
             }
         }
         // Un mètre de marge : le filtre de l'ombre lit autour du point, et une tranche gardée suit la caméra.
-        const float start = ShadowCascadeStart(cascade) - radius - 1.0f;
-        const float stop = ShadowCascadeEnds[cascade] + radius + 1.0f;
+        const float start = sliceStart - radius - 1.0f;
+        const float stop = sliceStop + radius + 1.0f;
         const float depthA = Math::Dot(center, m_forward);
         const float depthB = Math::Dot(end, m_forward);
         return std::max(depthA, depthB) >= start && std::min(depthA, depthB) <= stop;

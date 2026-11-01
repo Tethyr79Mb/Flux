@@ -66,9 +66,10 @@ namespace Flux {
         {
             Math::Matrix4f viewProjection; // décalée d'un sous-pixel (TemporalView::jitter)
             Math::Matrix4f previousViewProjection; // de l'image précédente, sans décalage
-            std::array<Math::Matrix4f, ShadowCascadeCount> cascades;
+            std::array<Math::Matrix4f, ShadowCascadeCount + TerrainShadowCascadeCount> cascades;
             std::array<float, 4> cascadeEnds;
             std::array<float, 4> cascadeTexels;
+            std::array<float, 4> terrainCascades; // xy : fin des tranches du relief ; zw : côté d'un texel
             std::array<float, 4> cameraForward;
             std::array<float, 4> cameraDelta; // TemporalView::cameraDelta
             std::array<float, 4> toSun;
@@ -90,9 +91,9 @@ namespace Flux {
             std::array<std::uint32_t, 4> pyramidSize;
             std::array<std::uint32_t, 16> pyramidOffsets;
         };
-        static_assert(sizeof(FrameData) == 576 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
+        static_assert(sizeof(FrameData) == 576 + 2 * 64 + 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
                                                + sizeof(Planetology::AtmosphereGpu) + 80
-                      && ShadowCascadeCount == 4);
+                      && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
 
         // Doit correspondre à DrawParams dans shaders/Mesh.slang : le matériau d'une primitive, envoyé avec chaque lot
@@ -129,6 +130,7 @@ namespace Flux {
         constexpr std::uint32_t TileCommandSlot = 11;
         constexpr std::uint32_t MeshTaskSlot = 12;    // mesh shaders des modèles (shaders/ModelMesh.slang)
         constexpr std::uint32_t MeshletStatSlot = 13;
+        constexpr std::uint32_t TerrainShadowMapSlot = 14;
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -152,6 +154,14 @@ namespace Flux {
         // Carte d'ombres : 2 x 2 cascades de 2048 texels de côté (64 Mo en profondeur 32 bits).
         constexpr std::uint32_t ShadowCascadeResolution = 2048;
         constexpr std::uint32_t ShadowMapResolution = 2 * ShadowCascadeResolution;
+        // Relief au loin (2 cascades côte à côte) : 4096 texels sur la configuration recommandée (128 Mo), 2048 sur le
+        // minimum (32 Mo), reconnu à l'absence de mesh shaders (GTX 1060, RX 5700). De 200 m à 3 km, un texel fait
+        // environ 2 m en 4096 ; de 3 à 40 km, environ 25 m.
+        constexpr std::uint32_t TerrainShadowResolution = 4096;
+        constexpr std::uint32_t TerrainShadowResolutionMinimum = 2048;
+        // Une cascade du relief refaite au moins toutes les N images même immobile (tuiles arrivées), à tour de rôle.
+        constexpr std::uint32_t TerrainRefreshFrames = 30;
+        constexpr std::uint32_t TerrainRefreshFramesMinimum = 60;
 
         // `entity` est `ancestor` ou l'un de ses descendants.
         bool IsInside(const Scene& scene, Entity entity, Entity ancestor) {
@@ -202,6 +212,15 @@ namespace Flux {
             return std::unexpected(shadowMap.error());
         }
         renderer->m_shadowMap = std::move(*shadowMap);
+        const bool recommended = device.HasMeshShaders();
+        renderer->m_terrainShadowResolution = recommended ? TerrainShadowResolution : TerrainShadowResolutionMinimum;
+        renderer->m_terrainRefreshFrames = recommended ? TerrainRefreshFrames : TerrainRefreshFramesMinimum;
+        auto terrainShadowMap = device.CreateRenderTarget(RHI::Format::D32Float,
+                                                          {2 * renderer->m_terrainShadowResolution, renderer->m_terrainShadowResolution}, true);
+        if (!terrainShadowMap) {
+            return std::unexpected(terrainShadowMap.error());
+        }
+        renderer->m_terrainShadowMap = std::move(*terrainShadowMap);
         auto shadowSampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Nearest,
                                                    .address = RHI::AddressMode::ClampToEdge, .compare = true});
         if (!shadowSampler) {
@@ -225,6 +244,7 @@ namespace Flux {
             RHI::Binding{TileCommandSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{MeshTaskSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+            RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -244,6 +264,7 @@ namespace Flux {
                 return std::unexpected("création des buffers de l'image");
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
+            renderer->m_frameGroups[f]->SetTexture(TerrainShadowMapSlot, *renderer->m_terrainShadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
         }
         if (device.HasMeshShaders()) {
@@ -651,6 +672,7 @@ namespace Flux {
         m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
         m_shadowReceivers = ShadowReceivers(camera, aspect, sky.toSun);
         ChooseShadowCascades(camera, sky.toSun);
+        ChooseTerrainCascades(camera, aspect, sky.toSun);
         m_planets->BeginFrame(frameIndex);
         m_vegetation->BeginFrame(frameIndex);
         m_vegetationComponent = nullptr;
@@ -855,10 +877,20 @@ namespace Flux {
         // première image (ou quand elle change), pas d'arbres avant la suivante.
         const Planetology::Terrain* known = m_planets->FindTerrain(transform.entity);
         const bool trees = vegetation && !m_vegetationComponent && known;
+        // Hors du champ, les tuiles qui portent une ombre dans une carte redessinée à cette image : une montagne derrière
+        // la caméra, soleil dans le dos, assombrit la vallée devant elle.
+        const Planetology::PlanetRenderer::ViewTest castsShadow = [this](const Math::Vector3f& center, float radius) {
+            for (std::size_t pass = 2; pass < TilePassCount; ++pass) {
+                if (TileCastsShadow(center, radius, pass)) {
+                    return true;
+                }
+            }
+            return false;
+        };
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
                            m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
-                           trees ? static_cast<double>(vegetation->range) : 0.0);
+                           trees ? static_cast<double>(vegetation->range) : 0.0, &castsShadow);
         if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
             m_vegetationComponent = vegetation;
             m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains);
@@ -941,7 +973,7 @@ namespace Flux {
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius,
-                                   Math::Length(sphere) - tile.radius, water, tile.firstIndex, tile.indexCount});
+                                   Math::Length(sphere) - tile.radius, water, tile.firstIndex, tile.indexCount, tile.shadowOnly});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
@@ -1106,6 +1138,11 @@ namespace Flux {
             frame.cascadeEnds[c] = ShadowCascadeEnds[c];
             frame.cascadeTexels[c] = m_cascades[c].texelSize;
         }
+        for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
+            frame.cascades[ShadowCascadeCount + t] = m_terrainCascades[t].lightViewProjection;
+            frame.terrainCascades[t] = TerrainShadowCascadeEnds[t];
+            frame.terrainCascades[2 + t] = m_terrainCascades[t].texelSize;
+        }
         // w : secondes écoulées (vagues des océans), repartent de 0 toutes les heures pour garder leur précision.
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
         frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
@@ -1180,15 +1217,54 @@ namespace Flux {
                 m_cascades[c] = MoveShadowCascade(drawn.cascade, Math::Vector3f(moved));
                 m_keepShadows = true;
             } else {
-                drawn = {true, m_cascades[c], camera.position, toSun};
+                drawn = {true, m_cascades[c], camera.position, toSun, camera.GetForward()};
             }
         }
+    }
+
+    // Le relief au loin change peu d'une image à l'autre : sa carte est gardée (recalée sur la caméra) tant que la
+    // caméra reste dans la marge du carré dessiné (ComputeTerrainShadowCascades : 10 %), a tourné de moins de 3° et que
+    // le soleil n'a pas tourné de plus d'un quart de texel au bout des obstacles. Les deux cascades sont refaites à tour de rôle
+    // toutes les m_terrainRefreshFrames images, pour les tuiles arrivées ou affinées entre-temps.
+    void MeshRenderer::ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun) {
+        const auto fresh = ComputeTerrainShadowCascades(camera, aspect, toSun, m_terrainShadowResolution);
+        m_keepTerrainShadows = false;
+        for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
+            DrawnCascade& drawn = m_drawnTerrain[t];
+            const std::uint64_t phase = m_preparedFrame + t * (m_terrainRefreshFrames / 2);
+            bool keep = drawn.valid && phase % m_terrainRefreshFrames != 0 && drawn.cascade.radius == fresh[t].radius;
+            ShadowCascade moved{};
+            if (keep) {
+                moved = MoveShadowCascade(drawn.cascade, Math::Vector3f(Math::Delta(drawn.eye, camera.position)));
+                const float sunTurn = Math::Length(Math::Cross(drawn.toSun, toSun));
+                // Les obstacles dessinés sont ceux dont l'ombre tombe dans le champ d'alors (élargi d'environ 4°,
+                // ShadowReceivers) : au-delà de 3° de rotation, ceux du nouveau champ peuvent manquer.
+                const bool turned = Math::Dot(drawn.forward, camera.GetForward()) < std::cos(3.0f * std::numbers::pi_v<float> / 180.0f);
+                keep = !turned && Math::Length(moved.center - fresh[t].center) < 0.05f * fresh[t].radius
+                    && sunTurn < 0.25f * fresh[t].texelSize / TerrainShadowCasterDistance;
+            }
+            m_drawTerrain[t] = !keep;
+            if (keep) {
+                m_terrainCascades[t] = moved;
+                m_keepTerrainShadows = true;
+            } else {
+                m_terrainCascades[t] = fresh[t];
+                drawn = {true, fresh[t], camera.position, toSun, camera.GetForward()};
+            }
+        }
+    }
+
+    bool MeshRenderer::TerrainShadowsPending() const {
+        return std::ranges::any_of(m_drawTerrain, [](bool draw) { return draw; });
     }
 
     // L'entité peut faire de l'ombre dans la cascade : sa sphère touche le volume vu par la carte (le carré couvert,
     // de casterDistance devant la tranche jusqu'à son arrière).
     bool MeshRenderer::InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const {
-        const ShadowCascade& c = m_cascades[cascade];
+        return InShadowVolume(m_cascades[cascade], center, radius);
+    }
+
+    bool MeshRenderer::InShadowVolume(const ShadowCascade& c, const Math::Vector3f& center, float radius) {
         const auto& m = c.lightViewProjection.columns;
         const Math::Vector3f p = center;
         const float x = m[0][0] * p.x + m[1][0] * p.y + m[2][0] * p.z + m[3][0];
@@ -1208,6 +1284,19 @@ namespace Flux {
             && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, cascade);
     }
 
+    bool MeshRenderer::TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass) const {
+        if (pass < FirstTerrainShadowPass) {
+            const std::size_t c = pass - 2;
+            return m_drawCascade[c] && InCascade(center, radius, c)
+                && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, c);
+        }
+        const std::size_t t = pass - FirstTerrainShadowPass;
+        return m_drawTerrain[t] && InShadowVolume(m_terrainCascades[t], center, radius)
+            // Depuis la caméra : la tranche est choisie par la distance (SunVisibility), un point à 3,5 km sur le bord
+            // du champ n'est qu'à 2,3 km devant la caméra.
+            && m_shadowReceivers.ReachesRange(center, radius, TerrainShadowCasterDistance, 0.0f, TerrainShadowCascadeEnds[t]);
+    }
+
     const MeshRenderer::ClusterDraw* MeshRenderer::FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const {
         return draw.model->clusters.empty() ? nullptr : &m_clusters[draw.firstCluster + primitive.cluster];
     }
@@ -1222,13 +1311,14 @@ namespace Flux {
     }
 
     MeshRenderer::PlanetTileStats MeshRenderer::GetPlanetTileStats() const {
-        PlanetTileStats stats{.drawn = static_cast<std::uint32_t>(m_tileDraws.size()),
+        PlanetTileStats stats{.drawn = 0,
                               .stored = m_planets->GetStoredTileCount(),
                               .pending = m_planets->GetPendingTileCount(),
                               .computed = m_planets->GetScheduledTileCount(),
                               .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading(),
                               .meshThreads = m_planetMesh ? m_planetMeshThreads : 0u};
         for (const TileDraw& draw : m_tileDraws) {
+            stats.drawn += draw.shadowOnly ? 0u : 1u;
             stats.ocean += draw.ocean ? 1u : 0u;
         }
         return stats;
@@ -1269,10 +1359,9 @@ namespace Flux {
         for (std::size_t pass = 0; pass < TilePassCount; ++pass) {
             passStarts[pass] = m_tileBatches.size();
             for (const TileDraw& draw : m_tileDraws) {
-                const bool drawn = pass == GroundPass ? true
+                const bool drawn = pass == GroundPass ? !draw.shadowOnly
                                  : pass == OceanPass  ? draw.ocean
-                                                      : InCascade(draw.center, draw.radius, pass - 2)
-                                                            && m_shadowReceivers.Reaches(draw.center, draw.radius, ShadowCasterDistance, pass - 2);
+                                                      : TileCastsShadow(draw.center, draw.radius, pass);
                 if (!drawn) {
                     continue;
                 }
@@ -1820,6 +1909,27 @@ namespace Flux {
             DrawBatches(commands, state, frameIndex, 2 + c);
             DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
             DrawTrees(commands, state, frameIndex, static_cast<Planetology::VegetationRenderer::List>(Planetology::VegetationRenderer::Shadow + c), c);
+        }
+        commands.EndRenderPass();
+    }
+
+    void MeshRenderer::DrawTerrainShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        commands.BeginRenderPass({.clearColor = {}, .depth = m_terrainShadowMap.get(), .clearDepth = 1.0f, .color = false,
+                                  .loadDepth = m_keepTerrainShadows});
+        BindState state;
+        const std::uint32_t size = m_terrainShadowResolution;
+        for (std::uint32_t t = 0; t < TerrainShadowCascadeCount; ++t) {
+            if (!m_drawTerrain[t]) {
+                continue;
+            }
+            // Cascade t : colonne t de la carte.
+            const std::int32_t x = static_cast<std::int32_t>(t * size);
+            commands.SetViewport({static_cast<float>(x), 0.0f, static_cast<float>(size), static_cast<float>(size)});
+            commands.SetScissor({x, 0, size, size});
+            if (m_keepTerrainShadows) {
+                commands.ClearDepth({x, 0, size, size}, 1.0f);
+            }
+            DrawTiles(commands, state, frameIndex, FirstTerrainShadowPass + t, *m_planet.shadowDoubleSided);
         }
         commands.EndRenderPass();
     }

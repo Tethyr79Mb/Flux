@@ -464,6 +464,7 @@ namespace Flux {
             const auto airRayleigh = texture("air : Rayleigh", Lifetime::Previous, [this] { return &sky->GetAirRayleigh(); });
             const auto airMie = texture("air : Mie", Lifetime::Previous, [this] { return &sky->GetAirMie(); });
             const auto shadowMap = texture("carte d'ombres", Lifetime::Previous, [this] { return &meshes->GetShadowMap(); });
+            const auto terrainShadowMap = texture("ombres du relief", Lifetime::Previous, [this] { return &meshes->GetTerrainShadowMap(); });
             // Textures de travail, créées par le graphe à la taille de la vue 3D. Profondeur lisible : l'anticrénelage
             // y retrouve où était chaque point. L'historique a deux exemplaires : l'anticrénelage lit l'un, écrit l'autre.
             using TextureSize = RenderGraph::TextureSize;
@@ -526,12 +527,20 @@ namespace Flux {
                 .Reads(culled)
                 .Writes(shadowMap)
                 .Step("ombres", [this](RHI::CommandList& commands) { meshes->DrawShadows(commands, frame.index); });
+            // Relief au loin : seulement les images où une de ses cascades est refaite (MeshRenderer::ChooseTerrainCascades).
+            graph.AddPass("ombres du relief")
+                .When([this] { return sceneVisible && meshes->TerrainShadowsPending(); })
+                .Reads(cpu)
+                .Reads(tiles)
+                .Writes(terrainShadowMap)
+                .Step("ombres du relief", [this](RHI::CommandList& commands) { meshes->DrawTerrainShadows(commands, frame.index); });
             graph.AddPass("scène")
                 .When(scene)
                 .Reads(cpu)
                 .Reads(tiles)
                 .Reads(culled)
                 .Reads(shadowMap)
+                .Reads(terrainShadowMap)
                 .Reads(skyBackground)
                 .Reads(skyRayleigh)
                 .Reads(skyMie)
@@ -618,6 +627,7 @@ namespace Flux {
                 .Reads(tiles)
                 .Reads(culled)
                 .Reads(shadowMap)
+                .Reads(terrainShadowMap)
                 .Reads(skyBackground)
                 .Reads(skyRayleigh)
                 .Reads(skyMie)
