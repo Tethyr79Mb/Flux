@@ -186,10 +186,9 @@ namespace Flux::Ships {
 
     void Update(Scene& scene, Entity piloted, double deltaSeconds, const ShipInput& input) {
         if (piloted != NullEntity && scene.IsValid(piloted)) {
-            // En warp, Warp le mène ; sous pilote automatique, Docking (sinon le pilote, sans gaz, le freinait plus fort
-            // que le pilote automatique n'accélère : il sortait d'un hangar au pas).
-            if (auto* ship = scene.TryGet<ShipComponent>(piloted);
-                ship && ship->warp == WarpStage::Off && ship->autopilot == AutopilotStage::Off) {
+            // Mené par le jeu (warp, pilote automatique) : sinon le pilote, sans gaz, le freinait plus fort que le pilote
+            // automatique n'accélère (il sortait d'un hangar au pas).
+            if (auto* ship = scene.TryGet<ShipComponent>(piloted); ship && !ship->autopilot) {
                 Pilot(*ship, scene.GetWorldRotation(piloted), deltaSeconds, input);
             }
         }
@@ -205,5 +204,11 @@ namespace Flux::Ships {
     Entity GetPilotedShip(const Scene& scene, Entity player) {
         const Entity seat = Seats::GetPilotSeat(scene, player);
         return seat != NullEntity ? scene.GetShip(seat) : NullEntity;
+    }
+
+    Math::Vector3f GetWorldVelocity(const Scene& scene, Entity entity) {
+        const Entity ship = scene.TryGet<ShipComponent>(entity) ? entity : scene.GetShip(entity);
+        const ShipComponent* component = ship != NullEntity ? scene.TryGet<ShipComponent>(ship) : nullptr;
+        return component ? scene.GetWorldRotation(ship).Rotate(component->velocity) : Math::Vector3f{};
     }
 }

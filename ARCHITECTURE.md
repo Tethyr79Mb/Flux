@@ -30,8 +30,16 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `BeforePhysics` et
   `AfterPhysics` autour de la physique, `Hud` pour l'écran, `Reset` à
   chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
-  comme `Missions::SpawnEnemies`, `Weapons::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`),
-  cible de l'IA de combat (`Combat.cpp`), commandes des armes du joueur (`PlayerWeapons.cpp`). L'éditeur charge une copie
+  comme `Projectiles::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`, avec leur composant et
+  leurs briques dans `MissionGiver.cpp`),
+  IA de combat (`CombatAI.cpp`) et sa cible (`Combat.cpp`), amarrage et warp (`Docking.cpp`, `Warp.cpp`, avec leurs
+  touches et leur affichage dans `Navigation.cpp`), armes, emports et points de vie (`Weapons.cpp`) et commandes des armes du joueur (`PlayerWeapons.cpp`), commandes du vaisseau (`Piloting.cpp`, données au moteur par
+  `Engine::SetPilotInput`) et infos de vol (`FlightInfo.cpp`, lignes des autres systèmes par `FlightInfo::SetExtra`). Le jeu ajoute aussi ses
+  objets au panneau Placer de l'éditeur (`Engine::GetEditorExtensions`, `PlaceItems.cpp` : chasseur armé, cible,
+  stations à quais) et l'aimant qui fixe une arme sur un emport (`MountRule`) : l'éditeur ne connaît pas les composants du jeu, ce qui évite qu'il lise une ancienne disposition
+  après un rechargement à chaud. Le code du jeu est une bibliothèque statique, `GameLogic` (`Game/Module/src`), liée par
+  la DLL (qui n'a que ses points d'entrée, `Game/Module/Dll`) et par FluxTests (tests du jeu dans `Tests/src/Game`).
+  L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.
 - **Ars Solaris.exe** (cible CMake `Game`) n'a qu'un `main` d'une ligne : `Flux::GameStartup` (`Core/GameStartup.hpp`) lit le projet et les
@@ -54,12 +62,14 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
    - systèmes du jeu à l'étape `Interaction` (ils peuvent prendre la touche Interagir : `ConsumeInteraction`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
-     vaisseau aux commandes, moteurs des autres coupés) ;
+     vaisseau aux commandes avec les commandes du jeu, `Engine::SetPilotInput`, complétées de la souris et de ce qui
+     entoure le vaisseau ; moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
    - projectiles, après la physique (les vaisseaux sont à leur place de l'image) : ils avancent et touchent
-     (`Weapons::GuideMissiles`, `UpdateProjectiles`, `ApplyHits`) ;
-   - systèmes du jeu à l'étape `AfterPhysics` : armes du joueur puis des ennemis (`Weapons::Update`,
-     `CombatAI::Fire`), qui ajoutent leurs tirs à `Engine::GetProjectiles` ;
+     (`Projectiles::GuideMissiles`, `Update`), les éclats d'impact sont créés ;
+   - systèmes du jeu à l'étape `AfterPhysics` : dégâts des projectiles arrivés (`Engine::GetProjectileHits`,
+     `Game::Weapons::ApplyHits`), puis armes du joueur et des ennemis (`Game::Weapons::Update`, `CombatAI::Fire`), qui
+     ajoutent leurs tirs à `Engine::GetProjectiles` ;
    - animation (`Animator::Update`), après la physique ;
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
@@ -78,7 +88,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 vers des types seulement déclarés dans `Engine.hpp`, pour que les changer ne recompile ni l'éditeur ni le jeu) :
 `PlayerCamera` (caméra qui suit le personnage, vue cockpit, vue extérieure), `QuickSave` (fichiers de la sauvegarde
 rapide, données des systèmes du jeu), `InterfaceBindings` (valeurs liées, fonctions et actions des boutons),
-`FlightHud` (infos de vol, message en haut de l'écran), `LoadingScreen` et `EnginePanel` (temps d'image et panneau
+`FlightSurroundings` (planète, altitude et air autour du vaisseau piloté, `Engine::GetFlightState`), `Notice`
+(message court en haut de l'écran), `LoadingScreen` et `EnginePanel` (temps d'image et panneau
 Moteur). Elles passent par l'interface publique d'`Engine` (`GetScene`, `GetPhysics`...) ou reçoivent ce qu'il leur
 faut en argument.
 
@@ -277,7 +288,8 @@ planète donne directement le sien comme indice d'instance.
   fichier plus récent que le moteur, d'un format plus récent ou avec un champ inconnu (autre branche) est refusé
   avec « Scène non chargée car non compatible avec la version actuelle du moteur » et le détail, la scène en cours
   intacte ; dans le jeu, le message s'affiche dans une fenêtre. Un fichier plus ancien (ou sans ce numéro) est lu et
-  converti (`.RemovedField`, `.ConvertedField`).
+  converti (`.RemovedField`, `.ConvertedField` ; un champ devenu un autre composant, souvent du jeu :
+  `ComponentRegistry::AddMovedField`, retiré avec ce composant au déchargement du jeu).
 - Prefabs (`SceneSerializer`) : un `.prefab.json` est une racine et ses descendants. Dans une scène, un exemplaire
   (`PrefabInstanceComponent` sur sa racine, `PrefabLinkComponent` sur chaque pièce) est écrit comme sa racine, le
   chemin du prefab et, par pièce, les seuls champs qui en diffèrent (`overrides`, composants ajoutés ou retirés).
@@ -336,14 +348,19 @@ planète donne directement le sien comme indice d'instance.
   `double` autour des objets (sondes), sur 1 à 4 fils. Les arbres aussi : les plaines proches sont resemées par le CPU
   (`Planetology::SowPlain`, copie de `SowPlace` de `PlanetTile.slang`), une capsule par tronc dans un corps par plaine.
 
-## Armes (`Weapons`)
+## Armes (`Game::Weapons`) et projectiles (`Projectiles`)
 
+- Partage (2026-11-01) : les armes, emports et points de vie sont au jeu (`Game/Module/src/Weapons.cpp`) ; le moteur
+  garde les projectiles (`Flux/Scene/Projectiles.hpp` : avancer, guider les missiles, toucher, éclats, traçantes) et
+  donne au jeu ceux arrivés à l'image (`Engine::GetProjectileHits`). Les noms JSON (`hardpoint`, `weapon`, `health`)
+  n'ont pas changé.
 - Un emport (`HardpointComponent`) est une entité du vaisseau ; l'arme (`WeaponComponent`) est son enfant direct. Une
-  arme d'un autre genre ou plus grande que l'emport ne tire pas (`Weapons::Fits`).
+  arme d'un autre genre ou plus grande que l'emport ne tire pas (`Weapons::Fits`). L'aimant de l'éditeur
+  (`Editor/src/Panels/Mounts.cpp`) suit la règle que le jeu déclare (`EditorExtensions::AddMountRule`).
 - Tir par groupes : chaque arme a un groupe (`WeaponComponent::group`). Les actions « Groupe d'armes 1 » à « 10 »
   (touches 1 à 0, déclarées par le jeu, `Game/Module/src/PlayerWeapons.cpp`) verrouillent la cible visée et activent
   ou arrêtent le groupe ; le jeu dessine le verrou et ajoute « Tir auto » et les missiles aux infos de vol
-  (`Engine::SetFlightInfoExtra`) ; les
+  (`FlightInfo::SetExtra`) ; les
   canons d'un groupe actif tirent seuls dès que la cible est à leur portée, un lance-missiles lance un missile puis
   son groupe s'arrête (`Weapons::Update` retourne le groupe). Perdre la cible arrête tout.
 - Visée : la cible verrouillée, en avance (sa vitesse moins celle du vaisseau, sur le temps de vol des obus) ; sans
@@ -356,13 +373,13 @@ planète donne directement le sien comme indice d'instance.
 - Impacts : chaque projectile lance le segment qu'il parcourt dans l'image contre tous les mondes physiques
   (`PhysicsWorld::CastRay` ; corps du tireur ignorés). La cible est l'entité touchée ou son ancêtre le plus proche
   qui a un `HealthComponent` ; à 0, elle est détruite avec ses enfants, et la physique retire ses corps à sa
-  prochaine mise à jour. Le personnage du joueur protège ce qui le porte (fin de partie à venir).
+  prochaine mise à jour (système du jeu « Armes : dégâts »). Le personnage du joueur protège ce qui le porte (fin de partie à venir).
 - Missiles : des `Projectile` marqués `missile`, avec une cible. Le verrouillage (`Weapons::FindLockTarget`) se
   fait à l'appui sur une touche de tir : la cible à points de vie la plus proche du centre de la vue, dans l'angle et
   la portée des armes montées (parcours de tous les `HealthComponent` : linéaire, peu nombreux). Il tient ensuite hors
   du viseur tant que la cible vit et reste à portée (`KeepsLock`, à chaque image). Un groupe actif en
-  lance un, du lance-missiles de ce groupe qui a le moins tiré. En vol, `GuideMissiles` tourne
-  la vitesse vers la cible (en avance sur un vaisseau qui vole, d'après la vitesse de son `ShipComponent`), sans
+  lance un, du lance-missiles de ce groupe qui a le moins tiré. En vol, `Projectiles::GuideMissiles` tourne
+  la vitesse vers la cible (en avance sur un vaisseau qui vole, d'après `Ships::GetWorldVelocity`), sans
   dépasser le virage du missile ni changer sa vitesse. Le nombre tiré (`fired`) n'est pas enregistré : la copie de la scène du mode Jouer
   repart pleine.
 

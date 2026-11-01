@@ -95,4 +95,18 @@ namespace Flux::Math {
         const float length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
         return length > 0.0f ? Quaternionf{q.x / length, q.y / length, q.z / length, q.w / length} : Quaternionf{};
     }
+
+    // Tourne la direction `from` vers `to` (unitaires) d'au plus `angle` radians. Opposées : autour d'un axe
+    // quelconque perpendiculaire.
+    inline Vector3f TurnToward(const Vector3f& from, const Vector3f& to, float angle) {
+        const float between = std::acos(std::fmax(std::fmin(Dot(from, to), 1.0f), -1.0f));
+        if (between <= angle) {
+            return to;
+        }
+        Vector3f axis = Cross(from, to);
+        if (Length(axis) < 1.0e-6f) {
+            axis = std::abs(from.y) < 0.9f ? Vector3f{0.0f, 1.0f, 0.0f} : Vector3f{1.0f, 0.0f, 0.0f};
+        }
+        return Normalize(Quaternionf::FromAxisAngle(axis, angle).Rotate(from));
+    }
 }

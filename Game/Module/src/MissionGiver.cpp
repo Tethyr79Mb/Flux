@@ -1,12 +1,32 @@
-#include "Flux/Scene/Missions.hpp"
+#include "MissionGiver.hpp"
 
-#include "Flux/Scene/Scene.hpp"
+#include "CombatAI.hpp"
+#include "Weapons.hpp"
+
+#include <Flux/Scene/ComponentRegistry.hpp>
+#include <Flux/Scene/Scene.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
 
-namespace Flux::Missions {
+namespace Game {
+    void RegisterMissionGiver(Flux::ComponentRegistry& registry) {
+        using namespace Flux;
+        registry.Register<MissionGiverComponent>("missionGiver", "Donneur de missions")
+            .Field("title", "Titre", &MissionGiverComponent::title)
+            .Field("briefing", "Ordre de mission", &MissionGiverComponent::briefing)
+            .Asset("enemyPrefab", "Ennemis (prefab)", &MissionGiverComponent::enemyPrefab, AssetType::Prefab)
+            .Field("enemyCount", "Nombre d'ennemis", &MissionGiverComponent::enemyCount, {.speed = 0.1, .min = 1.0, .max = 50.0, .decimals = 0})
+            .Field("distance", "Distance (m)", &MissionGiverComponent::distance, {.speed = 100.0, .min = 0.0, .max = 1.0e8, .decimals = 0})
+            .Field("spread", "Écart (m)", &MissionGiverComponent::spread, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
+            .Field("reach", "Portée pour parler (m)", &MissionGiverComponent::reach, {.speed = 0.05, .min = 0.5, .max = 20.0, .decimals = 2});
+    }
+}
+
+namespace Game::Missions {
+    using namespace Flux;
+
     namespace {
         constexpr float DefaultHealth = 100.0f; // ennemi sans points de vie : 10 obus du Gatling
         constexpr float DroneSize = 6.0f;       // m, drone cube quand le donneur n'a pas de prefab
@@ -21,7 +41,6 @@ namespace Flux::Missions {
             ship.turnRate = 70.0f;
             ship.levelAssist = false;
             ship.fallsWithoutPilot = false;
-            ship.warpSpeed = 0.0f;
             scene.Add<ShipComponent>(drone, ship);
             const Entity hull = scene.CreateEntity("Coque", drone);
             scene.Get<TransformComponent>(hull).scale = {DroneSize, DroneSize, DroneSize};

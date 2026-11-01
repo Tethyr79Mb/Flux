@@ -1,15 +1,20 @@
 // Warp : vers la destination visée, sans collision ni arrêt avant elle, en contournant les planètes sur le chemin.
-#include "Check.hpp"
+#include "../Check.hpp"
+
+#include "Docking.hpp"
+#include "Warp.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
+#include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
-#include "Flux/Scene/Warp.hpp"
+#include "Flux/Scene/SceneSerializer.hpp"
 
 #include <cmath>
 #include <numbers>
 #include <vector>
 
 using namespace Flux;
+using namespace Game;
 
 namespace {
     constexpr double Frame = 1.0 / 60.0;
@@ -19,6 +24,7 @@ namespace {
     Entity AddFighter(Scene& scene) {
         const Entity ship = scene.CreateEntity("Chasseur");
         scene.Add<ShipComponent>(ship, ShipComponent{.turnRate = 90.0f, .fallsWithoutPilot = false});
+        scene.Add<WarpDriveComponent>(ship);
         const Entity hull = scene.CreateEntity("Coque", ship);
         scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f};
         scene.Add<ColliderComponent>(hull);
@@ -31,7 +37,7 @@ namespace {
         if (position.sector != Math::Vector3i64{}) {
             scene.Add<SectorComponent>(station, position.sector);
         }
-        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .warpSpeed = 0.0f, .fallsWithoutPilot = false});
+        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
         scene.Add<DockComponent>(scene.CreateEntity("Quai", station));
         return station;
     }
@@ -78,16 +84,19 @@ namespace {
         // Parti à l'envers : il se retourne en chargeant, file à travers le mur et sort à 4 km de la station, à vitesse
         // normale.
         CHECK(Warp::Engage(scene, fighter, destinations[0]) == Warp::EngageResult::Started);
+        CHECK(scene.Get<ShipComponent>(fighter).autopilot && !scene.Get<ShipComponent>(fighter).passThrough); // charge
         double fastest = 0.0;
         double seconds = 0.0;
-        while (scene.Get<ShipComponent>(fighter).warp != WarpStage::Off && seconds < 60.0) {
+        bool passedThrough = false;
+        while (scene.Get<WarpDriveComponent>(fighter).stage != WarpStage::Off && seconds < 60.0) {
             Warp::Update(scene, Frame);
+            passedThrough |= scene.Get<ShipComponent>(fighter).passThrough;
             world.Update(scene, Frame, {});
             fastest = std::max(fastest, static_cast<double>(Math::Length(scene.Get<ShipComponent>(fighter).velocity)));
             seconds += Frame;
         }
         const ShipComponent& ship = scene.Get<ShipComponent>(fighter);
-        CHECK(ship.warp == WarpStage::Off);
+        CHECK(passedThrough && !ship.autopilot && !ship.passThrough); // la physique le reprend à la sortie
         CHECK(seconds < 25.0);
         CHECK(fastest > 50000.0);
         CHECK(std::abs(Distance(scene.GetWorldPosition(fighter), scene.GetWorldPosition(station)) - Warp::StationExit) < 50.0);
@@ -111,7 +120,7 @@ namespace {
         double lowest = 1.0e30;
         const auto fly = [&](double limit) {
             double seconds = 0.0;
-            while (scene.Get<ShipComponent>(fighter).warp != WarpStage::Off && seconds < limit) {
+            while (scene.Get<WarpDriveComponent>(fighter).stage != WarpStage::Off && seconds < limit) {
                 Warp::Update(scene, Frame);
                 Integrate(scene, fighter, Frame);
                 if (scene.IsValid(planet)) {
@@ -128,7 +137,7 @@ namespace {
         // La planète en plein sur la route : il la contourne sans s'arrêter et va jusqu'à la station, à 3 millions de km.
         CHECK(Warp::Engage(scene, fighter, {station, far, Warp::StationExit}) == Warp::EngageResult::Started);
         CHECK(fly(120.0) < 90.0);
-        CHECK(scene.Get<ShipComponent>(fighter).warp == WarpStage::Off);
+        CHECK(scene.Get<WarpDriveComponent>(fighter).stage == WarpStage::Off);
         CHECK(std::abs(Distance(scene.GetWorldPosition(fighter), far) - Warp::StationExit) < 50.0);
         CHECK(scene.GetWorldPosition(fighter).sector != Math::Vector3i64{});
         CHECK(lowest > 5000.0);
@@ -137,10 +146,36 @@ namespace {
         const Math::WorldPosition planetCenter = scene.GetWorldPosition(planet);
         CHECK(Warp::Engage(scene, fighter, {planet, planetCenter, boundary + 10000.0}) == Warp::EngageResult::Started);
         fly(120.0);
-        CHECK(scene.Get<ShipComponent>(fighter).warp == WarpStage::Off);
+        CHECK(scene.Get<WarpDriveComponent>(fighter).stage == WarpStage::Off);
         CHECK(std::abs(Distance(scene.GetWorldPosition(fighter), planetCenter) - boundary - 10000.0) < 50.0);
         return true;
     }
 }
 
-bool RunWarpTests() { return RunWarpTripTests() && RunWarpPlanetTests(); }
+// Anciennes scènes : la vitesse de warp était dans le vaisseau (« ship.warpSpeed »). Un vaisseau qui en avait reçoit le
+// moteur de warp du jeu ; une station (0) n'en reçoit pas.
+static bool RunWarpDriveConversionTests() {
+    ComponentRegistry components;
+    RegisterEngineComponents(components);
+    const std::size_t engineCount = components.GetCount();
+    RegisterWarpDrive(components);
+    const char* text = R"({"format": "flux.scene", "version": 1, "entities": [
+        {"id": "0000000000000001", "name": "Chasseur", "ship": {"maxSpeed": 200, "warpSpeed": 5000}},
+        {"id": "0000000000000002", "name": "Station", "ship": {"maxSpeed": 0, "warpSpeed": 0}}]})";
+    Scene scene;
+    CHECK(SceneSerializer::LoadFromString(scene, components, text).has_value());
+    const Entity fighter = scene.FindById(Uuid{1});
+    const Entity station = scene.FindById(Uuid{2});
+    CHECK(scene.Get<ShipComponent>(fighter).maxSpeed == 200.0f);
+    CHECK(scene.TryGet<WarpDriveComponent>(fighter) && scene.Get<WarpDriveComponent>(fighter).speed == 5000.0f);
+    CHECK(scene.TryGet<ShipComponent>(station) && !scene.TryGet<WarpDriveComponent>(station));
+    // Réécrite : le moteur de warp à part, plus de champ dans le vaisseau.
+    const std::string saved = SceneSerializer::SaveToString(scene, components);
+    CHECK(saved.find("warpDrive") != std::string::npos && saved.find("warpSpeed") == std::string::npos);
+    // Jeu déchargé : la conversion part avec son composant (son code était dans la DLL).
+    components.Truncate(engineCount);
+    CHECK(components.Find("ship")->movedFields.empty());
+    return true;
+}
+
+bool RunWarpTests() { return RunWarpTripTests() && RunWarpPlanetTests() && RunWarpDriveConversionTests(); }

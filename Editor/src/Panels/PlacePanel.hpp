@@ -19,7 +19,8 @@ namespace FluxEditor {
     // Panneau « Placer » (le « Place Actors » d'Unreal) : les objets qu'on peut ajouter à la scène, par catégorie.
     // Un clic crée l'objet (devant la caméra, ou au centre de l'écran pour une image) ; le glisser dans la vue
     // le pose sous la souris. Un modèle 3D ou un personnage demande d'abord son fichier. L'objet créé est sélectionné, et Ctrl+Z le retire.
-    // Les prefabs du projet ont leur section : un clic pose un nouvel exemplaire.
+    // Les prefabs du projet ont leur section : un clic pose un nouvel exemplaire. Le jeu ajoute ses propres objets
+    // (Engine::GetEditorExtensions) : chasseur armé, stations...
     class PlacePanel {
         public:
         // view : rectangle de la vue 3D (retourné par EditorLayout::Update). prefabs : ContentBrowser::GetPrefabs.
@@ -29,11 +30,13 @@ namespace FluxEditor {
                     const std::vector<std::filesystem::path>& prefabs, bool dropToGround);
 
         private:
-        enum class Item { Empty, Cube, Model, ScreenImage, SceneChange, Character, Ship, Fighter, Target, Light, Spot, Sky, Interior, Interface, Sound, Planet, Sun, Prefab, Station, OrbitalStation };
+        // Extension : objet ajouté par le jeu (Engine::GetEditorExtensions), retrouvé par son libellé.
+        enum class Item { Empty, Cube, Model, ScreenImage, SceneChange, Character, Ship, Light, Spot, Sky, Interior, Interface, Sound, Planet, Sun, Prefab, Extension };
         struct Choice
         {
             Item item;
             std::filesystem::path prefab; // Item::Prefab : son fichier
+            std::string extension;        // Item::Extension : son libellé (le jeu rechargé à chaud peut l'avoir retiré)
             bool operator==(const Choice&) const = default;
         };
 

@@ -332,58 +332,6 @@ namespace Flux {
         float light = 8.0f;      // intensité de la lumière jetée autour à pleine poussée (0 : aucune)
     };
 
-    // Ce qu'un emport accepte, et ce qu'est une arme.
-    enum class WeaponKind : std::uint8_t {
-        Gun,     // canon : tire des projectiles en rafale
-        Missile, // lance-missiles
-    };
-
-    // Point d'emport d'un vaisseau (« hardpoint ») : l'endroit du modèle où se fixe une arme, son -z vers l'avant du
-    // tir. L'arme est une entité enfant (WeaponComponent) : changer d'arme, c'est remplacer cet enfant. Une arme d'un
-    // autre genre, ou plus grande que l'emport, n'y tire pas.
-    struct HardpointComponent
-    {
-        WeaponKind kind = WeaponKind::Gun;
-        std::int32_t size = 1; // de 1 à 3 : la plus grande arme acceptée
-    };
-
-    // Arme posée sur un emport (HardpointComponent parent) d'un vaisseau. Pendant le jeu, aux commandes de ce
-    // vaisseau, elle pivote vers le point que regarde le pilote (sans sortir de son cône autour de l'avant de
-    // l'emport) et tire tant que la touche de son groupe est tenue (1 à 0 au-dessus des lettres). Son -z : le canon ; ses projectiles partent de
-    // muzzle mètres devant son origine.
-    struct WeaponComponent
-    {
-        WeaponKind kind = WeaponKind::Gun;
-        std::int32_t size = 1;
-        std::int32_t group = 1;         // groupe de tir : touche 1 à 9, 10 pour la touche 0 ; 0 : ne tire pas
-        float fireRate = 8.0f;          // tirs par seconde
-        float projectileSpeed = 1500.0f; // m/s, en plus de la vitesse du vaisseau
-        float range = 2500.0f;          // m : au-delà, le projectile disparaît
-        float damage = 10.0f;           // par projectile
-        float cone = 20.0f;             // °, débattement autour de l'avant de l'emport (0 : tir fixe)
-        float turnRate = 120.0f;        // °/s, vitesse de pivotement
-        float muzzle = 1.0f;            // m, de l'origine de l'arme à la bouche du canon
-        Math::LinearColor color{1.0f, 0.55f, 0.2f}; // couleur de la traçante
-        // Missiles : nombre emporté (0 : illimité) et virage le plus serré en vol (°/s). Verrouillage : écart autour
-        // du centre de la vue dans lequel une cible se verrouille à l'appui sur une touche de tir (°). Un missile part par appui sur la touche du groupe, du
-        // lance-missiles de ce groupe qui en a tiré le moins ; la cadence est alors son temps de rechargement.
-        std::int32_t ammo = 0;
-        float guidance = 90.0f;
-        float lockAngle = 10.0f;
-        // Pendant le jeu (non enregistrés) : temps avant le prochain tir (s), missiles déjà tirés.
-        float cooldown = 0.0f;
-        std::int32_t fired = 0;
-    };
-
-    // Points de vie d'une cible (vaisseau, décor) : les projectiles qui touchent ses corps de collision, ou ceux de
-    // ses enfants, les retirent ; à 0, elle est détruite avec ses enfants (sauf si elle porte le joueur : elle reste
-    // à 0, la fin de partie viendra plus tard). Pendant le jeu, sur la copie de la scène : le fichier garde la valeur
-    // de départ.
-    struct HealthComponent
-    {
-        float health = 100.0f;
-    };
-
     enum class ColliderShape : std::uint8_t {
         Box,     // size
         Sphere,  // radius
@@ -464,14 +412,6 @@ namespace Flux {
         float reach = 1.5f; // m, distance du personnage au siège pour s'y asseoir
     };
 
-    // Étape du pilote automatique d'un vaisseau (Docking) : vers un quai (par-dessus la station si on arrive par
-    // l'arrière ou le côté, ou par-dessous si on est plus bas qu'elle ; puis devant l'entrée, au-dessus du quai,
-    // demi-tour, descente), ou en repartant (remonter, sortir).
-    enum class AutopilotStage : std::uint8_t { Off, Climb, Over, Under, Approach, Enter, Turn, Descend, Rise, Exit };
-
-    // Warp d'un vaisseau (Warp) : il se tourne vers sa destination en chargeant, puis y file sans collision et en sort
-    // de lui-même à son arrivée.
-    enum class WarpStage : std::uint8_t { Off, Charging, Cruising };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
     // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou
@@ -505,9 +445,6 @@ namespace Flux {
         // 6 km d'altitude sur Terre), le frein ou un atterrissage le coupent.
         float travelFactor = 10.0f;
         float travelSpoolTime = 3.0f;
-        // Warp (J, vers la destination visée) : pour les grandes distances, jusqu'à warpSpeed km/s ; 0 : pas de warp
-        // (une station).
-        float warpSpeed = 1.0e7f;
         // Sans pilote, il tombe avec la gravité du lieu (planète, monde) jusqu'à se poser ; décoché : il reste où il
         // est (station, vaisseau amiral en orbite). Seulement à la racine de la scène et avec une collision.
         bool fallsWithoutPilot = true;
@@ -520,77 +457,11 @@ namespace Flux {
         // Poussée des moteurs vers l'avant, de 0 (coupés) à 1 (boost, mode voyage) : flammes des réacteurs
         // (ThrusterComponent). Retombe à 0 sans pilote.
         float throttle = 0.0f;
-        // Pilote automatique (Docking) : son étape, et le quai (DockComponent) réservé, ou occupé une fois amarré
-        // (étape Off, le vaisseau enfant de la station).
-        AutopilotStage autopilot = AutopilotStage::Off;
-        Entity dock = NullEntity;
-        // Warp en cours : son étape, sa destination, le rayon autour d'elle où il en sort (le haut de l'atmosphère d'une
-        // planète, quelques km d'une station) et le temps déjà chargé (s).
-        WarpStage warp = WarpStage::Off;
-        Math::WorldPosition warpTarget;
-        double warpExit = 0.0;
-        float warpCharge = 0.0f;
-    };
-
-    // Quai d'une station (entité enfant d'un vaisseau immobile) : là où un vaisseau s'amarre. Son origine est celle
-    // du vaisseau posé (pour le Chasseur, son plancher de cockpit, 2,3 m au-dessus de la dalle), son -z la direction
-    // de la sortie : le vaisseau amarré a son nez tourné vers elle, prêt à repartir. Le pilote automatique arrive par
-    // l'avant du quai (approach mètres devant, à hover mètres de haut), s'arrête au-dessus, fait demi-tour et descend.
-    struct DockComponent
-    {
-        float approach = 100.0f;  // m devant le quai : point d'approche, hors de la station
-        float hover = 6.0f;       // m au-dessus du quai : hauteur de l'approche et du demi-tour
-        float clearance = 150.0f; // m au-dessus du quai : on passe par-dessus la station quand on arrive de derrière
-        // Pendant le jeu : vaisseau qui l'a réservé ou qui y est amarré.
-        Entity ship = NullEntity;
-    };
-
-    // État d'un vaisseau mené par l'IA de combat (CombatAI).
-    enum class CombatState : std::uint8_t {
-        Patrol, // tourne autour de son point de départ, en attendant de voir la cible
-        Attack, // fonce sur elle et tire quand elle est devant lui
-        Break,  // rompt le combat un instant (passé trop près, ou touché s'il est prudent), puis revient
-        Flee,   // presque détruit : s'enfuit à toute vitesse
-    };
-
-    // IA de combat d'un vaisseau ennemi (CombatAI) : il attaque le vaisseau du joueur avec ses armes (emports). Les
-    // réglages font des pirates prudents ou kamikazes sans code.
-    struct CombatAIComponent
-    {
-        float detectionRange = 6000.0f; // m : il voit la cible et l'attaque ; à une fois et demie, il la perd
-        float preferredRange = 800.0f;  // m : distance de combat ; plus loin il fonce, plus près il ralentit
-        // 0 : prudent (rompt tôt, rompt quand il est touché, tire peu de missiles) ; 1 : kamikaze (colle à la cible).
-        float aggression = 0.5f;
-        float inaccuracy = 1.0f;    // °, erreur de visée qui va et vient (1° : 17 m à 1 km)
-        float fleeHealth = 20.0f;   // % de ses points de vie de départ : en dessous, il fuit
-        float patrolRadius = 300.0f; // m, cercle autour de son point de départ
-        // Pendant le jeu (non enregistrés).
-        CombatState state = CombatState::Patrol;
-        float stateTime = 0.0f;      // s dans l'état
-        float clock = 0.0f;          // s depuis le début : fait varier l'erreur de visée
-        float startHealth = -1.0f;   // points de vie au premier passage (-1 : pas encore lus)
-        float lastHealth = 0.0f;     // à l'image d'avant : touché s'ils baissent
-        float missileCooldown = 0.0f; // s avant de pouvoir lancer un missile
-        bool firing = false;         // la cible est devant lui : il tire (CombatAI::Fire)
-        bool hasHome = false;
-        Math::WorldPosition home;
-        Math::Vector3f breakDirection; // monde : où il file en rompant
-    };
-
-    // Donneur de missions (un personnage non joueur) : à moins de reach mètres, F ouvre sa fenêtre de mission. Une
-    // seule sorte de mission pour l'instant : détruire un groupe d'ennemis qui apparaît à distance mètres devant la
-    // station où il se trouve (le -z de son vaisseau ; sans vaisseau, le sien), répartis sur un cercle de spread mètres.
-    // Chaque ennemi est un exemplaire de enemyPrefab (un vaisseau qui n'a pas de points de vie en reçoit) ; sans prefab,
-    // un cube rouge à abattre.
-    struct MissionGiverComponent
-    {
-        std::string title = "Chasse aux pirates";
-        std::string briefing = "Des pirates rôdent près de la station. Détruisez tout le groupe.";
-        std::string enemyPrefab;     // relatif aux assets (.prefab.json)
-        std::int32_t enemyCount = 3;
-        float distance = 500000.0f;  // m, de la station au centre du groupe : loin, on y va en warp
-        float spread = 60.0f;        // m, rayon du cercle des ennemis
-        float reach = 2.5f;          // m, du joueur au donneur pour lui parler
+        // Mené par un système du jeu (pilote automatique, warp) : le pilote ne le commande pas (Ships::Update), il ne
+        // tombe pas et la physique ne le laisse pas au repos.
+        bool autopilot = false;
+        // Sans collision ni sol cherché sous lui (warp lancé : des milliers de km par image).
+        bool passThrough = false;
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

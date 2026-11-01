@@ -6,7 +6,7 @@
 #include <cmath>
 #include <numbers>
 
-// Rotation d'un vaisseau mené par un pilote automatique (Docking, Warp).
+// Rotation d'un vaisseau mené par un pilote automatique (amarrage, warp, IA de combat du jeu).
 namespace Flux::Steering {
     inline constexpr float Degrees = 180.0f / std::numbers::pi_v<float>;
     inline constexpr float TurnGain = 2.0f; // 1/s : vitesse de rotation par degré restant (arrivée en douceur)

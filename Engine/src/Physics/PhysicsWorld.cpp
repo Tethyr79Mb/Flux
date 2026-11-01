@@ -263,6 +263,7 @@ namespace Flux {
         // Enveloppe convexe de chaque vaisseau (ses collisions immobiles, dans son repère), pour qu'il bute sur le
         // décor ; nullptr : rien de solide, il passe partout.
         std::unordered_map<Entity, JPH::RefConst<JPH::Shape>> shipShapes;
+        std::vector<Entity> leavingShips; // LeaveCarriers, gardé d'une image à l'autre : pas d'allocation
         // Sol et gravité des planètes, dans le monde de la scène.
         Planetology::PlanetGround planetGround{Layers::NonMoving};
         std::vector<Planetology::PlanetGround::Probe> probes;
@@ -418,7 +419,7 @@ namespace Flux {
                 probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), 20.0 + speed, speed});
             }
             for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
-                if (scene.GetParent(entity) != NullEntity || ship.warp == WarpStage::Cruising) {
+                if (scene.GetParent(entity) != NullEntity || ship.passThrough) {
                     continue; // en warp, il ne touche pas le sol : pas d'immenses disques de sol devant lui
                 }
                 const JPH::Shape* shape = GetShipShape(scene, entity);
@@ -708,7 +709,45 @@ namespace Flux {
         // lieu, freiné par l'air, jusqu'à se poser. Dans le hangar d'une station, la gravité de son pont
         // (FindCarrierGravity) ; sinon, dans une scène à planètes, seulement près d'elles (leur gravité) : dans
         // l'espace, il reste où il est ; sans planète, avec la gravité du monde (sol plat).
+        // Vaisseau garé à bord d'un autre (dans le hangar d'une station) qui en sort en vol, sans le pilote automatique :
+        // hors de l'enveloppe de la station (et d'une marge), il la quitte. À la racine de la scène, à la même place dans
+        // le monde, il retrouve les collisions et le warp, comme un personnage qui descend à terre. Sans cela, il
+        // restait enfant de la station jusque dans l'espace, et le warp le croyait amarré.
+        void LeaveCarriers(Scene& scene) {
+            constexpr float Margin = 20.0f; // m autour de l'enveloppe : pas d'allers-retours au ras de la porte
+            leavingShips.clear();
+            for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
+                if (scene.GetParent(entity) == NullEntity || ship.autopilot || ship.velocity == Math::Vector3f{}) {
+                    continue; // à la racine, mené par le jeu (amarrage), ou immobile (garé, amarré)
+                }
+                const Entity carrier = scene.GetShip(entity); // le vaisseau qui le porte (pas lui-même)
+                const JPH::Shape* hull = carrier != NullEntity ? GetShipShape(scene, carrier) : nullptr;
+                if (!hull) {
+                    continue;
+                }
+                const Math::Vector3f local = scene.GetWorldRotation(carrier).Conjugate().Rotate(
+                    Math::Vector3f(Math::Delta(scene.GetWorldPosition(carrier), scene.GetWorldPosition(entity))));
+                JPH::AABox bounds = hull->GetLocalBounds();
+                bounds.ExpandBy(JPH::Vec3::sReplicate(Margin));
+                if (!bounds.Contains(ToJolt(local))) {
+                    leavingShips.push_back(entity);
+                }
+            }
+            for (const Entity entity : leavingShips) {
+                const Math::WorldPosition position = scene.GetWorldPosition(entity);
+                const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
+                scene.SetParent(entity, NullEntity);
+                TransformComponent& transform = scene.Get<TransformComponent>(entity);
+                transform.position = position.offset;
+                transform.rotation = rotation;
+                if (position.sector != Math::Vector3i64{}) {
+                    scene.GetRegistry().emplace_or_replace<SectorComponent>(entity, position.sector);
+                }
+            }
+        }
+
         void MoveShips(Scene& scene, double deltaSeconds) {
+            LeaveCarriers(scene);
             const Grid* worldGrid = nullptr;
             for (const std::unique_ptr<Grid>& grid : grids) {
                 if (grid->frame == NullEntity) {
@@ -722,14 +761,14 @@ namespace Flux {
             for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
-                // En warp, il file sans collision (des milliers de km par image : Warp le tient loin des planètes).
-                const JPH::Shape* shape = root && worldGrid && ship.warp != WarpStage::Cruising ? GetShipShape(scene, entity) : nullptr;
+                // En warp, il file sans collision (des milliers de km par image : le warp du jeu le tient loin des planètes).
+                const JPH::Shape* shape = root && worldGrid && !ship.passThrough ? GetShipShape(scene, entity) : nullptr;
                 // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas. Le pilote automatique le tient.
-                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && !ship.autopilot;
                 // Immobile, sans pilote ni chute : rien à tester, il garde son état (posé ou non). Une station ne
                 // cherche plus son sol à chaque image : son enveloppe englobe le hangar, et un chasseur racine garé
                 // dedans lui faisait tester ses 19 000 triangles un par un (26 ms par image et par chasseur).
-                const bool resting = !falls && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                const bool resting = !falls && entity != piloted && !ship.autopilot;
                 if ((!shape || resting) && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }

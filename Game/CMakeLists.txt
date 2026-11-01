@@ -1,8 +1,16 @@
 # Code du jeu : composants et systèmes. Chargé en DLL par l'éditeur et par le client (Ars Solaris.exe).
+# GameLogic : tout le code du jeu, en bibliothèque statique, liée par la DLL et par FluxTests (tests du jeu). La DLL
+# n'a que ses points d'entrée (Module/Dll).
+add_library(GameLogic STATIC)
+flux_add_sources(GameLogic Module/src)
+target_include_directories(GameLogic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Module/src)
+target_link_libraries(GameLogic PUBLIC Flux::Engine)
+flux_set_warnings(GameLogic)
+
 add_library(GameModule SHARED)
-flux_add_sources(GameModule Module/src)
+flux_add_sources(GameModule Module/Dll)
 set_target_properties(GameModule PROPERTIES PREFIX "")
-target_link_libraries(GameModule PRIVATE Flux::Engine)
+target_link_libraries(GameModule PRIVATE GameLogic)
 flux_set_warnings(GameModule)
 
 # Scènes et autres données du jeu, copiées dans bin/assets/ à côté de celles du moteur.

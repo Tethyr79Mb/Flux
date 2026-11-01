@@ -1,8 +1,11 @@
 // Missions : un PNJ de la station (donneur) envoie détruire un groupe d'ennemis, loin devant la station.
-#include "Check.hpp"
+#include "../Check.hpp"
+
+#include "CombatAI.hpp"
+#include "MissionGiver.hpp"
+#include "Weapons.hpp"
 
 #include "Flux/Scene/ComponentRegistry.hpp"
-#include "Flux/Scene/Missions.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 
@@ -12,6 +15,11 @@
 #include <string>
 
 using namespace Flux;
+using Game::CombatAIComponent;
+using Game::MissionGiverComponent;
+using Game::HardpointComponent;
+using Game::HealthComponent;
+namespace Missions = Game::Missions;
 
 namespace {
     double Distance(const Math::WorldPosition& a, const Math::WorldPosition& b) { return Math::Length(Math::Delta(a, b)); }
@@ -20,6 +28,9 @@ namespace {
 bool RunMissionTests() {
     ComponentRegistry components;
     RegisterEngineComponents(components);
+    Game::RegisterCombatAI(components);
+    Game::RegisterMissionGiver(components);
+    CHECK(components.Find("missionGiver") != nullptr); // même nom qu'au temps du moteur : les scènes se relisent
 
     // Station tournée d'un quart de tour : son avant (-z) pointe vers -x du monde.
     Scene scene;

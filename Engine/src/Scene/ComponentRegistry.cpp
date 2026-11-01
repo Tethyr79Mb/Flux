@@ -5,6 +5,18 @@
 namespace Flux {
     void ComponentRegistry::Unregister(std::string_view key) {
         std::erase_if(m_components, [&](const std::unique_ptr<ComponentInfo>& info) { return info->key == key; });
+        PruneMovedFields();
+    }
+
+    ComponentInfo* ComponentRegistry::FindMutable(std::string_view key) {
+        const auto found = std::ranges::find_if(m_components, [&](const auto& info) { return info->key == key; });
+        return found != m_components.end() ? found->get() : nullptr;
+    }
+
+    void ComponentRegistry::PruneMovedFields() {
+        for (const auto& info : m_components) {
+            std::erase_if(info->movedFields, [&](const ComponentInfo::MovedField& field) { return !Find(field.target); });
+        }
     }
 
     const ComponentInfo* ComponentRegistry::Find(std::string_view key) const {
@@ -16,6 +28,7 @@ namespace Flux {
     void ComponentRegistry::Truncate(std::size_t count) {
         if (count < m_components.size()) {
             m_components.resize(count);
+            PruneMovedFields();
         }
     }
 
@@ -74,29 +87,6 @@ namespace Flux {
             .Field("intensity", "Éclat", &ThrusterComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("idle", "Poussée au ralenti", &ThrusterComponent::idle, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("light", "Lumière à fond", &ThrusterComponent::light, {.speed = 0.05, .min = 0.0, .max = 1.0e4, .decimals = 2});
-        const std::initializer_list<EnumValue<WeaponKind>> weaponKinds{{"gun", "Canon", WeaponKind::Gun},
-                                                                       {"missile", "Missiles", WeaponKind::Missile}};
-        registry.Register<HardpointComponent>("hardpoint", "Emport")
-            .Enum("kind", "Accepte", &HardpointComponent::kind, weaponKinds)
-            .Field("size", "Taille max (1 à 3)", &HardpointComponent::size, {.speed = 0.05, .min = 1.0, .max = 3.0, .decimals = 0});
-        registry.Register<WeaponComponent>("weapon", "Arme")
-            .Enum("kind", "Genre", &WeaponComponent::kind, weaponKinds)
-            .Field("size", "Taille (1 à 3)", &WeaponComponent::size, {.speed = 0.05, .min = 1.0, .max = 3.0, .decimals = 0})
-            .Field("group", "Groupe de tir (touches 1 à 9 ; 10 : touche 0)", &WeaponComponent::group, {.speed = 0.05, .min = 0.0, .max = 10.0, .decimals = 0})
-            .Field("fireRate", "Cadence (tirs/s)", &WeaponComponent::fireRate, {.speed = 0.05, .min = 0.1, .max = 100.0, .decimals = 2})
-            .Field("projectileSpeed", "Vitesse des projectiles (m/s)", &WeaponComponent::projectileSpeed,
-                   {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
-            .Field("range", "Portée (m)", &WeaponComponent::range, {.speed = 5.0, .min = 10.0, .max = 1.0e6, .decimals = 0})
-            .Field("damage", "Dégâts", &WeaponComponent::damage, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 1})
-            .Field("cone", "Débattement (°)", &WeaponComponent::cone, {.speed = 0.1, .min = 0.0, .max = 180.0, .decimals = 1})
-            .Field("turnRate", "Pivotement (°/s)", &WeaponComponent::turnRate, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
-            .Field("muzzle", "Bouche du canon (m)", &WeaponComponent::muzzle, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
-            .Field("color", "Couleur des traçantes", &WeaponComponent::color, {.alpha = false})
-            .Field("ammo", "Missiles emportés (0 : illimités)", &WeaponComponent::ammo, {.speed = 0.05, .min = 0.0, .max = 1000.0, .decimals = 0})
-            .Field("guidance", "Missiles : virage (°/s)", &WeaponComponent::guidance, {.speed = 1.0, .min = 0.0, .max = 3600.0, .decimals = 0})
-            .Field("lockAngle", "Verrouillage (°)", &WeaponComponent::lockAngle, {.speed = 0.1, .min = 0.0, .max = 90.0, .decimals = 1});
-        registry.Register<HealthComponent>("health", "Points de vie")
-            .Field("health", "Points de vie", &HealthComponent::health, {.speed = 1.0, .min = 0.0, .max = 1.0e9, .decimals = 0});
         registry.Register<SkyComponent>("sky", "Ciel")
             .Asset("image", "Panorama (vide : généré)", &SkyComponent::image, AssetType::Image)
             .Field("brightness", "Luminosité", &SkyComponent::brightness, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
@@ -252,27 +242,7 @@ namespace Flux {
             .Field("boost", "Boost (x)", &ShipComponent::boost, {.speed = 0.05, .min = 1.0, .max = 20.0, .decimals = 2})
             .Field("travelFactor", "Mode voyage (x)", &ShipComponent::travelFactor, {.speed = 0.1, .min = 1.0, .max = 1000.0, .decimals = 1})
             .Field("travelSpoolTime", "Mode voyage : mise en route (s)", &ShipComponent::travelSpoolTime, {.speed = 0.05, .min = 0.0, .max = 60.0, .decimals = 1})
-            .Field("warpSpeed", "Warp : vitesse max (km/s)", &ShipComponent::warpSpeed, {.speed = 1000.0, .min = 0.0, .max = 1.0e9, .decimals = 0})
             .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot);
-        registry.Register<CombatAIComponent>("combatAI", "IA de combat")
-            .Field("detectionRange", "Détection (m)", &CombatAIComponent::detectionRange, {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
-            .Field("preferredRange", "Distance de combat (m)", &CombatAIComponent::preferredRange, {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
-            .Field("aggression", "Agressivité (0 à 1)", &CombatAIComponent::aggression, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
-            .Field("inaccuracy", "Imprécision (°)", &CombatAIComponent::inaccuracy, {.speed = 0.1, .min = 0.0, .max = 45.0, .decimals = 1})
-            .Field("fleeHealth", "Fuite sous (% de vie)", &CombatAIComponent::fleeHealth, {.speed = 0.5, .min = 0.0, .max = 100.0, .decimals = 0})
-            .Field("patrolRadius", "Rayon de patrouille (m)", &CombatAIComponent::patrolRadius, {.speed = 5.0, .min = 0.0, .max = 1.0e5, .decimals = 0});
-        registry.Register<DockComponent>("dock", "Quai")
-            .Field("approach", "Approche devant (m)", &DockComponent::approach, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
-            .Field("hover", "Hauteur d'arrivée (m)", &DockComponent::hover, {.speed = 0.1, .min = 0.0, .max = 1.0e3, .decimals = 1})
-            .Field("clearance", "Passage au-dessus (m)", &DockComponent::clearance, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1});
-        registry.Register<MissionGiverComponent>("missionGiver", "Donneur de missions")
-            .Field("title", "Titre", &MissionGiverComponent::title)
-            .Field("briefing", "Ordre de mission", &MissionGiverComponent::briefing)
-            .Asset("enemyPrefab", "Ennemis (prefab)", &MissionGiverComponent::enemyPrefab, AssetType::Prefab)
-            .Field("enemyCount", "Nombre d'ennemis", &MissionGiverComponent::enemyCount, {.speed = 0.1, .min = 1.0, .max = 50.0, .decimals = 0})
-            .Field("distance", "Distance (m)", &MissionGiverComponent::distance, {.speed = 100.0, .min = 0.0, .max = 1.0e8, .decimals = 0})
-            .Field("spread", "Écart (m)", &MissionGiverComponent::spread, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
-            .Field("reach", "Portée pour parler (m)", &MissionGiverComponent::reach, {.speed = 0.05, .min = 0.5, .max = 20.0, .decimals = 2});
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})

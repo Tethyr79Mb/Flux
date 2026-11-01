@@ -40,6 +40,7 @@ int main() {
         {"missions", RunMissionTests},
         {"warp", RunWarpTests},
         {"IA de combat", RunCombatAITests},
+        {"objets du jeu à placer (éditeur)", RunPlaceItemsTests},
         {"géométrie partagée des modèles", RunGeometryTests},
     };
 

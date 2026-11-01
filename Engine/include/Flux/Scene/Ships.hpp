@@ -36,6 +36,19 @@ namespace Flux {
         float planetCenter = 0.0f;
     };
 
+    // Où vole un vaisseau par rapport à la planète la plus proche (Engine::GetFlightState) : altitude au-dessus du sol
+    // (ou de la mer qui le recouvre), verticale du lieu (unitaire, monde) et densité de l'air (0 dans l'espace, voir
+    // ShipInput::air).
+    struct FlightState
+    {
+        bool nearPlanet = false; // à moins de deux rayons d'une planète ; sinon seul air est rempli
+        double altitude = 0.0;
+        Math::Vector3d up;
+        float air = 0.0f;
+        double boundary = 0.0; // distance au haut de l'atmosphère, ou à l'altitude sans atmosphère (ShipInput::planetDistance)
+        double center = 0.0;   // distance au centre de la planète (ShipInput::planetCenter)
+    };
+
     // Vol des vaisseaux : pilotage du vaisseau aux commandes et moteurs des autres. La physique (PhysicsWorld) les
     // déplace ensuite selon ShipComponent::velocity et angularVelocity.
     namespace Ships {
@@ -45,5 +58,8 @@ namespace Flux {
 
         // Vaisseau du poste de pilotage où le joueur est assis, NullEntity sinon.
         FLUX_API Entity GetPilotedShip(const Scene& scene, Entity player);
+        // Vitesse (monde, m/s) d'un vaisseau, ou du vaisseau qui porte l'entité ; nulle hors de tout vaisseau (le
+        // décor ne bouge pas seul). Visée en avance des armes et des missiles.
+        FLUX_API Math::Vector3f GetWorldVelocity(const Scene& scene, Entity entity);
     }
 }

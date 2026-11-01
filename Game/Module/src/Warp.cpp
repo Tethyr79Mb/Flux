@@ -1,13 +1,41 @@
-#include "Flux/Scene/Warp.hpp"
+#include "Warp.hpp"
 
-#include "Flux/Scene/Scene.hpp"
-#include "Steering.hpp"
+#include "Docking.hpp"
+
+#include <Flux/Scene/ComponentRegistry.hpp>
+#include <Flux/Scene/Scene.hpp>
+#include <Flux/Scene/Steering.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-namespace Flux::Warp {
+namespace Game {
+    void RegisterWarpDrive(Flux::ComponentRegistry& registry) {
+        using namespace Flux;
+        registry.Register<WarpDriveComponent>("warpDrive", "Moteur de warp")
+            .Field("speed", "Vitesse max (km/s)", &WarpDriveComponent::speed, {.speed = 1000.0, .min = 0.0, .max = 1.0e9, .decimals = 0});
+        // Avant le 2026-11-01, la vitesse de warp était dans le vaisseau (0 : pas de warp, une station).
+        registry.AddMovedField<WarpDriveComponent>("ship", "warpSpeed", "warpDrive", [](double speed) { return speed > 0.0; },
+                                                   [](WarpDriveComponent& drive, double speed) { drive.speed = static_cast<float>(speed); });
+    }
+
+    void SyncShipControl(Flux::Scene& scene, Flux::Entity entity) {
+        using namespace Flux;
+        auto* ship = scene.TryGet<ShipComponent>(entity);
+        if (!ship) {
+            return;
+        }
+        const auto* pilot = scene.TryGet<AutopilotComponent>(entity);
+        const auto* drive = scene.TryGet<WarpDriveComponent>(entity);
+        ship->autopilot = (drive && drive->stage != WarpStage::Off) || (pilot && pilot->stage != AutopilotStage::Off);
+        ship->passThrough = drive && drive->stage == WarpStage::Cruising;
+    }
+}
+
+namespace Game::Warp {
+    using namespace Flux;
+
     namespace {
         constexpr float ChargeAngle = 3.0f;         // ° : plus de travers, il attend d'être tourné
         constexpr float StartAcceleration = 1000.0f; // m/s² au départ...
@@ -34,8 +62,14 @@ namespace Flux::Warp {
             return nearest;
         }
 
-        double Remaining(const Scene& scene, Entity entity, const ShipComponent& ship) {
-            return Math::Length(Math::Delta(scene.GetWorldPosition(entity), ship.warpTarget)) - ship.warpExit;
+        double Remaining(const Scene& scene, Entity entity, const WarpDriveComponent& drive) {
+            return Math::Length(Math::Delta(scene.GetWorldPosition(entity), drive.target)) - drive.exit;
+        }
+
+        // Le pilote automatique d'amarrage le mène : pas de warp.
+        bool UnderAutopilot(const Scene& scene, Entity entity) {
+            const auto* pilot = scene.TryGet<AutopilotComponent>(entity);
+            return pilot && pilot->stage != AutopilotStage::Off;
         }
 
         // Cap vers la destination. Une planète sur la ligne droite (pas celle qu'on vise) est contournée : il vise le
@@ -72,14 +106,56 @@ namespace Flux::Warp {
             return heading;
         }
 
-        void Leave(ShipComponent& ship) {
-            ship.warp = WarpStage::Off;
-            ship.warpCharge = 0.0f;
+        void Leave(ShipComponent& ship, WarpDriveComponent& drive) {
+            drive.stage = WarpStage::Off;
+            drive.charge = 0.0f;
             // Retour à la vitesse normale, droit devant : la vitesse du warp ne se garde pas.
             if (const float speed = Math::Length(ship.velocity); speed > ship.maxSpeed && speed > 0.0f) {
                 ship.velocity = ship.velocity * (ship.maxSpeed / speed);
             }
             ship.cruiseSpeed = std::clamp(-ship.velocity.z, 0.0f, ship.maxSpeed);
+        }
+
+        // Une image de warp : charge en se tournant, puis course vers la destination ; sorti à l'arrivée.
+        void Fly(Scene& scene, Entity entity, ShipComponent& ship, WarpDriveComponent& drive, float delta, double deltaSeconds) {
+            if (scene.GetParent(entity) != NullEntity || drive.speed <= 0.0f || UnderAutopilot(scene, entity)) {
+                Leave(ship, drive);
+                return;
+            }
+            if (delta <= 0.0f) {
+                return; // pause
+            }
+            const Math::WorldPosition position = scene.GetWorldPosition(entity);
+            const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
+            const Math::Vector3d offset = Math::Delta(position, drive.target);
+            const double distance = Math::Length(offset);
+            const double remaining = distance - drive.exit;
+            if (remaining <= 0.0 || distance < 1.0e-3) {
+                Leave(ship, drive); // arrivé
+                return;
+            }
+            const Math::Vector3f direction(Heading(scene, position, drive.target));
+            const float angle = Steering::Steer(ship, rotation,
+                                                Steering::Look(direction, rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f})), delta);
+            ship.throttle = 1.0f;
+            if (drive.stage == WarpStage::Charging) {
+                drive.charge += delta;
+                if (drive.charge >= ChargeTime && angle < ChargeAngle) {
+                    drive.stage = WarpStage::Cruising;
+                }
+                return; // garde sa vitesse en se tournant
+            }
+            // Il ne s'arrête qu'à destination. Près d'une planète, une image ne le porte jamais plus loin que le quart
+            // de la distance qui l'en sépare : il ne la traverse pas en la contournant.
+            const double planets = std::max(DistanceToPlanets(scene, position), 0.0);
+            double limit = std::min({static_cast<double>(drive.speed) * 1000.0, remaining / BrakeTime, 0.25 * planets / deltaSeconds});
+            limit = std::max(limit, MinSpeed);
+            limit = std::min(limit, remaining / deltaSeconds); // pile à la sortie, pas au-delà
+            const double speed = Math::Length(ship.velocity);
+            const double grown = std::max(speed + StartAcceleration * deltaSeconds, speed * std::exp(deltaSeconds / GrowthTime));
+            const float wanted = static_cast<float>(std::min(grown, limit));
+            // Le long du cap (pas du nez, qui le rattrape) : il y arrive même mal tourné.
+            ship.velocity = rotation.Conjugate().Rotate(direction * wanted);
         }
     }
 
@@ -123,8 +199,9 @@ namespace Flux::Warp {
 
     EngageResult Engage(Scene& scene, Entity entity, const Destination& destination) {
         auto* ship = scene.TryGet<ShipComponent>(entity);
-        if (!ship || ship->warpSpeed <= 0.0f || scene.GetParent(entity) != NullEntity || ship->grounded
-            || ship->autopilot != AutopilotStage::Off) {
+        auto* drive = scene.TryGet<WarpDriveComponent>(entity);
+        if (!ship || !drive || drive->speed <= 0.0f || scene.GetParent(entity) != NullEntity || ship->grounded
+            || UnderAutopilot(scene, entity)) {
             return EngageResult::Unavailable;
         }
         const Math::WorldPosition position = scene.GetWorldPosition(entity);
@@ -134,70 +211,38 @@ namespace Flux::Warp {
         if (Math::Length(Math::Delta(position, destination.position)) - destination.exit < MinDistance) {
             return EngageResult::TooClose;
         }
-        ship->warp = WarpStage::Charging;
-        ship->warpTarget = destination.position;
-        ship->warpExit = destination.exit;
-        ship->warpCharge = 0.0f;
+        drive->stage = WarpStage::Charging;
+        drive->target = destination.position;
+        drive->exit = destination.exit;
+        drive->charge = 0.0f;
         ship->travel = false;
         ship->travelLevel = 0.0f;
+        SyncShipControl(scene, entity);
         return EngageResult::Started;
     }
 
     void Stop(Scene& scene, Entity entity) {
-        if (auto* ship = scene.TryGet<ShipComponent>(entity); ship && ship->warp != WarpStage::Off) {
-            Leave(*ship);
+        auto* ship = scene.TryGet<ShipComponent>(entity);
+        auto* drive = scene.TryGet<WarpDriveComponent>(entity);
+        if (ship && drive && drive->stage != WarpStage::Off) {
+            Leave(*ship, *drive);
+            SyncShipControl(scene, entity);
         }
     }
 
     void Update(Scene& scene, double deltaSeconds) {
         const float delta = static_cast<float>(deltaSeconds);
-        for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
-            if (ship.warp == WarpStage::Off) {
+        for (const auto [entity, ship, drive] : scene.GetRegistry().view<ShipComponent, WarpDriveComponent>().each()) {
+            if (drive.stage == WarpStage::Off) {
                 continue;
             }
-            if (scene.GetParent(entity) != NullEntity || ship.warpSpeed <= 0.0f || ship.autopilot != AutopilotStage::Off) {
-                Leave(ship);
-                continue;
-            }
-            if (delta <= 0.0f) {
-                continue; // pause
-            }
-            const Math::WorldPosition position = scene.GetWorldPosition(entity);
-            const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
-            const Math::Vector3d offset = Math::Delta(position, ship.warpTarget);
-            const double distance = Math::Length(offset);
-            const double remaining = distance - ship.warpExit;
-            if (remaining <= 0.0 || distance < 1.0e-3) {
-                Leave(ship); // arrivé
-                continue;
-            }
-            const Math::Vector3f direction(Heading(scene, position, ship.warpTarget));
-            const float angle = Steering::Steer(ship, rotation,
-                                                Steering::Look(direction, rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f})), delta);
-            ship.throttle = 1.0f;
-            if (ship.warp == WarpStage::Charging) {
-                ship.warpCharge += delta;
-                if (ship.warpCharge >= ChargeTime && angle < ChargeAngle) {
-                    ship.warp = WarpStage::Cruising;
-                }
-                continue; // garde sa vitesse en se tournant
-            }
-            // Il ne s'arrête qu'à destination. Près d'une planète, une image ne le porte jamais plus loin que le quart
-            // de la distance qui l'en sépare : il ne la traverse pas en la contournant.
-            const double planets = std::max(DistanceToPlanets(scene, position), 0.0);
-            double limit = std::min({static_cast<double>(ship.warpSpeed) * 1000.0, remaining / BrakeTime, 0.25 * planets / deltaSeconds});
-            limit = std::max(limit, MinSpeed);
-            limit = std::min(limit, remaining / deltaSeconds); // pile à la sortie, pas au-delà
-            const double speed = Math::Length(ship.velocity);
-            const double grown = std::max(speed + StartAcceleration * deltaSeconds, speed * std::exp(deltaSeconds / GrowthTime));
-            const float wanted = static_cast<float>(std::min(grown, limit));
-            // Le long du cap (pas du nez, qui le rattrape) : il y arrive même mal tourné.
-            ship.velocity = rotation.Conjugate().Rotate(direction * wanted);
+            Fly(scene, entity, ship, drive, delta, deltaSeconds);
+            SyncShipControl(scene, entity);
         }
     }
 
     double GetRemaining(const Scene& scene, Entity entity) {
-        const auto* ship = scene.TryGet<ShipComponent>(entity);
-        return ship && ship->warp != WarpStage::Off ? std::max(Remaining(scene, entity, *ship), 0.0) : 0.0;
+        const auto* drive = scene.TryGet<WarpDriveComponent>(entity);
+        return drive && drive->stage != WarpStage::Off ? std::max(Remaining(scene, entity, *drive), 0.0) : 0.0;
     }
 }

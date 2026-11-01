@@ -1,7 +1,7 @@
 #include "Panels/SceneViewport.hpp"
 
 #include "Panels/GroundSnap.hpp"
-#include "Panels/Hardpoints.hpp"
+#include "Panels/Mounts.hpp"
 #include "Panels/SceneEditor.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -740,24 +740,26 @@ namespace FluxEditor {
         }
         if (!input.IsMouseButtonDown(MouseButton::Left)) {
             m_drag.axis = -1;
-            if (m_drag.mode == GizmoMode::Move && scene.TryGet<WeaponComponent>(selected)) {
-                SnapToHardpoint(scene, selected);
+            if (m_drag.mode == GizmoMode::Move) {
+                SnapToMount(engine, selected);
             }
         }
     }
 
-    void SceneViewport::SnapToHardpoint(Scene& scene, Entity weapon) {
-        const Entity hardpoint = Hardpoints::FindNearby(scene, weapon);
-        if (hardpoint == NullEntity) {
+    void SceneViewport::SnapToMount(Engine& engine, Entity part) {
+        Scene& scene = engine.GetScene();
+        const MountRule* rule = engine.GetEditorExtensions().FindMountRule(scene, part);
+        const Entity mount = rule ? Mounts::FindNearby(scene, *rule, part) : NullEntity;
+        if (mount == NullEntity) {
             return;
         }
-        // Lâchée sans le vouloir près d'un emport qui la refuse : un mot dans la console, pas une fenêtre.
-        if (const std::string refusal = Hardpoints::GetRefusal(scene, weapon, hardpoint); !refusal.empty()) {
-            Log::Warning("« {} » non fixée sur « {} » : {}", scene.Get<NameComponent>(weapon).name,
-                         scene.Get<NameComponent>(hardpoint).name, refusal);
+        // Lâchée sans le vouloir près d'un support qui la refuse : un mot dans la console, pas une fenêtre.
+        if (const std::string refusal = rule->refusal(scene, part, mount); !refusal.empty()) {
+            Log::Warning("« {} » non fixée sur « {} » : {}", scene.Get<NameComponent>(part).name,
+                         scene.Get<NameComponent>(mount).name, refusal);
             return;
         }
-        if (Hardpoints::Mount(scene, weapon, hardpoint)) {
+        if (Mounts::Mount(scene, part, mount)) {
             m_modified = true; // même geste que le déplacement : un seul Annuler
         }
     }

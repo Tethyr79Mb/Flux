@@ -1,9 +1,11 @@
 // Collisions entre vaisseaux, et pilote automatique d'amarrage : un vaisseau rejoint un quai libre d'une station (par l'avant, ou par-dessus en
 // arrivant de derrière), s'y pose et devient son enfant ; on en sort à pied dans la station ; il repart.
-#include "Check.hpp"
+#include "../Check.hpp"
+
+#include "Docking.hpp"
+#include "Warp.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
-#include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Ships.hpp"
 
@@ -11,6 +13,7 @@
 #include <numbers>
 
 using namespace Flux;
+using namespace Game;
 
 namespace {
     constexpr double Frame = 1.0 / 60.0;
@@ -73,8 +76,9 @@ namespace {
 
         // Vers le quai le plus proche (le 1), puis posé dessus, enfant de la station, à sa place exacte.
         CHECK(Docking::Toggle(scene, first) == Docking::ToggleResult::Docking);
-        const ShipComponent& firstShip = scene.Get<ShipComponent>(first);
-        CHECK(firstShip.dock == dock1 && firstShip.autopilot == AutopilotStage::Approach);
+        const AutopilotComponent& firstPilot = scene.Get<AutopilotComponent>(first);
+        CHECK(firstPilot.dock == dock1 && firstPilot.stage == AutopilotStage::Approach);
+        CHECK(scene.Get<ShipComponent>(first).autopilot); // le moteur le sait mené par le jeu
         CHECK(scene.Get<DockComponent>(dock1).ship == first);
         CHECK(RunUntil(world, scene, 120.0, [&] { return Docking::IsDocked(scene, first); }));
         CHECK(scene.GetParent(first) == station);
@@ -100,7 +104,7 @@ namespace {
         const Entity second = AddFighter(scene, "Second", {700.0, 5.0, 0.0});
         world.Update(scene, 0.0, {});
         CHECK(Docking::Toggle(scene, second) == Docking::ToggleResult::Docking);
-        CHECK(scene.Get<ShipComponent>(second).dock == dock2 && scene.Get<ShipComponent>(second).autopilot == AutopilotStage::Climb);
+        CHECK(scene.Get<AutopilotComponent>(second).dock == dock2 && scene.Get<AutopilotComponent>(second).stage == AutopilotStage::Climb);
         double highest = 0.0;
         CHECK(RunUntil(world, scene, 180.0, [&] {
             highest = std::max(highest, scene.GetWorldPosition(second).offset.y);
@@ -113,17 +117,17 @@ namespace {
         // lancé vers l'avant ; le quai est libre.
         CHECK(Docking::Toggle(scene, first) == Docking::ToggleResult::Leaving);
         CHECK(scene.GetParent(first) == NullEntity);
-        CHECK(RunUntil(world, scene, 60.0, [&] { return scene.Get<ShipComponent>(first).autopilot == AutopilotStage::Off; }));
-        CHECK(scene.Get<ShipComponent>(first).dock == NullEntity && scene.Get<DockComponent>(dock1).ship == NullEntity);
+        CHECK(RunUntil(world, scene, 60.0, [&] { return scene.Get<AutopilotComponent>(first).stage == AutopilotStage::Off; }));
+        CHECK(scene.Get<AutopilotComponent>(first).dock == NullEntity && scene.Get<DockComponent>(dock1).ship == NullEntity);
         CHECK(Distance(scene.GetWorldPosition(first), scene.GetWorldPosition(dock1)) > 45.0);
         CHECK(scene.Get<ShipComponent>(first).cruiseSpeed > 5.0f);
         CHECK(scene.GetWorldPosition(first).offset.x < 455.0); // au point d'approche, devant les quais (-x du monde)
 
         // Coupé en route : le quai est rendu, le pilote reprend la main sur place.
         CHECK(Docking::Toggle(scene, first) == Docking::ToggleResult::Docking);
-        CHECK(scene.Get<ShipComponent>(first).dock == dock1);
+        CHECK(scene.Get<AutopilotComponent>(first).dock == dock1);
         CHECK(Docking::Toggle(scene, first) == Docking::ToggleResult::Cancelled);
-        CHECK(scene.Get<ShipComponent>(first).autopilot == AutopilotStage::Off && scene.Get<DockComponent>(dock1).ship == NullEntity);
+        CHECK(scene.Get<AutopilotComponent>(first).stage == AutopilotStage::Off && scene.Get<DockComponent>(dock1).ship == NullEntity);
         return true;
     }
 
@@ -207,7 +211,7 @@ namespace {
         CHECK(!Docking::IsDocked(scene, parked));
         CHECK(!Docking::Dock(scene, station, platform)); // la station elle-même
         CHECK(Docking::Toggle(scene, parked) == Docking::ToggleResult::Leaving);
-        CHECK(scene.Get<ShipComponent>(parked).autopilot == AutopilotStage::Rise);
+        CHECK(scene.Get<AutopilotComponent>(parked).stage == AutopilotStage::Rise);
         CHECK(scene.Get<DockComponent>(platform).ship == parked);
 
         const Entity aside = AddFighter(scene, "À côté", {25.0, 2.0, 30.0});
@@ -216,7 +220,7 @@ namespace {
         CHECK(Docking::Toggle(scene, aside) == Docking::ToggleResult::NoDock);
         scene.DestroyEntity(parked);
         CHECK(Docking::Toggle(scene, aside) == Docking::ToggleResult::Leaving);
-        CHECK(scene.Get<ShipComponent>(aside).autopilot == AutopilotStage::Exit);
+        CHECK(scene.Get<AutopilotComponent>(aside).stage == AutopilotStage::Exit);
         CHECK(scene.GetParent(aside) == NullEntity);
         // Aux commandes, sans gaz : le pilote ne freine pas le pilote automatique.
         scene.Get<ShipComponent>(aside).velocity = {0.0f, 0.0f, -20.0f};
@@ -228,15 +232,49 @@ namespace {
         scene.DestroyEntity(aside);
         const Entity back = AddFighter(scene, "Revenu", {5.0, 8.0, -97.0});
         CHECK(Docking::Toggle(scene, back) == Docking::ToggleResult::Docking);
-        CHECK(scene.Get<ShipComponent>(back).autopilot == AutopilotStage::Approach);
+        CHECK(scene.Get<AutopilotComponent>(back).stage == AutopilotStage::Approach);
         scene.DestroyEntity(back);
         const Entity beside = AddFighter(scene, "À côté de la station", {300.0, 8.0, -50.0});
         CHECK(Docking::Toggle(scene, beside) == Docking::ToggleResult::Docking);
-        CHECK(scene.Get<ShipComponent>(beside).autopilot == AutopilotStage::Climb);
+        CHECK(scene.Get<AutopilotComponent>(beside).stage == AutopilotStage::Climb);
+        return true;
+    }
+}
+
+namespace {
+    // Garé dans le hangar (enfant de la station) et sorti en vol sans la touche L : hors de la station, il la quitte
+    // (racine de la scène, même place dans le monde) et peut partir en warp. Avant, il restait à bord jusque dans
+    // l'espace, et le warp le refusait comme s'il était amarré.
+    bool RunLeaveHangarTests() {
+        Scene scene;
+        const Entity station = scene.CreateEntity("Station");
+        scene.Get<TransformComponent>(station).position = {1000.0, 0.0, 0.0};
+        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity floor = scene.CreateEntity("Sol", station);
+        scene.Get<TransformComponent>(floor).position = {0.0, -0.5, 0.0};
+        scene.Get<TransformComponent>(floor).scale = {60.0f, 1.0f, 60.0f};
+        scene.Add<ColliderComponent>(floor);
+        const Entity fighter = AddFighter(scene, "Chasseur", {0.0, 5.0, 0.0});
+        scene.Add<WarpDriveComponent>(fighter);
+        scene.SetParent(fighter, station);
+        scene.Get<TransformComponent>(fighter).position = {0.0, 5.0, 0.0};
+        PhysicsWorld world;
+        world.Update(scene, 0.0, {});
+        RunUntil(world, scene, 0.5, [] { return false; });
+        CHECK(scene.GetParent(fighter) == station); // garé : il reste à bord
+
+        const Math::WorldPosition start = scene.GetWorldPosition(fighter);
+        scene.Get<ShipComponent>(fighter).velocity = {0.0f, 0.0f, -60.0f};
+        CHECK(RunUntil(world, scene, 3.0, [&] { return scene.GetParent(fighter) == NullEntity; }));
+        const Math::WorldPosition outside = scene.GetWorldPosition(fighter);
+        CHECK(std::abs(outside.offset.x - start.offset.x) < 0.5 && outside.offset.z < start.offset.z - 40.0); // pas de saut
+        CHECK(scene.Get<ShipComponent>(fighter).velocity.z == -60.0f);
+        CHECK(Warp::Engage(scene, fighter, {NullEntity, {{}, {0.0, 0.0, -1.0e8}}, Warp::StationExit})
+              == Warp::EngageResult::Started);
         return true;
     }
 }
 
 bool RunDockingAutopilotTests() {
-    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests() && RunHangarParkingTests();
+    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests() && RunHangarParkingTests() && RunLeaveHangarTests();
 }

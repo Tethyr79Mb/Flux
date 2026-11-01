@@ -113,6 +113,22 @@ namespace Flux {
         };
         std::vector<ConvertedField> convertedFields;
 
+        // Champs devenus un autre composant (souvent du jeu, ComponentRegistry::AddMovedField) : la valeur lue dans une
+        // ancienne scène (un nombre) va dans le composant target de l'entité, créé s'il manque et si create(valeur).
+        struct MovedField
+        {
+            std::string key;
+            std::string target;
+            std::function<bool(double oldValue)> create;
+            std::function<void(void* target, double oldValue)> convert;
+        };
+        std::vector<MovedField> movedFields;
+
+        const MovedField* FindMovedField(std::string_view fieldKey) const {
+            const auto found = std::ranges::find(movedFields, fieldKey, &MovedField::key);
+            return found != movedFields.end() ? &*found : nullptr;
+        }
+
         const ConvertedField* FindConvertedField(std::string_view fieldKey) const {
             const auto found = std::ranges::find(convertedFields, fieldKey, &ConvertedField::key);
             return found != convertedFields.end() ? &*found : nullptr;
@@ -286,12 +302,31 @@ namespace Flux {
         void Unregister(std::string_view key);
         const ComponentInfo* Find(std::string_view key) const;
 
+        // Ancien champ fieldKey du composant component (déjà enregistré), devenu le composant T (enregistré sous
+        // target) : à la lecture, convert(T&, valeur) sur celui de l'entité, ajouté s'il manque et si create(valeur).
+        // Exemple : la vitesse de warp de « ship » devenue le moteur de warp du jeu. Retiré avec T (Truncate).
+        template <typename T>
+        void AddMovedField(std::string_view component, std::string fieldKey, std::string target, std::function<bool(double)> create,
+                           std::function<void(T&, double)> convert) {
+            if (ComponentInfo* info = FindMutable(component)) {
+                std::erase_if(info->movedFields, [&](const ComponentInfo::MovedField& field) { return field.key == fieldKey; });
+                info->movedFields.push_back({std::move(fieldKey), std::move(target), std::move(create),
+                                             [convert = std::move(convert)](void* instance, double value) {
+                                                 convert(*static_cast<T*>(instance), value);
+                                             }});
+            }
+        }
+
         std::size_t GetCount() const { return m_components.size(); }
         const ComponentInfo& Get(std::size_t index) const { return *m_components[index]; }
         // Retire tout ce qui a été enregistré après les count premiers (déchargement d'un module de jeu).
         void Truncate(std::size_t count);
 
         private:
+        ComponentInfo* FindMutable(std::string_view key);
+        // Champs déplacés vers un composant qui n'est plus enregistré : leur code est peut-être dans une DLL déchargée.
+        void PruneMovedFields();
+
         std::vector<std::unique_ptr<ComponentInfo>> m_components;
     };
 

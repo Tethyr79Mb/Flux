@@ -1,13 +1,11 @@
 #include "Panels/SceneEditor.hpp"
 
-#include "Panels/Hardpoints.hpp"
-
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
 #include "Panels/FontList.hpp"
 #include "Panels/ContentBrowser.hpp"
-#include "Panels/Hardpoints.hpp"
+#include "Panels/Mounts.hpp"
 #include "Search.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -845,12 +843,13 @@ namespace FluxEditor {
                         before = scene.GetNextSibling(entity); // déjà juste derrière : reste en place
                     }
                 }
-                // Une arme lâchée sur un emport s'y fixe (aimant), s'il l'accepte.
-                const bool mounting = parent != NullEntity && scene.TryGet<WeaponComponent>(entity)
-                                   && scene.TryGet<HardpointComponent>(parent);
+                // Une pièce lâchée sur un support s'y fixe (aimant, règle du jeu : une arme sur un emport), s'il
+                // l'accepte.
+                const MountRule* rule = parent != NullEntity ? engine.GetEditorExtensions().FindMountRule(scene, entity) : nullptr;
+                const bool mounting = rule && rule->isMount(scene, parent);
                 if (mounting) {
-                    if (const std::string refusal = Hardpoints::GetRefusal(scene, entity, parent); !refusal.empty()) {
-                        Platform::ShowError(engine.GetWindow(), "Emport",
+                    if (const std::string refusal = rule->refusal(scene, entity, parent); !refusal.empty()) {
+                        Platform::ShowError(engine.GetWindow(), rule->title,
                                             "« " + DisplayName(scene, entity) + " » ne se fixe pas sur « "
                                                 + DisplayName(scene, parent) + " » : " + refusal + ".");
                         break;
@@ -860,9 +859,9 @@ namespace FluxEditor {
                 std::string previous = UndoHistory::Capture(engine, id);
                 if (scene.SetParent(entity, parent, before)) {
                     if (mounting) {
-                        Hardpoints::Mount(scene, entity, parent);
+                        Mounts::Mount(scene, entity, parent);
                     }
-                    history.Push(mounting ? "Fixer sur l'emport" : "Déplacer dans la hiérarchie", id, std::move(previous),
+                    history.Push(mounting ? "Fixer (" + rule->title + ")" : std::string("Déplacer dans la hiérarchie"), id, std::move(previous),
                                  UndoHistory::Capture(engine, id));
                 }
                 break;

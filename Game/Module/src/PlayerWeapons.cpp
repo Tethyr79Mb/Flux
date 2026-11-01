@@ -1,5 +1,8 @@
 #include "PlayerWeapons.hpp"
 
+#include "FlightInfo.hpp"
+#include "Weapons.hpp"
+
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Scene/Picking.hpp>
 #include <Flux/Input/InputActions.hpp>
@@ -7,7 +10,6 @@
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/Scene/Components.hpp>
 #include <Flux/Scene/Ships.hpp>
-#include <Flux/Scene/Weapons.hpp>
 #include <Flux/UI/DrawList.hpp>
 #include <Flux/UI/HudText.hpp>
 
@@ -93,7 +95,7 @@ namespace Game {
                     std::format_to(std::back_inserter(g_info), "  {}", missiles);
                 }
             }
-            engine.SetFlightInfoExtra(g_info);
+            FlightInfo::SetExtra("Armes", g_info);
         }
 
         // Cible verrouillée : quatre coins autour d'elle et sa distance.
@@ -156,6 +158,6 @@ namespace Game {
         engine.RemoveGameSystem(HudSystem);
         engine.RemoveGameSystem(ResetSystem);
         Reset(engine, 0.0);
-        engine.SetFlightInfoExtra({});
+        FlightInfo::SetExtra("Armes", {});
     }
 }

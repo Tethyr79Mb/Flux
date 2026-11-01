@@ -111,6 +111,7 @@ namespace Flux {
             m_unregister(*m_registeredTo);
             m_registeredTo->ClearInterfaceFunctions(); // leur code est dans la DLL, même si le jeu a oublié de les retirer
             m_registeredTo->ClearGameSystems();
+            m_registeredTo->GetEditorExtensions().Clear();
             // Les stockages EnTT des composants du jeu ont leur code dans la DLL : ils doivent disparaître avant elle.
             m_registeredTo->GetScene().Clear();
             m_registeredTo->GetComponents().Truncate(m_engineComponentCount);

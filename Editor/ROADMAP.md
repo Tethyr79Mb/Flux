@@ -29,6 +29,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Barre d'outils « Texte » : poser un texte à l'écran, choisir sa police (dossier `Polices/` du projet, « Ajouter
   une police... » la copie), sa taille et sa couleur ; sur le texte sélectionné (annulable), sinon pour le prochain.
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), station orbitale (catégorie Espace, porte du joueur face à la caméra, avec le hangar du joueur derrière son champ bleu), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…
+- ✅ Objets du jeu dans « Placer » déclarés par le jeu (`Engine::GetEditorExtensions`, 2026-11-01) : chasseur, cible et stations sont dans GameModule ; l'éditeur ne connaît plus leurs composants.
 - ✅ « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.
 - ✅ Bouton « Monde » de la barre de menus : fenêtre des réglages du monde de la scène (gravité, air, chute max), annulables ; l'objet Monde qui les garde n'est plus montré dans la scène ni dans Placer.
 - ✅ Touche F : aller voir l'objet sélectionné (une planète ou un soleil à des millions de km). Soleil posé au centre de la scène ; planète posée en orbite quand la scène a un Soleil (la caméra va la voir), avec un liseré bleuté, des nuages et des arbres (Végétation).
@@ -39,6 +40,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - 🔧 Annuler / refaire (Ctrl+Z, Ctrl+Y). À améliorer : un objet à la fois, l'étoile du titre reste après une annulation.
 - ✅ Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de
   lui, s'y fixe (enfant, à sa place exacte) ; refus expliqué si l'emport ne l'accepte pas (genre, taille, déjà occupé).
+  Depuis le 2026-11-01, la règle (ce qui est arme, emport, et le refus) est déclarée par le jeu (`MountRule`).
 - 🔧 Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu. À améliorer : la scène est copiée en JSON, lent sur une grosse scène.
 - ✅ Scène de démarrage du projet.
 
@@ -88,4 +90,4 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 ## Dettes et limites connues
 - Le mode Jouer copie toute la scène en JSON : lent sur une grosse scène.
 - L'étoile du titre reste après une annulation jusqu'à l'enregistrement.
-- « Placer » code en dur certains chemins (Modeles/Chasseur).
+- Les objets du jeu dans « Placer » codent en dur certains chemins (Modeles/Chasseur), dans `Game/Module/src/PlaceItems.cpp`.
