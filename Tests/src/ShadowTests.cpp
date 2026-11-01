@@ -124,5 +124,33 @@ bool RunShadowTests() {
     CHECK(!receivers.Reaches(beside, 2.0f, 5.0f, 2));
     const ShadowReceivers sideSun(camera, aspect, right);
     CHECK(sideSun.Reaches(beside, 2.0f, 250.0f, 2));
+
+    // Relief au loin : ses deux tranches (200 m à 3 km, 3 à 40 km) tiennent dans leur carte, avec la marge qui laisse
+    // la carte gardée couvrir la vue quand la caméra a un peu bougé.
+    const auto terrain = ComputeTerrainShadowCascades(camera, aspect, toSun, 4096);
+    for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
+        const ShadowCascade& cascade = terrain[t];
+        for (const float depth : {TerrainShadowCascadeStart(t), TerrainShadowCascadeEnds[t]}) {
+            for (const float sx : {-1.0f, 1.0f}) {
+                for (const float sy : {-1.0f, 1.0f}) {
+                    const Math::Vector3f corner = forward * depth + right * (sx * tanX * depth) + up * (sy * tanY * depth);
+                    const Math::Vector3f p = Apply(cascade.lightViewProjection, corner);
+                    CHECK(Inside(p));
+                    CHECK(std::abs(p.x) < 0.95f && std::abs(p.y) < 0.95f); // la marge de 10 %
+                }
+            }
+        }
+        // Une montagne à 30 km vers le soleil fait encore de l'ombre dans la tranche.
+        const Math::Vector3f caster = Apply(cascade.lightViewProjection, cascade.center + toSun * TerrainShadowCasterDistance);
+        CHECK(std::abs(caster.z) < 1.0e-3f);
+    }
+    CHECK(terrain[0].radius > cascades[3].radius && terrain[1].radius > terrain[0].radius);
+    // Un texel de quelques mètres de 200 m à 3 km : le relief proche garde des ombres nettes.
+    CHECK(terrain[0].texelSize < 3.0f);
+    // Une montagne derrière la caméra, soleil dans le dos : son ombre longue tombe dans la tranche de 3 à 40 km.
+    const ShadowReceivers backSun(camera, aspect, -forward);
+    CHECK(backSun.ReachesRange(forward * -2000.0f, 500.0f, TerrainShadowCasterDistance, TerrainShadowCascadeStart(1),
+                               TerrainShadowCascadeEnds[1]));
+    CHECK(!backSun.ReachesRange(forward * -2000.0f, 500.0f, 1000.0f, TerrainShadowCascadeStart(1), TerrainShadowCascadeEnds[1]));
     return true;
 }

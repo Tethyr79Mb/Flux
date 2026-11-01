@@ -74,6 +74,8 @@ namespace Flux::Planetology {
             std::uint32_t firstIndex;
             std::uint32_t indexCount;
             TileKey key; // la tuile, ou l'enfant dont elle tient la place (un quart)
+            // Hors du champ : gardée seulement pour l'ombre qu'elle porte dans le champ (Collect, castsShadow).
+            bool shadowOnly = false;
         };
         // Une tuile du niveau des plaines semées d'arbres (VegetationRenderer), en vue, qu'elle soit dessinée ou coupée
         // en plus fines.
@@ -91,10 +93,13 @@ namespace Flux::Planetology {
         void BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
         // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra. Avec
         // `plains`, y ajoute aussi les tuiles du niveau `plainLevel` en vue à moins de `plainRange` mètres : celles
-        // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre.
+        // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre. Avec `castsShadow`, les tuiles hors
+        // du champ dont l'ombre peut y tomber sont ajoutées aussi (Tile::shadowOnly), sans plaines ni calcul en avance :
+        // une montagne derrière la caméra, soleil dans le dos.
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
-                     std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0);
+                     std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0,
+                     const ViewTest* castsShadow = nullptr);
         // Détail du sol (DefaultGroundDetail par défaut) : pris en compte au prochain Collect, les tuiles déjà calculées
         // restent bonnes.
         void SetGroundDetail(GroundDetail detail) {
@@ -194,11 +199,14 @@ namespace Flux::Planetology {
             std::vector<Plain>* plains;
             std::uint32_t plainLevel;
             double plainRange;
+            const ViewTest* castsShadow;
         };
 
         Node& GetNode(PlanetState& state, TileKey key, const Node* parent = nullptr);
         bool IsCulled(const Visit& visit, const TileBounds& bounds) const;
         bool IsCulled(const Visit& visit, const Node& node) const { return IsCulled(visit, node.bounds); }
+        // Dans le champ de la caméra (pas seulement pour son ombre) ; à appeler sur une tuile que IsCulled garde.
+        bool InView(const Visit& visit, const TileBounds& bounds) const;
         void VisitNode(Visit& visit, TileKey key, Node& node);
         void Prefetch(Visit& visit, TileKey key, Node& node);
         void AddPlains(Visit& visit, TileKey key);
