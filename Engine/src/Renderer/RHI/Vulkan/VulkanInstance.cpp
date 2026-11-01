@@ -1,8 +1,30 @@
 #include "Renderer/RHI/Vulkan/VulkanInstance.hpp"
 
+#include <cstdio>
+#include <cstring>
 #include <format>
 
 namespace Flux::Vk {
+#ifndef NDEBUG
+    namespace {
+        // Comme le messager par défaut de vk-bootstrap, sans un avertissement connu de FSR : sa ressource interne
+        // rw_luma_history est créée en RGBA16F par la DLL d'AMD, mais son shader la déclare en RGBA8. Rien à corriger
+        // de notre côté, et ces lignes, répétées à chaque image, noyaient les vrais messages.
+        VKAPI_ATTR VkBool32 VKAPI_CALL OnDebugMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                      VkDebugUtilsMessageTypeFlagsEXT type,
+                                                      const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
+            const char* id = data->pMessageIdName ? data->pMessageIdName : "";
+            if (std::strcmp(id, "Undefined-Value-StorageImage-FormatMismatch-ImageView") == 0
+                && std::strstr(data->pMessage, "rw_luma_history")) {
+                return VK_FALSE;
+            }
+            std::printf("[%s: %s] - %s\n%s\n", vkb::to_string_message_severity(severity),
+                        vkb::to_string_message_type(type), id, data->pMessage);
+            return VK_FALSE;
+        }
+    }
+#endif
+
     std::expected<std::unique_ptr<Instance>, std::string> Instance::Create(bool headless) {
         if (volkInitialize() != VK_SUCCESS) {
             return std::unexpected("vulkan-1.dll introuvable : installe ou mets à jour le pilote graphique");
@@ -18,7 +40,7 @@ namespace Flux::Vk {
 #ifndef NDEBUG
         // Actives seulement si le SDK Vulkan est installé ; sinon on continue sans.
         builder.request_validation_layers(true)
-               .use_default_debug_messenger();
+               .set_debug_callback(OnDebugMessage);
 #else
         // Noms des étapes (BeginStep) visibles dans Radeon GPU Profiler, Nsight ou RenderDoc, même en Release.
         if (const auto system = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
