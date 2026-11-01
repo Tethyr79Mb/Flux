@@ -37,8 +37,11 @@ namespace Flux {
             return frame;
         }
 
+        ShadowCascade CascadeAround(const LightFrame& frame, float centerDistance, float radius, std::uint32_t resolution,
+                                    float casterDistance);
+
         ShadowCascade ComputeCascade(const LightFrame& frame, float start, float end, std::uint32_t resolution,
-                                     float casterDistance, float margin) {
+                                     float casterDistance) {
             // Sphère de la tranche [start, end] : centre sur l'axe de la vue, là où elle touche à la fois les coins
             // proches et lointains (ou au bout, si la tranche est très évasée).
             float centerDistance = 0.5f * (start + end) * (1.0f + frame.cornerFactor);
@@ -47,7 +50,13 @@ namespace Flux {
                 const float along = depth - centerDistance;
                 return std::sqrt(along * along + depth * depth * frame.cornerFactor);
             };
-            float radius = std::max(cornerDistance(start), cornerDistance(end)) * margin;
+            return CascadeAround(frame, centerDistance, std::max(cornerDistance(start), cornerDistance(end)), resolution,
+                                 casterDistance);
+        }
+
+        // Carte qui couvre la sphère de rayon `radius` à `centerDistance` mètres devant la caméra.
+        ShadowCascade CascadeAround(const LightFrame& frame, float centerDistance, float radius, std::uint32_t resolution,
+                                    float casterDistance) {
             // Taille arrondie au décimètre au-dessus : elle ne change pas d'une image à l'autre (redimensionnement).
             radius = std::ceil(radius * 10.0f) / 10.0f;
             const float texel = 2.0f * radius / static_cast<float>(resolution);
@@ -82,7 +91,7 @@ namespace Flux {
         std::array<ShadowCascade, ShadowCascadeCount> cascades{};
         float start = camera.nearPlane;
         for (std::size_t i = 0; i < ShadowCascadeCount; ++i) {
-            cascades[i] = ComputeCascade(frame, start, ShadowCascadeEnds[i], resolution, casterDistance, 1.0f);
+            cascades[i] = ComputeCascade(frame, start, ShadowCascadeEnds[i], resolution, casterDistance);
             start = ShadowCascadeEnds[i];
         }
         return cascades;
@@ -94,8 +103,10 @@ namespace Flux {
         const LightFrame frame = MakeLightFrame(camera, aspect, toSun);
         std::array<ShadowCascade, TerrainShadowCascadeCount> cascades{};
         for (std::size_t i = 0; i < TerrainShadowCascadeCount; ++i) {
-            cascades[i] = ComputeCascade(frame, TerrainShadowCascadeStart(i), TerrainShadowCascadeEnds[i], resolution,
-                                         TerrainShadowCasterDistance, margin);
+            // Centrées sur la caméra, pas devant elle : la tranche se choisit par la distance (SunVisibility), une carte
+            // ne dépend ainsi que de la position de la caméra, jamais de son regard (tourner la tête faisait grandir
+            // et rétrécir les ombres des montagnes avec les obstacles retenus).
+            cascades[i] = CascadeAround(frame, 0.0f, TerrainShadowCascadeEnds[i] * margin, resolution, TerrainShadowCasterDistance);
         }
         return cascades;
     }

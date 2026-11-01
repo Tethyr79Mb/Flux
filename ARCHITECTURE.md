@@ -218,8 +218,9 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    (`MoveShadowCascade`). Redessinée quand même si le soleil a tourné ou si la caméra a bougé de 10 % de son rayon.
    Relief au loin : 2 cascades de plus (caméra à 3 km, 3 à 40 km, `TerrainShadowCascadeEnds`) dans une seconde carte
    (2 x 4096 sur la configuration recommandée, 2 x 2048 sans mesh shaders), passe « ombres du relief », où seules les
-   tuiles de planète sont dessinées, obstacles jusqu'à 30 km vers le soleil. Gardées tant que la tranche fraîche reste
-   dans la marge de 10 % du carré dessiné et que le soleil a tourné de moins d'un quart de texel au bout des obstacles,
+   tuiles de planète sont dessinées, obstacles jusqu'à 30 km vers le soleil. Chaque carte est centrée sur la caméra (sphère
+   de rayon la fin de sa tranche + 10 %), indépendante du regard ; gardée tant que la caméra reste dans la marge, a
+   tourné de moins de 3° et que le soleil a tourné de moins d'un quart de texel au bout des obstacles,
    refaites à tour de rôle toutes les 30 images (`MeshRenderer::ChooseTerrainCascades`). `PlanetRenderer::Collect`
    ajoute les tuiles hors du champ dont l'ombre tombe dans une carte redessinée (`Tile::shadowOnly` : ni sol, ni
    plaines d'arbres, ni calcul en avance). `SunVisibility` (`Mesh.slang`) garde jusqu'à 200 m le plus sombre des cascades

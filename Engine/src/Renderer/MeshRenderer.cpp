@@ -1217,14 +1217,14 @@ namespace Flux {
                 m_cascades[c] = MoveShadowCascade(drawn.cascade, Math::Vector3f(moved));
                 m_keepShadows = true;
             } else {
-                drawn = {true, m_cascades[c], camera.position, toSun};
+                drawn = {true, m_cascades[c], camera.position, toSun, camera.GetForward()};
             }
         }
     }
 
     // Le relief au loin change peu d'une image à l'autre : sa carte est gardée (recalée sur la caméra) tant que la
-    // tranche fraîche reste dans la marge du carré dessiné (ComputeTerrainShadowCascades : 10 %) et que le soleil n'a
-    // pas tourné de plus d'un quart de texel au bout des obstacles. Les deux cascades sont refaites à tour de rôle
+    // caméra reste dans la marge du carré dessiné (ComputeTerrainShadowCascades : 10 %), a tourné de moins de 3° et que
+    // le soleil n'a pas tourné de plus d'un quart de texel au bout des obstacles. Les deux cascades sont refaites à tour de rôle
     // toutes les m_terrainRefreshFrames images, pour les tuiles arrivées ou affinées entre-temps.
     void MeshRenderer::ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun) {
         const auto fresh = ComputeTerrainShadowCascades(camera, aspect, toSun, m_terrainShadowResolution);
@@ -1237,7 +1237,10 @@ namespace Flux {
             if (keep) {
                 moved = MoveShadowCascade(drawn.cascade, Math::Vector3f(Math::Delta(drawn.eye, camera.position)));
                 const float sunTurn = Math::Length(Math::Cross(drawn.toSun, toSun));
-                keep = Math::Length(moved.center - fresh[t].center) < 0.05f * fresh[t].radius
+                // Les obstacles dessinés sont ceux dont l'ombre tombe dans le champ d'alors (élargi d'environ 4°,
+                // ShadowReceivers) : au-delà de 3° de rotation, ceux du nouveau champ peuvent manquer.
+                const bool turned = Math::Dot(drawn.forward, camera.GetForward()) < std::cos(3.0f * std::numbers::pi_v<float> / 180.0f);
+                keep = !turned && Math::Length(moved.center - fresh[t].center) < 0.05f * fresh[t].radius
                     && sunTurn < 0.25f * fresh[t].texelSize / TerrainShadowCasterDistance;
             }
             m_drawTerrain[t] = !keep;
@@ -1246,7 +1249,7 @@ namespace Flux {
                 m_keepTerrainShadows = true;
             } else {
                 m_terrainCascades[t] = fresh[t];
-                drawn = {true, fresh[t], camera.position, toSun};
+                drawn = {true, fresh[t], camera.position, toSun, camera.GetForward()};
             }
         }
     }

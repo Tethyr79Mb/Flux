@@ -44,9 +44,9 @@ namespace Flux {
                                                                                  std::uint32_t resolution,
                                                                                  float casterDistance = ShadowCasterDistance);
 
-    // Cascades du relief au loin (TerrainShadowCascadeEnds ; la première commence à la caméra).
-    // `margin` agrandit le carré couvert (1,1 : 10 %) : la carte, gardée plusieurs images, couvre encore la vue quand
-    // la caméra a un peu bougé ou tourné.
+    // Cascades du relief au loin : chacune couvre la sphère autour de la caméra de rayon sa fin (TerrainShadowCascadeEnds)
+    // x `margin`, quelle que soit la direction du regard. La marge (1,1 : 10 %) laisse la carte, gardée plusieurs
+    // images, couvrir encore tout quand la caméra a un peu bougé.
     FLUX_API std::array<ShadowCascade, TerrainShadowCascadeCount> ComputeTerrainShadowCascades(const Camera& camera, float aspect,
                                                                                                const Math::Vector3f& toSun,
                                                                                                std::uint32_t resolution,

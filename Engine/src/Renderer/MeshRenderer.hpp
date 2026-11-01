@@ -460,6 +460,7 @@ namespace Flux {
             ShadowCascade cascade;
             Math::WorldPosition eye;
             Math::Vector3f toSun;
+            Math::Vector3f forward; // regard de la caméra (cascades du relief : obstacles retenus pour ce champ)
         };
         std::array<DrawnCascade, ShadowCascadeCount> m_drawnCascades{};
         std::array<bool, ShadowCascadeCount> m_drawCascade{}; // dessinée à cette image
