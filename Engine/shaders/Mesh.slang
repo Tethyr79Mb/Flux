@@ -604,9 +604,10 @@ float TerrainVisibility(uint slice, float3 worldPosition, float3 normal, float s
     return lit < 0.0 ? 1.0 : lit;
 }
 
-// Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Les cascades proches (objets,
-// arbres et sol) jusqu'à 200 m, puis celles du relief seul jusqu'à 40 km. Chaque tranche se fond dans la suivante sur
-// son dernier dixième : pas de limite nette (deux lectures seulement dans cette bande).
+// Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m, le plus sombre
+// des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et de la première du relief (montagnes plus
+// loin vers le soleil) ; au-delà, celles du relief seul jusqu'à 40 km. Chaque tranche se fond dans la suivante sur son
+// dernier dixième : pas de limite nette.
 float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
@@ -616,16 +617,13 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
         ++cascade;
     }
     if (cascade < 4) {
-        const float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
-                                            f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
-        if (lit < 0.0) {
-            return TerrainVisibility(0, worldPosition, normal, sunFacing);
-        }
+        float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
+                                      f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
+        lit = lit < 0.0 ? 1.0 : lit;
         if (cascade == 3) {
-            const float fade = saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3]));
-            return fade < 1.0 ? lerp(TerrainVisibility(0, worldPosition, normal, sunFacing), lit, fade) : lit;
+            lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
         }
-        return lit;
+        return min(lit, TerrainVisibility(0, worldPosition, normal, sunFacing));
     }
     if (depth > f.terrainCascades.y) {
         return 1.0; // trop loin : pas d'ombre

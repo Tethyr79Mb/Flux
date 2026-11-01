@@ -18,7 +18,7 @@ namespace Flux {
     // Distance vers le soleil jusqu'où un obstacle fait encore de l'ombre dans une tranche, en mètres.
     inline constexpr float ShadowCasterDistance = 300.0f;
 
-    // Ombres du relief au loin : deux tranches de plus, après la dernière cascade, dans leur propre carte où seul le
+    // Ombres du relief au loin : deux tranches de plus, jusqu'à 3 km puis 40 km, dans leur propre carte où seul le
     // sol des planètes est dessiné. Une montagne de 2 km sous un soleil bas porte son ombre sur des dizaines de
     // kilomètres : d'où la distance des obstacles.
     inline constexpr int TerrainShadowCascadeCount = 2;
@@ -44,7 +44,7 @@ namespace Flux {
                                                                                  std::uint32_t resolution,
                                                                                  float casterDistance = ShadowCasterDistance);
 
-    // Cascades du relief au loin (TerrainShadowCascadeEnds, la première commence à la fin de la dernière cascade).
+    // Cascades du relief au loin (TerrainShadowCascadeEnds ; la première commence à la caméra).
     // `margin` agrandit le carré couvert (1,1 : 10 %) : la carte, gardée plusieurs images, couvre encore la vue quand
     // la caméra a un peu bougé ou tourné.
     FLUX_API std::array<ShadowCascade, TerrainShadowCascadeCount> ComputeTerrainShadowCascades(const Camera& camera, float aspect,
@@ -89,8 +89,10 @@ namespace Flux {
         return cascade == 0 ? 0.0f : ShadowCascadeEnds[cascade - 1];
     }
 
-    // Début de la tranche du relief `cascade`, en mètres devant la caméra.
+    // Début de la tranche du relief `cascade`, en mètres devant la caméra. La première part de la caméra : les cascades
+    // proches ne voient pas les obstacles à plus de ShadowCasterDistance, une montagne à 1 km vers le soleil ne ferait
+    // pas d'ombre sur le sol à ses pieds (SunVisibility y garde le plus sombre des deux).
     inline float TerrainShadowCascadeStart(std::size_t cascade) {
-        return cascade == 0 ? ShadowCascadeEnds[ShadowCascadeCount - 1] : TerrainShadowCascadeEnds[cascade - 1];
+        return cascade == 0 ? 0.0f : TerrainShadowCascadeEnds[cascade - 1];
     }
 }
