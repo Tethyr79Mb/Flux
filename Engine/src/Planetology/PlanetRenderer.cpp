@@ -120,7 +120,7 @@ namespace Flux::Planetology {
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                                  const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                                  std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange,
-                                 const ViewTest* castsShadow) {
+                                 const ViewTest* castsShadow, const ShadowSpacing* shadowSpacing) {
         if (!m_indices) {
             return;
         }
@@ -164,7 +164,7 @@ namespace Flux::Planetology {
         state.camera = camera;
         state.time = m_now;
         Visit visit{state, camera, position, rotation, camera + state.velocity * LookAhead, minRadius, maxRadius, inView, tiles,
-                    plains, plainLevel, plainRange, castsShadow};
+                    plains, plainLevel, plainRange, castsShadow, shadowSpacing};
         // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
         bool rootsReady = true;
         for (std::uint8_t face = 0; face < 6; ++face) {
@@ -214,7 +214,11 @@ namespace Flux::Planetology {
         if (visit.plains && inView && key.level == visit.plainLevel && distance < visit.plainRange) {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
-        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level, m_splitFactor)) {
+        // Hors du champ, seulement pour son ombre : pas plus fin que ce que la carte d'ombre distingue (sans quoi tout
+        // le sol autour de la caméra, derrière elle comprise, était calculé à la finesse de l'écran).
+        const bool fineEnough = !inView && visit.shadowSpacing
+                             && node.bounds.edge / static_cast<double>(TileQuads) <= (*visit.shadowSpacing)(std::max(distance, 0.0));
+        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level, m_splitFactor) && !fineEnough) {
             // Les enfants visibles et prêts sont dessinés ; à la place de ceux qui ne le sont pas encore (demandés), le
             // quart de cette tuile qu'ils couvrent. Toute la tuile à leur place : quand la caméra tournait, un enfant
             // qui entrait dans le champ remettait pour une image tout le sol grossier, jusque sous la caméra.

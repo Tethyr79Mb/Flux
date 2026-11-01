@@ -364,7 +364,8 @@ namespace Flux {
         void ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun);
         // La tuile (sa sphère) porte une ombre dans la carte de la passe `pass` (une passe d'ombres), redessinée à
         // cette image.
-        bool TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass) const;
+        // drawnOnly faux : même si la carte est gardée à cette image.
+        bool TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass, bool drawnOnly = true) const;
         bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc

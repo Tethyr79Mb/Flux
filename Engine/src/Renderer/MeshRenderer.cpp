@@ -877,20 +877,26 @@ namespace Flux {
         // première image (ou quand elle change), pas d'arbres avant la suivante.
         const Planetology::Terrain* known = m_planets->FindTerrain(transform.entity);
         const bool trees = vegetation && !m_vegetationComponent && known;
-        // Hors du champ, les tuiles qui portent une ombre dans une carte redessinée à cette image : une montagne derrière
-        // la caméra, soleil dans le dos, assombrit la vallée devant elle.
+        // Hors du champ, les tuiles qui portent une ombre dans une carte : une montagne derrière la caméra, soleil dans le
+        // dos, assombrit la vallée devant elle. Celles du relief à chaque image, même gardée : visitées une image sur
+        // trente, leurs nœuds étaient oubliés entre-temps et les tuiles recalculées sans fin. Pas plus fines que deux
+        // texels de leur carte.
         const Planetology::PlanetRenderer::ViewTest castsShadow = [this](const Math::Vector3f& center, float radius) {
             for (std::size_t pass = 2; pass < TilePassCount; ++pass) {
-                if (TileCastsShadow(center, radius, pass)) {
+                if (TileCastsShadow(center, radius, pass, pass < FirstTerrainShadowPass)) {
                     return true;
                 }
             }
             return false;
         };
+        const Planetology::PlanetRenderer::ShadowSpacing shadowSpacing = [this](double distance) {
+            const std::size_t t = distance < static_cast<double>(TerrainShadowCascadeEnds[0]) ? 0 : 1;
+            return 2.0 * static_cast<double>(m_terrainCascades[t].texelSize);
+        };
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
                            m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
-                           trees ? static_cast<double>(vegetation->range) : 0.0, &castsShadow);
+                           trees ? static_cast<double>(vegetation->range) : 0.0, &castsShadow, &shadowSpacing);
         if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
             m_vegetationComponent = vegetation;
             m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains);
@@ -1297,14 +1303,14 @@ namespace Flux {
             && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, cascade);
     }
 
-    bool MeshRenderer::TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass) const {
+    bool MeshRenderer::TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass, bool drawnOnly) const {
         if (pass < FirstTerrainShadowPass) {
             const std::size_t c = pass - 2;
-            return m_drawCascade[c] && InCascade(center, radius, c)
+            return (m_drawCascade[c] || !drawnOnly) && InCascade(center, radius, c)
                 && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, c);
         }
         const std::size_t t = pass - FirstTerrainShadowPass;
-        if (!m_drawTerrain[t] || !InShadowVolume(m_terrainCascades[t], center, radius)) {
+        if ((!m_drawTerrain[t] && drawnOnly) || !InShadowVolume(m_terrainCascades[t], center, radius)) {
             return false;
         }
         // Sans regarder le champ : l'ombre (segment de la tuile jusqu'à TerrainShadowCasterDistance à l'opposé du

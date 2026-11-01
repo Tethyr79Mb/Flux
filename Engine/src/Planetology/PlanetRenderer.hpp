@@ -87,6 +87,9 @@ namespace Flux::Planetology {
         };
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
+        // Écart entre sommets suffisant pour une tuile gardée seulement pour son ombre, selon sa distance à la caméra
+        // (en mètres) : la carte d'ombre n'en voit pas plus fin. Elle n'est pas découpée plus loin.
+        using ShadowSpacing = std::function<double(double distance)>;
 
         // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice. `now` : heure
         // de l'image, d'où vient la vitesse de la caméra (les tests en donnent une).
@@ -99,7 +102,7 @@ namespace Flux::Planetology {
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                      std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0,
-                     const ViewTest* castsShadow = nullptr);
+                     const ViewTest* castsShadow = nullptr, const ShadowSpacing* shadowSpacing = nullptr);
         // Détail du sol (DefaultGroundDetail par défaut) : pris en compte au prochain Collect, les tuiles déjà calculées
         // restent bonnes.
         void SetGroundDetail(GroundDetail detail) {
@@ -205,6 +208,7 @@ namespace Flux::Planetology {
             std::uint32_t plainLevel;
             double plainRange;
             const ViewTest* castsShadow;
+            const ShadowSpacing* shadowSpacing;
         };
 
         Node& GetNode(PlanetState& state, TileKey key, const Node* parent = nullptr);
