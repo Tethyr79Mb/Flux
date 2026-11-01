@@ -15,6 +15,7 @@
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/Scene/Projectiles.hpp"
+#include "Flux/Scene/Ships.hpp"
 #include "Flux/UI/DrawList.hpp"
 
 #include <cstdint>
@@ -32,7 +33,8 @@
 
 namespace Flux {
     class AudioSystem;
-    class FlightHud;
+    class FlightSurroundings;
+    class Notice;
     class InputActions;
     class InterfaceBindings;
     class InterfaceLibrary;
@@ -265,12 +267,13 @@ namespace Flux {
         // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
         // elle est alors prise (les sièges ne la voient plus).
         bool ConsumeInteraction();
-        // Lignes du jeu (pilote automatique, armes actives, missiles...) ajoutées sous les infos de vol du vaisseau
-        // piloté, une source chacune (source : nom choisi par le système du jeu, dans l'ordre du premier appel) ; vide :
-        // aucune. Gardées jusqu'au prochain appel, effacées avec la scène.
-        void SetFlightInfoExtra(std::string_view source, std::string_view text);
-        // Message bref sous les infos de vol (« Warp coupé »...), effacé après quelques secondes.
-        void ShowFlightMessage(std::string message);
+        // Commandes du vaisseau piloté pour cette image (poussée, roulis, frein, boost, mode voyage), données par le jeu
+        // à l'étape Interaction. Le moteur y ajoute la souris et ce qui entoure le vaisseau (gravité, air, planète),
+        // puis le fait voler (Ships::Update) ; sans appel, le vaisseau ne reçoit aucune commande.
+        void SetPilotInput(const ShipInput& input);
+        // Planète la plus proche du vaisseau, altitude, air (aide au pilotage, infos de vol du jeu). Recrée le relief
+        // seulement quand la planète change.
+        FlightState GetFlightState(Entity ship);
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
@@ -318,7 +321,9 @@ namespace Flux {
         // Services privés du moteur (src/Core) : leur détail ne recompile ni l'éditeur ni le jeu.
         std::unique_ptr<InterfaceBindings> m_interfaceBindings; // valeurs, fonctions et actions des interfaces
         std::unique_ptr<PlayerCamera> m_playerCamera;           // caméra qui suit le joueur, cockpit, vue extérieure
-        std::unique_ptr<FlightHud> m_flightHud;                 // infos de vol et message en haut de l'écran
+        std::unique_ptr<FlightSurroundings> m_flightSurroundings; // planète, altitude et air autour du vaisseau piloté
+        std::unique_ptr<Notice> m_notice;                       // message court en haut de l'écran
+        ShipInput m_pilotInput;                                 // commandes du jeu pour cette image (SetPilotInput)
         std::unique_ptr<LoadingScreen> m_loadingScreen;
         std::unique_ptr<QuickSave> m_quickSave;                 // F7 / F8 / F9
         std::uint64_t m_frame = 0;

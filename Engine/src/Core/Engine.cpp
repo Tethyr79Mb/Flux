@@ -28,7 +28,8 @@
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
 #include "Core/EnginePanel.hpp"
-#include "Core/FlightHud.hpp"
+#include "Core/FlightSurroundings.hpp"
+#include "Core/Notice.hpp"
 #include "Core/InterfaceBindings.hpp"
 #include "Core/LoadingScreen.hpp"
 #include "Core/Measurements.hpp"
@@ -74,7 +75,8 @@ namespace Flux {
           m_inputActions(std::make_unique<InputActions>()),
           m_interfaceBindings(std::make_unique<InterfaceBindings>()),
           m_playerCamera(std::make_unique<PlayerCamera>()),
-          m_flightHud(std::make_unique<FlightHud>()),
+          m_flightSurroundings(std::make_unique<FlightSurroundings>()),
+          m_notice(std::make_unique<Notice>()),
           m_loadingScreen(std::make_unique<LoadingScreen>(config.loadingScreen)),
           m_quickSave(std::make_unique<QuickSave>()) {
         RegisterEngineComponents(m_components);
@@ -162,16 +164,8 @@ namespace Flux {
         actions.Add("Courir", "Déplacement", Key::LeftShift);
         actions.Add("Sauter", "Déplacement", Key::Space);
         actions.Add("Interagir", "Déplacement", Key::F);
-        // Comme Star Citizen : Espace monte, Ctrl descend, X freine ; Maj boost et Tab mode voyage, comme X4.
-        actions.Add("Freiner", "Vaisseau", Key::X);
-        actions.Add("Boost", "Vaisseau", Key::LeftShift);
-        actions.Add("Mode voyage", "Vaisseau", Key::Tab);
-        actions.Add("Monter", "Vaisseau", Key::Space);
-        actions.Add("Descendre", "Vaisseau", Key::LeftControl);
-        actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
-        actions.Add("Rouler à droite", "Vaisseau", Key::E);
+        // Vue du cockpit ou de dehors : la caméra est au moteur ; les commandes du vaisseau sont au jeu (SetPilotInput).
         actions.Add("Changer de vue", "Vaisseau", Key::V);
-        actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
         // F5 / F6 servent déjà à l'éditeur (jouer, pause).
         actions.Add("Sauvegarde rapide", "Partie", Key::F8);
         actions.Add("Chargement rapide", "Partie", Key::F9);
@@ -319,7 +313,7 @@ namespace Flux {
                     .modelMeshShaders = render.modelMeshShaders};
                 if (auto written = measures.Write(Platform::GetExecutableDirectory() / "Mesures", context)) {
                     Log::Info("Mesures écrites dans {}", Platform::ToGenericUtf8(*written));
-                    m_flightHud->ShowNotice("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));
+                    m_notice->Show("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));
                 } else {
                     Log::Error("Mesures : {}", written.error());
                 }
@@ -385,10 +379,8 @@ namespace Flux {
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
                 const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
-                m_flightHud->DrawFlightInfo(m_scene, m_physics.get(), m_renderer->GetOverlay(), player, screen, deltaSeconds);
-                if (m_gameState == GameState::Running) {
-                    RunGameSystems(GameStage::Hud, deltaSeconds);
-                }
+                // Aussi en pause (infos de vol, destinations), avec le temps du jeu : arrêté, les messages attendent.
+                RunGameSystems(GameStage::Hud, m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
             }
             if (m_drawScreenUi) {
                 // Version dans le coin bas droit : dit quelle compilation tourne sur une capture d'écran.
@@ -399,8 +391,8 @@ namespace Flux {
                 list.AddText({static_cast<float>(size.x) - extent.x - 8.0f, static_cast<float>(size.y) - extent.y - 6.0f}, version,
                              VersionSize, {1.0f, 1.0f, 1.0f, 0.45f});
             }
-            if (m_flightHud->HasNotice() && m_drawScreenUi) {
-                m_flightHud->DrawNotice(m_renderer->GetOverlay(), {static_cast<float>(size.x), static_cast<float>(size.y)},
+            if (m_notice->IsShown() && m_drawScreenUi) {
+                m_notice->Draw(m_renderer->GetOverlay(), {static_cast<float>(size.x), static_cast<float>(size.y)},
                                         deltaSeconds, m_loadingScreen->IsActive());
             }
             if (m_loadingScreen->IsActive()) { // par-dessus la scène
@@ -481,15 +473,10 @@ namespace Flux {
         RunGameSystems(GameStage::Interaction, deltaSeconds);
         SeatInput seatInput{.interact = m_interactionPending};
         m_interactionPending = false;
-        ShipInput shipInput;
+        // Commandes du jeu (étape Interaction, SetPilotInput), complétées ici de la souris et de ce qui entoure le
+        // vaisseau ; reprises à zéro à chaque image.
+        ShipInput shipInput = std::exchange(m_pilotInput, ShipInput{});
         if (seated) {
-            shipInput.thrust = axis("Avancer", "Reculer");
-            shipInput.strafe = axis("Aller à droite", "Aller à gauche");
-            shipInput.lift = axis("Monter", "Descendre");
-            shipInput.roll = axis("Rouler à droite", "Rouler à gauche");
-            shipInput.brake = IsActionDown("Freiner");
-            shipInput.boost = IsActionDown("Boost");
-            shipInput.travel = WasActionPressed("Mode voyage");
             shipInput.mouseYaw = m_playerCamera->GetSteerYaw();
             shipInput.mousePitch = m_playerCamera->GetSteerPitch();
             if (WasActionPressed("Changer de vue")) {
@@ -497,15 +484,10 @@ namespace Flux {
             }
             // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
             if (const Entity ship = Ships::GetPilotedShip(m_scene, player); ship != NullEntity) {
-                ShipComponent& component = m_scene.Get<ShipComponent>(ship);
-                if (WasActionPressed("Stabiliser à plat")) {
-                    component.levelAssist = !component.levelAssist;
-                    Log::Info("Stabilisation à plat : {}", component.levelAssist ? "oui" : "non");
-                }
                 if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
                     shipInput.up = Math::Normalize(gravity) * -1.0f;
                 }
-                const FlightHud::FlightState flight = m_flightHud->GetFlightState(m_scene, m_physics.get(), ship);
+                const FlightState flight = m_flightSurroundings->Get(m_scene, m_physics.get(), ship);
                 shipInput.air = flight.air;
                 if (flight.nearPlanet) {
                     shipInput.planetUp = Math::Vector3f(flight.up);
@@ -653,7 +635,7 @@ namespace Flux {
     }
 
     void Engine::DeleteQuickSave() {
-        m_flightHud->ShowNotice(QuickSave::Delete() ? "Sauvegarde effacée : le prochain lancement repart du début"
+        m_notice->Show(QuickSave::Delete() ? "Sauvegarde effacée : le prochain lancement repart du début"
                                                     : "Aucune sauvegarde rapide");
     }
 
@@ -665,10 +647,10 @@ namespace Flux {
         if (requests.save) {
             if (auto saved = m_quickSave->Write(*this, m_physics ? m_physics->GetPlayer() : NullEntity); !saved) {
                 Log::Error("sauvegarde rapide : {}", saved.error());
-                m_flightHud->ShowNotice("Sauvegarde impossible : " + saved.error());
+                m_notice->Show("Sauvegarde impossible : " + saved.error());
             } else {
                 Log::Info("partie sauvegardée dans {}", Platform::ToGenericUtf8(QuickSave::GetSceneFile()));
-                m_flightHud->ShowNotice("Partie sauvegardée");
+                m_notice->Show("Partie sauvegardée");
             }
         }
         if (requests.load) {
@@ -678,7 +660,7 @@ namespace Flux {
 
     void Engine::QuickLoad(bool resumes) {
         if (!QuickSave::Exists()) {
-            m_flightHud->ShowNotice("Aucune sauvegarde rapide");
+            m_notice->Show("Aucune sauvegarde rapide");
             return;
         }
         // Scène modifiée dans l'éditeur depuis la sauvegarde (puis recopiée à côté du jeu par la génération) : la
@@ -689,7 +671,7 @@ namespace Flux {
             Log::Error("chargement rapide : {}", loaded.error());
             // Sauvegarde d'une version du moteur qui ne la lit plus, par exemple : la partie continue sur la scène
             // en cours (rien n'a été touché).
-            m_flightHud->ShowNotice("Sauvegarde non chargée : " + loaded.error());
+            m_notice->Show("Sauvegarde non chargée : " + loaded.error());
             return;
         }
         // Une prochaine sauvegarde part de la même scène que celle-ci (pas du fichier de la sauvegarde).
@@ -705,7 +687,7 @@ namespace Flux {
         m_quickSave->Restore(*this, m_physics ? m_physics->GetPlayer() : NullEntity);
         // Sauvegarde sans sa scène de départ (faite avant la fusion, ou dans une scène jamais enregistrée) : les
         // modifications de l'éditeur ne peuvent pas y entrer ; le dire, sinon elles semblent ignorées.
-        m_flightHud->ShowNotice(merges    ? "Partie reprise dans la scène modifiée (F7 : effacer la sauvegarde)"
+        m_notice->Show(merges    ? "Partie reprise dans la scène modifiée (F7 : effacer la sauvegarde)"
                                 : !source ? "Partie reprise telle que sauvegardée, sans les modifications de l'éditeur "
                                             "(F7 : effacer la sauvegarde)"
                                 : resumes ? "Partie reprise (F7 : effacer la sauvegarde)"
@@ -815,16 +797,16 @@ namespace Flux {
         return std::exchange(m_interactionPending, false);
     }
 
-    void Engine::SetFlightInfoExtra(std::string_view source, std::string_view text) {
-        m_flightHud->SetExtra(source, text);
+    void Engine::SetPilotInput(const ShipInput& input) {
+        m_pilotInput = input;
     }
 
-    void Engine::ShowFlightMessage(std::string message) {
-        m_flightHud->ShowFlightMessage(std::move(message));
+    FlightState Engine::GetFlightState(Entity ship) {
+        return ship != NullEntity && m_scene.IsValid(ship) ? m_flightSurroundings->Get(m_scene, m_physics.get(), ship) : FlightState{};
     }
 
     void Engine::ResetGameState() {
-        m_flightHud->ClearExtra();
+        m_pilotInput = {};
         RunGameSystems(GameStage::Reset, 0.0);
     }
 

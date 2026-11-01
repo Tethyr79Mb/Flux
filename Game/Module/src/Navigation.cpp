@@ -1,6 +1,7 @@
 #include "Navigation.hpp"
 
 #include "Docking.hpp"
+#include "FlightInfo.hpp"
 #include "Warp.hpp"
 
 #include <Flux/Core/Engine.hpp>
@@ -22,7 +23,7 @@ namespace Game {
 
         constexpr const char* AutopilotAction = "Pilote automatique";
         constexpr const char* WarpAction = "Warp";
-        constexpr const char* InfoSource = "Navigation"; // ligne des infos de vol (Engine::SetFlightInfoExtra)
+        constexpr const char* InfoSource = "Navigation"; // ligne des infos de vol (FlightInfo::SetExtra)
 
         // Destinations du vaisseau piloté (recalculées à chaque image, mémoire gardée), celle que vise son nez (-1 :
         // aucune), le nom de celle vers laquelle il file (vide hors warp), l'objectif de mission et la ligne d'amarrage.
@@ -48,9 +49,9 @@ namespace Game {
             switch (Docking::Toggle(scene, ship)) {
             case Docking::ToggleResult::Docking:
             case Docking::ToggleResult::Leaving: break; // l'étape s'affiche dans les infos de vol
-            case Docking::ToggleResult::Cancelled: engine.ShowFlightMessage("Pilote automatique coupé"); break;
+            case Docking::ToggleResult::Cancelled: FlightInfo::ShowMessage("Pilote automatique coupé"); break;
             case Docking::ToggleResult::NoDock:
-                engine.ShowFlightMessage(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
+                FlightInfo::ShowMessage(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
                 break;
             }
         }
@@ -71,7 +72,7 @@ namespace Game {
             const bool warping = drive && drive->stage != WarpStage::Off;
             // Arrivé, ou arrêté par une planète sur le chemin.
             if (!warping && !g_warpName.empty()) {
-                engine.ShowFlightMessage("Sortie du warp : " + g_warpName);
+                FlightInfo::ShowMessage("Sortie du warp : " + g_warpName);
                 g_warpName.clear();
             }
             if (!warping) {
@@ -83,18 +84,18 @@ namespace Game {
             if (warping) {
                 Warp::Stop(scene, ship);
                 g_warpName.clear();
-                engine.ShowFlightMessage("Warp coupé");
+                FlightInfo::ShowMessage("Warp coupé");
                 return;
             }
             if (g_aim < 0) {
-                engine.ShowFlightMessage("Warp : tournez le nez vers une destination");
+                FlightInfo::ShowMessage("Warp : tournez le nez vers une destination");
                 return;
             }
             const Warp::Destination& destination = g_destinations[static_cast<std::size_t>(g_aim)];
             switch (Warp::Engage(scene, ship, destination)) {
             case Warp::EngageResult::Started: g_warpName = GetDestinationName(scene, destination); break;
-            case Warp::EngageResult::Unavailable: engine.ShowFlightMessage("Warp impossible ici (posé, amarré, près d'une planète, sans moteur de warp)"); break;
-            case Warp::EngageResult::TooClose: engine.ShowFlightMessage("Trop près pour le warp : mode voyage (Tab)"); break;
+            case Warp::EngageResult::Unavailable: FlightInfo::ShowMessage("Warp impossible ici (posé, amarré, près d'une planète, sans moteur de warp)"); break;
+            case Warp::EngageResult::TooClose: FlightInfo::ShowMessage("Trop près pour le warp : mode voyage (Tab)"); break;
             }
         }
 
@@ -110,7 +111,7 @@ namespace Game {
             UpdateWarp(engine, ship, ship != NullEntity && engine.WasActionPressed(WarpAction));
             Warp::Update(scene, deltaSeconds);
             g_info = ship != NullEntity ? Docking::Describe(scene, ship) : std::string{};
-            engine.SetFlightInfoExtra(InfoSource, g_info);
+            FlightInfo::SetExtra(InfoSource, g_info);
         }
 
         // Destinations du warp à l'écran, la visée en clair avec la touche ; en warp, la sienne et un bandeau.
@@ -199,7 +200,7 @@ namespace Game {
         engine.RemoveGameSystem(ResetSystem);
         engine.GetInputActions().Remove(AutopilotAction);
         engine.GetInputActions().Remove(WarpAction);
-        engine.SetFlightInfoExtra(InfoSource, {});
+        FlightInfo::SetExtra(InfoSource, {});
         Reset(engine, 0.0);
     }
 }

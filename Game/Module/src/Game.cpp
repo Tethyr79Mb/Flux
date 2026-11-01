@@ -3,9 +3,11 @@
 #include "Combat.hpp"
 #include "CombatAI.hpp"
 #include "Docking.hpp"
+#include "FlightInfo.hpp"
 #include "MissionGiver.hpp"
 #include "Navigation.hpp"
 #include "Missions.hpp"
+#include "Piloting.hpp"
 #include "PlaceItems.hpp"
 #include "PlayerWeapons.hpp"
 #include "Warp.hpp"
@@ -74,6 +76,8 @@ namespace Game {
         RegisterCombatAI(engine.GetComponents());
         RegisterMissionGiver(engine.GetComponents());
         engine.SetGameUpdate(Update);
+        RegisterPiloting(engine);
+        RegisterFlightInfo(engine);   // avant les autres affichages du jeu : dessinées dessous, comme au temps du moteur
         RegisterNavigation(engine); // avant l'IA de combat : même ordre qu'au temps du moteur
         RegisterMissions(engine);
         RegisterDamage(engine);        // les dégâts de l'image avant les nouveaux tirs, comme au temps du moteur
@@ -93,6 +97,8 @@ namespace Game {
     void Unregister(Engine& engine) {
         engine.SetGameUpdate(nullptr);
         UnregisterNavigation(engine);
+        UnregisterFlightInfo(engine);
+        UnregisterPiloting(engine);
         UnregisterMissions(engine);
         UnregisterCombat(engine);
         UnregisterPlayerWeapons(engine);
