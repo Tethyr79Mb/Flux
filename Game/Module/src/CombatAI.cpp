@@ -33,7 +33,7 @@ namespace Game::CombatAI {
         constexpr float LeadSpeed = 1500.0f;    // m/s : vitesse supposée des obus pour viser en avance
 
         bool CanFly(const Scene& scene, Entity entity, const ShipComponent& ship) {
-            return scene.GetParent(entity) == NullEntity && ship.warp == WarpStage::Off && ship.autopilot == AutopilotStage::Off
+            return scene.GetParent(entity) == NullEntity && !ship.autopilot
                    && ship.maxSpeed > 0.0f;
         }
 

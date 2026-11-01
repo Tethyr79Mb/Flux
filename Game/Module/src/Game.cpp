@@ -2,10 +2,13 @@
 
 #include "Combat.hpp"
 #include "CombatAI.hpp"
+#include "Docking.hpp"
 #include "MissionGiver.hpp"
+#include "Navigation.hpp"
 #include "Missions.hpp"
 #include "PlaceItems.hpp"
 #include "PlayerWeapons.hpp"
+#include "Warp.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
@@ -64,9 +67,12 @@ namespace Game {
             .Register<SpinComponent>("spin", "Rotation continue")
             .Field("axis", "Axe", &SpinComponent::axis, {.speed = 0.01})
             .Field("speed", "Vitesse (rad/s)", &SpinComponent::speed, {.speed = 0.01, .min = -100.0, .max = 100.0, .decimals = 2});
+        RegisterDock(engine.GetComponents());
+        RegisterWarpDrive(engine.GetComponents());
         RegisterCombatAI(engine.GetComponents());
         RegisterMissionGiver(engine.GetComponents());
         engine.SetGameUpdate(Update);
+        RegisterNavigation(engine); // avant l'IA de combat : même ordre qu'au temps du moteur
         RegisterMissions(engine);
         RegisterPlayerWeapons(engine); // avant les ennemis : même ordre de tir qu'avant
         RegisterCombat(engine);
@@ -82,6 +88,7 @@ namespace Game {
 
     void Unregister(Engine& engine) {
         engine.SetGameUpdate(nullptr);
+        UnregisterNavigation(engine);
         UnregisterMissions(engine);
         UnregisterCombat(engine);
         UnregisterPlayerWeapons(engine);

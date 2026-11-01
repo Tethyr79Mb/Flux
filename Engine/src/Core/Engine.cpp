@@ -16,7 +16,6 @@
 #include "Flux/Platform/Memory.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Renderer/Renderer.hpp"
-#include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/SceneChange.hpp"
 #include "Flux/Scene/SceneMerge.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -24,7 +23,6 @@
 #include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
-#include "Flux/Scene/Warp.hpp"
 #include "Flux/Scene/Weapons.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
 #include "Flux/UI/Context.hpp"
@@ -174,10 +172,6 @@ namespace Flux {
         actions.Add("Rouler à droite", "Vaisseau", Key::E);
         actions.Add("Changer de vue", "Vaisseau", Key::V);
         actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
-        // Près d'une station : se faire conduire au quai libre le plus proche ; amarré : repartir (choix de Bruno).
-        actions.Add("Pilote automatique", "Vaisseau", Key::L);
-        // Vers la destination que vise le nez (station, planète, objectif de mission) ; en warp : le couper.
-        actions.Add("Warp", "Vaisseau", Key::J);
         // F5 / F6 servent déjà à l'éditeur (jouer, pause).
         actions.Add("Sauvegarde rapide", "Partie", Key::F8);
         actions.Add("Chargement rapide", "Partie", Key::F9);
@@ -392,7 +386,6 @@ namespace Flux {
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
                 const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
                 m_flightHud->DrawFlightInfo(m_scene, m_physics.get(), m_renderer->GetOverlay(), player, screen, deltaSeconds);
-                DrawWarpInfo(player, screen);
                 if (m_gameState == GameState::Running) {
                     RunGameSystems(GameStage::Hud, deltaSeconds);
                 }
@@ -540,24 +533,8 @@ namespace Flux {
             };
             return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
         });
-        const Entity pilotedShip = Ships::GetPilotedShip(m_scene, player);
-        if (pilotedShip != NullEntity && WasActionPressed("Pilote automatique")) {
-            Warp::Stop(m_scene, pilotedShip); // L en warp : il en sort et cherche un quai
-            m_warpName.clear();
-            switch (Docking::Toggle(m_scene, pilotedShip)) {
-            case Docking::ToggleResult::Docking:
-            case Docking::ToggleResult::Leaving: break; // l'étape s'affiche dans les infos de vol
-            case Docking::ToggleResult::Cancelled: m_flightHud->ShowFlightMessage("Pilote automatique coupé"); break;
-            case Docking::ToggleResult::NoDock:
-                m_flightHud->ShowFlightMessage(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
-                break;
-            }
-        }
-        Ships::Update(m_scene, pilotedShip, deltaSeconds, shipInput);
-        Docking::Update(m_scene, deltaSeconds); // après le pilote : il prend la main sous pilote automatique
-        UpdateWarp(pilotedShip, pilotedShip != NullEntity && WasActionPressed("Warp"));
-        Warp::Update(m_scene, deltaSeconds); // après le pilote, comme le pilote automatique
-        RunGameSystems(GameStage::BeforePhysics, deltaSeconds); // IA de combat du jeu : comme Ships::Update
+        Ships::Update(m_scene, Ships::GetPilotedShip(m_scene, player), deltaSeconds, shipInput);
+        RunGameSystems(GameStage::BeforePhysics, deltaSeconds); // pilote automatique, warp et IA du jeu, après le pilote
         m_physics->Update(m_scene, deltaSeconds, character);
         // Projectiles après la physique, avant les armes du jeu (étape AfterPhysics) : les vaisseaux sont à leur place
         // de cette image, les nouveaux tirs partent de la bouche des canons (avant, ils naîtraient en retard d'une
@@ -828,21 +805,15 @@ namespace Flux {
         return std::exchange(m_interactionPending, false);
     }
 
-    void Engine::SetWarpObjective(std::string name, std::optional<Math::WorldPosition> position) {
-        m_warpObjectiveName = position ? std::move(name) : std::string{};
-        m_warpObjective = position;
+    void Engine::SetFlightInfoExtra(std::string_view source, std::string_view text) {
+        m_flightHud->SetExtra(source, text);
     }
 
-    void Engine::SetFlightInfoExtra(std::string_view text) {
-        m_flightHud->SetExtra(text);
+    void Engine::ShowFlightMessage(std::string message) {
+        m_flightHud->ShowFlightMessage(std::move(message));
     }
 
     void Engine::ResetGameState() {
-        m_warpDestinations.clear();
-        m_warpAim = -1;
-        m_warpName.clear();
-        m_warpObjective.reset();
-        m_warpObjectiveName.clear();
         m_flightHud->ClearExtra();
         RunGameSystems(GameStage::Reset, 0.0);
     }

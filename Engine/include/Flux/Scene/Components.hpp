@@ -464,14 +464,6 @@ namespace Flux {
         float reach = 1.5f; // m, distance du personnage au siège pour s'y asseoir
     };
 
-    // Étape du pilote automatique d'un vaisseau (Docking) : vers un quai (par-dessus la station si on arrive par
-    // l'arrière ou le côté, ou par-dessous si on est plus bas qu'elle ; puis devant l'entrée, au-dessus du quai,
-    // demi-tour, descente), ou en repartant (remonter, sortir).
-    enum class AutopilotStage : std::uint8_t { Off, Climb, Over, Under, Approach, Enter, Turn, Descend, Rise, Exit };
-
-    // Warp d'un vaisseau (Warp) : il se tourne vers sa destination en chargeant, puis y file sans collision et en sort
-    // de lui-même à son arrivée.
-    enum class WarpStage : std::uint8_t { Off, Charging, Cruising };
 
     // Vaisseau ou station : un repère physique à lui. Ses descendants (sol, murs, caisses, personnages) sont simulés
     // dans son repère, avec une gravité artificielle vers son -y (le sol du pont) : on y marche pendant qu'il vole ou
@@ -505,9 +497,6 @@ namespace Flux {
         // 6 km d'altitude sur Terre), le frein ou un atterrissage le coupent.
         float travelFactor = 10.0f;
         float travelSpoolTime = 3.0f;
-        // Warp (J, vers la destination visée) : pour les grandes distances, jusqu'à warpSpeed km/s ; 0 : pas de warp
-        // (une station).
-        float warpSpeed = 1.0e7f;
         // Sans pilote, il tombe avec la gravité du lieu (planète, monde) jusqu'à se poser ; décoché : il reste où il
         // est (station, vaisseau amiral en orbite). Seulement à la racine de la scène et avec une collision.
         bool fallsWithoutPilot = true;
@@ -520,29 +509,11 @@ namespace Flux {
         // Poussée des moteurs vers l'avant, de 0 (coupés) à 1 (boost, mode voyage) : flammes des réacteurs
         // (ThrusterComponent). Retombe à 0 sans pilote.
         float throttle = 0.0f;
-        // Pilote automatique (Docking) : son étape, et le quai (DockComponent) réservé, ou occupé une fois amarré
-        // (étape Off, le vaisseau enfant de la station).
-        AutopilotStage autopilot = AutopilotStage::Off;
-        Entity dock = NullEntity;
-        // Warp en cours : son étape, sa destination, le rayon autour d'elle où il en sort (le haut de l'atmosphère d'une
-        // planète, quelques km d'une station) et le temps déjà chargé (s).
-        WarpStage warp = WarpStage::Off;
-        Math::WorldPosition warpTarget;
-        double warpExit = 0.0;
-        float warpCharge = 0.0f;
-    };
-
-    // Quai d'une station (entité enfant d'un vaisseau immobile) : là où un vaisseau s'amarre. Son origine est celle
-    // du vaisseau posé (pour le Chasseur, son plancher de cockpit, 2,3 m au-dessus de la dalle), son -z la direction
-    // de la sortie : le vaisseau amarré a son nez tourné vers elle, prêt à repartir. Le pilote automatique arrive par
-    // l'avant du quai (approach mètres devant, à hover mètres de haut), s'arrête au-dessus, fait demi-tour et descend.
-    struct DockComponent
-    {
-        float approach = 100.0f;  // m devant le quai : point d'approche, hors de la station
-        float hover = 6.0f;       // m au-dessus du quai : hauteur de l'approche et du demi-tour
-        float clearance = 150.0f; // m au-dessus du quai : on passe par-dessus la station quand on arrive de derrière
-        // Pendant le jeu : vaisseau qui l'a réservé ou qui y est amarré.
-        Entity ship = NullEntity;
+        // Mené par un système du jeu (pilote automatique, warp) : le pilote ne le commande pas (Ships::Update), il ne
+        // tombe pas et la physique ne le laisse pas au repos.
+        bool autopilot = false;
+        // Sans collision ni sol cherché sous lui (warp lancé : des milliers de km par image).
+        bool passThrough = false;
     };
 
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre

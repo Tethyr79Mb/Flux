@@ -5,6 +5,18 @@
 namespace Flux {
     void ComponentRegistry::Unregister(std::string_view key) {
         std::erase_if(m_components, [&](const std::unique_ptr<ComponentInfo>& info) { return info->key == key; });
+        PruneMovedFields();
+    }
+
+    ComponentInfo* ComponentRegistry::FindMutable(std::string_view key) {
+        const auto found = std::ranges::find_if(m_components, [&](const auto& info) { return info->key == key; });
+        return found != m_components.end() ? found->get() : nullptr;
+    }
+
+    void ComponentRegistry::PruneMovedFields() {
+        for (const auto& info : m_components) {
+            std::erase_if(info->movedFields, [&](const ComponentInfo::MovedField& field) { return !Find(field.target); });
+        }
     }
 
     const ComponentInfo* ComponentRegistry::Find(std::string_view key) const {
@@ -16,6 +28,7 @@ namespace Flux {
     void ComponentRegistry::Truncate(std::size_t count) {
         if (count < m_components.size()) {
             m_components.resize(count);
+            PruneMovedFields();
         }
     }
 
@@ -252,12 +265,7 @@ namespace Flux {
             .Field("boost", "Boost (x)", &ShipComponent::boost, {.speed = 0.05, .min = 1.0, .max = 20.0, .decimals = 2})
             .Field("travelFactor", "Mode voyage (x)", &ShipComponent::travelFactor, {.speed = 0.1, .min = 1.0, .max = 1000.0, .decimals = 1})
             .Field("travelSpoolTime", "Mode voyage : mise en route (s)", &ShipComponent::travelSpoolTime, {.speed = 0.05, .min = 0.0, .max = 60.0, .decimals = 1})
-            .Field("warpSpeed", "Warp : vitesse max (km/s)", &ShipComponent::warpSpeed, {.speed = 1000.0, .min = 0.0, .max = 1.0e9, .decimals = 0})
             .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot);
-        registry.Register<DockComponent>("dock", "Quai")
-            .Field("approach", "Approche devant (m)", &DockComponent::approach, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1})
-            .Field("hover", "Hauteur d'arrivée (m)", &DockComponent::hover, {.speed = 0.1, .min = 0.0, .max = 1.0e3, .decimals = 1})
-            .Field("clearance", "Passage au-dessus (m)", &DockComponent::clearance, {.speed = 0.5, .min = 0.0, .max = 1.0e4, .decimals = 1});
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})

@@ -562,11 +562,15 @@ namespace Flux::SceneSerializer {
             }
         }
 
+        // Anciens champs devenus un autre composant (ComponentInfo::movedFields), appliqués une fois l'entité lue.
+        using MovedValues = std::vector<std::pair<const ComponentInfo::MovedField*, double>>;
+
         // Champs d'un composant lus dans `instance`. Lève une erreur : pas un objet, champ inconnu (fichier d'une version
         // plus récente du moteur ou d'une autre branche), valeur invalide. Les champs absents gardent leur valeur.
         // Avec `skipped`, un champ illisible y est noté et garde sa valeur, sans erreur.
+        // Avec `moved`, un champ déplacé vers un autre composant y est noté ; sans lui, il est ignoré.
         void ReadComponentFields(const ComponentInfo& info, const Json& value, void* instance,
-                                 std::vector<std::string>* skipped = nullptr) {
+                                 std::vector<std::string>* skipped = nullptr, MovedValues* moved = nullptr) {
             if (!value.is_object()) {
                 throw std::runtime_error("un objet { ... } est attendu");
             }
@@ -577,6 +581,12 @@ namespace Flux::SceneSerializer {
                     continue; // ancienne version : sa valeur est perdue, le champ reprend sa valeur par défaut
                 }
                 if (!field && KeepConverted(info, fieldKey, fieldValue, converted)) {
+                    continue;
+                }
+                if (const ComponentInfo::MovedField* movedField = field ? nullptr : info.FindMovedField(fieldKey)) {
+                    if (moved && fieldValue.is_number()) {
+                        moved->emplace_back(movedField, fieldValue.get<double>());
+                    }
                     continue;
                 }
                 try {
@@ -618,6 +628,25 @@ namespace Flux::SceneSerializer {
                                        Label(data), key, error));
             std::erase_if(data.unknown.components, [&](const auto& c) { return c.first == key; });
             data.unknown.components.emplace_back(key, value.dump());
+        }
+
+        // Valeurs des champs déplacés : dans le composant cible, ajouté s'il manque et si le champ le demande.
+        void ApplyMoved(const ComponentRegistry& components, EntityData& data, const MovedValues& moved) {
+            for (const auto& [field, value] : moved) {
+                const ComponentInfo* target = components.Find(field->target);
+                if (!target) {
+                    continue;
+                }
+                auto component = std::ranges::find(data.components, target, &ComponentData::info);
+                if (component == data.components.end()) {
+                    if (!field->create(value)) {
+                        continue;
+                    }
+                    data.components.push_back({target, target->create()});
+                    component = data.components.end() - 1;
+                }
+                field->convert(component->instance.get(), value);
+            }
         }
 
         // Applique à une pièce ce qu'un exemplaire change de son prefab (voir Differences).
@@ -669,7 +698,9 @@ namespace Flux::SceneSerializer {
                     data.components.push_back({info, info->create()});
                     component = data.components.end() - 1;
                 }
-                ReadComponentFields(*info, value, component->instance.get());
+                MovedValues moved;
+                ReadComponentFields(*info, value, component->instance.get(), nullptr, &moved);
+                ApplyMoved(components, data, moved);
             }
         }
 
@@ -739,6 +770,7 @@ namespace Flux::SceneSerializer {
                 data.instance = *instanceId;
             }
 
+            MovedValues moved;
             for (const auto& [key, value] : json.items()) {
                 if (IsEntityKey(key)) {
                     continue;
@@ -754,14 +786,17 @@ namespace Flux::SceneSerializer {
                     data.components.push_back(std::move(component));
                     continue;
                 }
+                MovedValues entityMoved;
                 try {
-                    ReadComponentFields(*info, value, component.instance.get());
+                    ReadComponentFields(*info, value, component.instance.get(), nullptr, &entityMoved);
                 } catch (const std::exception& error) {
                     KeepUnreadable(data, key, value, error.what(), warnings);
                     continue;
                 }
                 data.components.push_back(std::move(component));
+                std::ranges::move(entityMoved, std::back_inserter(moved));
             }
+            ApplyMoved(components, data, moved);
             return data;
         }
 

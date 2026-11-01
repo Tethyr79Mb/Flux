@@ -32,7 +32,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
   comme `Weapons::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`, avec leur composant et
   leurs briques dans `MissionGiver.cpp`),
-  IA de combat (`CombatAI.cpp`) et sa cible (`Combat.cpp`), commandes des armes du joueur (`PlayerWeapons.cpp`). Le jeu ajoute aussi ses
+  IA de combat (`CombatAI.cpp`) et sa cible (`Combat.cpp`), amarrage et warp (`Docking.cpp`, `Warp.cpp`, avec leurs
+  touches et leur affichage dans `Navigation.cpp`), commandes des armes du joueur (`PlayerWeapons.cpp`). Le jeu ajoute aussi ses
   objets au panneau Placer de l'éditeur (`Engine::GetEditorExtensions`, `PlaceItems.cpp` : chasseur armé, cible,
   stations à quais) : l'éditeur ne connaît pas les composants du jeu, ce qui évite qu'il lise une ancienne disposition
   après un rechargement à chaud. Le code du jeu est une bibliothèque statique, `GameLogic` (`Game/Module/src`), liée par
@@ -271,7 +272,8 @@ planète donne directement le sien comme indice d'instance.
   fichier plus récent que le moteur, d'un format plus récent ou avec un champ inconnu (autre branche) est refusé
   avec « Scène non chargée car non compatible avec la version actuelle du moteur » et le détail, la scène en cours
   intacte ; dans le jeu, le message s'affiche dans une fenêtre. Un fichier plus ancien (ou sans ce numéro) est lu et
-  converti (`.RemovedField`, `.ConvertedField`).
+  converti (`.RemovedField`, `.ConvertedField` ; un champ devenu un autre composant, souvent du jeu :
+  `ComponentRegistry::AddMovedField`, retiré avec ce composant au déchargement du jeu).
 - Prefabs (`SceneSerializer`) : un `.prefab.json` est une racine et ses descendants. Dans une scène, un exemplaire
   (`PrefabInstanceComponent` sur sa racine, `PrefabLinkComponent` sur chaque pièce) est écrit comme sa racine, le
   chemin du prefab et, par pièce, les seuls champs qui en diffèrent (`overrides`, composants ajoutés ou retirés).

@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Flux {
     class PhysicsWorld;
@@ -47,8 +48,8 @@ namespace Flux {
         // Message bref sous les infos de vol (pilote automatique lancé, aucun quai à portée).
         void ShowFlightMessage(std::string message);
         // Lignes du jeu sous les infos de vol (Engine::SetFlightInfoExtra).
-        void SetExtra(std::string_view text) { m_extra.assign(text); } // garde sa capacité : pas d'allocation
-        void ClearExtra() { m_extra.clear(); }
+        void SetExtra(std::string_view source, std::string_view text);
+        void ClearExtra() { m_extras.clear(); }
 
         void ShowNotice(std::string text);
         bool HasNotice() const { return m_noticeSeconds > 0.0; }
@@ -66,7 +67,12 @@ namespace Flux {
         Math::Vector3d m_velocity;
         std::string m_message;
         double m_messageSeconds = 0.0;
-        std::string m_extra;
+        struct Extra
+        {
+            std::string source;
+            std::string text; // garde sa capacité d'une image à l'autre : pas d'allocation
+        };
+        std::vector<Extra> m_extras;
         std::string m_notice;
         double m_noticeSeconds = 0.0;
     };

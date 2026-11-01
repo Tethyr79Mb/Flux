@@ -1,6 +1,7 @@
 #include "Missions.hpp"
 
 #include "MissionGiver.hpp"
+#include "Navigation.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
@@ -70,12 +71,12 @@ namespace Game {
 
         void SetMission(Engine& engine, std::optional<ActiveMission> mission) {
             g_mission = std::move(mission);
-            engine.SetWarpObjective(g_mission ? "Mission : " + g_mission->title : std::string{},
-                                    g_mission ? std::optional{g_mission->area} : std::nullopt);
+            SetWarpObjective(g_mission ? "Mission : " + g_mission->title : std::string{},
+                             g_mission ? std::optional{g_mission->area} : std::nullopt);
         }
 
         void Reset(Engine&, double) {
-            g_mission.reset(); // l'objectif du warp est effacé par le moteur avec la scène
+            g_mission.reset(); // l'objectif du warp est effacé par la navigation avec la scène
             g_window = NullEntity;
             g_messageSeconds = 0.0;
         }

@@ -2,7 +2,6 @@
 
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Planetology/Planet.hpp"
-#include "Flux/Scene/Docking.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
@@ -63,6 +62,15 @@ namespace Flux {
         return flight;
     }
 
+    void FlightHud::SetExtra(std::string_view source, std::string_view text) {
+        const auto found = std::ranges::find(m_extras, source, &Extra::source);
+        if (found != m_extras.end()) {
+            found->text.assign(text);
+        } else if (!text.empty()) {
+            m_extras.push_back({std::string(source), std::string(text)});
+        }
+    }
+
     void FlightHud::ShowFlightMessage(std::string message) {
         constexpr double MessageSeconds = 3.0;
         m_message = std::move(message);
@@ -109,15 +117,14 @@ namespace Flux {
                 text += std::format("\nAir  {:.0f} %", flight.air * 100.0f);
             }
         }
-        if (const std::string docking = Docking::Describe(scene, ship); !docking.empty()) {
-            text += "\n" + docking;
-        }
         if (m_messageSeconds > 0.0) {
             m_messageSeconds -= deltaSeconds;
             text += "\n" + m_message;
         }
-        if (!m_extra.empty()) {
-            text += "\n" + m_extra;
+        for (const Extra& extra : m_extras) {
+            if (!extra.text.empty()) {
+                text += "\n" + extra.text;
+            }
         }
         const float size = 20.0f;
         const Math::Vector2f extent = list.MeasureText(text, size);

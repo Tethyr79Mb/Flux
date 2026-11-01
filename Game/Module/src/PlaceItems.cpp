@@ -2,7 +2,9 @@
 // Ils utilisent des composants du jeu (emports, armes, quais, missions), que l'éditeur ne connaît pas.
 #include "PlaceItems.hpp"
 
+#include "Docking.hpp"
 #include "MissionGiver.hpp"
+#include "Warp.hpp"
 
 #include <Flux/Core/EditorExtensions.hpp>
 #include <Flux/Scene/Scene.hpp>
@@ -138,7 +140,6 @@ namespace Game {
             ship.strafeSpeed = 0.0f;
             ship.levelAssist = false;
             ship.fallsWithoutPilot = false;
-            ship.warpSpeed = 0.0f;
 
             // Hangar de 110 x 40 x 150 m, son entrée contre le fond du sas (z = 16 m), son sol à celui du sas.
             const Entity hangar = scene.CreateEntity("Hangar", station);
@@ -390,12 +391,13 @@ namespace Game {
                                      // Vire vite, pour suivre la souris (30 °/s par défaut, celle d'un transport, paraît mou).
                                      scene.Add<ShipComponent>(entity).turnRate = 90.0f;
                                      scene.Add<HealthComponent>(entity, HealthComponent{.health = 500.0f});
+                                     scene.Add<WarpDriveComponent>(entity);
                                      AddFighter(scene, entity);
                                  }});
         extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Station (maquette)", .name = "Station",
                                  .icon = UI::Icon::Ship, .distance = StationDistance, .level = true, .below = 12.0,
                                  .build = [](Scene& scene, Entity entity) {
-                                     // Immobile : ni moteurs ni chute ; sa gravité tient les personnages sur ses ponts.
+                                     // Immobile : ni moteurs, ni chute, ni warp ; sa gravité tient les personnages sur ses ponts.
                                      ShipComponent& ship = scene.Add<ShipComponent>(entity);
                                      ship.maxSpeed = 0.0f;
                                      ship.acceleration = 0.0f;
@@ -403,7 +405,6 @@ namespace Game {
                                      ship.strafeSpeed = 0.0f;
                                      ship.levelAssist = false;
                                      ship.fallsWithoutPilot = false;
-                                     ship.warpSpeed = 0.0f;
                                      AddStation(scene, entity);
                                  }});
         extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Cible", .name = "Cible", .icon = UI::Icon::Cube,

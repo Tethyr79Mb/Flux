@@ -418,7 +418,7 @@ namespace Flux {
                 probes.push_back({Math::Delta(anchor, scene.GetWorldPosition(entity)), 20.0 + speed, speed});
             }
             for (const auto [entity, ship] : scene.GetRegistry().view<const ShipComponent>().each()) {
-                if (scene.GetParent(entity) != NullEntity || ship.warp == WarpStage::Cruising) {
+                if (scene.GetParent(entity) != NullEntity || ship.passThrough) {
                     continue; // en warp, il ne touche pas le sol : pas d'immenses disques de sol devant lui
                 }
                 const JPH::Shape* shape = GetShipShape(scene, entity);
@@ -722,14 +722,14 @@ namespace Flux {
             for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
                 TransformComponent& transform = scene.Get<TransformComponent>(entity);
                 const bool root = scene.GetParent(entity) == NullEntity;
-                // En warp, il file sans collision (des milliers de km par image : Warp le tient loin des planètes).
-                const JPH::Shape* shape = root && worldGrid && ship.warp != WarpStage::Cruising ? GetShipShape(scene, entity) : nullptr;
+                // En warp, il file sans collision (des milliers de km par image : le warp du jeu le tient loin des planètes).
+                const JPH::Shape* shape = root && worldGrid && !ship.passThrough ? GetShipShape(scene, entity) : nullptr;
                 // Sans forme de collision, rien ne l'arrêterait : il ne tombe pas. Le pilote automatique le tient.
-                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                const bool falls = shape && ship.fallsWithoutPilot && entity != piloted && !ship.autopilot;
                 // Immobile, sans pilote ni chute : rien à tester, il garde son état (posé ou non). Une station ne
                 // cherche plus son sol à chaque image : son enveloppe englobe le hangar, et un chasseur racine garé
                 // dedans lui faisait tester ses 19 000 triangles un par un (26 ms par image et par chasseur).
-                const bool resting = !falls && entity != piloted && ship.autopilot == AutopilotStage::Off;
+                const bool resting = !falls && entity != piloted && !ship.autopilot;
                 if ((!shape || resting) && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }

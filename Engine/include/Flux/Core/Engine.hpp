@@ -14,7 +14,6 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
-#include "Flux/Scene/Warp.hpp"
 #include "Flux/Scene/Weapons.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -234,7 +233,7 @@ namespace Flux {
         // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
         enum class GameStage {
             Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
-            BeforePhysics, // après le vol des vaisseaux, le pilote automatique et le warp : mener des vaisseaux
+            BeforePhysics, // après le vol des vaisseaux : pilote automatique, warp, IA (mener des vaisseaux)
             AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Hud,         // indications à l'écran, après la scène et les infos de vol (jeu en cours, joueur présent)
             Reset,       // scène chargée ou jeu arrêté : oublier ce qui tenait à l'ancienne scène (deltaSeconds = 0)
@@ -259,12 +258,12 @@ namespace Flux {
         // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
         // elle est alors prise (les sièges ne la voient plus).
         bool ConsumeInteraction();
-        // Objectif du jeu (une mission) proposé comme destination du warp, sous ce nom ; nullopt le retire. Effacé
-        // avec la scène.
-        void SetWarpObjective(std::string name, std::optional<Math::WorldPosition> position);
-        // Lignes du jeu (armes actives, missiles...) ajoutées sous les infos de vol du vaisseau piloté ; vide : aucune.
-        // Gardées jusqu'au prochain appel, effacées avec la scène.
-        void SetFlightInfoExtra(std::string_view text);
+        // Lignes du jeu (pilote automatique, armes actives, missiles...) ajoutées sous les infos de vol du vaisseau
+        // piloté, une source chacune (source : nom choisi par le système du jeu, dans l'ordre du premier appel) ; vide :
+        // aucune. Gardées jusqu'au prochain appel, effacées avec la scène.
+        void SetFlightInfoExtra(std::string_view source, std::string_view text);
+        // Message bref sous les infos de vol (« Warp coupé »...), effacé après quelques secondes.
+        void ShowFlightMessage(std::string message);
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
@@ -293,8 +292,6 @@ namespace Flux {
         };
         std::vector<GameSystem> m_gameSystems;
         bool m_interactionPending = false; // Interagir enfoncée à cette image, pas encore prise
-        std::string m_warpObjectiveName;
-        std::optional<Math::WorldPosition> m_warpObjective;
         GameState m_gameState = GameState::Running;
         UpdateFunction m_editorUpdate;
         CloseFunction m_closeRequestHandler;
@@ -335,11 +332,6 @@ namespace Flux {
         std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
         std::vector<Impact> m_impacts;
         std::vector<std::string> m_destroyedNames;
-        // Warp (EngineWarp.cpp) : destinations du vaisseau piloté (recalculées à chaque image, mémoire gardée), celle
-        // que vise son nez (-1 : aucune) et le nom de celle vers laquelle il file (vide hors warp).
-        std::vector<Warp::Destination> m_warpDestinations;
-        int m_warpAim = -1;
-        std::string m_warpName;
 
         // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
         void UpdateGameSystems(double deltaSeconds);
@@ -357,11 +349,8 @@ namespace Flux {
         void StartPhysics();
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
         Entity GetFollowedPlayer() const;
-        void UpdateWarp(Entity ship, bool toggle);
-        void DrawWarpInfo(Entity player, Math::Vector2f screen);
-        std::string GetDestinationName(const Warp::Destination& destination) const;
         void RunGameSystems(GameStage stage, double deltaSeconds);
-        // Scène chargée ou jeu arrêté : destinations du warp et objectif oubliés, systèmes du jeu prévenus.
+        // Scène chargée ou jeu arrêté : lignes du jeu effacées, systèmes du jeu prévenus.
         void ResetGameState();
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterface(const ScreenUi::InterfaceRequest& request);
     };

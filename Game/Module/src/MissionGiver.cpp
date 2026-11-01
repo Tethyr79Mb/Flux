@@ -40,7 +40,6 @@ namespace Game::Missions {
             ship.turnRate = 70.0f;
             ship.levelAssist = false;
             ship.fallsWithoutPilot = false;
-            ship.warpSpeed = 0.0f;
             scene.Add<ShipComponent>(drone, ship);
             const Entity hull = scene.CreateEntity("Coque", drone);
             scene.Get<TransformComponent>(hull).scale = {DroneSize, DroneSize, DroneSize};

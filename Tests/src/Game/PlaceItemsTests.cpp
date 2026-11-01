@@ -2,7 +2,9 @@
 // sans connaître leurs composants.
 #include "../Check.hpp"
 
+#include "Docking.hpp"
 #include "MissionGiver.hpp"
+#include "Warp.hpp"
 #include "PlaceItems.hpp"
 
 #include "Flux/Core/EditorExtensions.hpp"
@@ -43,6 +45,7 @@ bool RunPlaceItemsTests() {
         CHECK(Build(extensions, "Chasseur", scene, fighter));
         CHECK(scene.Get<ShipComponent>(fighter).turnRate == 90.0f);
         CHECK(scene.Get<HealthComponent>(fighter).health == 500.0f);
+        CHECK(scene.TryGet<Game::WarpDriveComponent>(fighter) != nullptr);
         CHECK(Count<HardpointComponent>(scene) > 0 && Count<WeaponComponent>(scene) == Count<HardpointComponent>(scene));
         CHECK(Count<SeatComponent>(scene) == 1);
     }
@@ -51,8 +54,8 @@ bool RunPlaceItemsTests() {
         Scene scene;
         Entity station = NullEntity;
         CHECK(Build(extensions, "Station (maquette)", scene, station));
-        CHECK(!scene.Get<ShipComponent>(station).fallsWithoutPilot && scene.Get<ShipComponent>(station).warpSpeed == 0.0f);
-        CHECK(Count<DockComponent>(scene) == 4);
+        CHECK(!scene.Get<ShipComponent>(station).fallsWithoutPilot && !scene.TryGet<Game::WarpDriveComponent>(station));
+        CHECK(Count<Game::DockComponent>(scene) == 4);
         CHECK(Count<Game::MissionGiverComponent>(scene) == 1);
         CHECK(extensions.FindPlaceItem("Station (maquette)")->level);
     }
@@ -60,7 +63,7 @@ bool RunPlaceItemsTests() {
         Scene scene;
         Entity station = NullEntity;
         CHECK(Build(extensions, "Station orbitale", scene, station));
-        CHECK(Count<DockComponent>(scene) > 0);
+        CHECK(Count<Game::DockComponent>(scene) > 0);
         CHECK(!extensions.FindPlaceItem("Station orbitale")->dropToGround);
         CHECK(extensions.FindPlaceItem("Station orbitale")->category == "Espace");
     }
