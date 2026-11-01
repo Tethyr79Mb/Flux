@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Core/EditorExtensions.hpp"
 #include "Flux/Core/Project.hpp"
 #include "Flux/Export.hpp"
 #include "Flux/Graphics/Camera.hpp"
@@ -112,6 +113,8 @@ namespace Flux {
         // Types de composants sauvegardés et affichés dans l'inspecteur : ceux du moteur, puis ceux du jeu
         // (à enregistrer dans FluxRegisterGame, avant de charger une scène qui les utilise).
         ComponentRegistry& GetComponents() { return m_components; }
+        // Ce que le jeu ajoute à l'éditeur (objets du panneau Placer) : l'éditeur ne connaît pas les composants du jeu.
+        EditorExtensions& GetEditorExtensions() { return m_editorExtensions; }
 
         // Projet ouvert (nullptr sans projet) : dossier des assets, scène de démarrage.
         void SetProject(Project project);
@@ -277,6 +280,7 @@ namespace Flux {
         std::unique_ptr<Renderer> m_renderer;
         std::unique_ptr<UI::Context> m_ui;
         ComponentRegistry m_components;
+        EditorExtensions m_editorExtensions;
         std::optional<Project> m_project;
         SceneSerializer::PrefabReader m_prefabReader;
         Scene m_scene;
