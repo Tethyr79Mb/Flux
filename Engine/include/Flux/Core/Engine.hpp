@@ -205,6 +205,10 @@ namespace Flux {
         // avec ce que la partie y avait changé (vaisseaux, joueur ; voir SceneMerge). Effacée par DeleteQuickSave (F7).
         bool ResumeQuickSave();
         void DeleteQuickSave();
+        // Mode Jouer de l'éditeur, après SetGameState : fichier de la scène éditée et son texte au lancement (format
+        // d'un fichier de scène). Une sauvegarde rapide faite pendant ce jeu, reprise plus tard par le jeu, prend alors
+        // les modifications faites depuis dans l'éditeur. Chemin vide (scène jamais enregistrée) : pas de fusion.
+        void SetPlayedScene(std::filesystem::path path, std::string text);
 
         // Monde physique du jeu en cours, préparé au lancement du jeu et à chaque changement de scène ; nullptr à
         // l'arrêt. Tous partagent le contexte physique du moteur, créé avec lui. Voir PhysicsWorld, PhysicsContext.

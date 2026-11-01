@@ -43,7 +43,7 @@ namespace Flux {
         static std::filesystem::path GetBaseSceneFile();
 
         // Fichier de la scène chargée (Engine::LoadScene) : son texte est gardé tel qu'au chargement, pour la fusion
-        // si l'éditeur la modifie ensuite. Vide : scène sans fichier (mode Jouer de l'éditeur), pas de fusion.
+        // si l'éditeur la modifie ensuite. Vide : scène jamais enregistrée, pas de fusion.
         void SetScene(std::filesystem::path path, std::string text);
         void SetScene(const std::filesystem::path& path);
         // Scène d'où partait la partie sauvegardée, si la sauvegarde le dit et que sa copie est lisible : son fichier,

@@ -3,7 +3,7 @@
 #include "Flux/Math/Matrix4.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Scene/Weapons.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <expected>

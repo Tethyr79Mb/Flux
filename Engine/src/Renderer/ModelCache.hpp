@@ -5,7 +5,7 @@
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
 #include "Renderer/ModelLoader.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 #include "Renderer/RangeAllocator.hpp"
 
 #include <chrono>

@@ -5,7 +5,7 @@
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Planetology/AtmosphereGpu.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <chrono>

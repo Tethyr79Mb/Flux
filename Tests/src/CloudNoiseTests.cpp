@@ -5,7 +5,7 @@
 #include "Check.hpp"
 
 #include "Planetology/CloudNoise.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cmath>

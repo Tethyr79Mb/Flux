@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Flux/Math/Matrix4.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cstdint>

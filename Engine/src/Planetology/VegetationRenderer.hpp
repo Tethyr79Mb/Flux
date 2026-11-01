@@ -9,7 +9,7 @@
 #include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationLibrary.hpp"
 #include "Renderer/ModelCache.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cstdint>

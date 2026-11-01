@@ -6,7 +6,7 @@
 #include "Flux/Scene/Components.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Planetology/VegetationLibrary.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
 #include <array>

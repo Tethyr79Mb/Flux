@@ -611,7 +611,7 @@ namespace Flux {
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceBindings->ClearActions();
             m_interfacePaused = m_interfacePausedNow = false;
-            m_quickSave->SetScene({}, {}); // la scène éditée reprend, sans fichier (pas de fusion pour F8)
+            m_quickSave->SetScene({}, {}); // la scène éditée reprend (SetPlayedScene au prochain lancement)
         }
     }
 
@@ -648,6 +648,13 @@ namespace Flux {
         }
         m_quickSave->RequestLoad(true); // à la fin de la première image, comme F9
         return true;
+    }
+
+    void Engine::SetPlayedScene(std::filesystem::path path, std::string text) {
+        if (path.empty()) {
+            text.clear();
+        }
+        m_quickSave->SetScene(std::move(path), std::move(text));
     }
 
     void Engine::DeleteQuickSave() {
@@ -701,9 +708,17 @@ namespace Flux {
         m_audio->StopAll();
         m_playerCamera->Snap();
         m_quickSave->Restore(*this, m_physics ? m_physics->GetPlayer() : NullEntity);
-        m_flightHud->ShowNotice(merges ? "Partie reprise dans la scène modifiée (F7 : effacer la sauvegarde)"
+        // Sauvegarde sans sa scène de départ (faite avant la fusion, ou dans une scène jamais enregistrée) : les
+        // modifications de l'éditeur ne peuvent pas y entrer ; le dire, sinon elles semblent ignorées.
+        m_flightHud->ShowNotice(merges    ? "Partie reprise dans la scène modifiée (F7 : effacer la sauvegarde)"
+                                : !source ? "Partie reprise telle que sauvegardée, sans les modifications de l'éditeur "
+                                            "(F7 : effacer la sauvegarde)"
                                 : resumes ? "Partie reprise (F7 : effacer la sauvegarde)"
                                           : "Partie chargée");
+        if (!source) {
+            Log::Warning("sauvegarde rapide sans scène de départ : les modifications faites dans l'éditeur n'y sont pas "
+                         "reprises (F7 l'efface)");
+        }
     }
 
     std::expected<void, std::string> Engine::LoadMergedQuickSave(const std::filesystem::path& scenePath) {

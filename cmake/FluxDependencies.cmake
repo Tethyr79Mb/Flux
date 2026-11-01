@@ -214,7 +214,7 @@ set_target_properties(volk vk-bootstrap PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # et les quatre en-têtes C de son API. Compiler le SDK nous-mêmes demanderait son compilateur de shaders, des Go de
 # sources et un long temps de compilation, pour la même DLL. Téléchargés une fois dans le dossier des dépendances
 # (empreintes vérifiées : un fichier déjà là et intact n'est pas retéléchargé) ; la DLL est copiée à côté des exe et
-# chargée au démarrage (Renderer/Vulkan/VulkanUpscaler.cpp). Sans elle, le jeu tourne en Natif.
+# chargée au démarrage (Renderer/RHI/Vulkan/VulkanUpscaler.cpp). Sans elle, le jeu tourne en Natif.
 set(FLUX_FIDELITYFX_DIR ${FETCHCONTENT_BASE_DIR}/fidelityfx-1.1.4)
 set(FLUX_FIDELITYFX_URL https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/v1.1.4)
 set(FLUX_FIDELITYFX_FILES
