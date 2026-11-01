@@ -878,12 +878,11 @@ namespace Flux {
         const Planetology::Terrain* known = m_planets->FindTerrain(transform.entity);
         const bool trees = vegetation && !m_vegetationComponent && known;
         // Hors du champ, les tuiles qui portent une ombre dans une carte : une montagne derrière la caméra, soleil dans le
-        // dos, assombrit la vallée devant elle. Celles du relief à chaque image, même gardée : visitées une image sur
-        // trente, leurs nœuds étaient oubliés entre-temps et les tuiles recalculées sans fin. Pas plus fines que deux
-        // texels de leur carte.
+        // dos, assombrit la vallée devant elle, seulement aux images où la carte est redessinée (les visiter à chaque
+        // image doublait la préparation du rendu). Pas plus fines que deux texels de leur carte.
         const Planetology::PlanetRenderer::ViewTest castsShadow = [this](const Math::Vector3f& center, float radius) {
             for (std::size_t pass = 2; pass < TilePassCount; ++pass) {
-                if (TileCastsShadow(center, radius, pass, pass < FirstTerrainShadowPass)) {
+                if (TileCastsShadow(center, radius, pass)) {
                     return true;
                 }
             }
@@ -1399,11 +1398,15 @@ namespace Flux {
                 std::uint32_t indexCount = draw.indexCount;
                 if (pass >= FirstTerrainShadowPass) {
                     // Cartes du relief : un texel y couvre souvent plusieurs sommets (21 m dans celle des 40 km), la
-                    // tuile y est dessinée avec un sommet sur 2 ou 4 tant que l'écart reste sous 2 texels. Le rayon
-                    // de la sphère vaut au moins la moitié du côté : côté / 32 <= rayon / 16 (prudent, relief compris).
+                    // tuile y est dessinée avec un sommet sur 2 à 16 tant que l'écart reste sous 2 texels : les tuiles
+                    // fines près de la caméra n'y coûtent presque rien. Le rayon de la sphère vaut au moins la moitié
+                    // du côté : côté / 32 <= rayon / 16 (prudent, relief compris).
                     const float spacing = draw.radius / 16.0f;
                     const float texel = m_terrainCascades[pass - FirstTerrainShadowPass].texelSize;
-                    const std::uint32_t step = spacing * 4.0f <= 2.0f * texel ? 4u : spacing * 2.0f <= 2.0f * texel ? 2u : 1u;
+                    std::uint32_t step = 1;
+                    while (step < Planetology::TileQuads / 2 && spacing * static_cast<float>(2 * step) <= 2.0f * texel) {
+                        step *= 2;
+                    }
                     if (step > 1) {
                         const std::uint32_t quarter = draw.firstIndex / Planetology::TileQuarterIndices;
                         const std::uint32_t count = Planetology::TileQuarterIndexCount(step);

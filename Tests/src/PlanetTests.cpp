@@ -99,8 +99,8 @@ bool RunPlanetTests() {
     constexpr std::uint32_t half = Planetology::TileQuads / 2;
     CHECK(indices.size() == 6 * Planetology::TileQuads * Planetology::TileQuads + 4 * 6 * Planetology::TileQuads);
     CHECK(indices.size() == 4 * Planetology::TileQuarterIndices);
-    // Tuiles allégées (cartes d'ombre du relief) : un sommet sur 2 ou 4, même rangement par quart, indices valides.
-    for (const std::uint32_t step : {2u, 4u}) {
+    // Tuiles allégées (cartes d'ombre du relief) : un sommet sur 2 à 16, même rangement par quart, indices valides.
+    for (const std::uint32_t step : {2u, 4u, 8u, 16u}) {
         const std::vector<std::uint32_t> coarse = Planetology::BuildTileIndices(step);
         CHECK(coarse.size() == 4 * Planetology::TileQuarterIndexCount(step));
         for (const std::uint32_t index : coarse) {

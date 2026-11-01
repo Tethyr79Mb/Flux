@@ -11,7 +11,10 @@ namespace Flux::Planetology {
         // Nœuds gardés par planète au plus, au détail Bas : au-delà, les moins récemment utilisés sont oubliés
         // (environ 70 Ko de sommets par tuile, soit environ 70 Mo de mémoire vidéo). Autant de fois plus que de
         // tuiles en plus aux détails plus fins (carré du facteur de coupe).
-        constexpr std::size_t MaxNodes = 1024;
+        // Les tuiles gardées pour l'ombre du relief (tout autour de la caméra) comptent aussi : à 1024 (4096 en Ultra),
+        // leurs nœuds étaient oubliés à chaque image et leurs tuiles recalculées sans fin. Un nœud tient quelques
+        // dizaines d'octets.
+        constexpr std::size_t MaxNodes = 4096;
         // Les tuiles sont demandées en avance pour là où la caméra sera dans ce temps-là (s) : à pied, quelques mètres,
         // rien ne change ; en vaisseau, des kilomètres, les tuiles sont prêtes quand il arrive. Elles ne sont dessinées
         // qu'à leur distance : le détail à l'écran ne dépend pas de la vitesse (sinon il retombe à l'arrêt).
@@ -74,9 +77,9 @@ namespace Flux::Planetology {
         }
         m_computed[frameIndex].clear();
         if (!m_indices) {
-            // Pleine finesse, puis un sommet sur 2 et sur 4 (cartes d'ombre du relief : GetFirstIndex).
+            // Pleine finesse, puis un sommet sur 2, 4, 8 et 16 (cartes d'ombre du relief : GetFirstIndex).
             std::vector<std::uint32_t> indices;
-            for (const std::uint32_t step : {1u, 2u, 4u}) {
+            for (const std::uint32_t step : TileIndexSteps) {
                 const std::vector<std::uint32_t> part = BuildTileIndices(step);
                 indices.insert(indices.end(), part.begin(), part.end());
             }
