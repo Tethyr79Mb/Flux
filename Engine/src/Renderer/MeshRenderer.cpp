@@ -1228,28 +1228,45 @@ namespace Flux {
     // toutes les m_terrainRefreshFrames images, pour les tuiles arrivées ou affinées entre-temps.
     void MeshRenderer::ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun) {
         const auto fresh = ComputeTerrainShadowCascades(camera, aspect, toSun, m_terrainShadowResolution);
-        m_keepTerrainShadows = false;
+        // Redessin obligé (carte qui ne couvre plus la vue, soleil tourné) ou souhaité (rotation de la caméra, rafraîchi
+        // à intervalle). Les souhaités passent un à la fois, et seulement les images sans redessin obligé : redessiner
+        // les deux cartes la même image coûtait plus d'1 ms d'un coup (3 à 4 ms attendues sur une GTX 1060).
+        std::array<bool, TerrainShadowCascadeCount> must{};
+        std::array<bool, TerrainShadowCascadeCount> want{};
+        std::array<ShadowCascade, TerrainShadowCascadeCount> moved{};
         for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
-            DrawnCascade& drawn = m_drawnTerrain[t];
-            const std::uint64_t phase = m_preparedFrame + t * (m_terrainRefreshFrames / 2);
-            bool keep = drawn.valid && phase % m_terrainRefreshFrames != 0 && drawn.cascade.radius == fresh[t].radius;
-            ShadowCascade moved{};
-            if (keep) {
-                moved = MoveShadowCascade(drawn.cascade, Math::Vector3f(Math::Delta(drawn.eye, camera.position)));
-                const float sunTurn = Math::Length(Math::Cross(drawn.toSun, toSun));
-                // Les obstacles dessinés sont ceux dont l'ombre tombe dans le champ d'alors (élargi d'environ 4°,
-                // ShadowReceivers) : au-delà de 3° de rotation, ceux du nouveau champ peuvent manquer.
-                const bool turned = Math::Dot(drawn.forward, camera.GetForward()) < std::cos(3.0f * std::numbers::pi_v<float> / 180.0f);
-                keep = !turned && Math::Length(moved.center - fresh[t].center) < 0.05f * fresh[t].radius
-                    && sunTurn < 0.25f * fresh[t].texelSize / TerrainShadowCasterDistance;
+            const DrawnCascade& drawn = m_drawnTerrain[t];
+            if (!drawn.valid || drawn.cascade.radius != fresh[t].radius) {
+                must[t] = true;
+                continue;
             }
-            m_drawTerrain[t] = !keep;
-            if (keep) {
-                m_terrainCascades[t] = moved;
-                m_keepTerrainShadows = true;
-            } else {
+            moved[t] = MoveShadowCascade(drawn.cascade, Math::Vector3f(Math::Delta(drawn.eye, camera.position)));
+            const float sunTurn = Math::Length(Math::Cross(drawn.toSun, toSun));
+            must[t] = Math::Length(moved[t].center - fresh[t].center) >= 0.05f * fresh[t].radius
+                   || sunTurn >= 0.25f * fresh[t].texelSize / TerrainShadowCasterDistance;
+            // Les obstacles dessinés sont ceux dont l'ombre tombe dans le champ d'alors (élargi d'environ 4°,
+            // ShadowReceivers) : au-delà de 3° de rotation, ceux du nouveau champ peuvent manquer.
+            const bool turned = Math::Dot(drawn.forward, camera.GetForward()) < std::cos(3.0f * std::numbers::pi_v<float> / 180.0f);
+            const std::uint64_t phase = m_preparedFrame + t * (m_terrainRefreshFrames / 2);
+            want[t] = turned || phase % m_terrainRefreshFrames == 0;
+        }
+        bool busy = std::ranges::any_of(must, [](bool m) { return m; });
+        m_keepTerrainShadows = false;
+        for (std::size_t i = 0; i < TerrainShadowCascadeCount; ++i) {
+            // Priorité alternée d'une image à l'autre : en rotation continue, les deux cartes suivent à tour de rôle.
+            const std::size_t t = (i + m_preparedFrame) % TerrainShadowCascadeCount;
+            bool draw = must[t];
+            if (!draw && want[t] && !busy) {
+                draw = true;
+                busy = true;
+            }
+            m_drawTerrain[t] = draw;
+            if (draw) {
                 m_terrainCascades[t] = fresh[t];
-                drawn = {true, fresh[t], camera.position, toSun, camera.GetForward()};
+                m_drawnTerrain[t] = {true, fresh[t], camera.position, toSun, camera.GetForward()};
+            } else {
+                m_terrainCascades[t] = moved[t];
+                m_keepTerrainShadows = true;
             }
         }
     }
