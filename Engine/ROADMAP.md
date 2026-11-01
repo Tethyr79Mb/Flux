@@ -295,6 +295,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Calcul asynchrone (seconde file) : ligne à part, plus haut (« Chargement et rendu communs »).
 - ✅ Image du Renderer découpée (demande de Bruno, 2026-10-27) : `BeginFrame` (attente du GPU), `Render` (vue, anticrénelage, préparation des renderers, graphe), `EndFrame` (présentation), appelés à la suite après les mises à jour de la scène. Pas de fil de rendu séparé (comme CryEngine) tant que les mesures ne montrent pas le CPU limitant.
+- ⬜ Son, base de la table de mixage de l'éditeur (Bruno, 2026-11-01) : bus de mixage dans `AudioSystem` (chaque
+  « Son » envoyé dans un bus, volumes du joueur par bus dans `Reglages.json`), effets par bus, atténuation entre bus,
+  sons en couches (`.fluxsound`) et musique dynamique. Déjà fourni par miniaudio (graphe de nœuds) : pas de bibliothèque à ajouter.
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).
 - ⬜ Backend DX12.
 
