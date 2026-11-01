@@ -1,6 +1,7 @@
 // Missions : un PNJ de la station (donneur) envoie détruire un groupe d'ennemis, loin devant la station.
 #include "../Check.hpp"
 
+#include "CombatAI.hpp"
 #include "MissionGiver.hpp"
 
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -13,6 +14,7 @@
 #include <string>
 
 using namespace Flux;
+using Game::CombatAIComponent;
 using Game::MissionGiverComponent;
 namespace Missions = Game::Missions;
 
@@ -23,6 +25,7 @@ namespace {
 bool RunMissionTests() {
     ComponentRegistry components;
     RegisterEngineComponents(components);
+    Game::RegisterCombatAI(components);
     Game::RegisterMissionGiver(components);
     CHECK(components.Find("missionGiver") != nullptr); // même nom qu'au temps du moteur : les scènes se relisent
 

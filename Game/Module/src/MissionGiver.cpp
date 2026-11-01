@@ -1,5 +1,7 @@
 #include "MissionGiver.hpp"
 
+#include "CombatAI.hpp"
+
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
 

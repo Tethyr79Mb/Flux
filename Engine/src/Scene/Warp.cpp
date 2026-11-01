@@ -1,7 +1,7 @@
 #include "Flux/Scene/Warp.hpp"
 
 #include "Flux/Scene/Scene.hpp"
-#include "Steering.hpp"
+#include "Flux/Scene/Steering.hpp"
 
 #include <algorithm>
 #include <cmath>

@@ -1,13 +1,29 @@
-#include "Flux/Scene/CombatAI.hpp"
+#include "CombatAI.hpp"
 
-#include "Flux/Scene/Scene.hpp"
-#include "Steering.hpp"
+#include <Flux/Scene/ComponentRegistry.hpp>
+#include <Flux/Scene/Scene.hpp>
+#include <Flux/Scene/Steering.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-namespace Flux::CombatAI {
+namespace Game {
+    void RegisterCombatAI(Flux::ComponentRegistry& registry) {
+        using namespace Flux;
+        registry.Register<CombatAIComponent>("combatAI", "IA de combat")
+            .Field("detectionRange", "Détection (m)", &CombatAIComponent::detectionRange, {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            .Field("preferredRange", "Distance de combat (m)", &CombatAIComponent::preferredRange, {.speed = 5.0, .min = 10.0, .max = 1.0e5, .decimals = 0})
+            .Field("aggression", "Agressivité (0 à 1)", &CombatAIComponent::aggression, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("inaccuracy", "Imprécision (°)", &CombatAIComponent::inaccuracy, {.speed = 0.1, .min = 0.0, .max = 45.0, .decimals = 1})
+            .Field("fleeHealth", "Fuite sous (% de vie)", &CombatAIComponent::fleeHealth, {.speed = 0.5, .min = 0.0, .max = 100.0, .decimals = 0})
+            .Field("patrolRadius", "Rayon de patrouille (m)", &CombatAIComponent::patrolRadius, {.speed = 5.0, .min = 0.0, .max = 1.0e5, .decimals = 0});
+    }
+}
+
+namespace Game::CombatAI {
+    using namespace Flux;
+
     namespace {
         constexpr float BreakTime = 2.5f;       // s à filer de côté avant de revenir à l'attaque
         constexpr float FireAngle = 15.0f;      // ° entre son nez et la cible : il tire

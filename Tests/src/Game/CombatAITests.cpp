@@ -1,11 +1,12 @@
 // IA de combat : un drone de mission patrouille, attaque le vaisseau du joueur qui approche, le touche, rompt quand
 // il passe trop près et fuit presque détruit.
-#include "Check.hpp"
+#include "../Check.hpp"
+
+#include "CombatAI.hpp"
 
 #include "MissionGiver.hpp" // drone de mission (code du jeu)
 
 #include "Flux/Physics/PhysicsWorld.hpp"
-#include "Flux/Scene/CombatAI.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"
 
@@ -14,6 +15,9 @@
 using namespace Flux;
 using Game::MissionGiverComponent;
 namespace Missions = Game::Missions;
+namespace CombatAI = Game::CombatAI;
+using Game::CombatAIComponent;
+using Game::CombatState;
 
 namespace {
     constexpr double Frame = 1.0 / 60.0;
@@ -24,6 +28,8 @@ namespace {
 bool RunCombatAITests() {
     ComponentRegistry components;
     RegisterEngineComponents(components);
+    Game::RegisterCombatAI(components);
+    Game::RegisterMissionGiver(components);
     Scene scene;
 
     // Un drone de mission (donneur sans prefab) à 5 km devant l'origine.

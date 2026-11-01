@@ -32,7 +32,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
   comme `Weapons::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`, avec leur composant et
   leurs briques dans `MissionGiver.cpp`),
-  cible de l'IA de combat (`Combat.cpp`), commandes des armes du joueur (`PlayerWeapons.cpp`). Le jeu ajoute aussi ses
+  IA de combat (`CombatAI.cpp`) et sa cible (`Combat.cpp`), commandes des armes du joueur (`PlayerWeapons.cpp`). Le jeu ajoute aussi ses
   objets au panneau Placer de l'éditeur (`Engine::GetEditorExtensions`, `PlaceItems.cpp` : chasseur armé, cible,
   stations à quais) : l'éditeur ne connaît pas les composants du jeu, ce qui évite qu'il lise une ancienne disposition
   après un rechargement à chaud. Le code du jeu est une bibliothèque statique, `GameLogic` (`Game/Module/src`), liée par

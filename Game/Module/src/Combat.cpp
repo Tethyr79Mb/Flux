@@ -1,7 +1,8 @@
 #include "Combat.hpp"
 
+#include "CombatAI.hpp"
+
 #include <Flux/Core/Engine.hpp>
-#include <Flux/Scene/CombatAI.hpp>
 #include <Flux/Scene/Ships.hpp>
 
 namespace Game {
