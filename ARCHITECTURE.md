@@ -104,6 +104,17 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
 
+Le RHI a un en-tête par interface (`Renderer/RHI/Buffer.hpp`, `Texture.hpp`, `BindGroup.hpp`, `Pipeline.hpp`,
+`CommandList.hpp`, `Upscaler.hpp`, `Device.hpp`) et ses énumérations et petits types valeur dans `RHITypes.hpp`, en
+C++ pur ; `RHI.hpp` les inclut tous. Le backend Vulkan a un fichier par bloc : `VulkanInstance` (instance, validation),
+`VulkanSurface` (surface de la fenêtre), `VulkanAdapter` (choix du GPU et de ses fonctions facultatives),
+`VulkanDevice` (device logique, files, allocateur, `ImmediateSubmit`), `VulkanSwapchain` (images, acquisition,
+présentation), `VulkanFrames` (ressources de chaque image en vol), `VulkanTimestamps` (heures du GPU),
+`VulkanCrashMarkers` (diagnostic de plantage), `VulkanTransfer` (envois) ; puis une classe `Rhi*` par interface
+(`VulkanRhiBuffer`, `VulkanRhiTexture`, `VulkanRhiBindGroup`, `VulkanRhiPipeline`, `VulkanRhiCommandList`,
+`VulkanRhiDevice` : création des ressources, et `VulkanRhiDeviceFrames.cpp` : images et soumissions). Les conversions
+entre types du RHI et de Vulkan sont toutes dans `VulkanTypes`.
+
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
 (tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan), nuages en demi-résolution
 (marche, historique, composition), transparents, masque réactif (en FSR), pyramide de profondeur, anticrénelage ou FSR

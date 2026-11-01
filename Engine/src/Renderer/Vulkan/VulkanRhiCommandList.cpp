@@ -1,102 +1,16 @@
-#include "Renderer/Vulkan/VulkanRHI.hpp"
+#include "Renderer/Vulkan/VulkanRhiCommandList.hpp"
+
+#include "Renderer/Vulkan/VulkanRhiBindGroup.hpp"
+#include "Renderer/Vulkan/VulkanRhiBuffer.hpp"
+#include "Renderer/Vulkan/VulkanRhiPipeline.hpp"
+#include "Renderer/Vulkan/VulkanRhiTexture.hpp"
+#include "Renderer/Vulkan/VulkanTypes.hpp"
 
 #include <algorithm>
 #include <array>
 #include <utility>
 
 namespace Flux::Vk {
-    VkFormat ToVulkan(RHI::Format format) {
-        switch (format) {
-            case RHI::Format::Undefined: return VK_FORMAT_UNDEFINED;
-            case RHI::Format::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
-            case RHI::Format::RGBA8Srgb: return VK_FORMAT_R8G8B8A8_SRGB;
-            case RHI::Format::BGRA8Unorm: return VK_FORMAT_B8G8R8A8_UNORM;
-            case RHI::Format::BGRA8Srgb: return VK_FORMAT_B8G8R8A8_SRGB;
-            case RHI::Format::D32Float: return VK_FORMAT_D32_SFLOAT;
-            case RHI::Format::RG32Float: return VK_FORMAT_R32G32_SFLOAT;
-            case RHI::Format::RGB32Float: return VK_FORMAT_R32G32B32_SFLOAT;
-            case RHI::Format::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
-            case RHI::Format::RGBA16Uint: return VK_FORMAT_R16G16B16A16_UINT;
-            case RHI::Format::RGBA16Float: return VK_FORMAT_R16G16B16A16_SFLOAT;
-            case RHI::Format::RG16Float: return VK_FORMAT_R16G16_SFLOAT;
-            case RHI::Format::R8Unorm: return VK_FORMAT_R8_UNORM;
-            case RHI::Format::BC7Unorm: return VK_FORMAT_BC7_UNORM_BLOCK;
-            case RHI::Format::BC7Srgb: return VK_FORMAT_BC7_SRGB_BLOCK;
-        }
-        return VK_FORMAT_UNDEFINED;
-    }
-
-    RHI::Format FromVulkan(VkFormat format) {
-        switch (format) {
-            case VK_FORMAT_R8G8B8A8_UNORM: return RHI::Format::RGBA8Unorm;
-            case VK_FORMAT_R8G8B8A8_SRGB: return RHI::Format::RGBA8Srgb;
-            case VK_FORMAT_B8G8R8A8_UNORM: return RHI::Format::BGRA8Unorm;
-            case VK_FORMAT_B8G8R8A8_SRGB: return RHI::Format::BGRA8Srgb;
-            case VK_FORMAT_D32_SFLOAT: return RHI::Format::D32Float;
-            default: return RHI::Format::Undefined;
-        }
-    }
-
-    RhiBindGroupLayout::~RhiBindGroupLayout() {
-        vkDestroyDescriptorPool(m_device, m_pool, nullptr); // ses groupes doivent déjà être rendus
-        vkDestroyDescriptorSetLayout(m_device, m_layout, nullptr);
-    }
-
-    void RhiBindGroup::SetTexture(std::uint32_t slot, const RHI::Texture& texture, const RHI::Sampler& sampler) {
-        const VkDescriptorImageInfo imageInfo{static_cast<const RhiSampler&>(sampler).GetHandle(),
-                                              static_cast<const RhiTexture&>(texture).GetImage().GetView(),
-                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = m_set;
-        write.dstBinding = slot;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-    }
-
-    void RhiBindGroup::SetBuffer(std::uint32_t slot, const RHI::Buffer& buffer) {
-        const VkDescriptorBufferInfo bufferInfo{static_cast<const RhiBuffer&>(buffer).GetHandle(), 0, VK_WHOLE_SIZE};
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = m_set;
-        write.dstBinding = slot;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write.pBufferInfo = &bufferInfo;
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-    }
-
-    void RhiBindGroup::SetTableTexture(std::uint32_t slot, std::uint32_t element, const RHI::Texture& texture,
-                                       const RHI::Sampler& sampler) {
-        const VkDescriptorImageInfo imageInfo{static_cast<const RhiSampler&>(sampler).GetHandle(),
-                                              static_cast<const RhiTexture&>(texture).GetImage().GetView(),
-                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = m_set;
-        write.dstBinding = slot;
-        write.dstArrayElement = element;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-    }
-
-    void RhiBindGroup::SetStorageTexture(std::uint32_t slot, const RHI::Texture& texture) {
-        const VkDescriptorImageInfo imageInfo{VK_NULL_HANDLE, static_cast<const RhiTexture&>(texture).GetImage().GetStorageView(),
-                                              VK_IMAGE_LAYOUT_GENERAL};
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = m_set;
-        write.dstBinding = slot;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-    }
-
     namespace {
         // Image de la swapchain seulement : les textures passent par UseTextures.
         void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,

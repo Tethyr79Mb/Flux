@@ -1,7 +1,10 @@
 #pragma once
 
 #include "Renderer/Vulkan/Vulkan.hpp"
+#include "Renderer/Vulkan/VulkanAdapter.hpp"
 #include "Renderer/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/Vulkan/VulkanInstance.hpp"
+#include "Renderer/Vulkan/VulkanSurface.hpp"
 #include "Renderer/Vulkan/VulkanTransfer.hpp"
 
 #include <VkBootstrap.h>
@@ -15,7 +18,8 @@
 #include <vector>
 
 namespace Flux::Vk {
-    // Instance, surface, device, files et allocateur : tout ce qui vit aussi longtemps que le renderer.
+    // Device logique, ses files (graphique, présentation, transfert) et l'allocateur, sur l'instance, la surface et le
+    // GPU choisi (Adapter) qu'il possède : tout ce qui vit aussi longtemps que le renderer.
     class Device {
         public:
         // nativeWindowHandle nul : sans surface ni file de présentation (calculs, tests).
@@ -27,12 +31,13 @@ namespace Flux::Vk {
         Device& operator=(const Device&) = delete;
 
         VkDevice GetHandle() const { return m_device.device; }
-        VkPhysicalDevice GetPhysicalDevice() const { return m_physicalDevice.physical_device; }
+        VkPhysicalDevice GetPhysicalDevice() const { return m_adapter.GetHandle(); }
         const vkb::Device& GetBootstrapDevice() const { return m_device; }
-        VkSurfaceKHR GetSurface() const { return m_surface; }
-        const std::string& GetName() const { return m_physicalDevice.name; }
-        // « 1.3 (GPU : 1.4.303) » : la version que le moteur utilise, puis la plus haute que le pilote accepte.
-        const std::string& GetApiVersion() const { return m_apiVersion; }
+        // VK_NULL_HANDLE sans fenêtre.
+        VkSurfaceKHR GetSurface() const { return m_surface ? m_surface->GetHandle() : VK_NULL_HANDLE; }
+        const Adapter& GetAdapter() const { return m_adapter; }
+        const std::string& GetName() const { return m_adapter.GetName(); }
+        const std::string& GetApiVersion() const { return m_adapter.GetApiVersion(); }
         VmaAllocator GetAllocator() const { return m_allocator; }
 
         VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
@@ -40,18 +45,13 @@ namespace Flux::Vk {
         VkQueue GetPresentQueue() const { return m_presentQueue; }
         // Nanosecondes par tic des heures du GPU ; 0 si la file graphique ne note pas l'heure.
         float GetTimestampPeriod() const;
-        // samplerAnisotropy activé : SamplerDesc::anisotropy permis.
-        bool HasAnisotropy() const { return m_anisotropy; }
-        // VK_EXT_mesh_shader activée (étapes de tâche et de maillage) : sol des planètes en mesh shaders.
-        bool HasMeshShaders() const { return m_meshShaders; }
-        // maxPreferredMeshWorkGroupInvocations (0 sans mesh shaders).
-        std::uint32_t GetMeshPreferredThreads() const { return m_meshPreferredThreads; }
-        // textureCompressionBC activé : formats BC7 (sol des planètes).
-        bool HasTextureCompressionBC() const { return m_textureCompressionBC; }
-        // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
-        bool HasBufferMarkers() const { return m_bufferMarkers; }
-        // VK_EXT_debug_utils activée : repères nommés dans les listes de commandes (sinon ses fonctions sont interdites).
-        bool HasDebugLabels() const { return m_debugLabels; }
+        // Fonctions facultatives du GPU (Adapter) et de l'instance.
+        bool HasAnisotropy() const { return m_adapter.HasAnisotropy(); }
+        bool HasMeshShaders() const { return m_adapter.HasMeshShaders(); }
+        std::uint32_t GetMeshPreferredThreads() const { return m_adapter.GetMeshPreferredThreads(); }
+        bool HasTextureCompressionBC() const { return m_adapter.HasTextureCompressionBC(); }
+        bool HasBufferMarkers() const { return m_adapter.HasBufferMarkers(); }
+        bool HasDebugLabels() const { return m_instance->HasDebugLabels(); }
         // Après la perte du device : la description de la panne par le pilote (VK_EXT_device_fault), vide sans elle.
         std::string DescribeFault() const;
 
@@ -77,10 +77,10 @@ namespace Flux::Vk {
         private:
         Device() = default;
 
-        vkb::Instance m_instance;
-        VkSurfaceKHR m_surface = VK_NULL_HANDLE;
-        vkb::PhysicalDevice m_physicalDevice;
-        std::string m_apiVersion;
+        // Dans cet ordre : détruits après le device (instance en dernier).
+        std::unique_ptr<Instance> m_instance;
+        std::unique_ptr<Surface> m_surface; // nul sans fenêtre
+        Adapter m_adapter;
         vkb::Device m_device;
         VmaAllocator m_allocator = VK_NULL_HANDLE;
 
@@ -91,12 +91,5 @@ namespace Flux::Vk {
         VkCommandPool m_immediatePool = VK_NULL_HANDLE;
         std::unique_ptr<Transfer> m_transfer;
         bool m_deferUploads = false;
-        bool m_anisotropy = false;
-        bool m_meshShaders = false;
-        std::uint32_t m_meshPreferredThreads = 0;
-        bool m_textureCompressionBC = false;
-        bool m_bufferMarkers = false;
-        bool m_deviceFault = false;
-        bool m_debugLabels = false;
     };
 }

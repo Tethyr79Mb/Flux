@@ -35,6 +35,13 @@ namespace Flux::Vk {
         // Un sémaphore par image : il ne peut être réutilisé qu'une fois cette image de nouveau acquise.
         VkSemaphore GetRenderFinishedSemaphore(uint32_t index) const { return m_renderFinished[index]; }
 
+        // Prend une image libre (index), signalée par `available` quand le moteur de présentation l'a rendue.
+        // VK_ERROR_OUT_OF_DATE_KHR : à recréer.
+        VkResult Acquire(VkSemaphore available, uint32_t& index) const;
+        // Présente l'image `index` sur `queue` une fois son dessin fini (GetRenderFinishedSemaphore).
+        // VK_ERROR_OUT_OF_DATE_KHR ou VK_SUBOPTIMAL_KHR : à recréer.
+        VkResult Present(VkQueue queue, uint32_t index) const;
+
         private:
         void DestroyImageResources();
 

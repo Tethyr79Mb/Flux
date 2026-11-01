@@ -70,4 +70,19 @@ namespace Flux::Vk {
         }
         m_images.clear();
     }
+
+    VkResult Swapchain::Acquire(VkSemaphore available, uint32_t& index) const {
+        return vkAcquireNextImageKHR(m_device.GetHandle(), m_swapchain.swapchain, UINT64_MAX, available, VK_NULL_HANDLE, &index);
+    }
+
+    VkResult Swapchain::Present(VkQueue queue, uint32_t index) const {
+        VkPresentInfoKHR info{};
+        info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        info.waitSemaphoreCount = 1;
+        info.pWaitSemaphores = &m_renderFinished[index];
+        info.swapchainCount = 1;
+        info.pSwapchains = &m_swapchain.swapchain;
+        info.pImageIndices = &index;
+        return vkQueuePresentKHR(queue, &info);
+    }
 }
