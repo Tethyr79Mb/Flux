@@ -3,6 +3,7 @@
 #include "../Check.hpp"
 
 #include "Docking.hpp"
+#include "Warp.hpp"
 
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -240,6 +241,40 @@ namespace {
     }
 }
 
+namespace {
+    // Garé dans le hangar (enfant de la station) et sorti en vol sans la touche L : hors de la station, il la quitte
+    // (racine de la scène, même place dans le monde) et peut partir en warp. Avant, il restait à bord jusque dans
+    // l'espace, et le warp le refusait comme s'il était amarré.
+    bool RunLeaveHangarTests() {
+        Scene scene;
+        const Entity station = scene.CreateEntity("Station");
+        scene.Get<TransformComponent>(station).position = {1000.0, 0.0, 0.0};
+        scene.Add<ShipComponent>(station, ShipComponent{.maxSpeed = 0.0f, .fallsWithoutPilot = false});
+        const Entity floor = scene.CreateEntity("Sol", station);
+        scene.Get<TransformComponent>(floor).position = {0.0, -0.5, 0.0};
+        scene.Get<TransformComponent>(floor).scale = {60.0f, 1.0f, 60.0f};
+        scene.Add<ColliderComponent>(floor);
+        const Entity fighter = AddFighter(scene, "Chasseur", {0.0, 5.0, 0.0});
+        scene.Add<WarpDriveComponent>(fighter);
+        scene.SetParent(fighter, station);
+        scene.Get<TransformComponent>(fighter).position = {0.0, 5.0, 0.0};
+        PhysicsWorld world;
+        world.Update(scene, 0.0, {});
+        RunUntil(world, scene, 0.5, [] { return false; });
+        CHECK(scene.GetParent(fighter) == station); // garé : il reste à bord
+
+        const Math::WorldPosition start = scene.GetWorldPosition(fighter);
+        scene.Get<ShipComponent>(fighter).velocity = {0.0f, 0.0f, -60.0f};
+        CHECK(RunUntil(world, scene, 3.0, [&] { return scene.GetParent(fighter) == NullEntity; }));
+        const Math::WorldPosition outside = scene.GetWorldPosition(fighter);
+        CHECK(std::abs(outside.offset.x - start.offset.x) < 0.5 && outside.offset.z < start.offset.z - 40.0); // pas de saut
+        CHECK(scene.Get<ShipComponent>(fighter).velocity.z == -60.0f);
+        CHECK(Warp::Engage(scene, fighter, {NullEntity, {{}, {0.0, 0.0, -1.0e8}}, Warp::StationExit})
+              == Warp::EngageResult::Started);
+        return true;
+    }
+}
+
 bool RunDockingAutopilotTests() {
-    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests() && RunHangarParkingTests();
+    return RunShipObstacleTests() && RunDockingTests() && RunParkedShipTests() && RunHangarParkingTests() && RunLeaveHangarTests();
 }
