@@ -1341,7 +1341,9 @@ namespace Flux {
                               .pending = m_planets->GetPendingTileCount(),
                               .computed = m_planets->GetScheduledTileCount(),
                               .groundLoading = m_groundGroup == nullptr && m_ground.IsLoading(),
-                              .meshThreads = m_planetMesh ? m_planetMeshThreads : 0u};
+                              .meshThreads = m_planetMesh ? m_planetMeshThreads : 0u,
+                              .terrainShadowTiles = m_terrainShadowTiles,
+                              .terrainShadowTriangles = m_terrainShadowTriangles};
         for (const TileDraw& draw : m_tileDraws) {
             stats.drawn += draw.shadowOnly ? 0u : 1u;
             stats.ocean += draw.ocean ? 1u : 0u;
@@ -1364,6 +1366,8 @@ namespace Flux {
         m_tileCommands.clear();
         m_tileBatches.clear();
         m_tilePasses = {};
+        m_terrainShadowTiles = {};
+        m_terrainShadowTriangles = {};
         const RHI::Buffer* indices = m_planets->GetIndices();
         if (m_tileDraws.empty() || !indices) {
             return true;
@@ -1415,6 +1419,8 @@ namespace Flux {
                         firstIndex = Planetology::PlanetRenderer::GetFirstIndex(step) + (whole ? 0u : quarter * count);
                         indexCount = whole ? 4 * count : count;
                     }
+                    ++m_terrainShadowTiles[pass - FirstTerrainShadowPass];
+                    m_terrainShadowTriangles[pass - FirstTerrainShadowPass] += indexCount / 3;
                 }
                 m_tileCommands.push_back({indexCount, 1, firstIndex, static_cast<std::int32_t>(Planetology::PlanetTileCompute::GetFirstVertex(draw.tile)),
                                           firstData + draw.data});

@@ -55,6 +55,9 @@ namespace Flux {
             std::uint32_t computed = 0; // confiées au GPU à cette image
             bool groundLoading = false; // textures du sol en cours de lecture
             std::uint32_t meshThreads = 0; // threads par groupe des mesh shaders du sol (0 : par les sommets)
+            // Dessinés dans chaque carte du relief à cette image (0 : gardée).
+            std::array<std::uint32_t, TerrainShadowCascadeCount> terrainShadowTiles{};
+            std::array<std::uint32_t, TerrainShadowCascadeCount> terrainShadowTriangles{};
         };
         PlanetTileStats GetPlanetTileStats() const;
         Planetology::VegetationRenderer::Stats GetVegetationStats() const { return m_vegetation->GetStats(); }
@@ -480,6 +483,8 @@ namespace Flux {
         // Tuiles de planète demandées depuis le lancement : une carte du relief n'est rafraîchie que s'il en est arrivé
         // depuis son dessin.
         std::uint64_t m_computedTiles = 0;
+        std::array<std::uint32_t, TerrainShadowCascadeCount> m_terrainShadowTiles{};     // PlanetTileStats
+        std::array<std::uint32_t, TerrainShadowCascadeCount> m_terrainShadowTriangles{};
 
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une image à l'autre.
         std::vector<RelativeTransform> m_relativeTransforms;
