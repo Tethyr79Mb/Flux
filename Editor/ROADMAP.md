@@ -81,17 +81,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Glisser un prefab du Contenu dans la vue.
 - ⬜ Remplacer les vaisseaux codés en dur dans « Placer » par des prefabs.
 
-### Son (demande de Bruno, 2026-11-01)
-- ⬜ Table de mixage : panneau « Mixage » avec une tranche par bus du moteur (Général, Effets, Musique, Voix,
-  Interface…) : volume, muet, solo, vumètre, effets du bus (filtre, écho), atténuation d'un bus quand un autre joue
-  (la musique baisse sous les voix). Réglages enregistrés dans le projet, entendus en direct en mode Jouer.
-- ⬜ Création de sons (sound design, pas un logiciel de musique complet) : fichier `.fluxsound` qui assemble des sons
-  existants en couches (début / boucle / fin d'un réacteur, variantes tirées au hasard, hauteur et volume variés à
-  chaque tir), enveloppes et filtres, paramètres pilotés par le jeu (poussée du réacteur → hauteur et volume) ;
-  générateur de bruitages (oscillateurs, bruit, enveloppe) pour les tirs, alarmes et bips de l'interface.
-- ⬜ (Optionnel) Musique du jeu : composée dans un logiciel externe (Reaper, LMMS…), l'éditeur ne règle que la
-  musique dynamique (pistes superposées qui montent selon le combat ou l'exploration, enchaînements calés sur la
-  mesure). Un séquenceur de composition dans l'éditeur n'est pas prévu : trop gros pour ce qu'il apporterait.
+### Son (Bruno, 2026-11-01)
+- ⬜ Table de mixage : bus (Général, Effets, Musique, Voix, Interface), volume, muet, solo, effets ; la musique baisse sous les voix.
+- ⬜ Création de sons (`.fluxsound`) : couches, variantes au hasard, réglages pilotés par le jeu, générateur de bruitages.
+- ⬜ (Optionnel) Musique dynamique ; composition dans un logiciel externe (Reaper, LMMS).
 
 ## Plus tard
 - ⬜ Mise à l'échelle DPI (écrans 125 %, 150 %).
