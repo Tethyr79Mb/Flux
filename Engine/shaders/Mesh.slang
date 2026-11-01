@@ -634,8 +634,8 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
 
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
 // le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
-// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km.
-float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
+// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km. objectShadows faux (verres) : le relief seul.
+float SunVisibility(float3 worldPosition, float3 normal, float sunFacing, bool objectShadows = true)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
@@ -644,7 +644,7 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
         ++cascade;
     }
     const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
-    if (cascade >= 4) {
+    if (cascade >= 4 || !objectShadows) {
         return terrain;
     }
     float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
@@ -824,8 +824,10 @@ float3 Radiance(float3 color)
 static const float GroundBounceAlbedo = 0.2;
 
 // foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
+// objectShadows faux pour les transparents : un verre laisse passer la lumière, l'ombre d'un objet proche (la tête du
+// pilote sur la verrière) y dessinait une silhouette sombre ; il garde l'ombre du relief.
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
-                    bool foliage = false, float2 leaves = float2(0.0))
+                    bool foliage = false, float2 leaves = float2(0.0), bool objectShadows = true)
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
@@ -835,7 +837,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         geometryNormal = -geometryNormal; // décalage de la lecture vers le soleil, comme pour la face éclairée
         sunFacing = -sunFacing;
     }
-    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
+    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing, objectShadows) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
@@ -1663,7 +1665,8 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
-                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw,
+                             params.transparent == 0);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
