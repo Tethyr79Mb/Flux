@@ -298,7 +298,7 @@ namespace Flux {
         const std::array staticShadow{position, uv};
         const std::array skinnedAttributes{position, normal, uv, joints, weights};
         const std::array skinnedShadow{position, uv, joints, weights};
-        const std::array planetAttributes{position, normal, morphOffset, morphNormal}; // uv : seulement pour l'ombre
+        const std::array planetAttributes{position, normal, uv, morphOffset, morphNormal}; // uv : zones du relief (biomes)
         const std::array planetShadow{position, uv, morphOffset};
         const std::array oceanAttributes{position, morphOffset}; // l'eau fait sa normale et sa profondeur elle-même
         const std::array<const RHI::BindGroupLayout*, 3> layouts{&m_models->GetGroundLayout(), m_frameLayout.get(),
@@ -316,6 +316,9 @@ namespace Flux {
             bool motion = true; // le fragment écrit le mouvement propre (SV_Target1)
             // Modèles : variantes double face et à seuil d'alpha (le sol et l'eau des planètes n'en ont pas).
             bool materials = false;
+            // Variantes transparentes (Pipelines::transparent, transparentBack) : ni les arbres ni le sol n'en dessinent,
+            // et fragmentMain ne lit pas tout ce que sortent leurs programmes de sommets.
+            bool transparent = true;
             // Programme de pixel presque vide pour la mesure (Pipelines::geometryOnly), ou aucun.
             const char* geometryFragment = nullptr;
             // Seuil d'alpha avec pré-passe de profondeur (Pipelines::depthMasked, ce programme de sommets) : les
@@ -400,7 +403,8 @@ namespace Flux {
                 desc.fragmentEntryPoint = kind.fragment;
             }
             if (!kind.materials) {
-                return createMain(pipelines.transparent, RHI::CullMode::Back, true);
+                return kind.transparent ? createMain(pipelines.transparent, RHI::CullMode::Back, true)
+                                        : std::expected<void, std::string>{};
             }
             if (auto result = createMain(pipelines.opaqueDoubleSided, RHI::CullMode::None, false); !result) {
                 return result;
@@ -458,6 +462,9 @@ namespace Flux {
             if (auto result = createMasked(pipelines.maskedDoubleSided, RHI::CullMode::None); !result) {
                 return result;
             }
+            if (!kind.transparent) {
+                return {};
+            }
             desc.fragmentEntryPoint = "fragmentMain";
             if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true); !result) {
                 return result;
@@ -475,12 +482,12 @@ namespace Flux {
             return result;
         }
         if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
-                                             "fragmentTreeOpaque", "fragmentTree", true, true, nullptr, "vertexTreeDepth"});
+                                             "fragmentTreeOpaque", "fragmentTree", true, true, false, nullptr, "vertexTreeDepth"});
             !result) {
             return result;
         }
         if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
-                                               "fragmentPlanet", "fragmentMain", true, false, "fragmentPlanetGeometry"});
+                                               "fragmentPlanet", "fragmentMain", true, false, false, "fragmentPlanetGeometry"});
             !result) {
             return result;
         }
