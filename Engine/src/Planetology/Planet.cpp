@@ -830,17 +830,17 @@ namespace Flux::Planetology {
         return {static_cast<std::uint8_t>(face), static_cast<std::uint8_t>(level), cell(s), cell(t)};
     }
 
-    std::vector<std::uint32_t> BuildTileIndices() {
+    std::vector<std::uint32_t> BuildTileIndices(std::uint32_t step) {
         // Rangés par quart (ceux de l'enfant 0, puis 1, 2, 3) : un quart se dessine seul (PlanetRenderer::VisitNode).
         constexpr std::uint32_t Half = TileQuads / 2;
         const auto quarter = [](double i, double j) { return (i < Half ? 0u : 1u) + (j < Half ? 0u : 2u); };
         std::array<std::vector<std::uint32_t>, 4> quarters;
-        for (std::uint32_t j = 0; j < TileQuads; ++j) {
-            for (std::uint32_t i = 0; i < TileQuads; ++i) {
+        for (std::uint32_t j = 0; j < TileQuads; j += step) {
+            for (std::uint32_t i = 0; i < TileQuads; i += step) {
                 const std::uint32_t a = j * TileSide + i;
-                const std::uint32_t b = a + 1;
-                const std::uint32_t c = a + TileSide + 1;
-                const std::uint32_t d = a + TileSide;
+                const std::uint32_t b = a + step;
+                const std::uint32_t c = a + step * TileSide + step;
+                const std::uint32_t d = a + step * TileSide;
                 quarters[quarter(i, j)].insert(quarters[quarter(i, j)].end(), {a, b, c, a, c, d});
             }
         }
@@ -855,11 +855,11 @@ namespace Flux::Planetology {
         };
         for (std::uint32_t edge = 0; edge < 4; ++edge) {
             const std::uint32_t first = TileSide * TileSide + edge * TileSide;
-            for (std::uint32_t k = 0; k < TileQuads; ++k) {
+            for (std::uint32_t k = 0; k < TileQuads; k += step) {
                 const std::uint32_t top0 = border(edge, k);
-                const std::uint32_t top1 = border(edge, k + 1);
+                const std::uint32_t top1 = border(edge, k + step);
                 const std::uint32_t low0 = first + k;
-                const std::uint32_t low1 = first + k + 1;
+                const std::uint32_t low1 = first + k + step;
                 // Au quart qui contient le milieu de ce bout de bord.
                 std::vector<std::uint32_t>& to = quarters[quarter(0.5 * (top0 % TileSide + top1 % TileSide),
                                                                   0.5 * (top0 / TileSide + top1 / TileSide))];
@@ -868,7 +868,7 @@ namespace Flux::Planetology {
             }
         }
         std::vector<std::uint32_t> indices;
-        indices.reserve(4 * TileQuarterIndices);
+        indices.reserve(4 * TileQuarterIndexCount(step));
         for (const std::vector<std::uint32_t>& part : quarters) {
             indices.insert(indices.end(), part.begin(), part.end());
         }

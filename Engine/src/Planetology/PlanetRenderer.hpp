@@ -123,6 +123,11 @@ namespace Flux::Planetology {
         // Pages de sommets des tuiles, et leurs indices (communs à toutes) ; nullptr avant la première image.
         const PlanetTileCompute& GetTiles() const { return *m_compute; }
         const RHI::Buffer* GetIndices() const { return m_indices.get(); }
+        // Premier indice des tuiles allégées d'un sommet sur `step` (1, 2 ou 4) dans GetIndices : elles suivent celles
+        // à pleine finesse, rangées de même par quart (TileQuarterIndexCount(step) chacun).
+        static constexpr std::uint32_t GetFirstIndex(std::uint32_t step) {
+            return step <= 1 ? 0u : step == 2 ? 4u * TileQuarterIndexCount(1) : 4u * (TileQuarterIndexCount(1) + TileQuarterIndexCount(2));
+        }
         // Cases occupées par une tuile (gardée pour plus tard ou dessinée), pour le panneau Moteur.
         std::uint32_t GetStoredTileCount() const {
             return m_compute->GetTileCount() - static_cast<std::uint32_t>(m_freeTiles.size());

@@ -74,7 +74,12 @@ namespace Flux::Planetology {
         }
         m_computed[frameIndex].clear();
         if (!m_indices) {
-            const std::vector<std::uint32_t> indices = BuildTileIndices();
+            // Pleine finesse, puis un sommet sur 2 et sur 4 (cartes d'ombre du relief : GetFirstIndex).
+            std::vector<std::uint32_t> indices;
+            for (const std::uint32_t step : {1u, 2u, 4u}) {
+                const std::vector<std::uint32_t> part = BuildTileIndices(step);
+                indices.insert(indices.end(), part.begin(), part.end());
+            }
             auto buffer = m_device.CreateBuffer({indices.size() * sizeof(std::uint32_t), RHI::BufferUsage::Index}, indices.data());
             if (!buffer) {
                 Log::Error("Planète : {}", buffer.error());

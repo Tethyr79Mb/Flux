@@ -212,7 +212,12 @@ namespace Flux::Planetology {
     FLUX_API TileKey FindTile(const Math::Vector3d& direction, std::uint32_t level);
     // Indices communs à toutes les tuiles, dans le sens trigonométrique vu de dehors, rangés par quart de tuile : ceux de
     // l'enfant 0 (sa part de la grille, puis de ses jupes), puis de l'enfant 1, 2, 3 (TileKey::Child). Chaque quart en
-    // compte TileQuarterIndices.
-    constexpr std::uint32_t TileQuarterIndices = 6 * (TileQuads / 2) * (TileQuads / 2) + 2 * 6 * (TileQuads / 2);
-    FLUX_API std::vector<std::uint32_t> BuildTileIndices();
+    // compte TileQuarterIndices. Avec `step` (diviseur de TileQuads / 2), un sommet sur `step` dans chaque sens : la
+    // même tuile en step² fois moins de triangles, pour les cartes d'ombre du relief où un texel couvre plusieurs
+    // sommets.
+    constexpr std::uint32_t TileQuarterIndexCount(std::uint32_t step) {
+        return 6 * (TileQuads / 2 / step) * (TileQuads / 2 / step) + 2 * 6 * (TileQuads / 2 / step);
+    }
+    constexpr std::uint32_t TileQuarterIndices = TileQuarterIndexCount(1);
+    FLUX_API std::vector<std::uint32_t> BuildTileIndices(std::uint32_t step = 1);
 }

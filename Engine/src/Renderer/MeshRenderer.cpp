@@ -1217,19 +1217,18 @@ namespace Flux {
                 m_cascades[c] = MoveShadowCascade(drawn.cascade, Math::Vector3f(moved));
                 m_keepShadows = true;
             } else {
-                drawn = {true, m_cascades[c], camera.position, toSun, camera.GetForward()};
+                drawn = {true, m_cascades[c], camera.position, toSun};
             }
         }
     }
 
     // Le relief au loin change peu d'une image à l'autre : sa carte est gardée (recalée sur la caméra) tant que la
-    // caméra reste dans la marge du carré dessiné (ComputeTerrainShadowCascades : 10 %), a tourné de moins de 3° et que
-    // le soleil n'a pas tourné de plus d'un quart de texel au bout des obstacles. Les deux cascades sont refaites à tour de rôle
+    // caméra reste dans la marge du carré dessiné (ComputeTerrainShadowCascades : 10 %) et que le soleil n'a pas tourné de plus d'un quart de texel au bout des obstacles. Les deux cascades sont refaites à tour de rôle
     // toutes les m_terrainRefreshFrames images, pour les tuiles arrivées ou affinées entre-temps.
     void MeshRenderer::ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun) {
         const auto fresh = ComputeTerrainShadowCascades(camera, aspect, toSun, m_terrainShadowResolution);
-        // Redessin obligé (carte qui ne couvre plus la vue, soleil tourné) ou souhaité (rotation de la caméra, rafraîchi
-        // à intervalle). Les souhaités passent un à la fois, et seulement les images sans redessin obligé : redessiner
+        // Redessin obligé (carte qui ne couvre plus la vue, soleil tourné) ou souhaité (rafraîchi à intervalle, pour les
+        // tuiles arrivées ou affinées). Tourner la caméra ne demande rien : la carte ne dépend pas du regard. Les souhaités passent un à la fois, et seulement les images sans redessin obligé : redessiner
         // les deux cartes la même image coûtait plus d'1 ms d'un coup (3 à 4 ms attendues sur une GTX 1060).
         std::array<bool, TerrainShadowCascadeCount> must{};
         std::array<bool, TerrainShadowCascadeCount> want{};
@@ -1244,11 +1243,8 @@ namespace Flux {
             const float sunTurn = Math::Length(Math::Cross(drawn.toSun, toSun));
             must[t] = Math::Length(moved[t].center - fresh[t].center) >= 0.05f * fresh[t].radius
                    || sunTurn >= 0.25f * fresh[t].texelSize / TerrainShadowCasterDistance;
-            // Les obstacles dessinés sont ceux dont l'ombre tombe dans le champ d'alors (élargi d'environ 4°,
-            // ShadowReceivers) : au-delà de 3° de rotation, ceux du nouveau champ peuvent manquer.
-            const bool turned = Math::Dot(drawn.forward, camera.GetForward()) < std::cos(3.0f * std::numbers::pi_v<float> / 180.0f);
             const std::uint64_t phase = m_preparedFrame + t * (m_terrainRefreshFrames / 2);
-            want[t] = turned || phase % m_terrainRefreshFrames == 0;
+            want[t] = phase % m_terrainRefreshFrames == 0;
         }
         bool busy = std::ranges::any_of(must, [](bool m) { return m; });
         m_keepTerrainShadows = false;
@@ -1263,7 +1259,7 @@ namespace Flux {
             m_drawTerrain[t] = draw;
             if (draw) {
                 m_terrainCascades[t] = fresh[t];
-                m_drawnTerrain[t] = {true, fresh[t], camera.position, toSun, camera.GetForward()};
+                m_drawnTerrain[t] = {true, fresh[t], camera.position, toSun};
             } else {
                 m_terrainCascades[t] = moved[t];
                 m_keepTerrainShadows = true;
@@ -1308,10 +1304,16 @@ namespace Flux {
                 && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, c);
         }
         const std::size_t t = pass - FirstTerrainShadowPass;
-        return m_drawTerrain[t] && InShadowVolume(m_terrainCascades[t], center, radius)
-            // Depuis la caméra : la tranche est choisie par la distance (SunVisibility), un point à 3,5 km sur le bord
-            // du champ n'est qu'à 2,3 km devant la caméra.
-            && m_shadowReceivers.ReachesRange(center, radius, TerrainShadowCasterDistance, 0.0f, TerrainShadowCascadeEnds[t]);
+        if (!m_drawTerrain[t] || !InShadowVolume(m_terrainCascades[t], center, radius)) {
+            return false;
+        }
+        // Sans regarder le champ : l'ombre (segment de la tuile jusqu'à TerrainShadowCasterDistance à l'opposé du
+        // soleil) passe dans la sphère que couvre la carte autour de la caméra. La carte ne dépend pas du regard et
+        // n'est pas redessinée quand la caméra tourne.
+        const Math::Vector3f away = m_shadowReceivers.GetToSun() * -1.0f;
+        const float along = std::clamp(-Math::Dot(center, away), 0.0f, TerrainShadowCasterDistance);
+        const float reach = m_terrainCascades[t].radius + radius;
+        return Math::Dot(center + away * along, center + away * along) <= reach * reach;
     }
 
     const MeshRenderer::ClusterDraw* MeshRenderer::FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const {
@@ -1387,7 +1389,24 @@ namespace Flux {
                     m_tileBatches.push_back({page, static_cast<std::uint32_t>(m_tileCommands.size()), 0});
                 }
                 ++m_tileBatches.back().count;
-                m_tileCommands.push_back({draw.indexCount, 1, draw.firstIndex, static_cast<std::int32_t>(Planetology::PlanetTileCompute::GetFirstVertex(draw.tile)),
+                std::uint32_t firstIndex = draw.firstIndex;
+                std::uint32_t indexCount = draw.indexCount;
+                if (pass >= FirstTerrainShadowPass) {
+                    // Cartes du relief : un texel y couvre souvent plusieurs sommets (21 m dans celle des 40 km), la
+                    // tuile y est dessinée avec un sommet sur 2 ou 4 tant que l'écart reste sous 2 texels. Le rayon
+                    // de la sphère vaut au moins la moitié du côté : côté / 32 <= rayon / 16 (prudent, relief compris).
+                    const float spacing = draw.radius / 16.0f;
+                    const float texel = m_terrainCascades[pass - FirstTerrainShadowPass].texelSize;
+                    const std::uint32_t step = spacing * 4.0f <= 2.0f * texel ? 4u : spacing * 2.0f <= 2.0f * texel ? 2u : 1u;
+                    if (step > 1) {
+                        const std::uint32_t quarter = draw.firstIndex / Planetology::TileQuarterIndices;
+                        const std::uint32_t count = Planetology::TileQuarterIndexCount(step);
+                        const bool whole = draw.indexCount == 4 * Planetology::TileQuarterIndices;
+                        firstIndex = Planetology::PlanetRenderer::GetFirstIndex(step) + (whole ? 0u : quarter * count);
+                        indexCount = whole ? 4 * count : count;
+                    }
+                }
+                m_tileCommands.push_back({indexCount, 1, firstIndex, static_cast<std::int32_t>(Planetology::PlanetTileCompute::GetFirstVertex(draw.tile)),
                                           firstData + draw.data});
             }
         }
