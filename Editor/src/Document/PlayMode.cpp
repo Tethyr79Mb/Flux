@@ -14,13 +14,13 @@
 namespace FluxEditor {
     using namespace Flux;
 
-    void PlayMode::DrawToolbar(UI::Context& ui, Engine& engine) {
+    void PlayMode::DrawToolbar(UI::Context& ui, Engine& engine, const std::filesystem::path& scenePath) {
         // Au milieu de la barre d'outils : Jouer (ou Arrêter pendant le jeu) et Pause, en pictogrammes seuls ; leur nom
         // et leur raccourci sont dans l'info-bulle.
         const float width = 2.0f * ui.GetBarItemHeight() + 2.0f; // deux boutons carrés, 2 pixels entre eux
         ui.SetMenuBarCursor(std::round((static_cast<float>(engine.GetWindow().GetSize().x) - width) * 0.5f));
         if (ui.MenuBarButton("##jouer", m_playing, m_playing ? UI::Icon::Stop : UI::Icon::Play)) {
-            m_playing ? Stop(engine) : Start(engine);
+            m_playing ? Stop(engine) : Start(engine, scenePath);
         }
         ui.SetItemTooltip(m_playing ? "Arrêter le jeu (F5)" : "Jouer la scène (F5)");
         if (ui.MenuBarButton("##pause", engine.GetGameState() == GameState::Paused, UI::Icon::Pause) && m_playing) {
@@ -29,19 +29,19 @@ namespace FluxEditor {
         ui.SetItemTooltip(m_playing ? "Pause (F6)" : "Pause (F6), pendant le jeu");
     }
 
-    void PlayMode::HandleShortcuts(Engine& engine) {
+    void PlayMode::HandleShortcuts(Engine& engine, const std::filesystem::path& scenePath) {
         const Input& input = engine.GetWindow().GetInput();
         if (engine.GetUi().WantsKeyboard()) {
             return;
         }
         if (input.WasKeyPressed(Key::F5)) {
-            m_playing ? Stop(engine) : Start(engine);
+            m_playing ? Stop(engine) : Start(engine, scenePath);
         } else if (input.WasKeyPressed(Key::F6) && m_playing) {
             TogglePause(engine);
         }
     }
 
-    void PlayMode::Start(Engine& engine) {
+    void PlayMode::Start(Engine& engine, const std::filesystem::path& scenePath) {
         if (m_playing) {
             return;
         }
@@ -51,6 +51,9 @@ namespace FluxEditor {
         m_savedCamera = engine.GetCamera();
         m_playing = true;
         engine.SetGameState(GameState::Running);
+        // Une sauvegarde rapide (F8) faite ici est reprise au lancement du jeu : sans sa scène de départ, le jeu ne
+        // pourrait pas y ajouter ce que l'éditeur change ensuite (couleur du soleil...) et garderait l'ancienne.
+        engine.SetPlayedScene(scenePath, m_savedScene);
         // Toujours la scène éditée, pas la sauvegarde rapide (F8) : ce qu'on vient de changer doit se voir. F9 la
         // recharge si on la veut.
         Log::Info("jeu lancé");
