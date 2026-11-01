@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <cstdint>
 #include <expected>

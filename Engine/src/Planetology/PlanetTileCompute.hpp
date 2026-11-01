@@ -2,7 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Planetology/Planet.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cstdint>

@@ -9,7 +9,7 @@
 #include "Planetology/CloudRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/PostRenderer.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 #include "Renderer/RenderGraph.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"

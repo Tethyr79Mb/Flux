@@ -1,0 +1,103 @@
+#pragma once
+
+#include "Renderer/RHI/Vulkan/Vulkan.hpp"
+#include "Renderer/RHI/Vulkan/VulkanTransfer.hpp"
+
+#include <array>
+#include <cstdint>
+#include <expected>
+#include <functional>
+#include <span>
+#include <string>
+
+namespace Flux::Vk {
+    class Device;
+
+    // Façon de lire une image à plusieurs couches.
+    enum class ImageLayers : std::uint8_t {
+        Single, // image 2D
+        Cube,   // 6 faces, lue par direction
+        Array,  // tableau d'images 2D de même taille, lues par indice (Sampler2DArray)
+        Volume, // image 3D (Sampler3D), de `layerCount` pixels de profondeur
+    };
+
+    // Image 2D (ou cube : 6 faces, ou tableau, ou 3D) allouée par VMA, avec sa vue (tous les niveaux de mip) : texture ou attachment de rendu.
+    class Image {
+        public:
+        // Image vierge (contenu indéfini), par exemple un tampon de profondeur.
+        static std::expected<Image, std::string> CreateAttachment(const Device& device, VkFormat format, VkExtent2D extent,
+                                                                  VkImageUsageFlags usage, VkImageAspectFlags aspect);
+
+        // Texture cube vierge dont chaque face a sa propre vue 2D (GetFaceView), pour y dessiner.
+        static std::expected<Image, std::string> CreateCubeAttachment(const Device& device, VkFormat format, std::uint32_t size,
+                                                                      VkImageUsageFlags usage);
+
+        // Image 3D vierge écrite par les compute shaders (vue du niveau 0 : GetStorageView), puis lue ; mipmaps : tous
+        // ses niveaux jusqu'à 1 pixel, à remplir par blit (RhiCommandList::GenerateMipmaps).
+        static std::expected<Image, std::string> CreateVolume(const Device& device, VkFormat format, VkExtent2D extent,
+                                                              std::uint32_t depth, bool mipmaps);
+
+        // Crée l'image et y copie pixels (Device::UploadImage : prête pour la prochaine soumission à la file graphique).
+        // mipmaps : réductions successives calculées par le GPU (filtre linéaire), pour une texture vue de loin
+        // sans scintillement ; format filtrable en blit requis (RGBA8 UNORM ou SRGB : toujours le cas sur PC).
+        // Cube : pixels contient les 6 faces à la suite (+X, -X, +Y, -Y, +Z, -Z), vue de type cube. Array : les
+        // `layerCount` images à la suite.
+        static std::expected<Image, std::string> CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
+                                                               std::span<const std::uint8_t> pixels, bool mipmaps = false,
+                                                               ImageLayers kind = ImageLayers::Single,
+                                                               std::uint32_t layerCount = 1);
+        // Texture 2D simple depuis une mémoire d'envoi remplie par l'appelant (pixels RGBA8 à sourceOffset), sans
+        // recopie : la mémoire doit vivre jusqu'à la fin de la copie (Transfer::KeepUntilCopied).
+        static std::expected<Image, std::string> CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
+                                                               VkBuffer source, VkDeviceSize sourceOffset, bool mipmaps);
+        // De même avec ses `levels` niveaux de mip déjà calculés, à la suite dans pixels (chaque niveau : toutes les
+        // couches) : formats compressés, que le GPU ne sait pas réduire. Taille de chaque niveau déduite du format.
+        static std::expected<Image, std::string> CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
+                                                                     std::span<const std::uint8_t> pixels, std::uint32_t levels,
+                                                                     ImageLayers kind = ImageLayers::Single,
+                                                                     std::uint32_t layerCount = 1);
+
+        Image() = default;
+        ~Image();
+
+        Image(const Image&) = delete;
+        Image& operator=(const Image&) = delete;
+        Image(Image&& other) noexcept;
+        Image& operator=(Image&& other) noexcept;
+
+        VkImage GetHandle() const { return m_image; }
+        VkImageView GetView() const { return m_view; }
+        // Face i d'une image de CreateCubeAttachment (VK_NULL_HANDLE sinon).
+        VkImageView GetFaceView(std::uint32_t face) const { return face < m_faceViews.size() ? m_faceViews[face] : VK_NULL_HANDLE; }
+        // Niveau 0 seul, pour l'écriture par les compute shaders (une vue d'image de stockage n'a qu'un niveau).
+        VkImageView GetStorageView() const { return m_storageView != VK_NULL_HANDLE ? m_storageView : m_view; }
+        VkExtent2D GetExtent() const { return m_extent; }
+        std::uint32_t GetDepth() const { return m_depth; } // 1 sauf image 3D
+        std::uint32_t GetLayers() const { return m_layers; }
+        std::uint32_t GetMipLevels() const { return m_mipLevels; }
+
+        private:
+        // Image échantillonnée dont `upload` envoie le niveau 0 (faces ou couches à la suite), les niveaux suivants
+        // réduits par le GPU.
+        static std::expected<Image, std::string> CreateSampled(Device& device, VkFormat format, VkExtent2D extent, bool mipmaps,
+                                                               ImageLayers kind, std::uint32_t layerCount,
+                                                               const std::function<bool(const Transfer::ImageWrite&)>& upload);
+        static std::expected<Image, std::string> Allocate(const Device& device, VkFormat format, VkExtent2D extent,
+                                                          VkImageUsageFlags usage, VkImageAspectFlags aspect,
+                                                          std::uint32_t mipLevels = 1, ImageLayers kind = ImageLayers::Single,
+                                                          std::uint32_t layerCount = 1);
+        void Reset();
+
+        VkDevice m_device = VK_NULL_HANDLE;
+        VmaAllocator m_allocator = VK_NULL_HANDLE;
+        VkImage m_image = VK_NULL_HANDLE;
+        VmaAllocation m_allocation = VK_NULL_HANDLE;
+        VkImageView m_view = VK_NULL_HANDLE;
+        std::array<VkImageView, 6> m_faceViews{}; // CreateCubeAttachment seulement
+        VkImageView m_storageView = VK_NULL_HANDLE; // CreateVolume avec plusieurs niveaux seulement
+        VkExtent2D m_extent{};
+        std::uint32_t m_depth = 1;
+        std::uint32_t m_layers = 1;
+        std::uint32_t m_mipLevels = 1;
+    };
+}

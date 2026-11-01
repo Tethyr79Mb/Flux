@@ -104,9 +104,10 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
    └─ Vulkan       seul backend aujourd'hui (volk, vk-bootstrap, VMA)
 ```
 
-Le RHI a un en-tête par interface (`Renderer/RHI/Buffer.hpp`, `Texture.hpp`, `BindGroup.hpp`, `Pipeline.hpp`,
+Le RHI a un en-tête par interface, rangé avec les en-têtes publics (`include/Flux/Renderer/RHI/Buffer.hpp`, `Texture.hpp`, `BindGroup.hpp`, `Pipeline.hpp`,
 `CommandList.hpp`, `Upscaler.hpp`, `Device.hpp`) et ses énumérations et petits types valeur dans `RHITypes.hpp`, en
-C++ pur ; `RHI.hpp` les inclut tous. Le backend Vulkan a un fichier par bloc : `VulkanInstance` (instance, validation),
+C++ pur ; `RHI.hpp` les inclut tous. Ses classes ne portent pas `FLUX_API` : seul le moteur s'en sert pour l'instant. Le
+backend Vulkan, privé (`src/Renderer/RHI/Vulkan`, il inclut volk), a un fichier par bloc : `VulkanInstance` (instance, validation),
 `VulkanSurface` (surface de la fenêtre), `VulkanAdapter` (choix du GPU et de ses fonctions facultatives),
 `VulkanDevice` (device logique, files, allocateur, `ImmediateSubmit`), `VulkanSwapchain` (images, acquisition,
 présentation), `VulkanFrames` (ressources de chaque image en vol), `VulkanTimestamps` (heures du GPU),
@@ -141,7 +142,7 @@ de la taille). Pas de partage de mémoire entre textures (aliasing) : presque to
 seule celle du mouvement pourrait prêter la sienne au bloom, une dizaine de Mo en 1440p.
 
 Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) n'attendent pas le GPU
-(`Vk::Transfer`, `Renderer/Vulkan/VulkanTransfer`). Les copies partent sur la file de transfert dédiée quand la carte
+(`Vk::Transfer`, `Renderer/RHI/Vulkan/VulkanTransfer`). Les copies partent sur la file de transfert dédiée quand la carte
 en a une (moteur de copie des Radeon et des GeForce), sinon sur la file graphique par le même chemin
 (`FLUX_TRANSFER_QUEUE=0` force ce repli). Les données passent par un anneau d'envoi de 64 Mo mappé en permanence ; un
 envoi de plus de 32 Mo a son propre buffer, rendu dès sa copie finie. Un lot de copies part dès 32 Mo, ou avec
@@ -232,7 +233,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    rapport au carré). `Temporal.slang` (`fragmentMotion`) réunit le mouvement de la caméra et celui des objets en un
    mouvement complet. Les flammes, les traçantes et les nuages écrivent aussi un masque réactif (`ReactiveFormat`, R8) :
    là où l'image change sans que le mouvement le dise, FSR suit l'image du moment au lieu de les faire trembler ou
-   traîner. Puis la DLL d'AMD (`Renderer/Vulkan/VulkanUpscaler`, derrière `RHI::Upscaler`) agrandit
+   traîner. Puis la DLL d'AMD (`Renderer/RHI/Vulkan/VulkanUpscaler`, derrière `RHI::Upscaler`) agrandit
    l'image à la taille de la vue dans l'historique, qu'elle écrit par ses compute shaders ; elle garde son propre
    historique et pose ses propres barrières. Sans DLL ou si le GPU la refuse : Natif, dit une fois dans le journal.
    En Natif, anticrénelage temporel (`Temporal.slang`, activé par défaut) : chaque pixel est retrouvé

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Flux/Assets/Model.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <condition_variable>
 #include <cstddef>

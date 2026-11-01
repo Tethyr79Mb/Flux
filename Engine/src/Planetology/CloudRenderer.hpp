@@ -2,7 +2,7 @@
 
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Planetology/CloudNoise.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cstdint>

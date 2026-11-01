@@ -2,7 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Renderer/Renderer.hpp"
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cstdint>

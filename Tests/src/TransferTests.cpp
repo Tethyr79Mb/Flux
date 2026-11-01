@@ -1,9 +1,9 @@
-// Tests des envois vers la mémoire vidéo (Renderer/Vulkan/VulkanTransfer) : buffers et textures envoyés sans fenêtre,
+// Tests des envois vers la mémoire vidéo (Renderer/RHI/Vulkan/VulkanTransfer) : buffers et textures envoyés sans fenêtre,
 // puis relus par le CPU. Ignorés (réussis) sur une machine sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI,
 // sur lavapipe, qui n'a qu'une file : le chemin sans file de transfert séparée).
 #include "Check.hpp"
 
-#include "Renderer/RHI/RHI.hpp"
+#include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
 #include <cmath>
