@@ -8,6 +8,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <expected>
+#include <memory>
+#include <string>
 #include <vector>
 
 using namespace Flux;
@@ -93,8 +96,45 @@ namespace {
         return true;
     }
 
-    // Texture 4 x 4 avec mipmaps (niveaux réduits par la file graphique après la copie) : relue par un compute shader.
-    bool TestTexture(RHI::Device& device) {
+    // Mémoire d'envoi remplie par l'appelant, envois asynchrones et libération différée, sans shader.
+    bool TestStagingAndRetire(RHI::Device& device) {
+        auto staging = device.CreateStagingBuffer(4096);
+        CHECK(staging.has_value() && (*staging)->GetSize() == 4096);
+        const std::vector<std::uint8_t> pixels(16 * 16 * 4, 200);
+        (*staging)->Write(1024, pixels.data(), pixels.size());
+        // Pixels hors de la mémoire, format autre que RGBA8 : refusés.
+        CHECK(!device.CreateTexture(RHI::Format::RGBA8Unorm, {64, 64}, **staging, 0));
+        CHECK(!device.CreateTexture(RHI::Format::RGBA8Unorm, {16, 16}, **staging, 3584));
+        CHECK(!device.CreateTexture(RHI::Format::BC7Unorm, {16, 16}, **staging, 0));
+
+        // Sans fenêtre, un envoi asynchrone est prêt tout de suite ; une plage neuve s'écrit sans attendre (inUse faux).
+        device.BeginAsyncUploads();
+        auto texture = device.CreateTexture(RHI::Format::RGBA8Srgb, {16, 16}, **staging, 1024, true);
+        const std::vector<std::uint32_t> data = MakePattern(9, 256);
+        auto buffer = device.CreateBuffer({4096, RHI::BufferUsage::Storage, RHI::MemoryType::GpuOnly});
+        CHECK(buffer.has_value() && device.WriteBuffer(**buffer, 1024, data.data(), 1024, false));
+        const std::uint64_t ticket = device.EndAsyncUploads();
+        device.ReleaseStaging(std::move(*staging));
+        CHECK(texture.has_value());
+        CHECK(device.IsUploadReady(ticket));
+        CHECK(SameAsPattern(ReadBack(device, **buffer, 1024, 1024), 9, 0));
+
+        // Une ressource retirée est détruite au plus tard par WaitIdle, une seule fois.
+        int released = 0;
+        device.Retire([&released, old = std::move(*texture)]() mutable {
+            old.reset();
+            ++released;
+        });
+        device.WaitIdle();
+        CHECK(released == 1);
+        device.WaitIdle();
+        CHECK(released == 1);
+        return true;
+    }
+
+    // Texture 4 x 4 avec mipmaps (niveaux réduits par la file graphique après la copie), envoyée depuis des pixels puis
+    // depuis une mémoire d'envoi : relue par un compute shader.
+    bool TestTexture(RHI::Device& device, bool fromStaging) {
         constexpr std::uint32_t Width = 4;
         std::vector<std::uint8_t> pixels(Width * Width * 4);
         std::array<double, 4> sum{};
@@ -102,7 +142,14 @@ namespace {
             pixels[i] = static_cast<std::uint8_t>((i * 37 + 11) % 256);
             sum[i % 4] += pixels[i];
         }
-        auto texture = device.CreateTexture(RHI::Format::RGBA8Unorm, {Width, Width}, pixels, true);
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> texture = std::unexpected("pas de mémoire d'envoi");
+        if (!fromStaging) {
+            texture = device.CreateTexture(RHI::Format::RGBA8Unorm, {Width, Width}, pixels, true);
+        } else if (auto staging = device.CreateStagingBuffer(512 + pixels.size())) {
+            (*staging)->Write(512, pixels.data(), pixels.size());
+            texture = device.CreateTexture(RHI::Format::RGBA8Unorm, {Width, Width}, **staging, 512, true);
+            device.ReleaseStaging(std::move(*staging));
+        }
         auto sampler = device.CreateSampler({RHI::Filter::Nearest, RHI::Filter::Nearest, RHI::AddressMode::ClampToEdge});
         auto texels = device.CreateBuffer({Width * Width * 16, RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
         CHECK(texture && sampler && texels);
@@ -158,5 +205,5 @@ bool RunTransferTests() {
     if (!device) {
         return GpuMissing("envois", device.error().c_str());
     }
-    return TestBuffers(**device) && TestTexture(**device);
+    return TestBuffers(**device) && TestStagingAndRetire(**device) && TestTexture(**device, false) && TestTexture(**device, true);
 }

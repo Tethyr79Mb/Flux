@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Renderer/Vulkan/Vulkan.hpp"
+#include "Renderer/Vulkan/VulkanTransfer.hpp"
 
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <span>
 #include <string>
 
@@ -44,6 +46,10 @@ namespace Flux::Vk {
                                                                std::span<const std::uint8_t> pixels, bool mipmaps = false,
                                                                ImageLayers kind = ImageLayers::Single,
                                                                std::uint32_t layerCount = 1);
+        // Texture 2D simple depuis une mémoire d'envoi remplie par l'appelant (pixels RGBA8 à sourceOffset), sans
+        // recopie : la mémoire doit vivre jusqu'à la fin de la copie (Transfer::KeepUntilCopied).
+        static std::expected<Image, std::string> CreateTexture(Device& device, VkFormat format, VkExtent2D extent,
+                                                               VkBuffer source, VkDeviceSize sourceOffset, bool mipmaps);
         // De même avec ses `levels` niveaux de mip déjà calculés, à la suite dans pixels (chaque niveau : toutes les
         // couches) : formats compressés, que le GPU ne sait pas réduire. Taille de chaque niveau déduite du format.
         static std::expected<Image, std::string> CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
@@ -71,6 +77,11 @@ namespace Flux::Vk {
         std::uint32_t GetMipLevels() const { return m_mipLevels; }
 
         private:
+        // Image échantillonnée dont `upload` envoie le niveau 0 (faces ou couches à la suite), les niveaux suivants
+        // réduits par le GPU.
+        static std::expected<Image, std::string> CreateSampled(Device& device, VkFormat format, VkExtent2D extent, bool mipmaps,
+                                                               ImageLayers kind, std::uint32_t layerCount,
+                                                               const std::function<bool(const Transfer::ImageWrite&)>& upload);
         static std::expected<Image, std::string> Allocate(const Device& device, VkFormat format, VkExtent2D extent,
                                                           VkImageUsageFlags usage, VkImageAspectFlags aspect,
                                                           std::uint32_t mipLevels = 1, ImageLayers kind = ImageLayers::Single,

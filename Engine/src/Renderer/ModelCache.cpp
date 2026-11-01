@@ -155,7 +155,14 @@ namespace Flux {
         }
     }
 
-    ModelCache::~ModelCache() = default;
+    ModelCache::~ModelCache() {
+        // Les modèles retirés (Retire) rendent leurs places à ce cache : avant qu'il disparaisse.
+        m_device.WaitIdle();
+    }
+
+    void ModelCache::Retire(GpuModel model) {
+        m_device.Retire([old = std::move(model)]() mutable { old = {}; });
+    }
 
     void ModelCache::Release(GpuModelResources& resources) {
         GeometryPage& page = m_pages[resources.page];
@@ -331,13 +338,15 @@ namespace Flux {
             resources.firstMeshletWord = *target.meshletDataRanges.Allocate(wordCount);
             resources.meshletWordCount = wordCount;
         }
+        // Places neuves : aucune image soumise ne les lit (une place n'est rendue qu'après le GPU, Retire), les copies
+        // n'attendent pas la fin des images en vol.
         bool sent = m_device.WriteBuffer(*target.vertices, std::uint64_t{resources.firstVertex} * sizeof(ModelVertex),
-                                         data.vertices.data(), data.vertices.size() * sizeof(ModelVertex))
+                                         data.vertices.data(), data.vertices.size() * sizeof(ModelVertex), false)
                  && m_device.WriteBuffer(*target.indices, std::uint64_t{resources.firstIndex} * sizeof(std::uint32_t),
-                                         data.indices.data(), data.indices.size() * sizeof(std::uint32_t));
+                                         data.indices.data(), data.indices.size() * sizeof(std::uint32_t), false);
         if (animated) {
             sent = sent && m_device.WriteBuffer(*target.skin, std::uint64_t{resources.firstVertex} * sizeof(ModelSkinVertex),
-                                                data.skinVertices.data(), data.skinVertices.size() * sizeof(ModelSkinVertex));
+                                                data.skinVertices.data(), data.skinVertices.size() * sizeof(ModelSkinVertex), false);
         }
         if (meshlets) {
             std::vector<GpuMeshlet> gpuMeshlets;
@@ -345,21 +354,28 @@ namespace Flux {
             BuildGpuMeshlets(data, resources.firstVertex, resources.firstMeshletWord, gpuMeshlets, words);
             sent = sent
                 && m_device.WriteBuffer(*target.meshlets, std::uint64_t{resources.firstMeshlet} * sizeof(GpuMeshlet), gpuMeshlets.data(),
-                                        gpuMeshlets.size() * sizeof(GpuMeshlet))
+                                        gpuMeshlets.size() * sizeof(GpuMeshlet), false)
                 && m_device.WriteBuffer(*target.meshletData, std::uint64_t{resources.firstMeshletWord} * sizeof(std::uint32_t),
-                                        words.data(), words.size() * sizeof(std::uint32_t));
+                                        words.data(), words.size() * sizeof(std::uint32_t), false);
         }
         return sent;
     }
 
     // Sommets, indices, images et matériaux envoyés au GPU. Une image refusée par le GPU (ou plus de case libre) laisse
     // son matériau blanc.
-    std::expected<GpuModel, std::string> ModelCache::Upload(const ModelData& data, std::string_view name) {
+    std::expected<GpuModel, std::string> ModelCache::Upload(const ModelData& data, std::string_view name,
+                                                            const RHI::StagingBuffer* staging,
+                                                            std::span<const std::uint64_t> imageOffsets) {
         GpuModel model;
         model.resources = GpuModelResources(*this);
         GpuModelResources& resources = model.resources;
+        // Échec : des copies vers ses places et ses images sont peut-être déjà enregistrées.
+        const auto fail = [&](std::string message) -> std::unexpected<std::string> {
+            Retire(std::move(model));
+            return std::unexpected(std::move(message));
+        };
         if (!PlaceGeometry(data, resources)) {
-            return std::unexpected("envoi des sommets au GPU");
+            return fail("envoi des sommets au GPU");
         }
         model.animated = data.IsAnimated();
         if (model.animated) {
@@ -398,8 +414,10 @@ namespace Flux {
                 return 0;
             }
             const ImageData& pixels = data.images[i];
-            auto image = m_device.CreateTexture(format, {static_cast<uint32_t>(pixels.size.x), static_cast<uint32_t>(pixels.size.y)},
-                                                pixels.rgba, true);
+            const RHI::Extent extent{static_cast<std::uint32_t>(pixels.size.x), static_cast<std::uint32_t>(pixels.size.y)};
+            const std::uint64_t offset = i < imageOffsets.size() ? imageOffsets[i] : ModelLoader::NoImage;
+            auto image = staging && offset != ModelLoader::NoImage ? m_device.CreateTexture(format, extent, *staging, offset, true)
+                                                                    : m_device.CreateTexture(format, extent, pixels.rgba, true);
             if (!image) {
                 Log::Warning("modèle {} : image {} : {}", name, i, image.error());
                 return 0;
@@ -454,8 +472,8 @@ namespace Flux {
             model.materials.push_back(material);
         }
         if (!table.empty() && !m_device.WriteBuffer(*m_materialTable, std::uint64_t{resources.firstMaterial} * sizeof(MaterialData),
-                                                    table.data(), table.size() * sizeof(MaterialData))) {
-            return std::unexpected("envoi des matériaux au GPU");
+                                                    table.data(), table.size() * sizeof(MaterialData), false)) {
+            return fail("envoi des matériaux au GPU");
         }
         model.primitives = data.primitives;
         model.shadowPrimitives = data.shadowPrimitives;
@@ -475,6 +493,24 @@ namespace Flux {
     }
 
     void ModelCache::Update() {
+        // Modèles dont les copies sont finies : visibles dès cette image ; l'ancienne version est détruite quand les
+        // images en vol qui la dessinent sont finies.
+        std::erase_if(m_installing, [this](Installing& installing) {
+            if (!m_device.IsUploadReady(installing.ticket)) {
+                return false;
+            }
+            GpuModel& model = *installing.target;
+            const std::filesystem::file_time_type writeTime = model.writeTime;
+            const std::chrono::steady_clock::time_point checked = model.checked;
+            GpuModel old = std::exchange(model, std::move(installing.model));
+            model.writeTime = writeTime;
+            model.checked = checked;
+            if (old.loaded) {
+                Retire(std::move(old));
+            }
+            return true;
+        });
+
         m_loader.TakeFinished(m_ready);
         if (m_ready.empty()) {
             return;
@@ -483,38 +519,34 @@ namespace Flux {
         m_ready.erase(m_ready.begin()); // quelques modèles au plus
     }
 
-    // Remplace le modèle par ce qui a été lu ; en cas d'échec, l'ancienne version (s'il y en a une) reste.
+    // Envoie ce qui a été lu, visible quand les copies sont finies (Update) ; en cas d'échec, l'ancienne version (s'il
+    // y en a une) reste.
     void ModelCache::Install(ModelLoader::Result& result) {
         const auto found = m_models.find(result.key);
         if (found == m_models.end()) {
             return;
         }
         GpuModel& model = found->second;
-        model.loading = false;
         const std::string name = Platform::ToUtf8(Platform::PathFromUtf8(result.key).filename());
         if (!result.data) {
+            model.loading = false;
             Log::Error("modèle {}", result.data.error());
             return;
         }
         for (const std::string& warning : result.data->warnings) {
             Log::Warning("modèle {} : {}", name, warning);
         }
-        if (model.loaded) {
-            // Rechargement (fichier retouché) : les images en vol dessinent peut-être encore l'ancienne version, qui
-            // rend ses places aux tables. Rare : attendre le GPU suffit. Un premier chargement n'attend rien : ses
-            // cases sont neuves, et ses envois partent avec la prochaine image.
-            m_device.WaitIdle();
-        }
-        auto uploaded = Upload(*result.data, name);
+        // Places neuves (aucune image en vol ne les lit) : rien à attendre, même pour un rechargement.
+        m_device.BeginAsyncUploads();
+        auto uploaded = Upload(*result.data, name, result.staging.get(), result.imageOffsets);
+        const std::uint64_t ticket = m_device.EndAsyncUploads();
+        m_device.ReleaseStaging(std::move(result.staging));
         if (!uploaded) {
+            model.loading = false;
             Log::Error("modèle {} : {}", name, uploaded.error());
             return;
         }
-        const std::filesystem::file_time_type writeTime = model.writeTime;
-        const std::chrono::steady_clock::time_point checked = model.checked;
-        model = std::move(*uploaded); // l'ancienne version rend ses groupes et ses buffers
-        model.writeTime = writeTime;
-        model.checked = checked;
+        m_installing.push_back({&model, std::move(*uploaded), ticket});
     }
 
     const GpuModel* ModelCache::Find(const std::filesystem::path& path) {

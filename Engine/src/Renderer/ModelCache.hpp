@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -40,7 +41,7 @@ namespace Flux {
 
     // Places d'un modèle dans les tables partagées de ModelCache (sommets et indices d'une page de géométrie, cases
     // de la table des images, de la table des matériaux), et ses images. Rendues à sa destruction : le GPU ne doit
-    // plus dessiner le modèle (ModelCache::Install attend le GPU avant de remplacer un modèle).
+    // plus dessiner le modèle (un modèle remplacé passe par RHI::Device::Retire).
     class GpuModelResources {
         public:
         GpuModelResources() = default;
@@ -141,11 +142,12 @@ namespace Flux {
         // Paquets des modèles fixes envoyés au GPU (Device::HasMeshShaders) : primitives à meshletCount non nul.
         bool HasMeshlets() const { return m_meshlets; }
 
-        // Envoie au GPU les modèles lus depuis l'image précédente (un par image : chacun copie ses sommets et ses images
-        // vers la mémoire vidéo). Une fois par image, avant Find.
+        // Envoie au GPU les modèles lus depuis l'image précédente (un par image : chacun enregistre les copies de ses
+        // sommets et de ses images, faites par la file de transfert sans retarder les images), et rend visibles ceux
+        // dont les copies sont finies. Une fois par image, avant Find.
         void Update();
-        // Modèles demandés et pas encore envoyés au GPU.
-        std::size_t GetLoadingCount() const { return m_loader.GetPending() + m_ready.size(); }
+        // Modèles demandés et pas encore visibles.
+        std::size_t GetLoadingCount() const { return m_loader.GetPending() + m_ready.size() + m_installing.size(); }
 
         // Modèle du fichier, demandé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
         // tant qu'il n'est pas arrivé, ou s'il est illisible (message dans la console).
@@ -156,8 +158,14 @@ namespace Flux {
 
         private:
         friend class GpuModelResources;
-        explicit ModelCache(RHI::Device& device) : m_device(device) {}
-        std::expected<GpuModel, std::string> Upload(const ModelData& data, std::string_view name);
+        explicit ModelCache(RHI::Device& device) : m_device(device), m_loader(device) {}
+        // staging, imageOffsets : pixels des images déjà dans une mémoire d'envoi (ModelLoader::Result), sinon lus
+        // dans data.images.
+        std::expected<GpuModel, std::string> Upload(const ModelData& data, std::string_view name,
+                                                    const RHI::StagingBuffer* staging = nullptr,
+                                                    std::span<const std::uint64_t> imageOffsets = {});
+        // Détruit le modèle quand le GPU ne s'en sert plus (rend ses places aux tables à ce moment-là).
+        void Retire(GpuModel model);
         bool PlaceGeometry(const ModelData& data, GpuModelResources& resources);
         void Release(GpuModelResources& resources);
         void Install(ModelLoader::Result& result);
@@ -197,6 +205,15 @@ namespace Flux {
         std::filesystem::path m_knownDirectory;
         std::unordered_map<std::string, KnownPath, StringHash, std::equal_to<>> m_known;
         std::vector<ModelLoader::Result> m_ready; // lus, en attente d'envoi (Update)
+        // Envoyés, visibles quand leurs copies sont finies (RHI::Device::IsUploadReady) ; l'ancienne version reste
+        // dessinée jusque-là.
+        struct Installing
+        {
+            GpuModel* target; // dans m_models
+            GpuModel model;
+            std::uint64_t ticket = 0;
+        };
+        std::vector<Installing> m_installing;
         ModelLoader m_loader; // en dernier : ses fils s'arrêtent avant que le reste disparaisse
     };
 }
