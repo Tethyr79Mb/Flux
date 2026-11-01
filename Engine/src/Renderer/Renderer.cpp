@@ -416,6 +416,8 @@ namespace Flux {
             timings.planetPendingTiles = tiles.pending;
             timings.planetComputedTiles = tiles.computed;
             timings.groundMeshThreads = tiles.meshThreads;
+            timings.terrainShadowTiles = tiles.terrainShadowTiles;
+            timings.terrainShadowTriangles = tiles.terrainShadowTriangles;
             timings.groundTexturesLoading = tiles.groundLoading;
             timings.modelsLoading = static_cast<std::uint32_t>(meshes->GetModels().GetLoadingCount());
             timings.planetTileCapacity = Planetology::PlanetTileCompute::MaxPages * Planetology::PlanetTileCompute::TilesPerPage;

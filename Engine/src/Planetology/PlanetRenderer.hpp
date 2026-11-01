@@ -65,6 +65,7 @@ namespace Flux::Planetology {
             Math::Vector3d local; // son centre dans le repère de la planète
             Math::Vector3d sphere; // centre de la sphère englobante, relatif à la caméra
             float radius;
+            float edge; // côté de la tuile entière (TileBounds::edge) : écart entre ses sommets = edge / TileQuads
             // Glissement vers la forme parente (voir vertexPlanet dans shaders/Mesh.slang) : distance où il commence,
             // et 1 / sa longueur (0 : aucun).
             float morphStart;
@@ -87,6 +88,9 @@ namespace Flux::Planetology {
         };
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
+        // Écart entre sommets suffisant pour une tuile gardée seulement pour son ombre, selon sa distance à la caméra
+        // (en mètres) : la carte d'ombre n'en voit pas plus fin. Elle n'est pas découpée plus loin.
+        using ShadowSpacing = std::function<double(double distance)>;
 
         // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice. `now` : heure
         // de l'image, d'où vient la vitesse de la caméra (les tests en donnent une).
@@ -99,7 +103,7 @@ namespace Flux::Planetology {
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                      std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0,
-                     const ViewTest* castsShadow = nullptr);
+                     const ViewTest* castsShadow = nullptr, const ShadowSpacing* shadowSpacing = nullptr);
         // Détail du sol (DefaultGroundDetail par défaut) : pris en compte au prochain Collect, les tuiles déjà calculées
         // restent bonnes.
         void SetGroundDetail(GroundDetail detail) {
@@ -123,6 +127,19 @@ namespace Flux::Planetology {
         // Pages de sommets des tuiles, et leurs indices (communs à toutes) ; nullptr avant la première image.
         const PlanetTileCompute& GetTiles() const { return *m_compute; }
         const RHI::Buffer* GetIndices() const { return m_indices.get(); }
+        // Finesses des tuiles dans GetIndices : un sommet sur `step`, à la suite (TileIndexSteps), rangées de même par
+        // quart (TileQuarterIndexCount(step) chacun). Les allégées servent aux cartes d'ombre du relief.
+        static constexpr std::array<std::uint32_t, 5> TileIndexSteps{1, 2, 4, 8, 16};
+        static constexpr std::uint32_t GetFirstIndex(std::uint32_t step) {
+            std::uint32_t first = 0;
+            for (const std::uint32_t s : TileIndexSteps) {
+                if (s == step) {
+                    break;
+                }
+                first += 4 * TileQuarterIndexCount(s);
+            }
+            return first;
+        }
         // Cases occupées par une tuile (gardée pour plus tard ou dessinée), pour le panneau Moteur.
         std::uint32_t GetStoredTileCount() const {
             return m_compute->GetTileCount() - static_cast<std::uint32_t>(m_freeTiles.size());
@@ -200,6 +217,7 @@ namespace Flux::Planetology {
             std::uint32_t plainLevel;
             double plainRange;
             const ViewTest* castsShadow;
+            const ShadowSpacing* shadowSpacing;
         };
 
         Node& GetNode(PlanetState& state, TileKey key, const Node* parent = nullptr);

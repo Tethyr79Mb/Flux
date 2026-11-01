@@ -55,6 +55,9 @@ namespace Flux {
             std::uint32_t computed = 0; // confiées au GPU à cette image
             bool groundLoading = false; // textures du sol en cours de lecture
             std::uint32_t meshThreads = 0; // threads par groupe des mesh shaders du sol (0 : par les sommets)
+            // Dessinés dans chaque carte du relief à cette image (0 : gardée).
+            std::array<std::uint32_t, TerrainShadowCascadeCount> terrainShadowTiles{};
+            std::array<std::uint32_t, TerrainShadowCascadeCount> terrainShadowTriangles{};
         };
         PlanetTileStats GetPlanetTileStats() const;
         Planetology::VegetationRenderer::Stats GetVegetationStats() const { return m_vegetation->GetStats(); }
@@ -151,6 +154,7 @@ namespace Flux {
             std::uint32_t data;    // dans m_tileData
             Math::Vector3f center; // de sa sphère englobante, relatif à la caméra
             float radius;
+            float edge;            // côté de la tuile (PlanetRenderer::Tile::edge)
             float distance;        // au bord de sa sphère : ordre de près à loin
             bool ocean;            // l'eau la recouvre en partie, et touche le champ de la caméra
             std::uint32_t firstIndex; // toute la tuile ou un quart (PlanetRenderer::Tile)
@@ -364,7 +368,8 @@ namespace Flux {
         void ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun);
         // La tuile (sa sphère) porte une ombre dans la carte de la passe `pass` (une passe d'ombres), redessinée à
         // cette image.
-        bool TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass) const;
+        // drawnOnly faux : même si la carte est gardée à cette image.
+        bool TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass, bool drawnOnly = true) const;
         bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
@@ -460,7 +465,7 @@ namespace Flux {
             ShadowCascade cascade;
             Math::WorldPosition eye;
             Math::Vector3f toSun;
-            Math::Vector3f forward; // regard de la caméra (cascades du relief : obstacles retenus pour ce champ)
+            std::uint64_t computedTiles = 0; // m_computedTiles quand elle a été dessinée
         };
         std::array<DrawnCascade, ShadowCascadeCount> m_drawnCascades{};
         std::array<bool, ShadowCascadeCount> m_drawCascade{}; // dessinée à cette image
@@ -475,6 +480,11 @@ namespace Flux {
         std::array<DrawnCascade, TerrainShadowCascadeCount> m_drawnTerrain{};
         std::array<bool, TerrainShadowCascadeCount> m_drawTerrain{};
         bool m_keepTerrainShadows = false;
+        // Tuiles de planète demandées depuis le lancement : une carte du relief n'est rafraîchie que s'il en est arrivé
+        // depuis son dessin.
+        std::uint64_t m_computedTiles = 0;
+        std::array<std::uint32_t, TerrainShadowCascadeCount> m_terrainShadowTiles{};     // PlanetTileStats
+        std::array<std::uint32_t, TerrainShadowCascadeCount> m_terrainShadowTriangles{};
 
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une image à l'autre.
         std::vector<RelativeTransform> m_relativeTransforms;

@@ -62,6 +62,9 @@ namespace Flux {
         // plaines triées à la dernière image, et en vue pas encore semées.
         std::array<std::uint32_t, 3> trees{};
         std::uint32_t shadowTrees = 0;
+        // Tuiles et triangles dessinés dans les cartes du relief (près : 3 km, loin : 40 km) à cette image, 0 si gardée.
+        std::array<std::uint32_t, 2> terrainShadowTiles{};
+        std::array<std::uint32_t, 2> terrainShadowTriangles{};
         std::uint32_t treePlains = 0;
         std::uint32_t pendingTreePlains = 0;
         std::uint32_t sownTreePlains = 0; // semées à cette image

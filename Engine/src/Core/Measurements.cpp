@@ -57,7 +57,8 @@ namespace Flux {
         constexpr std::array<const char*, CounterCount> counters{
             "Tuiles de planète", "  dont eau", "  gardées", "  calculées", "  en attente", "Arbres près",
             "Arbres simplifiés", "Arbres loin", "Ombres d'arbres", "Plaines d'arbres", "  à semer", "  semées",
-            "Objets testés", "  dont cachés", "Paquets des modèles", "  dont dessinés"};
+            "Objets testés", "  dont cachés", "Paquets des modèles", "  dont dessinés", "Ombres du relief près : tuiles",
+            "  triangles", "Ombres du relief loin : tuiles", "  triangles"};
         for (std::size_t i = 0; i < CounterCount; ++i) {
             m_counters[i] = {counters[i]};
         }
@@ -100,7 +101,8 @@ namespace Flux {
             render.planetTiles, render.planetOceanTiles, render.planetStoredTiles, render.planetComputedTiles,
             render.planetPendingTiles, render.trees[0], render.trees[1], render.trees[2], render.shadowTrees,
             render.treePlains, render.pendingTreePlains, render.sownTreePlains, render.occlusionTested,
-            render.occlusionHidden, render.modelMeshlets, render.modelMeshletsDrawn};
+            render.occlusionHidden, render.modelMeshlets, render.modelMeshletsDrawn, render.terrainShadowTiles[0],
+            render.terrainShadowTriangles[0], render.terrainShadowTiles[1], render.terrainShadowTriangles[1]};
         for (std::size_t i = 0; i < CounterCount; ++i) {
             m_counters[i].Add(static_cast<double>(counters[i]));
         }

@@ -11,7 +11,10 @@ namespace Flux::Planetology {
         // Nœuds gardés par planète au plus, au détail Bas : au-delà, les moins récemment utilisés sont oubliés
         // (environ 70 Ko de sommets par tuile, soit environ 70 Mo de mémoire vidéo). Autant de fois plus que de
         // tuiles en plus aux détails plus fins (carré du facteur de coupe).
-        constexpr std::size_t MaxNodes = 1024;
+        // Les tuiles gardées pour l'ombre du relief (tout autour de la caméra) comptent aussi : à 1024 (4096 en Ultra),
+        // leurs nœuds étaient oubliés à chaque image et leurs tuiles recalculées sans fin. Un nœud tient quelques
+        // dizaines d'octets.
+        constexpr std::size_t MaxNodes = 4096;
         // Les tuiles sont demandées en avance pour là où la caméra sera dans ce temps-là (s) : à pied, quelques mètres,
         // rien ne change ; en vaisseau, des kilomètres, les tuiles sont prêtes quand il arrive. Elles ne sont dessinées
         // qu'à leur distance : le détail à l'écran ne dépend pas de la vitesse (sinon il retombe à l'arrêt).
@@ -74,7 +77,12 @@ namespace Flux::Planetology {
         }
         m_computed[frameIndex].clear();
         if (!m_indices) {
-            const std::vector<std::uint32_t> indices = BuildTileIndices();
+            // Pleine finesse, puis un sommet sur 2, 4, 8 et 16 (cartes d'ombre du relief : GetFirstIndex).
+            std::vector<std::uint32_t> indices;
+            for (const std::uint32_t step : TileIndexSteps) {
+                const std::vector<std::uint32_t> part = BuildTileIndices(step);
+                indices.insert(indices.end(), part.begin(), part.end());
+            }
             auto buffer = m_device.CreateBuffer({indices.size() * sizeof(std::uint32_t), RHI::BufferUsage::Index}, indices.data());
             if (!buffer) {
                 Log::Error("Planète : {}", buffer.error());
@@ -115,7 +123,7 @@ namespace Flux::Planetology {
     void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
                                  const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                                  std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange,
-                                 const ViewTest* castsShadow) {
+                                 const ViewTest* castsShadow, const ShadowSpacing* shadowSpacing) {
         if (!m_indices) {
             return;
         }
@@ -159,7 +167,7 @@ namespace Flux::Planetology {
         state.camera = camera;
         state.time = m_now;
         Visit visit{state, camera, position, rotation, camera + state.velocity * LookAhead, minRadius, maxRadius, inView, tiles,
-                    plains, plainLevel, plainRange, castsShadow};
+                    plains, plainLevel, plainRange, castsShadow, shadowSpacing};
         // Les racines d'abord : la planète apparaît d'un coup, quand ses six racines sont calculées (la même image).
         bool rootsReady = true;
         for (std::uint8_t face = 0; face < 6; ++face) {
@@ -209,7 +217,11 @@ namespace Flux::Planetology {
         if (visit.plains && inView && key.level == visit.plainLevel && distance < visit.plainRange) {
             visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0)});
         }
-        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level, m_splitFactor)) {
+        // Hors du champ, seulement pour son ombre : pas plus fin que ce que la carte d'ombre distingue (sans quoi tout
+        // le sol autour de la caméra, derrière elle comprise, était calculé à la finesse de l'écran).
+        const bool fineEnough = !inView && visit.shadowSpacing
+                             && node.bounds.edge / static_cast<double>(TileQuads) <= (*visit.shadowSpacing)(std::max(distance, 0.0));
+        if (key.level < terrain.GetMaxLevel() && distance < GetSplitDistance(terrain, key.level, m_splitFactor) && !fineEnough) {
             // Les enfants visibles et prêts sont dessinés ; à la place de ceux qui ne le sont pas encore (demandés), le
             // quart de cette tuile qu'ils couvrent. Toute la tuile à leur place : quand la caméra tournait, un enfant
             // qui entrait dans le champ remettait pour une image tout le sol grossier, jusque sous la caméra.
@@ -312,7 +324,7 @@ namespace Flux::Planetology {
         }
         visit.tiles.push_back({node.tile, visit.position + visit.rotation.Rotate(node.bounds.origin), node.bounds.origin,
                                visit.position + visit.rotation.Rotate(bounds.center), static_cast<float>(bounds.radius),
-                               morphStart, morphScale, node.lowest, whole ? 0u : quarter * TileQuarterIndices,
+                               static_cast<float>(node.bounds.edge), morphStart, morphScale, node.lowest, whole ? 0u : quarter * TileQuarterIndices,
                                whole ? 4u * TileQuarterIndices : TileQuarterIndices, covered, shadowOnly});
     }
 

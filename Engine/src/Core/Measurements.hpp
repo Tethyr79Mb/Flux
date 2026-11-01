@@ -71,7 +71,7 @@ namespace Flux {
         std::vector<double> m_frames;
         std::array<Stat, CpuCount> m_cpu;
         std::vector<Stat> m_gpu; // passes et étapes, dans l'ordre de l'image
-        static constexpr std::size_t CounterCount = 16;
+        static constexpr std::size_t CounterCount = 20;
         std::array<Stat, CounterCount> m_counters;
     };
 }
