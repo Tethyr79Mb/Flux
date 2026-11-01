@@ -162,6 +162,10 @@ namespace Flux {
         // Une cascade du relief refaite au moins toutes les N images même immobile (tuiles arrivées), à tour de rôle.
         constexpr std::uint32_t TerrainRefreshFrames = 30;
         constexpr std::uint32_t TerrainRefreshFramesMinimum = 60;
+        // Écart visé entre deux sommets du relief dans ses cartes d'ombre, en texels. À 2, une carte redessinée
+        // comptait 3 à 3,6 millions de triangles de 2 à 4 texels (près de 2 ms sur une RX 7700 XT) ; à 4, quatre
+        // fois moins, et le bord de l'ombre reste à quelques mètres près (6 m à 3 km, 86 m à 40 km).
+        constexpr float TerrainShadowVertexTexels = 4.0f;
 
         // `entity` est `ancestor` ou l'un de ses descendants.
         bool IsInside(const Scene& scene, Entity entity, Entity ancestor) {
@@ -891,7 +895,7 @@ namespace Flux {
         };
         const Planetology::PlanetRenderer::ShadowSpacing shadowSpacing = [this](double distance) {
             const std::size_t t = distance < static_cast<double>(TerrainShadowCascadeEnds[0]) ? 0 : 1;
-            return 2.0 * static_cast<double>(m_terrainCascades[t].texelSize);
+            return static_cast<double>(TerrainShadowVertexTexels * m_terrainCascades[t].texelSize);
         };
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
@@ -1403,13 +1407,13 @@ namespace Flux {
                 std::uint32_t indexCount = draw.indexCount;
                 if (pass >= FirstTerrainShadowPass) {
                     // Cartes du relief : un texel y couvre souvent plusieurs sommets (21 m dans celle des 40 km), la
-                    // tuile y est dessinée avec un sommet sur 2 à 16 tant que l'écart reste sous 2 texels : les tuiles
+                    // tuile y est dessinée avec un sommet sur 2 à 16 tant que l'écart reste sous TerrainShadowVertexTexels : les tuiles
                     // fines près de la caméra n'y coûtent presque rien. Par le côté et pas par le rayon : celui-ci
                     // compte la hauteur du relief, et les tuiles de montagne restaient dessinées trop finement.
                     const float spacing = draw.edge / static_cast<float>(Planetology::TileQuads);
                     const float texel = m_terrainCascades[pass - FirstTerrainShadowPass].texelSize;
                     std::uint32_t step = 1;
-                    while (step < Planetology::TileQuads / 2 && spacing * static_cast<float>(2 * step) <= 2.0f * texel) {
+                    while (step < Planetology::TileQuads / 2 && spacing * static_cast<float>(2 * step) <= TerrainShadowVertexTexels * texel) {
                         step *= 2;
                     }
                     if (step > 1) {

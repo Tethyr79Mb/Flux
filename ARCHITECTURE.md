@@ -234,7 +234,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    et rien n'est redessiné quand la caméra tourne. Gardée tant que la caméra reste dans la marge et que le soleil a
    tourné de moins d'un quart de texel au bout des obstacles, rafraîchie toutes les 30 images ; jamais les deux cartes
    la même image sans nécessité (`MeshRenderer::ChooseTerrainCascades`). Les tuiles y sont dessinées avec un sommet sur
-   2 à 16 (`BuildTileIndices(step)`) tant que l'écart reste sous 2 texels. `PlanetRenderer::Collect`
+   2 à 16 (`BuildTileIndices(step)`) tant que l'écart reste sous 4 texels. `PlanetRenderer::Collect`
    ajoute les tuiles hors du champ dont l'ombre tombe dans une carte redessinée (`Tile::shadowOnly` : ni sol, ni
    plaines d'arbres, ni calcul en avance). `SunVisibility` (`Mesh.slang`) garde jusqu'à 200 m le plus sombre des cascades
    proches (obstacles à 300 m au plus) et du relief (montagne plus loin vers le soleil), puis le relief seul. La
