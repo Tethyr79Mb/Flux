@@ -81,6 +81,11 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Glisser un prefab du Contenu dans la vue.
 - ⬜ Remplacer les vaisseaux codés en dur dans « Placer » par des prefabs.
 
+### Son (Bruno, 2026-11-01)
+- ⬜ Table de mixage : bus (Général, Effets, Musique, Voix, Interface), volume, muet, solo, effets ; la musique baisse sous les voix.
+- ⬜ Création de sons (`.fluxsound`) : couches, variantes au hasard, réglages pilotés par le jeu, générateur de bruitages.
+- ⬜ (Optionnel) Musique dynamique ; composition dans un logiciel externe (Reaper, LMMS).
+
 ## Plus tard
 - ⬜ Mise à l'échelle DPI (écrans 125 %, 150 %).
 - ⬜ Éditeur de matériaux.
