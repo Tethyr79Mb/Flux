@@ -130,6 +130,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Module du jeu en DLL rechargeable à chaud, API versionnée (`GameModuleApiVersion`).
 - ✅ Tests (FluxTests), CI MSVC Debug + Release, tests GPU sur GPU logiciel (lavapipe).
 - ✅ Debug utilisable : Jolt optimisé en Debug, préréglage « Release + débogage », petits mondes physiques sans fils.
+- ⬜ Validation Vulkan à la demande dans les versions optimisées (Bruno, 2026-11-01, quand le jeu et le moteur seront
+  plus avancés) : aujourd'hui elle n'est active qu'en Debug, ce qui rend le jeu lent (46 images/s au lieu de 250).
+  Une variable `FLUX_VULKAN_VALIDATION=1` l'activerait en « Release + débogage » pour jouer vite tout en vérifiant.
 - ✅ Version affichée dans le jeu : numéro + commit Git.
 - ✅ Instructions AVX2 (processeur minimum : Intel Haswell 2013, AMD Ryzen 2017 ; Bruno, 2026-10-28) pour tout le projet, Jolt compris (il restait en SSE2 avec Ninja), sans FMA implicite (relief C++ identique au shader). Pas de SIMD écrit à la main : à envisager pour le bruit des tuiles de collision (`Terrain::GetHeight`, 4 points à la fois) seulement si une mesure le justifie (mesuré : 2,5 ms par tuile, -13 % avec la seule option AVX2).
 - 🔧 Classe `Engine` allégée (demande de Bruno du 2026-10-25) : ses services sont des classes privées de `src/Core` qu'elle possède (caméra du joueur, sauvegarde rapide, liaisons des interfaces, infos de vol, écran de chargement, panneau Moteur) ; les changer ne recompile ni l'éditeur ni le jeu. À améliorer : `Engine::Run` et `UpdateGameSystems` restent longues ; le warp est encore dans `Engine` (`EngineWarp.cpp`) ; les infos de vol iront peut-être dans le module du jeu.
