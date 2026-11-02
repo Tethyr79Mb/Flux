@@ -3,8 +3,8 @@
 //    (réductions du GPU).
 // 2) prefilterFragment : chaque niveau de mip des reflets est ce cube vu à travers un reflet GGX de plus en plus rugueux
 //    (rugosité = niveau / dernier niveau, comme Mesh.slang le lit). Échantillonnage d'importance filtré (Křivánek et
-//    Colbert, GPU Gems 3 ch. 20) : chaque tirage lit le mip dont un texel couvre son angle solide, 64 tirages suffisent
-//    sans points brillants qui scintillent.
+//    Colbert, GPU Gems 3 ch. 20) : chaque tirage lit le mip dont un texel couvre son angle solide, 64 à 256 tirages
+//    suffisent sans points brillants qui scintillent.
 // 3) irradianceFragment : la lumière diffuse reçue par une surface de chaque orientation (moyenne pondérée par le
 //    cosinus, divisée par pi : ce que multiplie la couleur diffuse), dans un petit cube.
 
@@ -109,11 +109,17 @@ float SourceMip(float pdf, uint count)
 {
     const float texelSolidAngle = 4.0 * Pi / (6.0 * settings.sourceSize * settings.sourceSize);
     const float sampleSolidAngle = 1.0 / (float(count) * pdf + 1.0e-6);
-    // +1 : un peu plus flou, contre le bruit des tirages communs à tous les texels.
-    return max(0.5 * log2(sampleSolidAngle / texelSolidAngle) + 1.0, 0.0);
+    // +0,5 : un peu plus flou, contre le bruit des tirages communs à tous les texels. À +1 avec 64 tirages, le reflet
+    // le plus rugueux lisait des mips de 1 ou 2 pixels et s'aplatissait vers la moyenne du ciel (-7 % vers le haut
+    // d'un dégradé) ; à +0,5 avec 256 tirages, l'écart tombe à 1 % (simulation, et EnvironmentGpuTests).
+    return max(0.5 * log2(sampleSolidAngle / texelSolidAngle) + 0.5, 0.0);
 }
 
-static const uint PrefilterSamples = 64;
+// Lobes étroits : 64 tirages ; larges (rugosité 0,4 et plus, mips de 32 pixels et moins, peu de texels) : 256.
+uint PrefilterSamples(float roughness)
+{
+    return roughness < 0.3 ? 64 : 256;
+}
 
 // Comme Karis (« Real Shading in Unreal Engine 4 », 2013) : la vue est prise dans l'axe du reflet (n = v = r), ce
 // qui rend le lobe indépendant de l'angle de vue et tient en une texture cube.
@@ -132,8 +138,9 @@ float4 prefilterFragment(VertexOutput input) : SV_Target
     Basis(n, tangent, bitangent);
     float3 sum = float3(0.0);
     float weight = 0.0;
-    for (uint i = 0; i < PrefilterSamples; ++i) {
-        const float2 xi = Hammersley(i, PrefilterSamples);
+    const uint count = PrefilterSamples(roughness);
+    for (uint i = 0; i < count; ++i) {
+        const float2 xi = Hammersley(i, count);
         // Demi-vecteur tiré selon la distribution GGX.
         const float phi = 2.0 * Pi * xi.x;
         const float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a2 - 1.0) * xi.y));
@@ -148,13 +155,13 @@ float4 prefilterFragment(VertexOutput input) : SV_Target
         const float d = cosTheta * cosTheta * (a2 - 1.0) + 1.0;
         const float distribution = a2 / (Pi * d * d);
         const float pdf = distribution * 0.25;
-        sum += source.SampleLevel(l, SourceMip(pdf, PrefilterSamples)).rgb * nl;
+        sum += source.SampleLevel(l, SourceMip(pdf, count)).rgb * nl;
         weight += nl;
     }
     return float4(sum / max(weight, 1.0e-4), 1.0);
 }
 
-static const uint IrradianceSamples = 128;
+static const uint IrradianceSamples = 256;
 
 [shader("fragment")]
 float4 irradianceFragment(VertexOutput input) : SV_Target
