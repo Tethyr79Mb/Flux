@@ -7,7 +7,6 @@
 #include "Planetology/PlanetRenderer.hpp"
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 #include <numbers>
 #include <optional>
@@ -49,11 +48,8 @@ namespace Flux {
         // canal : la nébuleuse peut dépasser 1 avant la luminosité, sans bandes dans les dégradés sombres. 48 Mo.
         constexpr std::uint32_t BackgroundSize = 1024;
 
-        // Texture cube de la lumière ambiante et des reflets : floue de toute façon (les reflets nets viendraient
-        // d'autres techniques), petite pour être refaite vite quand un réglage du ciel change.
-        constexpr std::uint32_t EnvironmentSize = 128;
-        constexpr std::uint32_t GradientSize = 16;
-        // Un réglage qu'on fait glisser change le ciel à chaque image : la texture cube suit au plus à ce rythme.
+        // Un réglage qu'on fait glisser change le ciel à chaque image : le fond (et l'environnement tiré de lui) suit
+        // au plus à ce rythme.
         constexpr std::chrono::milliseconds MinRebuildInterval{150};
 
         // Éclairage sans ciel, celui d'avant le ciel : soleil légèrement chaud, ambiante bleutée en haut et plus
@@ -70,10 +66,6 @@ namespace Flux {
 
         std::array<float, 4> ToArray(const Math::Vector3f& v, float w = 0.0f) { return {v.x, v.y, v.z, w}; }
         std::array<float, 4> ToArray(const Math::LinearColor& c, float w = 0.0f) { return {c.r, c.g, c.b, w}; }
-
-        std::uint32_t MipCount(std::uint32_t size) {
-            return static_cast<std::uint32_t>(std::bit_width(size));
-        }
     }
 
     std::expected<std::unique_ptr<SkyRenderer>, std::string> SkyRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
@@ -219,46 +211,7 @@ namespace Flux {
             return panorama;
         }
         panorama.texture = std::move(*texture);
-        panorama.cube = PanoramaToCube(*image, EnvironmentSize);
         return panorama;
-    }
-
-    // Pixels refaits si le ciel a changé (pas trop souvent), puis la texture de l'image frameIndex si elle n'est pas à
-    // jour : ses ressources sont libres (après BeginFrame), l'autre image en vol garde la sienne.
-    void SkyRenderer::UpdateEnvironment(const EnvironmentKey& key, std::uint32_t frameIndex) {
-        const auto now = std::chrono::steady_clock::now();
-        if (!m_hasPixels || (key != m_key && now - m_lastBuild >= MinRebuildInterval)) {
-            switch (key.kind) {
-                case EnvironmentKey::Kind::Gradient:
-                    m_pixels = GradientCube(DefaultSkyAmbient, DefaultGroundAmbient, GradientSize);
-                    m_pixelsSize = GradientSize;
-                    break;
-                case EnvironmentKey::Kind::Generated:
-                    m_pixels = GenerateSkyCube(key.parameters, EnvironmentSize);
-                    m_pixelsSize = EnvironmentSize;
-                    break;
-                case EnvironmentKey::Kind::Panorama: {
-                    const Panorama& panorama = LoadPanorama(key.panorama);
-                    m_pixels = panorama.cube.empty() ? GradientCube({}, {}, GradientSize) : panorama.cube;
-                    m_pixelsSize = panorama.cube.empty() ? GradientSize : EnvironmentSize;
-                    break;
-                }
-            }
-            m_key = key;
-            m_hasPixels = true;
-            m_lastBuild = now;
-            ++m_version;
-        }
-        if (m_environmentVersions[frameIndex] == m_version && m_environments[frameIndex]) {
-            return;
-        }
-        auto texture = m_device.CreateCubeTexture(RHI::Format::RGBA8Srgb, m_pixelsSize, m_pixels, true);
-        if (!texture) {
-            Log::Error("ciel : {}", texture.error());
-            return; // l'ancienne reste
-        }
-        m_environments[frameIndex] = std::move(*texture);
-        m_environmentVersions[frameIndex] = m_version;
     }
 
     SkyLighting SkyRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
@@ -272,7 +225,10 @@ namespace Flux {
 
         SkyLighting lighting;
         lighting.exposure = Exposure;
-        EnvironmentKey key;
+        EnvironmentSource& environment = lighting.environmentSource;
+        environment.top = DefaultSkyAmbient;
+        environment.bottom = DefaultGroundAmbient;
+        std::optional<SkyParameters> generated; // ciel généré : ses réglages
         const RHI::Texture* panoramaTexture = m_black.get();
         SkyData data{};
         const float tanY = std::tan(0.5f * camera.verticalFov);
@@ -308,18 +264,20 @@ namespace Flux {
             const float brightness = std::max(sky.brightness, 0.0f);
             lighting.ambient = std::max(sky.ambient, 0.0f) * brightness;
 
-            if (!sky.image.empty() && !assetsDirectory.empty()) {
-                key.kind = EnvironmentKey::Kind::Panorama;
-                key.panorama = assetsDirectory / Platform::PathFromUtf8(sky.image);
-                if (const Panorama& panorama = LoadPanorama(key.panorama); panorama.texture) {
+            const bool usesPanorama = !sky.image.empty() && !assetsDirectory.empty();
+            if (usesPanorama) {
+                if (const Panorama& panorama = LoadPanorama(assetsDirectory / Platform::PathFromUtf8(sky.image)); panorama.texture) {
                     panoramaTexture = panorama.texture.get();
+                    environment.kind = EnvironmentSource::Kind::Panorama;
+                    environment.panorama = panoramaTexture;
+                } else {
+                    environment.top = environment.bottom = {}; // image illisible : ni fond ni lumière du ciel
                 }
             } else {
-                key.kind = EnvironmentKey::Kind::Generated;
-                key.parameters = MakeSkyParameters(sky);
+                generated = MakeSkyParameters(sky);
             }
 
-            const SkyParameters parameters = key.kind == EnvironmentKey::Kind::Generated ? key.parameters : MakeSkyParameters(sky);
+            const SkyParameters parameters = generated ? *generated : MakeSkyParameters(sky);
             data.toSun = ToArray(lighting.toSun, sunRadius(sun ? sun->size : sky.sunSize));
             data.sunColor = ToArray(lighting.sunColor, Exposure);
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
@@ -327,7 +285,7 @@ namespace Flux {
             data.galaxyAxis = ToArray(parameters.galaxyAxis, std::clamp(sky.stars, 0.0f, 1.0f));
             data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f));
             data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
-            data.options = {parameters.seed, key.kind == EnvironmentKey::Kind::Panorama && panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
+            data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
         // Le disque d'un Soleil posé a sa propre couleur ; sa lumière, la sienne (blanche par défaut).
         data.discColor = ToArray(sun ? sunLight(sun->color, sun->intensity) : lighting.sunColor, 0.0f);
@@ -345,14 +303,18 @@ namespace Flux {
 
         // Fond généré : recalculé (Bake) pour de nouveaux réglages, lu ensuite tant qu'ils ne changent pas.
         const RHI::Texture* backgroundTexture = m_blackCube.get();
-        if (component && key.kind == EnvironmentKey::Kind::Generated) {
+        if (generated) {
             const auto now = std::chrono::steady_clock::now();
-            if (!m_bakedParameters || (*m_bakedParameters != key.parameters && now - m_lastBake >= MinRebuildInterval)) {
-                m_bakedParameters = key.parameters;
+            if (!m_bakedParameters || (*m_bakedParameters != *generated && now - m_lastBake >= MinRebuildInterval)) {
+                m_bakedParameters = generated;
                 m_bakePending = true;
                 m_lastBake = now;
+                ++m_backgroundRevision; // calculé à cette image, avant l'environnement
             }
             backgroundTexture = m_background.get();
+            environment.kind = EnvironmentSource::Kind::Generated;
+            environment.background = m_background.get();
+            environment.revision = m_backgroundRevision;
         }
         if (m_boundBackground[frameIndex] != backgroundTexture) {
             m_groups[frameIndex]->SetTexture(BackgroundSlot, *backgroundTexture, *m_cubeSampler);
@@ -362,10 +324,6 @@ namespace Flux {
             m_groups[frameIndex]->SetTexture(PanoramaSlot, *panoramaTexture, *m_panoramaSampler);
             m_boundPanorama[frameIndex] = panoramaTexture;
         }
-        UpdateEnvironment(key, frameIndex);
-        lighting.environment = m_environments[frameIndex].get();
-        lighting.environmentSampler = m_cubeSampler.get();
-        lighting.environmentMips = MipCount(m_environments[frameIndex] ? m_environments[frameIndex]->GetExtent().width : 1);
         return lighting;
     }
 

@@ -242,12 +242,12 @@ namespace Flux::Vk {
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
-    // Texture 2D ou face d'une texture cube : effacée puis remplie.
+    // Texture 2D ou face d'un niveau de mip d'une texture cube : effacée puis remplie.
     void RhiCommandList::BeginTexturePass(const RHI::RenderPassDesc& desc) {
         const auto& target = static_cast<const RhiTexture&>(*desc.colorTarget);
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        const VkImageView faceView = target.GetImage().GetFaceView(desc.colorLayer);
+        const VkImageView faceView = target.GetImage().GetFaceView(desc.colorLayer, desc.colorMip);
         colorAttachment.imageView = faceView != VK_NULL_HANDLE ? faceView : target.GetImage().GetView();
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp = desc.loadColor ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -263,7 +263,11 @@ namespace Flux::Vk {
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         const VkRenderingAttachmentInfo depthAttachment = desc.depth ? BeginDepthAttachment(desc) : VkRenderingAttachmentInfo{};
-        renderingInfo.renderArea = {{0, 0}, target.GetImage().GetExtent()};
+        VkExtent2D area = target.GetImage().GetExtent();
+        if (faceView != VK_NULL_HANDLE) {
+            area = {std::max(area.width >> desc.colorMip, 1u), std::max(area.height >> desc.colorMip, 1u)};
+        }
+        renderingInfo.renderArea = {{0, 0}, area};
         renderingInfo.layerCount = 1;
         renderingInfo.colorAttachmentCount = desc.secondColorTarget ? 2 : 1;
         renderingInfo.pColorAttachments = colorAttachments.data();

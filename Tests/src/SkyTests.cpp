@@ -1,4 +1,4 @@
-// Tests du ciel : directions des faces de la texture cube (convention de Vulkan), panorama, ciel généré.
+// Tests du ciel : directions des faces de la texture cube (convention de Vulkan), panorama, réglages du ciel généré.
 #include "Check.hpp"
 
 #include "Flux/Graphics/Sky.hpp"
@@ -70,27 +70,6 @@ namespace {
         CHECK(Near(v, 0.0f));
         PanoramaUv({1.0f, 0.0f, 0.0f}, u, v); // à droite : un quart de tour plus loin
         CHECK(Near(u, 0.75f));
-
-        // Moitié haute blanche, moitié basse noire : la face +Y blanche, la face -Y noire.
-        ImageData image;
-        image.size = {64, 32};
-        image.rgba.resize(64 * 32 * 4);
-        for (int y = 0; y < 32; ++y) {
-            for (int x = 0; x < 64; ++x) {
-                const std::uint8_t value = y < 16 ? 255 : 0;
-                std::uint8_t* texel = image.rgba.data() + (y * 64 + x) * 4;
-                texel[0] = texel[1] = texel[2] = value;
-                texel[3] = 255;
-            }
-        }
-        constexpr std::uint32_t size = 8;
-        const std::vector<std::uint8_t> cube = PanoramaToCube(image, size);
-        CHECK(cube.size() == size * size * 4 * 6);
-        const auto texel = [&](int face, std::uint32_t x, std::uint32_t y) { return cube[((face * size + y) * size + x) * 4]; };
-        CHECK(texel(2, 4, 4) == 255);
-        CHECK(texel(3, 4, 4) == 0);
-        CHECK(texel(4, 4, 1) == 255); // face +Z : le haut au-dessus de l'horizon
-        CHECK(texel(4, 4, 6) == 0);
         return true;
     }
 
@@ -101,15 +80,10 @@ namespace {
         CHECK(Near(Math::Length(parameters.galaxyCenter), 1.0f));
         CHECK(Near(Math::Dot(parameters.galaxyAxis, parameters.galaxyCenter), 0.0f, 1.0e-3f));
         // Même graine : même ciel ; autre graine : autre ciel.
-        CHECK(GenerateSkyCube(parameters, 8) == GenerateSkyCube(MakeSkyParameters(sky), 8));
+        CHECK(parameters == MakeSkyParameters(sky));
         SkyComponent other = sky;
         other.seed = 2;
-        CHECK(GenerateSkyCube(parameters, 8) != GenerateSkyCube(MakeSkyParameters(other), 8));
-        // Ni nébuleuse ni galaxie : noir.
-        other.nebula = 0.0f;
-        other.galaxy = 0.0f;
-        const Math::Vector3f black = SkyBackground(Math::Normalize(Math::Vector3f{0.3f, 0.5f, -0.8f}), MakeSkyParameters(other));
-        CHECK(black.x == 0.0f && black.y == 0.0f && black.z == 0.0f);
+        CHECK(parameters != MakeSkyParameters(other));
         return true;
     }
 

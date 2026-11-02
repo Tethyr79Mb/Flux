@@ -4,6 +4,7 @@
 #include "Flux/Math/Color.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Renderer/EnvironmentRenderer.hpp"
 #include "Planetology/AtmosphereGpu.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
@@ -26,10 +27,14 @@ namespace Flux {
     {
         Math::Vector3f toSun;       // unitaire
         Math::Vector3f sunColor;    // couleur x intensité
-        float ambient = 1.0f;       // multiplie la texture cube (lumière ambiante et reflets)
+        float ambient = 1.0f;       // multiplie les textures de l'environnement (lumière ambiante et reflets)
         float exposure = 1.0f;
-        // Texture cube du ciel (les ressources de l'image en préparation) et son nombre de niveaux de mip.
+        // D'où l'environnement tire sa lumière (EnvironmentRenderer::Prepare).
+        EnvironmentSource environmentSource;
+        // Textures de l'environnement, remplies par le Renderer (EnvironmentRenderer) : reflets et leur nombre de
+        // niveaux de mip, lumière diffuse.
         const RHI::Texture* environment = nullptr;
+        const RHI::Texture* irradiance = nullptr;
         const RHI::Sampler* environmentSampler = nullptr;
         std::uint32_t environmentMips = 1;
         // Atmosphère de la planète la plus proche (aucune : mie[3] à 0).
@@ -41,9 +46,9 @@ namespace Flux {
         const RHI::Sampler* airSampler = nullptr;
     };
 
-    // Ciel de la scène (SkyComponent) : le fond, dessiné après les opaques là où rien ne l'a été, et la texture cube
-    // qui éclaire les maillages (lumière ambiante, reflets). Sans SkyComponent : pas de fond (la couleur d'effacement),
-    // un dégradé gris pour la lumière ambiante et le soleil par défaut, l'éclairage d'avant le ciel.
+    // Ciel de la scène (SkyComponent) : le fond, dessiné après les opaques là où rien ne l'a été, et de quoi en tirer
+    // la lumière ambiante et les reflets (SkyLighting::environmentSource). Sans SkyComponent : pas de fond (la couleur
+    // d'effacement), un dégradé gris pour la lumière ambiante et le soleil par défaut, l'éclairage d'avant le ciel.
     // Près d'une planète à atmosphère (PlanetComponent), le fond montre aussi son air : ciel bleu vu du sol, halo vu de
     // l'espace (même sans SkyComponent, sur un fond noir).
     class SkyRenderer {
@@ -76,27 +81,14 @@ namespace Flux {
         void Draw(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
         private:
-        // D'où vient la texture cube : quand elle change, la texture est refaite.
-        struct EnvironmentKey
-        {
-            enum class Kind : std::uint8_t { Gradient, Generated, Panorama };
-            Kind kind = Kind::Gradient;
-            SkyParameters parameters; // Generated
-            std::filesystem::path panorama; // Panorama
-
-            bool operator==(const EnvironmentKey&) const = default;
-        };
-
-        // Image panoramique chargée : la texture du fond et sa texture cube (pixels), gardées jusqu'à la fermeture.
+        // Image panoramique chargée, gardée jusqu'à la fermeture.
         struct Panorama
         {
             std::unique_ptr<RHI::Texture> texture; // nul : fichier illisible
-            std::vector<std::uint8_t> cube;
         };
 
         explicit SkyRenderer(RHI::Device& device) : m_device(device) {}
         const Panorama& LoadPanorama(const std::filesystem::path& path);
-        void UpdateEnvironment(const EnvironmentKey& key, std::uint32_t frameIndex);
 
         // Atmosphère de la planète la plus proche de la caméra, et sa lumière ambiante (refaite quand elle change).
         Planetology::AtmosphereGpu PrepareAtmosphere(const Scene& scene, const Camera& camera, const Math::Vector3f& sunColor);
@@ -126,6 +118,7 @@ namespace Flux {
         std::optional<SkyParameters> m_bakedParameters;
         bool m_bakePending = false;
         std::chrono::steady_clock::time_point m_lastBake;
+        std::uint64_t m_backgroundRevision = 0; // EnvironmentSource::revision : un par nouveau calcul du fond
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundBackground{};
 
         // Tables de l'air (shaders/Atmosphere.slang) : le ciel vu de la caméra et l'air jusqu'à ce qu'elle voit, deux
@@ -139,18 +132,6 @@ namespace Flux {
         std::unique_ptr<RHI::Texture> m_airMie;
         bool m_tablesWanted = false; // caméra dans l'air cette image
         bool m_tablesFilled = false;
-
-        // Pixels de la texture cube voulue (refaits quand la clé change, au plus tous les MinRebuildInterval), puis
-        // une texture par image en vol, refaite quand elle n'a pas la dernière version : jamais remplacée pendant que
-        // le GPU la lit, sans attendre le GPU.
-        EnvironmentKey m_key;
-        bool m_hasPixels = false;
-        std::vector<std::uint8_t> m_pixels;
-        std::uint32_t m_pixelsSize = 0;
-        std::uint64_t m_version = 0;
-        std::chrono::steady_clock::time_point m_lastBuild;
-        std::array<std::unique_ptr<RHI::Texture>, RHI::FramesInFlight> m_environments;
-        std::array<std::uint64_t, RHI::FramesInFlight> m_environmentVersions{};
 
         std::map<std::filesystem::path, Panorama> m_panoramas;
     };

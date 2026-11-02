@@ -55,7 +55,6 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - Semis des arbres en deux exemplaires : `SowPlace` (`shaders/PlanetTile.slang`, avec le climat et les biomes de
   `shaders/PlanetClimate.slang`) et `Planetology::SowPlain` (`TreeSowing.cpp`, collision) ; `VegetationGpuTests` les
   compare.
-- Bruit du ciel en deux exemplaires : `Graphics/Sky.cpp` et `shaders/Sky.slang`, à modifier ensemble.
 - Performances : pas d'allocation ni de copie par image dans le code chaud ; dire dans la PR ce qui coûte (appels de
   dessin un par un, parcours quadratiques) ; mesurer (panneau Moteur, timestamps GPU) avant d'optimiser.
 - Feuilles de route (`Engine/ROADMAP.md`, `Editor/ROADMAP.md`) : chaque objectif porte son état (demande de Bruno) :

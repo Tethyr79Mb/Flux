@@ -125,9 +125,11 @@ namespace Flux::RHI {
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false,
                                                                                         bool storage = false) = 0;
-        // Texture cube vierge dont chaque face est une cible de rendu (RenderPassDesc::colorTarget), lue ensuite par
-        // direction comme CreateCubeTexture. Un seul niveau de mip.
-        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeRenderTarget(Format format, std::uint32_t size) = 0;
+        // Texture cube vierge dont chaque face de chaque niveau de mip est une cible de rendu (RenderPassDesc::colorTarget,
+        // colorLayer, colorMip), lue ensuite par direction comme CreateCubeTexture. Plusieurs niveaux : chacun moitié du
+        // précédent, dessinés un à un ou réduits par CommandList::GenerateMipmaps.
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeRenderTarget(Format format, std::uint32_t size,
+                                                                                            std::uint32_t mipLevels = 1) = 0;
         virtual std::expected<std::unique_ptr<Sampler>, std::string> CreateSampler(const SamplerDesc& desc) = 0;
         virtual std::expected<std::unique_ptr<BindGroupLayout>, std::string> CreateBindGroupLayout(const BindGroupLayoutDesc& desc) = 0;
         // nullptr si le layout a atteint son maximum de groupes.

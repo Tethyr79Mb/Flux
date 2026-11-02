@@ -66,7 +66,8 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent,
                                                                                      bool sampled, bool storage) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeRenderTarget(RHI::Format format,
-                                                                                            std::uint32_t size) override;
+                                                                                            std::uint32_t size,
+                                                                                            std::uint32_t mipLevels) override;
         std::expected<std::unique_ptr<RHI::Sampler>, std::string> CreateSampler(const RHI::SamplerDesc& desc) override;
         std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) override;
         std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;

@@ -103,7 +103,9 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 │                  chaque image ; repère de plantage GPU et heure du GPU (panneau Moteur ouvert) par étape
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
-├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), éclairage ambiant
+├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), soleil, air de la planète proche
+├─ EnvironmentRenderer reflets (cube HDR préfiltré GGX par niveau de rugosité) et lumière ambiante (cube
+│                  d'irradiance) tirés du ciel par le GPU, refaits seulement quand le ciel change
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
 ├─ OverlayRenderer FluxUI : texte MSDF, formes SDF, images
