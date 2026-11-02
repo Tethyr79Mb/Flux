@@ -60,6 +60,7 @@ flux_add_shaders(FluxShaders
         shaders/CloudNoise.slang
         shaders/Clouds.slang
         shaders/Culling.slang
+        shaders/Environment.slang
         shaders/Flame.slang
         shaders/Grid.slang
         shaders/Mesh.slang

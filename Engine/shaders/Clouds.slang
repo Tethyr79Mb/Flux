@@ -267,8 +267,7 @@ CloudMarchOutput fragmentCloudMarch(CloudVertexOutput input)
     const bool air = HasAtmosphere(f.atmosphere)
                    && dot(f.atmosphere.center.xyz - c.planet.clouds.xyz, f.atmosphere.center.xyz - c.planet.clouds.xyz)
                           < 1.0e-6 * dot(c.planet.clouds.xyz, c.planet.clouds.xyz) + 1.0;
-    const float3 sky = environmentMap.SampleLevel(normalize(direction * start - c.planet.clouds.xyz), f.environment.y).rgb
-                     * f.environment.x;
+    const float3 sky = irradianceMap.SampleLevel(normalize(direction * start - c.planet.clouds.xyz), 0.0).rgb * f.environment.x;
     const float opacity = c.planet.cloudShape.y;
 
     float transmittance = 1.0;

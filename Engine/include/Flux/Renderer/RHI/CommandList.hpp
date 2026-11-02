@@ -25,8 +25,8 @@ namespace Flux::RHI {
 
     // Passe qui dessine dans l'image de la swapchain, effacée, avec un tampon de profondeur effacé (s'il y en a un).
     // Sans couleur (color = false) : profondeur seule dans `depth` (carte d'ombres, CreateRenderTarget sampled).
-    // Avec colorTarget : dans une texture (CreateRenderTarget sampled, de couleur) ou dans la face colorLayer d'une
-    // texture cube (CreateCubeRenderTarget), avec ou sans profondeur.
+    // Avec colorTarget : dans une texture (CreateRenderTarget sampled, de couleur) ou dans la face colorLayer du niveau
+    // de mip colorMip d'une texture cube (CreateCubeRenderTarget), avec ou sans profondeur.
     // Les textures doivent déjà servir de cibles (UseTextures : ColorTarget, DepthTarget) ; la passe ne change pas leur
     // usage : pour les lire ensuite, UseTextures(Sampled). Seule l'image de la swapchain est préparée par la passe.
     struct RenderPassDesc
@@ -37,6 +37,7 @@ namespace Flux::RHI {
         bool color = true;
         const Texture* colorTarget = nullptr;
         std::uint32_t colorLayer = 0;
+        std::uint32_t colorMip = 0; // texture cube seulement : la passe couvre ce niveau (sa taille)
         // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0.
         const Texture* secondColorTarget = nullptr;
         // Tampon de profondeur gardé après la passe, pour être lu ensuite (CreateRenderTarget sampled).

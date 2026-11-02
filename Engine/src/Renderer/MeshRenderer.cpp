@@ -131,6 +131,7 @@ namespace Flux {
         constexpr std::uint32_t MeshTaskSlot = 12;    // mesh shaders des modèles (shaders/ModelMesh.slang)
         constexpr std::uint32_t MeshletStatSlot = 13;
         constexpr std::uint32_t TerrainShadowMapSlot = 14;
+        constexpr std::uint32_t IrradianceSlot = 15;
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -249,6 +250,7 @@ namespace Flux {
             RHI::Binding{MeshTaskSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -643,8 +645,10 @@ namespace Flux {
                                const TemporalView& temporal, const std::filesystem::path& assetsDirectory,
                                std::uint32_t frameIndex) {
         m_models->Update();
-        if (sky.environment && sky.environment != m_boundEnvironment[frameIndex]) {
+        // Textures de l'environnement : les mêmes d'une image à l'autre (refaites sur place quand le ciel change).
+        if (sky.environment && sky.irradiance && sky.environment != m_boundEnvironment[frameIndex]) {
             m_frameGroups[frameIndex]->SetTexture(EnvironmentSlot, *sky.environment, *sky.environmentSampler);
+            m_frameGroups[frameIndex]->SetTexture(IrradianceSlot, *sky.irradiance, *sky.environmentSampler);
             m_boundEnvironment[frameIndex] = sky.environment;
         }
         if (sky.airRayleigh != m_boundAir[frameIndex]) {
@@ -1158,10 +1162,9 @@ namespace Flux {
         frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
         frame.toSun = ToArray(sky.toSun);
         frame.sunColor = ToArray(sky.sunColor);
-        // Lumière diffuse : la texture réduite à 4 x 4 par face, une moyenne de tout un côté du ciel. Reflets : de
-        // net (rugosité 0) à ce même flou (rugosité 1).
-        const float diffuseMip = static_cast<float>(sky.environmentMips > 3 ? sky.environmentMips - 3 : 0);
-        frame.environment = {sky.ambient, diffuseMip, diffuseMip, sky.exposure};
+        // Reflets : un niveau de mip par rugosité, du miroir (0) au plus rugueux (le dernier niveau, rugosité 1).
+        const float roughestMip = static_cast<float>(sky.environmentMips > 0 ? sky.environmentMips - 1 : 0);
+        frame.environment = {sky.ambient, 0.0f, roughestMip, sky.exposure};
         const float tanY = std::tan(0.5f * camera.verticalFov);
         frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
         frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);

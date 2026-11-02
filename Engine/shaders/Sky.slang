@@ -7,6 +7,7 @@
 
 // Près d'une planète à atmosphère : ce fond est vu à travers son air (ciel bleu le jour, halo vu de l'espace).
 
+#include "CubeMap.slang"
 #include "SkyData.slang"
 
 [[vk::binding(1, 0)]] Sampler2D panorama; // sRGB, ramené en linéaire à la lecture
@@ -40,7 +41,7 @@ VertexOutput vertexMain(uint vertexId : SV_VulkanVertexID)
     return output;
 }
 
-// --- Bruit : exactement les calculs de Engine/src/Graphics/Sky.cpp (toute modification des deux côtés). ---
+// --- Bruit du fond généré (calculé seulement ici : la lumière ambiante et les reflets en sont tirés par le GPU). ---
 
 uint Hash(uint x)
 {
@@ -89,7 +90,7 @@ float Fbm(float3 p, int octaves, uint seed)
     return sum / total;
 }
 
-// Nébuleuse et bande galactique, en linéaire, avant la luminosité (SkyBackground dans Sky.cpp).
+// Nébuleuse et bande galactique, en linéaire, avant la luminosité.
 float3 SkyBackground(float3 direction, SkyData s)
 {
     const uint seed = s.options.x;
@@ -191,22 +192,6 @@ float3 Stars(float3 d, float pixelAngle, uint seed, float density, float brightn
     return sum;
 }
 
-// Point (u, v de -1 à 1, au centre des texels) d'une face de texture cube -> direction (CubeFaceDirection dans
-// Sky.cpp : l'ordre et l'orientation des faces de Vulkan).
-float3 CubeFaceDirection(uint face, float u, float v)
-{
-    float3 d;
-    switch (face) {
-        case 0: d = float3(1.0, -v, -u); break;
-        case 1: d = float3(-1.0, -v, u); break;
-        case 2: d = float3(u, 1.0, v); break;
-        case 3: d = float3(u, -1.0, -v); break;
-        case 4: d = float3(u, -v, 1.0); break;
-        default: d = float3(-u, -v, -1.0); break;
-    }
-    return normalize(d);
-}
-
 // Une face de la texture cube du fond : le triangle plein écran la couvre, clip donne le point de la face.
 [shader("fragment")]
 float4 bakeFragment(VertexOutput input) : SV_Target
@@ -259,13 +244,6 @@ TableOutput airTableFragment(float4 position : SV_Position)
     TableOutput output;
     AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
     return output;
-}
-
-// Point du panorama vu dans `direction` (PanoramaUv dans Sky.cpp).
-float2 PanoramaUv(float3 direction)
-{
-    const float Pi = 3.14159265;
-    return float2(atan2(direction.x, -direction.z) / (2.0 * Pi) + 0.5, acos(clamp(direction.y, -1.0, 1.0)) / Pi);
 }
 
 // Force de l'effacement des étoiles et de la nébuleuse par la lumière de l'air (voir fragmentMain). Planète par défaut :

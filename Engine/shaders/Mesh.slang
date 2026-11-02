@@ -66,8 +66,8 @@ struct FrameData
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
-    // x : multiplie la texture du ciel ; y : niveau de mip de la lumière diffuse ; z : niveau de mip des reflets les
-    // plus flous ; w : exposition (appliquée après le bloom, shaders/Post.slang : inutilisée ici)
+    // x : multiplie les textures du ciel ; y : inutilisé ; z : niveau de mip des reflets les plus flous (rugosité 1) ;
+    // w : exposition (appliquée après le bloom, shaders/Post.slang : inutilisée ici)
     float4 environment;
     // Rayon d'un pixel (nuages) : cameraForward + cameraRight * clip.x - cameraUp * clip.y (à l'échelle du champ), le
     // clip du pixel moins le décalage d'un sous-pixel (w de cameraRight et de cameraUp).
@@ -176,8 +176,10 @@ struct MaterialData
 [[vk::binding(14, 1)]] Sampler2DShadow terrainShadowMap;
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
-// Le ciel tout autour (SkyRenderer), réduit à chaque niveau de mip : de plus en plus flou.
+// Le ciel tout autour vu dans un reflet (EnvironmentRenderer, HDR) : un niveau de mip par rugosité, préfiltré GGX.
 [[vk::binding(5, 1)]] SamplerCube environmentMap;
+// Lumière diffuse du ciel reçue par une surface de chaque orientation, divisée par pi (EnvironmentRenderer).
+[[vk::binding(15, 1)]] SamplerCube irradianceMap;
 // Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i].x avec le
 // matériau instances[i].y (les appels des tuiles de planète donnent directement l'indice dans draws).
 [[vk::binding(6, 1)]] StructuredBuffer<uint2> instances;
@@ -737,8 +739,7 @@ float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, f
     const FrameData f = frame[0];
     const float sky = f.environment.x * skyScale;
     // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
-    const float3 diffuseLight = lerp(environmentMap.SampleLevel(s.normal, f.environment.y).rgb * sky,
-                                     interiorLight, inside);
+    const float3 diffuseLight = lerp(irradianceMap.SampleLevel(s.normal, 0.0).rgb * sky, interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
     // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));

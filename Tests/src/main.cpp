@@ -26,6 +26,7 @@ int main() {
         {"cascades d'ombres", RunShadowTests},
         {"graphe de rendu", RunRenderGraphTests},
         {"ciel", RunSkyTests},
+        {"reflets et lumière du ciel sur le GPU", RunEnvironmentGpuTests},
         {"son", RunAudioTests},
         {"actions d'entrée", RunInputTests},
         {"planètes (cube-sphère)", RunPlanetTests},

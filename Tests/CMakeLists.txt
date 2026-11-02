@@ -6,7 +6,8 @@ target_link_libraries(FluxTests PRIVATE Flux::Engine GameLogic bc7enc meshoptimi
 target_include_directories(FluxTests PRIVATE ${PROJECT_SOURCE_DIR}/Engine/src)
 # Les biomes livrés avec le jeu sont lus là où ils sont rangés (VegetationTests.cpp).
 target_compile_definitions(FluxTests PRIVATE FLUX_GAME_ASSETS="${PROJECT_SOURCE_DIR}/Game/Module/assets")
-flux_add_shaders(FluxTestShaders shaders/ComputeTests.slang shaders/CloudNoiseTests.slang shaders/TransferTests.slang)
+flux_add_shaders(FluxTestShaders shaders/ComputeTests.slang shaders/CloudNoiseTests.slang shaders/TransferTests.slang
+                  shaders/EnvironmentTests.slang)
 add_dependencies(FluxTests FluxTestShaders)
 flux_set_warnings(FluxTests)
 flux_precompile_headers(FluxTests)

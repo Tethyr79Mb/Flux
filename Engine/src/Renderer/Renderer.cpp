@@ -4,6 +4,7 @@
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Renderer/EnvironmentRenderer.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
 #include "Planetology/CloudRenderer.hpp"
@@ -100,6 +101,7 @@ namespace Flux {
         // Déclaré en premier : détruit en dernier, après les ressources créées par lui.
         std::unique_ptr<RHI::Device> device;
         std::unique_ptr<SkyRenderer> sky;
+        std::unique_ptr<EnvironmentRenderer> environment;
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<ThrusterRenderer> thrusters;
         std::unique_ptr<TracerRenderer> tracers;
@@ -389,7 +391,12 @@ namespace Flux {
                 post->SkipTemporal();
             }
             const float renderHeight = static_cast<float>(frame.render.height);
-            const SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frameIndex);
+            SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frameIndex);
+            environment->Prepare(lighting.environmentSource, frameIndex);
+            lighting.environment = &environment->GetReflections();
+            lighting.irradiance = &environment->GetIrradiance();
+            lighting.environmentSampler = &environment->GetSampler();
+            lighting.environmentMips = environment->GetReflectionMips();
             frame.exposure = lighting.exposure;
             meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
             if (!meshes->HasClouds() || !temporal.continuous) {
@@ -465,6 +472,8 @@ namespace Flux {
             const auto skyMie = texture("ciel : Mie", Lifetime::Previous, [this] { return &sky->GetSkyMie(); });
             const auto airRayleigh = texture("air : Rayleigh", Lifetime::Previous, [this] { return &sky->GetAirRayleigh(); });
             const auto airMie = texture("air : Mie", Lifetime::Previous, [this] { return &sky->GetAirMie(); });
+            const auto reflections = texture("reflets du ciel", Lifetime::Previous, [this] { return &environment->GetReflections(); });
+            const auto irradiance = texture("lumière du ciel", Lifetime::Previous, [this] { return &environment->GetIrradiance(); });
             const auto shadowMap = texture("carte d'ombres", Lifetime::Previous, [this] { return &meshes->GetShadowMap(); });
             const auto terrainShadowMap = texture("ombres du relief", Lifetime::Previous, [this] { return &meshes->GetTerrainShadowMap(); });
             // Textures de travail, créées par le graphe à la taille de la vue 3D. Profondeur lisible : l'anticrénelage
@@ -522,6 +531,14 @@ namespace Flux {
                 .Reads(cpu)
                 .Writes(skyBackground)
                 .Step("nébuleuse", [this](RHI::CommandList& commands) { sky->BakeBackground(commands, frame.index); });
+            // Après la nébuleuse : l'environnement est tiré du fond qu'elle vient de calculer.
+            graph.AddPass("environnement")
+                .When([this] { return sceneVisible && environment->Pending(); })
+                .Reads(cpu)
+                .Reads(skyBackground)
+                .Writes(reflections)
+                .Writes(irradiance)
+                .Step("environnement", [this](RHI::CommandList& commands) { environment->Bake(commands, frame.index); });
             graph.AddPass("ombres")
                 .When(scene)
                 .Reads(cpu)
@@ -548,6 +565,8 @@ namespace Flux {
                 .Reads(skyMie)
                 .Reads(airRayleigh)
                 .Reads(airMie)
+                .Reads(reflections)
+                .Reads(irradiance)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -580,6 +599,7 @@ namespace Flux {
                 .When(hasClouds)
                 .Reads(cpu)
                 .Reads(sceneDepth)
+                .Reads(irradiance)
                 .Writes(cloudLight)
                 .Writes(cloudDistances)
                 .Begin([this, halfViewport](RHI::CommandList& commands) {
@@ -635,6 +655,8 @@ namespace Flux {
                 .Reads(skyMie)
                 .Reads(airRayleigh)
                 .Reads(airMie)
+                .Reads(reflections)
+                .Reads(irradiance)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -778,6 +800,11 @@ namespace Flux {
             return std::unexpected(sky.error());
         }
         impl->sky = std::move(*sky);
+        auto environment = EnvironmentRenderer::Create(*impl->device);
+        if (!environment) {
+            return std::unexpected(environment.error());
+        }
+        impl->environment = std::move(*environment);
         auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());

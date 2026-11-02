@@ -215,9 +215,13 @@ namespace Flux::Vk {
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateCubeRenderTarget(RHI::Format format,
-                                                                                                std::uint32_t size) {
-        auto image = Image::CreateCubeAttachment(*m_device, ToVulkan(format), size,
-                                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                                                                                                std::uint32_t size,
+                                                                                                std::uint32_t mipLevels) {
+        VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        if (mipLevels > 1) {
+            usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // GenerateMipmaps
+        }
+        auto image = Image::CreateCubeAttachment(*m_device, ToVulkan(format), size, usage, mipLevels);
         if (!image) {
             return std::unexpected(image.error());
         }

@@ -92,20 +92,25 @@ namespace Flux::Vk {
     }
 
     std::expected<Image, std::string> Image::CreateCubeAttachment(const Device& device, VkFormat format, std::uint32_t size,
-                                                                  VkImageUsageFlags usage) {
-        auto image = Allocate(device, format, {size, size}, usage, VK_IMAGE_ASPECT_COLOR_BIT, 1, ImageLayers::Cube);
+                                                                  VkImageUsageFlags usage, std::uint32_t mipLevels) {
+        const std::uint32_t levels = std::clamp(mipLevels, 1u, static_cast<std::uint32_t>(std::bit_width(size)));
+        auto image = Allocate(device, format, {size, size}, usage, VK_IMAGE_ASPECT_COLOR_BIT, levels, ImageLayers::Cube);
         if (!image) {
             return image;
         }
-        for (std::uint32_t face = 0; face < 6; ++face) {
-            VkImageViewCreateInfo viewInfo{};
-            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            viewInfo.image = image->m_image;
-            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            viewInfo.format = format;
-            viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, face, 1};
-            if (!Check(vkCreateImageView(image->m_device, &viewInfo, nullptr, &image->m_faceViews[face]), "vkCreateImageView")) {
-                return std::unexpected("création de la vue d'une face de texture cube");
+        image->m_faceViews.assign(static_cast<std::size_t>(levels) * 6, VK_NULL_HANDLE);
+        for (std::uint32_t mip = 0; mip < levels; ++mip) {
+            for (std::uint32_t face = 0; face < 6; ++face) {
+                VkImageViewCreateInfo viewInfo{};
+                viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                viewInfo.image = image->m_image;
+                viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                viewInfo.format = format;
+                viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 1, face, 1};
+                if (!Check(vkCreateImageView(image->m_device, &viewInfo, nullptr, &image->m_faceViews[mip * 6 + face]),
+                           "vkCreateImageView")) {
+                    return std::unexpected("création de la vue d'une face de texture cube");
+                }
             }
         }
         return image;
