@@ -239,10 +239,11 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   armes des PNJ.
 - ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
   couleurs unies), et un vrai modèle de lance-missiles.
-- 🔧 Second chasseur « Raie » (Placer > Chasseur Raie) : aile volante de 14 x 18,8 m, 46 000 triangles, 8 matériaux,
-  textures 4096 calculées dans l'espace UV (scripts dans `Modeles/Chasseur2` des fichiers du projet) ; cockpit
-  praticable (passage de 65 cm à côté du siège), deux canons fixes. À faire : rentrer le train (animation « Rentrer »
-  de `Raie-train.glb`, boîtes de collision des roues) et ouvrir la verrière (pivot de `Raie-verriere-mobile.glb`
+- 🔧 Second chasseur « Raie » (Placer > Chasseur Raie) : aile volante de 14 x 18,8 m, 49 000 triangles, 8 matériaux,
+  textures 4096 calculées dans l'espace UV (scripts dans `Modeles/Chasseur2` des fichiers du projet) ; verrière
+  jusqu'au nez, cockpit praticable (passage de 65 cm à côté du siège), deux canons fixes, gouvernes séparées de l'aile
+  par un vrai interstice. À faire : braquer les gouvernes (pièces à part dans `Raie.glb`, fusionnées pour l'instant),
+  rentrer le train (animation « Rentrer » de `Raie-train.glb`, boîtes de collision des roues) et ouvrir la verrière (pivot de `Raie-verriere-mobile.glb`
   autour de sa charnière) depuis le jeu ; collision concave du cockpit pour y marcher (enveloppe convexe aujourd'hui).
 - ✅ Vaisseau sans pilote soumis à la gravité près d'une planète ou dans son atmosphère, pas dans l'espace (« Tombe
   sans pilote », décochable pour une station).
