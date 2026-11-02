@@ -56,11 +56,11 @@ bool RunPlaceItemsTests() {
     {
         // Second chasseur (aile volante) : deux canons fixes, un siège, train et verrière en entités enfants.
         Scene scene;
-        Entity raie = NullEntity;
-        CHECK(Build(extensions, "Chasseur Raie", scene, raie));
-        CHECK(scene.Get<ShipComponent>(raie).turnRate == 90.0f);
-        CHECK(scene.Get<HealthComponent>(raie).health == 400.0f);
-        CHECK(scene.TryGet<Game::WarpDriveComponent>(raie) != nullptr);
+        Entity manta = NullEntity;
+        CHECK(Build(extensions, "Chasseur Manta", scene, manta));
+        CHECK(scene.Get<ShipComponent>(manta).turnRate == 90.0f);
+        CHECK(scene.Get<HealthComponent>(manta).health == 400.0f);
+        CHECK(scene.TryGet<Game::WarpDriveComponent>(manta) != nullptr);
         CHECK(Count<HardpointComponent>(scene) == 2 && Count<WeaponComponent>(scene) == 2);
         CHECK(Count<SeatComponent>(scene) == 1);
     }

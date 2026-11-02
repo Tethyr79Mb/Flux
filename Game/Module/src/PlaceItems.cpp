@@ -1,4 +1,4 @@
-// Objets du jeu dans le panneau Placer de l'éditeur : chasseurs armés (Chasseur et Raie), cible, stations à quais et donneur de missions.
+// Objets du jeu dans le panneau Placer de l'éditeur : chasseurs armés (Chasseur et Manta), cible, stations à quais et donneur de missions.
 // Ils utilisent des composants du jeu (emports, armes, quais, missions), que l'éditeur ne connaît pas.
 #include "PlaceItems.hpp"
 
@@ -127,16 +127,16 @@ namespace Game {
             }
         }
 
-        // Chasseur « Raie » (modèle du projet, dans Modeles/Raie ; scripts Blender dans Modeles/Chasseur2 des fichiers
+        // Chasseur « Manta » (nom de code Raie ; modèle du projet, dans Modeles/Raie ; scripts Blender dans Modeles/Chasseur2 des fichiers
         // du projet) : aile volante de 14 m de long et 18,8 m d'envergure, sans dérive. Origine : le siège du pilote,
         // l'avant vers -z ; les roues touchent le sol 1,66 m plus bas. Train et verrière sont des modèles à part pour
         // pouvoir les animer : le train (squelette, animation « Rentrer ») est affiché sorti tant que le jeu ne le
         // rentre pas, la verrière a son origine sur sa charnière arrière (elle s'ouvrira en tournant autour de x).
-        void AddRaie(Scene& scene, Entity ship) {
+        void AddManta(Scene& scene, Entity ship) {
             const Entity hull = scene.CreateEntity("Coque", ship);
             ModelComponent& model = scene.Add<ModelComponent>(hull);
             model.model = "Modeles/Raie/Raie.glb";
-            model.farModel = "Modeles/Raie/Raie-loin.glb"; // 5 300 triangles au lieu de 46 000
+            model.farModel = "Modeles/Raie/Raie-loin.glb"; // 5 300 triangles au lieu de 49 000
             model.farDistance = 1500.0f;
             ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
             collider.shape = ColliderShape::Mesh;
@@ -472,12 +472,12 @@ namespace Game {
                                      scene.Add<WarpDriveComponent>(entity);
                                      AddFighter(scene, entity);
                                  }});
-        extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Chasseur Raie", .name = "Raie",
+        extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Chasseur Manta", .name = "Manta",
                                  .icon = UI::Icon::Ship, .distance = FighterDistance, .build = [](Scene& scene, Entity entity) {
                                      scene.Add<ShipComponent>(entity).turnRate = 90.0f;
                                      scene.Add<HealthComponent>(entity, HealthComponent{.health = 400.0f});
                                      scene.Add<WarpDriveComponent>(entity);
-                                     AddRaie(scene, entity);
+                                     AddManta(scene, entity);
                                  }});
         extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Station (maquette)", .name = "Station",
                                  .icon = UI::Icon::Ship, .distance = StationDistance, .level = true, .below = 12.0,
