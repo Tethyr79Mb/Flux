@@ -53,6 +53,13 @@ namespace Game {
                 scene.Get<TransformComponent>(leg).position = {gear.center.x, gear.center.y, gear.center.z};
                 scene.Add<ColliderComponent>(leg).size = gear.size;
             }
+            // Levier du train, au bout gauche du tableau de bord : pièce à part (origine sur le pivot, axe x local),
+            // posée en bas (train sorti) ; le jeu le relèvera en le tournant autour de son x quand le train rentrera.
+            const Entity lever = scene.CreateEntity("Levier du train", ship);
+            TransformComponent& leverTransform = scene.Get<TransformComponent>(lever);
+            leverTransform.position = {-0.8786, 0.5627, -0.305};
+            leverTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, 68.0f * std::numbers::pi_v<float> / 180.0f);
+            scene.Add<ModelComponent>(lever).model = "Modeles/Raie/Raie-levier-train.glb";
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
             // Le cockpit est tout à l'avant (3,6 m derrière le nez) et l'origine est sous les hanches du pilote.
             SeatComponent& component = scene.Add<SeatComponent>(seat);
@@ -163,6 +170,13 @@ namespace Game {
                 scene.Get<TransformComponent>(leg).position = {wheel.center.x, wheel.center.y, wheel.center.z};
                 scene.Add<ColliderComponent>(leg).size = wheel.size;
             }
+            // Levier du train, au bout gauche du tableau de bord : pièce à part (origine sur le pivot, axe x local),
+            // posée en bas (train sorti) ; le jeu le relèvera en le tournant autour de son x quand le train rentrera.
+            const Entity lever = scene.CreateEntity("Levier du train", ship);
+            TransformComponent& leverTransform = scene.Get<TransformComponent>(lever);
+            leverTransform.position = {-0.8786, 0.5627, -0.305};
+            leverTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, 68.0f * std::numbers::pi_v<float> / 180.0f);
+            scene.Add<ModelComponent>(lever).model = "Modeles/Raie/Raie-levier-train.glb";
             const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
             SeatComponent& component = scene.Add<SeatComponent>(seat);
             component.pilot = true;
