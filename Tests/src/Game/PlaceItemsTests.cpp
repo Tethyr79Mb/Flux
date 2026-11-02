@@ -40,7 +40,7 @@ namespace {
 bool RunPlaceItemsTests() {
     EditorExtensions extensions;
     Game::RegisterPlaceItems(extensions);
-    CHECK(extensions.GetPlaceItems().size() == 4);
+    CHECK(extensions.GetPlaceItems().size() == 5);
     CHECK(extensions.FindPlaceItem("Rien de tel") == nullptr);
 
     {
@@ -51,6 +51,17 @@ bool RunPlaceItemsTests() {
         CHECK(scene.Get<HealthComponent>(fighter).health == 500.0f);
         CHECK(scene.TryGet<Game::WarpDriveComponent>(fighter) != nullptr);
         CHECK(Count<HardpointComponent>(scene) > 0 && Count<WeaponComponent>(scene) == Count<HardpointComponent>(scene));
+        CHECK(Count<SeatComponent>(scene) == 1);
+    }
+    {
+        // Second chasseur (aile volante) : deux canons fixes, un siège, train et verrière en entités enfants.
+        Scene scene;
+        Entity raie = NullEntity;
+        CHECK(Build(extensions, "Chasseur Raie", scene, raie));
+        CHECK(scene.Get<ShipComponent>(raie).turnRate == 90.0f);
+        CHECK(scene.Get<HealthComponent>(raie).health == 400.0f);
+        CHECK(scene.TryGet<Game::WarpDriveComponent>(raie) != nullptr);
+        CHECK(Count<HardpointComponent>(scene) == 2 && Count<WeaponComponent>(scene) == 2);
         CHECK(Count<SeatComponent>(scene) == 1);
     }
     {
