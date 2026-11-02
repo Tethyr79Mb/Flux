@@ -136,7 +136,7 @@ namespace Game {
             const Entity hull = scene.CreateEntity("Coque", ship);
             ModelComponent& model = scene.Add<ModelComponent>(hull);
             model.model = "Modeles/Raie/Raie.glb";
-            model.farModel = "Modeles/Raie/Raie-loin.glb"; // 5 300 triangles au lieu de 49 000
+            model.farModel = "Modeles/Raie/Raie-loin.glb"; // 5 300 triangles au lieu de 53 000
             model.farDistance = 1500.0f;
             ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
             collider.shape = ColliderShape::Mesh;

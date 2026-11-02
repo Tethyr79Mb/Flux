@@ -239,10 +239,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   armes des PNJ.
 - ⬜ Armes : sortir les armes dans fighter.py lui-même (aujourd'hui armes.py les retire du modèle déjà texturé, en
   couleurs unies), et un vrai modèle de lance-missiles.
-- 🔧 Second chasseur « Manta » (Placer > Chasseur Manta, fichiers `Raie*.glb` : nom de code) : aile volante de 14 x 18,8 m, 49 500 triangles, 9 matériaux,
-  textures 4096 calculées dans l'espace UV (scripts dans `Modeles/Chasseur2` des fichiers du projet) ; verrière
+- 🔧 Second chasseur « Manta » (Placer > Chasseur Manta, fichiers `Raie*.glb` : nom de code) : aile volante de 14 x 18,8 m, 53 000 triangles, 11 matériaux,
+  textures 4096 calculées dans l'espace UV (scripts dans `Modeles/Chasseur2` des fichiers du projet) ; verrière orange
   jusqu'au nez, cockpit praticable (passage de 65 cm à côté du siège), deux canons fixes, gouvernes séparées de l'aile
-  par un vrai interstice, nom MANTA en décalque sur les flancs du dos. À faire : braquer les gouvernes (pièces à part dans `Raie.glb`, fusionnées pour l'instant),
+  par un vrai interstice, tuyères à lèvres en dents de scie, siège éjectable, marquages en décalque (nom MANTA, série, sauvetage, ne pas marcher). À faire : braquer les gouvernes (pièces à part dans `Raie.glb`, fusionnées pour l'instant),
   rentrer le train (animation « Rentrer » de `Raie-train.glb`, boîtes de collision des roues) et ouvrir la verrière (pivot de `Raie-verriere-mobile.glb`
   autour de sa charnière) depuis le jeu ; collision concave du cockpit pour y marcher (enveloppe convexe aujourd'hui).
 - ✅ Vaisseau sans pilote soumis à la gravité près d'une planète ou dans son atmosphère, pas dans l'espace (« Tombe
