@@ -160,6 +160,13 @@ namespace Flux {
         Math::LinearColor sunColor{1.0f, 0.96f, 0.9f};
         float sunIntensity = 1.45f; // éclairement d'une surface face au soleil (1 : le blanc d'une surface blanche)
         float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
+        // Exposition, en stops (chacun double ou divise par deux la lumière de l'image). Automatique : l'image
+        // s'éclaircit dans le noir et s'assombrit face au soleil, comme l'œil, entre ses bornes.
+        bool autoExposure = true;
+        float exposure = 0.0f;    // décalage de l'exposition automatique ; sans elle, exposition fixe 2^exposure
+        float exposureMin = -4.0f;
+        float exposureMax = 1.0f;
+        float adaptationSpeed = 3.0f; // par seconde, vers plus clair (3 : presque fini en une seconde) ; 3 fois moins vite vers plus sombre
     };
 
     // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des

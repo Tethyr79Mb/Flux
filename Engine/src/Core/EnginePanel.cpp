@@ -80,6 +80,10 @@ namespace Flux {
                     renderer.SetGroundGeometryOnly(geometryOnly);
                 }
                 const RenderTimings& render = renderer.GetTimings();
+                ui.LabelText("Exposition", render.sceneLuminance > 0.0f
+                                               ? std::format("{:+.2f} stops (luminance mesurée {:.3f})",
+                                                             std::log2(render.exposure), render.sceneLuminance)
+                                               : std::format("{:+.2f} stops", std::log2(render.exposure)));
                 ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
                 ui.LabelText("Paquets des modèles", render.modelMeshShaders
                                                         ? std::format("{} dont {} dessinés", render.modelMeshlets,

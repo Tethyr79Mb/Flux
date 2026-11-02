@@ -5,6 +5,7 @@
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/EnvironmentRenderer.hpp"
+#include "Renderer/Exposure.hpp"
 #include "Planetology/AtmosphereGpu.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
@@ -28,7 +29,8 @@ namespace Flux {
         Math::Vector3f toSun;       // unitaire
         Math::Vector3f sunColor;    // couleur x intensité
         float ambient = 1.0f;       // multiplie les textures de l'environnement (lumière ambiante et reflets)
-        float exposure = 1.0f;
+        // Réglages de l'exposition (ExposureRenderer) ; sans ciel, exposition fixe de 1.
+        Exposure::Settings exposure;
         // D'où l'environnement tire sa lumière (EnvironmentRenderer::Prepare).
         EnvironmentSource environmentSource;
         // Textures de l'environnement, remplies par le Renderer (EnvironmentRenderer) : reflets et leur nombre de

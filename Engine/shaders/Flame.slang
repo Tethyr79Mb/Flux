@@ -5,6 +5,8 @@
 // profondeur. Le bruit et la forme sont dans un repère normalisé : x et y de -1 à 1 sur la largeur et la hauteur de
 // la boîte, z de 0 (la tuyère) à 1 (le bout de la flamme).
 
+#include "ToneCurve.slang"
+
 // Doit correspondre à FlameParams dans ThrusterRenderer.cpp : 128 octets, une flamme par appel de dessin.
 struct FlameParams
 {
@@ -103,15 +105,9 @@ float2 Emission(float3 p, float throttle, float time, uint seed)
 }
 
 // La flamme était réglée pour l'image finale (1 - exp(-x) : de 0 au blanc) ; l'image de la scène est en lumière
-// linéaire, avant la courbe de tons de Post.slang. On écrit la lumière qui, après cette courbe, redonne la même
-// couleur sur un fond noir ; sur un fond clair, elle s'y ajoute en lumière, comme le reste.
-float3 InverseToneMap(float3 c)
-{
-    c = min(c, float3(0.999));
-    const float3 a = 2.51 - 2.43 * c;
-    const float3 b = 0.03 - 0.59 * c;
-    return (-b + sqrt(b * b + 4.0 * a * 0.14 * c)) / (2.0 * a) / 0.6;
-}
+// linéaire, avant la courbe de tons (ToneCurve.slang). On écrit la lumière qui, après cette courbe et à l'exposition 1,
+// redonne la même couleur sur un fond noir ; sur un fond clair, elle s'y ajoute en lumière, comme le reste. Avec
+// l'exposition automatique, elle s'éclaircit dans le noir et pâlit en plein jour, comme une vraie lumière.
 
 float4 FlameLight(VertexOutput input)
 {
@@ -157,7 +153,7 @@ float4 FlameLight(VertexOutput input)
     // Gaz de la couleur choisie ; cœur qui tire vers le blanc. La courbe 1 - exp(-x) sature doucement : le
     // bleu plafonne en premier, puis le vert et le rouge, d'où un cœur blanc entouré de bleu.
     const float3 light = (flame.color.rgb * (0.45 * sum.y + 0.8 * sum.x) + float3(0.75, 0.85, 1.0) * sum.x * sum.x * 0.6) * flame.options.y;
-    return float4(InverseToneMap(1.0 - exp(-light)), 0.0);
+    return float4(InverseToneMap(min(1.0 - exp(-light), 0.999)), 0.0);
 }
 
 [shader("fragment")]

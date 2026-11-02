@@ -1164,7 +1164,7 @@ namespace Flux {
         frame.sunColor = ToArray(sky.sunColor);
         // Reflets : un niveau de mip par rugosité, du miroir (0) au plus rugueux (le dernier niveau, rugosité 1).
         const float roughestMip = static_cast<float>(sky.environmentMips > 0 ? sky.environmentMips - 1 : 0);
-        frame.environment = {sky.ambient, 0.0f, roughestMip, sky.exposure};
+        frame.environment = {sky.ambient, 0.0f, roughestMip, 0.0f};
         const float tanY = std::tan(0.5f * camera.verticalFov);
         frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
         frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);

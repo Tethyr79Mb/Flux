@@ -74,6 +74,10 @@ namespace Flux {
         bool groundTexturesLoading = false;
         std::uint32_t modelsLoading = 0;
         std::uint32_t fontsLoading = 0;
+        // Exposition de l'image (1 : aucune correction) et luminance moyenne mesurée deux images plus tôt (0 : exposition
+        // fixe, ou image noire).
+        float exposure = 1.0f;
+        float sceneLuminance = 0.0f;
         // Entités (et blocs de grands modèles) de la passe principale testées par le GPU, et dont cachées derrière
         // d'autres (non dessinées), deux images plus tôt.
         std::uint32_t occlusionTested = 0;

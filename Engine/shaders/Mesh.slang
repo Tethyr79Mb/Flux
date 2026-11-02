@@ -1,8 +1,8 @@
 // Maillages (cubes et modèles glTF), opaques ou transparents : position relative à la caméra, matériaux PBR comme
 // glTF (couleur de base, métal, rugosité, carte de normales, occlusion) éclairés par un soleil avec ses ombres
 // (cascades), la lumière ambiante et les reflets du ciel (texture cube) et les lumières de la scène (ponctuelles et
-// spots, sans ombre) ; plus la lumière propre du matériau (émissif). Puis exposition et courbe de tons (ACES) : la sortie est
-// déjà la couleur affichée (en linéaire, la swapchain sRGB fait le reste).
+// spots, sans ombre) ; plus la lumière propre du matériau (émissif). Lumière HDR linéaire : l'exposition et la
+// courbe de tons (AgX) viennent après, dans Post.slang.
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Tuiles de planète (vertexPlanet) : chaque sommet glisse vers la forme de la tuile parente en s'éloignant de la
 // caméra, pour qu'un changement de niveau de détail ne fasse pas de saut (« morphing » façon CDLOD). Leur sol
@@ -66,8 +66,7 @@ struct FrameData
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
-    // x : multiplie les textures du ciel ; y : inutilisé ; z : niveau de mip des reflets les plus flous (rugosité 1) ;
-    // w : exposition (appliquée après le bloom, shaders/Post.slang : inutilisée ici)
+    // x : multiplie les textures du ciel ; y, w : inutilisés ; z : niveau de mip des reflets les plus flous (rugosité 1)
     float4 environment;
     // Rayon d'un pixel (nuages) : cameraForward + cameraRight * clip.x - cameraUp * clip.y (à l'échelle du champ), le
     // clip du pixel moins le décalage d'un sous-pixel (w de cameraRight et de cameraUp).

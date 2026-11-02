@@ -52,6 +52,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   (`Engine/include/Flux/Core/GameModule.hpp`), une seule fois par PR.
 - Relief des planètes en deux exemplaires : `Terrain::GetHeight` (C++) et `Height` dans `shaders/PlanetTile.slang`.
   Toute modification va dans les deux ; `PlanetGpuTests` vérifie qu'ils restent égaux.
+- Courbe de tons AgX en deux exemplaires : `shaders/ToneCurve.slang` et `ToneCurve.cpp` (couleur de fond des scènes
+  sans ciel). Toute modification va dans les deux.
 - Semis des arbres en deux exemplaires : `SowPlace` (`shaders/PlanetTile.slang`, avec le climat et les biomes de
   `shaders/PlanetClimate.slang`) et `Planetology::SowPlain` (`TreeSowing.cpp`, collision) ; `VegetationGpuTests` les
   compare.

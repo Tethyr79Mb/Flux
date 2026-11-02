@@ -126,8 +126,8 @@ namespace Flux::RHI {
         Storage,     // écrite par les compute shaders (BindingType::StorageTexture)
     };
 
-    inline constexpr std::uint32_t MaxTimestamps = 32;
-    inline constexpr std::uint32_t MaxSteps = 32;
+    inline constexpr std::uint32_t MaxTimestamps = 48;
+    inline constexpr std::uint32_t MaxSteps = 48;
 
     enum class PresentMode : std::uint8_t { Fifo, FifoRelaxed, Mailbox, Immediate, Other };
 

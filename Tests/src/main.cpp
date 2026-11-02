@@ -27,6 +27,8 @@ int main() {
         {"graphe de rendu", RunRenderGraphTests},
         {"ciel", RunSkyTests},
         {"reflets et lumière du ciel sur le GPU", RunEnvironmentGpuTests},
+        {"exposition automatique et courbe de tons", RunExposureTests},
+        {"mesure de la lumière sur le GPU", RunExposureGpuTests},
         {"son", RunAudioTests},
         {"actions d'entrée", RunInputTests},
         {"planètes (cube-sphère)", RunPlanetTests},

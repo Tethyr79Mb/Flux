@@ -60,7 +60,6 @@ namespace Flux {
         const Math::Vector3f DefaultSunColor{1.45f, 1.4f, 1.3f};
         constexpr Math::LinearColor DefaultSkyAmbient{0.42f, 0.45f, 0.5f};
         constexpr Math::LinearColor DefaultGroundAmbient{0.2f, 0.19f, 0.18f};
-        constexpr float Exposure = 1.0f;
 
         constexpr float RadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
 
@@ -224,7 +223,6 @@ namespace Flux {
         }
 
         SkyLighting lighting;
-        lighting.exposure = Exposure;
         EnvironmentSource& environment = lighting.environmentSource;
         environment.top = DefaultSkyAmbient;
         environment.bottom = DefaultGroundAmbient;
@@ -256,9 +254,11 @@ namespace Flux {
             lighting.toSun = sunDirection.value_or(SunDirection(DefaultSunElevation, DefaultSunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : DefaultSunColor;
             data.toSun = ToArray(lighting.toSun, sun ? sunRadius(sun->size) : 0.0f);
-            data.sunColor = ToArray(lighting.sunColor, Exposure);
+            data.sunColor = ToArray(lighting.sunColor);
         } else {
             const SkyComponent& sky = *component;
+            lighting.exposure = {.automatic = sky.autoExposure, .compensation = sky.exposure, .minimum = sky.exposureMin,
+                                 .maximum = sky.exposureMax, .speed = sky.adaptationSpeed};
             lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : sunLight(sky.sunColor, sky.sunIntensity);
             const float brightness = std::max(sky.brightness, 0.0f);
@@ -279,7 +279,7 @@ namespace Flux {
 
             const SkyParameters parameters = generated ? *generated : MakeSkyParameters(sky);
             data.toSun = ToArray(lighting.toSun, sunRadius(sun ? sun->size : sky.sunSize));
-            data.sunColor = ToArray(lighting.sunColor, Exposure);
+            data.sunColor = ToArray(lighting.sunColor);
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);
             data.galaxyAxis = ToArray(parameters.galaxyAxis, std::clamp(sky.stars, 0.0f, 1.0f));
