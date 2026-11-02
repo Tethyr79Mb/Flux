@@ -1,4 +1,4 @@
-// Objets du jeu dans le panneau Placer de l'éditeur : chasseur armé, cible, stations à quais et donneur de missions.
+// Objets du jeu dans le panneau Placer de l'éditeur : chasseurs armés (Chasseur et Raie), cible, stations à quais et donneur de missions.
 // Ils utilisent des composants du jeu (emports, armes, quais, missions), que l'éditeur ne connaît pas.
 #include "PlaceItems.hpp"
 
@@ -124,6 +124,83 @@ namespace Game {
                     arms.damage = 60.0f;
                     arms.color = {1.0f, 0.85f, 0.6f};
                 }
+            }
+        }
+
+        // Chasseur « Raie » (modèle du projet, dans Modeles/Raie ; scripts Blender dans Modeles/Chasseur2 des fichiers
+        // du projet) : aile volante de 14 m de long et 18,8 m d'envergure, sans dérive. Origine : le siège du pilote,
+        // l'avant vers -z ; les roues touchent le sol 1,66 m plus bas. Train et verrière sont des modèles à part pour
+        // pouvoir les animer : le train (squelette, animation « Rentrer ») est affiché sorti tant que le jeu ne le
+        // rentre pas, la verrière a son origine sur sa charnière arrière (elle s'ouvrira en tournant autour de x).
+        void AddRaie(Scene& scene, Entity ship) {
+            const Entity hull = scene.CreateEntity("Coque", ship);
+            ModelComponent& model = scene.Add<ModelComponent>(hull);
+            model.model = "Modeles/Raie/Raie.glb";
+            model.farModel = "Modeles/Raie/Raie-loin.glb"; // 5 300 triangles au lieu de 46 000
+            model.farDistance = 1500.0f;
+            ColliderComponent& collider = scene.Add<ColliderComponent>(hull);
+            collider.shape = ColliderShape::Mesh;
+            collider.mesh = "Modeles/Raie/Raie-collision.glb";
+            RimLightComponent& rim = scene.Add<RimLightComponent>(hull);
+            rim.intensity = 0.8f;
+            rim.sharpness = 4.0f;
+            const Entity glass = scene.CreateEntity("Verrière", ship);
+            scene.Get<TransformComponent>(glass).position = {0.0, 1.5605, 2.48}; // charnière, derrière la vitre
+            scene.Add<ModelComponent>(glass).model = "Modeles/Raie/Raie-verriere-mobile.glb";
+            // Collision de la verrière fermée, dans le repère du vaisseau (comme pour le Chasseur).
+            const Entity glassStop = scene.CreateEntity("Verrière (collision)", ship);
+            ColliderComponent& glassCollider = scene.Add<ColliderComponent>(glassStop);
+            glassCollider.shape = ColliderShape::Mesh;
+            glassCollider.mesh = "Modeles/Raie/Raie-verriere.glb";
+            const Entity gear = scene.CreateEntity("Train d'atterrissage", ship);
+            scene.Add<ModelComponent>(gear).model = "Modeles/Raie/Raie-train.glb";
+            // Une boîte par roue (roulette avant sous le nez, jambes principales sous l'aile), pour se poser dessus.
+            struct Wheel { const char* name; Math::Vector3f center; Math::Vector3f size; };
+            for (const Wheel& wheel : {Wheel{"Roue avant", {0.0f, -1.46f, -1.0f}, {0.3f, 0.4f, 0.6f}},
+                                       Wheel{"Roue gauche", {-2.4f, -1.46f, 5.9f}, {0.5f, 0.4f, 0.7f}},
+                                       Wheel{"Roue droite", {2.4f, -1.46f, 5.9f}, {0.5f, 0.4f, 0.7f}}}) {
+                const Entity leg = scene.CreateEntity(wheel.name, ship);
+                scene.Get<TransformComponent>(leg).position = {wheel.center.x, wheel.center.y, wheel.center.z};
+                scene.Add<ColliderComponent>(leg).size = wheel.size;
+            }
+            const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
+            SeatComponent& component = scene.Add<SeatComponent>(seat);
+            component.pilot = true;
+            component.reach = 10.0f;
+            // En se relevant, le pilote se retrouve au sol devant le nez, côté gauche (sous l'aile, il n'y a que 1,3 m).
+            component.exit = {-1.0f, -1.66f, -4.5f};
+            // Même œil que le Chasseur : le nez plonge pour qu'il voie 14° sous l'horizon par-dessus le tableau de bord.
+            component.eye = {0.0f, 1.15f, 0.2f};
+            const Entity engines = scene.CreateEntity("Moteurs", ship);
+            scene.Get<TransformComponent>(engines).position = {0.0, 0.1, 9.5};
+            SoundComponent& sound = scene.Add<SoundComponent>(engines);
+            sound.file = "Sons/Reacteur.wav";
+            sound.loop = true;
+            sound.followShipSpeed = true;
+            sound.minDistance = 6.0f;
+            sound.maxDistance = 150.0f;
+            // Deux tuyères plates au bord de fuite (0,92 x 0,3 m, face arrière à z 10,8).
+            for (const double x : {-0.82, 0.82}) {
+                const Entity thruster = scene.CreateEntity(x < 0.0 ? "Réacteur gauche" : "Réacteur droit", ship);
+                scene.Get<TransformComponent>(thruster).position = {x, 0.033, 10.81};
+                ThrusterComponent& flame = scene.Add<ThrusterComponent>(thruster);
+                flame.width = 0.82f;
+                flame.height = 0.25f;
+                flame.length = 5.0f;
+            }
+            // Deux canons fixes dans les emplantures (pas de modèle d'arme : le tube fait partie de la coque) ; l'emport
+            // est sur la bouche du tube.
+            for (const double x : {-1.9, 1.9}) {
+                const Entity hardpoint = scene.CreateEntity(x < 0.0 ? "Canon gauche" : "Canon droit", ship);
+                scene.Get<TransformComponent>(hardpoint).position = {x, 0.021, -1.81};
+                scene.Add<HardpointComponent>(hardpoint, HardpointComponent{.kind = WeaponKind::Gun, .size = 1});
+                const Entity weapon = scene.CreateEntity("Canon de 20 mm", hardpoint);
+                WeaponComponent& arms = scene.Add<WeaponComponent>(weapon);
+                arms.kind = WeaponKind::Gun;
+                arms.size = 1;
+                arms.cone = 0.0f;
+                arms.muzzle = 0.0f;
+                arms.group = 1;
             }
         }
 
@@ -394,6 +471,13 @@ namespace Game {
                                      scene.Add<HealthComponent>(entity, HealthComponent{.health = 500.0f});
                                      scene.Add<WarpDriveComponent>(entity);
                                      AddFighter(scene, entity);
+                                 }});
+        extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Chasseur Raie", .name = "Raie",
+                                 .icon = UI::Icon::Ship, .distance = FighterDistance, .build = [](Scene& scene, Entity entity) {
+                                     scene.Add<ShipComponent>(entity).turnRate = 90.0f;
+                                     scene.Add<HealthComponent>(entity, HealthComponent{.health = 400.0f});
+                                     scene.Add<WarpDriveComponent>(entity);
+                                     AddRaie(scene, entity);
                                  }});
         extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Station (maquette)", .name = "Station",
                                  .icon = UI::Icon::Ship, .distance = StationDistance, .level = true, .below = 12.0,
