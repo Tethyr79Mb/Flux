@@ -113,7 +113,7 @@ namespace Flux {
             .ConvertedField("brightness", [](SkyComponent& sky, double brightness) {
                 sky.luminance = static_cast<float>(brightness) * SkyComponent{}.luminance;
             })
-            .Field("ambient", "Lumière ambiante", &SkyComponent::ambient, {.speed = 0.1, .min = 0.0, .max = 10000.0, .decimals = 1})
+            .Field("ambient", "Lumière ambiante", &SkyComponent::ambient, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("seed", "Graine", &SkyComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
             .Field("nebulaColor", "Nébuleuse", &SkyComponent::nebulaColor, {.alpha = false})
             .Field("nebulaColor2", "Nébuleuse (2e couleur)", &SkyComponent::nebulaColor2, {.alpha = false})

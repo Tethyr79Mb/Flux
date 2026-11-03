@@ -299,7 +299,10 @@ namespace Flux {
             lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->illuminance) : sunLight(sky.sunColor, sky.sunIlluminance);
             const float brightness = Photometry::FromNits(std::max(sky.luminance, 0.0f));
-            lighting.ambient = std::max(sky.ambient, 0.0f) * brightness;
+            // Triche voulue : la lumière ambiante et les reflets du ciel gardent l'échelle d'avant les unités physiques
+            // (fond par défaut = 1). En vrai, le fond étoilé n'éclaire presque rien (côté à l'ombre noir dans l'espace) ;
+            // ainsi, « Lumière ambiante » débouche les ombres, et suit encore la luminance réglée du fond.
+            lighting.ambient = std::max(sky.ambient, 0.0f) * std::max(sky.luminance, 0.0f) / SkyComponent{}.luminance;
 
             const bool usesPanorama = !sky.image.empty() && !assetsDirectory.empty();
             if (usesPanorama) {
