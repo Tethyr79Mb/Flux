@@ -116,7 +116,7 @@ bool RunExposureTests() {
     Camera camera;
     const auto at = [&](double x, double z) {
         camera.position = Math::WorldPosition{{}, {x, 0.0, z}};
-        return SkyRenderer::GetInteriorExposure(scene, camera);
+        return SkyRenderer::GetInteriorExposure(scene, camera).compensation;
     };
     CHECK(std::abs(at(20.0, 0.0) + 2.0f) < 1e-4f);
     // Tournée d'un quart de tour : ses 8 m de long (4 x 2) sont le long de x, ses 4 m de large le long de z.
@@ -124,6 +124,11 @@ bool RunExposureTests() {
     CHECK(std::abs(at(24.25, 0.0) + 1.0f) < 1e-3f);
     CHECK(std::abs(at(20.0, 2.25) + 1.0f) < 1e-3f);
     CHECK(at(20.0, 2.5) == 0.0f && at(0.0, 0.0) == 0.0f);
+    // Ses bornes de l'œil, avec le même poids.
+    camera.position = Math::WorldPosition{{}, {24.25, 0.0, 0.0}};
+    const SkyRenderer::InteriorExposure edge = SkyRenderer::GetInteriorExposure(scene, camera);
+    CHECK(std::abs(edge.weight - 0.5f) < 1e-3f && edge.minEv100 == InteriorComponent{}.minEv100
+          && edge.maxEv100 == InteriorComponent{}.maxEv100);
     return true;
 }
 

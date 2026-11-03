@@ -290,7 +290,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    portée. Les étoiles ont un éclat minimum à l'écran (sinon une station au soleil, sur laquelle l'exposition se règle,
    les effaçait) et s'effacent d'après la clarté de l'air à l'écran (ciel de jour, halo) ; image sans rien de
    mesurable : l'œil s'ouvre jusqu'à sa borne ; dans l'espace, le ciel (profondeur infinie) n'est pas mesuré, et une vue
-   de ciel seul garde son exposition. Un Intérieur ajoute sa compensation (stops, fondue hors de ses bords)
+   de ciel seul garde son exposition. Un Intérieur ajoute sa compensation et impose ses bornes d'EV100 (fondues hors de ses bords)
    quand la caméra y est : une station reste sombre au lieu d'être remontée au gris moyen. La lumière de contour, un effet,
    est divisée par la pré-exposition : la même à l'écran partout.
 

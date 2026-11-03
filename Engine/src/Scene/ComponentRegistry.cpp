@@ -241,7 +241,9 @@ namespace Flux {
             // Avant les unités physiques : réglée sur le plein soleil. Pas de conversion : la valeur réelle par défaut.
             .RemovedField("intensity")
             .Field("fade", "Fondu hors des bords (m)", &InteriorComponent::fade, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
-            .Field("exposure", "Exposition, caméra dedans (stops)", &InteriorComponent::exposure, {.speed = 0.02, .min = -8.0, .max = 8.0, .decimals = 2});
+            .Field("exposure", "Exposition, caméra dedans (stops)", &InteriorComponent::exposure, {.speed = 0.02, .min = -8.0, .max = 8.0, .decimals = 2})
+            .Field("minEv100", "EV100 minimum dedans", &InteriorComponent::minEv100, {.speed = 0.05, .min = -6.0, .max = 20.0, .decimals = 1})
+            .Field("maxEv100", "EV100 maximum dedans", &InteriorComponent::maxEv100, {.speed = 0.05, .min = -6.0, .max = 20.0, .decimals = 1});
         registry.Register<ColliderComponent>("collider", "Collision")
             .Enum("shape", "Forme", &ColliderComponent::shape,
                   {{"box", "Boîte", ColliderShape::Box},

@@ -214,10 +214,9 @@ namespace Flux {
         return panorama;
     }
 
-    float SkyRenderer::GetInteriorExposure(const Scene& scene, const Camera& camera) {
-        // Comme InteriorAt dans shaders/Mesh.slang : le volume où la caméra est le plus « dedans » (fondu près des bords).
-        float inside = 0.0f;
-        float stops = 0.0f;
+    SkyRenderer::InteriorExposure SkyRenderer::GetInteriorExposure(const Scene& scene, const Camera& camera) {
+        // Comme InteriorAt dans shaders/Mesh.slang : le volume où la caméra est le plus « dedans » (fondu hors des bords).
+        InteriorExposure result;
         for (const auto [entity, interior] : scene.GetRegistry().view<const InteriorComponent>().each()) {
             Math::Vector3f scale{1.0f, 1.0f, 1.0f};
             for (Entity e = entity; e != NullEntity; e = scene.GetParent(e)) {
@@ -230,20 +229,24 @@ namespace Flux {
                                            0.5f * std::max(interior.size.y, 0.0f) * scale.y - std::abs(local.y),
                                            0.5f * std::max(interior.size.z, 0.0f) * scale.z - std::abs(local.z)});
             const float weight = std::clamp(1.0f + margin / std::max(interior.fade, 1.0e-3f), 0.0f, 1.0f);
-            if (weight > inside) {
-                inside = weight;
-                stops = interior.exposure;
+            if (weight > result.weight) {
+                result = {weight, interior.exposure, interior.minEv100, interior.maxEv100};
             }
         }
-        return inside * stops;
+        result.compensation *= result.weight;
+        return result;
     }
 
     Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene, const Camera& camera) {
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+            // Dans un Intérieur, ses bornes remplacent celles du Ciel (fondues près de ses bords).
+            const InteriorExposure interior = GetInteriorExposure(scene, camera);
+            const float minEv = std::lerp(sky.minEv100, interior.minEv100, interior.weight);
+            const float maxEv = std::max(std::lerp(sky.maxEv100, interior.maxEv100, interior.weight), minEv);
             // La scène la plus claire donne l'exposition la plus basse.
-            return {.automatic = sky.autoExposure, .compensation = sky.exposure + GetInteriorExposure(scene, camera),
-                    .minimum = std::log2(Photometry::ExposureFromEv100(std::max(sky.maxEv100, sky.minEv100))),
-                    .maximum = std::log2(Photometry::ExposureFromEv100(sky.minEv100)), .speed = sky.adaptationSpeed};
+            return {.automatic = sky.autoExposure, .compensation = sky.exposure + interior.compensation,
+                    .minimum = std::log2(Photometry::ExposureFromEv100(maxEv)),
+                    .maximum = std::log2(Photometry::ExposureFromEv100(minEv)), .speed = sky.adaptationSpeed};
         }
         return {};
     }

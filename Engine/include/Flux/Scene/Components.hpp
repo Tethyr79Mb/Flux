@@ -332,6 +332,10 @@ namespace Flux {
         // Décalage de l'exposition automatique quand la caméra est dedans, en stops (fondu avec `fade`) : négatif, la
         // pièce reste sombre et contrastée au lieu d'être remontée au gris moyen.
         float exposure = -1.0f;
+        // Bornes de l'œil quand la caméra est dedans (EV100, fondues avec `fade`) : dans une pièce, l'image bouge peu
+        // en regardant ses lampes ou une porte ouverte au soleil (triche voulue, choix de Bruno).
+        float minEv100 = 3.0f;
+        float maxEv100 = 7.0f;
     };
 
     // Réacteur : la flamme qui sort de la tuyère, vers le +z de l'entité (l'arrière d'un vaisseau qui regarde vers
