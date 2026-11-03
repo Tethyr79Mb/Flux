@@ -154,6 +154,16 @@ namespace Flux::UI {
         void EndDisabled();
         // Libellé à gauche, texte à droite, alignés comme les champs.
         void LabelText(std::string_view label, std::string_view text);
+        // Comme LabelText, mais la valeur est un bouton (la touche d'une action : un clic pour la changer).
+        // highlighted : bordure d'accent (en attente d'une touche). Vrai au clic.
+        bool LabelButton(std::string_view label, std::string_view text, bool highlighted = false);
+        // Titre de page (fenêtre Paramètres) : plus grand que le texte, pictogramme devant.
+        void Heading(std::string_view text, Icon icon = Icon::None);
+        // Titre d'un groupe de réglages : couleur d'accent, trait fin dessous, de l'air au-dessus.
+        void SectionTitle(std::string_view text);
+        // Aide sous un réglage : plus petite, grisée, renvoyée à la ligne à la largeur de la zone, collée au widget
+        // précédent.
+        void HelpText(std::string_view text);
         // Vrai au clic (bouton relâché sur le widget).
         bool Button(std::string_view label);
         // Bouton avec un pictogramme devant le libellé ; fullWidth : toute la largeur de la ligne, libellé centré.

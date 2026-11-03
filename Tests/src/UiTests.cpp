@@ -907,6 +907,40 @@ namespace {
         return true;
     }
 
+    // Fenêtre Paramètres : aide renvoyée à la ligne sous un réglage, valeur cliquable à droite de son libellé.
+    bool RunSettingsWidgetTests(const UI::Font& font) {
+        Harness harness(font);
+        int clicks = 0;
+        Vector2f checkboxMax;
+        UI::Rect key;
+        const auto describe = [&](UI::Context& ui) {
+            if (ui.BeginPanel("Paramètres", {0.0f, 0.0f}, 240.0f, 400.0f)) {
+                ui.Heading("Graphiques", UI::Icon::Monitor);
+                ui.SectionTitle("Effets");
+                bool bloom = true;
+                ui.Checkbox("Bloom", bloom);
+                checkboxMax = ui.GetItemRect().max;
+                ui.HelpText("Fait déborder la lumière des zones très lumineuses : soleil, flammes et émissifs.");
+                if (ui.LabelButton("Avancer", "Z", clicks > 0)) {
+                    ++clicks;
+                }
+                key = ui.GetItemRect();
+            }
+            ui.EndPanel();
+        };
+        harness.Frame([] {}, describe);
+        // L'aide prend plusieurs lignes dans ce panneau étroit (entre la case et la touche), mais pas plus de quatre.
+        const float lineHeight = font.GetLineHeight() * std::round(15.0f * 0.87f);
+        const float gap = key.min.y - checkboxMax.y;
+        CHECK(gap > 1.5f * lineHeight && gap < 4.0f * lineHeight + 12.0f);
+        // Clic sur la touche (le rectangle du widget), pas sur le libellé à sa gauche.
+        harness.Click({key.max.x - 5.0f, (key.min.y + key.max.y) * 0.5f}, describe);
+        CHECK(clicks == 1);
+        harness.Click({key.min.x - 20.0f, (key.min.y + key.max.y) * 0.5f}, describe);
+        CHECK(clicks == 1);
+        return true;
+    }
+
     bool RunRotationTests() {
         // ToYawPitchRoll inverse FromYawPitchRoll, hors verticale.
         const float angles[][3] = {{0.3f, 0.2f, -0.5f}, {-2.5f, 1.2f, 3.0f}, {1.0f, -0.7f, 0.0f}, {0.0f, 0.0f, 0.0f}};
@@ -934,5 +968,5 @@ bool RunUiTests() {
     }
     return RunRotationTests() && RunWidgetTests(**font) && RunTreeTests(**font) && RunMenuTests(**font)
         && RunChoiceTests(**font) && RunPopupTests(**font) && RunColorPickerTests(**font) && RunDockTests(**font) && RunTileTests(**font)
-        && RunIconTabTests(**font) && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font) && RunHelperTests(**font);
+        && RunIconTabTests(**font) && RunSettingsWidgetTests(**font) && RunWindowTests(**font) && RunShapeTests(**font) && RunDockFocusTests(**font) && RunHelperTests(**font);
 }
