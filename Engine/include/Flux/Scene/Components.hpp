@@ -147,10 +147,10 @@ namespace Flux {
     {
         // Panorama (image 2:1, projection équirectangulaire) relatif aux assets ; vide : ciel généré.
         std::string image;
-        // Luminance du fond (le blanc du panorama, ou la nébuleuse et les étoiles générées), en cd/m², comme celle de
-        // la lumière qu'il donne. Le vrai ciel de nuit est bien plus sombre (0,001) ; l'œil ne voit les étoiles que
-        // dans le noir, et une planète éclairée en vue les efface (l'exposition se règle sur elle).
-        float luminance = 0.5f;
+        // Luminance du fond (le blanc du panorama, ou la nébuleuse générée), en cd/m², comme celle de la lumière qu'il
+        // donne. Le vrai ciel de nuit est bien plus sombre (0,001) : 20, avec l'exposition qui s'arrête à EV100 3, le
+        // montre comme avant les unités physiques dans le noir de l'espace, et une planète éclairée en vue l'efface.
+        float luminance = 20.0f;
         // Lumière ambiante et reflets : multiplie ce que le ciel éclaire (un ciel sombre éclaire peu).
         float ambient = 3.0f;
         // Ciel généré : le même pour une même graine.
@@ -171,7 +171,9 @@ namespace Flux {
         // ses bornes en EV100 (plein soleil 15, ciel couvert 12, intérieur éclairé 7, pleine lune -2).
         bool autoExposure = true;
         float exposure = 0.0f;  // décalage de l'exposition automatique, en stops ; sans elle, réglage fixe : EV100 = 14,4 - exposure
-        float minEv100 = -2.0f; // scène la plus sombre suivie (au-delà, l'image s'assombrit)
+        // Scène la plus sombre suivie (au-delà, l'image s'assombrit). Plus bas, dans le noir de l'espace, l'exposition
+        // s'ouvrait tant que le reflet d'une verrière voilait tout l'écran.
+        float minEv100 = 3.0f;
         float maxEv100 = 17.0f; // scène la plus claire suivie (au-delà, l'image se brûle)
         float adaptationSpeed = 3.0f; // par seconde, vers plus clair (3 : presque fini en une seconde) ; 3 fois moins vite vers plus sombre
     };

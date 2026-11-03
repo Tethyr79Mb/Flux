@@ -294,9 +294,9 @@ namespace Flux {
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);
             data.galaxyAxis = ToArray(parameters.galaxyAxis, std::clamp(sky.stars, 0.0f, 1.0f));
             // Une étoile occupe un pixel : sa luminance y est grande (Sirius, vue à l'œil : une centaine de cd/m² sur
-            // une minute d'arc). Les plus claires (éclat 5 dans Sky.slang) à 200 cd/m² : visibles depuis un cockpit
+            // une minute d'arc). Les plus claires (éclat 5 dans Sky.slang) à 100 cd/m² : visibles depuis un cockpit
             // éclairé, noyées par une planète au soleil ou un ciel de jour.
-            constexpr float StarNits = 40.0f;
+            constexpr float StarNits = 20.0f;
             data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f) * Photometry::FromNits(StarNits));
             data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
