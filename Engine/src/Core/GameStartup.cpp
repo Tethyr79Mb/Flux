@@ -61,6 +61,7 @@ namespace Flux {
                        .sharpness = settings.sharpness,
                        .groundDetail = settings.groundDetail,
                        .cloudQuality = settings.cloudQuality,
+                       .bloom = settings.bloom,
                        .volume = settings.volume});
         engine.SetProject(*project);
 
@@ -111,6 +112,7 @@ namespace Flux {
         settings.sharpness = engine.GetRenderer().GetSharpness();
         settings.groundDetail = engine.GetRenderer().GetGroundDetail();
         settings.cloudQuality = engine.GetRenderer().GetCloudQuality();
+        settings.bloom = engine.GetRenderer().GetBloom() > 0.0f;
         settings.volume = engine.GetAudio().GetMasterVolume();
         return settings;
     }

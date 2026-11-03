@@ -3,5 +3,6 @@
   "version": 1,
   "name": "Flux Demo",
   "assets": "assets",
-  "startupScene": "scenes/Demo.scene.json"
+  "startupScene": "scenes/Demo.scene.json",
+  "menu": "Interfaces/MenuOptions.fluxui"
 }

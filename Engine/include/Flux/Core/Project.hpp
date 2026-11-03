@@ -10,7 +10,7 @@
 namespace Flux {
     // Projet de jeu (fichier .fluxproject, JSON) : ce que l'éditeur ouvre, et ce que Ars Solaris.exe lance.
     //     { "format": "flux.project", "version": 1, "name": "Flux Demo",
-    //       "assets": "assets", "startupScene": "scenes/Demo.scene.json" }
+    //       "assets": "assets", "startupScene": "scenes/Demo.scene.json", "menu": "Interfaces/Options.fluxui" }
     // Les chemins du fichier sont relatifs : le même projet sert dans le dépôt (éditeur) et dans bin/ (jeu).
     struct Project
     {
@@ -18,6 +18,9 @@ namespace Flux {
         std::filesystem::path file;            // le .fluxproject lui-même
         std::filesystem::path assetsDirectory; // absolu
         std::filesystem::path startupScene;    // relatif au dossier des assets
+        // Menu du jeu (.fluxui, relatif au dossier des assets, avec des « / ») : présent dans toutes les scènes en jeu,
+        // par-dessus leurs interfaces ; une fenêtre « Ouvrir avec Échap » l'ouvre. Vide : aucun.
+        std::string menu;
 
         std::filesystem::path GetStartupScenePath() const { return assetsDirectory / startupScene; }
     };

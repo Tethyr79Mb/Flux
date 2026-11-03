@@ -13,6 +13,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - 🔧 Taille de l'interface (Paramètres > Interface, 80 % à 200 %) : texte, marges, boutons et arrondis. À améliorer :
   les largeurs fixées par le code (panneaux à leur première ouverture, vignettes du Contenu) ne suivent pas.
 - ✅ Barre de menus (Fichier, Édition…), dialogues Windows natifs, étoile dans le titre si la scène est modifiée.
+- ✅ Menu du jeu : clic droit sur une interface du Contenu, « Définir comme menu du jeu (Échap) », badge « Menu ».
 - ✅ Barre d'outils : nouvelle scène, ouvrir, enregistrer, annuler / rétablir, Jouer et Pause au milieu, Paramètres à droite.
 - 🔧 Paramètres : catégories à icônes à gauche (Graphiques, Son, Touches, Interface, Système), réglages en groupes
   titrés avec une aide sous chacun, préréglages Bas à Ultra, « Rétablir par défaut » par page, recherche des touches.

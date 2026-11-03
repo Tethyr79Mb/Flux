@@ -77,6 +77,7 @@ namespace Flux {
         float sharpness = DefaultSharpness;
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
+        bool bloom = true; // à Renderer::DefaultBloom, sinon coupé
         float volume = 1.0f; // volume général, 0 à 1
     };
 
@@ -144,6 +145,9 @@ namespace Flux {
         // Réglages de ScreenUi::Draw pour la scène : images, polices et interfaces du projet. Pendant le jeu, les interfaces
         // réagissent à la souris (cases, curseurs, boutons, fenêtres déplacées).
         ScreenUi::DrawOptions GetScreenUiOptions();
+        // Menu du projet (Project::menu : Options, pause) dans la vue, en jeu seulement, par-dessus les interfaces de la
+        // scène : à appeler après ScreenUi::Draw. Le jeu l'appelle seul ; l'éditeur, dans sa vue en mode Jouer.
+        void DrawProjectMenu(UI::DrawList& list, Math::Vector2f viewMin, Math::Vector2f viewMax);
         // Vrai si la souris était sur une interface du jeu à l'image précédente : ses clics ne vont pas au jeu.
         bool InterfaceWantsMouse() const { return m_interfaceWantsMouse; }
         // Éditeur : false fige la caméra en vol libre (la souris et le clavier servent à l'éditeur d'interface).
@@ -370,5 +374,10 @@ namespace Flux {
         // Scène chargée ou jeu arrêté : lignes du jeu effacées, systèmes du jeu prévenus.
         void ResetGameState();
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterface(const ScreenUi::InterfaceRequest& request);
+        // owner : l'entité dont c'est l'interface, ou NullEntity pour le menu du projet (sa copie en jeu).
+        std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterfaceFile(Entity owner, const std::string& file,
+                                                                                    UI::DrawList& list, Math::Vector2f viewMin,
+                                                                                    Math::Vector2f viewMax, bool placeholders,
+                                                                                    bool needsRect);
     };
 }

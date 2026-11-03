@@ -128,7 +128,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 
 ### Interface (FluxUI)
 - 🔧 Mode immédiat partagé éditeur/jeu, texte MSDF, formes SDF, thèmes. À améliorer : pas de DPI (mise à l'échelle 100 % seulement), police Latin-1.
-- ✅ Interfaces du jeu en fichiers `.fluxui` : fenêtres, boutons à actions, liaisons de valeurs (rangées par catégorie), onglets, défilement, listes déroulantes (choix tapés ou donnés par la valeur liée, comme « Détail du sol »).
+- ✅ Interfaces du jeu en fichiers `.fluxui` : fenêtres, boutons à actions, liaisons de valeurs (rangées par catégorie), onglets (pages qui peuvent défiler), défilement, listes déroulantes (choix tapés ou donnés par la valeur liée, comme « Détail du sol »).
 - ✅ Textes et images à l'écran, changement de scène.
 - 🔧 Polices du projet pour les textes à l'écran (`.ttf`, `.otf` du dossier `Polices/`), atlas MSDF construit sur un
   autre fil au premier usage, attendu par l'écran de chargement. À améliorer : 0,3 à 0,5 s de processeur par police
@@ -223,7 +223,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Exe du jeu nommé « Ars Solaris.exe » (cible CMake `Game`) : les pilotes comme AMD Adrenalin le reconnaissent comme un jeu.
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
 - 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.
-- ⬜ Menu Échap du jeu ; plein écran et choix du GPU dans les réglages.
+- 🔧 Menu Options du jeu (`Interfaces/MenuOptions.fluxui`, déclaré par « menu » dans `Game.fluxproject`, présent dans
+  toutes les scènes) : plein écran, Échap l'ouvre et met le jeu en pause ; Graphiques, Son, Touches, Reprendre, Quitter.
+  Limites : la liste des touches est écrite dans le fichier (une action ajoutée au jeu doit y être ajoutée) ; pas
+  encore le plein écran ni le choix du GPU dans les réglages ; pas de préréglages Bas à Ultra comme dans l'éditeur.
 - ⬜ Événements d'animation (bruits de pas).
 - ⬜ Vêtements et équipement des personnages (demandé par Bruno le 2026-10-17) : aujourd'hui, seuls les vêtements
   du même fichier que le corps s'animent. À faire : vêtements interchangeables dans leur propre fichier qui suivent

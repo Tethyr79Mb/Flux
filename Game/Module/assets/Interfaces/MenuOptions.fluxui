@@ -1,0 +1,4605 @@
+{
+  "format": "flux.ui",
+  "version": 1,
+  "nextId": 118,
+  "elements": [
+    {
+      "id": 1,
+      "type": "window",
+      "name": "Options",
+      "anchor": "stretch",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.0,
+        0.0
+      ],
+      "visible": false,
+      "text": "Options",
+      "fontSize": 24.0,
+      "textColor": [
+        0.80695236,
+        0.8549927,
+        0.90466136,
+        1.0
+      ],
+      "titleHeight": 0.0,
+      "titleColor": [
+        0.010329823,
+        0.017641952,
+        0.03189603,
+        1.0
+      ],
+      "background": [
+        0.001517635,
+        0.002731743,
+        0.0047769533,
+        0.86
+      ],
+      "border": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "borderWidth": 0.0,
+      "radius": 0.0,
+      "shadow": false,
+      "movable": false,
+      "closeButton": false,
+      "closeOnEscape": true,
+      "openOnEscape": true,
+      "pausesGame": true,
+      "children": [
+        {
+          "id": 2,
+          "type": "text",
+          "name": "Titre",
+          "anchor": "top",
+          "position": [
+            0.0,
+            54.0
+          ],
+          "size": [
+            1240.0,
+            64.0
+          ],
+          "text": "OPTIONS",
+          "fontSize": 54.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "radius": 0.0,
+          "binding": ""
+        },
+        {
+          "id": 3,
+          "type": "text",
+          "name": "Pause",
+          "anchor": "top",
+          "position": [
+            0.0,
+            122.0
+          ],
+          "size": [
+            1240.0,
+            32.0
+          ],
+          "text": "Jeu en pause. Échap pour reprendre.",
+          "fontSize": 22.0,
+          "textColor": [
+            0.26225072,
+            0.33245158,
+            0.4125427,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "radius": 0.0,
+          "binding": ""
+        },
+        {
+          "id": 4,
+          "type": "tabs",
+          "name": "Onglets",
+          "anchor": "center",
+          "position": [
+            0.0,
+            20.0
+          ],
+          "size": [
+            1240.0,
+            700.0
+          ],
+          "fontSize": 26.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "titleHeight": 58.0,
+          "titleColor": [
+            0.0060488326,
+            0.010960094,
+            0.019382361,
+            1.0
+          ],
+          "pressedColor": [
+            0.010329823,
+            0.027320892,
+            0.051269468,
+            1.0
+          ],
+          "accent": [
+            0.06124607,
+            0.5775805,
+            0.79129803,
+            1.0
+          ],
+          "background": [
+            0.003676507,
+            0.0060488326,
+            0.010960094,
+            0.92
+          ],
+          "hoverColor": [
+            0.012983031,
+            0.025186857,
+            0.045186203,
+            1.0
+          ],
+          "border": [
+            0.06124607,
+            0.5775805,
+            0.79129803,
+            0.35
+          ],
+          "borderWidth": 1.0,
+          "radius": 8.0,
+          "children": [
+            {
+              "id": 5,
+              "type": "scrollArea",
+              "name": "Graphiques",
+              "anchor": "stretch",
+              "position": [
+                0.0,
+                8.0
+              ],
+              "size": [
+                0.0,
+                0.0
+              ],
+              "background": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scrollbarWidth": 10.0,
+              "titleColor": [
+                0.012983031,
+                0.025186857,
+                0.045186203,
+                1.0
+              ],
+              "accent": [
+                0.06124607,
+                0.15592647,
+                0.26225072,
+                1.0
+              ],
+              "hoverColor": [
+                0.06124607,
+                0.5775805,
+                0.79129803,
+                1.0
+              ],
+              "border": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "borderWidth": 0.0,
+              "radius": 0.0,
+              "children": [
+                {
+                  "id": 6,
+                  "type": "text",
+                  "name": "Titre Affichage",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    28.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Affichage",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 7,
+                  "type": "frame",
+                  "name": "Trait Affichage",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    66.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 8,
+                  "type": "text",
+                  "name": "Synchronisation verticale",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    86.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Synchronisation verticale",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 9,
+                  "type": "text",
+                  "name": "Aide Synchronisation verticale",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    126.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Pas de déchirure de l'image, mais pas plus d'images par seconde que l'écran.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 10,
+                  "type": "checkbox",
+                  "name": "Case Synchronisation verticale",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    84.0
+                  ],
+                  "size": [
+                    40.0,
+                    40.0
+                  ],
+                  "text": "",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "checked": true,
+                  "binding": "V-Sync"
+                },
+                {
+                  "id": 11,
+                  "type": "text",
+                  "name": "Mise à l'échelle",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    178.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Mise à l'échelle",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 12,
+                  "type": "text",
+                  "name": "Aide Mise à l'échelle",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    218.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "FSR dessine l'image plus petite puis l'agrandit : plus fluide quand la carte graphique peine.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 13,
+                  "type": "dropdown",
+                  "name": "Choix Mise à l'échelle",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    174.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "options": [
+                    "Natif (TAA)",
+                    "FSR Natif AA",
+                    "FSR Qualité",
+                    "FSR Équilibré",
+                    "FSR Performance",
+                    "FSR Ultra Performance"
+                  ],
+                  "value": 2.0,
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "binding": "Mise à l'échelle"
+                },
+                {
+                  "id": 14,
+                  "type": "text",
+                  "name": "Netteté FSR",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    270.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Netteté FSR",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 15,
+                  "type": "text",
+                  "name": "Aide Netteté FSR",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    310.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Redonne du piqué à l'image agrandie par FSR.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 16,
+                  "type": "slider",
+                  "name": "Curseur Netteté FSR",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    276.0
+                  ],
+                  "size": [
+                    410.0,
+                    26.0
+                  ],
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "binding": "Netteté FSR",
+                  "value": 0.5,
+                  "minimum": 0.0,
+                  "maximum": 1.0
+                },
+                {
+                  "id": 17,
+                  "type": "text",
+                  "name": "Valeur Netteté FSR",
+                  "anchor": "topLeft",
+                  "position": [
+                    1030.0,
+                    270.0
+                  ],
+                  "size": [
+                    90.0,
+                    36.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "right",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": "Netteté FSR"
+                },
+                {
+                  "id": 18,
+                  "type": "text",
+                  "name": "Anticrénelage (TAA)",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    362.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Anticrénelage (TAA)",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 19,
+                  "type": "text",
+                  "name": "Aide Anticrénelage (TAA)",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    402.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Lisse les bords en escalier en mode Natif.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 20,
+                  "type": "checkbox",
+                  "name": "Case Anticrénelage (TAA)",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    360.0
+                  ],
+                  "size": [
+                    40.0,
+                    40.0
+                  ],
+                  "text": "",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "checked": true,
+                  "binding": "Anticrénelage"
+                },
+                {
+                  "id": 21,
+                  "type": "text",
+                  "name": "Titre Qualité",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    468.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Qualité",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 22,
+                  "type": "frame",
+                  "name": "Trait Qualité",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    506.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 23,
+                  "type": "text",
+                  "name": "Détail du sol",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    526.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Détail du sol",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 24,
+                  "type": "text",
+                  "name": "Aide Détail du sol",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    566.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Distance où le sol des planètes devient moins fin.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 25,
+                  "type": "dropdown",
+                  "name": "Choix Détail du sol",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    522.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "options": [
+                    "Bas",
+                    "Moyen",
+                    "Élevé",
+                    "Ultra"
+                  ],
+                  "value": 2.0,
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "binding": "Détail du sol"
+                },
+                {
+                  "id": 26,
+                  "type": "text",
+                  "name": "Qualité des nuages",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    618.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Qualité des nuages",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 27,
+                  "type": "text",
+                  "name": "Aide Qualité des nuages",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    658.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Plus bas : nuages plus légers à calculer, avec un peu de grain.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 28,
+                  "type": "dropdown",
+                  "name": "Choix Qualité des nuages",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    614.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "options": [
+                    "Bas",
+                    "Moyen",
+                    "Élevé"
+                  ],
+                  "value": 2.0,
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "binding": "Qualité des nuages"
+                },
+                {
+                  "id": 29,
+                  "type": "text",
+                  "name": "Titre Effets",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    724.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Effets",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 30,
+                  "type": "frame",
+                  "name": "Trait Effets",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    762.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 31,
+                  "type": "text",
+                  "name": "Bloom",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    782.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Bloom",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 32,
+                  "type": "text",
+                  "name": "Aide Bloom",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    822.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Halo autour du soleil, des flammes et des lumières vives.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 33,
+                  "type": "checkbox",
+                  "name": "Case Bloom",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    780.0
+                  ],
+                  "size": [
+                    40.0,
+                    40.0
+                  ],
+                  "text": "",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "checked": true,
+                  "binding": "Bloom"
+                }
+              ]
+            },
+            {
+              "id": 34,
+              "type": "scrollArea",
+              "name": "Son",
+              "anchor": "stretch",
+              "position": [
+                0.0,
+                8.0
+              ],
+              "size": [
+                0.0,
+                0.0
+              ],
+              "visible": false,
+              "background": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scrollbarWidth": 10.0,
+              "titleColor": [
+                0.012983031,
+                0.025186857,
+                0.045186203,
+                1.0
+              ],
+              "accent": [
+                0.06124607,
+                0.15592647,
+                0.26225072,
+                1.0
+              ],
+              "hoverColor": [
+                0.06124607,
+                0.5775805,
+                0.79129803,
+                1.0
+              ],
+              "border": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "borderWidth": 0.0,
+              "radius": 0.0,
+              "children": [
+                {
+                  "id": 35,
+                  "type": "text",
+                  "name": "Titre Volume",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    28.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Volume",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 36,
+                  "type": "frame",
+                  "name": "Trait Volume",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    66.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 37,
+                  "type": "text",
+                  "name": "Volume général",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    86.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Volume général",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 38,
+                  "type": "text",
+                  "name": "Aide Volume général",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    126.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Tous les sons du jeu.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 39,
+                  "type": "slider",
+                  "name": "Curseur Volume général",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    92.0
+                  ],
+                  "size": [
+                    410.0,
+                    26.0
+                  ],
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "binding": "Volume général",
+                  "value": 1.0,
+                  "minimum": 0.0,
+                  "maximum": 1.0
+                },
+                {
+                  "id": 40,
+                  "type": "text",
+                  "name": "Valeur Volume général",
+                  "anchor": "topLeft",
+                  "position": [
+                    1030.0,
+                    86.0
+                  ],
+                  "size": [
+                    90.0,
+                    36.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "right",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": "Volume général"
+                }
+              ]
+            },
+            {
+              "id": 41,
+              "type": "scrollArea",
+              "name": "Touches",
+              "anchor": "stretch",
+              "position": [
+                0.0,
+                8.0
+              ],
+              "size": [
+                0.0,
+                0.0
+              ],
+              "visible": false,
+              "background": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scrollbarWidth": 10.0,
+              "titleColor": [
+                0.012983031,
+                0.025186857,
+                0.045186203,
+                1.0
+              ],
+              "accent": [
+                0.06124607,
+                0.15592647,
+                0.26225072,
+                1.0
+              ],
+              "hoverColor": [
+                0.06124607,
+                0.5775805,
+                0.79129803,
+                1.0
+              ],
+              "border": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "borderWidth": 0.0,
+              "radius": 0.0,
+              "children": [
+                {
+                  "id": 42,
+                  "type": "text",
+                  "name": "Aide touches",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    28.0
+                  ],
+                  "size": [
+                    1100.0,
+                    28.0
+                  ],
+                  "text": "Cliquez sur une touche, puis appuyez sur la nouvelle (Échap annule).",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 43,
+                  "type": "text",
+                  "name": "Titre Déplacement",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    86.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Déplacement",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 44,
+                  "type": "frame",
+                  "name": "Trait Déplacement",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    124.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 45,
+                  "type": "text",
+                  "name": "Avancer",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    144.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Avancer",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 46,
+                  "type": "button",
+                  "name": "Touche Avancer",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    140.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Avancer",
+                  "binding": "Touche : Avancer"
+                },
+                {
+                  "id": 47,
+                  "type": "text",
+                  "name": "Reculer",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    198.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Reculer",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 48,
+                  "type": "button",
+                  "name": "Touche Reculer",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    194.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Reculer",
+                  "binding": "Touche : Reculer"
+                },
+                {
+                  "id": 49,
+                  "type": "text",
+                  "name": "Aller à gauche",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    252.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Aller à gauche",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 50,
+                  "type": "button",
+                  "name": "Touche Aller à gauche",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    248.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Aller à gauche",
+                  "binding": "Touche : Aller à gauche"
+                },
+                {
+                  "id": 51,
+                  "type": "text",
+                  "name": "Aller à droite",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    306.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Aller à droite",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 52,
+                  "type": "button",
+                  "name": "Touche Aller à droite",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    302.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Aller à droite",
+                  "binding": "Touche : Aller à droite"
+                },
+                {
+                  "id": 53,
+                  "type": "text",
+                  "name": "Courir",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    360.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Courir",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 54,
+                  "type": "button",
+                  "name": "Touche Courir",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    356.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Courir",
+                  "binding": "Touche : Courir"
+                },
+                {
+                  "id": 55,
+                  "type": "text",
+                  "name": "Sauter",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    414.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Sauter",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 56,
+                  "type": "button",
+                  "name": "Touche Sauter",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    410.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Sauter",
+                  "binding": "Touche : Sauter"
+                },
+                {
+                  "id": 57,
+                  "type": "text",
+                  "name": "Interagir",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    468.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Interagir",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 58,
+                  "type": "button",
+                  "name": "Touche Interagir",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    464.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Interagir",
+                  "binding": "Touche : Interagir"
+                },
+                {
+                  "id": 59,
+                  "type": "text",
+                  "name": "Titre Vaisseau",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    536.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Vaisseau",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 60,
+                  "type": "frame",
+                  "name": "Trait Vaisseau",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    574.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 61,
+                  "type": "text",
+                  "name": "Changer de vue",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    594.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Changer de vue",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 62,
+                  "type": "button",
+                  "name": "Touche Changer de vue",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    590.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Changer de vue",
+                  "binding": "Touche : Changer de vue"
+                },
+                {
+                  "id": 63,
+                  "type": "text",
+                  "name": "Freiner",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    648.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Freiner",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 64,
+                  "type": "button",
+                  "name": "Touche Freiner",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    644.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Freiner",
+                  "binding": "Touche : Freiner"
+                },
+                {
+                  "id": 65,
+                  "type": "text",
+                  "name": "Boost",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    702.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Boost",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 66,
+                  "type": "button",
+                  "name": "Touche Boost",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    698.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Boost",
+                  "binding": "Touche : Boost"
+                },
+                {
+                  "id": 67,
+                  "type": "text",
+                  "name": "Mode voyage",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    756.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Mode voyage",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 68,
+                  "type": "button",
+                  "name": "Touche Mode voyage",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    752.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Mode voyage",
+                  "binding": "Touche : Mode voyage"
+                },
+                {
+                  "id": 69,
+                  "type": "text",
+                  "name": "Monter",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    810.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Monter",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 70,
+                  "type": "button",
+                  "name": "Touche Monter",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    806.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Monter",
+                  "binding": "Touche : Monter"
+                },
+                {
+                  "id": 71,
+                  "type": "text",
+                  "name": "Descendre",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    864.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Descendre",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 72,
+                  "type": "button",
+                  "name": "Touche Descendre",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    860.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Descendre",
+                  "binding": "Touche : Descendre"
+                },
+                {
+                  "id": 73,
+                  "type": "text",
+                  "name": "Rouler à gauche",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    918.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Rouler à gauche",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 74,
+                  "type": "button",
+                  "name": "Touche Rouler à gauche",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    914.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Rouler à gauche",
+                  "binding": "Touche : Rouler à gauche"
+                },
+                {
+                  "id": 75,
+                  "type": "text",
+                  "name": "Rouler à droite",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    972.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Rouler à droite",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 76,
+                  "type": "button",
+                  "name": "Touche Rouler à droite",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    968.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Rouler à droite",
+                  "binding": "Touche : Rouler à droite"
+                },
+                {
+                  "id": 77,
+                  "type": "text",
+                  "name": "Stabiliser à plat",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1026.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Stabiliser à plat",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 78,
+                  "type": "button",
+                  "name": "Touche Stabiliser à plat",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1022.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Stabiliser à plat",
+                  "binding": "Touche : Stabiliser à plat"
+                },
+                {
+                  "id": 79,
+                  "type": "text",
+                  "name": "Pilote automatique",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1080.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Pilote automatique",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 80,
+                  "type": "button",
+                  "name": "Touche Pilote automatique",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1076.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Pilote automatique",
+                  "binding": "Touche : Pilote automatique"
+                },
+                {
+                  "id": 81,
+                  "type": "text",
+                  "name": "Warp",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1134.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Warp",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 82,
+                  "type": "button",
+                  "name": "Touche Warp",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1130.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Warp",
+                  "binding": "Touche : Warp"
+                },
+                {
+                  "id": 83,
+                  "type": "text",
+                  "name": "Groupe d'armes 1",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1188.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 1",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 84,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 1",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1184.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 1",
+                  "binding": "Touche : Groupe d'armes 1"
+                },
+                {
+                  "id": 85,
+                  "type": "text",
+                  "name": "Groupe d'armes 2",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1242.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 2",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 86,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 2",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1238.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 2",
+                  "binding": "Touche : Groupe d'armes 2"
+                },
+                {
+                  "id": 87,
+                  "type": "text",
+                  "name": "Groupe d'armes 3",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1296.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 3",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 88,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 3",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1292.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 3",
+                  "binding": "Touche : Groupe d'armes 3"
+                },
+                {
+                  "id": 89,
+                  "type": "text",
+                  "name": "Groupe d'armes 4",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1350.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 4",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 90,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 4",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1346.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 4",
+                  "binding": "Touche : Groupe d'armes 4"
+                },
+                {
+                  "id": 91,
+                  "type": "text",
+                  "name": "Groupe d'armes 5",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1404.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 5",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 92,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 5",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1400.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 5",
+                  "binding": "Touche : Groupe d'armes 5"
+                },
+                {
+                  "id": 93,
+                  "type": "text",
+                  "name": "Groupe d'armes 6",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1458.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 6",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 94,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 6",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1454.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 6",
+                  "binding": "Touche : Groupe d'armes 6"
+                },
+                {
+                  "id": 95,
+                  "type": "text",
+                  "name": "Groupe d'armes 7",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1512.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 7",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 96,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 7",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1508.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 7",
+                  "binding": "Touche : Groupe d'armes 7"
+                },
+                {
+                  "id": 97,
+                  "type": "text",
+                  "name": "Groupe d'armes 8",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1566.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 8",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 98,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 8",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1562.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 8",
+                  "binding": "Touche : Groupe d'armes 8"
+                },
+                {
+                  "id": 99,
+                  "type": "text",
+                  "name": "Groupe d'armes 9",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1620.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 9",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 100,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 9",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1616.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 9",
+                  "binding": "Touche : Groupe d'armes 9"
+                },
+                {
+                  "id": 101,
+                  "type": "text",
+                  "name": "Groupe d'armes 10",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1674.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Groupe d'armes 10",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 102,
+                  "type": "button",
+                  "name": "Touche Groupe d'armes 10",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1670.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Groupe d'armes 10",
+                  "binding": "Touche : Groupe d'armes 10"
+                },
+                {
+                  "id": 103,
+                  "type": "text",
+                  "name": "Titre Partie",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1742.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Partie",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 104,
+                  "type": "frame",
+                  "name": "Trait Partie",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1780.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 105,
+                  "type": "text",
+                  "name": "Sauvegarde rapide",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1800.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Sauvegarde rapide",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 106,
+                  "type": "button",
+                  "name": "Touche Sauvegarde rapide",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1796.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Sauvegarde rapide",
+                  "binding": "Touche : Sauvegarde rapide"
+                },
+                {
+                  "id": 107,
+                  "type": "text",
+                  "name": "Chargement rapide",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1854.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Chargement rapide",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 108,
+                  "type": "button",
+                  "name": "Touche Chargement rapide",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1850.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Chargement rapide",
+                  "binding": "Touche : Chargement rapide"
+                },
+                {
+                  "id": 109,
+                  "type": "text",
+                  "name": "Effacer la sauvegarde",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1908.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Effacer la sauvegarde",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 110,
+                  "type": "button",
+                  "name": "Touche Effacer la sauvegarde",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    1904.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Effacer la sauvegarde",
+                  "binding": "Touche : Effacer la sauvegarde"
+                },
+                {
+                  "id": 111,
+                  "type": "text",
+                  "name": "Titre Démo",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    1976.0
+                  ],
+                  "size": [
+                    1072.0,
+                    36.0
+                  ],
+                  "text": "Démo",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 112,
+                  "type": "frame",
+                  "name": "Trait Démo",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    2014.0
+                  ],
+                  "size": [
+                    1072.0,
+                    1.0
+                  ],
+                  "background": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.25
+                  ],
+                  "border": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "borderWidth": 0.0,
+                  "radius": 0.0
+                },
+                {
+                  "id": 113,
+                  "type": "text",
+                  "name": "Saut d'une année-lumière",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    2034.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Saut d'une année-lumière",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 114,
+                  "type": "button",
+                  "name": "Touche Saut d'une année-lumière",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    2030.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "text": "{}",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "rebindKey",
+                  "target": "Saut d'une année-lumière",
+                  "binding": "Touche : Saut d'une année-lumière"
+                },
+                {
+                  "id": 115,
+                  "type": "button",
+                  "name": "Touches par défaut",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    2100.0
+                  ],
+                  "size": [
+                    320.0,
+                    48.0
+                  ],
+                  "text": "Touches par défaut",
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "center",
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "pressedColor": [
+                    0.02121901,
+                    0.15592647,
+                    0.26225072,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "action": "resetKeys",
+                  "target": "",
+                  "binding": ""
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 116,
+          "type": "button",
+          "name": "Reprendre",
+          "anchor": "bottom",
+          "position": [
+            -170.0,
+            -48.0
+          ],
+          "size": [
+            300.0,
+            60.0
+          ],
+          "text": "Reprendre",
+          "fontSize": 26.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.00699541,
+            0.012983031,
+            0.023153365,
+            1.0
+          ],
+          "hoverColor": [
+            0.017641952,
+            0.08021983,
+            0.13843162,
+            1.0
+          ],
+          "pressedColor": [
+            0.012983031,
+            0.30498737,
+            0.5149178,
+            1.0
+          ],
+          "border": [
+            0.06124607,
+            0.5775805,
+            0.79129803,
+            0.6
+          ],
+          "borderWidth": 1.0,
+          "radius": 8.0,
+          "action": "closeWindow",
+          "target": "Options",
+          "binding": ""
+        },
+        {
+          "id": 117,
+          "type": "button",
+          "name": "Quitter le jeu",
+          "anchor": "bottom",
+          "position": [
+            170.0,
+            -48.0
+          ],
+          "size": [
+            300.0,
+            60.0
+          ],
+          "text": "Quitter le jeu",
+          "fontSize": 26.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.00699541,
+            0.012983031,
+            0.023153365,
+            1.0
+          ],
+          "hoverColor": [
+            0.15592647,
+            0.017641952,
+            0.017641952,
+            1.0
+          ],
+          "pressedColor": [
+            0.012983031,
+            0.30498737,
+            0.5149178,
+            1.0
+          ],
+          "border": [
+            0.06124607,
+            0.5775805,
+            0.79129803,
+            0.6
+          ],
+          "borderWidth": 1.0,
+          "radius": 8.0,
+          "action": "quit",
+          "target": "",
+          "binding": ""
+        }
+      ]
+    }
+  ]
+}

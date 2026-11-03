@@ -18,11 +18,17 @@ bool RunProjectTests() {
     // Aller-retour par ToString : mêmes chemins, écrits avec des « / ».
     Project changed = *project;
     changed.startupScene = std::filesystem::path("scenes") / "Titre.scene.json";
+    changed.menu = "Interfaces/Options.fluxui";
     const std::string saved = ProjectFile::ToString(changed);
     CHECK(saved.find("\"scenes/Titre.scene.json\"") != std::string::npos);
     const auto reread = ProjectFile::Parse(saved, file);
     CHECK(reread && reread->name == "Démo" && reread->assetsDirectory == project->assetsDirectory
-          && reread->startupScene == changed.startupScene);
+          && reread->startupScene == changed.startupScene && reread->menu == "Interfaces/Options.fluxui");
+    // Sans menu : pas de clé écrite ; un menu hors du projet est ignoré, le projet reste lu.
+    CHECK(project->menu.empty() && ProjectFile::ToString(*project).find("\"menu\"") == std::string::npos);
+    const auto outside = ProjectFile::Parse(R"({"format": "flux.project", "version": 1,
+        "assets": ".", "startupScene": "a.scene.json", "menu": "../Options.fluxui"})", file);
+    CHECK(outside && outside->menu.empty());
 
     // Sans nom : celui du fichier.
     const auto unnamed = ProjectFile::Parse(R"({"format": "flux.project", "version": 1,

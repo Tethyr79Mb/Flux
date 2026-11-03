@@ -101,6 +101,7 @@ namespace Flux {
         m_renderer->SetSharpness(config.sharpness);
         m_renderer->SetGroundDetail(config.groundDetail);
         m_renderer->SetCloudQuality(config.cloudQuality);
+        m_renderer->SetBloom(config.bloom ? Renderer::DefaultBloom : 0.0f);
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
@@ -129,8 +130,10 @@ namespace Flux {
                                              },
                                              .getText = {},
                                              .options = {UpscalingLabels.begin(), UpscalingLabels.end()}});
+        // Texte lié : en pour cent (« 50 % »), comme dans les Paramètres de l'éditeur.
         m_interfaceBindings->SetEngineValue("Netteté FSR", "Graphismes", {.get = [this] { return static_cast<double>(m_renderer->GetSharpness()); },
-                                             .set = [this](double value) { m_renderer->SetSharpness(static_cast<float>(value)); }});
+                                             .set = [this](double value) { m_renderer->SetSharpness(static_cast<float>(value)); },
+                                             .getText = [this] { return std::format("{:.0f} %", m_renderer->GetSharpness() * 100.0f); }});
         // Numéro dans GroundDetailLabels (0 Bas à 3 Ultra).
         m_interfaceBindings->SetEngineValue("Détail du sol", "Graphismes",
                                             {.get = [this] { return static_cast<double>(m_renderer->GetGroundDetail()); },
@@ -149,10 +152,18 @@ namespace Flux {
                                              },
                                              .getText = {},
                                              .options = {CloudQualityLabels.begin(), CloudQualityLabels.end()}});
+        // Allumé ou coupé : l'intensité reste celle réglée (éditeur), ou celle par défaut si le bloom était coupé.
+        m_interfaceBindings->SetEngineValue("Bloom", "Graphismes", {.get = [this] { return m_renderer->GetBloom() > 0.0f ? 1.0 : 0.0; },
+                                    .set = [this](double value) {
+                                        if ((value >= 0.5) != (m_renderer->GetBloom() > 0.0f)) {
+                                            m_renderer->SetBloom(value >= 0.5 ? Renderer::DefaultBloom : 0.0f);
+                                        }
+                                    }});
         m_interfaceBindings->SetEngineValue("Volume général", "Son", {.get = [this] { return static_cast<double>(m_audio->GetMasterVolume()); },
                                              .set = [this](double value) {
                                                  m_audio->SetMasterVolume(static_cast<float>(std::clamp(value, 0.0, 1.0)));
-                                             }});
+                                             },
+                                             .getText = [this] { return std::format("{:.0f} %", m_audio->GetMasterVolume() * 100.0f); }});
         m_interfaceBindings->SetEngineValue("Images par seconde", "Informations", {.get = [this] { return std::round(m_fps); }});
 
         // Actions du moteur (personnage, vaisseau), puis les touches choisies par le joueur. ZQSD en AZERTY : les
@@ -377,6 +388,7 @@ namespace Flux {
             if (m_drawScreenUi) {
                 ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
                                GetScreenUiOptions());
+                DrawProjectMenu(m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)});
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
                 const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
@@ -862,15 +874,30 @@ namespace Flux {
                 .fonts = [this](std::string_view path) { return LoadAssetFont(path); }};
     }
 
+    void Engine::DrawProjectMenu(UI::DrawList& list, Math::Vector2f viewMin, Math::Vector2f viewMax) {
+        if (m_gameState == GameState::Stopped || !m_project || m_project->menu.empty()) {
+            return;
+        }
+        // Dessiné après la scène : par-dessus ses interfaces ; Échap ferme d'abord une de leurs fenêtres, puis ouvre le menu.
+        DrawInterfaceFile(NullEntity, m_project->menu, list, viewMin, viewMax, false, false);
+    }
+
     std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterface(const ScreenUi::InterfaceRequest& request) {
-        const std::string& file = request.component.file;
+        return DrawInterfaceFile(request.entity, request.component.file, request.list, request.viewMin, request.viewMax,
+                                 request.placeholders, request.needsRect);
+    }
+
+    std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterfaceFile(Entity owner, const std::string& file,
+                                                                                        UI::DrawList& list, Math::Vector2f viewMin,
+                                                                                        Math::Vector2f viewMax, bool placeholders,
+                                                                                        bool needsRect) {
         const Interface::Document* document = nullptr;
         Interface::DrawOptions options{.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
-                                       .placeholders = request.placeholders};
+                                       .placeholders = placeholders};
         if (m_gameState != GameState::Stopped && m_project && !file.empty()) {
-            // En jeu : la copie de l'entité, que la souris modifie.
+            // En jeu : la copie de l'entité (NullEntity : celle du menu du projet), que la souris modifie.
             if (InterfaceLibrary::Instance* instance =
-                    m_interfaces->GetInstance(m_project->assetsDirectory, request.entity, file, m_frame)) {
+                    m_interfaces->GetInstance(m_project->assetsDirectory, owner, file, m_frame)) {
                 const Input& input = m_window->GetInput();
                 const Interface::Pointer pointer{.position = input.GetMousePosition(),
                                                  .down = input.IsMouseButtonDown(MouseButton::Left),
@@ -882,7 +909,7 @@ namespace Flux {
                                                         && !m_escapeUsed,
                                                  .wheel = input.GetWheelDelta()};
                 Interface::Interaction& interaction = instance->interaction;
-                Interface::Update(instance->document, interaction, request.viewMin, request.viewMax, pointer);
+                Interface::Update(instance->document, interaction, viewMin, viewMax, pointer);
                 m_interfaceBindings->Sync(instance->document.roots, interaction.changed, *m_inputActions, m_rebindingAction);
                 m_interfaceMouseNow = m_interfaceMouseNow || interaction.wantsMouse;
                 m_interfacePausedNow = m_interfacePausedNow || interaction.pausesGame;
@@ -899,27 +926,27 @@ namespace Flux {
         }
 
         if (!document) {
-            if (!request.placeholders) {
+            if (!placeholders) {
                 return std::nullopt;
             }
             // Éditeur : un message à la place de l'interface, pour la voir et la sélectionner.
             const std::string label = file.empty() ? "Interface : aucun fichier" : "Interface introuvable : " + file;
-            const float pixelSize = std::max(12.0f, 20.0f * Interface::GetScale(request.viewMin, request.viewMax));
-            const Math::Vector2f size = request.list.MeasureText(label, pixelSize);
-            const Math::Vector2f min = (request.viewMin + request.viewMax) * 0.5f - size * 0.5f;
-            request.list.AddRect(min - Math::Vector2f{8.0f, 6.0f}, min + size + Math::Vector2f{8.0f, 6.0f},
+            const float pixelSize = std::max(12.0f, 20.0f * Interface::GetScale(viewMin, viewMax));
+            const Math::Vector2f size = list.MeasureText(label, pixelSize);
+            const Math::Vector2f min = (viewMin + viewMax) * 0.5f - size * 0.5f;
+            list.AddRect(min - Math::Vector2f{8.0f, 6.0f}, min + size + Math::Vector2f{8.0f, 6.0f},
                                  Math::LinearColor::FromSrgb8(90, 90, 100, 0.6f));
-            request.list.AddText(min, label, pixelSize, Math::LinearColor::FromSrgb8(220, 220, 225));
+            list.AddText(min, label, pixelSize, Math::LinearColor::FromSrgb8(220, 220, 225));
             return std::pair{min - Math::Vector2f{8.0f, 6.0f}, min + size + Math::Vector2f{8.0f, 6.0f}};
         }
-        Interface::Draw(*document, request.list, request.viewMin, request.viewMax, options);
-        if (!request.needsRect) {
+        Interface::Draw(*document, list, viewMin, viewMax, options);
+        if (!needsRect) {
             return std::nullopt;
         }
 
         // Rectangle qui englobe les éléments du premier niveau : de quoi cliquer l'interface dans la vue.
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> bounds;
-        for (const Interface::Placed& placed : Interface::Arrange(*document, request.viewMin, request.viewMax)) {
+        for (const Interface::Placed& placed : Interface::Arrange(*document, viewMin, viewMax)) {
             if (placed.depth != 0) {
                 continue;
             }
