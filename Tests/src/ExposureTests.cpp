@@ -4,14 +4,18 @@
 // sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
 #include "Check.hpp"
 
+#include "Flux/Graphics/Camera.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
+#include "Flux/Scene/Scene.hpp"
 #include "Renderer/Exposure.hpp"
 #include "Renderer/ExposureRenderer.hpp"
+#include "Renderer/SkyRenderer.hpp"
 #include "Renderer/Photometry.hpp"
 #include "Renderer/ToneCurve.hpp"
 
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 
 using namespace Flux;
 
@@ -99,6 +103,26 @@ bool RunExposureTests() {
             }
         }
     }
+
+    // Exposition d'un Intérieur : entière au centre, à moitié au milieu du fondu, nulle dehors ; l'échelle d'un parent
+    // et la rotation de la boîte comptent.
+    Scene scene;
+    const Entity station = scene.CreateEntity("Station");
+    scene.Get<TransformComponent>(station).scale = {2.0f, 2.0f, 2.0f};
+    const Entity room = scene.CreateEntity("Pièce", station);
+    scene.Get<TransformComponent>(room).position = {10.0, 0.0, 0.0}; // 20 m dans le monde
+    scene.Get<TransformComponent>(room).rotation = Math::Quaternionf::FromAxisAngle({0, 1, 0}, std::numbers::pi_v<float> / 2);
+    scene.Add<InteriorComponent>(room, InteriorComponent{.size = {2.0f, 2.0f, 4.0f}, .fade = 0.5f, .exposure = -2.0f});
+    Camera camera;
+    const auto at = [&](double x, double z) {
+        camera.position = Math::WorldPosition{{}, {x, 0.0, z}};
+        return SkyRenderer::GetInteriorExposure(scene, camera);
+    };
+    CHECK(std::abs(at(20.0, 0.0) + 2.0f) < 1e-4f);
+    // Tournée d'un quart de tour : ses 8 m de long (4 x 2) sont le long de x, ses 4 m de large le long de z.
+    CHECK(std::abs(at(23.75, 0.0) + 1.0f) < 1e-3f);
+    CHECK(std::abs(at(20.0, 1.75) + 1.0f) < 1e-3f);
+    CHECK(at(20.0, 2.5) == 0.0f && at(0.0, 0.0) == 0.0f);
     return true;
 }
 

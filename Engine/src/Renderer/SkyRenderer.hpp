@@ -67,7 +67,9 @@ namespace Flux {
                             const std::filesystem::path& assetsDirectory, float preExposure, std::uint32_t frameIndex);
         // Réglages de l'exposition du Ciel de la scène ; sans Ciel, exposition fixe de 1. Lus avant Prepare : la
         // pré-exposition de l'image en dépend.
-        static Exposure::Settings GetExposureSettings(const Scene& scene);
+        static Exposure::Settings GetExposureSettings(const Scene& scene, const Camera& camera);
+        // Décalage d'exposition (stops) de l'Intérieur où se trouve la caméra, fondu près de ses bords ; 0 dehors.
+        static float GetInteriorExposure(const Scene& scene, const Camera& camera);
         // Tables de l'air à remplir à cette image : caméra dans l'air d'une planète, ou jamais remplies (les shaders
         // les déclarent, elles doivent être lisibles).
         bool TablesPending() const { return m_tablesWanted || !m_tablesFilled; }

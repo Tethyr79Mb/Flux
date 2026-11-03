@@ -404,7 +404,7 @@ namespace Flux {
             }
             const float renderHeight = static_cast<float>(frame.render.height);
             // L'exposition d'abord : toute la lumière de la scène en est multipliée (pré-exposition).
-            const Exposure::Settings exposureSettings = SkyRenderer::GetExposureSettings(scene);
+            const Exposure::Settings exposureSettings = SkyRenderer::GetExposureSettings(scene, camera);
             frame.autoExposure = exposureSettings.automatic;
             frame.exposure = exposure->Update(exposureSettings, frame.upscale.frameMilliseconds * 0.001f, !temporal.continuous,
                                               frameIndex);

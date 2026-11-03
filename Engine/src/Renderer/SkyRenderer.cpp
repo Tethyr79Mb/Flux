@@ -214,10 +214,34 @@ namespace Flux {
         return panorama;
     }
 
-    Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene) {
+    float SkyRenderer::GetInteriorExposure(const Scene& scene, const Camera& camera) {
+        // Comme InteriorAt dans shaders/Mesh.slang : le volume où la caméra est le plus « dedans » (fondu près des bords).
+        float inside = 0.0f;
+        float stops = 0.0f;
+        for (const auto [entity, interior] : scene.GetRegistry().view<const InteriorComponent>().each()) {
+            Math::Vector3f scale{1.0f, 1.0f, 1.0f};
+            for (Entity e = entity; e != NullEntity; e = scene.GetParent(e)) {
+                const Math::Vector3f s = scene.Get<TransformComponent>(e).scale;
+                scale = {scale.x * std::abs(s.x), scale.y * std::abs(s.y), scale.z * std::abs(s.z)};
+            }
+            const Math::Vector3f toCamera(Math::Delta(scene.GetWorldPosition(entity), camera.position));
+            const Math::Vector3f local = scene.GetWorldRotation(entity).Conjugate().Rotate(toCamera);
+            const float margin = std::min({0.5f * std::max(interior.size.x, 0.0f) * scale.x - std::abs(local.x),
+                                           0.5f * std::max(interior.size.y, 0.0f) * scale.y - std::abs(local.y),
+                                           0.5f * std::max(interior.size.z, 0.0f) * scale.z - std::abs(local.z)});
+            const float weight = std::clamp(margin / std::max(interior.fade, 1.0e-3f), 0.0f, 1.0f);
+            if (weight > inside) {
+                inside = weight;
+                stops = interior.exposure;
+            }
+        }
+        return inside * stops;
+    }
+
+    Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene, const Camera& camera) {
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
             // La scène la plus claire donne l'exposition la plus basse.
-            return {.automatic = sky.autoExposure, .compensation = sky.exposure,
+            return {.automatic = sky.autoExposure, .compensation = sky.exposure + GetInteriorExposure(scene, camera),
                     .minimum = std::log2(Photometry::ExposureFromEv100(std::max(sky.maxEv100, sky.minEv100))),
                     .maximum = std::log2(Photometry::ExposureFromEv100(sky.minEv100)), .speed = sky.adaptationSpeed};
         }
