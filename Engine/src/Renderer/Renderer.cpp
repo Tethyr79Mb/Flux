@@ -134,6 +134,7 @@ namespace Flux {
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
         bool hasPrevious = false;
+        float previousPreExposure = 1.0f; // de la dernière image où la scène a été dessinée (historiques)
         Math::Matrix4f previousViewProjection;
         Math::WorldPosition previousPosition;
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
@@ -149,6 +150,10 @@ namespace Flux {
             RHI::Rect scene3d;
             RHI::Extent render; // taille de rendu
             float exposure = 1.0f;
+            // Multiplie la lumière écrite dans l'image de la scène (Radiance dans shaders/Mesh.slang) : l'exposition
+            // elle-même, la scène arrive déjà exposée (gris moyen vers 0,18), loin du plafond des 16 bits. Composite
+            // n'applique plus que exposure / preExposure.
+            float preExposure = 1.0f;
             bool autoExposure = false; // mesure de la lumière à cette image (ExposureRenderer)
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
@@ -298,6 +303,7 @@ namespace Flux {
             const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
             PrepareTemporal(camera, aspect, viewProjection);
             frame.exposure = 1.0f;
+            frame.preExposure = 1.0f;
             frame.autoExposure = false;
             if (sceneVisible) {
                 if (!PrepareScene(scene, camera, aspect, hidden, frameIndex)) {
@@ -397,23 +403,29 @@ namespace Flux {
                 post->SkipTemporal();
             }
             const float renderHeight = static_cast<float>(frame.render.height);
-            SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frameIndex);
+            // L'exposition d'abord : toute la lumière de la scène en est multipliée (pré-exposition).
+            const Exposure::Settings exposureSettings = SkyRenderer::GetExposureSettings(scene);
+            frame.autoExposure = exposureSettings.automatic;
+            frame.exposure = exposure->Update(exposureSettings, frame.upscale.frameMilliseconds * 0.001f, !temporal.continuous,
+                                              frameIndex);
+            frame.preExposure = frame.exposure;
+            frame.temporal.historyExposure = frame.preExposure / previousPreExposure;
+            previousPreExposure = frame.preExposure;
+            frame.upscale.preExposure = frame.preExposure;
+            timings.exposure = frame.exposure;
+            timings.sceneLuminance = exposure->GetLuminance();
+            SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frame.preExposure, frameIndex);
             environment->Prepare(lighting.environmentSource, frameIndex);
             lighting.environment = &environment->GetReflections();
             lighting.irradiance = &environment->GetIrradiance();
             lighting.environmentSampler = &environment->GetSampler();
             lighting.environmentMips = environment->GetReflectionMips();
-            frame.autoExposure = lighting.exposure.automatic;
-            frame.exposure = exposure->Update(lighting.exposure, frame.upscale.frameMilliseconds * 0.001f,
-                                              !temporal.continuous, frameIndex);
-            timings.exposure = frame.exposure;
-            timings.sceneLuminance = exposure->GetLuminance();
             meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
             if (!meshes->HasClouds() || !temporal.continuous) {
                 clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
             }
-            thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter);
-            tracers->Prepare(projectiles, impacts, camera, aspect, renderHeight, temporal.jitter, frameIndex);
+            thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter, frame.preExposure);
+            tracers->Prepare(projectiles, impacts, camera, aspect, renderHeight, temporal.jitter, frame.preExposure, frameIndex);
             return true;
         }
 
@@ -584,7 +596,7 @@ namespace Flux {
                 .Begin([this](RHI::CommandList& commands) {
                     // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
                     // Profondeur et mouvement gardés pour l'anticrénelage.
-                    commands.BeginRenderPass({.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure),
+                    commands.BeginRenderPass({.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
                                               .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
                                               .colorTarget = graph.GetTexture(targets.sceneColor),
                                               .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true});
@@ -690,7 +702,7 @@ namespace Flux {
                 .When([this] { return sceneVisible && frame.autoExposure; })
                 .Reads(sceneColor)
                 .Writes(lightMeasure)
-                .Step("mesure de la lumière", [this](RHI::CommandList& commands) { exposure->Measure(commands, frame.index); });
+                .Step("mesure de la lumière", [this](RHI::CommandList& commands) { exposure->Measure(commands, frame.index, frame.preExposure); });
             // Masque réactif de FSR : là où l'image change sans que le mouvement le dise (gaz des flammes, traçantes plus
             // rapides que l'historique, nuages et leur propre historique), FSR suit l'image du moment au lieu de laisser
             // des traînées ou de faire trembler. Les flammes et traçantes redessinées (deux appels de plus), cachées par
@@ -742,7 +754,8 @@ namespace Flux {
                 .Reads(history)
                 .Writes(history)
                 .Step("anticrénelage", [this](RHI::CommandList& commands) {
-                    post->ResolveTemporal(commands, graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history);
+                    post->ResolveTemporal(commands, graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history,
+                                          frame.temporal.historyExposure);
                 });
             graph.AddPass("mouvement complet")
                 .When(upscaled)
@@ -788,7 +801,7 @@ namespace Flux {
                     commands.SetViewport({static_cast<float>(frame.scene3d.x), static_cast<float>(frame.scene3d.y),
                                           static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
                     commands.SetScissor(frame.scene3d);
-                    post->Composite(commands, bloom, frame.exposure);
+                    post->Composite(commands, bloom, frame.exposure / frame.preExposure);
                 }, scene)
                 // Même viewport que la scène.
                 .Step("grille", [this](RHI::CommandList& commands) { post->DrawGrid(commands, frame.gridParams); },

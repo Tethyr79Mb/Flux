@@ -144,7 +144,7 @@ namespace Flux::Vk {
                 dispatch.enableSharpening = inputs.sharpness > 0.0f;
                 dispatch.sharpness = inputs.sharpness;
                 dispatch.frameTimeDelta = inputs.frameMilliseconds;
-                dispatch.preExposure = 1.0f;
+                dispatch.preExposure = inputs.preExposure;
                 dispatch.reset = inputs.reset;
                 // Plan lointain à l'infini : FSR prend le plus petit des deux comme plan proche.
                 dispatch.cameraNear = inputs.nearPlane;

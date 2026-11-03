@@ -51,8 +51,9 @@ namespace Flux {
         // Hors de toute passe, après la scène et avant DrawBloom : mélange la scène à l'historique (voir Temporal.slang).
         // `reprojection` : clip space de cette image sans décalage (x, y, profondeur, 1) -> celui de l'image précédente ;
         // `history` false : rien à reprendre (saut de la caméra). `target` : l'exemplaire de l'historique écrit
-        // (RenderGraph::GetWriteCopy), l'autre est lu.
-        void ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection, bool history);
+        // (RenderGraph::GetWriteCopy), l'autre est lu. `historyExposure` : TemporalView::historyExposure.
+        void ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection, bool history,
+                             float historyExposure);
         // Anticrénelage coupé à cette image : le bloom et l'image finale lisent la scène telle quelle.
         void SkipTemporal();
         // Hors de toute passe, après la scène : le mouvement complet de chaque pixel (caméra et objets) dans

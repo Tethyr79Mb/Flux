@@ -29,8 +29,8 @@ namespace Flux {
         Math::Vector3f toSun;       // unitaire
         Math::Vector3f sunColor;    // couleur x intensité
         float ambient = 1.0f;       // multiplie les textures de l'environnement (lumière ambiante et reflets)
-        // Réglages de l'exposition (ExposureRenderer) ; sans ciel, exposition fixe de 1.
-        Exposure::Settings exposure;
+        // Multiplie la lumière écrite dans l'image de la scène (pré-exposition : Radiance dans shaders/Mesh.slang).
+        float preExposure = 1.0f;
         // D'où l'environnement tire sa lumière (EnvironmentRenderer::Prepare).
         EnvironmentSource environmentSource;
         // Textures de l'environnement, remplies par le Renderer (EnvironmentRenderer) : reflets et leur nombre de
@@ -62,8 +62,12 @@ namespace Flux {
         // Après Device::BeginFrame : les ressources de l'image frameIndex sont libres. `viewportHeight` en pixels.
         // Pas de décalage d'un sous-pixel (TemporalView::jitter), contrairement au reste de la scène : les étoiles, d'un
         // pixel, étalées par l'anticrénelage sur ceux d'à côté, pâliraient ; le fond, lui, est déjà lisse.
+        // `preExposure` : multiplie la lumière écrite dans l'image de la scène (Radiance dans shaders/Mesh.slang).
         SkyLighting Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
-                            const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
+                            const std::filesystem::path& assetsDirectory, float preExposure, std::uint32_t frameIndex);
+        // Réglages de l'exposition du Ciel de la scène ; sans Ciel, exposition fixe de 1. Lus avant Prepare : la
+        // pré-exposition de l'image en dépend.
+        static Exposure::Settings GetExposureSettings(const Scene& scene);
         // Tables de l'air à remplir à cette image : caméra dans l'air d'une planète, ou jamais remplies (les shaders
         // les déclarent, elles doivent être lisibles).
         bool TablesPending() const { return m_tablesWanted || !m_tablesFilled; }

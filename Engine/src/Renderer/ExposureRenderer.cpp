@@ -2,6 +2,7 @@
 
 #include "Flux/Platform/Filesystem.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace Flux {
@@ -87,7 +88,10 @@ namespace Flux {
             return m_exposure;
         }
         m_readback[frameIndex]->Read(m_read.data(), BinsSize);
-        const std::optional<float> luminance = Exposure::MeteredLuminance(m_read);
+        std::optional<float> luminance = Exposure::MeteredLuminance(m_read);
+        if (luminance) {
+            *luminance /= m_preExposures[frameIndex];
+        }
         m_luminance = luminance.value_or(0.0f);
         // Image noire (rien que le fond de l'espace, sans étoile assez claire) : l'exposition reste où elle est.
         if (!luminance) {
@@ -99,7 +103,7 @@ namespace Flux {
         return m_exposure;
     }
 
-    void ExposureRenderer::Measure(RHI::CommandList& commands, std::uint32_t frameIndex) {
+    void ExposureRenderer::Measure(RHI::CommandList& commands, std::uint32_t frameIndex, float preExposure) {
         if (m_extent.width == 0 || m_extent.height == 0) {
             return;
         }
@@ -117,5 +121,6 @@ namespace Flux {
         // Lu par la copie (CopyBuffer pose sa barrière) ; la copie finie avant le calcul suivant qui le réécrit.
         commands.CopyBuffer(*m_bins, 0, *m_readback[frameIndex], 0, BinsSize);
         m_measured[frameIndex] = true;
+        m_preExposures[frameIndex] = std::max(preExposure, 1.0e-6f);
     }
 }

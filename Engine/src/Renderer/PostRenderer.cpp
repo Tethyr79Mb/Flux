@@ -250,7 +250,7 @@ namespace Flux {
     }
 
     void PostRenderer::ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection,
-                                       bool history) {
+                                       bool history, float historyExposure) {
         // L'historique lu n'a jamais été écrit à la première image : une passe vide l'efface (un contenu indéfini peut
         // tenir des NaN, que le poids nul ne suffit pas à effacer). Le graphe de rendu l'a déjà rendu lisible : il
         // redevient cible le temps de l'effacer.
@@ -264,7 +264,7 @@ namespace Flux {
         }
         const TemporalParams params{reprojection,
                                     {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height),
-                                     CurrentWeight, history && m_historyValid && m_extent == m_sceneExtent ? 1.0f : 0.0f}};
+                                     CurrentWeight, history && m_historyValid && m_extent == m_sceneExtent ? historyExposure : 0.0f}};
         commands.BeginRenderPass({.colorTarget = m_targets.history[target]});
         commands.SetViewport({0.0f, 0.0f, static_cast<float>(m_extent.width), static_cast<float>(m_extent.height)});
         commands.SetScissor({0, 0, m_extent.width, m_extent.height});

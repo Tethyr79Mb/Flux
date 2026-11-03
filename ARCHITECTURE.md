@@ -278,6 +278,10 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    luminance en log2 pondéré vers le centre (`Exposure.slang`, une lecture par bloc de 2 x 2 pixels), relu par le CPU
    deux images plus tard ; moyenne de la tranche 40-90 %, ramenée au gris moyen, bornée, puis adaptation de l'œil
    (`Exposure.cpp` ; plus lente vers le sombre).
+   Pré-exposition : chaque shader qui écrit la scène multiplie sa lumière par l'exposition de l'image (`Radiance` dans
+   `Mesh.slang`, `SkyData::sunColor.w`, constantes des flammes et traçantes), connue du CPU avant le dessin. La scène
+   arrive déjà exposée (gris moyen vers 0,18), loin du plafond des 16 bits même avec des lumières physiques ; les
+   historiques (anticrénelage, nuages, FSR) sont ramenés par le rapport à l'exposition de l'image précédente.
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques

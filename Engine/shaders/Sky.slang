@@ -300,5 +300,5 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         color *= exp(-daylight * SkyDaylightFade);
         color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
     }
-    return float4(min(color, float3(60000.0)), 1.0);
+    return float4(min(color * s.sunColor.w, float3(60000.0)), 1.0); // pré-exposition (Radiance dans Mesh.slang)
 }

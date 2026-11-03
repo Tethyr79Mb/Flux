@@ -9,7 +9,7 @@ struct SkyData
     float4 up;           // xyz : haut de la caméra x tangente du demi-champ vertical
     float4 forward;      // xyz : avant de la caméra ; w : angle couvert par un pixel (radians)
     float4 toSun;        // xyz : direction du soleil (unitaire) ; w : rayon apparent du disque (radians)
-    float4 sunColor;     // rgb : couleur de la lumière x intensité
+    float4 sunColor;     // rgb : couleur de la lumière x intensité ; w : pré-exposition
     float4 discColor;    // rgb : couleur du disque x intensité
     float4 nebulaColor;  // rgb ; w : densité de la nébuleuse
     float4 nebulaColor2; // rgb ; w : éclat de la bande galactique

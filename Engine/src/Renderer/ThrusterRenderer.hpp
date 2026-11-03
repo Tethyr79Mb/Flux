@@ -37,7 +37,9 @@ namespace Flux {
 
         // Flammes de l'image : boîtes relatives à la caméra, celles hors du champ écartées. L'exposition s'applique
         // après, sur toute l'image (PostRenderer). `jitter` : TemporalView::jitter.
-        void Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect, Math::Vector2f jitter);
+        // `preExposure` : multiplie la lumière écrite dans l'image de la scène (Radiance dans shaders/Mesh.slang).
+        void Prepare(std::span<const ThrusterDraw> thrusters, const Camera& camera, float aspect, Math::Vector2f jitter,
+                     float preExposure);
         // Dans la passe de la scène, après les transparents.
         void Draw(RHI::CommandList& commands) const;
         // En FSR, dans la passe du masque réactif (profondeur de la scène gardée) : les mêmes flammes, leur éclat

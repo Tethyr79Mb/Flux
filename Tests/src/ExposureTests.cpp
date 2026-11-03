@@ -104,12 +104,14 @@ bool RunExposureGpuTests() {
         return false;
     }
     (*exposure)->Bind(**scene);
-    const auto measure = [&](Math::LinearColor color) {
+    // L'image écrite telle que la scène l'écrirait : la lumière multipliée par la pré-exposition.
+    const auto measure = [&](Math::LinearColor color, float preExposure = 1.0f) {
         return (**device).Submit([&](RHI::CommandList& commands) {
-            commands.BeginRenderPass({.clearColor = color, .colorTarget = scene->get()});
+            const Math::LinearColor written{color.r * preExposure, color.g * preExposure, color.b * preExposure};
+            commands.BeginRenderPass({.clearColor = written, .colorTarget = scene->get()});
             commands.EndRenderPass();
             commands.Use(**scene, RHI::TextureAccess::Sampled);
-            (*exposure)->Measure(commands, 0);
+            (*exposure)->Measure(commands, 0, preExposure);
         });
     };
     const Exposure::Settings settings{.automatic = true, .compensation = 0.0f, .minimum = -4.0f, .maximum = 1.0f, .speed = 3.0f};
@@ -123,6 +125,10 @@ bool RunExposureGpuTests() {
     std::printf("       luminance mesurée %.4f, exposition %.4f\n", (*exposure)->GetLuminance(), first);
     CHECK(NearStops((*exposure)->GetLuminance(), luminance, HalfBin + 0.01f));
     CHECK(NearStops(first, 0.18f / luminance, HalfBin + 0.01f));
+    // La même image écrite avec une pré-exposition de 4 : la même luminance mesurée.
+    CHECK(measure({0.9f, 0.7f, 0.6f}, 4.0f));
+    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), first, HalfBin + 0.01f));
+    CHECK(NearStops((*exposure)->GetLuminance(), luminance, HalfBin + 0.01f));
     // Sans nouvelle mesure, l'exposition ne bouge pas.
     CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), first, 0.0001f));
     // Image noire (le fond de l'espace) : rien de mesurable, l'exposition reste.

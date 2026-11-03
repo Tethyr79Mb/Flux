@@ -27,6 +27,9 @@ namespace Flux {
         bool continuous = false;
         // Anticrénelage et continuous : l'image précédente est reprise.
         bool history = false;
+        // Pré-exposition de cette image divisée par celle de l'image précédente : ce qui multiplie un historique écrit
+        // alors (anticrénelage, FSR, nuages) pour le ramener à cette image.
+        float historyExposure = 1.0f;
     };
 
     // `viewProjection` décalé de `jitter` : x et y du clip space reçoivent jitter x w, soit jitter après la division.

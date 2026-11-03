@@ -15,7 +15,9 @@ struct TemporalParams
     // Par colonnes : clip space d'un pixel de cette image, sans décalage (x, y, sa profondeur, 1) -> clip space de
     // l'image précédente. Profondeur 0 (ciel, reverse-Z infini) : w passe à 0, seule la direction compte.
     float4 reprojection[4];
-    float4 texel; // xy : 1 / taille de l'image ; z : part de l'image actuelle ; w : 1 si l'historique est valable
+    // xy : 1 / taille de l'image ; z : part de l'image actuelle ; w : pré-exposition de cette image divisée par celle
+    // de l'historique, 0 si l'historique n'est pas valable
+    float4 texel;
 };
 [[vk::push_constant]] ConstantBuffer<TemporalParams> temporal;
 
@@ -176,7 +178,7 @@ float4 fragmentTemporal(VertexOutput input) : SV_Target
     // un reflet) serait sinon ramené vers le fond sombre de ses voisins et pâlirait.
     const float3 low = min(mean - deviation, center);
     const float3 high = max(mean + deviation, center);
-    const float3 old = ClipToBox(ToYCoCg(Compress(Finite(SampleHistory(previousUv)))), low, high);
+    const float3 old = ClipToBox(ToYCoCg(Compress(Finite(SampleHistory(previousUv) * temporal.texel.w))), low, high);
     const float3 blended = lerp(old, center, temporal.texel.z);
     return float4(Expand(FromYCoCg(blended)), 1.0);
 }

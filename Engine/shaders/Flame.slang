@@ -14,7 +14,7 @@ struct FlameParams
     float4 camera;       // xyz : caméra dans le repère normalisé ; w : temps (s)
     float4 color;        // rgb : couleur x éclat ; w : poussée (0 à 1)
     float4 size;         // xyz : demi-largeur, demi-hauteur et longueur de la boîte (m) ; w : sortie de la tuyère dans la boîte (< 1)
-    float4 options;      // x : graine ; y : gain de la lumière du gaz
+    float4 options;      // x : graine ; y : gain de la lumière du gaz ; z : pré-exposition
 };
 [[vk::push_constant]] ConstantBuffer<FlameParams> flame;
 
@@ -159,7 +159,7 @@ float4 FlameLight(VertexOutput input)
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    return FlameLight(input);
+    return FlameLight(input) * flame.options.z; // pré-exposition (Radiance dans Mesh.slang)
 }
 
 // Masque réactif de FSR (ThrusterRenderer::DrawReactive) : le gaz remue d'une image à l'autre sans que le mouvement de
