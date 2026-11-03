@@ -199,6 +199,7 @@ int main(int argc, char** argv) {
                                               .prefabs = &contentBrowser.GetPrefabs()};
     FluxEditor::McpServer mcp;
     FluxEditor::RegisterEditorTools(mcp, toolContext);
+    FluxEditor::RegisterInterfaceTools(mcp, toolContext, interfaceEditor);
     mcp.Start(McpPort());
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
