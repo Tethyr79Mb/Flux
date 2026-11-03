@@ -22,10 +22,10 @@ float3 AgxContrast(float3 x)
     return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
 }
 
-// Réglage « Punchy » d'AgX (comme dans Blender) : AgX de base délave les couleurs (une planète vue de l'espace tourne
-// au blanc) ; un peu plus de contraste et de saturation leur rend leur force, le blanc des très fortes lumières reste.
-static const float AgxLookPower = 1.35;
-static const float AgxLookSaturation = 1.4;
+// Un peu plus de contraste et de saturation qu'AgX de base, qui délave les couleurs (une planète vue de l'espace tourne
+// au blanc) : moitié moins que le réglage « Punchy » de Blender (1,35 et 1,4), jugé trop proche d'ACES par Bruno.
+static const float AgxLookPower = 1.15;
+static const float AgxLookSaturation = 1.2;
 static const float3 AgxLuma = float3(0.2126, 0.7152, 0.0722);
 
 float3 AgxLook(float3 v)

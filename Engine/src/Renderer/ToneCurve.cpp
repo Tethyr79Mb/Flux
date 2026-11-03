@@ -28,9 +28,9 @@ namespace Flux::ToneCurve {
                     m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]};
         }
 
-        // Réglage « Punchy » (comme dans Blender) : plus de contraste et de saturation qu'AgX de base, qui délave.
-        constexpr float LookPower = 1.35f;
-        constexpr float LookSaturation = 1.4f;
+        // Un peu plus de contraste et de saturation qu'AgX de base, qui délave : moitié moins que « Punchy » (Blender).
+        constexpr float LookPower = 1.15f;
+        constexpr float LookSaturation = 1.2f;
         constexpr Vector Luma{0.2126f, 0.7152f, 0.0722f};
 
         float Dot(const Vector& a, const Vector& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }

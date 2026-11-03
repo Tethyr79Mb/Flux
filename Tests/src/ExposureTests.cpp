@@ -67,12 +67,12 @@ bool RunExposureTests() {
     CHECK(darker > 1.0f && brighter < 1.0f && std::log2(darker) < -std::log2(brighter) * 0.5f);
     CHECK(NearStops(Exposure::Adapt(0.5f, 0.5f, 0.1f, settings), 0.5f, 0.0001f));
 
-    // AgX « Punchy » : noir reste noir, gris moyen à 0,125 (proche d'ACES avant lui, 0,14), blanc pur jamais atteint.
+    // AgX : noir reste noir, gris moyen à 0,17 (ACES avant lui : 0,14), blanc pur jamais atteint.
     const Math::LinearColor black = ToneCurve::ToneMap({0.0f, 0.0f, 0.0f}, 1.0f);
     const Math::LinearColor gray = ToneCurve::ToneMap({0.18f, 0.18f, 0.18f}, 1.0f);
     const Math::LinearColor bright = ToneCurve::ToneMap({100.0f, 100.0f, 100.0f}, 1.0f);
     CHECK(black.r < 0.001f);
-    CHECK(gray.r > 0.11f && gray.r < 0.14f && std::abs(gray.g - gray.r) < 0.001f);
+    CHECK(gray.r > 0.15f && gray.r < 0.19f && std::abs(gray.g - gray.r) < 0.001f);
     CHECK(bright.r > 0.98f && bright.r <= 1.0f);
     // Une couleur saturée très forte tourne au blanc : ses composantes se rapprochent.
     const Math::LinearColor red = ToneCurve::ToneMap({50.0f, 0.5f, 0.5f}, 1.0f);
