@@ -18,6 +18,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -87,6 +88,8 @@ namespace Flux::Vk {
         bool EndFrame() override;
         std::span<const double> GetTimestamps() const override;
         const RHI::WaitTimes& GetWaitTimes() const override { return m_waitTimes; }
+        bool RequestCapture() override;
+        std::optional<ImageData> TakeCapture() override;
 
         private:
         // Appelle les libérations différées dont le GPU a fini (toutes : après une attente complète).
@@ -94,6 +97,8 @@ namespace Flux::Vk {
 
         RhiDevice() = default;
         bool RecreateSwapchain();
+        // Relit la capture copiée par l'image qui vient de finir dans ces ressources (BeginFrame, après l'attente).
+        void ReadCapture();
 
         // Dans cet ordre : tout ce qui suit est détruit avant le device.
         std::unique_ptr<Vk::Device> m_device;
@@ -116,5 +121,16 @@ namespace Flux::Vk {
         std::deque<Retired> m_retired;
         bool m_asyncUploads = false; // entre BeginAsyncUploads et EndAsyncUploads, avec une fenêtre
         std::vector<VkCommandBufferSubmitInfo> m_commandInfos; // de la soumission de l'image, réutilisé
+        // Capture d'écran : demandée, copiée par l'image frameIndex (relue quand elle a fini), puis prête.
+        bool m_captureRequested = false;
+        struct PendingCapture
+        {
+            Vk::Buffer buffer;
+            std::uint32_t frameIndex;
+            VkExtent2D extent;
+            VkFormat format;
+        };
+        std::optional<PendingCapture> m_pendingCapture;
+        std::optional<ImageData> m_capture;
     };
 }

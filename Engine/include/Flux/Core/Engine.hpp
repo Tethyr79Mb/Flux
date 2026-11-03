@@ -41,6 +41,7 @@ namespace Flux {
     class LoadingScreen;
     class PhysicsContext;
     class PhysicsWorld;
+    class FrameStats;
     class PlayerCamera;
     class QuickSave;
     class Renderer;
@@ -107,6 +108,10 @@ namespace Flux {
 
         Window& GetWindow();
         Renderer& GetRenderer();
+        // Mesures du panneau Moteur (cadence, temps du CPU et du GPU, exposition, scène, mémoire), en JSON : outils
+        // (serveur MCP de l'éditeur). Les temps du GPU passe par passe n'y sont que si Renderer::RequestDetailedTimings
+        // a été demandé pendant la dernière demi-seconde.
+        std::string GetStatsJson() const;
         // Interface FluxUI de la frame en cours (panneaux décrits dans la fonction de mise à jour du jeu).
         UI::Context& GetUi();
         Camera& GetCamera() { return m_camera; }
@@ -326,6 +331,7 @@ namespace Flux {
         ShipInput m_pilotInput;                                 // commandes du jeu pour cette image (SetPilotInput)
         std::unique_ptr<LoadingScreen> m_loadingScreen;
         std::unique_ptr<QuickSave> m_quickSave;                 // F7 / F8 / F9
+        std::unique_ptr<FrameStats> m_frameStats;               // temps moyens du panneau Moteur
         std::uint64_t m_frame = 0;
         bool m_interfaceWantsMouse = false; // à l'image précédente
         bool m_interfaceMouseNow = false;   // à l'image en cours, d'après les interfaces déjà dessinées

@@ -31,6 +31,7 @@ int main() {
         {"mesure de la lumière sur le GPU", RunExposureGpuTests},
         {"son", RunAudioTests},
         {"actions d'entrée", RunInputTests},
+        {"serveur HTTP local (outils MCP)", RunLocalHttpServerTests},
         {"planètes (cube-sphère)", RunPlanetTests},
         {"calculs sur le GPU (compute)", RunComputeTests},
         {"envois vers le GPU (file de transfert)", RunTransferTests},

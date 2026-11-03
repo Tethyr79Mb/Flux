@@ -206,6 +206,11 @@ namespace Flux {
         // l'empêchent d'enchaîner ses étapes.
         void RequestDetailedTimings();
 
+        // Capture d'écran de toute la fenêtre (interface comprise), telle que la prochaine image la présente : prête
+        // deux ou trois images plus tard dans TakeCapture (une seule fois). false si la fenêtre ne permet pas la copie.
+        bool RequestCapture();
+        std::optional<ImageData> TakeCapture();
+
         // Nom du GPU utilisé, tel que rapporté par le pilote.
         std::string_view GetDeviceName() const;
         // Version de Vulkan utilisée, puis celle que le GPU accepte : « 1.3 (GPU : 1.4.303) ».

@@ -24,4 +24,7 @@ namespace Flux {
     // Formats lus : PNG, JPEG, TGA, BMP. Les images en niveaux de gris ou sans alpha sont converties en RGBA.
     FLUX_API std::expected<ImageData, std::string> LoadImageFile(const std::filesystem::path& path);
     FLUX_API std::expected<ImageData, std::string> LoadImageMemory(std::span<const std::uint8_t> bytes);
+
+    // Image encodée en PNG, en mémoire (vide si l'image est vide ou invalide).
+    FLUX_API std::vector<std::uint8_t> EncodePng(const ImageData& image);
 }

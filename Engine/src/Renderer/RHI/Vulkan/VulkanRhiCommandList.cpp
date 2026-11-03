@@ -306,6 +306,32 @@ namespace Flux::Vk {
                         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE);
     }
 
+    void RhiCommandList::CopyImageToReadback(VkBuffer target) {
+        TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {m_extent.width, m_extent.height, 1};
+        vkCmdCopyImageToBuffer(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, 1, &region);
+        // La copie, lisible par le CPU une fois l'image finie (fence).
+        VkMemoryBarrier2 toHost{};
+        toHost.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        toHost.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        toHost.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        toHost.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        toHost.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &toHost;
+        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        // Retour au layout que TransitionToPresent attend.
+        TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_NONE,
+                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    }
+
     void RhiCommandList::SetViewport(const RHI::Viewport& viewport) {
         const VkViewport vkViewport{viewport.x, viewport.y, viewport.width, viewport.height, viewport.minDepth, viewport.maxDepth};
         vkCmdSetViewport(m_commandBuffer, 0, 1, &vkViewport);

@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace Flux {
@@ -122,4 +123,6 @@ namespace Flux {
 
     void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, MeasureRecorder& measures,
                          Camera& camera, FlyCameraController* controller);
+    // Les mêmes valeurs que le panneau, en JSON (Engine::GetStatsJson) : temps en millisecondes, -1 si inconnus.
+    std::string DescribeEngineStats(const Renderer& renderer, const FrameStats& stats);
 }

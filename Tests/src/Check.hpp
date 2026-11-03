@@ -40,6 +40,7 @@ bool RunPickingTests();
 bool RunScreenUiTests();
 bool RunInterfaceTests();
 bool RunImageTests();
+bool RunLocalHttpServerTests();
 bool RunTextureCompressionTests();
 bool RunSceneChangeTests();
 bool RunModelTests();

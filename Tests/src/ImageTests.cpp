@@ -127,11 +127,28 @@ namespace {
     }
 }
 
+namespace {
+    // Capture d'écran de l'outil MCP : PNG écrit en mémoire, relu à l'identique (sans perte, alpha compris).
+    bool RunPngTests() {
+        auto source = LoadImageMemory(RgbaPng);
+        CHECK(source.has_value());
+        const std::vector<std::uint8_t> png = EncodePng(*source);
+        CHECK(png.size() > 8 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G');
+        auto decoded = LoadImageMemory(png);
+        CHECK(decoded.has_value());
+        CHECK(decoded->size == source->size);
+        CHECK(decoded->rgba == source->rgba);
+        CHECK(EncodePng(ImageData{}).empty()); // image vide : rien
+        CHECK(EncodePng(ImageData{{2, 2}, std::vector<std::uint8_t>(3)}).empty()); // taille et pixels en désaccord
+        return true;
+    }
+}
+
 bool RunImageTests() {
     auto font = UI::Font::Load(Platform::GetExecutableDirectory() / "assets" / "fonts" / "Arimo.ttf");
     if (!font) {
         std::printf("ÉCHEC : police introuvable (%s)\n", font.error().c_str());
         return false;
     }
-    return RunLoadTests() && RunCommandTests(**font);
+    return RunLoadTests() && RunPngTests() && RunCommandTests(**font);
 }

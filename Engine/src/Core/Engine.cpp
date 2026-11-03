@@ -78,7 +78,8 @@ namespace Flux {
           m_flightSurroundings(std::make_unique<FlightSurroundings>()),
           m_notice(std::make_unique<Notice>()),
           m_loadingScreen(std::make_unique<LoadingScreen>(config.loadingScreen)),
-          m_quickSave(std::make_unique<QuickSave>()) {
+          m_quickSave(std::make_unique<QuickSave>()),
+          m_frameStats(std::make_unique<FrameStats>()) {
         RegisterEngineComponents(m_components);
         Log::Info("Flux {}", GetFullVersion());
         if (!m_window->Create(config.title, config.windowSize, config.maximized, config.fullscreen)) {
@@ -240,7 +241,7 @@ namespace Flux {
             return 1;
         }
 
-        FrameStats stats;
+        FrameStats& stats = *m_frameStats;
         MeasureRecorder measures;
         // Temps du CPU de l'image précédente pour le relevé (négatif : pas mesuré, jeu arrêté).
         double updateMilliseconds = -1.0;
@@ -424,6 +425,10 @@ namespace Flux {
             RunQuickSave(); // après le changement de scène : F9 l'emporte sur une scène demandée à la même image
         }
         return 0;
+    }
+
+    std::string Engine::GetStatsJson() const {
+        return DescribeEngineStats(*m_renderer, *m_frameStats);
     }
 
     void Engine::RequestScene(std::string relativePath) {
