@@ -69,7 +69,7 @@ namespace Flux {
         // pré-exposition de l'image en dépend.
         static Exposure::Settings GetExposureSettings(const Scene& scene, const Camera& camera);
         // Décalage d'exposition (stops) de l'Intérieur où se trouve la caméra, fondu près de ses bords ; 0 dehors.
-        static float GetInteriorExposure(const Scene& scene, const Camera& camera);
+        static FLUX_API float GetInteriorExposure(const Scene& scene, const Camera& camera); // exporté pour ExposureTests
         // Tables de l'air à remplir à cette image : caméra dans l'air d'une planète, ou jamais remplies (les shaders
         // les déclarent, elles doivent être lisibles).
         bool TablesPending() const { return m_tablesWanted || !m_tablesFilled; }
