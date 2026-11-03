@@ -5,7 +5,9 @@
 #include "Flux/Platform/Memory.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Core/Measurements.hpp"
+#include "Renderer/Photometry.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <format>
@@ -80,10 +82,12 @@ namespace Flux {
                     renderer.SetGroundGeometryOnly(geometryOnly);
                 }
                 const RenderTimings& render = renderer.GetTimings();
+                // En EV100, comme les bornes du Ciel (Photometry::ExposureFromEv100 à l'envers).
+                const float ev100 = std::log2(Photometry::NitsPerUnit / (1.2f * std::max(render.exposure, 1.0e-12f)));
                 ui.LabelText("Exposition", render.sceneLuminance > 0.0f
-                                               ? std::format("{:+.2f} stops (luminance mesurée {:.3f})",
-                                                             std::log2(render.exposure), render.sceneLuminance)
-                                               : std::format("{:+.2f} stops", std::log2(render.exposure)));
+                                               ? std::format("EV100 {:.1f} (luminance mesurée {:.3g} cd/m²)", ev100,
+                                                             render.sceneLuminance * Photometry::NitsPerUnit)
+                                               : std::format("EV100 {:.1f} (rien de mesurable)", ev100));
                 ui.LabelText("Objets testés", std::format("{} dont {} cachés", render.occlusionTested, render.occlusionHidden));
                 ui.LabelText("Paquets des modèles", render.modelMeshShaders
                                                         ? std::format("{} dont {} dessinés", render.modelMeshlets,

@@ -89,9 +89,9 @@ namespace {
                 && (parentA == NullEntity ? parentB == NullEntity : parentB != NullEntity && a.GetId(parentA) == b.GetId(parentB))
                 && (sa ? sa->sector : Math::Vector3i64{}) == (sb ? sb->sector : Math::Vector3i64{})
                 && (ma == nullptr) == (mb == nullptr)
-                && (!ma || (ma->mesh == mb->mesh && ma->color == mb->color && ma->emission == mb->emission))
+                && (!ma || (ma->mesh == mb->mesh && ma->color == mb->color && ma->luminance == mb->luminance))
                 && (la == nullptr) == (lb == nullptr)
-                && (!la || (la->type == lb->type && la->color == lb->color && la->intensity == lb->intensity
+                && (!la || (la->type == lb->type && la->color == lb->color && la->lumens == lb->lumens
                             && la->range == lb->range && la->angle == lb->angle && la->softness == lb->softness))
                 && (ra == nullptr) == (rb == nullptr)
                 && (!ra || (ra->color == rb->color && ra->intensity == rb->intensity && ra->sharpness == rb->sharpness))
@@ -283,6 +283,22 @@ bool RunSceneSerializerTests() {
     // Réécrite : le nouveau champ seulement.
     const std::string converted = SceneSerializer::SaveToString(loaded, engineOnly);
     CHECK(converted.find("sandLevel") == std::string::npos && converted.find("beachHeight") != std::string::npos);
+
+    // Unités physiques : le soleil d'avant (1 : 80 000 lux) en lux, le fond en cd/m², les émissifs (1 : 1000 cd/m²),
+    // la lumière des réacteurs en lumens ; les lampes et l'ambiance des intérieurs reprennent une valeur réelle.
+    CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 2, "entities": [
+        {"id": "00000000000000d2", "sky": {"sunIntensity": 1.5, "brightness": 2, "exposureMin": -3}},
+        {"id": "00000000000000d3", "sun": {"intensity": 1.45}},
+        {"id": "00000000000000d4", "meshRenderer": {"emission": 2.5}, "light": {"intensity": 900}},
+        {"id": "00000000000000d5", "thruster": {"light": 8}, "interior": {"intensity": 2}}]})").has_value());
+    const SkyComponent* oldSky = loaded.TryGet<SkyComponent>(loaded.FindById(Uuid{0xd2}));
+    CHECK(oldSky && oldSky->sunIlluminance == 120000.0f && oldSky->luminance == 2.0f * SkyComponent{}.luminance);
+    CHECK(oldSky && oldSky->minEv100 == SkyComponent{}.minEv100);
+    CHECK(loaded.TryGet<SunComponent>(loaded.FindById(Uuid{0xd3}))->illuminance == 116000.0f);
+    CHECK(loaded.TryGet<MeshRendererComponent>(loaded.FindById(Uuid{0xd4}))->luminance == 2500.0f);
+    CHECK(loaded.TryGet<LightComponent>(loaded.FindById(Uuid{0xd4}))->lumens == LightComponent{}.lumens);
+    CHECK(std::abs(loaded.TryGet<ThrusterComponent>(loaded.FindById(Uuid{0xd5}))->lightLumens - 8.04e6f) < 0.01e6f);
+    CHECK(loaded.TryGet<InteriorComponent>(loaded.FindById(Uuid{0xd5}))->luminance == InteriorComponent{}.luminance);
 
     // Déchargement d'un module : ses types disparaissent du registre, ceux du moteur restent.
     const std::size_t engineCount = engineOnly.GetCount();

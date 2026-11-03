@@ -282,6 +282,13 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    `Mesh.slang`, `SkyData::sunColor.w`, constantes des flammes et traçantes), connue du CPU avant le dessin. La scène
    arrive déjà exposée (gris moyen vers 0,18), loin du plafond des 16 bits même avec des lumières physiques ; les
    historiques (anticrénelage, nuages, FSR) sont ramenés par le rapport à l'exposition de l'image précédente.
+   Unités physiques (`Renderer/Photometry.hpp`) : les composants parlent en lux (soleil), lumens (lampes, réacteurs),
+   cd/m² (fond du ciel, émissifs, ambiance des intérieurs) et EV100 (bornes de l'exposition) ; le CPU les convertit une
+   fois dans l'unité des shaders (1 = 80 000 lux, l'échelle d'avant), qui garde la précision des textures 16 bits non
+   pré-exposées (environnement, tables de l'atmosphère). Lampes en 1/d² (au moins 10 cm) avec le fondu de Karis à la
+   portée. Les étoiles s'effacent d'elles-mêmes devant un ciel de jour ou une planète éclairée (l'exposition se règle
+   sur la scène) ; image sans rien de mesurable : l'œil s'ouvre jusqu'à sa borne. La lumière de contour, un effet,
+   est divisée par la pré-exposition : la même à l'écran partout.
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques

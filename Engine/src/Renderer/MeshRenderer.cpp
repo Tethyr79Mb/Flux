@@ -3,6 +3,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Renderer/Photometry.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -645,6 +646,9 @@ namespace Flux {
                                const TemporalView& temporal, const std::filesystem::path& assetsDirectory,
                                std::uint32_t frameIndex) {
         m_models->Update();
+        // La lumière de contour est un effet, pas une lumière : la même à l'écran à toute exposition (réglée pour
+        // l'exposition 1, le plein soleil), sinon elle éblouirait dans un intérieur ou dans le noir de l'espace.
+        m_rimScale = 1.0f / std::max(sky.preExposure, 1.0e-6f);
         // Textures de l'environnement : les mêmes d'une image à l'autre (refaites sur place quand le ciel change).
         if (sky.environment && sky.irradiance && sky.environment != m_boundEnvironment[frameIndex]) {
             m_frameGroups[frameIndex]->SetTexture(EnvironmentSlot, *sky.environment, *sky.environmentSampler);
@@ -719,7 +723,8 @@ namespace Flux {
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 model = &m_models->GetCube();
                 tint = renderer->color;
-                emissive = {tint.r * renderer->emission, tint.g * renderer->emission, tint.b * renderer->emission};
+                const float luminance = Photometry::FromNits(std::max(renderer->luminance, 0.0f));
+                emissive = {tint.r * luminance, tint.g * luminance, tint.b * luminance};
                 metallic = std::clamp(renderer->metallic, 0.0f, 1.0f);
                 roughness = std::clamp(renderer->roughness, 0.0f, 1.0f);
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
@@ -787,8 +792,9 @@ namespace Flux {
             for (Entity owner = transform.entity; owner != NullEntity; owner = scene.GetParent(owner)) {
                 if (const auto* component = scene.TryGet<RimLightComponent>(owner)) {
                     if (component->intensity > 0.0f) {
-                        rim = {component->color.r * component->intensity, component->color.g * component->intensity,
-                               component->color.b * component->intensity, std::max(component->sharpness, 0.5f)};
+                        const float intensity = component->intensity * m_rimScale;
+                        rim = {component->color.r * intensity, component->color.g * intensity, component->color.b * intensity,
+                               std::max(component->sharpness, 0.5f)};
                     }
                     break;
                 }
@@ -946,7 +952,7 @@ namespace Flux {
             const double above = Math::Length(transform.position) - std::max(static_cast<double>(planet.radius), 1.0);
             const double rimFade = std::clamp((above - rimStart) / rimStart, 0.0, 1.0);
             if (rim && rim->intensity > 0.0f && rimFade > 0.0) {
-                const float intensity = rim->intensity * static_cast<float>(rimFade * rimFade * (3.0 - 2.0 * rimFade));
+                const float intensity = rim->intensity * m_rimScale * static_cast<float>(rimFade * rimFade * (3.0 - 2.0 * rimFade));
                 m_planetData[index].rim = {rim->color.r * intensity, rim->color.g * intensity, rim->color.b * intensity,
                                            std::max(rim->sharpness, 0.5f)};
             }
@@ -1030,7 +1036,7 @@ namespace Flux {
 
     void MeshRenderer::AddLight(const Camera& camera, float aspect, const RelativeTransform& transform, const LightComponent& light) {
         const Math::Vector3f position(transform.position);
-        if (light.range <= 0.0f || light.intensity <= 0.0f || !InView(camera, aspect, position, light.range)) {
+        if (light.range <= 0.0f || light.lumens <= 0.0f || !InView(camera, aspect, position, light.range)) {
             return;
         }
         // Très loin pour sa portée, elle n'éclaire que quelques pixels : ignorée (plafonniers d'une station vue de
@@ -1039,7 +1045,9 @@ namespace Flux {
         if (Math::Length(position) > FarRanges * light.range) {
             return;
         }
-        const Math::Vector3f color{light.color.r * light.intensity, light.color.g * light.intensity, light.color.b * light.intensity};
+        // Intensité : l'éclairement à 1 m (shaders/Mesh.slang le divise par le carré de la distance).
+        const float intensity = Photometry::FromLumens(light.lumens);
+        const Math::Vector3f color{light.color.r * intensity, light.color.g * intensity, light.color.b * intensity};
         LightData data{ToArray(position, light.range), ToArray(color, light.type == LightType::Spot ? 1.0f : 0.0f), {}, {}};
         if (light.type == LightType::Spot) {
             constexpr float RadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
@@ -1067,7 +1075,7 @@ namespace Flux {
             return;
         }
         m_thrusters.push_back({transform, &thruster, shown});
-        if (thruster.light <= 0.0f) {
+        if (thruster.lightLumens <= 0.0f) {
             return;
         }
         const Math::Vector3f box = ThrusterRenderer::GetBox(thruster, shown);
@@ -1075,7 +1083,7 @@ namespace Flux {
         glow.position += Math::Vector3d(transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, 0.25f * box.z * transform.scale.z}));
         const LightComponent light{.type = LightType::Point,
                                    .color = thruster.color,
-                                   .intensity = thruster.light * shown,
+                                   .lumens = thruster.lightLumens * shown,
                                    .range = 2.0f * std::max(box.x, box.y) + 2.0f * box.z};
         AddLight(camera, aspect, glow, light);
     }
@@ -1186,8 +1194,8 @@ namespace Flux {
             data.halfSize = {0.5f * std::max(interior.size.x, 0.0f) * std::abs(transform.scale.x),
                              0.5f * std::max(interior.size.y, 0.0f) * std::abs(transform.scale.y),
                              0.5f * std::max(interior.size.z, 0.0f) * std::abs(transform.scale.z), std::max(interior.fade, 1.0e-3f)};
-            const float intensity = std::max(interior.intensity, 0.0f);
-            data.ambient = {interior.ambient.r * intensity, interior.ambient.g * intensity, interior.ambient.b * intensity, 0.0f};
+            const float luminance = Photometry::FromNits(std::max(interior.luminance, 0.0f));
+            data.ambient = {interior.ambient.r * luminance, interior.ambient.g * luminance, interior.ambient.b * luminance, 0.0f};
         }
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
                             static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};

@@ -46,7 +46,7 @@ bool RunPrefabTests() {
     scene.Get<TransformComponent>(seat).position = {0.0, 1.0, -3.0};
     scene.Add<SeatComponent>(seat).reach = 2.0f;
     const Entity lamp = scene.CreateEntity("Lampe", seat);
-    scene.Add<LightComponent>(lamp).intensity = 3.0f;
+    scene.Add<LightComponent>(lamp).lumens = 3000.0f;
 
     // Prefab tiré du vaisseau : la racine à l'origine ; le vaisseau devient son exemplaire sans changer d'identifiants.
     const std::string path = "Prefabs/Vaisseau.prefab.json";
@@ -73,7 +73,7 @@ bool RunPrefabTests() {
     CHECK(loaded.GetEntityCount() == 3);
     const Entity loadedLamp = loaded.FindById(lampId);
     CHECK(loadedLamp != NullEntity && loaded.GetParent(loadedLamp) == loaded.FindById(seatId));
-    CHECK(loaded.Get<LightComponent>(loadedLamp).intensity == 3.0f);
+    CHECK(loaded.Get<LightComponent>(loadedLamp).lumens == 3000.0f);
     CHECK(loaded.Get<TransformComponent>(loaded.FindById(shipId)).position == (Math::Vector3d{100.0, 2.0, -50.0}));
     CHECK(loaded.Get<PrefabInstanceComponent>(loaded.FindById(shipId)).prefab == path);
     CHECK(SceneSerializer::SaveToString(loaded, components, reader) == saved); // fichier stable

@@ -756,9 +756,10 @@ float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, f
     return (s.diffuse * diffuseLight + specular * specularLight) * occlusion;
 }
 
-// Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots). Affaiblies comme 1 / (1 + d²)
-// (d en mètres : la moitié à 1 m, sans l'infini d'une vraie source ponctuelle collée à la surface), puis éteintes en
-// douceur à leur portée.
+// Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots) : leur intensité (l'éclairement à
+// 1 m, LightComponent::lumens) divisée par le carré de la distance, comme une vraie ampoule, sans descendre sous
+// 10 cm (la taille d'une ampoule : pas d'infini contre la surface), puis éteinte en douceur à leur portée (le fondu
+// de Karis, Unreal 2013).
 float3 SceneLights(float3 worldPosition, Surface s)
 {
     float3 sum = float3(0.0);
@@ -778,7 +779,7 @@ float3 SceneLights(float3 worldPosition, Surface s)
         }
         const float ratio = distanceSquared / (range * range);
         const float window = saturate(1.0 - ratio * ratio);
-        float attenuation = window * window / (1.0 + distanceSquared);
+        float attenuation = window * window / max(distanceSquared, 0.01);
         if (light.color.w > 0.5) {
             // Spot : plein dans le cœur du cône, fondu vers son bord.
             const float cosine = dot(-direction, light.direction.xyz);

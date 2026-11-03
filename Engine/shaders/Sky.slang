@@ -246,11 +246,6 @@ TableOutput airTableFragment(float4 position : SV_Position)
     return output;
 }
 
-// Force de l'effacement des étoiles et de la nébuleuse par la lumière de l'air (voir fragmentMain). Planète par défaut :
-// au zénith, l'air vaut 0,12 avec le soleil à 45°, 0,06 au coucher, 0,03 à -15°. À 60, il reste 0,07 % du fond en
-// plein jour (20 : 8 %, étoiles encore bien visibles), 2,5 % au coucher, 15 % à -15° : elles reviennent à la nuit.
-static const float SkyDaylightFade = 60.0;
-
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
@@ -293,11 +288,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target
             scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
                                           transmittance);
         }
-        // Le jour, l'air éclairé est bien plus lumineux que les étoiles et la nébuleuse : l'œil ne les voit plus. Elles
-        // s'effacent d'après la lumière de l'air dans cette direction, donc en douceur à la descente et au couchant,
-        // et reviennent la nuit.
-        const float daylight = dot(scattered, float3(0.2126, 0.7152, 0.0722));
-        color *= exp(-daylight * SkyDaylightFade);
+        // Le jour, l'air éclairé (des milliers de cd/m²) noie les étoiles et la nébuleuse (moins d'une) : elles
+        // disparaissent d'elles-mêmes, et reviennent à la nuit quand l'exposition s'ouvre.
         color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
     }
     return float4(min(color * s.sunColor.w, float3(60000.0)), 1.0); // pré-exposition (Radiance dans Mesh.slang)
