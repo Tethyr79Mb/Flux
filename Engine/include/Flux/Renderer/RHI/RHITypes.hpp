@@ -114,6 +114,9 @@ namespace Flux::RHI {
         Opaque,
         Alpha, // mélange classique, couleur non prémultipliée (interface, texte)
         Additive, // couleur ajoutée à ce qui est derrière (lumière : flammes, lueurs), dans n'importe quel ordre
+        // Couleur déjà multipliée par son alpha, ajoutée à ce qui est derrière assombri de cet alpha : une surface peut
+        // ajouter de la lumière sans rien cacher (reflets d'un verre presque transparent).
+        Premultiplied,
     };
 
     // Ce qu'une passe fait d'une texture : le graphe de rendu le déclare (RenderGraph), CommandList::UseTextures en

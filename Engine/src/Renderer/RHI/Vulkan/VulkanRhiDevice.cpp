@@ -369,6 +369,7 @@ namespace Flux::Vk {
         vkDesc.cullMode = ToVulkan(desc.cullMode);
         vkDesc.alphaBlend = desc.blend == RHI::BlendMode::Alpha;
         vkDesc.additiveBlend = desc.blend == RHI::BlendMode::Additive;
+        vkDesc.premultipliedBlend = desc.blend == RHI::BlendMode::Premultiplied;
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
         auto pipeline = Pipeline::CreateGraphics(m_device->GetHandle(), vkDesc);

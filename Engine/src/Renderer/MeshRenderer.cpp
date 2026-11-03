@@ -415,7 +415,8 @@ namespace Flux {
                 // Transparents : mélangés à ce qui est déjà dessiné, cachés par les opaques plus proches, mais sans
                 // écrire la profondeur (un transparent ne doit pas masquer ce qui est derrière lui).
                 desc.depthWrite = !transparent;
-                desc.blend = transparent ? RHI::BlendMode::Alpha : RHI::BlendMode::Opaque;
+                // Prémultiplié : les reflets d'un verre s'ajoutent entiers, quel que soit son alpha (Mesh.slang).
+                desc.blend = transparent ? RHI::BlendMode::Premultiplied : RHI::BlendMode::Opaque;
                 // Transparents : le mouvement reste celui de ce qu'on voit à travers.
                 desc.writeSecondColor = kind.motion && !transparent;
                 return create(pipeline, desc);
