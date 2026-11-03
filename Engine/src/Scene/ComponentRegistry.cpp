@@ -84,9 +84,13 @@ namespace Flux {
                   {{"point", "Ponctuelle", LightType::Point}, {"spot", "Spot", LightType::Spot}})
             .Field("color", "Couleur", &LightComponent::color, {.alpha = false})
             .Field("lumens", "Flux (lumens)", &LightComponent::lumens, {.speed = 10.0, .min = 0.0, .max = 1.0e8, .decimals = 0})
-            // Avant les unités physiques : lumières réglées sur le plein soleil (5 à 1 m), sans rapport avec une vraie
-            // lampe. Pas de conversion : les lampes reprennent une valeur réelle (1600 lm, une ampoule de 100 W).
-            .RemovedField("intensity")
+            // Avant les unités physiques : lumières réglées sur le plein soleil (5 à 1 m). La conversion à l'identique
+            // (x 80 000 x 4π) donnerait des intérieurs éclairés comme en plein jour ; x 2500 est le rapport moyen entre
+            // les anciennes valeurs des lampes de la station et leurs lumens réalistes (hangar 900 -> 2,25 millions,
+            // couloir 8 -> 20 000), qui garde l'écart voulu entre une ampoule et un projecteur.
+            .ConvertedField("intensity", [](LightComponent& light, double intensity) {
+                light.lumens = static_cast<float>(std::max(intensity, 0.0) * 2500.0);
+            })
             .Field("range", "Portée (m)", &LightComponent::range, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
             .Field("angle", "Ouverture du spot (°)", &LightComponent::angle, {.speed = 0.5, .min = 1.0, .max = 179.0, .decimals = 1})
             .Field("softness", "Bord du spot adouci", &LightComponent::softness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
