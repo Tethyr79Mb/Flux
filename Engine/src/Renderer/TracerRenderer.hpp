@@ -32,8 +32,9 @@ namespace Flux {
         // Traçantes de l'image, relatives à la caméra, envoyées dans le buffer de l'image en vol. `jitter` :
         // TemporalView::jitter ; `height` : hauteur de la vue en pixels (largeur minimale d'une traçante).
         // `impacts` : un éclat rond par impact, qui pâlit en s'éteignant.
+        // `preExposure` : multiplie la lumière écrite dans l'image de la scène (Radiance dans shaders/Mesh.slang).
         void Prepare(std::span<const Projectile> projectiles, std::span<const Impact> impacts, const Camera& camera, float aspect, float height,
-                     Math::Vector2f jitter, std::uint32_t frameIndex);
+                     Math::Vector2f jitter, float preExposure, std::uint32_t frameIndex);
         // Dans la passe de la scène, après les transparents.
         void Draw(RHI::CommandList& commands) const;
         // En FSR, dans la passe du masque réactif : les mêmes traçantes, leur éclat ajouté au masque.

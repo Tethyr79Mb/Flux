@@ -416,7 +416,8 @@ float4 fragmentCloudResolve(CloudVertexOutput input) : SV_Target
     const bool inside = all(previousUv >= 0.0) && all(previousUv <= 1.0);
     float4 result = center;
     if (params.color.z > 0.0 && inside) {
-        const float4 old = cloudHistory.SampleLevel(previousUv, 0.0);
+        float4 old = cloudHistory.SampleLevel(previousUv, 0.0);
+        old.rgb *= f.environment.y; // écrit avec la pré-exposition de l'image précédente
         const float4 clamped = clamp(float4(CloudCompress(max(old.rgb, float3(0.0))), old.a), low, high);
         result = lerp(clamped, center, params.color.w);
     }

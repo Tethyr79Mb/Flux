@@ -77,7 +77,7 @@ namespace Flux {
     }
 
     void TracerRenderer::Prepare(std::span<const Projectile> projectiles, std::span<const Impact> impacts, const Camera& camera, float aspect, float height,
-                                 Math::Vector2f jitter, std::uint32_t frameIndex) {
+                                 Math::Vector2f jitter, float preExposure, std::uint32_t frameIndex) {
         m_tracers.clear();
         m_frameIndex = frameIndex;
         const Math::Vector3f forward = camera.GetForward();
@@ -122,7 +122,7 @@ namespace Flux {
         }
         m_buffers[frameIndex]->Write(m_tracers.data(), m_tracers.size() * sizeof(TracerData));
         m_params.viewToClip = Jittered(camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix(), jitter);
-        m_params.options = {2.0f * std::tan(0.5f * camera.verticalFov) / std::max(height, 1.0f), 0.0f, 0.0f, 0.0f};
+        m_params.options = {2.0f * std::tan(0.5f * camera.verticalFov) / std::max(height, 1.0f), preExposure, 0.0f, 0.0f};
     }
 
     void TracerRenderer::Draw(RHI::CommandList& commands) const {

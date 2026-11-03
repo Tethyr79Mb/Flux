@@ -15,7 +15,7 @@ struct TracerData
 struct TracerParams
 {
     float4 viewToClip[4]; // relatif à la caméra -> clip space, par colonnes (comme Math::Matrix4f)
-    float4 options;       // x : angle d'un pixel (rad)
+    float4 options;       // x : angle d'un pixel (rad) ; y : pré-exposition (Radiance dans Mesh.slang)
 };
 [[vk::push_constant]] ConstantBuffer<TracerParams> params;
 
@@ -80,7 +80,7 @@ float4 TracerLight(VertexOutput input)
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    return TracerLight(input);
+    return TracerLight(input) * params.options.y;
 }
 
 // Masque réactif de FSR (TracerRenderer::DrawReactive) : une traçante file plus vite que ce que l'historique peut

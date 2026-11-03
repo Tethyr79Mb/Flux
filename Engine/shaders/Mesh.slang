@@ -66,7 +66,9 @@ struct FrameData
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
     float4 toSun;             // xyz : direction du soleil (unitaire)
     float4 sunColor;          // rgb : couleur x intensité
-    // x : multiplie les textures du ciel ; y, w : inutilisés ; z : niveau de mip des reflets les plus flous (rugosité 1)
+    // x : multiplie les textures du ciel ; y : pré-exposition de cette image divisée par celle de la précédente (à
+    // appliquer aux historiques) ; z : niveau de mip des reflets les plus flous (rugosité 1) ; w : pré-exposition (voir
+    // Radiance)
     float4 environment;
     // Rayon d'un pixel (nuages) : cameraForward + cameraRight * clip.x - cameraUp * clip.y (à l'échelle du champ), le
     // clip du pixel moins le décalage d'un sous-pixel (w de cameraRight et de cameraUp).
@@ -813,9 +815,12 @@ float3 PerturbNormal(MaterialData material, float3 normal, float3 worldPosition,
 
 // Couleur écrite dans l'image HDR de la scène : la lumière linéaire, sans exposition ni courbe de tons (appliquées
 // après le bloom, shaders/Post.slang), bornée à ce que tient un float 16 bits.
+// Lumière écrite dans l'image de la scène (16 bits) : multipliée d'avance par l'exposition de l'image
+// (pré-exposition, Renderer) : avec des lumières en unités physiques, un ciel de jour à 10 000 nits ou le disque du
+// soleil dépasseraient sinon ce que tient un nombre de 16 bits (65 504).
 float3 Radiance(float3 color)
 {
-    return min(color, float3(60000.0));
+    return min(color * frame[0].environment.w, float3(60000.0));
 }
 
 // Lumière renvoyée vers l'œil par une surface : soleil (ombres, rougi par l'air), ambiante du ciel ou du volume

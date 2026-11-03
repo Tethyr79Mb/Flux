@@ -213,8 +213,16 @@ namespace Flux {
         return panorama;
     }
 
+    Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene) {
+        for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+            return {.automatic = sky.autoExposure, .compensation = sky.exposure, .minimum = sky.exposureMin,
+                    .maximum = sky.exposureMax, .speed = sky.adaptationSpeed};
+        }
+        return {};
+    }
+
     SkyLighting SkyRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
-                                     const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex) {
+                                     const std::filesystem::path& assetsDirectory, float preExposure, std::uint32_t frameIndex) {
         // Un seul ciel compte : s'il y en a plusieurs, l'un d'eux.
         const SkyComponent* component = nullptr;
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
@@ -223,6 +231,7 @@ namespace Flux {
         }
 
         SkyLighting lighting;
+        lighting.preExposure = preExposure;
         EnvironmentSource& environment = lighting.environmentSource;
         environment.top = DefaultSkyAmbient;
         environment.bottom = DefaultGroundAmbient;
@@ -254,11 +263,9 @@ namespace Flux {
             lighting.toSun = sunDirection.value_or(SunDirection(DefaultSunElevation, DefaultSunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : DefaultSunColor;
             data.toSun = ToArray(lighting.toSun, sun ? sunRadius(sun->size) : 0.0f);
-            data.sunColor = ToArray(lighting.sunColor);
+            data.sunColor = ToArray(lighting.sunColor, preExposure);
         } else {
             const SkyComponent& sky = *component;
-            lighting.exposure = {.automatic = sky.autoExposure, .compensation = sky.exposure, .minimum = sky.exposureMin,
-                                 .maximum = sky.exposureMax, .speed = sky.adaptationSpeed};
             lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : sunLight(sky.sunColor, sky.sunIntensity);
             const float brightness = std::max(sky.brightness, 0.0f);
@@ -279,7 +286,7 @@ namespace Flux {
 
             const SkyParameters parameters = generated ? *generated : MakeSkyParameters(sky);
             data.toSun = ToArray(lighting.toSun, sunRadius(sun ? sun->size : sky.sunSize));
-            data.sunColor = ToArray(lighting.sunColor);
+            data.sunColor = ToArray(lighting.sunColor, preExposure);
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);
             data.galaxyAxis = ToArray(parameters.galaxyAxis, std::clamp(sky.stars, 0.0f, 1.0f));

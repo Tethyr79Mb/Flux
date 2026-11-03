@@ -28,8 +28,9 @@ namespace Flux {
         // l'exposition de celle qu'elle demande. `seconds` depuis l'image précédente ; `snap` : aller tout de suite à
         // l'exposition visée (caméra qui saute, scène chargée). Rend l'exposition de cette image.
         float Update(const Exposure::Settings& settings, float seconds, bool snap, std::uint32_t frameIndex);
-        // Hors de toute passe, la scène lisible par les compute shaders : la mesure de cette image.
-        void Measure(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Hors de toute passe, la scène lisible par les compute shaders : la mesure de cette image. `preExposure` : ce
+        // qui multiplie déjà la lumière de la scène (défait à la lecture de la mesure).
+        void Measure(RHI::CommandList& commands, std::uint32_t frameIndex, float preExposure);
 
         float GetExposure() const { return m_exposure; }
         // Dernière luminance moyenne mesurée (0 : rien de mesurable, image noire).
@@ -48,6 +49,7 @@ namespace Flux {
         // Copie de la mesure de chaque image en vol, relue par le CPU quand cette image revient.
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_readback;
         std::array<bool, RHI::FramesInFlight> m_measured{};
+        std::array<float, RHI::FramesInFlight> m_preExposures{};
         RHI::Extent m_extent; // de la scène
         Exposure::Histogram m_read{};
         float m_exposure = 1.0f;

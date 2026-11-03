@@ -117,5 +117,5 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float3 depth = AtmosphereSunDepth(s.atmosphere, position, direction, 0.0, AtmosphereSunsetAngle);
         color *= depth.z <= 0.0 ? float3(0.0) : AtmosphereExtinction(s.atmosphere, depth.x, depth.y) * depth.z;
     }
-    return float4(min(color, float3(60000.0)), 0.0);
+    return float4(min(color * s.sunColor.w, float3(60000.0)), 0.0); // pré-exposition (Radiance dans Mesh.slang)
 }

@@ -27,6 +27,7 @@ namespace Flux::RHI {
         float frameMilliseconds = 16.7f; // depuis l'image précédente
         float nearPlane = 0.1f;
         float verticalFov = 1.0f;        // radians
+        float preExposure = 1.0f;        // ce qui multiplie déjà la lumière de color (FSR en tient compte d'une image à l'autre)
         bool reset = false;              // rien à reprendre des images précédentes (saut de la caméra)
     };
 
