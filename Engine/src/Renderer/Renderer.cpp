@@ -155,6 +155,7 @@ namespace Flux {
             // n'applique plus que exposure / preExposure.
             float preExposure = 1.0f;
             bool autoExposure = false; // mesure de la lumière à cette image (ExposureRenderer)
+            bool cameraInAir = false;  // dans l'atmosphère d'une planète : son ciel compte dans la mesure de la lumière
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             PostRenderer::GridParams gridParams{};
@@ -211,7 +212,7 @@ namespace Flux {
             if (!*viewResized && !*renderResized && !*halfResized) {
                 return {};
             }
-            exposure->Bind(*graph.GetTexture(targets.sceneColor));
+            exposure->Bind(*graph.GetTexture(targets.sceneColor), graph.GetTexture(targets.sceneDepth));
             clouds->Bind({.sceneDepth = graph.GetTexture(targets.sceneDepth),
                           .light = graph.GetTexture(targets.cloudLight),
                           .distances = graph.GetTexture(targets.cloudDistances),
@@ -415,6 +416,7 @@ namespace Flux {
             timings.exposure = frame.exposure;
             timings.sceneLuminance = exposure->GetLuminance();
             SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frame.preExposure, frameIndex);
+            frame.cameraInAir = lighting.atmosphere.scale[1] > 0.0f;
             environment->Prepare(lighting.environmentSource, frameIndex);
             lighting.environment = &environment->GetReflections();
             lighting.irradiance = &environment->GetIrradiance();
@@ -701,8 +703,11 @@ namespace Flux {
             graph.AddPass("mesure de la lumière")
                 .When([this] { return sceneVisible && frame.autoExposure; })
                 .Reads(sceneColor)
+                .Reads(sceneDepth)
                 .Writes(lightMeasure)
-                .Step("mesure de la lumière", [this](RHI::CommandList& commands) { exposure->Measure(commands, frame.index, frame.preExposure); });
+                .Step("mesure de la lumière", [this](RHI::CommandList& commands) {
+                    exposure->Measure(commands, frame.index, frame.preExposure, !frame.cameraInAir);
+                });
             // Masque réactif de FSR : là où l'image change sans que le mouvement le dise (gaz des flammes, traçantes plus
             // rapides que l'historique, nuages et leur propre historique), FSR suit l'image du moment au lieu de laisser
             // des traînées ou de faire trembler. Les flammes et traçantes redessinées (deux appels de plus), cachées par

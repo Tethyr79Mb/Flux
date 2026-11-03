@@ -22,15 +22,19 @@ namespace Flux {
         public:
         static std::expected<std::unique_ptr<ExposureRenderer>, std::string> Create(RHI::Device& device);
 
-        // Quand le graphe de rendu a recréé l'image de la scène (le GPU déjà attendu).
-        void Bind(const RHI::Texture& scene);
+        // Quand le graphe de rendu a recréé l'image de la scène (le GPU déjà attendu). `depth` : sa profondeur
+        // (reverse-Z), pour écarter le ciel de la mesure ; nullptr : le ciel n'est jamais écarté.
+        void Bind(const RHI::Texture& scene, const RHI::Texture* depth = nullptr);
         // Après Device::BeginFrame : la mesure faite à la dernière image de même indice, s'il y en a une, rapproche
         // l'exposition de celle qu'elle demande. `seconds` depuis l'image précédente ; `snap` : aller tout de suite à
         // l'exposition visée (caméra qui saute, scène chargée). Rend l'exposition de cette image.
         float Update(const Exposure::Settings& settings, float seconds, bool snap, std::uint32_t frameIndex);
         // Hors de toute passe, la scène lisible par les compute shaders : la mesure de cette image. `preExposure` : ce
-        // qui multiplie déjà la lumière de la scène (défait à la lecture de la mesure).
-        void Measure(RHI::CommandList& commands, std::uint32_t frameIndex, float preExposure);
+        // qui multiplie déjà la lumière de la scène (défait à la lecture de la mesure). `skipSky` (dans l'espace) : le
+        // ciel n'est pas mesuré. Les étoiles y ont un éclat minimum à l'écran, divisé par l'exposition : mesurées,
+        // elles fermaient l'œil, qui les rendait plus claires encore, jusqu'à la borne (hangar éteint en regardant
+        // l'espace). Une vue où il n'y a que du ciel garde son exposition.
+        void Measure(RHI::CommandList& commands, std::uint32_t frameIndex, float preExposure, bool skipSky = false);
 
         float GetExposure() const { return m_exposure; }
         // Dernière luminance moyenne mesurée (0 : rien de mesurable, image noire).
@@ -41,6 +45,7 @@ namespace Flux {
 
         RHI::Device& m_device;
         std::unique_ptr<RHI::Sampler> m_sampler;
+        std::unique_ptr<RHI::Sampler> m_pointSampler; // profondeur
         std::unique_ptr<RHI::BindGroupLayout> m_layout;
         std::unique_ptr<RHI::BindGroup> m_group;
         std::unique_ptr<RHI::Pipeline> m_clear;
@@ -50,6 +55,7 @@ namespace Flux {
         std::array<std::unique_ptr<RHI::Buffer>, RHI::FramesInFlight> m_readback;
         std::array<bool, RHI::FramesInFlight> m_measured{};
         std::array<float, RHI::FramesInFlight> m_preExposures{};
+        bool m_hasDepth = false;
         RHI::Extent m_extent; // de la scène
         Exposure::Histogram m_read{};
         float m_exposure = 1.0f;

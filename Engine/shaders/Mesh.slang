@@ -724,9 +724,10 @@ float InteriorAt(float3 worldPosition, out float3 interiorLight)
         const float3 local = float3(dot(volume.axes[0].xyz, worldPosition) + volume.axes[0].w,
                                     dot(volume.axes[1].xyz, worldPosition) + volume.axes[1].w,
                                     dot(volume.axes[2].xyz, worldPosition) + volume.axes[2].w);
-        // Distance au bord le plus proche, positive dedans.
+        // Distance au bord le plus proche, positive dedans. La boîte entière compte (sol et murs posés sur ses faces) ;
+        // le fondu se fait dehors, sur halfSize.w mètres.
         const float3 margin = volume.halfSize.xyz - abs(local);
-        const float weight = saturate(min(margin.x, min(margin.y, margin.z)) / volume.halfSize.w);
+        const float weight = saturate(1.0 + min(margin.x, min(margin.y, margin.z)) / volume.halfSize.w);
         if (weight > inside) {
             inside = weight;
             interiorLight = volume.ambient.rgb;

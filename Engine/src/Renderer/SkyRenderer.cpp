@@ -229,7 +229,7 @@ namespace Flux {
             const float margin = std::min({0.5f * std::max(interior.size.x, 0.0f) * scale.x - std::abs(local.x),
                                            0.5f * std::max(interior.size.y, 0.0f) * scale.y - std::abs(local.y),
                                            0.5f * std::max(interior.size.z, 0.0f) * scale.z - std::abs(local.z)});
-            const float weight = std::clamp(margin / std::max(interior.fade, 1.0e-3f), 0.0f, 1.0f);
+            const float weight = std::clamp(1.0f + margin / std::max(interior.fade, 1.0e-3f), 0.0f, 1.0f);
             if (weight > inside) {
                 inside = weight;
                 stops = interior.exposure;

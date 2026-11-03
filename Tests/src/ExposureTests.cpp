@@ -104,8 +104,8 @@ bool RunExposureTests() {
         }
     }
 
-    // Exposition d'un Intérieur : entière au centre, à moitié au milieu du fondu, nulle dehors ; l'échelle d'un parent
-    // et la rotation de la boîte comptent.
+    // Exposition d'un Intérieur : entière dans la boîte (bords compris), à moitié au milieu du fondu, dehors, nulle
+    // au-delà ; l'échelle d'un parent et la rotation de la boîte comptent.
     Scene scene;
     const Entity station = scene.CreateEntity("Station");
     scene.Get<TransformComponent>(station).scale = {2.0f, 2.0f, 2.0f};
@@ -120,8 +120,9 @@ bool RunExposureTests() {
     };
     CHECK(std::abs(at(20.0, 0.0) + 2.0f) < 1e-4f);
     // Tournée d'un quart de tour : ses 8 m de long (4 x 2) sont le long de x, ses 4 m de large le long de z.
-    CHECK(std::abs(at(23.75, 0.0) + 1.0f) < 1e-3f);
-    CHECK(std::abs(at(20.0, 1.75) + 1.0f) < 1e-3f);
+    CHECK(std::abs(at(24.0, 0.0) + 2.0f) < 1e-4f);
+    CHECK(std::abs(at(24.25, 0.0) + 1.0f) < 1e-3f);
+    CHECK(std::abs(at(20.0, 2.25) + 1.0f) < 1e-3f);
     CHECK(at(20.0, 2.5) == 0.0f && at(0.0, 0.0) == 0.0f);
     return true;
 }
@@ -176,5 +177,37 @@ bool RunExposureGpuTests() {
     CHECK(measure({0.05f, 0.05f, 0.05f}));
     const float adapting = (*exposure)->Update(settings, 0.016f, false, 0);
     CHECK(adapting > opening && adapting < 0.18f / 0.05f);
+
+    // Dans l'espace, le ciel (profondeur 0 en reverse-Z) n'est pas mesuré : ses étoiles ont un éclat minimum à
+    // l'écran, divisé par l'exposition, qui fermait l'œil sans fin. Que du ciel : l'exposition ne bouge pas.
+    auto spaceExposure = ExposureRenderer::Create(**device);
+    auto depth = (**device).CreateRenderTarget(RHI::Format::D32Float, {64, 36}, true);
+    if (!spaceExposure || !depth) {
+        std::printf("ÉCHEC %s\n", !spaceExposure ? spaceExposure.error().c_str() : depth.error().c_str());
+        return false;
+    }
+    (*spaceExposure)->Bind(**scene, depth->get());
+    const auto measureSpace = [&](Math::LinearColor color, float clearDepth, bool skipSky) {
+        return (**device).Submit([&](RHI::CommandList& commands) {
+            commands.Use(**scene, RHI::TextureAccess::ColorTarget);
+            commands.Use(**depth, RHI::TextureAccess::DepthTarget);
+            commands.BeginRenderPass({.clearColor = color, .depth = depth->get(), .clearDepth = clearDepth,
+                                      .colorTarget = scene->get(), .keepDepth = true});
+            commands.EndRenderPass();
+            commands.Use(**scene, RHI::TextureAccess::Sampled);
+            commands.Use(**depth, RHI::TextureAccess::Sampled);
+            (*spaceExposure)->Measure(commands, 0, 1.0f, skipSky);
+        });
+    };
+    // Des objets partout (profondeur 0,5) : mesurés, comme sans profondeur.
+    CHECK(measureSpace({0.9f, 0.7f, 0.6f}, 0.5f, true));
+    const float objects = (*spaceExposure)->Update(settings, 0.016f, false, 0);
+    CHECK(NearStops(objects, 0.18f / luminance, HalfBin + 0.01f));
+    // Que du ciel, très clair : écarté, l'exposition reste.
+    CHECK(measureSpace({20.0f, 20.0f, 20.0f}, 0.0f, true));
+    CHECK(NearStops((*spaceExposure)->Update(settings, 0.016f, false, 0), objects, 0.0001f));
+    // Le même ciel sur une planète (skipSky faux) : mesuré, l'œil se ferme.
+    CHECK(measureSpace({20.0f, 20.0f, 20.0f}, 0.0f, false));
+    CHECK((*spaceExposure)->Update(settings, 0.016f, false, 0) < objects);
     return true;
 }

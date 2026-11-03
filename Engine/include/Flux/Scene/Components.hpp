@@ -322,7 +322,7 @@ namespace Flux {
 
     // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec
     // elle. Dedans, la lumière ambiante et les reflets ne viennent plus du ciel (qui n'y entre pas) mais de `ambient`,
-    // avec un fondu de `fade` mètres depuis les bords. Le soleil, lui, est arrêté par les ombres.
+    // avec un fondu de `fade` mètres hors de ses bords (la boîte se pose sur le sol et les murs de la pièce). Le soleil, lui, est arrêté par les ombres.
     struct InteriorComponent
     {
         Math::Vector3f size{2.0f, 2.5f, 4.0f}; // mètres, multipliés par l'échelle de l'entité
