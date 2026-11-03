@@ -294,10 +294,15 @@ namespace Flux {
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);
             data.galaxyAxis = ToArray(parameters.galaxyAxis, std::clamp(sky.stars, 0.0f, 1.0f));
             // Une étoile occupe un pixel : sa luminance y est grande (Sirius, vue à l'œil : une centaine de cd/m² sur
-            // une minute d'arc). Les plus claires (éclat 5 dans Sky.slang) à 100 cd/m² : visibles depuis un cockpit
-            // éclairé, noyées par une planète au soleil ou un ciel de jour.
+            // une minute d'arc). Les plus claires (éclat 5 dans Sky.slang) à 100 cd/m². C'est encore 8 stops sous
+            // une station blanche au soleil, sur laquelle l'exposition se règle : comme sur une photo, plus d'étoiles.
+            // Triche voulue (choix de Bruno, comme Star Citizen semble le faire) : un plancher à l'écran, les plus
+            // claires jamais sous 1,5 après l'exposition (le blanc est vers 1). Sky.slang les efface devant un air
+            // éclairé.
             constexpr float StarNits = 20.0f;
-            data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f) * Photometry::FromNits(StarNits));
+            constexpr float StarScreenFloor = 0.3f;
+            const float starScale = std::max(Photometry::FromNits(StarNits), StarScreenFloor / std::max(preExposure, 1.0e-6f));
+            data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f) * starScale);
             data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }

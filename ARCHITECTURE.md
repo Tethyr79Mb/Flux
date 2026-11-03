@@ -287,8 +287,9 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    cd/m² (fond du ciel, émissifs, ambiance des intérieurs) et EV100 (bornes de l'exposition) ; le CPU les convertit une
    fois dans l'unité des shaders (1 = 80 000 lux, l'échelle d'avant), qui garde la précision des textures 16 bits non
    pré-exposées (environnement, tables de l'atmosphère). Lampes en 1/d² (au moins 10 cm) avec le fondu de Karis à la
-   portée. Les étoiles s'effacent d'elles-mêmes devant un ciel de jour ou une planète éclairée (l'exposition se règle
-   sur la scène) ; image sans rien de mesurable : l'œil s'ouvre jusqu'à sa borne. La lumière de contour, un effet,
+   portée. Les étoiles ont un éclat minimum à l'écran (sinon une station au soleil, sur laquelle l'exposition se règle,
+   les effaçait) et s'effacent d'après la clarté de l'air à l'écran (ciel de jour, halo) ; image sans rien de
+   mesurable : l'œil s'ouvre jusqu'à sa borne. La lumière de contour, un effet,
    est divisée par la pré-exposition : la même à l'écran partout.
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
