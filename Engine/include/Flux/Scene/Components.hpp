@@ -330,7 +330,7 @@ namespace Flux {
         float luminance = 30.0f; // cd/m², des murs autour (éclairés à 300 lux, comme un bureau : 50 ; un couloir : 10 à 20)
         float fade = 0.5f;
         // Décalage de l'exposition automatique quand la caméra est dedans, en stops (fondu avec `fade`) : négatif, la
-        // pièce reste sombre et contrastée au lieu d'être remontée au gris moyen, comme dans une station de Star Citizen.
+        // pièce reste sombre et contrastée au lieu d'être remontée au gris moyen.
         float exposure = -1.0f;
     };
 
