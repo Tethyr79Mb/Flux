@@ -61,7 +61,15 @@ jobs:
           7z x $archive.FullName "-o$root\mesa" | Out-Null
           $icd = Get-ChildItem "$root\mesa\x64" -Filter "lvp_icd*.json" | Select-Object -First 1
           if (-not $icd) { Write-Error "lavapipe introuvable dans $($archive.Name)"; exit 1 }
-          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime-components.zip" -OutFile "$root\runtime.zip"
+          # « latest » annonce parfois une version dont les fichiers Windows ne sont pas encore publiés (1.4.363.1 le
+          # 2026-11-03) : repli sur une version déjà publiée.
+          $runtime = "vulkan-runtime-components.zip"
+          try {
+            Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/latest/windows/$runtime" -OutFile "$root\runtime.zip"
+          } catch {
+            Write-Host "chargeur Vulkan « latest » introuvable ($($_.Exception.Message)) : repli sur 1.4.357.0"
+            Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/$runtime" -OutFile "$root\runtime.zip"
+          }
           Expand-Archive "$root\runtime.zip" -DestinationPath "$root\runtime"
           $loader = Get-ChildItem "$root\runtime" -Recurse -Filter "vulkan-1.dll" | Where-Object { $_.DirectoryName -match 'x64' } | Select-Object -First 1
           if (-not $loader) { Write-Error "vulkan-1.dll introuvable"; exit 1 }

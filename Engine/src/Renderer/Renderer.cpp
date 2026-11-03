@@ -5,6 +5,7 @@
 #include "Flux/Platform/Window.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/EnvironmentRenderer.hpp"
+#include "Renderer/ExposureRenderer.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
 #include "Planetology/CloudRenderer.hpp"
@@ -14,6 +15,7 @@
 #include "Renderer/RenderGraph.hpp"
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
+#include "Renderer/ToneCurve.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
 #include "Renderer/TracerRenderer.hpp"
 
@@ -102,6 +104,7 @@ namespace Flux {
         std::unique_ptr<RHI::Device> device;
         std::unique_ptr<SkyRenderer> sky;
         std::unique_ptr<EnvironmentRenderer> environment;
+        std::unique_ptr<ExposureRenderer> exposure;
         std::unique_ptr<MeshRenderer> meshes;
         std::unique_ptr<ThrusterRenderer> thrusters;
         std::unique_ptr<TracerRenderer> tracers;
@@ -146,6 +149,7 @@ namespace Flux {
             RHI::Rect scene3d;
             RHI::Extent render; // taille de rendu
             float exposure = 1.0f;
+            bool autoExposure = false; // mesure de la lumière à cette image (ExposureRenderer)
             TemporalView temporal;
             Math::Matrix4f reprojection = Math::Matrix4f::Identity();
             PostRenderer::GridParams gridParams{};
@@ -202,6 +206,7 @@ namespace Flux {
             if (!*viewResized && !*renderResized && !*halfResized) {
                 return {};
             }
+            exposure->Bind(*graph.GetTexture(targets.sceneColor));
             clouds->Bind({.sceneDepth = graph.GetTexture(targets.sceneDepth),
                           .light = graph.GetTexture(targets.cloudLight),
                           .distances = graph.GetTexture(targets.cloudDistances),
@@ -293,6 +298,7 @@ namespace Flux {
             const Math::Matrix4f viewProjection = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
             PrepareTemporal(camera, aspect, viewProjection);
             frame.exposure = 1.0f;
+            frame.autoExposure = false;
             if (sceneVisible) {
                 if (!PrepareScene(scene, camera, aspect, hidden, frameIndex)) {
                     return false;
@@ -397,7 +403,11 @@ namespace Flux {
             lighting.irradiance = &environment->GetIrradiance();
             lighting.environmentSampler = &environment->GetSampler();
             lighting.environmentMips = environment->GetReflectionMips();
-            frame.exposure = lighting.exposure;
+            frame.autoExposure = lighting.exposure.automatic;
+            frame.exposure = exposure->Update(lighting.exposure, frame.upscale.frameMilliseconds * 0.001f,
+                                              !temporal.continuous, frameIndex);
+            timings.exposure = frame.exposure;
+            timings.sceneLuminance = exposure->GetLuminance();
             meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
             if (!meshes->HasClouds() || !temporal.continuous) {
                 clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
@@ -506,6 +516,7 @@ namespace Flux {
             // Niveaux du bloom : internes à PostRenderer::DrawBloom, qui laisse son résultat lisible.
             const auto bloomTextures = graph.AddResource("bloom");
             const auto windowImage = graph.AddResource("image de la fenêtre"); // préparée par sa passe (RHI)
+            const auto lightMeasure = graph.AddResource("mesure de la lumière"); // relue par le CPU (ExposureRenderer)
             const auto scene = [this] { return sceneVisible; };
 
             graph.AddPass("calculs")
@@ -573,7 +584,7 @@ namespace Flux {
                 .Begin([this](RHI::CommandList& commands) {
                     // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
                     // Profondeur et mouvement gardés pour l'anticrénelage.
-                    commands.BeginRenderPass({.clearColor = PostRenderer::InverseToneMap(clearColor, frame.exposure),
+                    commands.BeginRenderPass({.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure),
                                               .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
                                               .colorTarget = graph.GetTexture(targets.sceneColor),
                                               .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true});
@@ -674,6 +685,12 @@ namespace Flux {
                     commands.BeginStep("traçantes");
                     tracers->Draw(commands);
                 });
+            // La lumière de la scène finie, avant le bloom : l'exposition des images suivantes (ExposureRenderer).
+            graph.AddPass("mesure de la lumière")
+                .When([this] { return sceneVisible && frame.autoExposure; })
+                .Reads(sceneColor)
+                .Writes(lightMeasure)
+                .Step("mesure de la lumière", [this](RHI::CommandList& commands) { exposure->Measure(commands, frame.index); });
             // Masque réactif de FSR : là où l'image change sans que le mouvement le dise (gaz des flammes, traçantes plus
             // rapides que l'historique, nuages et leur propre historique), FSR suit l'image du moment au lieu de laisser
             // des traînées ou de faire trembler. Les flammes et traçantes redessinées (deux appels de plus), cachées par
@@ -805,6 +822,11 @@ namespace Flux {
             return std::unexpected(environment.error());
         }
         impl->environment = std::move(*environment);
+        auto exposure = ExposureRenderer::Create(*impl->device);
+        if (!exposure) {
+            return std::unexpected(exposure.error());
+        }
+        impl->exposure = std::move(*exposure);
         auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());

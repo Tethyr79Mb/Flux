@@ -5,6 +5,8 @@
 // (soleil, flammes, émissifs) débordent ainsi autour d'elles, d'autant plus qu'elles sont fortes ; aucun seuil, donc
 // pas de bord net entre ce qui brille et ce qui ne brille pas. Méthode de Jimenez (Call of Duty, SIGGRAPH 2014).
 
+#include "ToneCurve.slang"
+
 // Doit correspondre à PostParams dans PostRenderer.cpp.
 struct PostParams
 {
@@ -105,14 +107,6 @@ float4 fragmentUpsample(VertexOutput input) : SV_Target
     sum += source.SampleLevel(uv + float2(-t.x, -t.y), 0.0).rgb + source.SampleLevel(uv + float2(t.x, -t.y), 0.0).rgb
          + source.SampleLevel(uv + float2(-t.x, t.y), 0.0).rgb + source.SampleLevel(uv + float2(t.x, t.y), 0.0).rgb;
     return float4(other.SampleLevel(uv, 0.0).rgb + sum * (1.0 / 16.0), 1.0);
-}
-
-// Courbe de tons ACES (approximation de Narkowicz) : les couleurs trop fortes sont adoucies vers le blanc au lieu
-// d'être coupées net. InverseToneMap dans PostRenderer.cpp en est l'inverse (couleur de fond sans ciel).
-float3 ToneMap(float3 color, float exposure)
-{
-    color *= exposure * 0.6;
-    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
 }
 
 // Image finale : la scène et son bloom (other : la somme des niveaux, ramenée à une moyenne), puis la courbe de tons. Le bloom

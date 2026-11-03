@@ -64,7 +64,8 @@ namespace Flux {
         // Hors de toute passe, après la scène : réductions et remontées du bloom. Rien si `strength` vaut 0. Les niveaux
         // sont internes (barrières posées ici) ; le résultat est laissé lisible pour Composite, même non dessiné.
         void DrawBloom(RHI::CommandList& commands, float strength);
-        // Dans la passe principale, viewport sur la vue 3D : la scène et son bloom, avec la courbe de tons.
+        // Dans la passe principale, viewport sur la vue 3D : la scène et son bloom, avec l'exposition et la courbe de tons
+        // (shaders/ToneCurve.slang).
         void Composite(RHI::CommandList& commands, float strength, float exposure) const;
 
         // Doit correspondre à GridParams dans shaders/Grid.slang.
@@ -80,10 +81,6 @@ namespace Flux {
         // (shaders/Grid.slang), cachée derrière la scène par sa profondeur. Un triangle plein écran, une lecture de
         // la profondeur par pixel.
         void DrawGrid(RHI::CommandList& commands, const GridParams& params) const;
-
-        // Couleur HDR qui donne `color` après la courbe de tons : le fond d'une scène sans ciel garde la couleur
-        // choisie, quelle que soit la courbe.
-        static Math::LinearColor InverseToneMap(Math::LinearColor color, float exposure);
 
         private:
         // Doit correspondre à PostParams dans shaders/Post.slang.

@@ -48,6 +48,8 @@ bool RunAnimationTests();
 bool RunShadowTests();
 bool RunSkyTests();
 bool RunEnvironmentGpuTests();
+bool RunExposureTests();
+bool RunExposureGpuTests();
 bool RunAudioTests();
 bool RunInputTests();
 bool RunPlanetTests();

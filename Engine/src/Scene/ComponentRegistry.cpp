@@ -102,7 +102,13 @@ namespace Flux {
             .Field("sunAzimuth", "Soleil : direction (°)", &SkyComponent::sunAzimuth, {.speed = 0.5, .min = -360.0, .max = 360.0, .decimals = 1})
             .Field("sunColor", "Soleil : couleur", &SkyComponent::sunColor, {.alpha = false})
             .Field("sunIntensity", "Soleil : intensité", &SkyComponent::sunIntensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
-            .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2});
+            .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2})
+            .Field("autoExposure", "Exposition automatique", &SkyComponent::autoExposure)
+            .Field("exposure", "Exposition : décalage (stops)", &SkyComponent::exposure, {.speed = 0.02, .min = -10.0, .max = 10.0, .decimals = 2})
+            .Field("exposureMin", "Exposition : minimum (stops)", &SkyComponent::exposureMin, {.speed = 0.05, .min = -16.0, .max = 16.0, .decimals = 1})
+            .Field("exposureMax", "Exposition : maximum (stops)", &SkyComponent::exposureMax, {.speed = 0.05, .min = -16.0, .max = 16.0, .decimals = 1})
+            .Field("adaptationSpeed", "Exposition : vitesse d'adaptation", &SkyComponent::adaptationSpeed,
+                   {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2});
         registry.Register<WorldComponent>("world", "Monde")
             .Field("gravity", "Gravité (m/s²)", &WorldComponent::gravity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("air", "Air (1 : comme sur Terre)", &WorldComponent::air, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})

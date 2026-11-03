@@ -333,16 +333,4 @@ namespace Flux {
         commands.PushConstants(&params, sizeof(params));
         commands.Draw(3, 0);
     }
-
-    Math::LinearColor PostRenderer::InverseToneMap(Math::LinearColor color, float exposure) {
-        // ACES de Post.slang : c = x (2,51 x + 0,03) / (x (2,43 x + 0,59) + 0,14), résolue en x (racine positive).
-        const auto inverse = [&](float c) {
-            c = std::clamp(c, 0.0f, 1.0f);
-            const float a = 2.51f - 2.43f * c;
-            const float b = 0.03f - 0.59f * c;
-            const float x = (-b + std::sqrt(b * b + 4.0f * a * 0.14f * c)) / (2.0f * a);
-            return x / (std::max(exposure, 1.0e-4f) * 0.6f);
-        };
-        return {inverse(color.r), inverse(color.g), inverse(color.b), color.a};
-    }
 }
