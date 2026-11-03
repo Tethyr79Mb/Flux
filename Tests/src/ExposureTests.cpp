@@ -126,18 +126,20 @@ bool RunExposureGpuTests() {
     CHECK(NearStops((*exposure)->GetLuminance(), luminance, HalfBin + 0.01f));
     CHECK(NearStops(first, 0.18f / luminance, HalfBin + 0.01f));
     // La même image écrite avec une pré-exposition de 4 : la même luminance mesurée.
+    // (Pas tout à fait la même case de l'histogramme : l'exposition s'adapte d'un rien, d'où `steady`.)
     CHECK(measure({0.9f, 0.7f, 0.6f}, 4.0f));
-    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), first, HalfBin + 0.01f));
+    const float steady = (*exposure)->Update(settings, 0.016f, false, 0);
+    CHECK(NearStops(steady, first, HalfBin + 0.01f));
     CHECK(NearStops((*exposure)->GetLuminance(), luminance, HalfBin + 0.01f));
     // Sans nouvelle mesure, l'exposition ne bouge pas.
-    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), first, 0.0001f));
+    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), steady, 0.0001f));
     // Image noire (le fond de l'espace) : rien de mesurable, l'exposition reste.
     CHECK(measure({0.0f, 0.0f, 0.0f}));
-    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), first, 0.0001f));
+    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), steady, 0.0001f));
     CHECK((*exposure)->GetLuminance() == 0.0f);
     // Image plus sombre : l'exposition monte, doucement.
     CHECK(measure({0.05f, 0.05f, 0.05f}));
     const float adapting = (*exposure)->Update(settings, 0.016f, false, 0);
-    CHECK(adapting > first && adapting < 0.18f / 0.05f);
+    CHECK(adapting > steady && adapting < 0.18f / 0.05f);
     return true;
 }
