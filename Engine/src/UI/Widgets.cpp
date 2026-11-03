@@ -51,6 +51,107 @@ namespace Flux::UI {
                        ui.style.text);
     }
 
+    bool Context::LabelButton(std::string_view label, std::string_view text, bool highlighted) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return false;
+        }
+        const Style& style = ui.style;
+        const auto [min, max] = ui.LabeledRow(label);
+        const Impl::Interaction interaction = ui.Behavior(ui.GetId(label), min, max);
+        const LinearColor color = interaction.held && interaction.hovered ? style.buttonActive
+                                : interaction.hovered                     ? style.buttonHovered
+                                                                          : style.button;
+        ui.FrameRect(min, max, color);
+        if (highlighted) {
+            ui.panel->content.AddRoundedRectOutline(min, max, style.checkMark, style.frameRounding, 1.5f);
+        }
+        ui.ClippedText(min + style.framePadding, max.x - style.framePadding.x, text, style.text);
+        return interaction.clicked;
+    }
+
+    void Context::Heading(std::string_view text, Icon icon) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return;
+        }
+        const Style& style = ui.style;
+        const float size = std::round(style.fontSize * 1.45f);
+        const float iconSize = icon != Icon::None ? size : 0.0f;
+        const float gap = iconSize > 0.0f ? std::round(style.fontSize * 0.5f) : 0.0f;
+        const Vector2f textSize = ui.panel->content.MeasureText(text, size);
+        const float height = std::max(textSize.y, iconSize);
+        const Vector2f min = ui.ItemRect({iconSize + gap + textSize.x, height}, style.itemSpacing * 2.0f);
+        if (iconSize > 0.0f) {
+            DrawIcon(ui.panel->content, icon, {min.x, std::round(min.y + 0.5f * (height - iconSize))}, iconSize);
+        }
+        ui.panel->content.AddText({min.x + iconSize + gap, std::round(min.y + 0.5f * (height - textSize.y))}, text, size,
+                                  style.text);
+    }
+
+    void Context::SectionTitle(std::string_view text) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return;
+        }
+        const Style& style = ui.style;
+        // Plus d'air au-dessus qu'entre deux réglages : les groupes se détachent sans cadre autour.
+        if (!ui.sameLine && ui.cursorY > ui.contentMin.y) {
+            ui.cursorY += 2.0f * style.itemSpacing;
+        }
+        const float lineGap = std::round(style.itemSpacing * 0.8f);
+        const Vector2f min = ui.ItemRect({ui.RowWidth(), ui.LineHeight() + lineGap + 1.0f}, style.itemSpacing * 1.5f);
+        ui.ClippedText(min, min.x + ui.RowWidth(), text, style.checkMark);
+        const float y = min.y + ui.LineHeight() + lineGap;
+        ui.panel->content.AddRect({min.x, y}, {min.x + ui.RowWidth(), y + 1.0f}, style.separator);
+    }
+
+    void Context::HelpText(std::string_view text) {
+        Impl& ui = *m_impl;
+        if (!ui.panel) {
+            return;
+        }
+        const Style& style = ui.style;
+        const float size = std::round(style.fontSize * 0.87f);
+        const float lineHeight = ui.font.GetLineHeight() * size;
+        const float width = std::max(1.0f, ui.RowWidth());
+        DrawList& list = ui.panel->content;
+        // Coupe aux espaces, mot par mot, sans copier le texte : appelée deux fois (compter les lignes, puis dessiner).
+        const auto forEachLine = [&](auto&& draw) {
+            std::size_t start = 0;
+            while (start < text.size()) {
+                std::size_t end = text.size();
+                if (list.MeasureText(text.substr(start), size).x > width) {
+                    std::size_t lastFit = std::string_view::npos;
+                    for (std::size_t space = text.find(' ', start); space != std::string_view::npos;
+                         space = text.find(' ', space + 1)) {
+                        if (list.MeasureText(text.substr(start, space - start), size).x > width) {
+                            break;
+                        }
+                        lastFit = space;
+                    }
+                    if (lastFit != std::string_view::npos) {
+                        end = lastFit; // sinon un mot plus large que la zone : ligne entière, découpée
+                    }
+                }
+                draw(text.substr(start, end - start));
+                start = end + 1;
+            }
+        };
+        int lines = 0;
+        forEachLine([&](std::string_view) { ++lines; });
+        // Collée au réglage qu'elle explique, plutôt qu'à mi-chemin du suivant.
+        if (!ui.sameLine && ui.cursorY > ui.contentMin.y) {
+            ui.cursorY = std::min(ui.cursorY, ui.lastItemMax.y + 2.0f);
+        }
+        const Vector2f min = ui.ItemRect({width, static_cast<float>(lines) * lineHeight});
+        float y = min.y;
+        forEachLine([&](std::string_view line) {
+            list.AddText({min.x, y}, line, size, style.textDisabled);
+            y += lineHeight;
+        });
+    }
+
     bool Context::Button(std::string_view label) {
         Impl& ui = *m_impl;
         if (!ui.panel) {

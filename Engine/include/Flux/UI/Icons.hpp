@@ -74,6 +74,9 @@ namespace Flux::UI {
         Atmosphere,  // planète entourée d'un halo bleu
         Cloud,
         Orbit,       // soleil et planète sur son ellipse
+        // Catégories de la fenêtre Paramètres.
+        Monitor,     // écran sur son pied : graphismes
+        Keyboard,    // clavier : touches
     };
 
     // Dessine l'icône dans le carré [min, min + size].

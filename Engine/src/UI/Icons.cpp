@@ -592,6 +592,28 @@ namespace Flux::UI {
                 pen.Disc(0.86f, 0.42f, 0.09f, LinearColor::FromSrgb8(90, 150, 220)); // planète
                 break;
             }
+            case Icon::Monitor: {
+                const LinearColor frame = LinearColor::FromSrgb8(150, 160, 176);
+                pen.Rect(0.06f, 0.14f, 0.94f, 0.72f, frame);
+                pen.Rect(0.12f, 0.20f, 0.88f, 0.66f, LinearColor::FromSrgb8(60, 120, 210)); // dalle allumée
+                pen.Triangle({0.5f, 0.20f}, {0.88f, 0.20f}, {0.88f, 0.48f}, LinearColor::FromSrgb8(90, 155, 235)); // reflet
+                pen.Rect(0.44f, 0.72f, 0.56f, 0.84f, frame);
+                pen.Rect(0.28f, 0.84f, 0.72f, 0.9f, frame);
+                break;
+            }
+            case Icon::Keyboard: {
+                pen.Rect(0.04f, 0.24f, 0.96f, 0.78f, LinearColor::FromSrgb8(150, 160, 176));
+                const LinearColor key = LinearColor::FromSrgb8(52, 56, 64);
+                for (int row = 0; row < 2; ++row) {
+                    for (int i = 0; i < 5; ++i) {
+                        const float x = 0.11f + 0.163f * static_cast<float>(i);
+                        const float y = 0.31f + 0.15f * static_cast<float>(row);
+                        pen.Rect(x, y, x + 0.12f, y + 0.1f, key);
+                    }
+                }
+                pen.Rect(0.24f, 0.61f, 0.76f, 0.71f, key); // barre d'espace
+                break;
+            }
         }
     }
 }

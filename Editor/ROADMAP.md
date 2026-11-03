@@ -14,7 +14,9 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   les largeurs fixées par le code (panneaux à leur première ouverture, vignettes du Contenu) ne suivent pas.
 - ✅ Barre de menus (Fichier, Édition…), dialogues Windows natifs, étoile dans le titre si la scène est modifiée.
 - ✅ Barre d'outils : nouvelle scène, ouvrir, enregistrer, annuler / rétablir, Jouer et Pause au milieu, Paramètres à droite.
-- ✅ Paramètres : graphiques (GPU, version de Vulkan, V-Sync, mise à l'échelle FSR et sa netteté, taille de rendu, anticrénelage en Natif, détail du sol, qualité des nuages, bloom et son intensité), interface, son, touches.
+- 🔧 Paramètres : catégories à icônes à gauche (Graphiques, Son, Touches, Interface, Système), réglages en groupes
+  titrés avec une aide sous chacun, préréglages Bas à Ultra, « Rétablir par défaut » par page, recherche des touches.
+  Limites : V-Sync non enregistrée ; pas de seconde touche ni de manette ; pas d'aperçu du thème avant de le choisir.
 - ✅ Console.
 - ✅ Version de l'éditeur dans le titre.
 - ✅ Logo FluxEngine : icône du programme et de sa fenêtre (losange seul), écran d'accueil pendant le démarrage, en-tête du README.
