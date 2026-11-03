@@ -227,12 +227,15 @@ namespace Flux::Platform {
                     response = HttpResponse{.status = 503, .contentType = "text/plain", .body = "le moteur ne répond pas"};
                     close = true;
                 }
-                const std::string header = std::format("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n"
+                // En-tête et corps d'un seul envoi : un antivirus qui inspecte le HTTP local (Avast) peut réécrire une
+                // réponse arrivée en deux morceaux.
+                std::string message = std::format("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n"
                                                        "Connection: {}\r\n\r\n",
                                                        response->status, ReasonPhrase(response->status),
                                                        response->contentType, response->body.size(),
                                                        close ? "close" : "keep-alive");
-                if (!SendAll(socket, header) || !SendAll(socket, response->body) || close) {
+                message += response->body;
+                if (!SendAll(socket, message) || close) {
                     shutdown(socket, SD_BOTH);
                     return;
                 }
