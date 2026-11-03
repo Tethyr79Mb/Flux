@@ -28,6 +28,33 @@ namespace Flux::ToneCurve {
                     m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]};
         }
 
+        // Réglage « Punchy » (comme dans Blender) : plus de contraste et de saturation qu'AgX de base, qui délave.
+        constexpr float LookPower = 1.35f;
+        constexpr float LookSaturation = 1.4f;
+        constexpr Vector Luma{0.2126f, 0.7152f, 0.0722f};
+
+        float Dot(const Vector& a, const Vector& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+        Vector Look(Vector v) {
+            for (float& c : v) {
+                c = std::pow(std::max(c, 0.0f), LookPower);
+            }
+            const float luma = Dot(v, Luma);
+            for (float& c : v) {
+                c = luma + LookSaturation * (c - luma);
+            }
+            return v;
+        }
+
+        // La saturation garde la luminance : elle se défait d'abord, puis la puissance.
+        Vector InverseLook(Vector v) {
+            const float luma = Dot(v, Luma);
+            for (float& c : v) {
+                c = std::pow(std::max(luma + (c - luma) / LookSaturation, 0.0f), 1.0f / LookPower);
+            }
+            return v;
+        }
+
         // Le contraste d'AgX en polynôme de degré 6, croissant de 0 à 1.
         float Contrast(float x) {
             const float x2 = x * x;
@@ -54,14 +81,14 @@ namespace Flux::ToneCurve {
             const float ev = std::clamp(std::log2(std::max(inset[i], 1.0e-10f)), MinEv, MaxEv);
             curved[i] = Contrast((ev - MinEv) / (MaxEv - MinEv));
         }
-        const Vector display = Multiply(Outset, curved);
+        const Vector display = Multiply(Outset, Look(curved));
         const auto linear = [](float c) { return std::pow(std::clamp(c, 0.0f, 1.0f), DisplayGamma); };
         return {linear(display[0]), linear(display[1]), linear(display[2]), color.a};
     }
 
     Math::LinearColor InverseToneMap(Math::LinearColor color, float exposure) {
         const auto encoded = [](float c) { return std::pow(std::clamp(c, 0.0f, 1.0f), 1.0f / DisplayGamma); };
-        const Vector curved = Multiply(Inset, {encoded(color.r), encoded(color.g), encoded(color.b)});
+        const Vector curved = InverseLook(Multiply(Inset, {encoded(color.r), encoded(color.g), encoded(color.b)}));
         Vector inset;
         for (std::size_t i = 0; i < 3; ++i) {
             inset[i] = std::exp2(MinEv + InverseContrast(curved[i]) * (MaxEv - MinEv));
