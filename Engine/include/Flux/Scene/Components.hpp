@@ -322,13 +322,20 @@ namespace Flux {
 
     // Volume intérieur (cabine, couloir, station) : une boîte centrée sur l'entité, qui tourne et se déplace avec
     // elle. Dedans, la lumière ambiante et les reflets ne viennent plus du ciel (qui n'y entre pas) mais de `ambient`,
-    // avec un fondu de `fade` mètres depuis les bords. Le soleil, lui, est arrêté par les ombres.
+    // avec un fondu de `fade` mètres hors de ses bords (la boîte se pose sur le sol et les murs de la pièce). Le soleil, lui, est arrêté par les ombres.
     struct InteriorComponent
     {
         Math::Vector3f size{2.0f, 2.5f, 4.0f}; // mètres, multipliés par l'échelle de l'entité
         Math::LinearColor ambient{1.0f, 1.0f, 1.05f};
         float luminance = 30.0f; // cd/m², des murs autour (éclairés à 300 lux, comme un bureau : 50 ; un couloir : 10 à 20)
         float fade = 0.5f;
+        // Décalage de l'exposition automatique quand la caméra est dedans, en stops (fondu avec `fade`) : négatif, la
+        // pièce reste sombre et contrastée au lieu d'être remontée au gris moyen.
+        float exposure = -1.0f;
+        // Bornes de l'œil quand la caméra est dedans (EV100, fondues avec `fade`) : dans une pièce, l'image bouge peu
+        // en regardant ses lampes ou une porte ouverte au soleil (triche voulue, choix de Bruno).
+        float minEv100 = 3.0f;
+        float maxEv100 = 7.0f;
     };
 
     // Réacteur : la flamme qui sort de la tuyère, vers le +z de l'entité (l'arrière d'un vaisseau qui regarde vers

@@ -214,12 +214,39 @@ namespace Flux {
         return panorama;
     }
 
-    Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene) {
+    SkyRenderer::InteriorExposure SkyRenderer::GetInteriorExposure(const Scene& scene, const Camera& camera) {
+        // Comme InteriorAt dans shaders/Mesh.slang : le volume où la caméra est le plus « dedans » (fondu hors des bords).
+        InteriorExposure result;
+        for (const auto [entity, interior] : scene.GetRegistry().view<const InteriorComponent>().each()) {
+            Math::Vector3f scale{1.0f, 1.0f, 1.0f};
+            for (Entity e = entity; e != NullEntity; e = scene.GetParent(e)) {
+                const Math::Vector3f s = scene.Get<TransformComponent>(e).scale;
+                scale = {scale.x * std::abs(s.x), scale.y * std::abs(s.y), scale.z * std::abs(s.z)};
+            }
+            const Math::Vector3f toCamera(Math::Delta(scene.GetWorldPosition(entity), camera.position));
+            const Math::Vector3f local = scene.GetWorldRotation(entity).Conjugate().Rotate(toCamera);
+            const float margin = std::min({0.5f * std::max(interior.size.x, 0.0f) * scale.x - std::abs(local.x),
+                                           0.5f * std::max(interior.size.y, 0.0f) * scale.y - std::abs(local.y),
+                                           0.5f * std::max(interior.size.z, 0.0f) * scale.z - std::abs(local.z)});
+            const float weight = std::clamp(1.0f + margin / std::max(interior.fade, 1.0e-3f), 0.0f, 1.0f);
+            if (weight > result.weight) {
+                result = {weight, interior.exposure, interior.minEv100, interior.maxEv100};
+            }
+        }
+        result.compensation *= result.weight;
+        return result;
+    }
+
+    Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene, const Camera& camera) {
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
+            // Dans un Intérieur, ses bornes remplacent celles du Ciel (fondues près de ses bords).
+            const InteriorExposure interior = GetInteriorExposure(scene, camera);
+            const float minEv = std::lerp(sky.minEv100, interior.minEv100, interior.weight);
+            const float maxEv = std::max(std::lerp(sky.maxEv100, interior.maxEv100, interior.weight), minEv);
             // La scène la plus claire donne l'exposition la plus basse.
-            return {.automatic = sky.autoExposure, .compensation = sky.exposure,
-                    .minimum = std::log2(Photometry::ExposureFromEv100(std::max(sky.maxEv100, sky.minEv100))),
-                    .maximum = std::log2(Photometry::ExposureFromEv100(sky.minEv100)), .speed = sky.adaptationSpeed};
+            return {.automatic = sky.autoExposure, .compensation = sky.exposure + interior.compensation,
+                    .minimum = std::log2(Photometry::ExposureFromEv100(maxEv)),
+                    .maximum = std::log2(Photometry::ExposureFromEv100(minEv)), .speed = sky.adaptationSpeed};
         }
         return {};
     }
@@ -272,7 +299,10 @@ namespace Flux {
             lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->illuminance) : sunLight(sky.sunColor, sky.sunIlluminance);
             const float brightness = Photometry::FromNits(std::max(sky.luminance, 0.0f));
-            lighting.ambient = std::max(sky.ambient, 0.0f) * brightness;
+            // Triche voulue : la lumière ambiante et les reflets du ciel gardent l'échelle d'avant les unités physiques
+            // (fond par défaut = 1). En vrai, le fond étoilé n'éclaire presque rien (côté à l'ombre noir dans l'espace) ;
+            // ainsi, « Lumière ambiante » débouche les ombres, et suit encore la luminance réglée du fond.
+            lighting.ambient = std::max(sky.ambient, 0.0f) * std::max(sky.luminance, 0.0f) / SkyComponent{}.luminance;
 
             const bool usesPanorama = !sky.image.empty() && !assetsDirectory.empty();
             if (usesPanorama) {
@@ -303,7 +333,15 @@ namespace Flux {
             constexpr float StarScreenFloor = 0.3f;
             const float starScale = std::max(Photometry::FromNits(StarNits), StarScreenFloor / std::max(preExposure, 1.0e-6f));
             data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f) * starScale);
-            data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
+            // Triche voulue (choix de Bruno, comme pour les étoiles) : les nébuleuses, vraies, sont trop faibles pour
+            // l'œil réglé sur une station éclairée ; le fond garde un plancher à l'écran (les plus claires vers 0,1
+            // après l'exposition avec la luminance par défaut), proportionnel à la luminance réglée : elle reste le
+            // réglage de l'éclat du fond. Le fond seul : la lumière ambiante du ciel (lighting.ambient) reste réelle.
+            // Pas de boucle avec l'exposition : dans l'espace le ciel n'est pas mesuré, et sur une planète il reste
+            // sous le gris moyen.
+            constexpr float BackgroundScreenFloor = 0.3f;
+            const float floor = BackgroundScreenFloor * std::max(sky.luminance, 0.0f) / SkyComponent{}.luminance;
+            data.noiseOffset = ToArray(parameters.noiseOffset, std::max(brightness, floor / std::max(preExposure, 1.0e-6f)));
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
         // Le disque d'un Soleil posé a sa propre couleur ; sa lumière, la sienne (blanche par défaut).

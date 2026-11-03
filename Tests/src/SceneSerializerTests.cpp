@@ -296,7 +296,7 @@ bool RunSceneSerializerTests() {
     CHECK(oldSky && oldSky->minEv100 == SkyComponent{}.minEv100);
     CHECK(loaded.TryGet<SunComponent>(loaded.FindById(Uuid{0xd3}))->illuminance == 116000.0f);
     CHECK(loaded.TryGet<MeshRendererComponent>(loaded.FindById(Uuid{0xd4}))->luminance == 2500.0f);
-    CHECK(loaded.TryGet<LightComponent>(loaded.FindById(Uuid{0xd4}))->lumens == LightComponent{}.lumens);
+    CHECK(loaded.TryGet<LightComponent>(loaded.FindById(Uuid{0xd4}))->lumens == 900.0f * 2500.0f);
     CHECK(std::abs(loaded.TryGet<ThrusterComponent>(loaded.FindById(Uuid{0xd5}))->lightLumens - 8.04e6f) < 0.01e6f);
     CHECK(loaded.TryGet<InteriorComponent>(loaded.FindById(Uuid{0xd5}))->luminance == InteriorComponent{}.luminance);
 

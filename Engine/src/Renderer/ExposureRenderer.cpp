@@ -12,11 +12,15 @@ namespace Flux {
         {
             std::array<float, 2> texel;
             std::array<std::uint32_t, 2> samples;
+            std::array<std::uint32_t, 2> extent;
+            std::uint32_t skipSky;
+            std::uint32_t padding;
         };
-        static_assert(sizeof(HistogramParams) == 16);
+        static_assert(sizeof(HistogramParams) == 32);
 
         constexpr std::uint32_t SceneSlot = 0;
         constexpr std::uint32_t BinsSlot = 1;
+        constexpr std::uint32_t DepthSlot = 2;
         constexpr std::uint32_t GroupSize = 16; // comme dans Exposure.slang
         constexpr std::uint64_t BinsSize = sizeof(Exposure::Histogram);
     }
@@ -25,11 +29,14 @@ namespace Flux {
         std::unique_ptr<ExposureRenderer> exposure(new ExposureRenderer(device));
         auto sampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Nearest,
                                              .address = RHI::AddressMode::ClampToEdge});
+        auto pointSampler = device.CreateSampler({.filter = RHI::Filter::Nearest, .mipFilter = RHI::Filter::Nearest,
+                                                  .address = RHI::AddressMode::ClampToEdge});
         auto bins = device.CreateBuffer({BinsSize, RHI::BufferUsage::Storage, RHI::MemoryType::GpuOnly});
-        if (!sampler || !bins) {
-            return std::unexpected(!sampler ? sampler.error() : bins.error());
+        if (!sampler || !pointSampler || !bins) {
+            return std::unexpected(!sampler ? sampler.error() : !pointSampler ? pointSampler.error() : bins.error());
         }
         exposure->m_sampler = std::move(*sampler);
+        exposure->m_pointSampler = std::move(*pointSampler);
         exposure->m_bins = std::move(*bins);
         for (auto& readback : exposure->m_readback) {
             auto buffer = device.CreateBuffer({BinsSize, RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
@@ -42,6 +49,7 @@ namespace Flux {
         constexpr std::array bindings{
             RHI::Binding{SceneSlot, RHI::BindingType::Texture, RHI::ShaderStage::Compute},
             RHI::Binding{BinsSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Compute},
+            RHI::Binding{DepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Compute},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = 1});
         if (!layout) {
@@ -66,8 +74,11 @@ namespace Flux {
         return exposure;
     }
 
-    void ExposureRenderer::Bind(const RHI::Texture& scene) {
+    void ExposureRenderer::Bind(const RHI::Texture& scene, const RHI::Texture* depth) {
         m_group->SetTexture(SceneSlot, scene, *m_sampler);
+        // Sans profondeur, la scène tient la place (jamais lue : skipSky reste à 0).
+        m_group->SetTexture(DepthSlot, depth ? *depth : scene, *m_pointSampler);
+        m_hasDepth = depth != nullptr;
         m_extent = scene.GetExtent();
     }
 
@@ -93,6 +104,10 @@ namespace Flux {
             *luminance /= m_preExposures[frameIndex];
         }
         m_luminance = luminance.value_or(0.0f);
+        // Rien de mesuré, pas même du noir (case 0) : il n'y avait que du ciel écarté, l'œil reste comme il est.
+        if (!luminance && m_read[0] == 0) {
+            return m_exposure;
+        }
         // Image noire : rien au-dessus de la plus basse case de l'histogramme, 7,5 stops sous le gris moyen (le fond de
         // l'espace après une planète éclairée). L'œil s'ouvre jusqu'à sa limite, et les étoiles apparaissent.
         const float target = luminance ? Exposure::Target(*luminance, settings) : std::exp2(settings.maximum);
@@ -102,12 +117,15 @@ namespace Flux {
         return m_exposure;
     }
 
-    void ExposureRenderer::Measure(RHI::CommandList& commands, std::uint32_t frameIndex, float preExposure) {
+    void ExposureRenderer::Measure(RHI::CommandList& commands, std::uint32_t frameIndex, float preExposure, bool skipSky) {
         if (m_extent.width == 0 || m_extent.height == 0) {
             return;
         }
         const HistogramParams params{{1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height)},
-                                     {(m_extent.width + 1) / 2, (m_extent.height + 1) / 2}};
+                                     {(m_extent.width + 1) / 2, (m_extent.height + 1) / 2},
+                                     {m_extent.width, m_extent.height},
+                                     skipSky && m_hasDepth ? 1u : 0u,
+                                     0};
         commands.BindPipeline(*m_clear);
         commands.SetBindGroup(0, *m_group);
         commands.PushConstants(&params, sizeof(params));

@@ -251,7 +251,7 @@ namespace Game {
             InteriorComponent& interior = scene.Add<InteriorComponent>(inside);
             interior.size = {110.0f, 40.0f, 150.0f};
             interior.luminance = 30.0f;
-            interior.fade = 2.0f;
+            interior.fade = 1.0f; // les murs ont 1 m : la coque, dehors, ne reçoit pas la lumière du hangar
             for (const double x : {-30.0, 30.0}) {
                 for (const double z : {-55.0, -20.0, 20.0, 55.0}) {
                     const Entity light = scene.CreateEntity("Plafonnier", hangar);

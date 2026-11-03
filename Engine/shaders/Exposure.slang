@@ -14,10 +14,14 @@ struct Constants
 {
     float2 texel;  // 1 / taille de la scène, en pixels
     uint2 samples; // blocs de 2 x 2 pixels mesurés, en largeur et en hauteur
+    uint2 extent;  // taille de la scène, en pixels
+    uint skipSky;  // 1 : le ciel (profondeur infinie) n'est pas mesuré, ni même compté comme noir
+    uint padding;
 };
 
 [[vk::binding(0, 0)]] Sampler2D scene;
 [[vk::binding(1, 0)]] RWStructuredBuffer<uint> histogram; // Bins poids
+[[vk::binding(2, 0)]] Sampler2D sceneDepth; // reverse-Z : 0 là où rien n'a été dessiné (le ciel)
 [[vk::push_constant]] ConstantBuffer<Constants> constants;
 
 groupshared uint localBins[Bins];
@@ -46,7 +50,18 @@ void histogramMain(uint3 id : SV_DispatchThreadID, uint index : SV_GroupIndex)
         localBins[index] = 0;
     }
     GroupMemoryBarrierWithGroupSync();
-    if (all(id.xy < constants.samples)) {
+    bool measured = all(id.xy < constants.samples);
+    if (measured && constants.skipSky != 0) {
+        // Bloc de ciel seul (les quatre pixels) : écarté. Un bord d'objet sur le ciel reste mesuré.
+        const int2 last = int2(constants.extent) - 1;
+        const int2 corner = int2(id.xy) * 2;
+        float depth = 0.0;
+        for (int i = 0; i < 4; ++i) {
+            depth = max(depth, sceneDepth.Load(int3(min(corner + int2(i & 1, i >> 1), last), 0)).r);
+        }
+        measured = depth > 0.0;
+    }
+    if (measured) {
         // Au coin commun de quatre pixels : le filtre bilinéaire en rend la moyenne.
         const float2 uv = (float2(id.xy) * 2.0 + 1.0) * constants.texel;
         const float3 color = scene.SampleLevel(uv, 0.0).rgb;
