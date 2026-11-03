@@ -250,7 +250,7 @@ namespace Game {
             scene.Get<TransformComponent>(inside).position = {0.0, 20.0, 0.0};
             InteriorComponent& interior = scene.Add<InteriorComponent>(inside);
             interior.size = {110.0f, 40.0f, 150.0f};
-            interior.intensity = 1.0f;
+            interior.luminance = 30.0f;
             interior.fade = 2.0f;
             for (const double x : {-30.0, 30.0}) {
                 for (const double z : {-55.0, -20.0, 20.0, 55.0}) {
@@ -258,7 +258,7 @@ namespace Game {
                     scene.Get<TransformComponent>(light).position = {x, 36.0, z};
                     LightComponent& component = scene.Add<LightComponent>(light);
                     component.color = {1.0f, 0.95f, 0.88f};
-                    component.intensity = 900.0f;
+                    component.lumens = 2.0e6f; // ~150 lux au sol, 36 m plus bas (un éclairage de hangar)
                     component.range = 70.0f;
                 }
             }
@@ -286,7 +286,7 @@ namespace Game {
                 Math::Vector3d min;
                 Math::Vector3d max;
                 Math::LinearColor color;
-                float emission = 0.0f;
+                float luminance = 0.0f; // cd/m²
                 bool solid = true; // marquages au sol et néons : seulement affichés
             };
             const auto grey = [](std::uint8_t level) { return Math::LinearColor::FromSrgb8(level, level, level + 8); };
@@ -297,26 +297,26 @@ namespace Game {
                 const Math::Vector3d size = box.max - box.min;
                 transform.scale = {static_cast<float>(size.x), static_cast<float>(size.y), static_cast<float>(size.z)};
                 MeshRendererComponent& mesh = scene.Add<MeshRendererComponent>(entity, MeshType::Cube, box.color);
-                mesh.emission = box.emission;
+                mesh.luminance = box.luminance;
                 if (box.solid) {
                     scene.Add<ColliderComponent>(entity);
                 }
                 return entity;
             };
-            const auto addLight = [&](const char* name, Math::Vector3d position, float intensity, float range) {
+            const auto addLight = [&](const char* name, Math::Vector3d position, float lumens, float range) {
                 const Entity entity = scene.CreateEntity(name, station);
                 scene.Get<TransformComponent>(entity).position = position;
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 light.color = {1.0f, 0.95f, 0.88f};
-                light.intensity = intensity;
+                light.lumens = lumens;
                 light.range = range;
             };
-            const auto addInterior = [&](const char* name, Math::Vector3d center, Math::Vector3f size, float intensity) {
+            const auto addInterior = [&](const char* name, Math::Vector3d center, Math::Vector3f size, float luminance) {
                 const Entity entity = scene.CreateEntity(name, station);
                 scene.Get<TransformComponent>(entity).position = center;
                 InteriorComponent& interior = scene.Add<InteriorComponent>(entity);
                 interior.size = size;
-                interior.intensity = intensity;
+                interior.luminance = luminance;
                 interior.fade = 1.0f;
             };
 
@@ -335,9 +335,9 @@ namespace Game {
                                    Box{"Fond au-dessus de la porte", {-1.5, 3.0, 50.0}, {1.5, 30.0, 50.4}, grey(125)},
                                    // Balises de l'entrée : elle se repère de loin.
                                    Box{"Balise gauche", {-50.0, 0.0, -51.2}, {-49.6, 24.0, -50.8},
-                                       Math::LinearColor{0.2f, 0.6f, 1.0f}, 4.0f, false},
+                                       Math::LinearColor{0.2f, 0.6f, 1.0f}, 8000.0f, false},
                                    Box{"Balise droite", {49.6, 0.0, -51.2}, {50.0, 24.0, -50.8},
-                                       Math::LinearColor{0.2f, 0.6f, 1.0f}, 4.0f, false}}) {
+                                       Math::LinearColor{0.2f, 0.6f, 1.0f}, 8000.0f, false}}) {
                 addBox(box, hangar);
             }
 
@@ -362,9 +362,10 @@ namespace Game {
                 const double x0 = x - HalfWidth, x1 = x + HalfWidth, z0 = DockZ - HalfLength, z1 = DockZ + HalfLength;
                 // Les bandes sont posées sur la dalle et ne se chevauchent pas (les côtés vont d'un bord à l'autre) : deux
                 // faces au même endroit, l'une passe devant l'autre au hasard d'une image à l'autre (scintillement).
-                // Lueur modérée : une bande très lumineuse vue de loin, plus fine qu'un pixel, clignote elle aussi.
+                // Lueur modérée (une peinture luminescente) : une bande très lumineuse vue de loin, plus fine qu'un
+                // pixel, clignote elle aussi.
                 constexpr double Top = 0.02, Paint = 0.04;
-                constexpr float Glow = 0.5f;
+                constexpr float Glow = 150.0f;
                 for (const Box& box : {Box{"Dalle", {x0, 0.0, z0}, {x1, Top, z1}, grey(60), 0.0f, false},
                                        Box{"Bord avant", {x0, Top, z0}, {x1, Paint, z0 + Line}, yellow, Glow, false},
                                        Box{"Bord arrière", {x0, Top, z1 - Line}, {x1, Paint, z1}, yellow, Glow, false},
@@ -372,14 +373,15 @@ namespace Game {
                                        Box{"Bord droit", {x1 - Line, Top, z0 + Line}, {x1, Paint, z1 - Line}, yellow, Glow, false},
                                        // Néon au plafond, au-dessus du quai.
                                        Box{"Plafonnier", {x - 4.0, 29.7, DockZ - 4.0}, {x + 4.0, 30.0, DockZ + 4.0},
-                                           Math::LinearColor{1.0f, 0.95f, 0.88f}, 3.0f, false}}) {
+                                           Math::LinearColor{1.0f, 0.95f, 0.88f}, 6000.0f, false}}) {
                     addBox(box, marks);
                 }
-                addLight(("Lumière du " + name).c_str(), {x, 26.0, DockZ}, 400.0f, 45.0f);
+                // Lumens réels : ~300 lux sur le quai, 26 m plus bas (en vrai, une rangée de projecteurs).
+                addLight(("Lumière du " + name).c_str(), {x, 26.0, DockZ}, 2.5e6f, 45.0f);
             }
-            addLight("Lumière de l'entrée", {0.0, 20.0, -35.0}, 300.0f, 40.0f);
-            addLight("Lumière du fond", {0.0, 20.0, 35.0}, 80.0f, 35.0f);
-            addInterior("Intérieur du hangar", {0.0, 15.0, 0.0}, {140.0f, 30.0f, 100.0f}, 1.0f);
+            addLight("Lumière de l'entrée", {0.0, 20.0, -35.0}, 1.5e6f, 40.0f);
+            addLight("Lumière du fond", {0.0, 20.0, 35.0}, 4.0e5f, 35.0f);
+            addInterior("Intérieur du hangar", {0.0, 15.0, 0.0}, {140.0f, 30.0f, 100.0f}, 30.0f);
 
             // Derrière le hangar : un couloir (z 50,4 à 54,4) puis trois pièces de 14 x 12,4 m, sous un même plafond
             // de 3,5 m. Les vides entre les pièces restent fermés.
@@ -409,9 +411,9 @@ namespace Game {
                 addBox(box, decks);
             }
             for (const double x : {-25.0, 0.0, 25.0}) {
-                addLight("Lumière du couloir", {x, Height - 0.3, 52.4}, 8.0f, 14.0f);
+                addLight("Lumière du couloir", {x, Height - 0.3, 52.4}, 5000.0f, 14.0f);
             }
-            addInterior("Intérieur du couloir", {0.0, 0.5 * Height, 52.4}, {80.0f, static_cast<float>(Height), 4.0f}, 1.0f);
+            addInterior("Intérieur du couloir", {0.0, 0.5 * Height, 52.4}, {80.0f, static_cast<float>(Height), 4.0f}, 15.0f);
 
             // Boutiques : un comptoir, une étagère contre le mur du fond, et la place du marchand entre les deux.
             const Math::LinearColor wood = Math::LinearColor::FromSrgb8(120, 85, 55);
@@ -422,13 +424,13 @@ namespace Game {
                 for (const Box& box : {Box{"Comptoir", {x - 4.0, 0.0, 61.8}, {x + 4.0, 1.1, 62.6}, wood},
                                        Box{"Étagère", {x - 6.0, 0.0, 66.6}, {x + 6.0, 2.5, 67.2}, wood},
                                        Box{"Enseigne", {x - 2.0, 2.7, 67.1}, {x + 2.0, 3.2, 67.2},
-                                           Math::LinearColor{1.0f, 0.5f, 0.15f}, 3.0f, false}}) {
+                                           Math::LinearColor{1.0f, 0.5f, 0.15f}, 3000.0f, false}}) {
                     addBox(box, shop);
                 }
                 const Entity merchant = scene.CreateEntity("Place du marchand", shop);
                 scene.Get<TransformComponent>(merchant).position = {x, 0.0, 64.5};
-                addLight(("Lumière de la " + name).c_str(), {x, Height - 0.3, 61.0}, 10.0f, 12.0f);
-                addInterior(("Intérieur de la " + name).c_str(), {x, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 1.0f);
+                addLight(("Lumière de la " + name).c_str(), {x, Height - 0.3, 61.0}, 20000.0f, 12.0f);
+                addInterior(("Intérieur de la " + name).c_str(), {x, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 30.0f);
             }
 
             // Donneur de missions derrière le comptoir de la première boutique (à 1,8 m du client qui s'y accoude), tourné
@@ -469,10 +471,10 @@ namespace Game {
                 const double x = terminals - 4.5 + 3.0 * i;
                 const Entity terminal = scene.CreateEntity("Terminal " + std::to_string(i + 1), room);
                 addBox({"Pied", {x - 0.35, 0.0, 66.6}, {x + 0.35, 1.0, 67.2}, grey(70)}, terminal);
-                addBox({"Écran", {x - 0.45, 1.0, 66.75}, {x + 0.45, 1.6, 66.85}, Math::LinearColor{0.2f, 0.8f, 1.0f}, 2.5f}, terminal);
+                addBox({"Écran", {x - 0.45, 1.0, 66.75}, {x + 0.45, 1.6, 66.85}, Math::LinearColor{0.2f, 0.8f, 1.0f}, 300.0f}, terminal);
             }
-            addLight("Lumière des terminaux", {terminals, Height - 0.3, 61.0}, 10.0f, 12.0f);
-            addInterior("Intérieur des terminaux", {terminals, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 1.0f);
+            addLight("Lumière des terminaux", {terminals, Height - 0.3, 61.0}, 20000.0f, 12.0f);
+            addInterior("Intérieur des terminaux", {terminals, 0.5 * Height, 61.0}, {14.0f, static_cast<float>(Height), 12.4f}, 25.0f);
         }
     }
 

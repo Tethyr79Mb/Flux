@@ -93,13 +93,12 @@ namespace Flux {
             *luminance /= m_preExposures[frameIndex];
         }
         m_luminance = luminance.value_or(0.0f);
-        // Image noire (rien que le fond de l'espace, sans étoile assez claire) : l'exposition reste où elle est.
-        if (!luminance) {
-            return m_exposure;
-        }
-        const float target = Exposure::Target(*luminance, settings);
+        // Image noire : rien au-dessus de la plus basse case de l'histogramme, 7,5 stops sous le gris moyen (le fond de
+        // l'espace après une planète éclairée). L'œil s'ouvre jusqu'à sa limite, et les étoiles apparaissent.
+        const float target = luminance ? Exposure::Target(*luminance, settings) : std::exp2(settings.maximum);
         m_exposure = m_adapted ? Exposure::Adapt(m_exposure, target, seconds, settings) : target;
-        m_adapted = true;
+        // Une scène qui se charge commence souvent noire : la première vraie mesure est encore prise d'un coup.
+        m_adapted = m_adapted || luminance.has_value();
         return m_exposure;
     }
 

@@ -1,6 +1,9 @@
 #include "Flux/Scene/ComponentRegistry.hpp"
 
+#include "Renderer/Photometry.hpp"
+
 #include <algorithm>
+#include <numbers>
 
 namespace Flux {
     void ComponentRegistry::Unregister(std::string_view key) {
@@ -56,7 +59,12 @@ namespace Flux {
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")
             .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}})
             .Field("color", "Couleur", &MeshRendererComponent::color)
-            .Field("emission", "Émission", &MeshRendererComponent::emission, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("luminance", "Lumière propre (cd/m²)", &MeshRendererComponent::luminance, {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
+            // Avant les unités physiques : 1 valait le blanc d'une surface en plein soleil. Pris comme l'émissif des
+            // modèles glTF (1 : 1000 cd/m²), ce que des néons à 25 000 cd/m² auraient ébloui dans un intérieur.
+            .ConvertedField("emission", [](MeshRendererComponent& mesh, double emission) {
+                mesh.luminance = static_cast<float>(emission) * Photometry::NitsPerGltfEmissive;
+            })
             .Field("metallic", "Métal", &MeshRendererComponent::metallic, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("roughness", "Rugosité", &MeshRendererComponent::roughness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<ModelComponent>("model", "Modèle 3D")
@@ -75,7 +83,10 @@ namespace Flux {
             .Enum("type", "Type", &LightComponent::type,
                   {{"point", "Ponctuelle", LightType::Point}, {"spot", "Spot", LightType::Spot}})
             .Field("color", "Couleur", &LightComponent::color, {.alpha = false})
-            .Field("intensity", "Intensité", &LightComponent::intensity, {.speed = 0.05, .min = 0.0, .max = 1.0e4, .decimals = 2})
+            .Field("lumens", "Flux (lumens)", &LightComponent::lumens, {.speed = 10.0, .min = 0.0, .max = 1.0e8, .decimals = 0})
+            // Avant les unités physiques : lumières réglées sur le plein soleil (5 à 1 m), sans rapport avec une vraie
+            // lampe. Pas de conversion : les lampes reprennent une valeur réelle (1600 lm, une ampoule de 100 W).
+            .RemovedField("intensity")
             .Field("range", "Portée (m)", &LightComponent::range, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
             .Field("angle", "Ouverture du spot (°)", &LightComponent::angle, {.speed = 0.5, .min = 1.0, .max = 179.0, .decimals = 1})
             .Field("softness", "Bord du spot adouci", &LightComponent::softness, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
@@ -86,10 +97,18 @@ namespace Flux {
             .Field("length", "Longueur à fond (m)", &ThrusterComponent::length, {.speed = 0.05, .min = 0.01, .max = 1.0e4, .decimals = 2})
             .Field("intensity", "Éclat", &ThrusterComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("idle", "Poussée au ralenti", &ThrusterComponent::idle, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
-            .Field("light", "Lumière à fond", &ThrusterComponent::light, {.speed = 0.05, .min = 0.0, .max = 1.0e4, .decimals = 2});
+            .Field("lightLumens", "Lumière à fond (lumens)", &ThrusterComponent::lightLumens, {.speed = 1.0e4, .min = 0.0, .max = 1.0e10, .decimals = 0})
+            // Avant les unités physiques : intensité d'une lumière affaiblie comme 1 / (1 + d²), 1 valant le plein soleil.
+            .ConvertedField("light", [](ThrusterComponent& thruster, double light) {
+                thruster.lightLumens = static_cast<float>(light * Photometry::LuxPerUnit * 4.0 * std::numbers::pi);
+            });
         registry.Register<SkyComponent>("sky", "Ciel")
             .Asset("image", "Panorama (vide : généré)", &SkyComponent::image, AssetType::Image)
-            .Field("brightness", "Luminosité", &SkyComponent::brightness, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("luminance", "Luminosité du fond (cd/m²)", &SkyComponent::luminance, {.speed = 0.01, .min = 0.0, .max = 1.0e5, .decimals = 3})
+            // Avant les unités physiques : 1 pour le fond par défaut.
+            .ConvertedField("brightness", [](SkyComponent& sky, double brightness) {
+                sky.luminance = static_cast<float>(brightness) * SkyComponent{}.luminance;
+            })
             .Field("ambient", "Lumière ambiante", &SkyComponent::ambient, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("seed", "Graine", &SkyComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
             .Field("nebulaColor", "Nébuleuse", &SkyComponent::nebulaColor, {.alpha = false})
@@ -101,12 +120,19 @@ namespace Flux {
             .Field("sunElevation", "Soleil : hauteur (°)", &SkyComponent::sunElevation, {.speed = 0.5, .min = -90.0, .max = 90.0, .decimals = 1})
             .Field("sunAzimuth", "Soleil : direction (°)", &SkyComponent::sunAzimuth, {.speed = 0.5, .min = -360.0, .max = 360.0, .decimals = 1})
             .Field("sunColor", "Soleil : couleur", &SkyComponent::sunColor, {.alpha = false})
-            .Field("sunIntensity", "Soleil : intensité", &SkyComponent::sunIntensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("sunIlluminance", "Soleil : éclairement (lux)", &SkyComponent::sunIlluminance, {.speed = 100.0, .min = 0.0, .max = 1.0e7, .decimals = 0})
+            .ConvertedField("sunIntensity", [](SkyComponent& sky, double intensity) {
+                sky.sunIlluminance = static_cast<float>(intensity) * Photometry::LuxPerUnit;
+            })
             .Field("sunSize", "Soleil : taille (°)", &SkyComponent::sunSize, {.speed = 0.05, .min = 0.0, .max = 45.0, .decimals = 2})
             .Field("autoExposure", "Exposition automatique", &SkyComponent::autoExposure)
             .Field("exposure", "Exposition : décalage (stops)", &SkyComponent::exposure, {.speed = 0.02, .min = -10.0, .max = 10.0, .decimals = 2})
-            .Field("exposureMin", "Exposition : minimum (stops)", &SkyComponent::exposureMin, {.speed = 0.05, .min = -16.0, .max = 16.0, .decimals = 1})
-            .Field("exposureMax", "Exposition : maximum (stops)", &SkyComponent::exposureMax, {.speed = 0.05, .min = -16.0, .max = 16.0, .decimals = 1})
+            .Field("minEv100", "Exposition : scène la plus sombre (EV100)", &SkyComponent::minEv100, {.speed = 0.05, .min = -10.0, .max = 25.0, .decimals = 1})
+            .Field("maxEv100", "Exposition : scène la plus claire (EV100)", &SkyComponent::maxEv100, {.speed = 0.05, .min = -10.0, .max = 25.0, .decimals = 1})
+            // Bornes en stops autour de l'exposition 1, réglées pour l'ancienne échelle : elles interdisaient les
+            // intérieurs éclairés par de vraies lampes. Les nouvelles bornes par défaut les remplacent.
+            .RemovedField("exposureMin")
+            .RemovedField("exposureMax")
             .Field("adaptationSpeed", "Exposition : vitesse d'adaptation", &SkyComponent::adaptationSpeed,
                    {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2});
         registry.Register<WorldComponent>("world", "Monde")
@@ -117,7 +143,10 @@ namespace Flux {
         registry.Register<SunComponent>("sun", "Soleil")
             .Field("color", "Couleur du disque", &SunComponent::color, {.alpha = false})
             .Field("lightColor", "Couleur de la lumière", &SunComponent::lightColor, {.alpha = false})
-            .Field("intensity", "Intensité", &SunComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("illuminance", "Éclairement (lux)", &SunComponent::illuminance, {.speed = 100.0, .min = 0.0, .max = 1.0e7, .decimals = 0})
+            .ConvertedField("intensity", [](SunComponent& sun, double intensity) {
+                sun.illuminance = static_cast<float>(intensity) * Photometry::LuxPerUnit;
+            })
             .Field("size", "Taille (°)", &SunComponent::size, {.speed = 0.01, .min = 0.0, .max = 45.0, .decimals = 2})
             .Enum("rays", "Rayons", &SunComponent::rays,
                   {{"star", "Étoile", SunRays::Star}, {"streak", "Trait horizontal", SunRays::Streak}, {"none", "Aucun", SunRays::None}});
@@ -203,8 +232,10 @@ namespace Flux {
             .Field("leafTransmission", "Lumière traversante", &VegetationComponent::leafTransmission, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
         registry.Register<InteriorComponent>("interior", "Intérieur")
             .Field("size", "Taille (m)", &InteriorComponent::size, {.speed = 0.01, .min = 0.0, .max = 1.0e4})
-            .Field("ambient", "Lumière ambiante", &InteriorComponent::ambient, {.alpha = false})
-            .Field("intensity", "Intensité", &InteriorComponent::intensity, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("ambient", "Lumière ambiante (couleur)", &InteriorComponent::ambient, {.alpha = false})
+            .Field("luminance", "Lumière ambiante (cd/m²)", &InteriorComponent::luminance, {.speed = 0.1, .min = 0.0, .max = 1.0e5, .decimals = 1})
+            // Avant les unités physiques : réglée sur le plein soleil. Pas de conversion : la valeur réelle par défaut.
+            .RemovedField("intensity")
             .Field("fade", "Fondu aux bords (m)", &InteriorComponent::fade, {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2});
         registry.Register<ColliderComponent>("collider", "Collision")
             .Enum("shape", "Forme", &ColliderComponent::shape,

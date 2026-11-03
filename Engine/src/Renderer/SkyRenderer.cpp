@@ -5,6 +5,7 @@
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Planetology/PlanetRenderer.hpp"
+#include "Renderer/Photometry.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -215,8 +216,10 @@ namespace Flux {
 
     Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene) {
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
-            return {.automatic = sky.autoExposure, .compensation = sky.exposure, .minimum = sky.exposureMin,
-                    .maximum = sky.exposureMax, .speed = sky.adaptationSpeed};
+            // La scène la plus claire donne l'exposition la plus basse.
+            return {.automatic = sky.autoExposure, .compensation = sky.exposure,
+                    .minimum = std::log2(Photometry::ExposureFromEv100(std::max(sky.maxEv100, sky.minEv100))),
+                    .maximum = std::log2(Photometry::ExposureFromEv100(sky.minEv100)), .speed = sky.adaptationSpeed};
         }
         return {};
     }
@@ -253,22 +256,22 @@ namespace Flux {
             }
             break;
         }
-        const auto sunLight = [&](const Math::LinearColor& color, float intensity) {
-            return Math::Vector3f{color.r, color.g, color.b} * std::max(intensity, 0.0f);
+        const auto sunLight = [&](const Math::LinearColor& color, float lux) {
+            return Math::Vector3f{color.r, color.g, color.b} * Photometry::FromLux(std::max(lux, 0.0f));
         };
         // Disque du soleil : son rayon apparent en radians.
         const auto sunRadius = [](float degrees) { return 0.5f * std::clamp(degrees, 0.0f, 45.0f) * RadiansPerDegree; };
         if (!component) {
             // Pas de fond (luminosité nulle) : seulement l'air d'une planète s'il y en a, et le disque d'un Soleil posé.
             lighting.toSun = sunDirection.value_or(SunDirection(DefaultSunElevation, DefaultSunAzimuth));
-            lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : DefaultSunColor;
+            lighting.sunColor = sun ? sunLight(sun->lightColor, sun->illuminance) : DefaultSunColor;
             data.toSun = ToArray(lighting.toSun, sun ? sunRadius(sun->size) : 0.0f);
             data.sunColor = ToArray(lighting.sunColor, preExposure);
         } else {
             const SkyComponent& sky = *component;
             lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
-            lighting.sunColor = sun ? sunLight(sun->lightColor, sun->intensity) : sunLight(sky.sunColor, sky.sunIntensity);
-            const float brightness = std::max(sky.brightness, 0.0f);
+            lighting.sunColor = sun ? sunLight(sun->lightColor, sun->illuminance) : sunLight(sky.sunColor, sky.sunIlluminance);
+            const float brightness = Photometry::FromNits(std::max(sky.luminance, 0.0f));
             lighting.ambient = std::max(sky.ambient, 0.0f) * brightness;
 
             const bool usesPanorama = !sky.image.empty() && !assetsDirectory.empty();
@@ -290,12 +293,21 @@ namespace Flux {
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);
             data.galaxyAxis = ToArray(parameters.galaxyAxis, std::clamp(sky.stars, 0.0f, 1.0f));
-            data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f));
+            // Une étoile occupe un pixel : sa luminance y est grande (Sirius, vue à l'œil : une centaine de cd/m² sur
+            // une minute d'arc). Les plus claires (éclat 5 dans Sky.slang) à 100 cd/m². C'est encore 8 stops sous
+            // une station blanche au soleil, sur laquelle l'exposition se règle : comme sur une photo, plus d'étoiles.
+            // Triche voulue (choix de Bruno, comme Star Citizen semble le faire) : un plancher à l'écran, les plus
+            // claires jamais sous 1,5 après l'exposition (le blanc est vers 1). Sky.slang les efface devant un air
+            // éclairé.
+            constexpr float StarNits = 20.0f;
+            constexpr float StarScreenFloor = 0.3f;
+            const float starScale = std::max(Photometry::FromNits(StarNits), StarScreenFloor / std::max(preExposure, 1.0e-6f));
+            data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f) * starScale);
             data.noiseOffset = ToArray(parameters.noiseOffset, brightness);
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
         // Le disque d'un Soleil posé a sa propre couleur ; sa lumière, la sienne (blanche par défaut).
-        data.discColor = ToArray(sun ? sunLight(sun->color, sun->intensity) : lighting.sunColor, 0.0f);
+        data.discColor = ToArray(sun ? sunLight(sun->color, sun->illuminance) : lighting.sunColor, 0.0f);
         data.options[2] = static_cast<std::uint32_t>(sun ? sun->rays : SunRays::Star);
         lighting.atmosphere = PrepareAtmosphere(scene, camera, lighting.sunColor);
         data.atmosphere = lighting.atmosphere;

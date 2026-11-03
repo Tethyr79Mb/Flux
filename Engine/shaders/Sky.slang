@@ -246,10 +246,9 @@ TableOutput airTableFragment(float4 position : SV_Position)
     return output;
 }
 
-// Force de l'effacement des étoiles et de la nébuleuse par la lumière de l'air (voir fragmentMain). Planète par défaut :
-// au zénith, l'air vaut 0,12 avec le soleil à 45°, 0,06 au coucher, 0,03 à -15°. À 60, il reste 0,07 % du fond en
-// plein jour (20 : 8 %, étoiles encore bien visibles), 2,5 % au coucher, 15 % à -15° : elles reviennent à la nuit.
-static const float SkyDaylightFade = 60.0;
+// Effacement des étoiles par l'air éclairé, d'après sa clarté à l'écran : un ciel au gris moyen (0,18) n'en laisse
+// que 1 %, un ciel 20 fois plus sombre (crépuscule) les trois quarts.
+static const float StarDaylightFade = 25.0;
 
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
@@ -259,6 +258,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     const float pixelAngle = s.forward.w;
 
     float3 color;
+    float3 stars = float3(0.0);
     if (s.options.y != 0) {
         // Mip choisi d'après l'écart entre pixels voisins ; u fait le tour : sans correction, l'écart d'un bord à
         // l'autre de l'image prendrait le plus petit mip (une ligne floue verticale).
@@ -267,12 +267,13 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         float2 dy = ddy(uv);
         dx.x -= round(dx.x);
         dy.x -= round(dy.x);
-        color = panorama.SampleGrad(uv, dx, dy).rgb;
+        color = panorama.SampleGrad(uv, dx, dy).rgb * s.noiseOffset.w;
     } else {
-        color = background.SampleLevel(direction, 0.0).rgb
-              + Stars(direction, pixelAngle, s.options.x, s.galaxyAxis.w, s.galaxyCenter.w);
+        // Les étoiles ont leur propre éclat (galaxyCenter.w, déjà dans l'unité de lumière, avec un plancher à
+        // l'écran : SkyRenderer::Prepare).
+        color = background.SampleLevel(direction, 0.0).rgb * s.noiseOffset.w;
+        stars = Stars(direction, pixelAngle, s.options.x, s.galaxyAxis.w, s.galaxyCenter.w);
     }
-    color *= s.noiseOffset.w;
 
     if (HasAtmosphere(s.atmosphere)) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
@@ -293,12 +294,15 @@ float4 fragmentMain(VertexOutput input) : SV_Target
             scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
                                           transmittance);
         }
-        // Le jour, l'air éclairé est bien plus lumineux que les étoiles et la nébuleuse : l'œil ne les voit plus. Elles
-        // s'effacent d'après la lumière de l'air dans cette direction, donc en douceur à la descente et au couchant,
-        // et reviennent la nuit.
-        const float daylight = dot(scattered, float3(0.2126, 0.7152, 0.0722));
-        color *= exp(-daylight * SkyDaylightFade);
-        color = (distance < 1.0e30 ? float3(0.0) : color * transmittance) + scattered;
+        // Le jour, l'air éclairé (des milliers de cd/m²) noie la nébuleuse (moins d'une) d'elle-même. Les étoiles,
+        // avec leur plancher à l'écran, s'effacent d'après la clarté de l'air À L'ÉCRAN (après la pré-exposition) :
+        // ciel de jour et halo d'une planète éclairée les cachent, la nuit et le noir de l'espace les montrent,
+        // quelle que soit la densité de l'atmosphère.
+        const float airOnScreen = dot(scattered, float3(0.2126, 0.7152, 0.0722)) * s.sunColor.w;
+        stars *= exp(-airOnScreen * StarDaylightFade);
+        color = (distance < 1.0e30 ? float3(0.0) : (color + stars) * transmittance) + scattered;
+    } else {
+        color += stars;
     }
     return float4(min(color * s.sunColor.w, float3(60000.0)), 1.0); // pré-exposition (Radiance dans Mesh.slang)
 }

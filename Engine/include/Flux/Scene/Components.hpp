@@ -62,9 +62,10 @@ namespace Flux {
     {
         MeshType mesh = MeshType::Cube;
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
-        // Lumière propre de la surface (écran, voyant, néon), ajoutée à l'éclairage : couleur x émission. 0 : aucune.
-        // N'éclaire pas les objets voisins (il faut une lumière pour cela).
-        float emission = 0.0f;
+        // Lumière propre de la surface (écran, voyant, néon), ajoutée à l'éclairage : couleur x luminance, en cd/m²
+        // (un écran 200 à 1000, un néon 5000 à 20 000). 0 : aucune. N'éclaire pas les objets voisins (il faut une
+        // lumière pour cela).
+        float luminance = 0.0f;
         // Surface : 0 plastique, peinture, bois ; 1 métal nu (sa couleur teinte ses reflets).
         float metallic = 0.0f;
         // 0 : lisse, reflets nets comme un miroir ; 1 : mate, reflets étalés.
@@ -104,14 +105,17 @@ namespace Flux {
         Spot,  // dans un cône, vers le -z de l'entité (projecteur, lampe de plafond)
     };
 
-    // Lumière placée dans la scène : éclaire les maillages à moins de `range` mètres, en s'affaiblissant avec la
-    // distance jusqu'à s'éteindre à `range`. Ne fait pas d'ombre : elle traverse les murs (réglez la portée).
+    // Lumière placée dans la scène : éclaire les maillages à moins de `range` mètres, en s'affaiblissant comme le carré
+    // de la distance, puis en s'éteignant en douceur à `range`. Ne fait pas d'ombre : elle traverse les murs (réglez
+    // la portée).
     struct LightComponent
     {
         LightType type = LightType::Point;
         Math::LinearColor color{1.0f, 1.0f, 1.0f};
-        // Éclairement d'une surface face à la lumière à 1 m : intensity / 2 (1 : le plein soleil) ; à 2 m, intensity / 5.
-        float intensity = 5.0f;
+        // Flux lumineux, en lumens : ampoule de 100 W 1600, néon de bureau 3000, projecteur de hangar 100 000 et plus.
+        // Éclairement face à elle : lumens / (4π d²) lux à d mètres (1600 lm : 127 lux à 1 m, 32 à 2 m). Un spot
+        // garde l'éclat de la même ampoule nue, quelle que soit son ouverture.
+        float lumens = 1600.0f;
         float range = 10.0f;     // mètres
         float angle = 60.0f;     // spot : ouverture totale du cône, en degrés
         float softness = 0.25f;  // spot : part du bord du cône qui s'estompe (0 : bord net, 1 : fondu depuis l'axe)
@@ -143,7 +147,10 @@ namespace Flux {
     {
         // Panorama (image 2:1, projection équirectangulaire) relatif aux assets ; vide : ciel généré.
         std::string image;
-        float brightness = 1.0f; // du fond comme de la lumière qu'il donne
+        // Luminance du fond (le blanc du panorama, ou la nébuleuse générée), en cd/m², comme celle de la lumière qu'il
+        // donne. Le vrai ciel de nuit est bien plus sombre (0,001) : 20, avec l'exposition qui s'arrête à EV100 3, le
+        // montre comme avant les unités physiques dans le noir de l'espace, et une planète éclairée en vue l'efface.
+        float luminance = 20.0f;
         // Lumière ambiante et reflets : multiplie ce que le ciel éclaire (un ciel sombre éclaire peu).
         float ambient = 3.0f;
         // Ciel généré : le même pour une même graine.
@@ -158,14 +165,16 @@ namespace Flux {
         float sunElevation = 63.0f;
         float sunAzimuth = 53.0f;
         Math::LinearColor sunColor{1.0f, 0.96f, 0.9f};
-        float sunIntensity = 1.45f; // éclairement d'une surface face au soleil (1 : le blanc d'une surface blanche)
+        float sunIlluminance = 116000.0f; // lux, sur une surface face au soleil (le Soleil vu de la Terre : 100 000 à 120 000)
         float sunSize = 1.5f;       // diamètre apparent du disque, en degrés
-        // Exposition, en stops (chacun double ou divise par deux la lumière de l'image). Automatique : l'image
-        // s'éclaircit dans le noir et s'assombrit face au soleil, comme l'œil, entre ses bornes.
+        // Exposition. Automatique : l'image s'éclaircit dans le noir et s'assombrit face au soleil, comme l'œil, entre
+        // ses bornes en EV100 (plein soleil 15, ciel couvert 12, intérieur éclairé 7, pleine lune -2).
         bool autoExposure = true;
-        float exposure = 0.0f;    // décalage de l'exposition automatique ; sans elle, exposition fixe 2^exposure
-        float exposureMin = -4.0f;
-        float exposureMax = 1.0f;
+        float exposure = 0.0f;  // décalage de l'exposition automatique, en stops ; sans elle, réglage fixe : EV100 = 14,4 - exposure
+        // Scène la plus sombre suivie (au-delà, l'image s'assombrit). Plus bas, dans le noir de l'espace, l'exposition
+        // s'ouvrait tant que le reflet d'une verrière voilait tout l'écran.
+        float minEv100 = 3.0f;
+        float maxEv100 = 17.0f; // scène la plus claire suivie (au-delà, l'image se brûle)
         float adaptationSpeed = 3.0f; // par seconde, vers plus clair (3 : presque fini en une seconde) ; 3 fois moins vite vers plus sombre
     };
 
@@ -196,7 +205,7 @@ namespace Flux {
     {
         Math::LinearColor color{1.0f, 0.96f, 0.9f};    // couleur du disque vu dans le ciel
         Math::LinearColor lightColor{1.0f, 1.0f, 1.0f}; // couleur de la lumière (blanche, comme celle du Soleil)
-        float intensity = 1.45f; // éclairement d'une surface face à lui (1 : le blanc d'une surface blanche)
+        float illuminance = 116000.0f; // lux, sur une surface face à lui (le Soleil vu de la Terre : 100 000 à 120 000)
         float size = 0.53f;      // diamètre apparent du disque, en degrés (le Soleil vu de la Terre)
         SunRays rays = SunRays::Star;
     };
@@ -317,8 +326,8 @@ namespace Flux {
     struct InteriorComponent
     {
         Math::Vector3f size{2.0f, 2.5f, 4.0f}; // mètres, multipliés par l'échelle de l'entité
-        Math::LinearColor ambient{0.25f, 0.25f, 0.27f};
-        float intensity = 1.0f;
+        Math::LinearColor ambient{1.0f, 1.0f, 1.05f};
+        float luminance = 30.0f; // cd/m², des murs autour (éclairés à 300 lux, comme un bureau : 50 ; un couloir : 10 à 20)
         float fade = 0.5f;
     };
 
@@ -336,7 +345,7 @@ namespace Flux {
         float intensity = 1.0f;  // éclat de la flamme
         // Poussée montrée quand les moteurs sont coupés (dans l'éditeur, vaisseau sans pilote) ; 0 : flamme éteinte.
         float idle = 0.15f;
-        float light = 8.0f;      // intensité de la lumière jetée autour à pleine poussée (0 : aucune)
+        float lightLumens = 8.0e6f; // flux de la lumière jetée autour à pleine poussée, en lumens (0 : aucune)
     };
 
     enum class ColliderShape : std::uint8_t {

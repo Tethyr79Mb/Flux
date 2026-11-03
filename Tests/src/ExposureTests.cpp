@@ -7,6 +7,7 @@
 #include "Flux/Renderer/RHI/RHI.hpp"
 #include "Renderer/Exposure.hpp"
 #include "Renderer/ExposureRenderer.hpp"
+#include "Renderer/Photometry.hpp"
 #include "Renderer/ToneCurve.hpp"
 
 #include <cmath>
@@ -66,6 +67,15 @@ bool RunExposureTests() {
     const float brighter = Exposure::Adapt(1.0f, 0.25f, 0.1f, settings);
     CHECK(darker > 1.0f && brighter < 1.0f && std::log2(darker) < -std::log2(brighter) * 0.5f);
     CHECK(NearStops(Exposure::Adapt(0.5f, 0.5f, 0.1f, settings), 0.5f, 0.0001f));
+
+    // Unités physiques : le soleil d'avant (1,45) vaut 116 000 lux ; 1600 lumens éclairent de 127 lux à 1 m ;
+    // l'exposition 1 est celle d'un appareil réglé à EV100 14,4, chaque EV de plus la divise par deux.
+    CHECK(std::abs(Photometry::FromLux(116000.0f) - 1.45f) < 1.0e-5f);
+    CHECK(std::abs(Photometry::FromLumens(1600.0f) * Photometry::LuxPerUnit - 127.32f) < 0.01f);
+    CHECK(NearStops(Photometry::ExposureFromEv100(14.373f), 1.0f, 0.001f));
+    CHECK(NearStops(Photometry::ExposureFromEv100(15.373f), 0.5f, 0.001f));
+    // Une surface blanche au plein soleil (EV100 15) reste sous le blanc de la courbe de tons.
+    CHECK(Photometry::FromLux(116000.0f) * Photometry::ExposureFromEv100(15.0f) < 1.0f);
 
     // AgX : noir reste noir, gris moyen à 0,17 (ACES avant lui : 0,14), blanc pur jamais atteint.
     const Math::LinearColor black = ToneCurve::ToneMap({0.0f, 0.0f, 0.0f}, 1.0f);
@@ -133,13 +143,14 @@ bool RunExposureGpuTests() {
     CHECK(NearStops((*exposure)->GetLuminance(), luminance, HalfBin + 0.01f));
     // Sans nouvelle mesure, l'exposition ne bouge pas.
     CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), steady, 0.0001f));
-    // Image noire (le fond de l'espace) : rien de mesurable, l'exposition reste.
+    // Image noire (le fond de l'espace) : rien de mesurable, l'œil s'ouvre vers sa limite, doucement.
     CHECK(measure({0.0f, 0.0f, 0.0f}));
-    CHECK(NearStops((*exposure)->Update(settings, 0.016f, false, 0), steady, 0.0001f));
+    const float opening = (*exposure)->Update(settings, 0.016f, false, 0);
+    CHECK(opening > steady && opening < std::exp2(settings.maximum));
     CHECK((*exposure)->GetLuminance() == 0.0f);
-    // Image plus sombre : l'exposition monte, doucement.
+    // Image plus sombre : l'exposition monte encore.
     CHECK(measure({0.05f, 0.05f, 0.05f}));
     const float adapting = (*exposure)->Update(settings, 0.016f, false, 0);
-    CHECK(adapting > steady && adapting < 0.18f / 0.05f);
+    CHECK(adapting > opening && adapting < 0.18f / 0.05f);
     return true;
 }

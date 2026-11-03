@@ -213,7 +213,8 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    primitive), et les lots du même pipeline et de la même page de géométrie partent ensemble dans un seul
    `DrawIndexedIndirect` (une commande par lot, le matériau de chaque objet lu par indice dans la table) ; les lots opaques passent dans l'ordre de leur objet
    le plus proche (ce qu'ils cachent échoue au test de profondeur avant d'être éclairé). Les transparents restent un
-   appel par objet, dans leur ordre.
+   appel par objet, dans leur ordre, en mélange prémultiplié ; un transparent lisse (rugosité 0,2 au plus) est un
+   verre : ni couleur diffuse ni lumière peinte, seulement ses reflets entiers, et le fond assombri de son alpha.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé, entités cachées écartées
    (`OcclusionCulling`, `Culling.slang`) : chaque entité des lots opaques et transparents (ou chaque bloc d'un grand
    modèle) est comparée, là où elle était à l'image précédente (`previousWorld`), à la pyramide de la profondeur de
@@ -282,6 +283,14 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    `Mesh.slang`, `SkyData::sunColor.w`, constantes des flammes et traçantes), connue du CPU avant le dessin. La scène
    arrive déjà exposée (gris moyen vers 0,18), loin du plafond des 16 bits même avec des lumières physiques ; les
    historiques (anticrénelage, nuages, FSR) sont ramenés par le rapport à l'exposition de l'image précédente.
+   Unités physiques (`Renderer/Photometry.hpp`) : les composants parlent en lux (soleil), lumens (lampes, réacteurs),
+   cd/m² (fond du ciel, émissifs, ambiance des intérieurs) et EV100 (bornes de l'exposition) ; le CPU les convertit une
+   fois dans l'unité des shaders (1 = 80 000 lux, l'échelle d'avant), qui garde la précision des textures 16 bits non
+   pré-exposées (environnement, tables de l'atmosphère). Lampes en 1/d² (au moins 10 cm) avec le fondu de Karis à la
+   portée. Les étoiles ont un éclat minimum à l'écran (sinon une station au soleil, sur laquelle l'exposition se règle,
+   les effaçait) et s'effacent d'après la clarté de l'air à l'écran (ciel de jour, halo) ; image sans rien de
+   mesurable : l'œil s'ouvre jusqu'à sa borne. La lumière de contour, un effet,
+   est divisée par la pré-exposition : la même à l'écran partout.
 
 Shaders : `Engine/shaders/*.slang`, compilés en SPIR-V par CMake (`slangc`). Les données par image et par objet passent
 par des buffers de stockage (`FrameData`, `DrawData`) ; leurs structures C++ et Slang doivent rester identiques

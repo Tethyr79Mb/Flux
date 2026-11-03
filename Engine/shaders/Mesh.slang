@@ -637,8 +637,8 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
 
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
 // le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
-// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km. objectShadows faux (verres) : le relief seul.
-float SunVisibility(float3 worldPosition, float3 normal, float sunFacing, bool objectShadows = true)
+// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km.
+float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
@@ -647,7 +647,7 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing, bool o
         ++cascade;
     }
     const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
-    if (cascade >= 4 || !objectShadows) {
+    if (cascade >= 4) {
         return terrain;
     }
     float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
@@ -756,9 +756,10 @@ float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, f
     return (s.diffuse * diffuseLight + specular * specularLight) * occlusion;
 }
 
-// Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots). Affaiblies comme 1 / (1 + d²)
-// (d en mètres : la moitié à 1 m, sans l'infini d'une vraie source ponctuelle collée à la surface), puis éteintes en
-// douceur à leur portée.
+// Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots) : leur intensité (l'éclairement à
+// 1 m, LightComponent::lumens) divisée par le carré de la distance, comme une vraie ampoule, sans descendre sous
+// 10 cm (la taille d'une ampoule : pas d'infini contre la surface), puis éteinte en douceur à leur portée (le fondu
+// de Karis, Unreal 2013).
 float3 SceneLights(float3 worldPosition, Surface s)
 {
     float3 sum = float3(0.0);
@@ -778,7 +779,7 @@ float3 SceneLights(float3 worldPosition, Surface s)
         }
         const float ratio = distanceSquared / (range * range);
         const float window = saturate(1.0 - ratio * ratio);
-        float attenuation = window * window / (1.0 + distanceSquared);
+        float attenuation = window * window / max(distanceSquared, 0.01);
         if (light.color.w > 0.5) {
             // Spot : plein dans le cœur du cône, fondu vers son bord.
             const float cosine = dot(-direction, light.direction.xyz);
@@ -827,12 +828,12 @@ float3 Radiance(float3 color)
 // intérieur, lumières de la scène. inside : poids du volume intérieur où elle se trouve.
 // Albédo moyen du sol des planètes, pour la lumière qu'il renvoie (herbe, roche et terre autour de 0,15 à 0,3).
 static const float GroundBounceAlbedo = 0.2;
+// Rugosité au-dessous de laquelle un transparent est un verre (MeshColor) ; plus rugueux, il diffuse (fumée, plastique dépoli).
+static const float GlassRoughness = 0.2;
 
 // foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
-// objectShadows faux pour les transparents : un verre laisse passer la lumière, l'ombre d'un objet proche (la tête du
-// pilote sur la verrière) y dessinait une silhouette sombre ; il garde l'ombre du relief.
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
-                    bool foliage = false, float2 leaves = float2(0.0), bool objectShadows = true)
+                    bool foliage = false, float2 leaves = float2(0.0))
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
@@ -842,7 +843,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         geometryNormal = -geometryNormal; // décalage de la lecture vers le soleil, comme pour la face éclairée
         sunFacing = -sunFacing;
     }
-    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing, objectShadows) * clouds : 0.0;
+    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
@@ -1583,7 +1584,7 @@ float4 fragmentOcean(OceanVertexOutput input) : SV_Target
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
     const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
-    return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), alpha);
+    return float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié
 }
 
 // Matériau à seuil d'alpha (feuillage, grillage) et transparents : les pixels sous le seuil sont jetés.
@@ -1666,12 +1667,21 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     if (foliage) {
         surface.roughness = max(surface.roughness, 0.7); // reflet du ciel flou : vu rasant, il blanchissait aussi
     }
+    // Verre : un transparent lisse (verrière, hublot). Il ne diffuse presque rien : sa couleur de base peinte sur 30 %
+    // de la surface, éclairée par le soleil, voilait l'écran plus fort que tout ce qu'on voyait à travers (et réglait
+    // l'exposition sur elle). Il ne garde que ses reflets (soleil, ciel, lampes), entiers quel que soit son alpha,
+    // et assombrit le fond de son alpha (mélange prémultiplié, comme le mode « transparent » de Filament). Une ombre
+    // n'y efface que le reflet du soleil : plus de silhouette du pilote peinte sur la verrière.
+    const bool transparent = params.transparent != 0;
+    const bool glass = transparent && surface.roughness <= GlassRoughness;
+    if (glass) {
+        surface.diffuse = float3(0.0);
+    }
     const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
-                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw,
-                             params.transparent == 0);
+                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
     const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
     if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
         lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
@@ -1682,8 +1692,13 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     if (rim.w > 0.0 && inside < 1.0) {
         lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
     }
-    lit = airGiven ? lit * airTransmittance + airScattered : ThroughAir(lit, input.worldPosition);
-    return float4(Radiance(lit), params.transparent != 0 ? base.a : 1.0);
+    // Mélange prémultiplié (transparents) : la lumière de la surface pèse son alpha, sauf les reflets d'un verre ;
+    // l'air devant elle aussi (derrière, le fond a déjà le sien).
+    const float alpha = transparent ? base.a : 1.0;
+    float3 transmittance = airTransmittance;
+    const float3 scattered = airGiven ? airScattered : AirTo(input.worldPosition, transmittance);
+    lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
+    return float4(Radiance(lit), alpha);
 }
 
 // Cartes d'ombres : la position vue du soleil (cascade params.cascade), et l'image seulement pour le seuil d'alpha.

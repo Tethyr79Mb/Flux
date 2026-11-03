@@ -108,10 +108,10 @@ bool RunSceneMergeTests() {
     {
         Scene target;
         CHECK(Copy(target, components, text));
-        target.Get<LightComponent>(target.FindById(sunId)).intensity = 2.0f;
+        target.Get<LightComponent>(target.FindById(sunId)).lumens = 2000.0f;
         CHECK(SceneMerge::ApplyChanges(target, base, base, components).empty());
         CHECK(SceneSerializer::SaveToString(target, components) != text);
-        CHECK(target.Get<LightComponent>(target.FindById(sunId)).intensity == 2.0f);
+        CHECK(target.Get<LightComponent>(target.FindById(sunId)).lumens == 2000.0f);
         CHECK(target.GetEntityCount() == start.GetEntityCount());
     }
     return true;

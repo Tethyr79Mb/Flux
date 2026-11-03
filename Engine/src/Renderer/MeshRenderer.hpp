@@ -504,6 +504,7 @@ namespace Flux {
         std::vector<PreparedInterior> m_interiors;
         std::vector<ThrusterDraw> m_thrusters;
         bool m_thrusterPreview = false;
+        float m_rimScale = 1.0f; // 1 / pré-exposition de l'image en cours (lumière de contour)
         std::vector<Planetology::PlanetRenderer::Tile> m_planetTiles;
         std::vector<Planetology::PlanetRenderer::Plain> m_plains;
         const VegetationComponent* m_vegetationComponent = nullptr; // de la planète à arbres de l'image

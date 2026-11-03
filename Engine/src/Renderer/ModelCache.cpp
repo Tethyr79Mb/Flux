@@ -3,6 +3,7 @@
 #include "Flux/Assets/Image.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Renderer/Photometry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -452,7 +453,10 @@ namespace Flux {
             const ModelMaterial& source = data.materials[m];
             GpuMaterial material;
             material.baseColor = source.baseColor;
-            material.emissive = source.emissive;
+            // Émissif glTF : 1 vaut NitsPerGltfEmissive cd/m².
+            constexpr float Emissive = Photometry::FromNits(Photometry::NitsPerGltfEmissive);
+            material.emissive = {source.emissive.r * Emissive, source.emissive.g * Emissive, source.emissive.b * Emissive,
+                                 source.emissive.a};
             material.metallic = source.metallic;
             material.roughness = source.roughness;
             material.alphaCutoff = source.alphaCutoff;
