@@ -262,12 +262,13 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         float2 dy = ddy(uv);
         dx.x -= round(dx.x);
         dy.x -= round(dy.x);
-        color = panorama.SampleGrad(uv, dx, dy).rgb;
+        color = panorama.SampleGrad(uv, dx, dy).rgb * s.noiseOffset.w;
     } else {
-        color = background.SampleLevel(direction, 0.0).rgb
+        // Les étoiles ont leur propre éclat (galaxyCenter.w, déjà dans l'unité de lumière) : ponctuelles, bien plus
+        // lumineuses au pixel que la nébuleuse étalée.
+        color = background.SampleLevel(direction, 0.0).rgb * s.noiseOffset.w
               + Stars(direction, pixelAngle, s.options.x, s.galaxyAxis.w, s.galaxyCenter.w);
     }
-    color *= s.noiseOffset.w;
 
     if (HasAtmosphere(s.atmosphere)) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
