@@ -332,12 +332,13 @@ namespace Flux {
             data.galaxyCenter = ToArray(parameters.galaxyCenter, std::max(sky.starBrightness, 0.0f) * starScale);
             // Triche voulue (choix de Bruno, comme pour les étoiles) : les nébuleuses, vraies, sont trop faibles pour
             // l'œil réglé sur une station éclairée ; le fond garde un plancher à l'écran (les plus claires vers 0,1
-            // après l'exposition). Le fond seul : la lumière ambiante du ciel (lighting.ambient) reste réelle. Pas de
-            // boucle avec l'exposition : dans l'espace le ciel n'est pas mesuré, et sur une planète il reste sous le
-            // gris moyen.
+            // après l'exposition avec la luminance par défaut), proportionnel à la luminance réglée : elle reste le
+            // réglage de l'éclat du fond. Le fond seul : la lumière ambiante du ciel (lighting.ambient) reste réelle.
+            // Pas de boucle avec l'exposition : dans l'espace le ciel n'est pas mesuré, et sur une planète il reste
+            // sous le gris moyen.
             constexpr float BackgroundScreenFloor = 0.3f;
-            data.noiseOffset = ToArray(parameters.noiseOffset,
-                                       std::max(brightness, BackgroundScreenFloor / std::max(preExposure, 1.0e-6f)));
+            const float floor = BackgroundScreenFloor * std::max(sky.luminance, 0.0f) / SkyComponent{}.luminance;
+            data.noiseOffset = ToArray(parameters.noiseOffset, std::max(brightness, floor / std::max(preExposure, 1.0e-6f)));
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
         // Le disque d'un Soleil posé a sa propre couleur ; sa lumière, la sienne (blanche par défaut).
