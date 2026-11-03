@@ -25,6 +25,7 @@ namespace Flux {
         float sharpness = DefaultSharpness; // netteté ajoutée par FSR, 0 à 1
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
+        bool bloom = true;
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)
     };

@@ -785,6 +785,11 @@ namespace FluxEditor {
             m_hoveredAxis = -1;
             m_screenRects.clear();
             ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max, engine.GetScreenUiOptions());
+            // Menu du projet (Échap) : comme dans le jeu, par-dessus les interfaces de la scène, découpé à la vue.
+            UI::DrawList& overlay = engine.GetRenderer().GetOverlay();
+            overlay.SetClipRect(view.min, view.max);
+            engine.DrawProjectMenu(overlay, view.min, view.max);
+            overlay.ResetClipRect();
             return;
         }
 

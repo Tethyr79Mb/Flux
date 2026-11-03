@@ -549,6 +549,34 @@ namespace {
         const Interface::Element* loadedArea = Interface::Find(*loaded, areaId);
         CHECK(loadedArea && loadedArea->type == Interface::ElementType::ScrollArea && loadedArea->scrollbarWidth == 16.0f
               && loadedArea->scroll == 0.0f && loadedArea->children.size() == 2);
+
+        // Page d'onglets qui défile (menu Options) : ascenseur, et la molette la fait défiler.
+        Interface::Document withTabs;
+        Interface::Element tabs = Interface::MakeElement(withTabs, Interface::ElementType::Tabs);
+        tabs.anchor = Interface::Anchor::TopLeft;
+        tabs.size = {400.0f, 340.0f};
+        tabs.titleHeight = 40.0f; // page de 300
+        Interface::Element page = Interface::MakeElement(withTabs, Interface::ElementType::ScrollArea);
+        page.anchor = Interface::Anchor::Stretch;
+        page.position = {0.0f, 0.0f};
+        page.size = {0.0f, 0.0f};
+        Interface::Element tall = Interface::MakeElement(withTabs, Interface::ElementType::Button);
+        tall.anchor = Interface::Anchor::TopLeft;
+        tall.size = {200.0f, 500.0f};
+        const std::uint32_t pageId = page.id;
+        const std::uint32_t tallId = tall.id;
+        page.children.push_back(tall);
+        tabs.children.push_back(page);
+        withTabs.roots = {tabs};
+        const auto placedIn = [&](std::uint32_t id) {
+            const std::vector<Interface::Placed> all = Interface::Arrange(withTabs, min, max);
+            const auto found = std::ranges::find_if(all, [id](const Interface::Placed& item) { return item.element->id == id; });
+            return found == all.end() ? Interface::Placed{} : *found;
+        };
+        CHECK(std::abs(placedIn(pageId).scrollRange - 200.0f) < 0.01f);
+        Interface::Interaction tabsInteraction;
+        Interface::Update(withTabs, tabsInteraction, min, max, {.position = {100.0f, 200.0f}, .wheel = -1.0f});
+        CHECK(Interface::Find(withTabs, pageId)->scroll == 60.0f && Near(placedIn(tallId).rect.min, {0.0f, -20.0f}));
         return true;
     }
 }

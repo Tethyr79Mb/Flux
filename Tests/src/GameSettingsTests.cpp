@@ -17,11 +17,12 @@ bool RunGameSettingsTests() {
     changed.upscaling = Upscaling::FsrPerformance;
     changed.sharpness = 0.8f;
     changed.volume = 0.25f;
+    changed.bloom = false;
     changed.showEngineStats = false;
     const auto reread = GameSettingsFile::Parse(GameSettingsFile::ToString(changed));
     CHECK(reread.has_value());
     CHECK(reread->windowSize.x == 1920 && reread->windowSize.y == 1080 && reread->maximized && reread->fullscreen);
-    CHECK(!reread->vsync && !reread->temporalAA && reread->volume == 0.25f && !reread->showEngineStats);
+    CHECK(!reread->vsync && !reread->temporalAA && reread->volume == 0.25f && !reread->showEngineStats && !reread->bloom);
     CHECK(reread->groundDetail == GroundDetail::Ultra);
     CHECK(reread->cloudQuality == CloudQuality::Low);
     CHECK(reread->upscaling == Upscaling::FsrPerformance && reread->sharpness == 0.8f);

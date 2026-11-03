@@ -88,6 +88,7 @@ namespace Flux::GameSettingsFile {
                 warnings->push_back("« upscaling » ignoré (valeur non valide)");
             }
         }
+        Read(document, "bloom", settings.bloom, IsBool, warnings);
         Read(document, "sharpness", settings.sharpness, IsNumber, warnings);
         settings.sharpness = std::clamp(settings.sharpness, 0.0f, 1.0f);
         Read(document, "volume", settings.volume, IsNumber, warnings);
@@ -108,6 +109,7 @@ namespace Flux::GameSettingsFile {
         document["cloudQuality"] = CloudQualityKeys[static_cast<std::size_t>(settings.cloudQuality)];
         document["upscaling"] = UpscalingKeys[static_cast<std::size_t>(settings.upscaling)];
         document["sharpness"] = std::round(settings.sharpness * 100.0) / 100.0;
+        document["bloom"] = settings.bloom;
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;
         return document.dump(2) + "\n";

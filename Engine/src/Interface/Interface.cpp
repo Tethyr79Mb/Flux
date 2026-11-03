@@ -210,6 +210,8 @@ namespace Flux::Interface {
 
         void ArrangeChildren(const std::vector<Element>& elements, const Rect& parent, const Rect& clip, std::uint32_t parentId,
                              int depth, float scale, std::uint32_t reveal, std::vector<Placed>& out);
+        void ArrangeScrollArea(const Element& area, const Rect& rect, const Rect& clip, int depth, float scale,
+                               std::uint32_t reveal, std::vector<Placed>& out);
 
         // Onglets : seule la page affichée est placée, sous la barre ; ou celle qui contient l'élément montré par
         // l'éditeur (reveal), sans changer le document.
@@ -228,7 +230,13 @@ namespace Flux::Interface {
             const Rect pageRect = Arrange(page, content, scale);
             const Rect pageClip = Intersect(clip, content);
             out.push_back({&page, pageRect, content, pageClip, tabs.id, depth + 1});
-            if (!page.children.empty()) {
+            if (page.children.empty()) {
+                return;
+            }
+            // Une page peut défiler (menu Options : plus de réglages que de place).
+            if (page.type == ElementType::ScrollArea) {
+                ArrangeScrollArea(page, pageRect, Intersect(pageClip, pageRect), depth + 1, scale, reveal, out);
+            } else {
                 ArrangeChildren(page.children, pageRect, Intersect(pageClip, pageRect), page.id, depth + 2, scale, reveal, out);
             }
         }
