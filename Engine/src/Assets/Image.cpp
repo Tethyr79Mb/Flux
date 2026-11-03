@@ -9,6 +9,8 @@
 // Déclarations seules : l'implémentation est dans StbImage.c.
 #define STBI_NO_STDIO
 #include <stb_image.h>
+#define STBI_WRITE_NO_STDIO
+#include <stb_image_write.h>
 
 namespace Flux {
     std::expected<ImageData, std::string> LoadImageMemory(std::span<const std::uint8_t> bytes) {
@@ -52,5 +54,20 @@ namespace Flux {
             return std::unexpected("« " + Platform::ToUtf8(path.filename()) + " » : " + image.error());
         }
         return image;
+    }
+
+    std::vector<std::uint8_t> EncodePng(const ImageData& image) {
+        std::vector<std::uint8_t> png;
+        if (image.size.x <= 0 || image.size.y <= 0
+            || image.rgba.size() != static_cast<std::size_t>(image.size.x) * static_cast<std::size_t>(image.size.y) * 4) {
+            return png;
+        }
+        const auto append = [](void* context, void* data, int size) {
+            auto& out = *static_cast<std::vector<std::uint8_t>*>(context);
+            const auto* bytes = static_cast<const std::uint8_t*>(data);
+            out.insert(out.end(), bytes, bytes + size);
+        };
+        stbi_write_png_to_func(append, &png, image.size.x, image.size.y, 4, image.rgba.data(), image.size.x * 4);
+        return png;
     }
 }

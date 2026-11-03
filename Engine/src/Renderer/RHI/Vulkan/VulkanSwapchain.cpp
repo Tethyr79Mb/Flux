@@ -22,11 +22,17 @@ namespace Flux::Vk {
             builder.set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
                    .add_fallback_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR);
         }
+        // Copiée vers la mémoire du CPU pour une capture d'écran (outil MCP de l'éditeur), si la surface le permet
+        // (tous les pilotes de bureau) : sans effet sur le dessin.
+        VkSurfaceCapabilitiesKHR capabilities{};
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_device.GetPhysicalDevice(), m_device.GetSurface(), &capabilities);
+        m_copyable = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
         auto swapchain = builder
             // Couleurs écrites en linéaire, converties en sRGB par le matériel.
             .set_desired_format({VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
             .set_desired_extent(extent.width, extent.height)
-            .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                                   | (m_copyable ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0))
             .set_old_swapchain(m_swapchain)
             .build();
         if (!swapchain) {

@@ -22,6 +22,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <initializer_list>
 #include <iterator>
 #include <numbers>
@@ -247,12 +248,12 @@ namespace FluxEditor {
         }
         // Relâché sur le bouton sans l'avoir quitté : un clic. Après un glissement, relâché sur le bouton : abandon.
         if (clicked && !m_dragging) {
-            Place(engine, sceneEditor, history, *clicked, std::nullopt, view, dropToGround);
+            PlaceFromPanel(engine, sceneEditor, history, *clicked, std::nullopt, view, dropToGround);
         }
         if (m_dragging && m_held && !input.IsMouseButtonDown(MouseButton::Left)) {
             // Lâché dans la vue, pas sur un panneau : l'objet est posé là. Ailleurs, rien.
             if (Contains(view, mouse) && !ui.WantsMouse()) {
-                Place(engine, sceneEditor, history, *m_held, mouse, view, dropToGround);
+                PlaceFromPanel(engine, sceneEditor, history, *m_held, mouse, view, dropToGround);
             }
             m_dragging = false;
             m_held.reset();
@@ -275,8 +276,59 @@ namespace FluxEditor {
         }
     }
 
-    void PlacePanel::Place(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
-                           std::optional<Vector2f> drop, const UI::Rect& view, bool dropToGround) {
+    std::vector<std::string> PlacePanel::GetItemLabels(Engine& engine, const std::vector<std::filesystem::path>& prefabs) {
+        std::vector<std::string> labels;
+        for (int item = 0; item < static_cast<int>(Item::Prefab); ++item) {
+            labels.emplace_back(GetInfo(item).label);
+        }
+        for (const PlaceItem& extension : engine.GetEditorExtensions().GetPlaceItems()) {
+            labels.push_back(extension.label);
+        }
+        for (const std::filesystem::path& prefab : prefabs) {
+            labels.push_back("Prefab : " + PrefabLabel(prefab));
+        }
+        return labels;
+    }
+
+    std::expected<Uuid, std::string> PlacePanel::PlaceByLabel(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history,
+                                                              std::string_view label, std::optional<std::string> file,
+                                                              const UI::Rect& view, bool dropToGround,
+                                                              const std::vector<std::filesystem::path>& prefabs) {
+        std::optional<Choice> choice;
+        for (int item = 0; item < static_cast<int>(Item::Prefab) && !choice; ++item) {
+            if (label == GetInfo(item).label) {
+                choice = Choice{static_cast<Item>(item), {}, {}};
+            }
+        }
+        if (!choice && engine.GetEditorExtensions().FindPlaceItem(label)) {
+            choice = Choice{Item::Extension, {}, std::string(label)};
+        }
+        constexpr std::string_view PrefabPrefix = "Prefab : ";
+        for (const std::filesystem::path& prefab : prefabs) {
+            if (!choice && label.starts_with(PrefabPrefix) && label.substr(PrefabPrefix.size()) == PrefabLabel(prefab)) {
+                choice = Choice{Item::Prefab, prefab, {}};
+            }
+        }
+        if (!choice) {
+            return std::unexpected(std::format("« {} » n'est pas dans le panneau Placer", label));
+        }
+        auto placed = Place(engine, sceneEditor, history, *choice, std::nullopt, view, dropToGround, std::move(file));
+        if (!placed && placed.error().empty()) {
+            return std::unexpected("abandonné (fichier non choisi)");
+        }
+        return placed;
+    }
+
+    void PlacePanel::PlaceFromPanel(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
+                                    std::optional<Vector2f> drop, const UI::Rect& view, bool dropToGround) {
+        if (auto placed = Place(engine, sceneEditor, history, choice, drop, view, dropToGround); !placed && !placed.error().empty()) {
+            Platform::ShowError(engine.GetWindow(), "Placer", placed.error());
+        }
+    }
+
+    std::expected<Uuid, std::string> PlacePanel::Place(Engine& engine, SceneEditor& sceneEditor, UndoHistory& history,
+                                                       const Choice& choice, std::optional<Vector2f> drop, const UI::Rect& view,
+                                                       bool dropToGround, std::optional<std::string> file) {
         history.Commit(engine); // un geste en cours est un pas à part, avant celui-ci
         Scene& scene = engine.GetScene();
         const Item item = choice.item;
@@ -284,12 +336,12 @@ namespace FluxEditor {
             // Un seul ciel compte : s'il y en a déjà un, c'est lui qu'on sélectionne (à régler dans l'inspecteur).
             for (const auto [existing, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
                 sceneEditor.Select(scene, existing);
-                return;
+                return scene.GetId(existing);
             }
         } else if (item == Item::Sun) {
             for (const auto [existing, sun] : scene.GetRegistry().view<const SunComponent>().each()) {
                 sceneEditor.Select(scene, existing);
-                return;
+                return scene.GetId(existing);
             }
         }
         const ItemInfo info = GetInfo(static_cast<int>(item));
@@ -298,7 +350,7 @@ namespace FluxEditor {
         if (item == Item::Extension) {
             const PlaceItem* found = engine.GetEditorExtensions().FindPlaceItem(choice.extension);
             if (!found) {
-                return; // le jeu rechargé ne le propose plus
+                return std::unexpected(std::string{}); // le jeu rechargé ne le propose plus
             }
             extension = *found;
         }
@@ -307,9 +359,9 @@ namespace FluxEditor {
         std::string name = extension ? extension->name : std::string(info.name);
         std::optional<std::string> model;
         if (item == Item::Model || item == Item::Character) {
-            model = ChooseAsset(engine, AssetType::Model, "");
+            model = file ? file : ChooseAsset(engine, AssetType::Model, "");
             if (!model) {
-                return;
+                return std::unexpected(std::string{});
             }
             std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*model).stem());
             if (!stem.empty() && item == Item::Model) {
@@ -319,9 +371,9 @@ namespace FluxEditor {
         // Une interface : le fichier .fluxui d'abord (créé dans Contenu, clic droit > Nouvelle interface).
         std::optional<std::string> interfaceFile;
         if (item == Item::Interface) {
-            interfaceFile = ChooseAsset(engine, AssetType::Interface, "");
+            interfaceFile = file ? file : ChooseAsset(engine, AssetType::Interface, "");
             if (!interfaceFile) {
-                return;
+                return std::unexpected(std::string{});
             }
             if (std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*interfaceFile).stem()); !stem.empty()) {
                 name = std::move(stem);
@@ -330,9 +382,9 @@ namespace FluxEditor {
         // Un son : le fichier d'abord, comme un modèle ; l'entité porte son nom.
         std::optional<std::string> soundFile;
         if (item == Item::Sound) {
-            soundFile = ChooseAsset(engine, AssetType::Sound, "");
+            soundFile = file ? file : ChooseAsset(engine, AssetType::Sound, "");
             if (!soundFile) {
-                return;
+                return std::unexpected(std::string{});
             }
             if (std::string stem = Platform::ToUtf8(Platform::PathFromUtf8(*soundFile).stem()); !stem.empty()) {
                 name = std::move(stem);
@@ -346,8 +398,7 @@ namespace FluxEditor {
                                              : std::string{};
             auto placed = SceneSerializer::Instantiate(scene, engine.GetComponents(), path, engine.GetPrefabReader());
             if (!placed) {
-                Platform::ShowError(engine.GetWindow(), "Placer un prefab", placed.error());
-                return;
+                return std::unexpected("prefab : " + placed.error());
             }
             entity = *placed;
             name = PrefabLabel(choice.prefab);
@@ -484,5 +535,6 @@ namespace FluxEditor {
         if (item == Item::Character) {
             sceneEditor.RequestClaimPlayer(); // le nouveau personnage devient le seul dirigé par le joueur
         }
+        return scene.GetId(entity);
     }
 }

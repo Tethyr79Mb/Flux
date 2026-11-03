@@ -4,6 +4,7 @@
 #include <Flux/Core/Project.hpp>
 #include <Flux/Platform/Console.hpp>
 #include <Flux/Platform/Dialogs.hpp>
+#include <Flux/Platform/Environment.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/SplashScreen.hpp>
@@ -17,6 +18,8 @@
 #include "Document/UndoHistory.hpp"
 #include "EditorLayout.hpp"
 #include "Interface/InterfaceEditor.hpp"
+#include "Mcp/EditorTools.hpp"
+#include "Mcp/McpServer.hpp"
 #include "Panels/CameraPanel.hpp"
 #include "Panels/ConsolePanel.hpp"
 #include "Panels/ContentBrowser.hpp"
@@ -28,8 +31,11 @@
 #include "Panels/TextTools.hpp"
 #include "Panels/WorldWindow.hpp"
 
+#include <charconv>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace {
@@ -42,6 +48,15 @@ namespace {
         std::error_code error;
         return std::filesystem::exists(source, error) ? source
                                                       : Flux::Platform::GetExecutableDirectory() / "Game.fluxproject";
+    }
+
+    // Port du serveur MCP (Claude) : 7777, ou FLUX_MCP_PORT (0 : pas de serveur).
+    std::uint16_t McpPort() {
+        std::uint16_t port = 7777;
+        if (const std::optional<std::string> text = Flux::Platform::ReadEnvironment("FLUX_MCP_PORT")) {
+            std::from_chars(text->data(), text->data() + text->size(), port);
+        }
+        return port;
     }
 
     // Annule ou refait un pas, puis sélectionne l'entité concernée (ou rien si elle n'existe plus).
@@ -179,6 +194,12 @@ int main(int argc, char** argv) {
     settings.Load(engine); // thème de l'interface choisi la dernière fois
     contentBrowser.SetInterfaceEditor(&interfaceEditor);
     contentBrowser.SetVegetationPanel(&vegetationPanel);
+    // Claude (Claude Code sur ce PC) branché sur l'éditeur : mesures, objets de la scène, caméra, captures.
+    FluxEditor::EditorToolContext toolContext{.engine = engine, .sceneEditor = sceneEditor, .history = history,
+                                              .prefabs = &contentBrowser.GetPrefabs()};
+    FluxEditor::McpServer mcp;
+    FluxEditor::RegisterEditorTools(mcp, toolContext);
+    mcp.Start(McpPort());
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
         playMode.HandleShortcuts(e, document.GetPath());
@@ -234,10 +255,15 @@ int main(int argc, char** argv) {
             history.Commit(e); // la scène du jeu est encore identique à la scène éditée
         }
         history.SetEnabled(!playMode.IsPlaying());
+        // Outils appelés par Claude : avant les panneaux, qui montrent leurs modifications dès cette image.
+        toolContext.playing = playMode.IsPlaying();
+        toolContext.dropToGround = viewport.IsDroppingToGround();
+        mcp.Update();
         history.BeginFrame(e, sceneEditor.GetSelection());
 
         // Onglets au-dessus de la vue : la scène, ou une interface ouverte (qui remplace alors la vue 3D).
         const Flux::UI::Rect view = interfaceEditor.DrawTabs(e, layout.Update(e));
+        toolContext.view = view;
         const bool editingInterface = interfaceEditor.IsActive();
         if (!editingInterface) {
             placePanel.Update(e, sceneEditor, history, view, contentBrowser.GetPrefabs(), viewport.IsDroppingToGround()); // « Placer » pose dans la vue 3D

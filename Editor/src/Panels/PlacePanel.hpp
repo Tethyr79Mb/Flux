@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Flux/Core/Uuid.hpp>
 #include <Flux/Math/Vector2.hpp>
 #include <Flux/UI/Context.hpp>
 
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Flux {
@@ -29,6 +32,17 @@ namespace FluxEditor {
         void Update(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Flux::UI::Rect& view,
                     const std::vector<std::filesystem::path>& prefabs, bool dropToGround);
 
+        // Pour les outils (serveur MCP) : libellés des objets du panneau, ceux du jeu compris (un prefab : « Prefab :
+        // nom »), et pose de l'un d'eux comme un clic (devant la caméra, sélectionné, annulable). file : fichier d'un
+        // modèle, personnage, interface ou son, relatif aux assets (sans lui, la boîte de dialogue). Rend l'objet posé
+        // (ou le ciel, le soleil déjà là).
+        static std::vector<std::string> GetItemLabels(Flux::Engine& engine, const std::vector<std::filesystem::path>& prefabs);
+        static std::expected<Flux::Uuid, std::string> PlaceByLabel(Flux::Engine& engine, SceneEditor& sceneEditor,
+                                                                   UndoHistory& history, std::string_view label,
+                                                                   std::optional<std::string> file, const Flux::UI::Rect& view,
+                                                                   bool dropToGround,
+                                                                   const std::vector<std::filesystem::path>& prefabs);
+
         private:
         // Extension : objet ajouté par le jeu (Engine::GetEditorExtensions), retrouvé par son libellé.
         enum class Item { Empty, Cube, Model, ScreenImage, SceneChange, Character, Ship, Light, Spot, Sky, Interior, Interface, Sound, Planet, Sun, Prefab, Extension };
@@ -40,9 +54,15 @@ namespace FluxEditor {
             bool operator==(const Choice&) const = default;
         };
 
-        // drop : point de la vue où l'objet a été lâché ; sans lui, la place par défaut.
-        static void Place(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
-                          std::optional<Flux::Math::Vector2f> drop, const Flux::UI::Rect& view, bool dropToGround);
+        // drop : point de la vue où l'objet a été lâché ; sans lui, la place par défaut. file : voir PlaceByLabel.
+        // Erreur vide : abandon sans message (boîte de dialogue fermée, objet du jeu retiré).
+        static std::expected<Flux::Uuid, std::string> Place(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history,
+                                                            const Choice& choice, std::optional<Flux::Math::Vector2f> drop,
+                                                            const Flux::UI::Rect& view, bool dropToGround,
+                                                            std::optional<std::string> file = std::nullopt);
+        // Place depuis le panneau : une erreur est montrée dans une boîte de dialogue.
+        static void PlaceFromPanel(Flux::Engine& engine, SceneEditor& sceneEditor, UndoHistory& history, const Choice& choice,
+                                   std::optional<Flux::Math::Vector2f> drop, const Flux::UI::Rect& view, bool dropToGround);
 
         std::optional<Choice> m_held; // bouton tenu
         std::string m_filter;         // recherche dans la liste

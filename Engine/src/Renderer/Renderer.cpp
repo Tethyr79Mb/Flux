@@ -1067,6 +1067,14 @@ namespace Flux {
         return animation ? animation->duration : 0.0f;
     }
 
+    bool Renderer::RequestCapture() {
+        return m_impl->device->RequestCapture();
+    }
+
+    std::optional<ImageData> Renderer::TakeCapture() {
+        return m_impl->device->TakeCapture();
+    }
+
     UI::DrawList& Renderer::GetOverlay() {
         return m_impl->overlay->GetDrawList();
     }

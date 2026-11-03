@@ -45,6 +45,8 @@ target_link_libraries(FluxEngine PRIVATE miniaudio)
 target_link_libraries(FluxEngine PRIVATE comdlg32)
 # Corbeille, explorateur et icônes des fichiers (SHFileOperationW, ShellExecuteW, SHGetImageList).
 target_link_libraries(FluxEngine PRIVATE shell32 ole32)
+# Serveur HTTP local des outils de développement (LocalHttpServer : serveur MCP de l'éditeur).
+target_link_libraries(FluxEngine PRIVATE ws2_32)
 
 target_compile_definitions(FluxEngine PRIVATE
         VK_NO_PROTOTYPES

@@ -1,5 +1,6 @@
 #include "Renderer/RHI/Vulkan/VulkanRhiDevice.hpp"
 
+#include "Flux/Core/Log.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiBuffer.hpp"
 #include "Renderer/RHI/Vulkan/VulkanTypes.hpp"
 
@@ -120,6 +121,9 @@ namespace Flux::Vk {
         }
         const Clock::time_point acquireStart = Clock::now();
         m_waitTimes.frame = milliseconds(acquireStart - waitStart);
+        if (m_pendingCapture && m_pendingCapture->frameIndex == m_frameIndex) {
+            ReadCapture();
+        }
         m_timestamps->Read(m_frameIndex, m_writtenTimestamps[m_frameIndex]);
         m_device->GetTransfer().Collect();
         RunRetired(false);
@@ -144,6 +148,19 @@ namespace Flux::Vk {
     bool RhiDevice::EndFrame() {
         const Frames::Frame& frame = m_frames->Get(m_frameIndex);
         m_commandList.EndStep();
+        if (m_captureRequested && !m_pendingCapture) {
+            // Un buffer le temps d'une capture : rare (outil), pas la peine de le garder.
+            m_captureRequested = false;
+            const VkExtent2D extent = m_swapchain->GetExtent();
+            auto buffer = Buffer::Create(m_device->GetAllocator(), VkDeviceSize{extent.width} * extent.height * 4,
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
+            if (buffer) {
+                m_commandList.CopyImageToReadback(buffer->GetHandle());
+                m_pendingCapture.emplace(PendingCapture{std::move(*buffer), m_frameIndex, extent, m_swapchain->GetFormat()});
+            } else {
+                Log::Error("capture d'écran : {}", buffer.error());
+            }
+        }
         m_commandList.TransitionToPresent();
         m_writtenTimestamps[m_frameIndex] = m_commandList.GetWrittenTimestamps();
         if (!Check(vkEndCommandBuffer(frame.commandBuffer), "vkEndCommandBuffer")) {
@@ -198,5 +215,40 @@ namespace Flux::Vk {
             return RecreateSwapchain();
         }
         return m_crash->Check(present, "vkQueuePresentKHR");
+    }
+
+    bool RhiDevice::RequestCapture() {
+        if (!m_swapchain || !m_swapchain->IsCopyable()) {
+            return false;
+        }
+        m_captureRequested = true;
+        return true;
+    }
+
+    std::optional<ImageData> RhiDevice::TakeCapture() {
+        return std::exchange(m_capture, std::nullopt);
+    }
+
+    void RhiDevice::ReadCapture() {
+        PendingCapture pending = std::move(*m_pendingCapture);
+        m_pendingCapture.reset();
+        // Formats 8 bits seulement (ceux que la swapchain demande) ; l'alpha de la fenêtre ne veut rien dire.
+        const bool bgra = pending.format == VK_FORMAT_B8G8R8A8_SRGB || pending.format == VK_FORMAT_B8G8R8A8_UNORM;
+        const bool rgba = pending.format == VK_FORMAT_R8G8B8A8_SRGB || pending.format == VK_FORMAT_R8G8B8A8_UNORM;
+        if (!bgra && !rgba) {
+            Log::Error("capture d'écran : format de la fenêtre non géré ({})", static_cast<int>(pending.format));
+            return;
+        }
+        ImageData image;
+        image.size = {static_cast<int>(pending.extent.width), static_cast<int>(pending.extent.height)};
+        image.rgba.resize(static_cast<std::size_t>(pending.buffer.GetSize()));
+        pending.buffer.Read(image.rgba.data(), pending.buffer.GetSize());
+        for (std::size_t i = 0; i < image.rgba.size(); i += 4) {
+            if (bgra) {
+                std::swap(image.rgba[i], image.rgba[i + 2]);
+            }
+            image.rgba[i + 3] = 255;
+        }
+        m_capture = std::move(image);
     }
 }

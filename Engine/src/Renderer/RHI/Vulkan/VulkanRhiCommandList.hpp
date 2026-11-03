@@ -30,6 +30,9 @@ namespace Flux::Vk {
         void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent, VkQueryPool queryPool);
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
         void TransitionToPresent();
+        // Copie l'image de la swapchain, telle que dessinée jusqu'ici, dans target (Readback, largeur x hauteur x 4
+        // octets) : capture d'écran. Avant TransitionToPresent.
+        void CopyImageToReadback(VkBuffer target);
         // Pour une bibliothèque qui enregistre elle-même ses commandes (FSR).
         VkCommandBuffer GetHandle() const { return m_commandBuffer; }
 

@@ -2,6 +2,7 @@
 
 // Device du RHI : création des ressources, images en vol, envois.
 
+#include "Flux/Assets/Image.hpp"
 #include "Flux/Export.hpp"
 #include "Flux/Renderer/RHI/BindGroup.hpp"
 #include "Flux/Renderer/RHI/Buffer.hpp"
@@ -14,6 +15,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -163,5 +165,12 @@ namespace Flux::RHI {
         // millisecondes depuis la case 0 ; négatif pour une case non écrite. Vide si le GPU ne note pas l'heure.
         virtual std::span<const double> GetTimestamps() const = 0;
         virtual const WaitTimes& GetWaitTimes() const = 0;
+
+        // Capture d'écran : l'image de la fenêtre de la prochaine image présentée (interface comprise), copiée pour le
+        // CPU. false si la fenêtre ne permet pas la copie.
+        virtual bool RequestCapture() = 0;
+        // La capture demandée, une fois que le GPU a fini cette image (deux ou trois images plus tard), rendue une
+        // seule fois ; nullopt avant.
+        virtual std::optional<ImageData> TakeCapture() = 0;
     };
 }

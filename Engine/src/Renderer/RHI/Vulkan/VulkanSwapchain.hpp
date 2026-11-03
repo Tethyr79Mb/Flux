@@ -27,6 +27,8 @@ namespace Flux::Vk {
         VkFormat GetFormat() const { return m_swapchain.image_format; }
         // Mode réellement obtenu, qui peut différer du mode demandé.
         VkPresentModeKHR GetPresentMode() const { return m_swapchain.present_mode; }
+        // Les images peuvent être copiées (capture d'écran).
+        bool IsCopyable() const { return m_copyable; }
 
         uint32_t GetImageCount() const { return static_cast<uint32_t>(m_images.size()); }
         VkImage GetImage(uint32_t index) const { return m_images[index]; }
@@ -50,5 +52,6 @@ namespace Flux::Vk {
         std::vector<VkImage> m_images;
         std::vector<VkImageView> m_imageViews;
         std::vector<VkSemaphore> m_renderFinished;
+        bool m_copyable = false;
     };
 }

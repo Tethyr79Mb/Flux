@@ -7,6 +7,8 @@
 #include "Core/Measurements.hpp"
 #include "Renderer/Photometry.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -25,6 +27,11 @@ namespace Flux {
 
         // Durée d'un relevé lancé depuis le panneau Moteur.
         constexpr double MeasureSeconds = 10.0;
+
+        // En EV100, comme les bornes du Ciel (Photometry::ExposureFromEv100 à l'envers).
+        float ExposureToEv100(float exposure) {
+            return std::log2(Photometry::NitsPerUnit / (1.2f * std::max(exposure, 1.0e-12f)));
+        }
     }
 
     void DrawEnginePanel(UI::Context& ui, Renderer& renderer, const FrameStats& stats, MeasureRecorder& measures,
@@ -82,8 +89,7 @@ namespace Flux {
                     renderer.SetGroundGeometryOnly(geometryOnly);
                 }
                 const RenderTimings& render = renderer.GetTimings();
-                // En EV100, comme les bornes du Ciel (Photometry::ExposureFromEv100 à l'envers).
-                const float ev100 = std::log2(Photometry::NitsPerUnit / (1.2f * std::max(render.exposure, 1.0e-12f)));
+                const float ev100 = ExposureToEv100(render.exposure);
                 ui.LabelText("Exposition", render.sceneLuminance > 0.0f
                                                ? std::format("EV100 {:.1f} (luminance mesurée {:.3g} cd/m²)", ev100,
                                                              render.sceneLuminance * Photometry::NitsPerUnit)
@@ -123,5 +129,67 @@ namespace Flux {
             }
         }
         ui.EndPanel();
+    }
+
+    std::string DescribeEngineStats(const Renderer& renderer, const FrameStats& stats) {
+        using Json = nlohmann::ordered_json;
+        const RenderTimings& render = renderer.GetTimings();
+        Json json;
+        json["fps"] = stats.GetFps();
+        json["frameMs"] = stats.GetFrameMilliseconds();
+        json["worstFrameMs"] = stats.GetWorstMilliseconds();
+        json["cpu"] = {{"updateMs", stats.Get(UpdateCost)},
+                       {"gameMs", stats.Get(GameCost)},
+                       {"prepareMs", stats.Get(PrepareCost)},
+                       {"recordMs", stats.Get(RecordCost)},
+                       {"waitGpuMs", stats.Get(WaitGpuCost)},
+                       {"waitScreenMs", stats.Get(WaitImageCost)}};
+        double gpuTotal = 0.0;
+        Json passes = Json::array();
+        for (const FrameStats::Row& row : stats.GetGpu()) {
+            gpuTotal += !row.step && row.average > 0.0 ? row.average : 0.0;
+            passes.push_back({{"name", row.name}, {"step", row.step}, {"ms", row.average}});
+        }
+        json["gpu"] = {{"totalMs", passes.empty() ? -1.0 : gpuTotal}, {"passes", std::move(passes)}};
+        Json exposure = {{"ev100", ExposureToEv100(render.exposure)}, {"exposure", render.exposure}};
+        // 0 : exposition fixe, ou rien de mesurable (image noire).
+        exposure["measuredLuminanceNits"] = render.sceneLuminance * Photometry::NitsPerUnit;
+        json["exposure"] = std::move(exposure);
+        json["scene"] = {{"objectsTested", render.occlusionTested},
+                         {"objectsHidden", render.occlusionHidden},
+                         {"modelMeshShaders", render.modelMeshShaders},
+                         {"modelMeshlets", render.modelMeshlets},
+                         {"modelMeshletsDrawn", render.modelMeshletsDrawn},
+                         {"modelsLoading", render.modelsLoading},
+                         {"planetTiles", render.planetTiles},
+                         {"planetOceanTiles", render.planetOceanTiles},
+                         {"planetStoredTiles", render.planetStoredTiles},
+                         {"planetTileCapacity", render.planetTileCapacity},
+                         {"planetPendingTiles", render.planetPendingTiles},
+                         {"groundMeshThreads", render.groundMeshThreads},
+                         {"trees", {{"near", render.trees[0]}, {"simplified", render.trees[1]}, {"far", render.trees[2]}}},
+                         {"shadowTrees", render.shadowTrees},
+                         {"treePlains", render.treePlains},
+                         {"pendingTreePlains", render.pendingTreePlains}};
+        const Platform::ProcessMemory memory = Platform::GetProcessMemory();
+        const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
+        constexpr double Megabyte = 1024.0 * 1024.0;
+        json["memoryMb"] = {{"ram", static_cast<double>(memory.workingSet) / Megabyte},
+                            {"ramReserved", static_cast<double>(memory.privateBytes) / Megabyte},
+                            {"video", static_cast<double>(gpuDevice) / Megabyte},
+                            {"videoInRam", static_cast<double>(gpuHost) / Megabyte}};
+        const Math::Vector2i renderSize = renderer.GetRenderSize();
+        json["renderer"] = {{"gpu", renderer.GetDeviceName()},
+                            {"vulkan", renderer.GetApiVersion()},
+                            {"presentMode", renderer.GetPresentModeName()},
+                            {"vsync", renderer.IsVSyncEnabled()},
+                            {"renderSize", {renderSize.x, renderSize.y}},
+                            // Mode demandé ; un mode FSR sans FSR disponible tourne en Natif.
+                            {"upscaling", UpscalingKeys[static_cast<std::size_t>(renderer.GetUpscaling())]},
+                            {"fsrAvailable", renderer.IsUpscalingAvailable()},
+                            {"temporalAA", renderer.IsTemporalAAEnabled()},
+                            {"occlusionCulling", renderer.IsOcclusionCullingEnabled()},
+                            {"bloom", renderer.GetBloom()}};
+        return json.dump(1);
     }
 }
