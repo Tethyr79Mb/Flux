@@ -301,12 +301,12 @@ bool RunSceneSerializerTests() {
     CHECK(loaded.TryGet<InteriorComponent>(loaded.FindById(Uuid{0xd5}))->luminance == InteriorComponent{}.luminance);
 
     // Vaisseau d'avant : une seule vitesse de rotation (répartie par axe), et l'accélération réglée pour la souris
-    // façon caméra, remplacée (chaque axe prend sa vitesse en une demi-seconde).
+    // façon caméra, remplacée (chaque axe prend sa vitesse en 0,8 s).
     CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 2, "entities": [
         {"id": "00000000000000d6", "ship": {"turnRate": 90, "turnAcceleration": 360}}]})").has_value());
     const ShipComponent* oldShip = loaded.TryGet<ShipComponent>(loaded.FindById(Uuid{0xd6}));
-    CHECK(oldShip && std::abs(oldShip->turnRate.x - 81.0f) < 0.01f && std::abs(oldShip->turnRate.y - 64.8f) < 0.01f
-          && std::abs(oldShip->turnRate.z - 150.3f) < 0.01f && oldShip->turnAcceleration == oldShip->turnRate * 2.0f);
+    CHECK(oldShip && std::abs(oldShip->turnRate.x - 70.2f) < 0.01f && std::abs(oldShip->turnRate.y - 54.9f) < 0.01f
+          && std::abs(oldShip->turnRate.z - 129.6f) < 0.01f && oldShip->turnAcceleration == oldShip->turnRate * 1.25f);
 
     // Déchargement d'un module : ses types disparaissent du registre, ceux du moteur restent.
     const std::size_t engineCount = engineOnly.GetCount();

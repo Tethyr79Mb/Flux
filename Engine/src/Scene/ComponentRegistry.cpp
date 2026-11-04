@@ -288,11 +288,11 @@ namespace Flux {
             .Field("travelSpoolTime", "Mode voyage : mise en route (s)", &ShipComponent::travelSpoolTime, {.speed = 0.05, .min = 0.0, .max = 60.0, .decimals = 1})
             .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot)
             // Avant : une seule vitesse pour les trois axes, et une accélération réglée pour suivre la souris comme une
-            // caméra (360 °/s²), sans sens avec le manche. Le tangage garde à peu près l'ancienne vitesse, le lacet est
-            // plus lent, le roulis plus rapide, et chaque axe atteint sa vitesse en une demi-seconde.
+            // caméra (360 °/s²), sans sens avec le manche. Vaisseau plus lent qu'avant (le chasseur de 90 °/s passe à
+            // 70 en tangage), lacet plus lent, roulis plus rapide, et chaque axe atteint sa vitesse en 0,8 s.
             .ConvertedField("turnRate", [](ShipComponent& ship, double rate) {
-                ship.turnRate = Math::Vector3f{0.9f, 0.72f, 1.67f} * static_cast<float>(rate);
-                ship.turnAcceleration = ship.turnRate * 2.0f;
+                ship.turnRate = Math::Vector3f{0.78f, 0.61f, 1.44f} * static_cast<float>(rate);
+                ship.turnAcceleration = ship.turnRate * 1.25f;
             })
             .RemovedField("turnAcceleration");
         registry.Register<SeatComponent>("seat", "Siège")

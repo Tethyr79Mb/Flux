@@ -223,10 +223,10 @@ namespace Game {
         // son champ bleu (qui se traverse), le hangar du joueur est une pièce de la station, sans chargement (choix de
         // Bruno du 2026-10-27) ; sa plateforme est le quai du pilote automatique (L), qui y pose le vaisseau.
         // Chasseur : vire bien plus vite qu'un transport (30 °/s par défaut), roulis rapide, lacet plus lent que le
-        // tangage comme un avion ; chaque axe prend sa vitesse en une demi-seconde.
+        // tangage comme un avion ; chaque axe prend sa vitesse en 0,8 s.
         void AddFighterAgility(ShipComponent& ship) {
-            ship.turnRate = {80.0f, 65.0f, 150.0f};
-            ship.turnAcceleration = ship.turnRate * 2.0f;
+            ship.turnRate = {70.0f, 55.0f, 130.0f};
+            ship.turnAcceleration = ship.turnRate * 1.25f;
         }
 
         void AddOrbitalStation(Scene& scene, Entity station) {
