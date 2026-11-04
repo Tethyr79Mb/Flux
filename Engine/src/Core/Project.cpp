@@ -55,14 +55,8 @@ namespace Flux::ProjectFile {
             project.file = std::filesystem::absolute(file).lexically_normal();
             project.assetsDirectory = (project.file.parent_path() / *assets).lexically_normal();
             project.startupScene = *startupScene;
-            // Facultatif ; faux, il est ignoré (le jeu démarre sans menu plutôt que pas du tout).
-            if (document.contains("menu")) {
-                if (auto menu = ReadRelative(document, "menu")) {
-                    project.menu = Platform::ToGenericUtf8(*menu);
-                } else {
-                    Log::Warning("Projet : {}, ignoré", menu.error());
-                }
-            }
+            // Ancienne clé « menu » (un menu dans toutes les scènes) ignorée : les menus sont des interfaces des scènes
+            // qui en veulent, pour qu'un écran titre n'ouvre pas le menu Options avec Échap.
             return project;
         } catch (const std::exception& error) {
             return std::unexpected(std::string(error.what()));
@@ -90,9 +84,6 @@ namespace Flux::ProjectFile {
         document["name"] = project.name;
         document["assets"] = Platform::ToGenericUtf8(project.assetsDirectory.lexically_relative(project.file.parent_path()));
         document["startupScene"] = Platform::ToGenericUtf8(project.startupScene);
-        if (!project.menu.empty()) {
-            document["menu"] = project.menu;
-        }
         return document.dump(2) + '\n';
     }
 

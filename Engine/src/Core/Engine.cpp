@@ -389,20 +389,15 @@ namespace Flux {
             }
             Orbits::Update(m_scene); // après l'inspecteur : une orbite changée place la planète dès cette image
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
-            if (m_drawScreenUi) {
-                ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
-                               GetScreenUiOptions());
-            }
-            // Pas sous un menu opaque plein écran : déjà couvert par une interface de la scène à cette image (dessinée
-            // avant), ou à l'image précédente (le menu du projet, dessiné après).
-            if (const Entity player = GetFollowedPlayer();
-                player != NullEntity && m_drawScreenUi && !m_interfaceCovered && !m_interfaceCoversNow) {
+            // HUD sous les interfaces de la scène (menus, inventaire) ; rien sous un menu opaque plein écran, connu à
+            // l'image précédente (les interfaces sont dessinées après).
+            if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi && !m_interfaceCovered) {
                 // Aussi en pause (infos de vol, destinations), avec le temps du jeu : arrêté, les messages attendent.
                 RunGameSystems(GameStage::Hud, m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
             }
             if (m_drawScreenUi) {
-                // Après le HUD : le menu du projet (Options) couvre tout l'écran, HUD compris, sous son voile sombre.
-                DrawProjectMenu(m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)});
+                ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
+                               GetScreenUiOptions());
             }
             if (m_drawScreenUi) {
                 // Version dans le coin bas droit : dit quelle compilation tourne sur une capture d'écran.
@@ -885,14 +880,6 @@ namespace Flux {
                 .fonts = [this](std::string_view path) { return LoadAssetFont(path); }};
     }
 
-    void Engine::DrawProjectMenu(UI::DrawList& list, Math::Vector2f viewMin, Math::Vector2f viewMax) {
-        if (m_gameState == GameState::Stopped || !m_project || m_project->menu.empty()) {
-            return;
-        }
-        // Dessiné après la scène : par-dessus ses interfaces ; Échap ferme d'abord une de leurs fenêtres, puis ouvre le menu.
-        DrawInterfaceFile(NullEntity, m_project->menu, list, viewMin, viewMax, false, false);
-    }
-
     std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterface(const ScreenUi::InterfaceRequest& request) {
         return DrawInterfaceFile(request.entity, request.component.file, request.list, request.viewMin, request.viewMax,
                                  request.placeholders, request.needsRect);
@@ -909,6 +896,8 @@ namespace Flux {
             // En jeu : la copie de l'entité (NullEntity : celle du menu du projet), que la souris modifie.
             if (InterfaceLibrary::Instance* instance =
                     m_interfaces->GetInstance(m_project->assetsDirectory, owner, file, m_frame)) {
+                Interface::ToggleWindowsByAction(
+                    instance->document, [this](std::string_view action) { return WasActionPressed(action); }, !m_interfacePaused);
                 const Input& input = m_window->GetInput();
                 const Interface::Pointer pointer{.position = input.GetMousePosition(),
                                                  .down = input.IsMouseButtonDown(MouseButton::Left),

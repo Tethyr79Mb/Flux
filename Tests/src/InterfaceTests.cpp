@@ -314,6 +314,20 @@ namespace {
         CHECK(!isOpen(pauseId) && !interaction.coversView);
         CHECK(!Interface::SetWindowOpen(document, "Inconnue", true));
 
+        // Touche d'ouverture : l'action ouvre la fenêtre (pas par-dessus une pause), puis la ferme.
+        Interface::Find(document, optionsId)->openAction = "Inventaire";
+        const auto inventory = [](std::string_view action) { return action == "Inventaire"; };
+        CHECK(!Interface::ToggleWindowsByAction(document, inventory, false) && !isOpen(optionsId));
+        CHECK(!Interface::ToggleWindowsByAction(document, [](std::string_view) { return false; }, true));
+        CHECK(Interface::ToggleWindowsByAction(document, inventory, true) && isOpen(optionsId));
+        CHECK(document.roots.back().id == optionsId); // devant les autres
+        CHECK(Interface::ToggleWindowsByAction(document, inventory, false) && !isOpen(optionsId));
+
+        // « Ouvrir une fenêtre » d'une autre interface : le moteur la cherche (Interaction::action).
+        Interface::Find(document, menuId)->children[0].target = "Ailleurs";
+        click({50.0f, 70.0f});
+        CHECK(interaction.action == Interface::ButtonAction::OpenWindow && interaction.target == "Ailleurs");
+
         // Éditeur : une fenêtre fermée est placée quand on la montre (elle ou un de ses enfants sélectionné).
         CHECK(std::ranges::none_of(Interface::Arrange(document, min, max),
                                    [&](const Interface::Placed& item) { return item.element->id == optionsId; }));
@@ -326,7 +340,7 @@ namespace {
         CHECK(loaded.has_value());
         const Interface::Element* back = Interface::Find(*loaded, pauseId);
         CHECK(back && back->openOnEscape && back->pausesGame && !back->visible);
-        CHECK(Interface::Find(*loaded, optionsId)->closeButton);
+        CHECK(Interface::Find(*loaded, optionsId)->closeButton && Interface::Find(*loaded, optionsId)->openAction == "Inventaire");
         const Interface::Element* call = Interface::FindByName(*loaded, "Menu");
         CHECK(call && call->children[2].action == Interface::ButtonAction::CallFunction && call->children[2].target == "Sauver");
         return true;

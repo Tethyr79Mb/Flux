@@ -153,7 +153,7 @@ namespace FluxEditor {
                         continue;
                     }
                     const std::string relative = Platform::ToGenericUtf8(it->path().lexically_relative(project->assetsDirectory));
-                    text += std::format("{}{}{}\n", relative, relative == project->menu ? " [menu du jeu]" : "",
+                    text += std::format("{}{}\n", relative,
                                         active && active->lexically_normal() == it->path().lexically_normal() ? " [affichée]" : "");
                 }
                 return McpToolResult::Text(text.empty() ? std::string("aucune interface\n") : text);

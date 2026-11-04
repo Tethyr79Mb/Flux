@@ -149,6 +149,15 @@ namespace Flux {
                         engine.RequestQuit();
                     }
                     break;
+                case Interface::ButtonAction::OpenWindow:
+                case Interface::ButtonAction::CloseWindow:
+                    engine.SetInterfaceWindowOpen(target, action == Interface::ButtonAction::OpenWindow);
+                    break;
+                case Interface::ButtonAction::ToggleWindow:
+                    if (const Interface::Element* window = engine.FindInterfaceElement(target)) {
+                        engine.SetInterfaceWindowOpen(target, !window->visible);
+                    }
+                    break;
                 case Interface::ButtonAction::RebindKey:
                     engine.StartKeyRebinding(std::move(target));
                     break;

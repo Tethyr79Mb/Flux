@@ -146,9 +146,6 @@ namespace Flux {
         // Réglages de ScreenUi::Draw pour la scène : images, polices et interfaces du projet. Pendant le jeu, les interfaces
         // réagissent à la souris (cases, curseurs, boutons, fenêtres déplacées).
         ScreenUi::DrawOptions GetScreenUiOptions();
-        // Menu du projet (Project::menu : Options, pause) dans la vue, en jeu seulement, par-dessus les interfaces de la
-        // scène : à appeler après ScreenUi::Draw. Le jeu l'appelle seul ; l'éditeur, dans sa vue en mode Jouer.
-        void DrawProjectMenu(UI::DrawList& list, Math::Vector2f viewMin, Math::Vector2f viewMax);
         // Vrai si la souris était sur une interface du jeu à l'image précédente : ses clics ne vont pas au jeu.
         bool InterfaceWantsMouse() const { return m_interfaceWantsMouse; }
         // Éditeur : false fige la caméra en vol libre (la souris et le clavier servent à l'éditeur d'interface).
