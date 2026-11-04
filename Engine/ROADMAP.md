@@ -20,8 +20,8 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
 - 🔨 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
   - ✅ 1. `JobSystem` : fils de travail (cœurs moins un), vol de tâches, attente qui aide, aucune allocation par tâche.
-  - ⬜ 2. Command buffers secondaires dans le RHI : un pool par fil et par image en vol (dynamic rendering).
-  - ⬜ 3. Graphe de rendu : passes indépendantes enregistrées en parallèle, grosses passes (ombres) en morceaux ; CPU rendu mesuré avant et après.
+  - ✅ 2. Plusieurs listes primaires par image (choix de Bruno) : `CommandList::Fork` insère des listes à remplir sur d'autres fils, jouées dans l'ordre en une seule soumission ; un pool par command buffer, créé une fois. Aussi dans `Device::Submit`.
+  - ⬜ 3. Graphe de rendu : passes indépendantes enregistrées en parallèle (listes de Fork), passes lourdes (opaques, ombres) coupées en command buffers secondaires ; barrières des textures calculées avant l'enregistrement ; CPU rendu mesuré avant et après.
   - Plus tard : Jolt sur le `JobSystem` (il a aujourd'hui ses propres fils, cœurs moins un aussi).
 
 ### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)

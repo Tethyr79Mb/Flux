@@ -179,33 +179,20 @@ namespace Flux::Vk {
         Check(vkDeviceWaitIdle(m_device.device), "vkDeviceWaitIdle");
     }
 
-    bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
-        VkCommandBufferAllocateInfo allocateInfo{};
-        allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocateInfo.commandPool = m_immediatePool;
-        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocateInfo.commandBufferCount = 1;
-        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-        if (!Check(vkAllocateCommandBuffers(m_device.device, &allocateInfo, &commandBuffer), "vkAllocateCommandBuffers")) {
-            return false;
-        }
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(commandBuffer, &beginInfo);
-        record(commandBuffer);
-        bool success = Check(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+    bool Device::SubmitAndWait(std::span<const VkCommandBuffer> commandBuffers, bool recorded) {
+        bool success = recorded;
 
         // Les envois en attente d'abord : ces commandes les lisent peut-être.
         Transfer::GraphicsPart uploads = m_transfer->TakeGraphics();
         if (success) {
             std::vector<VkCommandBufferSubmitInfo> commandInfos;
-            commandInfos.reserve(uploads.commands.size() + 1);
+            commandInfos.reserve(uploads.commands.size() + commandBuffers.size());
             for (VkCommandBuffer commands : uploads.commands) {
                 commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
             }
-            commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commandBuffer, 0});
+            for (VkCommandBuffer commands : commandBuffers) {
+                commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
+            }
             const auto count = static_cast<std::uint32_t>(commandInfos.size());
             const VkSemaphoreSubmitInfo wait = m_transfer->GetWait(uploads);
             const VkSemaphoreSubmitInfo signal = m_transfer->GetSignal();
@@ -223,10 +210,31 @@ namespace Flux::Vk {
         // Seulement cette soumission (et ce qui la précède), pas toute la file comme vkQueueWaitIdle.
         success = success && m_transfer->WaitGraphics();
         if (!success) {
-            WaitIdle(); // rien ne doit plus lire le command buffer rendu ci-dessous
+            WaitIdle(); // rien ne doit plus lire les command buffers, que l'appelant va réutiliser
         }
-        vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &commandBuffer);
         m_transfer->Collect();
+        return success;
+    }
+
+    bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
+        VkCommandBufferAllocateInfo allocateInfo{};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocateInfo.commandPool = m_immediatePool;
+        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocateInfo.commandBufferCount = 1;
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        if (!Check(vkAllocateCommandBuffers(m_device.device, &allocateInfo, &commandBuffer), "vkAllocateCommandBuffers")) {
+            return false;
+        }
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        record(commandBuffer);
+        const bool recorded = Check(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+        const bool success = SubmitAndWait({&commandBuffer, 1}, recorded);
+        vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &commandBuffer);
         return success;
     }
 

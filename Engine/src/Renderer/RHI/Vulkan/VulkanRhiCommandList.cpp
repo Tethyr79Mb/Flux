@@ -1,5 +1,7 @@
 #include "Renderer/RHI/Vulkan/VulkanRhiCommandList.hpp"
 
+#include "Renderer/RHI/Vulkan/VulkanCommandBatch.hpp"
+
 #include "Renderer/RHI/Vulkan/VulkanRhiBindGroup.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiBuffer.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiPipeline.hpp"
@@ -38,8 +40,9 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent,
-                               VkQueryPool queryPool) {
+                               VkQueryPool queryPool, CommandBatch& batch) {
         m_commandBuffer = commandBuffer;
+        m_batch = &batch;
         m_image = image;
         m_view = view;
         m_extent = extent;
@@ -56,6 +59,33 @@ namespace Flux::Vk {
         }
     }
 
+    void RhiCommandList::BeginParallel(VkCommandBuffer commandBuffer, const RhiCommandList& main) {
+        m_commandBuffer = commandBuffer;
+        m_batch = nullptr;
+        m_image = main.m_image;
+        m_view = main.m_view;
+        m_extent = main.m_extent;
+        m_queryPool = main.m_queryPool;
+        m_markers = main.m_markers;
+        m_debugLabels = main.m_debugLabels;
+        m_meshShaders = main.m_meshShaders;
+        m_writtenTimestamps = 0;
+        m_openStep = RHI::MaxSteps;
+        m_labelOpen = false;
+        ContinueIn(commandBuffer);
+    }
+
+    void RhiCommandList::ContinueIn(VkCommandBuffer commandBuffer) {
+        m_commandBuffer = commandBuffer;
+        m_layout = VK_NULL_HANDLE;
+        m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        m_pushStages = 0;
+    }
+
+    std::span<RHI::CommandList* const> RhiCommandList::Fork(std::uint32_t count) {
+        return m_batch ? m_batch->Fork(*this, count) : std::span<RHI::CommandList* const>{};
+    }
+
     void RhiCommandList::WriteTimestamp(std::uint32_t slot) {
         if (m_queryPool == VK_NULL_HANDLE || slot >= RHI::MaxTimestamps) {
             return;
@@ -66,7 +96,6 @@ namespace Flux::Vk {
 
     void RhiCommandList::SetStepMarkers(const StepMarkers& markers) {
         m_markers = markers;
-        *m_markers.count = 0;
     }
 
     void RhiCommandList::BeginStep(const char* name) {
@@ -85,10 +114,12 @@ namespace Flux::Vk {
             return;
         }
         EndStep();
-        if (*m_markers.count >= RHI::MaxSteps) {
+        // Case prise d'un coup : les listes parallèles notent leurs étapes en même temps.
+        const std::uint32_t step = m_markers.count->fetch_add(1, std::memory_order_relaxed);
+        if (step >= RHI::MaxSteps) {
             return;
         }
-        m_openStep = (*m_markers.count)++;
+        m_openStep = step;
         (*m_markers.names)[m_openStep] = name;
         // Début : quand le GPU arrive à cette commande ; fin (EndStep) : quand tout ce qui précède est fini.
         vkCmdWriteBufferMarkerAMD(m_commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_markers.buffer,

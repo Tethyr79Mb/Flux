@@ -1,7 +1,9 @@
-// Tests des compute shaders du RHI : un calcul envoyé au GPU sans fenêtre, puis relu par le CPU. Ignorés (réussis)
-// sur une machine sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
+// Tests des compute shaders du RHI : un calcul envoyé au GPU sans fenêtre, puis relu par le CPU ; le même calcul
+// enregistré dans des listes parallèles (CommandList::Fork) remplies par des fils de travail. Ignorés (réussis) sur une
+// machine sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
 #include "Check.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -69,6 +71,52 @@ bool RunComputeTests() {
     for (std::uint32_t i = 0; i < Count; ++i) {
         const float expected = (input[i] * 3.0f + static_cast<float>(i)) * 2.0f;
         CHECK(std::abs(output[i] - expected) < 1.0e-3f);
+    }
+
+    // Listes parallèles : remplies dans le désordre par des fils, jouées dans l'ordre du tableau, puis la liste
+    // principale reprend (pipeline à relier). Première liste : le calcul ; les trois suivantes et la suite : doublent.
+    // Fork refusé sur une liste parallèle et au-delà de MaxParallelCommandLists.
+    {
+        auto group = (*device)->CreateBindGroup(**layout);
+        CHECK(group != nullptr);
+        group->SetBuffer(0, **inputBuffer);
+        group->SetBuffer(1, **outputBuffer);
+        const Constants constants{Count, 3.0f};
+        JobSystem jobs(3);
+        bool forked = false;
+        bool refused = false;
+        bool tooMany = false;
+        const bool submitted = (*device)->Submit([&](RHI::CommandList& commands) {
+            const std::span<RHI::CommandList* const> lists = commands.Fork(4);
+            forked = lists.size() == 4;
+            if (!forked) {
+                return;
+            }
+            refused = lists[0]->Fork(2).empty(); // pas de Fork sur une liste parallèle
+            jobs.ParallelFor(4, 1, [&](std::uint32_t begin, std::uint32_t end) {
+                for (std::uint32_t i = begin; i < end; ++i) {
+                    RHI::CommandList& list = *lists[i];
+                    list.BeginStep("calcul parallèle");
+                    list.BindPipeline(i == 0 ? **pipeline : **doubling);
+                    list.SetBindGroup(0, *group);
+                    list.PushConstants(&constants, sizeof(constants));
+                    list.Dispatch((Count + 63) / 64);
+                    list.ComputeBarrier();
+                }
+            });
+            tooMany = commands.Fork(RHI::MaxParallelCommandLists).empty(); // 4 déjà pris
+            commands.BindPipeline(**doubling);
+            commands.SetBindGroup(0, *group);
+            commands.PushConstants(&constants, sizeof(constants));
+            commands.Dispatch((Count + 63) / 64);
+            commands.ComputeBarrier();
+        });
+        CHECK(submitted && forked && refused && tooMany);
+    }
+    (*outputBuffer)->Read(output.data(), Size);
+    for (std::uint32_t i = 0; i < Count; ++i) {
+        const float expected = (input[i] * 3.0f + static_cast<float>(i)) * 16.0f;
+        CHECK(std::abs(output[i] - expected) < 1.0e-2f);
     }
     return true;
 }

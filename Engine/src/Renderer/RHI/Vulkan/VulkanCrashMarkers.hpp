@@ -5,6 +5,7 @@
 #include "Renderer/RHI/Vulkan/VulkanBuffer.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 
 namespace Flux::Vk {
@@ -32,7 +33,7 @@ namespace Flux::Vk {
         {
             // Étapes de la dernière image soumise dans ces ressources (BeginStep).
             std::array<const char*, RHI::MaxSteps> names{};
-            std::uint32_t count = 0;
+            std::atomic<std::uint32_t> count = 0; // peut dépasser MaxSteps (étapes de trop, pas notées)
             std::uint32_t serial = 0; // numéro de cette image, écrit par le GPU au début et à la fin de chaque étape
             bool submitted = false;
         };

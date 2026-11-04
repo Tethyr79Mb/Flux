@@ -43,6 +43,11 @@ namespace Flux::Vk {
         }
         rhi->m_commandList.SetDebugLabels(rhi->m_device->HasDebugLabels());
         rhi->m_commandList.SetMeshShaders(rhi->m_device->HasMeshShaders());
+        rhi->m_submitList.SetMeshShaders(rhi->m_device->HasMeshShaders());
+        for (auto& batch : rhi->m_batches) {
+            batch = std::make_unique<CommandBatch>(*rhi->m_device);
+        }
+        rhi->m_submitBatch = std::make_unique<CommandBatch>(*rhi->m_device);
         rhi->m_timestamps = std::make_unique<Timestamps>(*rhi->m_device);
         rhi->m_crash = std::make_unique<CrashMarkers>(*rhi->m_device, nativeWindowHandle != nullptr);
         rhi->m_frames = std::make_unique<Frames>(*rhi->m_device);

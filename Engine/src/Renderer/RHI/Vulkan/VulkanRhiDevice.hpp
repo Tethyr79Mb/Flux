@@ -4,6 +4,7 @@
 // heures du GPU, diagnostic de plantage, envois).
 
 #include "Flux/Renderer/RHI/Device.hpp"
+#include "Renderer/RHI/Vulkan/VulkanCommandBatch.hpp"
 #include "Renderer/RHI/Vulkan/VulkanCrashMarkers.hpp"
 #include "Renderer/RHI/Vulkan/VulkanDevice.hpp"
 #include "Renderer/RHI/Vulkan/VulkanFrames.hpp"
@@ -104,6 +105,8 @@ namespace Flux::Vk {
         std::unique_ptr<Vk::Device> m_device;
         std::unique_ptr<Swapchain> m_swapchain; // nul sans fenêtre
         std::unique_ptr<Frames> m_frames;       // de même
+        std::array<std::unique_ptr<CommandBatch>, RHI::FramesInFlight> m_batches; // command buffers de chaque image
+        std::unique_ptr<CommandBatch> m_submitBatch;                             // ceux de Submit
         std::unique_ptr<Timestamps> m_timestamps;
         std::unique_ptr<CrashMarkers> m_crash;
         std::array<std::uint32_t, RHI::FramesInFlight> m_writtenTimestamps{}; // cases écrites par chaque image
@@ -112,6 +115,7 @@ namespace Flux::Vk {
         RHI::Extent m_extent;
         bool m_vsync = true;
         RhiCommandList m_commandList;
+        RhiCommandList m_submitList;
         RHI::WaitTimes m_waitTimes;
         struct Retired
         {

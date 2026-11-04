@@ -62,12 +62,15 @@ namespace Flux::Vk {
     }
 
     bool RhiDevice::Submit(const std::function<void(RHI::CommandList&)>& record) {
-        const bool submitted = m_device->ImmediateSubmit([&](VkCommandBuffer commandBuffer) {
-            RhiCommandList commandList;
-            commandList.SetMeshShaders(m_device->HasMeshShaders());
-            commandList.Begin(commandBuffer, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, VK_NULL_HANDLE);
-            record(commandList);
-        });
+        // Le lot de Submit est libre : la soumission précédente a été attendue.
+        const VkCommandBuffer first = m_submitBatch->Begin();
+        if (first == VK_NULL_HANDLE) {
+            return false;
+        }
+        m_submitList.Begin(first, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, VK_NULL_HANDLE, *m_submitBatch);
+        record(m_submitList);
+        const bool recorded = m_submitBatch->End(m_submitList);
+        const bool submitted = m_device->SubmitAndWait(m_submitBatch->GetCommandBuffers(), recorded);
         RunRetired(false);
         return submitted;
     }
@@ -138,9 +141,14 @@ namespace Flux::Vk {
             return RHI::FrameStatus::Error;
         }
 
+        CommandBatch& batch = *m_batches[m_frameIndex];
+        const VkCommandBuffer first = batch.Begin();
+        if (first == VK_NULL_HANDLE) {
+            return RHI::FrameStatus::Error;
+        }
         m_frames->Begin(m_frameIndex);
-        m_commandList.Begin(frame.commandBuffer, m_swapchain->GetImage(m_imageIndex), m_swapchain->GetImageView(m_imageIndex),
-                            m_swapchain->GetExtent(), m_timestamps->GetPool(m_frameIndex));
+        m_commandList.Begin(first, m_swapchain->GetImage(m_imageIndex), m_swapchain->GetImageView(m_imageIndex),
+                            m_swapchain->GetExtent(), m_timestamps->GetPool(m_frameIndex), batch);
         m_crash->BeginFrame(m_frameIndex, m_commandList);
         return RHI::FrameStatus::Ready;
     }
@@ -162,10 +170,11 @@ namespace Flux::Vk {
             }
         }
         m_commandList.TransitionToPresent();
-        m_writtenTimestamps[m_frameIndex] = m_commandList.GetWrittenTimestamps();
-        if (!Check(vkEndCommandBuffer(frame.commandBuffer), "vkEndCommandBuffer")) {
+        CommandBatch& batch = *m_batches[m_frameIndex];
+        if (!batch.End(m_commandList)) {
             return false;
         }
+        m_writtenTimestamps[m_frameIndex] = batch.GetWrittenTimestamps(m_commandList);
 
         VkSemaphoreSubmitInfo waitInfo{};
         waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -187,7 +196,9 @@ namespace Flux::Vk {
         for (VkCommandBuffer commands : uploads.commands) {
             m_commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
         }
-        m_commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, frame.commandBuffer, 0});
+        for (VkCommandBuffer commands : batch.GetCommandBuffers()) {
+            m_commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
+        }
 
         VkSubmitInfo2 submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
