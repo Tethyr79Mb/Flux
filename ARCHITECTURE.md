@@ -93,6 +93,12 @@ rapide, données des systèmes du jeu), `InterfaceBindings` (valeurs liées, fon
 Moteur). Elles passent par l'interface publique d'`Engine` (`GetScene`, `GetPhysics`...) ou reçoivent ce qu'il leur
 faut en argument.
 
+`JobSystem` (`Core`) : fils de travail pour le travail court de chaque image, un par cœur moins un. Une file par fil,
+vol de tâches entre fils, et le fil qui attend un lot (`Wait`) exécute des tâches au lieu de dormir. Aucune
+allocation par tâche (case fixe de 48 octets, captures copiables seulement). Le travail long (lecture des modèles,
+compression des textures du sol) garde ses propres fils, pour ne jamais retenir une image. Jolt a encore son propre
+groupe de fils.
+
 ## Rendu
 
 Couches, de la plus haute à la plus basse :
