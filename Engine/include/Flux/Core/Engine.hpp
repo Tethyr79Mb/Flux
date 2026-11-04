@@ -278,6 +278,9 @@ namespace Flux {
         // à l'étape Interaction. Le moteur y ajoute la souris et ce qui entoure le vaisseau (gravité, air, planète),
         // puis le fait voler (Ships::Update) ; sans appel, le vaisseau ne reçoit aucune commande.
         void SetPilotInput(const ShipInput& input);
+        // Pointeur virtuel du pilote (le manche de la souris), pour l'afficher : -1 à 1 au bord de son cercle, x vers
+        // la droite, y vers le bas ; nul quand le joueur ne pilote pas ou que la souris est libérée (Alt, menu).
+        Math::Vector2f GetSteerPointer() const;
         // Planète la plus proche du vaisseau, altitude, air (aide au pilotage, infos de vol du jeu). Recrée le relief
         // seulement quand la planète change.
         FlightState GetFlightState(Entity ship);

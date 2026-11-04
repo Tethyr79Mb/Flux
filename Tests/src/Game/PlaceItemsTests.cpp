@@ -47,7 +47,7 @@ bool RunPlaceItemsTests() {
         Scene scene;
         Entity fighter = NullEntity;
         CHECK(Build(extensions, "Chasseur", scene, fighter));
-        CHECK(scene.Get<ShipComponent>(fighter).turnRate == 90.0f);
+        CHECK(scene.Get<ShipComponent>(fighter).turnRate.z == 150.0f);
         CHECK(scene.Get<HealthComponent>(fighter).health == 500.0f);
         CHECK(scene.TryGet<Game::WarpDriveComponent>(fighter) != nullptr);
         CHECK(Count<HardpointComponent>(scene) > 0 && Count<WeaponComponent>(scene) == Count<HardpointComponent>(scene));
@@ -58,7 +58,7 @@ bool RunPlaceItemsTests() {
         Scene scene;
         Entity manta = NullEntity;
         CHECK(Build(extensions, "Chasseur Manta", scene, manta));
-        CHECK(scene.Get<ShipComponent>(manta).turnRate == 90.0f);
+        CHECK(scene.Get<ShipComponent>(manta).turnRate.z == 150.0f);
         CHECK(scene.Get<HealthComponent>(manta).health == 400.0f);
         CHECK(scene.TryGet<Game::WarpDriveComponent>(manta) != nullptr);
         CHECK(Count<HardpointComponent>(scene) == 2 && Count<WeaponComponent>(scene) == 2);

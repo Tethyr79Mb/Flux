@@ -38,7 +38,8 @@ namespace Game::Missions {
             ShipComponent ship;
             ship.maxSpeed = 120.0f;
             ship.acceleration = 30.0f;
-            ship.turnRate = 70.0f;
+            ship.turnRate = {70.0f, 70.0f, 70.0f};
+            ship.turnAcceleration = {360.0f, 360.0f, 360.0f}; // l'IA vise d'un geste sec
             ship.levelAssist = false;
             ship.fallsWithoutPilot = false;
             scene.Add<ShipComponent>(drone, ship);

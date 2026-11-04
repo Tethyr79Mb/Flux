@@ -500,8 +500,8 @@ namespace Flux {
         // vaisseau ; reprises à zéro à chaque image.
         ShipInput shipInput = std::exchange(m_pilotInput, ShipInput{});
         if (seated) {
-            shipInput.mouseYaw = m_playerCamera->GetSteerYaw();
-            shipInput.mousePitch = m_playerCamera->GetSteerPitch();
+            shipInput.stickYaw = m_playerCamera->GetSteerYaw();
+            shipInput.stickPitch = m_playerCamera->GetSteerPitch();
             if (WasActionPressed("Changer de vue")) {
                 m_playerCamera->ToggleCockpitView();
             }
@@ -818,6 +818,10 @@ namespace Flux {
 
     bool Engine::ConsumeInteraction() {
         return std::exchange(m_interactionPending, false);
+    }
+
+    Math::Vector2f Engine::GetSteerPointer() const {
+        return m_playerCamera->GetSteerPointer();
     }
 
     void Engine::SetPilotInput(const ShipInput& input) {
