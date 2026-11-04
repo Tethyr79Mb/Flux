@@ -230,11 +230,51 @@ namespace Flux {
         return -Stick(m_pointer).y;
     }
 
+    void PlayerCamera::WidenWithThrust(Engine& engine, Entity player, double deltaSeconds) {
+        // Champ de vision du pilote élargi quand le vaisseau accélère vers l'avant (moteurs à fond, boost, mode voyage) :
+        // le décor semble filer plus vite. Accélération mesurée sur sa vitesse dans le monde, pour qu'un virage, qui
+        // tourne sa vitesse dans ses axes, n'y compte pas.
+        constexpr float BaseFov = std::numbers::pi_v<float> / 3.0f;   // 60°, celui de Camera
+        constexpr float FovPerThrust = 3.0f;  // ° pour une accélération égale à ShipComponent::acceleration
+        constexpr float FovMax = 8.0f;        // °
+        constexpr float FovSettle = 0.4f;     // s
+        Scene& scene = engine.GetScene();
+        float wanted = 0.0f;
+        const Entity seat = Seats::GetPilotSeat(scene, player);
+        const Entity ship = seat != NullEntity ? scene.GetShip(seat) : NullEntity;
+        if (ship != NullEntity && deltaSeconds > 0.0) {
+            const ShipComponent& component = scene.Get<ShipComponent>(ship);
+            const Math::Quaternionf rotation = scene.GetWorldRotation(ship);
+            const Math::Vector3f velocity = rotation.Rotate(component.velocity);
+            if (ship == m_fovShip) {
+                const Math::Vector3f forward = rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+                const float thrust = Math::Dot(velocity - m_fovVelocity, forward) / static_cast<float>(deltaSeconds);
+                wanted = std::clamp(thrust / std::max(component.acceleration, 1.0f) * FovPerThrust, 0.0f, FovMax);
+            }
+            m_fovVelocity = velocity;
+        }
+        m_fovShip = ship;
+        if (deltaSeconds > 0.0) {
+            m_fovExtra += (wanted - m_fovExtra) * (1.0f - std::exp(-static_cast<float>(deltaSeconds) / FovSettle));
+        }
+        if (ship == NullEntity && m_fovExtra < 0.01f) {
+            m_fovExtra = 0.0f; // revenu : la caméra du personnage garde son champ de vision
+            if (m_fovWidened) {
+                engine.GetCamera().verticalFov = BaseFov;
+                m_fovWidened = false;
+            }
+            return;
+        }
+        engine.GetCamera().verticalFov = BaseFov + m_fovExtra * std::numbers::pi_v<float> / 180.0f;
+        m_fovWidened = true;
+    }
+
     void PlayerCamera::Place(Engine& engine, Entity player, double deltaSeconds) {
         Scene& scene = engine.GetScene();
         Camera& camera = engine.GetCamera();
         m_hiddenPlayer = NullEntity;
         TurnWithShip(engine, player);
+        WidenWithThrust(engine, player, deltaSeconds);
         if (const Entity pilotSeat = Seats::GetPilotSeat(scene, player); pilotSeat != NullEntity && !m_cockpitView) {
             PlaceChase(engine, pilotSeat, deltaSeconds);
             Aim(camera); // en se relevant, elle regarde où regardait la vue extérieure

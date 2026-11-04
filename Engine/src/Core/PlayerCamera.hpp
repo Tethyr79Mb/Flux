@@ -44,6 +44,7 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(const Scene& scene, Entity player) const;
         void TurnWithShip(Engine& engine, Entity player);
+        void WidenWithThrust(Engine& engine, Entity player, double deltaSeconds);
         // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
         void Aim(const Camera& camera);
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
@@ -63,6 +64,12 @@ namespace Flux {
         // Tête du pilote en vue cockpit : vitesse de rotation du vaisseau lissée (°/s, ses axes) ; la tête est en
         // retard sur les changements de rotation, puis se recale.
         Math::Vector3f m_headTurn;
+        // Champ de vision élargi par l'accélération du vaisseau piloté (°, lissé), et sa vitesse dans le monde à
+        // l'image d'avant pour la mesurer.
+        float m_fovExtra = 0.0f;
+        bool m_fovWidened = false;
+        Entity m_fovShip = NullEntity;
+        Math::Vector3f m_fovVelocity;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
