@@ -297,6 +297,21 @@ namespace {
         escape();
         CHECK(!isOpen(pauseId) && !interaction.pausesGame);
         CHECK(isOpen(menuId)); // « Échap la ferme » décoché
+
+        // Pause étirée sans marge, fond opaque : elle cache la scène, mais seulement ouverte et sans transparence.
+        CHECK(!interaction.coversView);
+        Interface::Element* pauseWindow = Interface::Find(document, pauseId);
+        pauseWindow->anchor = Interface::Anchor::Stretch;
+        pauseWindow->position = pauseWindow->size = {};
+        pauseWindow->background = {0.0f, 0.0f, 0.0f, 1.0f};
+        pauseWindow->radius = 0.0f; // une fenêtre neuve a des coins arrondis
+        CHECK(!Interface::IsCoveringView(document));
+        escape();
+        CHECK(isOpen(pauseId) && interaction.coversView);
+        Interface::Find(document, pauseId)->background.a = 0.86f;
+        CHECK(!Interface::IsCoveringView(document));
+        escape();
+        CHECK(!isOpen(pauseId) && !interaction.coversView);
         CHECK(!Interface::SetWindowOpen(document, "Inconnue", true));
 
         // Éditeur : une fenêtre fermée est placée quand on la montre (elle ou un de ses enfants sélectionné).

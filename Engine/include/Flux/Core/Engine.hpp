@@ -345,6 +345,7 @@ namespace Flux {
         bool m_cameraInputEnabled = true;
         bool m_interfacePaused = false;    // à l'image précédente
         bool m_interfacePausedNow = false; // à l'image en cours
+        bool m_interfaceCoversNow = false; // une fenêtre opaque cache la scène à l'image en cours
         bool m_escapeUsed = false;         // Échap a déjà servi à une interface dans cette image
         double m_fps = 0.0; // moyenne de la dernière seconde (« Images par seconde »)
         std::string m_rebindingAction; // action dont on attend la nouvelle touche

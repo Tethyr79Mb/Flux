@@ -339,6 +339,7 @@ namespace Flux {
             ++m_frame;
             m_interfaceWantsMouse = std::exchange(m_interfaceMouseNow, false);
             m_interfacePaused = std::exchange(m_interfacePausedNow, false);
+            m_interfaceCoversNow = false;
             m_escapeUsed = false;
             m_keyCaptured = false;
             if (!m_rebindingAction.empty()) {
@@ -391,12 +392,14 @@ namespace Flux {
             if (m_drawScreenUi) {
                 ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
                                GetScreenUiOptions());
-                DrawProjectMenu(m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)});
             }
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
-                const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
                 // Aussi en pause (infos de vol, destinations), avec le temps du jeu : arrêté, les messages attendent.
                 RunGameSystems(GameStage::Hud, m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
+            }
+            if (m_drawScreenUi) {
+                // Après le HUD : le menu du projet (Options) couvre tout l'écran, HUD compris, sous son voile sombre.
+                DrawProjectMenu(m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)});
             }
             if (m_drawScreenUi) {
                 // Version dans le coin bas droit : dit quelle compilation tourne sur une capture d'écran.
@@ -428,6 +431,8 @@ namespace Flux {
 
             m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
+            // Menu opaque plein écran (dessiné plus haut, à cette image) : la scène derrière ne coûte plus rien au GPU.
+            m_renderer->SetSceneCovered(m_interfaceCoversNow);
             m_renderer->SetProjectiles(m_projectiles, m_impacts);
             if (!m_renderer->BeginFrame() || !m_renderer->Render(m_scene, m_camera, m_playerCamera->GetHiddenPlayer())
                 || !m_renderer->EndFrame()) {
@@ -607,7 +612,7 @@ namespace Flux {
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceBindings->ClearActions();
-            m_interfacePaused = m_interfacePausedNow = false;
+            m_interfacePaused = m_interfacePausedNow = m_interfaceCoversNow = false;
             m_quickSave->SetScene({}, {}); // la scène éditée reprend (SetPlayedScene au prochain lancement)
         }
     }
@@ -916,6 +921,7 @@ namespace Flux {
                 m_interfaceBindings->Sync(instance->document.roots, interaction.changed, *m_inputActions, m_rebindingAction);
                 m_interfaceMouseNow = m_interfaceMouseNow || interaction.wantsMouse;
                 m_interfacePausedNow = m_interfacePausedNow || interaction.pausesGame;
+                m_interfaceCoversNow = m_interfaceCoversNow || interaction.coversView;
                 m_escapeUsed = m_escapeUsed || interaction.escapeUsed;
                 if (interaction.action != Interface::ButtonAction::None) {
                     // Pas pendant le dessin : la scène est en cours de parcours.

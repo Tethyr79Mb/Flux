@@ -912,6 +912,15 @@ namespace Flux::Interface {
         return search(search, document.roots);
     }
 
+    bool IsCoveringView(const Document& document) {
+        // Les fenêtres sont à la racine ; un coin arrondi ou une marge laisserait voir la scène.
+        return std::ranges::any_of(document.roots, [](const Element& element) {
+            return element.visible && element.type == ElementType::Window && element.anchor == Anchor::Stretch
+                && element.position == Vector2f{} && element.size == Vector2f{} && element.background.a >= 1.0f
+                && element.radius <= 0.0f;
+        });
+    }
+
     std::optional<Element> Remove(Document& document, std::uint32_t id) {
         std::size_t index = 0;
         std::vector<Element>* siblings = FindSiblings(document, id, index);
@@ -1108,6 +1117,7 @@ namespace Flux::Interface {
                 interaction.thumbPressed = false;
                 interaction.wantsMouse = true;
                 interaction.pausesGame = IsPausingGame(document);
+                interaction.coversView = IsCoveringView(document);
                 return;
             }
         }
@@ -1253,6 +1263,7 @@ namespace Flux::Interface {
         }
         interaction.wantsMouse = hit != nullptr || interaction.pressed != 0;
         interaction.pausesGame = IsPausingGame(document);
+        interaction.coversView = IsCoveringView(document);
     }
 
     void Draw(const Document& document, UI::DrawList& list, Vector2f viewMin, Vector2f viewMax, const DrawOptions& options) {

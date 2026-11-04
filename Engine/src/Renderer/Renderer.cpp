@@ -142,7 +142,9 @@ namespace Flux {
         Math::WorldPosition previousPosition;
         Math::Vector2f sceneViewportMin; // en pixels ; vide : toute la fenêtre
         Math::Vector2f sceneViewportMax;
-        bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface)
+        bool sceneVisible = true; // false : seule l'interface est dessinée (éditeur d'interface, menu opaque)
+        bool sceneShown = true;   // SetSceneVisible
+        bool sceneCovered = false; // SetSceneCovered
         bool grid = false;        // grille au sol de l'éditeur
         RenderTimings timings;
         // L'image décrite une fois (BuildGraph), jouée à chaque image avec l'état de l'image ci-dessous.
@@ -913,7 +915,13 @@ namespace Flux {
     }
 
     void Renderer::SetSceneVisible(bool visible) {
-        m_impl->sceneVisible = visible;
+        m_impl->sceneShown = visible;
+        m_impl->sceneVisible = m_impl->sceneShown && !m_impl->sceneCovered;
+    }
+
+    void Renderer::SetSceneCovered(bool covered) {
+        m_impl->sceneCovered = covered;
+        m_impl->sceneVisible = m_impl->sceneShown && !m_impl->sceneCovered;
     }
 
     void Renderer::SetThrusterPreview(bool preview) {
