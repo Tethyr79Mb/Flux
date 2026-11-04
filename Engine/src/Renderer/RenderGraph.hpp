@@ -15,6 +15,8 @@
 #include <vector>
 
 namespace Flux {
+    class JobSystem;
+
     // Graphe de rendu : l'image décrite comme une suite de passes qui disent ce qu'elles lisent et écrivent, au lieu
     // d'appels enchaînés à la main. Décrit une fois (AddPass, puis Compile qui vérifie les dépendances), joué à chaque
     // image (Execute) : pas d'allocation par image.
@@ -25,6 +27,11 @@ namespace Flux {
     // déclare : lue (Sampled), ou écrite (cible de couleur, ou de profondeur selon son format). Les passes n'en posent
     // plus, sauf pour leurs textures internes (niveaux du bloom). Les buffers gardent leurs barrières de calcul
     // (CommandList::ComputeBarrier). L'ordre est celui de la description (Engine/ROADMAP.md, étapes suivantes).
+    // Enregistrement en parallèle (SetParallelism) : chaque image se joue en deux temps. D'abord, sur le fil qui
+    // appelle Execute et dans l'ordre, les conditions, les Prepare des passes, les barrières prévues
+    // (CommandList::PlanTextures) et les échanges d'historiques. Puis les passes, coupées en groupes qui se suivent,
+    // chacun enregistré par un fil dans sa liste (CommandList::Fork), équilibrés sur le temps CPU de chaque passe aux
+    // images précédentes. Les Record ne changent donc aucun état qu'une autre passe lit : ce changement va dans Prepare.
     // Textures de travail (CreateTexture) : créées par le graphe à la taille de la vue 3D ou de la fenêtre, recréées
     // quand elle change (ResizeTextures). Un historique (Lifetime::Previous) en a deux exemplaires : une passe lit le
     // dernier écrit et écrit l'autre, qui devient le dernier écrit ; rien à échanger à la main.
@@ -76,6 +83,9 @@ namespace Flux {
             PassBuilder& Begin(Record begin);
             // Passe jouée seulement quand `condition` est vraie (vérifiée à chaque image).
             PassBuilder& When(Condition condition);
+            // Appelé à chaque image où la passe joue, sur le fil d'Execute, avant tout enregistrement et dans l'ordre
+            // des passes : l'état que lisent les passes suivantes (exemplaire d'historique écrit, sortie choisie).
+            PassBuilder& Prepare(std::function<void()> prepare);
             // `name` : texte constant, vivant jusqu'à la fin du programme (repère de plantage, panneau Moteur).
             PassBuilder& Step(const char* name, Record record, Condition condition = {});
 
@@ -109,9 +119,16 @@ namespace Flux {
 
         // Joue les passes dans l'ordre, chacune précédée des barrières de ses textures. `timestamps` : une heure du GPU au début puis après chaque étape (même une
         // étape sautée, qui compte alors pour 0) : les cases restent celles de ReadTimings d'une image à l'autre.
-        void Execute(RHI::CommandList& commands, bool timestamps);
+        // jobs : fils qui enregistrent les groupes de passes (SetParallelism) ; nul : tout dans `commands`.
+        void Execute(RHI::CommandList& commands, bool timestamps, JobSystem* jobs = nullptr);
+        // Au plus `maxLists` listes par image (0 ou 1 : une seule), une par tranche de `listMicroseconds` de temps
+        // CPU d'enregistrement : couper coûte une liste de plus, inutile pour des passes qui s'enregistrent vite.
+        void SetParallelism(std::uint32_t maxLists, double listMicroseconds);
+        // Listes remplies à la dernière image (1 : pas de parallèle).
+        std::uint32_t GetListCount() const { return m_listCount; }
         // Temps des passes et de leurs étapes d'après les heures relues (Device::GetTimestamps), dans l'ordre de
-        // la description : une passe, puis ses étapes si elle en a plusieurs.
+        // la description : une passe, puis ses étapes si elle en a plusieurs. Le temps CPU d'enregistrement de chaque
+        // passe aussi (moyenne glissante), sur sa ligne.
         std::span<const Timing> ReadTimings(std::span<const double> stamps);
         // Heures du GPU qu'utilise Execute.
         std::uint32_t GetTimestampCount() const { return m_stepCount + 1; }
@@ -135,6 +152,7 @@ namespace Flux {
             const char* name;
             Record record;
             Condition condition;
+            bool active = false; // à cette image
         };
         struct Pass
         {
@@ -146,17 +164,37 @@ namespace Flux {
             std::vector<ResourceId> continued;
             Record begin;
             Condition condition;
+            std::function<void()> prepare;
             std::vector<Step> steps;
+            // Rangé par Compile : ses barrières dans m_planned, ses heures du GPU.
+            std::uint32_t firstUse = 0;
+            std::uint32_t firstSlot = 0;
+            // À chaque image : jouée, barrières prévues, temps CPU d'enregistrement (moyenne glissante).
+            bool active = false;
+            std::uint32_t useCount = 0;
+            double cpuMicroseconds = 0.0;
         };
 
-        void PrepareTextures(RHI::CommandList& commands, const Pass& pass);
+        static constexpr std::uint32_t MaxLists = 16;
+
+        // Premier temps d'Execute : conditions, Prepare, barrières prévues, historiques échangés.
+        void Plan(RHI::CommandList& commands);
+        // Barrières de la passe, dans `uses` ; leur nombre.
+        std::uint32_t CollectUses(const Pass& pass, RHI::TextureUse* uses) const;
+        // Groupes de passes à enregistrer chacun dans sa liste (bornes dans m_bounds) ; 1 : tout dans une liste.
+        std::uint32_t ChooseGroups();
+        void RecordPasses(RHI::CommandList& commands, std::uint32_t first, std::uint32_t last, bool timestamps);
         const RHI::Texture* ReadTexture(const Resource& resource) const;
         const RHI::Texture* WriteTexture(const Resource& resource) const;
 
         std::vector<Resource> m_resources;
         std::vector<Pass> m_passes;
         std::vector<Timing> m_timings;
-        std::vector<RHI::TextureUse> m_uses; // barrières d'une passe, réservées par Compile
+        std::vector<RHI::TextureUse> m_planned; // barrières de toutes les passes, de taille fixée par Compile
         std::uint32_t m_stepCount = 0;
+        std::uint32_t m_maxLists = 1;
+        double m_listMicroseconds = 100.0;
+        std::array<std::uint32_t, MaxLists + 1> m_bounds{};
+        std::uint32_t m_listCount = 1;
     };
 }

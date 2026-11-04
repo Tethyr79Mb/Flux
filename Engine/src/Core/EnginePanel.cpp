@@ -78,6 +78,22 @@ namespace Flux {
                 }
             }
 
+            // Temps CPU d'enregistrement de chaque passe (moyenne glissante), sur le fil qui l'a faite : la somme dépasse
+            // « rendu » quand plusieurs fils enregistrent en même temps.
+            if (ui.CollapsingHeader("Enregistrement (CPU)", false)) {
+                bool parallel = renderer.IsParallelRecording();
+                if (ui.Checkbox("Enregistrement parallèle", parallel)) {
+                    renderer.SetParallelRecording(parallel);
+                }
+                const RenderTimings& render = renderer.GetTimings();
+                ui.LabelText("Listes de commandes", std::format("{}", render.recordLists));
+                for (const RenderPassTiming& pass : render.gpu) {
+                    if (!pass.step && pass.cpuMilliseconds >= 0.0) {
+                        ui.LabelText(pass.name, std::format("{:.3f} ms", pass.cpuMilliseconds));
+                    }
+                }
+            }
+
             if (ui.CollapsingHeader("Scène", false)) {
                 // V-Sync et anticrénelage : dans Fichier > Paramètres (le panneau garde la mesure).
                 bool occlusion = renderer.IsOcclusionCullingEnabled();
@@ -150,7 +166,15 @@ namespace Flux {
             gpuTotal += !row.step && row.average > 0.0 ? row.average : 0.0;
             passes.push_back({{"name", row.name}, {"step", row.step}, {"ms", row.average}});
         }
+        Json recording = Json::array();
+        for (const RenderPassTiming& pass : render.gpu) {
+            if (!pass.step) {
+                recording.push_back({{"name", pass.name}, {"cpuMs", pass.cpuMilliseconds}});
+            }
+        }
         json["gpu"] = {{"totalMs", passes.empty() ? -1.0 : gpuTotal}, {"passes", std::move(passes)}};
+        json["recording"] = {{"parallel", renderer.IsParallelRecording()}, {"lists", render.recordLists},
+                             {"passes", std::move(recording)}};
         Json exposure = {{"ev100", ExposureToEv100(render.exposure)}, {"exposure", render.exposure}};
         // 0 : exposition fixe, ou rien de mesurable (image noire).
         exposure["measuredLuminanceNits"] = render.sceneLuminance * Photometry::NitsPerUnit;

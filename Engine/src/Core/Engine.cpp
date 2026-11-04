@@ -2,6 +2,7 @@
 
 #include "Flux/Animation/Animator.hpp"
 #include "Flux/Audio/AudioSystem.hpp"
+#include "Flux/Core/JobSystem.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Core/Version.hpp"
 #include "Flux/Input/InputActions.hpp"
@@ -66,6 +67,7 @@ namespace Flux {
 
     Engine::Engine(const EngineConfig& config)
         : m_window(std::make_unique<Window>()),
+          m_jobs(std::make_unique<JobSystem>()),
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
           m_freeCamera(config.freeCamera),
@@ -95,6 +97,7 @@ namespace Flux {
             return;
         }
         m_renderer = std::move(renderer.value());
+        m_renderer->SetJobSystem(m_jobs.get());
         m_renderer->SetVSync(config.vsync);
         m_renderer->SetTemporalAA(config.temporalAA);
         m_renderer->SetUpscaling(config.upscaling);

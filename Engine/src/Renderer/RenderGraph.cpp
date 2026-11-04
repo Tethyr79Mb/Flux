@@ -1,6 +1,9 @@
 #include "Renderer/RenderGraph.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
+
 #include <algorithm>
+#include <chrono>
 #include <format>
 
 namespace Flux {
@@ -26,6 +29,11 @@ namespace Flux {
 
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::When(Condition condition) {
         m_graph.m_passes[m_pass].condition = std::move(condition);
+        return *this;
+    }
+
+    RenderGraph::PassBuilder& RenderGraph::PassBuilder::Prepare(std::function<void()> prepare) {
+        m_graph.m_passes[m_pass].prepare = std::move(prepare);
         return *this;
     }
 
@@ -111,7 +119,7 @@ namespace Flux {
     }
 
     RenderGraph::PassBuilder RenderGraph::AddPass(const char* name) {
-        m_passes.push_back({name, {}, {}, {}, {}, {}});
+        m_passes.push_back({.name = name});
         return {*this, static_cast<std::uint32_t>(m_passes.size() - 1)};
     }
 
@@ -132,7 +140,9 @@ namespace Flux {
         }
         std::size_t uses = 0;
         for (Pass& pass : m_passes) {
-            uses = std::max(uses, pass.reads.size() + pass.writes.size());
+            pass.firstUse = static_cast<std::uint32_t>(uses);
+            pass.firstSlot = m_stepCount + 1; // case 0 : le début de l'image
+            uses += pass.reads.size() + pass.writes.size();
             pass.continued.clear();
             if (pass.steps.empty()) {
                 return std::unexpected(std::format("graphe de rendu : la passe « {} » n'a aucune étape", pass.name));
@@ -166,61 +176,30 @@ namespace Flux {
                 drawn[resource] = true;
             }
             m_stepCount += static_cast<std::uint32_t>(pass.steps.size());
-            m_timings.push_back({pass.name, -1.0, false});
+            m_timings.push_back({pass.name, -1.0, false, -1.0});
             if (pass.steps.size() > 1) {
                 for (const Step& step : pass.steps) {
-                    m_timings.push_back({step.name, -1.0, true});
+                    m_timings.push_back({step.name, -1.0, true, -1.0});
                 }
             }
         }
-        m_uses.reserve(uses);
+        m_planned.assign(uses, {});
         if (GetTimestampCount() > RHI::MaxTimestamps) {
             return std::unexpected(std::format("graphe de rendu : {} étapes, au plus {} mesurables", m_stepCount, RHI::MaxTimestamps - 1));
         }
         return {};
     }
 
-    void RenderGraph::Execute(RHI::CommandList& commands, bool timestamps) {
-        std::uint32_t slot = 0;
-        if (timestamps) {
-            commands.WriteTimestamp(slot);
-        }
-        for (const Pass& pass : m_passes) {
-            const bool active = !pass.condition || pass.condition();
-            if (active) {
-                PrepareTextures(commands, pass);
-            }
-            if (active && pass.begin) {
-                pass.begin(commands);
-            }
-            for (const Step& step : pass.steps) {
-                if (active && (!step.condition || step.condition())) {
-                    commands.BeginStep(step.name);
-                    step.record(commands);
-                }
-                if (timestamps) {
-                    commands.WriteTimestamp(++slot);
-                }
-            }
-            if (active && pass.begin) {
-                commands.EndRenderPass();
-            }
-            if (active) {
-                // L'exemplaire écrit devient celui que liront les passes suivantes, et l'image d'après.
-                for (const ResourceId resource : pass.writes) {
-                    if (Resource& r = m_resources[resource]; r.IsHistory()) {
-                        r.written = 1 - r.written;
-                    }
-                }
-            }
-        }
+    void RenderGraph::SetParallelism(std::uint32_t maxLists, double listMicroseconds) {
+        m_maxLists = std::clamp(maxLists, 1u, MaxLists);
+        m_listMicroseconds = listMicroseconds;
     }
 
-    void RenderGraph::PrepareTextures(RHI::CommandList& commands, const Pass& pass) {
-        m_uses.clear(); // capacité gardée : pas d'allocation
+    std::uint32_t RenderGraph::CollectUses(const Pass& pass, RHI::TextureUse* uses) const {
+        std::uint32_t count = 0;
         for (const ResourceId resource : pass.reads) {
             if (const RHI::Texture* texture = ReadTexture(m_resources[resource])) {
-                m_uses.push_back({texture, RHI::TextureAccess::Sampled, false});
+                uses[count++] = {texture, RHI::TextureAccess::Sampled, false, {}};
             }
         }
         // Contenu jeté : texture de l'image à sa première écriture, ou exemplaire d'historique qui ne tient que
@@ -234,12 +213,118 @@ namespace Flux {
                 const RHI::TextureAccess access = pass.writeAccess[w] != RHI::TextureAccess::None ? pass.writeAccess[w]
                                                 : depth ? RHI::TextureAccess::DepthTarget
                                                         : RHI::TextureAccess::ColorTarget;
-                m_uses.push_back({texture, access, first || r.IsHistory()});
+                uses[count++] = {texture, access, first || r.IsHistory(), {}};
             }
         }
-        if (!m_uses.empty()) {
-            commands.UseTextures(m_uses);
+        return count;
+    }
+
+    void RenderGraph::Plan(RHI::CommandList& commands) {
+        for (Pass& pass : m_passes) {
+            pass.active = !pass.condition || pass.condition();
+            pass.useCount = 0;
+            for (Step& step : pass.steps) {
+                step.active = pass.active && (!step.condition || step.condition());
+            }
+            if (!pass.active) {
+                continue;
+            }
+            if (pass.prepare) {
+                pass.prepare();
+            }
+            RHI::TextureUse* uses = m_planned.data() + pass.firstUse;
+            pass.useCount = CollectUses(pass, uses);
+            if (pass.useCount > 0) {
+                commands.PlanTextures({uses, pass.useCount});
+            }
+            // L'exemplaire écrit devient celui que liront les passes suivantes, et l'image d'après.
+            for (const ResourceId resource : pass.writes) {
+                if (Resource& r = m_resources[resource]; r.IsHistory()) {
+                    r.written = 1 - r.written;
+                }
+            }
         }
+    }
+
+    std::uint32_t RenderGraph::ChooseGroups() {
+        const auto count = static_cast<std::uint32_t>(m_passes.size());
+        // Une passe jouée compte au moins une microseconde : son premier enregistrement n'est pas encore mesuré.
+        const auto cost = [](const Pass& pass) { return pass.active ? std::max(pass.cpuMicroseconds, 1.0) : 0.0; };
+        double total = 0.0;
+        for (const Pass& pass : m_passes) {
+            total += cost(pass);
+        }
+        const double wanted = m_listMicroseconds > 0.0 ? total / m_listMicroseconds : static_cast<double>(m_maxLists);
+        const std::uint32_t groups = std::min({m_maxLists, count, static_cast<std::uint32_t>(std::max(wanted, 1.0))});
+        if (groups < 2) {
+            return 1;
+        }
+        // Coupé dès qu'un groupe atteint sa part du total, en laissant au moins une passe à chaque groupe suivant.
+        std::uint32_t group = 1;
+        double sum = 0.0;
+        m_bounds[0] = 0;
+        for (std::uint32_t i = 0; i + 1 < count && group < groups; ++i) {
+            sum += cost(m_passes[i]);
+            if (sum >= total * group / groups || count - (i + 1) == groups - group) {
+                m_bounds[group++] = i + 1;
+            }
+        }
+        m_bounds[group] = count;
+        return group;
+    }
+
+    void RenderGraph::RecordPasses(RHI::CommandList& commands, std::uint32_t first, std::uint32_t last, bool timestamps) {
+        using Clock = std::chrono::steady_clock;
+        for (std::uint32_t p = first; p < last; ++p) {
+            Pass& pass = m_passes[p];
+            const Clock::time_point start = Clock::now();
+            if (pass.useCount > 0) {
+                commands.UseTextures({m_planned.data() + pass.firstUse, pass.useCount});
+            }
+            if (pass.active && pass.begin) {
+                pass.begin(commands);
+            }
+            std::uint32_t slot = pass.firstSlot;
+            for (const Step& step : pass.steps) {
+                if (step.active) {
+                    commands.BeginStep(step.name);
+                    step.record(commands);
+                }
+                if (timestamps) {
+                    commands.WriteTimestamp(slot);
+                }
+                ++slot;
+            }
+            if (pass.active && pass.begin) {
+                commands.EndRenderPass();
+            }
+            const double spent = std::chrono::duration<double, std::micro>(Clock::now() - start).count();
+            pass.cpuMicroseconds = pass.cpuMicroseconds == 0.0 ? spent : pass.cpuMicroseconds * 0.9 + spent * 0.1;
+        }
+    }
+
+    void RenderGraph::Execute(RHI::CommandList& commands, bool timestamps, JobSystem* jobs) {
+        if (timestamps) {
+            commands.WriteTimestamp(0);
+        }
+        Plan(commands);
+        const auto count = static_cast<std::uint32_t>(m_passes.size());
+        m_listCount = 1;
+        const std::uint32_t groups = jobs ? ChooseGroups() : 1;
+        if (groups > 1) {
+            const std::span<RHI::CommandList* const> lists = commands.Fork(groups);
+            if (lists.size() == groups) {
+                // Le fil d'Execute fait le premier groupe ; chaque passe n'est touchée que par le fil de son groupe.
+                jobs->ParallelFor(groups, 1, [this, lists, timestamps](std::uint32_t begin, std::uint32_t end) {
+                    for (std::uint32_t g = begin; g < end; ++g) {
+                        RecordPasses(*lists[g], m_bounds[g], m_bounds[g + 1], timestamps);
+                    }
+                });
+                m_listCount = groups;
+                return;
+            }
+        }
+        RecordPasses(commands, 0, count, timestamps);
     }
 
     std::span<const RenderGraph::Timing> RenderGraph::ReadTimings(std::span<const double> stamps) {
@@ -250,6 +335,7 @@ namespace Flux {
         std::size_t row = 0;
         for (const Pass& pass : m_passes) {
             const auto count = static_cast<std::uint32_t>(pass.steps.size());
+            m_timings[row].cpuMilliseconds = pass.cpuMicroseconds / 1000.0;
             m_timings[row++].milliseconds = between(slot, slot + count);
             if (count > 1) {
                 for (std::uint32_t s = 0; s < count; ++s) {

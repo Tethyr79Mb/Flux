@@ -62,12 +62,17 @@ namespace Flux::RHI {
         // seul fil à la fois, et finie (passes fermées) avant Device::EndFrame ou la fin de Submit. Hors d'une passe,
         // sur la liste de l'image (ou de Submit) seulement. Cette liste perd ensuite pipeline et groupes liés.
         // UseTextures suit l'usage que chaque texture a noté à l'enregistrement : une texture change d'usage dans une
-        // seule des listes parallèles, et aucune autre liste n'y touche avant que celle-ci soit remplie. Vide au-delà
-        // de MaxParallelCommandLists, ou sur une liste parallèle : enregistrer alors dans cette liste-ci.
+        // seule des listes parallèles, et aucune autre liste n'y touche avant que celle-ci soit remplie (ou ses
+        // barrières sont prévues avant, par PlanTextures). Vide au-delà de MaxParallelCommandLists, ou sur une liste
+        // parallèle : enregistrer alors dans cette liste-ci.
         virtual std::span<CommandList* const> Fork(std::uint32_t count) = 0;
         // Prépare chaque texture à son nouvel usage, en une barrière pour toutes : attend ce qui l'écrivait ou la
         // lisait avant, change son layout. Sans effet pour une texture déjà lue (Sampled) et relue. Hors d'une passe.
         virtual void UseTextures(std::span<const TextureUse> uses) = 0;
+        // Prévoit des barrières sans rien enregistrer : dans l'ordre, chaque texture note son nouvel usage et `from`
+        // reçoit celui d'avant. Ces TextureUse passés plus tard à UseTextures, dans n'importe quelle liste, posent
+        // leurs barrières sans relire ni changer l'usage noté : l'enregistrement en parallèle garde l'ordre prévu.
+        virtual void PlanTextures(std::span<TextureUse> uses) = 0;
         void Use(const Texture& texture, TextureAccess access, bool discard = false) {
             const TextureUse use{&texture, access, discard};
             UseTextures({&use, 1});

@@ -232,6 +232,8 @@ namespace Flux::Planetology {
         PlanetState* FindOwner(std::uint64_t owner);
         bool Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex);
         void Retire(Node& node);
+        // Cases toutes prises : libère celles des tuiles vues il y a le plus longtemps, pour `requested` tuiles demandées.
+        void MakeRoom(std::size_t requested);
 
         RHI::Device& m_device;
         std::unique_ptr<PlanetTileCompute> m_compute; // avant les nœuds : leurs groupes sont rendus à son layout
@@ -251,6 +253,13 @@ namespace Flux::Planetology {
             std::uint64_t frame;
         };
         std::vector<FreeTile> m_freeTiles;
+        // Candidates de MakeRoom, gardée d'une image à l'autre (pas d'allocation quand les cases sont pleines).
+        struct OldTile
+        {
+            std::uint64_t lastUsed;
+            Node* node;
+        };
+        std::vector<OldTile> m_oldTiles;
         // Tuiles calculées avec chaque image en vol, dans l'ordre : leurs mesures reviennent quand le GPU a fini.
         struct Computed
         {

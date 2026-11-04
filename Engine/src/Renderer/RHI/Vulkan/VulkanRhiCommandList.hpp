@@ -48,6 +48,7 @@ namespace Flux::Vk {
 
         std::span<RHI::CommandList* const> Fork(std::uint32_t count) override;
         void UseTextures(std::span<const RHI::TextureUse> uses) override;
+        void PlanTextures(std::span<RHI::TextureUse> uses) override;
         void BeginRenderPass(const RHI::RenderPassDesc& desc) override;
         void EndRenderPass() override;
         void SetViewport(const RHI::Viewport& viewport) override;

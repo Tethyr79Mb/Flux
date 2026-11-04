@@ -24,6 +24,7 @@
 #include <vector>
 
 namespace Flux {
+    class JobSystem;
     class Window;
     struct Camera;
     class Scene;
@@ -31,11 +32,13 @@ namespace Flux {
     struct Impact;
 
     // Temps du GPU d'une passe du rendu (step false) ou d'une de ses étapes, en millisecondes ; négatif si inconnu.
+    // Pour une passe, aussi le temps CPU de son enregistrement (moyenne glissante), sur le fil qui l'a faite.
     struct RenderPassTiming
     {
         const char* name; // texte constant
         double milliseconds;
         bool step;
+        double cpuMilliseconds = -1.0;
     };
 
     // Temps de la dernière image rendue, en millisecondes. Les temps du GPU sont ceux d'une image un peu plus ancienne
@@ -47,6 +50,7 @@ namespace Flux {
         double waitGpu = 0.0;  // CPU arrêté : le GPU n'a pas fini l'image qui utilisait les mêmes ressources
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
         double present = 0.0;  // CPU : appel de présentation
+        std::uint32_t recordLists = 1; // listes de commandes enregistrées en même temps (SetParallelRecording)
         // GPU : chaque passe du graphe de rendu dans l'ordre de l'image, suivie de ses étapes (step) quand elle en a
         // plusieurs. Rempli quand le panneau Moteur demande les heures (RequestDetailedTimings) ; valable jusqu'à
         // l'image suivante.
@@ -149,6 +153,12 @@ namespace Flux {
         // Entités cachées derrière d'autres écartées par le GPU (activé par défaut), d'après la profondeur de l'image
         // précédente. Désactivable pour comparer.
         void SetOcclusionCulling(bool enabled);
+        // Fils qui enregistrent les passes de l'image en parallèle (ceux du moteur, qui vivent plus longtemps que le
+        // Renderer) ; nul (par défaut) : tout sur le fil de Render.
+        void SetJobSystem(JobSystem* jobs);
+        // Enregistrement en parallèle, avec des fils (activé par défaut) : désactivable pour comparer.
+        void SetParallelRecording(bool enabled);
+        bool IsParallelRecording() const;
         // Grille au sol de l'éditeur (plan y = 0, lignes du mètre, des 10 m et des 100 m, axes X et Z en couleur),
         // cachée derrière les objets ; désactivée par défaut, le jeu ne la montre pas.
         void SetGridVisible(bool visible);

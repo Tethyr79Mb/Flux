@@ -196,11 +196,16 @@ namespace Flux::Vk {
         };
         for (const RHI::TextureUse& use : uses) {
             const auto& texture = static_cast<const RhiTexture&>(*use.texture);
-            const AccessInfo before = Describe(texture.GetAccess(), m_meshShaders);
+            // Usage prévu : l'usage noté n'est pas lu, un autre fil peut l'écrire (passes internes d'une autre liste).
+            const RHI::TextureAccess from = use.from ? *use.from : texture.GetAccess();
+            const AccessInfo before = Describe(from, m_meshShaders);
             const AccessInfo after = Describe(use.access, m_meshShaders);
+            if (!use.from) {
+                texture.SetAccess(use.access);
+            }
             // Lue puis relue : rien à attendre. Écrite : toujours attendre ce qui précède, même déjà cible (la même
             // texture sert à chaque image, la précédente écrit peut-être encore).
-            if (texture.GetAccess() == use.access && !after.write) {
+            if (from == use.access && !after.write) {
                 continue;
             }
             if (count == MaxBatch) {
@@ -219,9 +224,16 @@ namespace Flux::Vk {
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = texture.GetImage().GetHandle();
             barrier.subresourceRange = {texture.GetAspect(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
-            texture.SetAccess(use.access);
         }
         flush();
+    }
+
+    void RhiCommandList::PlanTextures(std::span<RHI::TextureUse> uses) {
+        for (RHI::TextureUse& use : uses) {
+            const auto& texture = static_cast<const RhiTexture&>(*use.texture);
+            use.from = texture.GetAccess();
+            texture.SetAccess(use.access);
+        }
     }
 
     // Tampon de profondeur d'une passe avec couleur, effacé ; son contenu n'est gardé (lisible après la passe) qu'avec

@@ -1,12 +1,16 @@
 // Graphe de rendu (Renderer/RenderGraph) : ordre des passes et des étapes, passes et étapes sautées, heures du GPU
-// aux mêmes cases d'une image à l'autre, barrières des textures déclarées, et description refusée quand une passe lit
-// ce que rien n'a encore écrit.
+// aux mêmes cases d'une image à l'autre, barrières des textures déclarées, description refusée quand une passe lit
+// ce que rien n'a encore écrit, et enregistrement en parallèle (groupes de passes dans des listes de Fork) qui donne
+// les mêmes commandes dans le même ordre.
 #include "Check.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
 #include "Renderer/RenderGraph.hpp"
 
 #include <array>
 #include <format>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,8 +32,30 @@ namespace {
         std::vector<std::string> log;
 
         std::vector<RHI::TextureUse> uses; // toutes, dans l'ordre
+        std::map<const RHI::Texture*, RHI::TextureAccess> noted; // usage noté par PlanTextures
+        bool forks = false; // Fork rend des listes (sinon vide, comme une liste parallèle)
+        std::vector<std::unique_ptr<RecordingCommands>> children;
+        std::vector<RHI::CommandList*> childPointers;
 
-        std::span<RHI::CommandList* const> Fork(std::uint32_t) override { return {}; }
+        std::span<RHI::CommandList* const> Fork(std::uint32_t count) override {
+            if (!forks) {
+                return {};
+            }
+            children.clear();
+            childPointers.clear();
+            for (std::uint32_t i = 0; i < count; ++i) {
+                children.push_back(std::make_unique<RecordingCommands>());
+                childPointers.push_back(children.back().get());
+            }
+            return childPointers;
+        }
+        void PlanTextures(std::span<RHI::TextureUse> list) override {
+            for (RHI::TextureUse& use : list) {
+                const auto found = noted.find(use.texture);
+                use.from = found != noted.end() ? found->second : RHI::TextureAccess::None;
+                noted[use.texture] = use.access;
+            }
+        }
         void UseTextures(std::span<const RHI::TextureUse> list) override {
             std::string line = "barrières";
             for (const RHI::TextureUse& use : list) {
@@ -200,6 +226,63 @@ bool RunRenderGraphTests() {
         CHECK(work.GetWriteCopy(history) == 1); // recommence au premier exemplaire
     } else {
         GpuMissing("graphe de rendu (textures)", device.error().c_str());
+    }
+
+    // En parallèle : les passes coupées en 3 groupes, chacun dans sa liste, donnent les mêmes commandes dans le même
+    // ordre (heure 0 dans la liste principale) ; les Prepare passent avant tout enregistrement, dans l'ordre ; une liste
+    // pose les barrières prévues, même pour une texture qu'une liste d'avant a changée.
+    {
+        const NamedTexture colorTexture("couleur", RHI::Format::RGBA16Float);
+        std::vector<std::string> prepared;
+        RenderGraph parallel;
+        const auto color = parallel.AddTexture("couleur", Lifetime::Frame, [&] { return &colorTexture; });
+        const auto other = parallel.AddResource("autre");
+        parallel.AddPass("scène").Writes(color).Prepare([&] { prepared.emplace_back("scène"); })
+            .Step("scène", [](RHI::CommandList& c) { c.Draw(3, 0); });
+        parallel.AddPass("calcul").Writes(other).Step("calcul", [](RHI::CommandList& c) { c.Dispatch(1, 1, 1); });
+        parallel.AddPass("bloom").Reads(color).Prepare([&] { prepared.emplace_back("bloom"); })
+            .Step("bloom", [](RHI::CommandList& c) { c.Draw(3, 0); });
+        parallel.AddPass("fin").Reads(color).Reads(other).Step("fin", [](RHI::CommandList& c) { c.Draw(3, 0); });
+        CHECK(parallel.Compile().has_value());
+
+        RecordingCommands serial;
+        parallel.Execute(serial, true);
+        CHECK(parallel.GetListCount() == 1);
+
+        JobSystem jobs(2);
+        parallel.SetParallelism(3, 0.0); // 0 : autant de listes que permis, quel que soit le temps mesuré
+        prepared.clear();
+        RecordingCommands forked;
+        forked.forks = true;
+        parallel.Execute(forked, true, &jobs);
+        CHECK(parallel.GetListCount() == 3 && forked.children.size() == 3);
+        CHECK(forked.log == std::vector<std::string>{"heure 0"});
+        CHECK((prepared == std::vector<std::string>{"scène", "bloom"}));
+        std::vector<std::string> joined{"heure 0"};
+        for (const auto& child : forked.children) {
+            CHECK(!child->log.empty()); // chaque groupe a au moins une passe
+            joined.insert(joined.end(), child->log.begin(), child->log.end());
+        }
+        CHECK(joined == serial.log);
+        // bloom lit la couleur écrite par « scène », dans une autre liste : barrière prévue depuis la cible.
+        bool found = false;
+        for (const auto& child : forked.children) {
+            for (const RHI::TextureUse& use : child->uses) {
+                if (use.access == RHI::TextureAccess::Sampled) {
+                    found = use.from == RHI::TextureAccess::ColorTarget;
+                    break;
+                }
+            }
+            if (found) {
+                break;
+            }
+        }
+        CHECK(found);
+        // Fork refusé (liste parallèle, trop de listes) : tout dans la liste donnée.
+        RecordingCommands refused;
+        parallel.Execute(refused, true, &jobs);
+        CHECK(parallel.GetListCount() == 1 && refused.log == serial.log);
+        CHECK(parallel.ReadTimings({})[0].cpuMilliseconds >= 0.0);
     }
 
     // Lire avant toute écriture de l'image : refusé, en nommant la passe et la ressource.

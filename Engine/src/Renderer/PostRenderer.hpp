@@ -48,12 +48,15 @@ namespace Flux {
         // Quand le graphe les a recréées (le GPU déjà attendu) : refait les niveaux du bloom et les groupes.
         std::expected<void, std::string> Bind(const Targets& targets);
 
-        // Hors de toute passe, après la scène et avant DrawBloom : mélange la scène à l'historique (voir Temporal.slang).
-        // `reprojection` : clip space de cette image sans décalage (x, y, profondeur, 1) -> celui de l'image précédente ;
-        // `history` false : rien à reprendre (saut de la caméra). `target` : l'exemplaire de l'historique écrit
-        // (RenderGraph::GetWriteCopy), l'autre est lu. `historyExposure` : TemporalView::historyExposure.
-        void ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection, bool history,
-                             float historyExposure);
+        // Anticrénelage de cette image, sur le fil du graphe avant tout enregistrement (RenderGraph Prepare) : la sortie
+        // que liront le bloom et l'image finale. `reprojection` : clip space de cette image sans décalage (x, y,
+        // profondeur, 1) -> celui de l'image précédente ; `history` false : rien à reprendre (saut de la caméra).
+        // `target` : l'exemplaire de l'historique écrit (RenderGraph::GetWriteCopy), l'autre est lu.
+        // `historyExposure` : TemporalView::historyExposure.
+        void PrepareTemporal(std::uint32_t target, const Math::Matrix4f& reprojection, bool history, float historyExposure);
+        // Hors de toute passe, après la scène et avant DrawBloom : mélange la scène à l'historique (voir
+        // Temporal.slang), comme PrepareTemporal l'a préparé.
+        void ResolveTemporal(RHI::CommandList& commands) const;
         // Anticrénelage coupé à cette image : le bloom et l'image finale lisent la scène telle quelle.
         void SkipTemporal();
         // Hors de toute passe, après la scène : le mouvement complet de chaque pixel (caméra et objets) dans
@@ -62,9 +65,11 @@ namespace Flux {
         // FSR a écrit l'exemplaire `target` de l'historique : le bloom et l'image finale le lisent.
         void UseUpscaled(std::uint32_t target);
 
-        // Hors de toute passe, après la scène : réductions et remontées du bloom. Rien si `strength` vaut 0. Les niveaux
-        // sont internes (barrières posées ici) ; le résultat est laissé lisible pour Composite, même non dessiné.
-        void DrawBloom(RHI::CommandList& commands, float strength);
+        // Bloom de cette image, avant tout enregistrement (RenderGraph Prepare) : rien si `strength` vaut 0.
+        void PrepareBloom(float strength);
+        // Hors de toute passe, après la scène : réductions et remontées du bloom préparé. Les niveaux sont internes
+        // (barrières posées ici) ; le résultat est laissé lisible pour Composite, même non dessiné.
+        void DrawBloom(RHI::CommandList& commands) const;
         // Dans la passe principale, viewport sur la vue 3D : la scène et son bloom, avec l'exposition et la courbe de tons
         // (shaders/ToneCurve.slang).
         void Composite(RHI::CommandList& commands, float strength, float exposure) const;
@@ -130,6 +135,10 @@ namespace Flux {
         bool m_historyValid = false;      // l'historique lu tient une image de cette taille
         bool m_historyCleared = false;    // les deux historiques ont déjà servi de cible (lisibles par un shader)
         std::uint32_t m_output = 0;       // 0 : la scène ; 1 + i : history[i]
+        // Anticrénelage préparé (PrepareTemporal) : exemplaire écrit, paramètres, historique lu à effacer d'abord.
+        std::uint32_t m_temporalTarget = 0;
+        TemporalParams m_temporalParams{};
+        bool m_clearHistory = false;
         std::uint32_t m_levels = 0;
         // down[i] : la scène réduite i + 1 fois ; up[i] : down[i] plus tous les niveaux plus petits (up[m_levels - 1]
         // n'existe pas : c'est down[m_levels - 1]).

@@ -97,7 +97,7 @@ faut en argument.
 vol de tâches entre fils, et le fil qui attend un lot (`Wait`) exécute des tâches au lieu de dormir. Aucune
 allocation par tâche (case fixe de 48 octets, captures copiables seulement). Le travail long (lecture des modèles,
 compression des textures du sol) garde ses propres fils, pour ne jamais retenir une image. Jolt a encore son propre
-groupe de fils.
+groupe de fils. `Engine` possède le `JobSystem` (privé au moteur) et le donne au `Renderer`.
 
 ## Rendu
 
@@ -107,6 +107,8 @@ Couches, de la plus haute à la plus basse :
 Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 ├─ RenderGraph     passes et étapes avec leurs lectures et écritures, vérifiées une fois (Compile) puis jouées à
 │                  chaque image ; repère de plantage GPU et heure du GPU (panneau Moteur ouvert) par étape
+│                  ; joué en deux temps : préparation et barrières prévues sur un fil (Prepare, PlanTextures),
+│                  puis groupes de passes enregistrés en parallèle (CommandList::Fork, JobSystem)
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), soleil, air de la planète proche
