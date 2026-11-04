@@ -304,6 +304,7 @@ namespace {
         pauseWindow->anchor = Interface::Anchor::Stretch;
         pauseWindow->position = pauseWindow->size = {};
         pauseWindow->background = {0.0f, 0.0f, 0.0f, 1.0f};
+        pauseWindow->radius = 0.0f; // une fenêtre neuve a des coins arrondis
         CHECK(!Interface::IsCoveringView(document));
         escape();
         CHECK(isOpen(pauseId) && interaction.coversView);
