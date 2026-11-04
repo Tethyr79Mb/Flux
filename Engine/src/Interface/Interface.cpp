@@ -81,6 +81,7 @@ namespace Flux::Interface {
             Field{"closeOnEscape", "Échap la ferme", &Element::closeOnEscape, W},
             Field{"openOnEscape", "Échap l'ouvre (menu pause)", &Element::openOnEscape, W},
             Field{"pausesGame", "Met le jeu en pause", &Element::pausesGame, W},
+            Field{"openAction", "Touche d'ouverture", &Element::openAction, W, Field::Text::InputAction},
             Field{"action", "Action", &Element::action, B},
             Field{"target", "Cible", &Element::target, B, Field::Text::ActionTarget},
             Field{"checked", "Cochée", &Element::checked, C},
@@ -400,6 +401,10 @@ namespace Flux::Interface {
                         const bool open = button.action == ButtonAction::OpenWindow
                                        || (button.action == ButtonAction::ToggleWindow && !window->visible);
                         SetOpen(*window, open, raise);
+                    } else {
+                        // Dans une autre interface de la scène (bouton Options d'un menu principal) : le moteur la cherche.
+                        interaction.action = button.action;
+                        interaction.target = button.target;
                     }
                     break;
                 case ButtonAction::CloseParent:
@@ -868,6 +873,25 @@ namespace Flux::Interface {
             return nullptr;
         };
         return name.empty() ? nullptr : search(search, document.roots);
+    }
+
+    bool ToggleWindowsByAction(Document& document, const std::function<bool(std::string_view)>& pressed, bool allowOpen) {
+        // Par identifiant : BringToFront réordonne les racines.
+        std::vector<std::uint32_t> toggled;
+        for (const Element& element : document.roots) {
+            if (element.type == ElementType::Window && !element.openAction.empty() && (element.visible || allowOpen)
+                && pressed(element.openAction)) {
+                toggled.push_back(element.id);
+            }
+        }
+        for (const std::uint32_t id : toggled) {
+            Element* window = Find(document, id);
+            window->visible = !window->visible;
+            if (window->visible) {
+                BringToFront(document, id);
+            }
+        }
+        return !toggled.empty();
     }
 
     bool SetWindowOpen(Document& document, std::string_view name, bool open) {

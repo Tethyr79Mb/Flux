@@ -48,7 +48,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   ces réglages sur le moteur et réécrit le fichier (créé dès le premier lancement ; fermer la console arrête aussi la
   boucle proprement, `Platform::CatchConsoleClose`). Comme dans Unreal, le moteur possède la boucle et
   appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
-- **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage, menu du jeu (`.fluxui` présent dans toutes les scènes). Les assets sont copiés à côté
+- **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage (les menus sont des interfaces des scènes). Les assets sont copiés à côté
   des exécutables (`bin/assets/`).
 - Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à
   lancer) ; `out/build/` garde les fichiers intermédiaires et `out/deps/` les dépendances téléchargées
@@ -579,7 +579,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 | `*.scene.json` | scène (`flux.scene` v2 : exemplaires de prefabs) |
 | `*.prefab.json` | prefab (`flux.prefab`, même forme qu'une scène, une seule racine) |
 | `*.fluxui` | interface du jeu (`flux.ui` v1) |
-| `Game.fluxproject` | projet : nom, assets, scène de démarrage, menu du jeu |
+| `Game.fluxproject` | projet : nom, assets, scène de démarrage |
 | `Touches.json` | touches réassignées (à côté de l'exe) |
 | `Sauvegardes/rapide.scene.json`, `rapide.joueur.json`, `rapide.depart.json` | sauvegarde rapide (à côté de l'exe) : la scène en cours, ouvrable dans l'éditeur, et le siège du joueur ; reprise au lancement du jeu (`Engine::ResumeQuickSave`), effacée par F7. `rapide.depart.json` est la scène d'où la partie était partie, telle qu'au chargement : si l'éditeur l'a modifiée depuis, sa version actuelle est chargée et fusionnée avec la partie (`SceneMerge::ApplyChanges`). `rapide.joueur.json` garde aussi l'état des systèmes du jeu (`Engine::AddGameSaveData` : la mission en cours, par identifiants) |
 | `FluxEditor.layout.v3.json`, `FluxEditor.settings.json` | disposition et réglages de l'éditeur |

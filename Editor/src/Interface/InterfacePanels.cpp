@@ -267,7 +267,9 @@ namespace FluxEditor {
                 std::vector<std::string_view> options;
                 std::string missingLabel;
                 if (missing) {
-                    missingLabel = target.empty() ? std::format("(choisir {})", noun) : "« " + target + " » introuvable";
+                    missingLabel = target.empty() ? std::format("(choisir {})", noun)
+                                 : pages          ? "« " + target + " » introuvable"
+                                                  : "« " + target + " » (autre interface)";
                     options.push_back(missingLabel);
                 }
                 options.insert(options.end(), names.begin(), names.end());
@@ -276,10 +278,15 @@ namespace FluxEditor {
                     target = names[static_cast<std::size_t>(index - (missing ? 1 : 0))];
                     return true;
                 }
-                if (names.empty()) {
+                // Une fenêtre d'une autre interface de la scène (le menu Options depuis un menu principal) : par son nom.
+                bool typed = false;
+                if (!pages) {
+                    typed = ui.InputText("Nom de la fenêtre", target);
+                    ui.SetItemTooltip("Ou le nom d'une fenêtre d'une autre interface affichée dans la scène (« Options »).");
+                } else if (names.empty()) {
                     ui.TextDisabled(std::format("Ajoutez d'abord {} et donnez-lui un nom.", noun));
                 }
-                return false;
+                return typed;
             }
             case Interface::ButtonAction::ChangeScene: {
                 bool browse = false;
@@ -322,6 +329,31 @@ namespace FluxEditor {
             default:
                 return false; // pas de cible : rien à régler
         }
+    }
+
+    bool InterfaceEditor::DrawInputAction(Engine& engine, std::string_view label, std::string& action) {
+        UI::Context& ui = engine.GetUi();
+        // Actions du moteur et du jeu chargé ; une action inconnue (jeu pas encore compilé, renommée) reste affichée.
+        std::vector<std::string_view> names{"(aucune)"};
+        for (const InputAction& known : engine.GetInputActions().GetActions()) {
+            names.push_back(known.name);
+        }
+        const std::string unknownLabel = "« " + action + " » inconnue";
+        if (!action.empty() && std::ranges::find(names, std::string_view(action)) == names.end()) {
+            names.push_back(unknownLabel);
+        }
+        const std::string_view current = action.empty() ? names.front() : std::string_view(action);
+        auto found = std::ranges::find(names, current);
+        int index = found == names.end() ? static_cast<int>(names.size()) - 1 : static_cast<int>(found - names.begin());
+        bool changed = false;
+        if (ui.Choice(label, index, names) && names[static_cast<std::size_t>(index)] != current
+            && names[static_cast<std::size_t>(index)] != unknownLabel) {
+            action = index == 0 ? std::string{} : std::string(names[static_cast<std::size_t>(index)]);
+            changed = true;
+        }
+        ui.SetItemTooltip("En jeu, la touche de cette action (écran des touches) ouvre la fenêtre, et la ferme si elle "
+                          "est ouverte. Pas par-dessus un menu qui met le jeu en pause.");
+        return changed;
     }
 
     bool InterfaceEditor::DrawBinding(Engine& engine, Interface::Element& element) {
@@ -520,6 +552,8 @@ namespace FluxEditor {
                                     changed |= DrawActionTarget(engine, open.document, *element);
                                 } else if (field.text == Interface::Field::Text::Binding) {
                                     changed |= DrawBinding(engine, *element);
+                                } else if (field.text == Interface::Field::Text::InputAction) {
+                                    changed |= DrawInputAction(engine, field.label, value);
                                 } else if (field.text == Interface::Field::Text::Image) {
                                     bool browse = false;
                                     changed |= ui.InputTextBrowse(field.label, value, browse);

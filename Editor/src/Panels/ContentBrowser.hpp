@@ -99,9 +99,6 @@ namespace FluxEditor {
         bool Rename(Flux::Engine& engine, SceneDocument& document, const std::string& name);
         // Ars Solaris.exe chargera cette scène au lancement (enregistré dans le .fluxproject, recopié dans bin/ au build).
         static void SetStartupScene(Flux::Engine& engine, const std::filesystem::path& path);
-        // Menu du jeu (Project::menu) : présent dans toutes les scènes, ouvert par Échap. path vide : plus de menu.
-        static bool IsProjectMenu(const Flux::Engine& engine, const std::filesystem::path& path);
-        static void SetProjectMenu(Flux::Engine& engine, const std::filesystem::path& path);
 
         std::filesystem::path m_root;
         Entry m_tree;      // le dossier des assets, sans les scènes

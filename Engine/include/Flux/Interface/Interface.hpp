@@ -117,6 +117,7 @@ namespace Flux::Interface {
         bool closeOnEscape = true;  // Échap ferme la fenêtre ouverte la plus en avant qui l'accepte
         bool openOnEscape = false;  // ... et sinon ouvre celle-ci (menu pause)
         bool pausesGame = false;    // le jeu est en pause tant qu'elle est ouverte
+        std::string openAction;     // action d'entrée (« Inventaire ») qui ouvre et ferme la fenêtre ; vide : aucune
 
         bool checked = false; // case
         float value = 0.5f;   // curseur, entre minimum et maximum ; liste déroulante : numéro du choix (0 le premier)
@@ -165,8 +166,9 @@ namespace Flux::Interface {
                                     TextAlign Element::*, ButtonAction Element::*, std::vector<std::string> Element::*>;
         // Texte libre, chemin d'une image (choisi dans l'explorateur), ou cible d'une action (fenêtre, scène,
         // fonction : l'éditeur propose selon l'action).
-        // Liaison : nom d'une valeur (l'éditeur propose celles du moteur et du jeu).
-        enum class Text : std::uint8_t { Plain, Image, ActionTarget, Binding };
+        // Liaison : nom d'une valeur (l'éditeur propose celles du moteur et du jeu). Action d'entrée : nom d'une action
+        // de l'écran des touches.
+        enum class Text : std::uint8_t { Plain, Image, ActionTarget, Binding, InputAction };
 
         std::string_view key;   // dans le fichier
         std::string_view label; // dans l'éditeur
@@ -203,6 +205,10 @@ namespace Flux::Interface {
     // Ouvre (la met aussi devant les autres fenêtres) ou ferme la fenêtre de ce nom ; false si aucune fenêtre ne
     // porte ce nom.
     FLUX_API bool SetWindowOpen(Document& document, std::string_view name, bool open);
+    // Fenêtres à « Touche d'ouverture » dont l'action vient d'être appuyée (pressed) : ouverte, elle se ferme ; fermée,
+    // elle s'ouvre devant les autres si allowOpen (pas par-dessus un menu qui met le jeu en pause). true si l'une a changé.
+    FLUX_API bool ToggleWindowsByAction(Document& document, const std::function<bool(std::string_view)>& pressed,
+                                        bool allowOpen);
     // Affiche la page d'onglets de ce nom (les autres pages de ses onglets sont masquées) ; false si aucune page
     // d'onglets ne porte ce nom.
     FLUX_API bool ShowTab(Document& document, std::string_view pageName);

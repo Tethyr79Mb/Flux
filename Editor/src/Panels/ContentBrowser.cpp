@@ -476,9 +476,7 @@ namespace FluxEditor {
             const auto [badge, color] = scene     ? std::pair<std::string, Math::LinearColor>{startup ? "Démarrage" : "",
                                                                                             Math::LinearColor::FromSrgb8(52, 128, 80)}
                                         : entry.directory ? std::pair<std::string, Math::LinearColor>{}
-                                        : IsProjectMenu(engine, entry.path)
-                                            ? std::pair<std::string, Math::LinearColor>{"Menu", Math::LinearColor::FromSrgb8(52, 128, 80)}
-                                            : Badge(entry);
+                                                          : Badge(entry);
             const bool interfaceFile = !entry.directory && IsInterface(entry.path);
             const bool prefab = !entry.directory && IsPrefab(entry.path);
             const bool biome = !entry.directory && VegetationPanel::IsBiome(entry.path);
@@ -602,15 +600,6 @@ namespace FluxEditor {
         }
         if (!entry.directory && IsInterface(entry.path) && m_interfaces && ui.MenuItem("Ouvrir dans l'éditeur d'interface")) {
             m_interfaces->Open(engine, entry.path);
-        }
-        if (!entry.directory && IsInterface(entry.path)) {
-            if (!IsProjectMenu(engine, entry.path)) {
-                if (ui.MenuItem("Définir comme menu du jeu (Échap)")) {
-                    SetProjectMenu(engine, entry.path);
-                }
-            } else if (ui.MenuItem("Retirer du menu du jeu")) {
-                SetProjectMenu(engine, {});
-            }
         }
         if (!entry.directory && (VegetationPanel::IsBiome(entry.path) || VegetationPanel::IsSpecies(entry.path)) && m_vegetation
             && ui.MenuItem("Régler dans le panneau Végétation")) {
@@ -880,12 +869,6 @@ namespace FluxEditor {
             if (const std::optional<std::filesystem::path> startup = moved(project->GetStartupScenePath())) {
                 SetStartupScene(engine, *startup);
             }
-            if (!project->menu.empty()) {
-                if (const std::optional<std::filesystem::path> menu =
-                        moved(project->assetsDirectory / Platform::PathFromUtf8(project->menu))) {
-                    SetProjectMenu(engine, *menu);
-                }
-            }
         }
         if (m_selected == from) {
             m_selected = to;
@@ -983,33 +966,6 @@ namespace FluxEditor {
         if (auto saved = ProjectFile::Save(*project); !saved) {
             project->startupScene = previous; // le fichier n'a pas changé : le projet en mémoire non plus
             Platform::ShowError(engine.GetWindow(), "Scène de démarrage", "Projet non enregistré : " + saved.error());
-        }
-    }
-
-    bool ContentBrowser::IsProjectMenu(const Engine& engine, const std::filesystem::path& path) {
-        const Project* project = engine.GetProject();
-        return project && !project->menu.empty()
-            && (project->assetsDirectory / Platform::PathFromUtf8(project->menu)).lexically_normal() == path.lexically_normal();
-    }
-
-    void ContentBrowser::SetProjectMenu(Engine& engine, const std::filesystem::path& path) {
-        Project* project = engine.GetProject();
-        if (!project) {
-            return;
-        }
-        std::string menu;
-        if (!path.empty()) {
-            const std::filesystem::path relative = path.lexically_normal().lexically_relative(project->assetsDirectory);
-            if (relative.empty() || *relative.begin() == "..") {
-                Platform::ShowError(engine.GetWindow(), "Menu du jeu", "L'interface doit être dans le dossier des assets.");
-                return;
-            }
-            menu = Platform::ToGenericUtf8(relative);
-        }
-        std::string previous = std::exchange(project->menu, std::move(menu));
-        if (auto saved = ProjectFile::Save(*project); !saved) {
-            project->menu = std::move(previous); // le fichier n'a pas changé : le projet en mémoire non plus
-            Platform::ShowError(engine.GetWindow(), "Menu du jeu", "Projet non enregistré : " + saved.error());
         }
     }
 
