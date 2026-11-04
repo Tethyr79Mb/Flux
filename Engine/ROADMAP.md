@@ -230,7 +230,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
 - 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.
 - 🔧 Menu Options du jeu (`Interfaces/MenuOptions.fluxui`, déclaré par « menu » dans `Game.fluxproject`, présent dans
-  toutes les scènes) : plein écran, Échap l'ouvre et met le jeu en pause ; Graphiques, Son, Touches, Reprendre, Quitter.
+  toutes les scènes) : plein écran et dessiné par-dessus le HUD, Échap l'ouvre et met le jeu en pause ; Graphiques, Son, Touches, Reprendre, Quitter.
   Limites : la liste des touches est écrite dans le fichier (une action ajoutée au jeu doit y être ajoutée) ; pas
   encore le plein écran ni le choix du GPU dans les réglages ; pas de préréglages Bas à Ultra comme dans l'éditeur.
 - ⬜ Événements d'animation (bruits de pas).
