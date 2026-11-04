@@ -119,14 +119,14 @@
           "id": 4,
           "type": "tabs",
           "name": "Onglets",
-          "anchor": "center",
+          "anchor": "stretch",
           "position": [
-            0.0,
-            20.0
+            64.0,
+            176.0
           ],
           "size": [
-            1240.0,
-            700.0
+            64.0,
+            124.0
           ],
           "fontSize": 26.0,
           "textColor": [
