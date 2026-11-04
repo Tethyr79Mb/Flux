@@ -210,6 +210,8 @@ namespace Flux::Interface {
     FLUX_API int GetShownTab(const Element& tabs);
     // Une fenêtre ouverte (et ses parents visibles) met le jeu en pause.
     FLUX_API bool IsPausingGame(const Document& document);
+    // Une fenêtre ouverte, étirée sans marge et au fond opaque, cache toute la vue (menu Options).
+    FLUX_API bool IsCoveringView(const Document& document);
     // Retire l'élément (avec ses enfants) et le retourne.
     FLUX_API std::optional<Element> Remove(Document& document, std::uint32_t id);
     // Liste qui contient l'élément (racines ou enfants de son parent), et sa place dedans.
@@ -315,6 +317,7 @@ namespace Flux::Interface {
         std::string target;
         bool escapeUsed = false;
         bool pausesGame = false;
+        bool coversView = false; // une fenêtre opaque couvre toute la vue : la scène derrière n'a pas à être rendue
     };
 
     // Fait réagir l'interface à la souris et à Échap (cases, curseurs, fenêtres déplacées, ouvertes, fermées, mises

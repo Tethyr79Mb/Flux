@@ -119,6 +119,8 @@ namespace Flux {
         void SetSceneViewport(Math::Vector2f min, Math::Vector2f max);
         // false : ni ombres, ni scène 3D, ni ciel ; seule l'interface est dessinée (l'éditeur d'interface couvre la vue).
         void SetSceneVisible(bool visible);
+        // Comme SetSceneVisible(false), mais demandé par le jeu (menu opaque) : les deux se cumulent.
+        void SetSceneCovered(bool covered);
         // Flammes des réacteurs montrées à pleine poussée, quels que soient les moteurs : dans l'éditeur, jeu arrêté,
         // pour les voir et les régler (sinon, au ralenti, elles sont à peine visibles).
         void SetThrusterPreview(bool preview);
