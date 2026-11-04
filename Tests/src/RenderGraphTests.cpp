@@ -1,7 +1,7 @@
 // Graphe de rendu (Renderer/RenderGraph) : ordre des passes et des étapes, passes et étapes sautées, heures du GPU
 // aux mêmes cases d'une image à l'autre, barrières des textures déclarées, description refusée quand une passe lit
-// ce que rien n'a encore écrit, et enregistrement en parallèle (groupes de passes dans des listes de Fork) qui donne
-// les mêmes commandes dans le même ordre.
+// ce que rien n'a encore écrit, et enregistrement en parallèle (groupes de passes dans des listes de Fork, étapes d'une
+// passe dans des listes secondaires) qui donne les mêmes commandes dans le même ordre.
 #include "Check.hpp"
 
 #include "Flux/Core/JobSystem.hpp"
@@ -68,8 +68,25 @@ namespace {
             log.push_back(line);
         }
         void BeginRenderPass(const RHI::RenderPassDesc&) override { log.emplace_back("début de passe"); }
+        bool secondaries = false; // BeginParallelRenderPass rend des listes (sinon vide, passe commencée ici)
+        std::vector<std::unique_ptr<RecordingCommands>> inside;
+        std::vector<RHI::CommandList*> insidePointers;
+        std::span<RHI::CommandList* const> BeginParallelRenderPass(const RHI::RenderPassDesc& desc, std::uint32_t count) override {
+            if (!secondaries) {
+                BeginRenderPass(desc);
+                return {};
+            }
+            log.push_back(std::format("début de passe en {} listes", count));
+            inside.clear();
+            insidePointers.clear();
+            for (std::uint32_t i = 0; i < count; ++i) {
+                inside.push_back(std::make_unique<RecordingCommands>());
+                insidePointers.push_back(inside.back().get());
+            }
+            return insidePointers;
+        }
         void EndRenderPass() override { log.emplace_back("fin de passe"); }
-        void SetViewport(const RHI::Viewport&) override {}
+        void SetViewport(const RHI::Viewport&) override { log.emplace_back("vue"); }
         void SetScissor(const RHI::Rect&) override {}
         void ClearDepth(const RHI::Rect&, float) override {}
         void BindPipeline(const RHI::Pipeline&) override {}
@@ -283,6 +300,40 @@ bool RunRenderGraphTests() {
         parallel.Execute(refused, true, &jobs);
         CHECK(parallel.GetListCount() == 1 && refused.log == serial.log);
         CHECK(parallel.ReadTimings({})[0].cpuMilliseconds >= 0.0);
+    }
+
+    // Étapes en listes secondaires : chacune dans la sienne, réglée par `setup`, avec son heure ; mises bout à bout
+    // dans la passe, elles donnent les commandes de la passe enregistrée dans une seule liste.
+    {
+        bool third = false;
+        RenderGraph split;
+        const auto target = split.AddResource("cible");
+        split.AddPass("scène")
+            .Writes(target)
+            .BeginParallel([] { return RHI::RenderPassDesc{}; }, [](RHI::CommandList& c) { c.SetViewport({}); })
+            .Step("objets", [](RHI::CommandList& c) { c.Draw(3, 0); })
+            .Step("sol", [](RHI::CommandList& c) { c.Draw(3, 0); })
+            .Step("ciel", [](RHI::CommandList& c) { c.Draw(3, 0); }, [&] { return third; });
+        CHECK(split.Compile().has_value());
+
+        RecordingCommands alone;
+        split.Execute(alone, true);
+        CHECK((alone.log == std::vector<std::string>{"heure 0", "début de passe", "vue", "étape objets", "heure 1",
+                                                     "étape sol", "heure 2", "heure 3", "fin de passe"}));
+
+        JobSystem jobs(2);
+        RecordingCommands parent;
+        parent.secondaries = true;
+        split.Execute(parent, true, &jobs);
+        CHECK((parent.log == std::vector<std::string>{"heure 0", "début de passe en 3 listes", "fin de passe"}));
+        CHECK(parent.inside.size() == 3);
+        CHECK((parent.inside[0]->log == std::vector<std::string>{"vue", "étape objets", "heure 1"}));
+        CHECK((parent.inside[1]->log == std::vector<std::string>{"vue", "étape sol", "heure 2"}));
+        CHECK((parent.inside[2]->log == std::vector<std::string>{"vue", "heure 3"})); // étape sautée : heure gardée
+        // Listes refusées (image de la swapchain, trop de listes) : tout dans la liste, comme sans fils.
+        RecordingCommands refused;
+        split.Execute(refused, true, &jobs);
+        CHECK(refused.log == alone.log);
     }
 
     // Lire avant toute écriture de l'image : refusé, en nommant la passe et la ressource.

@@ -27,6 +27,12 @@ namespace Flux {
         return *this;
     }
 
+    RenderGraph::PassBuilder& RenderGraph::PassBuilder::BeginParallel(std::function<RHI::RenderPassDesc()> desc, Record setup) {
+        m_graph.m_passes[m_pass].parallelDesc = std::move(desc);
+        m_graph.m_passes[m_pass].setup = std::move(setup);
+        return *this;
+    }
+
     RenderGraph::PassBuilder& RenderGraph::PassBuilder::When(Condition condition) {
         m_graph.m_passes[m_pass].condition = std::move(condition);
         return *this;
@@ -281,29 +287,66 @@ namespace Flux {
             if (pass.useCount > 0) {
                 commands.UseTextures({m_planned.data() + pass.firstUse, pass.useCount});
             }
-            if (pass.active && pass.begin) {
-                pass.begin(commands);
-            }
-            std::uint32_t slot = pass.firstSlot;
-            for (const Step& step : pass.steps) {
-                if (step.active) {
-                    commands.BeginStep(step.name);
-                    step.record(commands);
+            if (pass.active && pass.parallelDesc) {
+                RecordParallelSteps(commands, pass, timestamps);
+            } else {
+                if (pass.active && pass.begin) {
+                    pass.begin(commands);
                 }
-                if (timestamps) {
-                    commands.WriteTimestamp(slot);
+                std::uint32_t slot = pass.firstSlot;
+                for (const Step& step : pass.steps) {
+                    RecordStep(commands, step, slot++, timestamps);
                 }
-                ++slot;
-            }
-            if (pass.active && pass.begin) {
-                commands.EndRenderPass();
+                if (pass.active && pass.begin) {
+                    commands.EndRenderPass();
+                }
             }
             const double spent = std::chrono::duration<double, std::micro>(Clock::now() - start).count();
             pass.cpuMicroseconds = pass.cpuMicroseconds == 0.0 ? spent : pass.cpuMicroseconds * 0.9 + spent * 0.1;
         }
     }
 
+    void RenderGraph::RecordStep(RHI::CommandList& commands, const Step& step, std::uint32_t slot, bool timestamps) {
+        if (step.active) {
+            commands.BeginStep(step.name);
+            step.record(commands);
+        }
+        if (timestamps) {
+            commands.WriteTimestamp(slot);
+        }
+    }
+
+    void RenderGraph::RecordParallelSteps(RHI::CommandList& commands, const Pass& pass, bool timestamps) {
+        const auto count = static_cast<std::uint32_t>(pass.steps.size());
+        const RHI::RenderPassDesc desc = pass.parallelDesc();
+        const std::span<RHI::CommandList* const> lists = m_jobs ? commands.BeginParallelRenderPass(desc, count)
+                                                                 : std::span<RHI::CommandList* const>{};
+        if (lists.size() == count) {
+            // Une étape par liste : chacune ne touche que la sienne (heure comprise, notée à la fin de l'étape).
+            m_jobs->ParallelFor(count, 1, [&pass, lists, timestamps](std::uint32_t begin, std::uint32_t end) {
+                for (std::uint32_t i = begin; i < end; ++i) {
+                    if (pass.setup) {
+                        pass.setup(*lists[i]);
+                    }
+                    RecordStep(*lists[i], pass.steps[i], pass.firstSlot + i, timestamps);
+                }
+            });
+        } else {
+            if (!m_jobs) {
+                commands.BeginRenderPass(desc);
+            }
+            if (pass.setup) {
+                pass.setup(commands);
+            }
+            for (std::uint32_t i = 0; i < count; ++i) {
+                RecordStep(commands, pass.steps[i], pass.firstSlot + i, timestamps);
+            }
+        }
+        commands.EndRenderPass();
+    }
+
     void RenderGraph::Execute(RHI::CommandList& commands, bool timestamps, JobSystem* jobs) {
+        m_jobs = jobs;
         if (timestamps) {
             commands.WriteTimestamp(0);
         }

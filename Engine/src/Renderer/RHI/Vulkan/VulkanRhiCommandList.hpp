@@ -36,6 +36,9 @@ namespace Flux::Vk {
         // Liste parallèle de la même soumission que `main` : même image de swapchain, mêmes heures (sans les remettre
         // à zéro), mêmes repères ; pas de Fork.
         void BeginParallel(VkCommandBuffer commandBuffer, const RhiCommandList& main);
+        // Liste secondaire d'une passe de `owner` (BeginParallelRenderPass) : mêmes heures et repères ; pas de Fork ni
+        // de passe.
+        void BeginSecondary(VkCommandBuffer commandBuffer, const RhiCommandList& owner);
         // Suite de cette liste dans un autre command buffer (après un Fork) : pipeline et groupes liés ne suivent pas.
         void ContinueIn(VkCommandBuffer commandBuffer);
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
@@ -50,6 +53,7 @@ namespace Flux::Vk {
         void UseTextures(std::span<const RHI::TextureUse> uses) override;
         void PlanTextures(std::span<RHI::TextureUse> uses) override;
         void BeginRenderPass(const RHI::RenderPassDesc& desc) override;
+        std::span<RHI::CommandList* const> BeginParallelRenderPass(const RHI::RenderPassDesc& desc, std::uint32_t count) override;
         void EndRenderPass() override;
         void SetViewport(const RHI::Viewport& viewport) override;
         void SetScissor(const RHI::Rect& rect) override;
@@ -82,12 +86,14 @@ namespace Flux::Vk {
         std::uint32_t GetWrittenTimestamps() const { return m_writtenTimestamps; }
 
         private:
-        void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc);
-        void BeginTexturePass(const RHI::RenderPassDesc& desc);
+        void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc, VkRenderingFlags flags);
+        void BeginTexturePass(const RHI::RenderPassDesc& desc, VkRenderingFlags flags);
         VkRenderingAttachmentInfo BeginDepthAttachment(const RHI::RenderPassDesc& desc);
 
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
-        CommandBatch* m_batch = nullptr; // nul pour une liste parallèle
+        CommandBatch* m_batch = nullptr; // nul pour une liste secondaire
+        bool m_canFork = false;          // liste de l'image (ou de Submit) seulement
+        std::span<RHI::CommandList* const> m_secondaries; // de la passe ouverte (BeginParallelRenderPass)
         VkImage m_image = VK_NULL_HANDLE;
         VkImageView m_view = VK_NULL_HANDLE;
         VkExtent2D m_extent{};

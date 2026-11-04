@@ -1,5 +1,6 @@
 // Tests des compute shaders du RHI : un calcul envoyé au GPU sans fenêtre, puis relu par le CPU ; le même calcul
-// enregistré dans des listes parallèles (CommandList::Fork) remplies par des fils de travail. Ignorés (réussis) sur une
+// enregistré dans des listes parallèles (CommandList::Fork) remplies par des fils de travail ; une passe de dessin
+// remplie par des listes secondaires. Ignorés (réussis) sur une
 // machine sans GPU Vulkan 1.3, sauf avec FLUX_TESTS_GPU=1 (la CI, sur lavapipe).
 #include "Check.hpp"
 
@@ -117,6 +118,41 @@ bool RunComputeTests() {
     for (std::uint32_t i = 0; i < Count; ++i) {
         const float expected = (input[i] * 3.0f + static_cast<float>(i)) * 16.0f;
         CHECK(std::abs(output[i] - expected) < 1.0e-2f);
+    }
+
+    // Passe de dessin remplie par des listes secondaires (BeginParallelRenderPass), chacune par un fil, dans une liste
+    // parallèle : la soumission passe, les étapes de plantage et les heures des listes secondaires comprises.
+    {
+        auto color = (*device)->CreateRenderTarget(RHI::Format::RGBA16Float, {64, 64}, true);
+        auto depth = (*device)->CreateRenderTarget(RHI::Format::D32Float, {64, 64}, true);
+        CHECK(color.has_value() && depth.has_value());
+        JobSystem jobs(3);
+        bool opened = false;
+        const bool submitted = (*device)->Submit([&](RHI::CommandList& commands) {
+            const std::span<RHI::CommandList* const> lists = commands.Fork(1);
+            RHI::CommandList& list = lists.empty() ? commands : *lists[0];
+            list.Use(**color, RHI::TextureAccess::ColorTarget, true);
+            list.Use(**depth, RHI::TextureAccess::DepthTarget, true);
+            const std::span<RHI::CommandList* const> inside = list.BeginParallelRenderPass(
+                {.clearColor = {0.5f, 0.5f, 0.5f, 1.0f}, .depth = depth->get(), .colorTarget = color->get()}, 4);
+            opened = inside.size() == 4;
+            if (opened) {
+                jobs.ParallelFor(4, 1, [&](std::uint32_t begin, std::uint32_t end) {
+                    for (std::uint32_t i = begin; i < end; ++i) {
+                        // Un quart de l'image chacune.
+                        const std::int32_t x = static_cast<std::int32_t>(i % 2) * 32;
+                        const std::int32_t y = static_cast<std::int32_t>(i / 2) * 32;
+                        inside[i]->BeginStep("quart");
+                        inside[i]->WriteTimestamp(i);
+                        inside[i]->SetViewport({static_cast<float>(x), static_cast<float>(y), 32.0f, 32.0f});
+                        inside[i]->SetScissor({x, y, 32, 32});
+                        inside[i]->ClearDepth({x, y, 32, 32}, 0.25f * static_cast<float>(i));
+                    }
+                });
+            }
+            list.EndRenderPass();
+        });
+        CHECK(submitted && opened);
     }
     return true;
 }

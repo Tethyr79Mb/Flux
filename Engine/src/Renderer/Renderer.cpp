@@ -576,7 +576,15 @@ namespace Flux {
                 .Reads(tiles)
                 .Reads(culled)
                 .Writes(shadowMap)
-                .Step("ombres", [this](RHI::CommandList& commands) { meshes->DrawShadows(commands, frame.index); });
+                .BeginParallel([this] { return meshes->GetShadowPassDesc(); })
+                .Step("ombres 1", [this](RHI::CommandList& commands) { meshes->DrawShadowCascade(commands, frame.index, 0); },
+                      [this] { return meshes->IsCascadeDrawn(0); })
+                .Step("ombres 2", [this](RHI::CommandList& commands) { meshes->DrawShadowCascade(commands, frame.index, 1); },
+                      [this] { return meshes->IsCascadeDrawn(1); })
+                .Step("ombres 3", [this](RHI::CommandList& commands) { meshes->DrawShadowCascade(commands, frame.index, 2); },
+                      [this] { return meshes->IsCascadeDrawn(2); })
+                .Step("ombres 4", [this](RHI::CommandList& commands) { meshes->DrawShadowCascade(commands, frame.index, 3); },
+                      [this] { return meshes->IsCascadeDrawn(3); });
             // Relief au loin : seulement les images où une de ses cascades est refaite (MeshRenderer::ChooseTerrainCascades).
             graph.AddPass("ombres du relief")
                 .When([this] { return sceneVisible && meshes->TerrainShadowsPending(); })
@@ -601,16 +609,20 @@ namespace Flux {
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
-                .Begin([this](RHI::CommandList& commands) {
-                    // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
-                    // Profondeur et mouvement gardés pour l'anticrénelage.
-                    commands.BeginRenderPass({.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
-                                              .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
-                                              .colorTarget = graph.GetTexture(targets.sceneColor),
-                                              .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true});
-                    commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
-                    commands.SetScissor({0, 0, frame.render.width, frame.render.height});
-                })
+                // Étapes enregistrées en même temps, chacune dans sa liste (objets, arbres, sol sont les plus longs).
+                .BeginParallel(
+                    [this] {
+                        // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
+                        // Profondeur et mouvement gardés pour l'anticrénelage.
+                        return RHI::RenderPassDesc{.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
+                                                   .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
+                                                   .colorTarget = graph.GetTexture(targets.sceneColor),
+                                                   .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true};
+                    },
+                    [this](RHI::CommandList& commands) {
+                        commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
+                        commands.SetScissor({0, 0, frame.render.width, frame.render.height});
+                    })
                 .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); })
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
