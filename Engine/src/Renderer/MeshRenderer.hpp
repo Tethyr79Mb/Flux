@@ -96,8 +96,11 @@ namespace Flux {
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
-        // cible (le graphe de rendu la rend ensuite lisible pour la scène).
-        void DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // cible (le graphe de rendu la rend ensuite lisible pour la scène). Une étape par cascade, chacune
+        // enregistrable dans sa liste : elle pose son viewport et ses liaisons.
+        RHI::RenderPassDesc GetShadowPassDesc() const;
+        bool IsCascadeDrawn(std::uint32_t cascade) const { return m_drawCascade[cascade]; }
+        void DrawShadowCascade(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t cascade) const;
         const RHI::Texture& GetShadowMap() const { return *m_shadowMap; }
         // Ombres du relief au loin : leur carte n'est redessinée que de temps en temps (ChooseTerrainCascades). Rien à
         // faire à cette image si TerrainShadowsPending est faux.

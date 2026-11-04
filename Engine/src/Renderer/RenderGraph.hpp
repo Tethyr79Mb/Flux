@@ -81,6 +81,11 @@ namespace Flux {
             PassBuilder& Writes(ResourceId resource, RHI::TextureAccess access);
             // Commence la passe de dessin (BeginRenderPass, viewport…) ; le graphe la termine après la dernière étape.
             PassBuilder& Begin(Record begin);
+            // Passe de dessin dont les étapes s'enregistrent en même temps, chacune dans sa liste secondaire
+            // (CommandList::BeginParallelRenderPass), jouées dans l'ordre. `setup` (viewport, scissor) est appelé au
+            // début de chaque liste, rien n'étant hérité. Sans fils (Execute sans JobSystem) : toutes dans la liste.
+            // Au lieu de Begin ; pour les passes lourdes, chaque liste coûtant un peu.
+            PassBuilder& BeginParallel(std::function<RHI::RenderPassDesc()> desc, Record setup = {});
             // Passe jouée seulement quand `condition` est vraie (vérifiée à chaque image).
             PassBuilder& When(Condition condition);
             // Appelé à chaque image où la passe joue, sur le fil d'Execute, avant tout enregistrement et dans l'ordre
@@ -163,6 +168,8 @@ namespace Flux {
             // Textures de l'image déjà écrites par une passe d'avant (Compile) : gardées, la passe continue leur dessin.
             std::vector<ResourceId> continued;
             Record begin;
+            std::function<RHI::RenderPassDesc()> parallelDesc; // BeginParallel
+            Record setup;
             Condition condition;
             std::function<void()> prepare;
             std::vector<Step> steps;
@@ -184,6 +191,9 @@ namespace Flux {
         // Groupes de passes à enregistrer chacun dans sa liste (bornes dans m_bounds) ; 1 : tout dans une liste.
         std::uint32_t ChooseGroups();
         void RecordPasses(RHI::CommandList& commands, std::uint32_t first, std::uint32_t last, bool timestamps);
+        // Passe de BeginParallel : ses étapes dans des listes secondaires remplies par m_jobs (sinon dans `commands`).
+        void RecordParallelSteps(RHI::CommandList& commands, const Pass& pass, bool timestamps);
+        static void RecordStep(RHI::CommandList& commands, const Step& step, std::uint32_t slot, bool timestamps);
         const RHI::Texture* ReadTexture(const Resource& resource) const;
         const RHI::Texture* WriteTexture(const Resource& resource) const;
 
@@ -196,5 +206,6 @@ namespace Flux {
         double m_listMicroseconds = 100.0;
         std::array<std::uint32_t, MaxLists + 1> m_bounds{};
         std::uint32_t m_listCount = 1;
+        JobSystem* m_jobs = nullptr; // de l'Execute en cours
     };
 }

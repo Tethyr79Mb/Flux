@@ -52,6 +52,8 @@ namespace Flux::RHI {
 
     // Listes parallèles au plus par soumission (une image, un Device::Submit), tous Fork compris.
     inline constexpr std::uint32_t MaxParallelCommandLists = 64;
+    // Listes secondaires au plus par soumission, toutes BeginParallelRenderPass comprises.
+    inline constexpr std::uint32_t MaxSecondaryCommandLists = 64;
 
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
     class CommandList {
@@ -78,6 +80,13 @@ namespace Flux::RHI {
             UseTextures({&use, 1});
         }
         virtual void BeginRenderPass(const RenderPassDesc& desc) = 0;
+        // Passe de dessin remplie par `count` listes secondaires, une par fil s'il le faut, jouées dans l'ordre du
+        // tableau. Jusqu'à EndRenderPass, cette liste n'enregistre rien d'autre ; chaque liste secondaire pose son
+        // viewport, son scissor, son pipeline et ses groupes (rien n'est hérité), sans BeginRenderPass, UseTextures,
+        // Fork ni Dispatch, et elles sont toutes remplies avant EndRenderPass. Vide (passe commencée comme par
+        // BeginRenderPass, à remplir dans cette liste) : image de la swapchain, au-delà de MaxSecondaryCommandLists,
+        // ou dans une liste secondaire.
+        virtual std::span<CommandList* const> BeginParallelRenderPass(const RenderPassDesc& desc, std::uint32_t count) = 0;
         virtual void EndRenderPass() = 0;
         virtual void SetViewport(const Viewport& viewport) = 0;
         virtual void SetScissor(const Rect& rect) = 0;

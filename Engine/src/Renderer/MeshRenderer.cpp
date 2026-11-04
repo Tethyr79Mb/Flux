@@ -1956,29 +1956,25 @@ namespace Flux {
         m_occlusion->BuildPyramid(commands, frameIndex, depth, size);
     }
 
-    void MeshRenderer::DrawShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+    RHI::RenderPassDesc MeshRenderer::GetShadowPassDesc() const {
         // Une cascade gardée (ChooseShadowCascades) : la carte n'est pas effacée, seulement les cascades redessinées.
-        commands.BeginRenderPass({.clearColor = {}, .depth = m_shadowMap.get(), .clearDepth = 1.0f, .color = false,
-                                  .loadDepth = m_keepShadows});
+        return {.clearColor = {}, .depth = m_shadowMap.get(), .clearDepth = 1.0f, .color = false, .loadDepth = m_keepShadows};
+    }
+
+    void MeshRenderer::DrawShadowCascade(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t c) const {
         BindState state;
-        for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
-            if (!m_drawCascade[c]) {
-                continue;
-            }
-            // Cascade c : colonne c % 2, ligne c / 2 de la carte.
-            const std::int32_t x = static_cast<std::int32_t>((c % 2) * ShadowCascadeResolution);
-            const std::int32_t y = static_cast<std::int32_t>((c / 2) * ShadowCascadeResolution);
-            constexpr auto size = static_cast<float>(ShadowCascadeResolution);
-            commands.SetViewport({static_cast<float>(x), static_cast<float>(y), size, size});
-            commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
-            if (m_keepShadows) {
-                commands.ClearDepth({x, y, ShadowCascadeResolution, ShadowCascadeResolution}, 1.0f);
-            }
-            DrawBatches(commands, state, frameIndex, 2 + c);
-            DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
-            DrawTrees(commands, state, frameIndex, static_cast<Planetology::VegetationRenderer::List>(Planetology::VegetationRenderer::Shadow + c), c);
+        // Cascade c : colonne c % 2, ligne c / 2 de la carte.
+        const std::int32_t x = static_cast<std::int32_t>((c % 2) * ShadowCascadeResolution);
+        const std::int32_t y = static_cast<std::int32_t>((c / 2) * ShadowCascadeResolution);
+        constexpr auto size = static_cast<float>(ShadowCascadeResolution);
+        commands.SetViewport({static_cast<float>(x), static_cast<float>(y), size, size});
+        commands.SetScissor({x, y, ShadowCascadeResolution, ShadowCascadeResolution});
+        if (m_keepShadows) {
+            commands.ClearDepth({x, y, ShadowCascadeResolution, ShadowCascadeResolution}, 1.0f);
         }
-        commands.EndRenderPass();
+        DrawBatches(commands, state, frameIndex, 2 + c);
+        DrawTiles(commands, state, frameIndex, 2 + c, *m_planet.shadowDoubleSided); // jupes des tuiles comprises
+        DrawTrees(commands, state, frameIndex, static_cast<Planetology::VegetationRenderer::List>(Planetology::VegetationRenderer::Shadow + c), c);
     }
 
     void MeshRenderer::DrawTerrainShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {

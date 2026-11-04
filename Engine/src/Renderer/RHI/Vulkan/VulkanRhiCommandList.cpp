@@ -43,6 +43,8 @@ namespace Flux::Vk {
                                VkQueryPool queryPool, CommandBatch& batch) {
         m_commandBuffer = commandBuffer;
         m_batch = &batch;
+        m_canFork = true;
+        m_secondaries = {};
         m_image = image;
         m_view = view;
         m_extent = extent;
@@ -61,7 +63,9 @@ namespace Flux::Vk {
 
     void RhiCommandList::BeginParallel(VkCommandBuffer commandBuffer, const RhiCommandList& main) {
         m_commandBuffer = commandBuffer;
-        m_batch = nullptr;
+        m_batch = main.m_batch;
+        m_canFork = false;
+        m_secondaries = {};
         m_image = main.m_image;
         m_view = main.m_view;
         m_extent = main.m_extent;
@@ -75,6 +79,11 @@ namespace Flux::Vk {
         ContinueIn(commandBuffer);
     }
 
+    void RhiCommandList::BeginSecondary(VkCommandBuffer commandBuffer, const RhiCommandList& owner) {
+        BeginParallel(commandBuffer, owner);
+        m_batch = nullptr;
+    }
+
     void RhiCommandList::ContinueIn(VkCommandBuffer commandBuffer) {
         m_commandBuffer = commandBuffer;
         m_layout = VK_NULL_HANDLE;
@@ -83,7 +92,7 @@ namespace Flux::Vk {
     }
 
     std::span<RHI::CommandList* const> RhiCommandList::Fork(std::uint32_t count) {
-        return m_batch ? m_batch->Fork(*this, count) : std::span<RHI::CommandList* const>{};
+        return m_canFork ? m_batch->Fork(*this, count) : std::span<RHI::CommandList* const>{};
     }
 
     void RhiCommandList::WriteTimestamp(std::uint32_t slot) {
@@ -252,11 +261,11 @@ namespace Flux::Vk {
 
     void RhiCommandList::BeginRenderPass(const RHI::RenderPassDesc& desc) {
         if (!desc.color) {
-            BeginDepthOnlyPass(desc);
+            BeginDepthOnlyPass(desc, 0);
             return;
         }
         if (desc.colorTarget) {
-            BeginTexturePass(desc);
+            BeginTexturePass(desc, 0);
             return;
         }
         // Image de la swapchain : seule cible que la passe prépare elle-même (le graphe ne la voit pas). Le contenu
@@ -286,7 +295,7 @@ namespace Flux::Vk {
     }
 
     // Texture 2D ou face d'un niveau de mip d'une texture cube : effacée puis remplie.
-    void RhiCommandList::BeginTexturePass(const RHI::RenderPassDesc& desc) {
+    void RhiCommandList::BeginTexturePass(const RHI::RenderPassDesc& desc, VkRenderingFlags flags) {
         const auto& target = static_cast<const RhiTexture&>(*desc.colorTarget);
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -311,6 +320,7 @@ namespace Flux::Vk {
             area = {std::max(area.width >> desc.colorMip, 1u), std::max(area.height >> desc.colorMip, 1u)};
         }
         renderingInfo.renderArea = {{0, 0}, area};
+        renderingInfo.flags = flags;
         renderingInfo.layerCount = 1;
         renderingInfo.colorAttachmentCount = desc.secondColorTarget ? 2 : 1;
         renderingInfo.pColorAttachments = colorAttachments.data();
@@ -319,7 +329,7 @@ namespace Flux::Vk {
     }
 
     // Carte d'ombres : effacée, ou gardée (loadDepth) quand seules certaines cascades sont redessinées.
-    void RhiCommandList::BeginDepthOnlyPass(const RHI::RenderPassDesc& desc) {
+    void RhiCommandList::BeginDepthOnlyPass(const RHI::RenderPassDesc& desc, VkRenderingFlags flags) {
         const auto& depth = static_cast<const RhiTexture&>(*desc.depth);
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -332,12 +342,67 @@ namespace Flux::Vk {
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         renderingInfo.renderArea = {{0, 0}, depth.GetImage().GetExtent()};
+        renderingInfo.flags = flags;
         renderingInfo.layerCount = 1;
         renderingInfo.pDepthAttachment = &depthAttachment;
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
+    std::span<RHI::CommandList* const> RhiCommandList::BeginParallelRenderPass(const RHI::RenderPassDesc& desc,
+                                                                             std::uint32_t count) {
+        // L'image de la swapchain reste dans la liste : sa passe est légère, et son format n'est pas noté ici.
+        if (m_batch == nullptr || count == 0 || (desc.color && desc.colorTarget == nullptr)) {
+            BeginRenderPass(desc);
+            return {};
+        }
+        // Formats de la passe, que les listes secondaires doivent connaître d'avance.
+        std::array<VkFormat, 2> colorFormats{};
+        VkCommandBufferInheritanceRenderingInfo rendering{};
+        rendering.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO;
+        if (desc.color) {
+            colorFormats[0] = ToVulkan(desc.colorTarget->GetFormat());
+            rendering.colorAttachmentCount = 1;
+            if (desc.secondColorTarget) {
+                colorFormats[1] = ToVulkan(desc.secondColorTarget->GetFormat());
+                rendering.colorAttachmentCount = 2;
+            }
+            rendering.pColorAttachmentFormats = colorFormats.data();
+        }
+        rendering.depthAttachmentFormat = desc.depth ? ToVulkan(desc.depth->GetFormat()) : VK_FORMAT_UNDEFINED;
+        rendering.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        const std::span<RHI::CommandList* const> lists = m_batch->OpenSecondaries(*this, rendering, count);
+        if (lists.empty()) {
+            BeginRenderPass(desc);
+            return {};
+        }
+        // Rien ne s'enregistre ici jusqu'à la fin de la passe : l'étape ouverte se ferme avant, chaque liste note les siennes.
+        EndStep();
+        if (desc.color) {
+            BeginTexturePass(desc, VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT);
+        } else {
+            BeginDepthOnlyPass(desc, VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT);
+        }
+        m_secondaries = lists;
+        return lists;
+    }
+
     void RhiCommandList::EndRenderPass() {
+        if (!m_secondaries.empty()) {
+            std::array<VkCommandBuffer, RHI::MaxSecondaryCommandLists> buffers{};
+            std::uint32_t count = 0;
+            for (RHI::CommandList* list : m_secondaries) {
+                auto& secondary = static_cast<RhiCommandList&>(*list);
+                secondary.EndStep();
+                if (Check(vkEndCommandBuffer(secondary.m_commandBuffer), "vkEndCommandBuffer")) {
+                    buffers[count++] = secondary.m_commandBuffer;
+                }
+                m_writtenTimestamps |= secondary.m_writtenTimestamps;
+            }
+            if (count > 0) {
+                vkCmdExecuteCommands(m_commandBuffer, count, buffers.data());
+            }
+            m_secondaries = {};
+        }
         vkCmdEndRendering(m_commandBuffer);
     }
 

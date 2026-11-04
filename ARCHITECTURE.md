@@ -109,6 +109,7 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 │                  chaque image ; repère de plantage GPU et heure du GPU (panneau Moteur ouvert) par étape
 │                  ; joué en deux temps : préparation et barrières prévues sur un fil (Prepare, PlanTextures),
 │                  puis groupes de passes enregistrés en parallèle (CommandList::Fork, JobSystem)
+│                  ; étapes des passes lourdes (scène, ombres) chacune dans une liste secondaire (BeginParallel)
 ├─ MeshRenderer    modèles, tuiles de planète, ombres, lumières, données par image
 ├─ PlanetRenderer  choix des tuiles du quadtree ; PlanetTileCompute : relief calculé par le GPU
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), soleil, air de la planète proche
@@ -134,7 +135,8 @@ backend Vulkan, privé (`src/Renderer/RHI/Vulkan`, il inclut volk), a un fichier
 `VulkanDevice` (device logique, files, allocateur, `ImmediateSubmit`), `VulkanSwapchain` (images, acquisition,
 présentation), `VulkanFrames` (ressources de chaque image en vol), `VulkanCommandBatch` (command buffers d'une
 soumission : la liste principale coupée à chaque `CommandList::Fork`, les listes parallèles entre ses morceaux, un pool
-par command buffer pour qu'un fil remplisse chacun), `VulkanTimestamps` (heures du GPU),
+par command buffer pour qu'un fil remplisse chacun ; aussi les listes secondaires des passes de dessin
+parallèles, prises sous verrou), `VulkanTimestamps` (heures du GPU),
 `VulkanCrashMarkers` (diagnostic de plantage), `VulkanTransfer` (envois) ; puis une classe `Rhi*` par interface
 (`VulkanRhiBuffer`, `VulkanRhiTexture`, `VulkanRhiBindGroup`, `VulkanRhiPipeline`, `VulkanRhiCommandList`,
 `VulkanRhiDevice` : création des ressources, et `VulkanRhiDeviceFrames.cpp` : images et soumissions). Les conversions

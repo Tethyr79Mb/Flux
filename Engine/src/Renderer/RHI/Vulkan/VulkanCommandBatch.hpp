@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <vector>
 
@@ -32,20 +33,26 @@ namespace Flux::Vk {
         // Ferme le dernier morceau de `main` et les listes parallèles. Ensuite : GetCommandBuffers, à soumettre.
         bool End(RhiCommandList& main);
         std::span<const VkCommandBuffer> GetCommandBuffers() const { return m_order; }
+        // RhiCommandList::BeginParallelRenderPass de `owner` (n'importe quelle liste primaire du lot, depuis n'importe
+        // quel fil) : `count` listes secondaires ouvertes dans la passe décrite par `rendering`. Vide au-delà de
+        // MaxSecondaryCommandLists ou sur une erreur.
+        std::span<RHI::CommandList* const> OpenSecondaries(const RhiCommandList& owner,
+                                                           const VkCommandBufferInheritanceRenderingInfo& rendering,
+                                                           std::uint32_t count);
         // Cases d'heures écrites par toutes les listes du lot (bit i : case i).
         std::uint32_t GetWrittenTimestamps(const RhiCommandList& main) const;
 
         private:
-        // Au moins `count` command buffers prêts (pools créés) : un Fork n'échoue pas à moitié.
-        bool Reserve(std::uint32_t count);
-        // Le command buffer suivant, ouvert et placé à la fin de l'ordre de soumission.
-        VkCommandBuffer Open();
-
         struct Slot
         {
             VkCommandPool pool = VK_NULL_HANDLE;
             VkCommandBuffer buffer = VK_NULL_HANDLE;
         };
+
+        // Au moins `count` command buffers de ce niveau prêts dans `slots` (pools créés) : un Fork n'échoue pas à moitié.
+        bool Reserve(std::vector<Slot>& slots, std::uint32_t count, VkCommandBufferLevel level);
+        // Le command buffer suivant, ouvert et placé à la fin de l'ordre de soumission.
+        VkCommandBuffer Open();
 
         const Device& m_device;
         std::vector<Slot> m_slots;
@@ -54,5 +61,11 @@ namespace Flux::Vk {
         std::array<RhiCommandList, RHI::MaxParallelCommandLists> m_lists;
         std::array<RHI::CommandList*, RHI::MaxParallelCommandLists> m_listPointers{};
         std::uint32_t m_listCount = 0;
+        // Listes secondaires : prises par plusieurs fils à la fois (listes parallèles), d'où le verrou.
+        std::mutex m_secondaryMutex;
+        std::vector<Slot> m_secondarySlots;
+        std::uint32_t m_secondaryUsed = 0;
+        std::array<RhiCommandList, RHI::MaxSecondaryCommandLists> m_secondaryLists;
+        std::array<RHI::CommandList*, RHI::MaxSecondaryCommandLists> m_secondaryPointers{};
     };
 }
