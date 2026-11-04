@@ -554,7 +554,8 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 - `SceneDocument` : fichier ouvert, annuler / refaire (état avant/après par objet), titre de la fenêtre.
 - `Interface/` : éditeur des `.fluxui`.
 - `Mcp/` : serveur MCP pour Claude Code (`McpServer` : JSON-RPC sur `Platform::LocalHttpServer`, 127.0.0.1 seulement ;
-  `EditorTools` : les outils). Les requêtes sont lues par des fils réseau, les outils tournent sur le fil principal au
+  `EditorTools` : les outils de la scène, `InterfaceTools` : ceux des interfaces, appliqués au JSON du document
+  affiché puis relus, un pas d'annulation par appel). Les requêtes sont lues par des fils réseau, les outils tournent sur le fil principal au
   début de l'image (avant les panneaux) ; un outil qui attend (capture d'écran, mesures) est rappelé à chaque image.
   Les modifications passent par `UndoHistory` : l'instantané JSON de l'objet est modifié puis remis comme un Annuler.
   La capture copie l'image de la swapchain dans un buffer Readback (`RHI::Device::RequestCapture`), relue quand le

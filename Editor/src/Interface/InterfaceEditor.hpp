@@ -5,6 +5,7 @@
 #include <Flux/UI/Context.hpp>
 
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -53,6 +54,18 @@ namespace FluxEditor {
         void FileMoved(const std::filesystem::path& from, const std::filesystem::path& to, const std::string& oldReference,
                        const std::string& newReference);
         void FileDeleted(const std::filesystem::path& path);
+
+        // Outils de Claude (serveur MCP) : sans boîte de dialogue, une erreur en texte à la place.
+        // Ouvre le fichier dans un onglet et l'affiche (comme Open).
+        std::expected<void, std::string> OpenFile(const std::filesystem::path& path);
+        // Interface affichée : son fichier (vide si supprimé) et son document ; nullptr sans interface affichée.
+        const std::filesystem::path* GetActivePath() const;
+        const Flux::Interface::Document* GetActiveDocument() const;
+        bool IsActiveModified() const;
+        // Remplace le document affiché : un pas d'annulation (Ctrl+Z le défait), sélection gardée si l'élément existe.
+        void ReplaceActiveDocument(Flux::Interface::Document document, std::uint32_t select = 0);
+        // Enregistre l'interface affichée dans son fichier.
+        std::expected<void, std::string> SaveActive();
 
         private:
         struct Snapshot

@@ -10,6 +10,7 @@ namespace Flux {
 }
 
 namespace FluxEditor {
+    class InterfaceEditor;
     class McpServer;
     class SceneEditor;
     class UndoHistory;
@@ -29,4 +30,7 @@ namespace FluxEditor {
     // Outils de l'éditeur pour Claude : mesures du panneau Moteur, objets de la scène (lire, modifier, créer, dupliquer,
     // supprimer, sélectionner, annuler), composants, caméra, panneau Placer, capture d'écran.
     void RegisterEditorTools(McpServer& server, EditorToolContext& context);
+    // Interfaces (.fluxui) dans l'éditeur d'interface : lister, ouvrir, lire, ajouter, régler, déplacer, supprimer
+    // (annulable), enregistrer (InterfaceTools.cpp).
+    void RegisterInterfaceTools(McpServer& server, EditorToolContext& context, InterfaceEditor& editor);
 }

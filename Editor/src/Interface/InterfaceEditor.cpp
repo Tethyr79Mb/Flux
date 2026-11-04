@@ -40,17 +40,22 @@ namespace FluxEditor {
     }
 
     void InterfaceEditor::Open(Engine& engine, const std::filesystem::path& path) {
+        if (auto opened = OpenFile(path); !opened) {
+            Platform::ShowError(engine.GetWindow(), "Ouvrir une interface", opened.error());
+        }
+    }
+
+    std::expected<void, std::string> InterfaceEditor::OpenFile(const std::filesystem::path& path) {
         const std::filesystem::path normal = path.lexically_normal();
         for (std::size_t i = 0; i < m_open.size(); ++i) {
             if (m_open[i].path.lexically_normal() == normal) {
                 m_active = static_cast<int>(i);
-                return;
+                return {};
             }
         }
         auto loaded = Interface::LoadFile(path);
         if (!loaded) {
-            Platform::ShowError(engine.GetWindow(), "Ouvrir une interface", loaded.error());
-            return;
+            return std::unexpected(loaded.error());
         }
         OpenInterface open;
         open.path = path;
@@ -60,6 +65,53 @@ namespace FluxEditor {
         m_open.push_back(std::move(open));
         m_active = static_cast<int>(m_open.size()) - 1;
         m_drag = {};
+        return {};
+    }
+
+    const std::filesystem::path* InterfaceEditor::GetActivePath() const {
+        return m_active >= 0 ? &m_open[static_cast<std::size_t>(m_active)].path : nullptr;
+    }
+
+    const Interface::Document* InterfaceEditor::GetActiveDocument() const {
+        return m_active >= 0 ? &m_open[static_cast<std::size_t>(m_active)].document : nullptr;
+    }
+
+    bool InterfaceEditor::IsActiveModified() const {
+        return m_active >= 0 && m_open[static_cast<std::size_t>(m_active)].IsModified();
+    }
+
+    void InterfaceEditor::ReplaceActiveDocument(Interface::Document document, std::uint32_t select) {
+        OpenInterface* open = GetActive();
+        if (!open) {
+            return;
+        }
+        CommitHistory(false); // un geste pas encore dans l'historique reste un pas à part
+        open->document = std::move(document);
+        if (select != 0 && Interface::Find(open->document, select)) {
+            open->selection = select;
+        } else if (!Interface::Find(open->document, open->selection)) {
+            open->selection = 0;
+        }
+        m_drag = {};
+        open->changed = true;
+        CommitHistory(false);
+    }
+
+    std::expected<void, std::string> InterfaceEditor::SaveActive() {
+        OpenInterface* open = GetActive();
+        if (!open) {
+            return std::unexpected("aucune interface affichée");
+        }
+        if (open->path.empty()) {
+            return std::unexpected("fichier supprimé : l'enregistrer depuis l'éditeur (Ctrl+S), sous un autre nom");
+        }
+        CommitHistory(false);
+        if (auto saved = Interface::SaveFile(open->document, open->path); !saved) {
+            return saved;
+        }
+        open->committedJson = Interface::SaveToString(open->document);
+        open->savedJson = open->committedJson;
+        return {};
     }
 
     Interface::Element* InterfaceEditor::GetSelected() {

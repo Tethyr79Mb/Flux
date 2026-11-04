@@ -64,7 +64,8 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 ### Claude branché sur l'éditeur (MCP)
 - 🔧 Serveur MCP local (`http://127.0.0.1:7777/mcp`, déclaré pour Claude Code dans `.mcp.json` à la racine du dépôt) :
   mesures du panneau Moteur, objets (lire, modifier, créer, dupliquer, supprimer, sélectionner, annuler), composants,
-  caméra, panneau Placer, capture d'écran PNG. Tout passe par l'historique, rien n'est enregistré sur le disque.
+  caméra, panneau Placer, capture d'écran PNG, interfaces `.fluxui` (lister, ouvrir, lire, ajouter, régler, déplacer,
+  supprimer, enregistrer sur demande). Tout passe par l'historique ; seul `save_interface` écrit sur le disque.
   À améliorer : capture avec la grille et le gizmo, pas de réglages du rendu (V-Sync, FSR…) ni de relevé de mesures
   de 10 s, rien dans le jeu (Ars Solaris.exe), port réglable seulement par `FLUX_MCP_PORT`.
 
