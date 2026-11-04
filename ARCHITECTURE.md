@@ -224,7 +224,8 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    `DrawIndexedIndirect` (une commande par lot, le matériau de chaque objet lu par indice dans la table) ; les lots opaques passent dans l'ordre de leur objet
    le plus proche (ce qu'ils cachent échoue au test de profondeur avant d'être éclairé). Les transparents restent un
    appel par objet, dans leur ordre, en mélange prémultiplié ; un transparent lisse (rugosité 0,2 au plus) est un
-   verre : ni couleur diffuse ni lumière peinte, seulement ses reflets entiers, et le fond assombri de son alpha.
+   verre : ni couleur diffuse ni lumière peinte, seulement ses reflets entiers (diélectrique, 4 % de face ; vu de
+   l'intérieur, sans le ciel ni l'ambiance), et le fond assombri de son alpha.
 2. Calculs GPU : tuiles de planète manquantes (compute), ciel recuit s'il a changé, entités cachées écartées
    (`OcclusionCulling`, `Culling.slang`) : chaque entité des lots opaques et transparents (ou chaque bloc d'un grand
    modèle) est comparée, là où elle était à l'image précédente (`previousWorld`), à la pyramide de la profondeur de

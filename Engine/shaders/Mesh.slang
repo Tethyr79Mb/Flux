@@ -1674,11 +1674,20 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     // et assombrit le fond de son alpha (mélange prémultiplié, comme le mode « transparent » de Filament). Une ombre
     // n'y efface que le reflet du soleil : plus de silhouette du pilote peinte sur la verrière.
     const bool transparent = params.transparent != 0;
+    // Un verre est un diélectrique : 4 % de reflet de face, quel que soit son métal. Celui du modèle (0,5 pour la Raie,
+    // pour la teinter) en faisait un miroir orange à 22 %, voilant tout ce qu'on voyait à travers.
+    // Vu de sa face arrière (de l'intérieur d'une verrière ou d'un hublot, normales tournées vers l'extérieur), son reflet
+    // est l'habitacle, sombre et absent du cube du ciel : on n'y garde que le soleil et les lampes. Sinon le ciel derrière
+    // le pilote s'étalait sur toute la verrière dès la sortie d'un intérieur.
+    float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
     const bool glass = transparent && surface.roughness <= GlassRoughness;
     if (glass) {
         surface.diffuse = float3(0.0);
+        surface.f0 = float3(0.04);
+        if (!frontFacing) {
+            occlusion = 0.0; // n'éteint que le ciel et l'ambiance : le verre n'a plus de diffus
+        }
     }
-    const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
 
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
