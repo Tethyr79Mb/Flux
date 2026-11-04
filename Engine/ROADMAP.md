@@ -18,6 +18,11 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
+- 🔨 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
+  - ✅ 1. `JobSystem` : fils de travail (cœurs moins un), vol de tâches, attente qui aide, aucune allocation par tâche.
+  - ⬜ 2. Command buffers secondaires dans le RHI : un pool par fil et par image en vol (dynamic rendering).
+  - ⬜ 3. Graphe de rendu : passes indépendantes enregistrées en parallèle, grosses passes (ombres) en morceaux ; CPU rendu mesuré avant et après.
+  - Plus tard : Jolt sur le `JobSystem` (il a aujourd'hui ses propres fils, cœurs moins un aussi).
 
 ### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)
 Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pièces à la main.

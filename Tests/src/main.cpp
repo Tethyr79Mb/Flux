@@ -25,6 +25,7 @@ int main() {
         {"animation squelettique", RunAnimationTests},
         {"cascades d'ombres", RunShadowTests},
         {"graphe de rendu", RunRenderGraphTests},
+        {"fils de travail (JobSystem)", RunJobSystemTests},
         {"ciel", RunSkyTests},
         {"reflets et lumière du ciel sur le GPU", RunEnvironmentGpuTests},
         {"exposition automatique et courbe de tons", RunExposureTests},
