@@ -391,6 +391,34 @@ namespace Flux::Planetology {
         return true;
     }
 
+    void PlanetRenderer::MakeRoom(std::size_t requested) {
+        // Les nœuds sont oubliés au-delà d'un nombre qui grandit avec le détail du sol : en Ultra, il dépasse le nombre
+        // de cases, qui se remplissent sans que rien ne soit libéré, et les tuiles demandées n'arrivent jamais. Les
+        // cases manquantes sont donc reprises aux tuiles vues il y a le plus longtemps (ni racines, ni lues par le GPU).
+        const std::size_t wanted = std::min<std::size_t>(requested, PlanetTileCompute::MaxTilesPerFrame);
+        const std::size_t capacity = static_cast<std::size_t>(PlanetTileCompute::MaxPages) * PlanetTileCompute::TilesPerPage;
+        const std::size_t ready = static_cast<std::size_t>(std::ranges::count_if(
+            m_freeTiles, [this](const FreeTile& f) { return f.frame + RHI::FramesInFlight < m_frame; }));
+        const std::size_t available = ready + (capacity - std::min<std::size_t>(m_compute->GetTileCount(), capacity));
+        if (available >= wanted) {
+            return;
+        }
+        m_oldTiles.clear();
+        for (auto& [entity, state] : m_planets) {
+            for (auto& [key, node] : state.nodes) {
+                if (node.tile != NoTile && node.lastUsed + RHI::FramesInFlight < m_frame && (key >> 59) != 0) {
+                    m_oldTiles.push_back({node.lastUsed, &node});
+                }
+            }
+        }
+        const std::size_t count = std::min(wanted - available, m_oldTiles.size());
+        std::ranges::nth_element(m_oldTiles, m_oldTiles.begin() + static_cast<std::ptrdiff_t>(count),
+                                 [](const OldTile& a, const OldTile& b) { return a.lastUsed < b.lastUsed; });
+        for (std::size_t i = 0; i < count; ++i) {
+            Retire(*m_oldTiles[i].node);
+        }
+    }
+
     void PlanetRenderer::Retire(Node& node) {
         if (node.tile != NoTile) {
             m_freeTiles.push_back({node.tile, node.lastUsed});
@@ -421,6 +449,7 @@ namespace Flux::Planetology {
             return a.request.key.level != b.request.key.level ? a.request.key.level < b.request.key.level
                                                               : a.request.distance < b.request.distance;
         });
+        MakeRoom(pending.size());
         m_scheduledTiles = 0;
         for (const Pending& item : pending) {
             Node& node = GetNode(*item.state, item.request.key);
