@@ -249,32 +249,37 @@ namespace Flux {
         m_historyValid = false;
     }
 
-    void PostRenderer::ResolveTemporal(RHI::CommandList& commands, std::uint32_t target, const Math::Matrix4f& reprojection,
-                                       bool history, float historyExposure) {
+    void PostRenderer::PrepareTemporal(std::uint32_t target, const Math::Matrix4f& reprojection, bool history,
+                                       float historyExposure) {
+        m_temporalTarget = target;
+        m_temporalParams = {reprojection,
+                            {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height), CurrentWeight,
+                             history && m_historyValid && m_extent == m_sceneExtent ? historyExposure : 0.0f}};
+        m_clearHistory = !m_historyCleared;
+        m_historyCleared = true;
+        m_historyValid = true;
+        m_output = 1 + target;
+    }
+
+    void PostRenderer::ResolveTemporal(RHI::CommandList& commands) const {
         // L'historique lu n'a jamais été écrit à la première image : une passe vide l'efface (un contenu indéfini peut
         // tenir des NaN, que le poids nul ne suffit pas à effacer). Le graphe de rendu l'a déjà rendu lisible : il
         // redevient cible le temps de l'effacer.
-        if (!m_historyCleared) {
-            const RHI::Texture& source = *m_targets.history[1 - target];
+        if (m_clearHistory) {
+            const RHI::Texture& source = *m_targets.history[1 - m_temporalTarget];
             commands.Use(source, RHI::TextureAccess::ColorTarget, true);
             commands.BeginRenderPass({.colorTarget = &source});
             commands.EndRenderPass();
             commands.Use(source, RHI::TextureAccess::Sampled);
-            m_historyCleared = true;
         }
-        const TemporalParams params{reprojection,
-                                    {1.0f / static_cast<float>(m_extent.width), 1.0f / static_cast<float>(m_extent.height),
-                                     CurrentWeight, history && m_historyValid && m_extent == m_sceneExtent ? historyExposure : 0.0f}};
-        commands.BeginRenderPass({.colorTarget = m_targets.history[target]});
+        commands.BeginRenderPass({.colorTarget = m_targets.history[m_temporalTarget]});
         commands.SetViewport({0.0f, 0.0f, static_cast<float>(m_extent.width), static_cast<float>(m_extent.height)});
         commands.SetScissor({0, 0, m_extent.width, m_extent.height});
         commands.BindPipeline(*m_temporal);
-        commands.SetBindGroup(0, *m_temporalGroups[target]);
-        commands.PushConstants(&params, sizeof(params));
+        commands.SetBindGroup(0, *m_temporalGroups[m_temporalTarget]);
+        commands.PushConstants(&m_temporalParams, sizeof(m_temporalParams));
         commands.Draw(3, 0);
         commands.EndRenderPass();
-        m_historyValid = true;
-        m_output = 1 + target;
     }
 
     void PostRenderer::DrawMotion(RHI::CommandList& commands, const Math::Matrix4f& reprojection) {
@@ -294,8 +299,11 @@ namespace Flux {
         m_historyValid = false; // l'anticrénelage, s'il reprend, ne repart pas d'une image de FSR
     }
 
-    void PostRenderer::DrawBloom(RHI::CommandList& commands, float strength) {
+    void PostRenderer::PrepareBloom(float strength) {
         m_bloomDrawn = strength > 0.0f && m_levels > 0;
+    }
+
+    void PostRenderer::DrawBloom(RHI::CommandList& commands) const {
         // Ce que Composite lit comme bloom (m_compositeGroups) ; sans niveau, la sortie, déjà lisible.
         const RHI::Texture* result = m_levels >= 2 ? m_up[0].get() : m_levels == 1 ? m_down[0].get() : nullptr;
         if (!m_bloomDrawn) {

@@ -18,10 +18,11 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
 - ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
-- 🔨 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
+- 🔧 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
   - ✅ 1. `JobSystem` : fils de travail (cœurs moins un), vol de tâches, attente qui aide, aucune allocation par tâche.
   - ✅ 2. Plusieurs listes primaires par image (choix de Bruno) : `CommandList::Fork` insère des listes à remplir sur d'autres fils, jouées dans l'ordre en une seule soumission ; un pool par command buffer, créé une fois. Aussi dans `Device::Submit`.
-  - ⬜ 3. Graphe de rendu : passes indépendantes enregistrées en parallèle (listes de Fork), passes lourdes (opaques, ombres) coupées en command buffers secondaires ; barrières des textures calculées avant l'enregistrement ; CPU rendu mesuré avant et après.
+  - 🔧 3. Graphe de rendu enregistré en parallèle : préparation et barrières des textures prévues d'abord sur un fil, puis passes réparties en groupes de temps CPU égal (moyenne mesurée par passe), un groupe par liste de Fork, 8 listes au plus. Case « Enregistrement parallèle » et temps CPU par passe au panneau Moteur. Limite : une passe ne se coupe pas, la plus lourde fixe le temps.
+  - ⬜ 3b. Passes lourdes (opaques, ombres) coupées en command buffers secondaires, si les mesures de l'étape 3 le montrent utile.
   - Plus tard : Jolt sur le `JobSystem` (il a aujourd'hui ses propres fils, cœurs moins un aussi).
 
 ### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)

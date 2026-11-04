@@ -1,5 +1,6 @@
 #include "Flux/Renderer/Renderer.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Window.hpp"
@@ -131,6 +132,8 @@ namespace Flux {
         Clock::time_point prepareStart;
         Clock::time_point recordStart;
         bool detailedTimings = false; // heures du GPU demandées pour cette image seulement
+        JobSystem* jobs = nullptr;     // Renderer::SetJobSystem
+        bool parallelRecording = true;
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
         bool hasPrevious = false;
@@ -320,7 +323,8 @@ namespace Flux {
             frame.index = frameIndex;
             frame.upscale.nearPlane = camera.nearPlane;
             frame.upscale.verticalFov = camera.verticalFov;
-            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false));
+            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false), parallelRecording ? jobs : nullptr);
+            timings.recordLists = graph.GetListCount();
             return true;
         }
 
@@ -640,8 +644,8 @@ namespace Flux {
                 .Reads(cloudDistances)
                 .Reads(cloudHistory)
                 .Writes(cloudHistory)
+                .Prepare([this] { frame.cloudCopy = graph.GetWriteCopy(targets.cloudHistory); })
                 .Begin([this, halfViewport](RHI::CommandList& commands) {
-                    frame.cloudCopy = graph.GetWriteCopy(targets.cloudHistory);
                     commands.BeginRenderPass({.colorTarget = graph.GetCopy(targets.cloudHistory, frame.cloudCopy)});
                     halfViewport(commands);
                 })
@@ -758,10 +762,11 @@ namespace Flux {
                 .Reads(sceneDepth)
                 .Reads(history)
                 .Writes(history)
-                .Step("anticrénelage", [this](RHI::CommandList& commands) {
-                    post->ResolveTemporal(commands, graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history,
+                .Prepare([this] {
+                    post->PrepareTemporal(graph.GetWriteCopy(targets.history), frame.reprojection, frame.temporal.history,
                                           frame.temporal.historyExposure);
-                });
+                })
+                .Step("anticrénelage", [this](RHI::CommandList& commands) { post->ResolveTemporal(commands); });
             graph.AddPass("mouvement complet")
                 .When(upscaled)
                 .Reads(motion)
@@ -776,22 +781,23 @@ namespace Flux {
                 .Reads(reactive)
                 .Reads(sceneDepth)
                 .Writes(history, RHI::TextureAccess::Storage)
-                .Step("FSR", [this](RHI::CommandList& commands) {
+                .Prepare([this] {
                     const std::uint32_t target = graph.GetWriteCopy(targets.history);
                     frame.upscale.color = graph.GetTexture(targets.sceneColor);
                     frame.upscale.depth = graph.GetTexture(targets.sceneDepth);
                     frame.upscale.motion = graph.GetTexture(targets.fullMotion);
                     frame.upscale.reactive = graph.GetTexture(targets.reactive);
                     frame.upscale.output = graph.GetCopy(targets.history, target);
-                    upscaler->Dispatch(commands, frame.upscale);
                     post->UseUpscaled(target);
-                });
+                })
+                .Step("FSR", [this](RHI::CommandList& commands) { upscaler->Dispatch(commands, frame.upscale); });
             graph.AddPass("bloom")
                 .When(scene)
                 .Reads(sceneColor)
                 .Reads(history)
                 .Writes(bloomTextures)
-                .Step("bloom", [this](RHI::CommandList& commands) { post->DrawBloom(commands, bloom); });
+                .Prepare([this] { post->PrepareBloom(bloom); })
+                .Step("bloom", [this](RHI::CommandList& commands) { post->DrawBloom(commands); });
             graph.AddPass("image finale")
                 .Reads(sceneColor)
                 .Reads(history)
@@ -981,6 +987,22 @@ namespace Flux {
 
     bool Renderer::IsGridVisible() const {
         return m_impl->grid;
+    }
+
+    void Renderer::SetJobSystem(JobSystem* jobs) {
+        m_impl->jobs = jobs;
+        // Un fil par liste au plus, 8 en tout : au-delà, chaque liste n'aurait plus qu'une passe ou deux. Une liste
+        // par 100 µs d'enregistrement : moins, couper coûterait plus que le gain.
+        constexpr std::uint32_t MaxLists = 8;
+        m_impl->graph.SetParallelism(jobs ? std::min(jobs->GetWorkerCount() + 1, MaxLists) : 1, 100.0);
+    }
+
+    void Renderer::SetParallelRecording(bool enabled) {
+        m_impl->parallelRecording = enabled;
+    }
+
+    bool Renderer::IsParallelRecording() const {
+        return m_impl->parallelRecording;
     }
 
     void Renderer::SetOcclusionCulling(bool enabled) {

@@ -38,6 +38,7 @@ namespace Flux {
     class InputActions;
     class InterfaceBindings;
     class InterfaceLibrary;
+    class JobSystem;
     class LoadingScreen;
     class PhysicsContext;
     class PhysicsWorld;
@@ -295,6 +296,8 @@ namespace Flux {
 
         private:
         std::unique_ptr<Window> m_window;
+        // Fils de travail du moteur (enregistrement du rendu) : avant le Renderer, détruits après lui.
+        std::unique_ptr<JobSystem> m_jobs;
         std::unique_ptr<Renderer> m_renderer;
         std::unique_ptr<UI::Context> m_ui;
         ComponentRegistry m_components;

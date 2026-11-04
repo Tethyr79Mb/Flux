@@ -4,6 +4,8 @@
 
 #include "Flux/Renderer/RHI/RHITypes.hpp"
 
+#include <optional>
+
 namespace Flux::RHI {
     struct SamplerDesc
     {
@@ -25,11 +27,13 @@ namespace Flux::RHI {
     };
 
     // `discard` : le contenu d'avant ne sert plus (la passe efface tout ou réécrit tout), le GPU peut le jeter.
+    // `from` : usage d'avant, donné par CommandList::PlanTextures ; sans lui, celui que la texture a noté.
     struct TextureUse
     {
         const Texture* texture = nullptr;
         TextureAccess access = TextureAccess::None;
         bool discard = false;
+        std::optional<TextureAccess> from;
     };
 
     class Sampler {
