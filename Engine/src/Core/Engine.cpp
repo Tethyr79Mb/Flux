@@ -339,7 +339,7 @@ namespace Flux {
             ++m_frame;
             m_interfaceWantsMouse = std::exchange(m_interfaceMouseNow, false);
             m_interfacePaused = std::exchange(m_interfacePausedNow, false);
-            m_interfaceCoversNow = false;
+            m_interfaceCovered = std::exchange(m_interfaceCoversNow, false);
             m_escapeUsed = false;
             m_keyCaptured = false;
             if (!m_rebindingAction.empty()) {
@@ -393,7 +393,10 @@ namespace Flux {
                 ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
                                GetScreenUiOptions());
             }
-            if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi) {
+            // Pas sous un menu opaque plein écran : déjà couvert par une interface de la scène à cette image (dessinée
+            // avant), ou à l'image précédente (le menu du projet, dessiné après).
+            if (const Entity player = GetFollowedPlayer();
+                player != NullEntity && m_drawScreenUi && !m_interfaceCovered && !m_interfaceCoversNow) {
                 // Aussi en pause (infos de vol, destinations), avec le temps du jeu : arrêté, les messages attendent.
                 RunGameSystems(GameStage::Hud, m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
             }
@@ -612,7 +615,7 @@ namespace Flux {
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceBindings->ClearActions();
-            m_interfacePaused = m_interfacePausedNow = m_interfaceCoversNow = false;
+            m_interfacePaused = m_interfacePausedNow = m_interfaceCovered = m_interfaceCoversNow = false;
             m_quickSave->SetScene({}, {}); // la scène éditée reprend (SetPlayedScene au prochain lancement)
         }
     }
