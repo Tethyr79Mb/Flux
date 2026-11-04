@@ -7,10 +7,13 @@
 #include "Renderer/RHI/Vulkan/Vulkan.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <span>
 
 namespace Flux::Vk {
+    class CommandBatch;
+
     // Repères d'étapes d'une image (BeginStep) : noms gardés par le CPU, début et fin notés par le GPU dans `buffer`
     // (deux uint32 par étape à partir de `offset`, égaux à `serial` une fois atteints).
     struct StepMarkers
@@ -19,7 +22,7 @@ namespace Flux::Vk {
         VkDeviceSize offset = 0;
         std::uint32_t serial = 0;
         std::array<const char*, RHI::MaxSteps>* names = nullptr;
-        std::uint32_t* count = nullptr;
+        std::atomic<std::uint32_t>* count = nullptr; // partagé par les listes parallèles de l'image
     };
 
     // Liste de commandes de l'image en cours, et l'image de la swapchain où dessine sa passe.
@@ -27,7 +30,14 @@ namespace Flux::Vk {
         public:
         // queryPool : heures notées par WriteTimestamp (VK_NULL_HANDLE : pas d'heures), remise à zéro ici.
         // image VK_NULL_HANDLE : commandes hors des images (Device::Submit), sans passe vers la swapchain.
-        void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent, VkQueryPool queryPool);
+        // batch : lot qui fournit les command buffers des Fork.
+        void Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent, VkQueryPool queryPool,
+                   CommandBatch& batch);
+        // Liste parallèle de la même soumission que `main` : même image de swapchain, mêmes heures (sans les remettre
+        // à zéro), mêmes repères ; pas de Fork.
+        void BeginParallel(VkCommandBuffer commandBuffer, const RhiCommandList& main);
+        // Suite de cette liste dans un autre command buffer (après un Fork) : pipeline et groupes liés ne suivent pas.
+        void ContinueIn(VkCommandBuffer commandBuffer);
         // Termine la passe vers la présentation : l'image de la swapchain passe en lecture pour l'écran.
         void TransitionToPresent();
         // Copie l'image de la swapchain, telle que dessinée jusqu'ici, dans target (Readback, largeur x hauteur x 4
@@ -36,6 +46,7 @@ namespace Flux::Vk {
         // Pour une bibliothèque qui enregistre elle-même ses commandes (FSR).
         VkCommandBuffer GetHandle() const { return m_commandBuffer; }
 
+        std::span<RHI::CommandList* const> Fork(std::uint32_t count) override;
         void UseTextures(std::span<const RHI::TextureUse> uses) override;
         void BeginRenderPass(const RHI::RenderPassDesc& desc) override;
         void EndRenderPass() override;
@@ -75,6 +86,7 @@ namespace Flux::Vk {
         VkRenderingAttachmentInfo BeginDepthAttachment(const RHI::RenderPassDesc& desc);
 
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+        CommandBatch* m_batch = nullptr; // nul pour une liste parallèle
         VkImage m_image = VK_NULL_HANDLE;
         VkImageView m_view = VK_NULL_HANDLE;
         VkExtent2D m_extent{};

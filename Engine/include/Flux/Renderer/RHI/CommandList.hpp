@@ -50,10 +50,21 @@ namespace Flux::RHI {
         bool loadColor = false;
     };
 
+    // Listes parallèles au plus par soumission (une image, un Device::Submit), tous Fork compris.
+    inline constexpr std::uint32_t MaxParallelCommandLists = 64;
+
     // Commandes d'une image, enregistrées entre Device::BeginFrame et Device::EndFrame.
     class CommandList {
         public:
         virtual ~CommandList() = default;
+        // Insère ici `count` listes à remplir en parallèle, jouées par le GPU dans l'ordre du tableau : après ce que
+        // cette liste a enregistré jusqu'ici, avant ce qu'elle enregistrera ensuite. Chaque liste est remplie par un
+        // seul fil à la fois, et finie (passes fermées) avant Device::EndFrame ou la fin de Submit. Hors d'une passe,
+        // sur la liste de l'image (ou de Submit) seulement. Cette liste perd ensuite pipeline et groupes liés.
+        // UseTextures suit l'usage que chaque texture a noté à l'enregistrement : une texture change d'usage dans une
+        // seule des listes parallèles, et aucune autre liste n'y touche avant que celle-ci soit remplie. Vide au-delà
+        // de MaxParallelCommandLists, ou sur une liste parallèle : enregistrer alors dans cette liste-ci.
+        virtual std::span<CommandList* const> Fork(std::uint32_t count) = 0;
         // Prépare chaque texture à son nouvel usage, en une barrière pour toutes : attend ce qui l'écrivait ou la
         // lisait avant, change son layout. Sans effet pour une texture déjà lue (Sampled) et relue. Hors d'une passe.
         virtual void UseTextures(std::span<const TextureUse> uses) = 0;

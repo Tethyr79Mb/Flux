@@ -29,6 +29,7 @@ namespace {
 
         std::vector<RHI::TextureUse> uses; // toutes, dans l'ordre
 
+        std::span<RHI::CommandList* const> Fork(std::uint32_t) override { return {}; }
         void UseTextures(std::span<const RHI::TextureUse> list) override {
             std::string line = "barrières";
             for (const RHI::TextureUse& use : list) {

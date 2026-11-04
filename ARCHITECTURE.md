@@ -130,7 +130,9 @@ C++ pur ; `RHI.hpp` les inclut tous. Ses classes ne portent pas `FLUX_API` : seu
 backend Vulkan, privé (`src/Renderer/RHI/Vulkan`, il inclut volk), a un fichier par bloc : `VulkanInstance` (instance, validation),
 `VulkanSurface` (surface de la fenêtre), `VulkanAdapter` (choix du GPU et de ses fonctions facultatives),
 `VulkanDevice` (device logique, files, allocateur, `ImmediateSubmit`), `VulkanSwapchain` (images, acquisition,
-présentation), `VulkanFrames` (ressources de chaque image en vol), `VulkanTimestamps` (heures du GPU),
+présentation), `VulkanFrames` (ressources de chaque image en vol), `VulkanCommandBatch` (command buffers d'une
+soumission : la liste principale coupée à chaque `CommandList::Fork`, les listes parallèles entre ses morceaux, un pool
+par command buffer pour qu'un fil remplisse chacun), `VulkanTimestamps` (heures du GPU),
 `VulkanCrashMarkers` (diagnostic de plantage), `VulkanTransfer` (envois) ; puis une classe `Rhi*` par interface
 (`VulkanRhiBuffer`, `VulkanRhiTexture`, `VulkanRhiBindGroup`, `VulkanRhiPipeline`, `VulkanRhiCommandList`,
 `VulkanRhiDevice` : création des ressources, et `VulkanRhiDeviceFrames.cpp` : images et soumissions). Les conversions

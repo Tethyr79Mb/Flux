@@ -60,6 +60,9 @@ namespace Flux::Vk {
         // Enregistre des commandes, les soumet sur la file graphique et attend leur fin (après les envois en attente,
         // soumis avec elles). Bloque le CPU : calculs dont on attend le résultat, tests.
         bool ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record);
+        // De même pour des command buffers déjà enregistrés et fermés, joués dans l'ordre. recorded faux : leur
+        // enregistrement a échoué, rien n'est soumis (les envois en attente sont rendus).
+        bool SubmitAndWait(std::span<const VkCommandBuffer> commandBuffers, bool recorded = true);
 
         // Envois vers la mémoire vidéo (VulkanTransfer) : copiés par la file de transfert, attendus par la prochaine
         // soumission à la file graphique (image ou ImmediateSubmit), sans attendre le GPU. Sans envois différés

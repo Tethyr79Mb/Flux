@@ -26,6 +26,7 @@ namespace Flux::Vk {
     void CrashMarkers::BeginFrame(std::uint32_t frame, RhiCommandList& commands) {
         FrameSteps& steps = m_frames[frame];
         steps.submitted = false;
+        steps.count = 0;
         if (m_buffer.GetHandle() == VK_NULL_HANDLE) {
             return;
         }
@@ -68,7 +69,7 @@ namespace Flux::Vk {
                 }
                 const std::size_t first = static_cast<std::size_t>(frame - m_frames.data()) * RHI::MaxSteps * 2;
                 report += std::format("\nImage {} :", frame->serial);
-                for (std::uint32_t step = 0; step < frame->count; ++step) {
+                for (std::uint32_t step = 0; step < std::min(frame->count.load(), RHI::MaxSteps); ++step) {
                     const bool started = marks[first + step * 2] == frame->serial;
                     const bool finished = marks[first + step * 2 + 1] == frame->serial;
                     report += std::format("\n  {:<28} {}", frame->names[step],
