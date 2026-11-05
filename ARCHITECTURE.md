@@ -62,7 +62,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
    - systèmes du jeu à l'étape `Interaction` (ils peuvent prendre la touche Interagir : `ConsumeInteraction`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
-     vaisseau aux commandes avec les commandes du jeu, `Engine::SetPilotInput`, complétées de la souris et de ce qui
+     vaisseau aux commandes avec les commandes du jeu, `Engine::SetPilotInput`, complétées du manche de la souris
+     (pointeur virtuel de `PlayerCamera`, `Engine::GetSteerPointer` pour l'afficher) et de ce qui
      entoure le vaisseau ; moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
    - projectiles, après la physique (les vaisseaux sont à leur place de l'image) : ils avancent et touchent

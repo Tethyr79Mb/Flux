@@ -103,6 +103,19 @@ namespace Game {
             list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 10.0f}, topLeft + extent + Math::Vector2f{14.0f, 10.0f},
                                 {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
             list.AddText(topLeft, g_text, textSize, {0.85f, 0.95f, 1.0f, 1.0f});
+
+            // Manche de la souris : un petit cercle au centre (zone morte), le pointeur et un trait qui l'y relie. Plus le
+            // pointeur est loin, plus le vaisseau tourne vite ; ramené au centre, il cesse de tourner.
+            const Math::Vector2f center = screen * 0.5f;
+            const float reach = 0.18f * screen.y; // bord du cercle du manche, à fond
+            constexpr Math::LinearColor StickColor{0.85f, 0.95f, 1.0f, 0.55f};
+            list.AddCircleOutline(center, 0.06f * reach, StickColor, 1.5f);
+            const Math::Vector2f pointer = engine.GetSteerPointer();
+            if (std::abs(pointer.x) + std::abs(pointer.y) > 0.0f) {
+                const Math::Vector2f tip = center + pointer * reach;
+                list.AddLine(center, tip, {StickColor.r, StickColor.g, StickColor.b, 0.3f}, 1.5f);
+                list.AddCircle(tip, 3.5f, StickColor);
+            }
         }
 
         void Reset(Engine&, double) {

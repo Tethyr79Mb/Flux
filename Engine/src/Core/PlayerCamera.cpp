@@ -37,8 +37,16 @@ namespace Flux {
         // La première image où le curseur se cache, son déplacement vient d'avant : ignoré.
         const bool wasLocked = window.IsCursorLocked();
         window.SetCursorLocked(m_followRotating || steering);
-        m_steerYaw = steering && wasLocked ? -mouse.x * Sensitivity : 0.0f;
-        m_steerPitch = steering && wasLocked ? -mouse.y * Sensitivity : 0.0f;
+        if (!steering) {
+            m_pointer = {}; // le manche lâché revient au centre : le vaisseau arrête de tourner
+        } else if (wasLocked) {
+            // 400 points de souris du centre au bord : à peu près ce qu'on tournait d'un geste jusqu'ici.
+            constexpr float PointerSensitivity = 1.0f / 400.0f;
+            m_pointer = m_pointer + mouse * PointerSensitivity;
+            if (const float length = std::hypot(m_pointer.x, m_pointer.y); length > 1.0f) {
+                m_pointer = m_pointer * (1.0f / length);
+            }
+        }
         if (m_followRotating) {
             if (Seats::GetPilotSeat(scene, player) != NullEntity) {
                 // Aux commandes (cockpit ou vue extérieure) : on tourne la tête, sans perdre le vaisseau de vue.
@@ -200,11 +208,73 @@ namespace Flux {
         camera.SetRotation(rotation);
     }
 
+    namespace {
+        // Zone morte au centre : sans elle, un pointeur presque centré ferait dériver le vaisseau lentement.
+        constexpr float PointerDeadZone = 0.06f;
+
+        // Inclinaison du manche, zone morte retirée (de 0 à son bord, puis linéaire jusqu'à 1).
+        Math::Vector2f Stick(Math::Vector2f pointer) {
+            const float length = std::hypot(pointer.x, pointer.y);
+            if (length <= PointerDeadZone) {
+                return {};
+            }
+            return pointer * ((length - PointerDeadZone) / ((1.0f - PointerDeadZone) * length));
+        }
+    }
+
+    float PlayerCamera::GetSteerYaw() const {
+        return -Stick(m_pointer).x;
+    }
+
+    float PlayerCamera::GetSteerPitch() const {
+        return -Stick(m_pointer).y;
+    }
+
+    void PlayerCamera::WidenWithThrust(Engine& engine, Entity player, double deltaSeconds) {
+        // Champ de vision du pilote élargi quand le vaisseau accélère vers l'avant (moteurs à fond, boost, mode voyage) :
+        // le décor semble filer plus vite. Accélération mesurée sur sa vitesse dans le monde, pour qu'un virage, qui
+        // tourne sa vitesse dans ses axes, n'y compte pas.
+        constexpr float BaseFov = std::numbers::pi_v<float> / 3.0f;   // 60°, celui de Camera
+        constexpr float FovPerThrust = 3.0f;  // ° pour une accélération égale à ShipComponent::acceleration
+        constexpr float FovMax = 8.0f;        // °
+        constexpr float FovSettle = 0.4f;     // s
+        Scene& scene = engine.GetScene();
+        float wanted = 0.0f;
+        const Entity seat = Seats::GetPilotSeat(scene, player);
+        const Entity ship = seat != NullEntity ? scene.GetShip(seat) : NullEntity;
+        if (ship != NullEntity && deltaSeconds > 0.0) {
+            const ShipComponent& component = scene.Get<ShipComponent>(ship);
+            const Math::Quaternionf rotation = scene.GetWorldRotation(ship);
+            const Math::Vector3f velocity = rotation.Rotate(component.velocity);
+            if (ship == m_fovShip) {
+                const Math::Vector3f forward = rotation.Rotate(Math::Vector3f{0.0f, 0.0f, -1.0f});
+                const float thrust = Math::Dot(velocity - m_fovVelocity, forward) / static_cast<float>(deltaSeconds);
+                wanted = std::clamp(thrust / std::max(component.acceleration, 1.0f) * FovPerThrust, 0.0f, FovMax);
+            }
+            m_fovVelocity = velocity;
+        }
+        m_fovShip = ship;
+        if (deltaSeconds > 0.0) {
+            m_fovExtra += (wanted - m_fovExtra) * (1.0f - std::exp(-static_cast<float>(deltaSeconds) / FovSettle));
+        }
+        if (ship == NullEntity && m_fovExtra < 0.01f) {
+            m_fovExtra = 0.0f; // revenu : la caméra du personnage garde son champ de vision
+            if (m_fovWidened) {
+                engine.GetCamera().verticalFov = BaseFov;
+                m_fovWidened = false;
+            }
+            return;
+        }
+        engine.GetCamera().verticalFov = BaseFov + m_fovExtra * std::numbers::pi_v<float> / 180.0f;
+        m_fovWidened = true;
+    }
+
     void PlayerCamera::Place(Engine& engine, Entity player, double deltaSeconds) {
         Scene& scene = engine.GetScene();
         Camera& camera = engine.GetCamera();
         m_hiddenPlayer = NullEntity;
         TurnWithShip(engine, player);
+        WidenWithThrust(engine, player, deltaSeconds);
         if (const Entity pilotSeat = Seats::GetPilotSeat(scene, player); pilotSeat != NullEntity && !m_cockpitView) {
             PlaceChase(engine, pilotSeat, deltaSeconds);
             Aim(camera); // en se relevant, elle regarde où regardait la vue extérieure
@@ -217,7 +287,29 @@ namespace Flux {
             const Math::Quaternionf seatRotation = scene.GetWorldRotation(seat);
             camera.position = scene.GetWorldPosition(seat);
             camera.position += Math::Vector3d(seatRotation.Rotate(scene.Get<SeatComponent>(seat).eye));
-            camera.SetRotation(seatRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
+            // Tête du pilote : en retard sur ce que fait le vaisseau (entrer dans un virage, en sortir), elle se recale
+            // en HeadSettle secondes ; on voit le cockpit tourner autour de soi, ce qui donne au vaisseau sa masse.
+            // Bornée à quelques degrés : la visée reste devant.
+            Math::Quaternionf head;
+            if (const Entity ship = scene.GetShip(seat); ship != NullEntity && deltaSeconds > 0.0) {
+                constexpr float HeadSettle = 0.25f;   // s
+                constexpr float HeadLag = 0.06f;      // s : degrés de retard par °/s d'écart
+                constexpr float HeadMaxAngle = 4.0f;  // °
+                constexpr float Radians = std::numbers::pi_v<float> / 180.0f;
+                const Math::Vector3f turn = scene.Get<ShipComponent>(ship).angularVelocity;
+                m_headTurn = m_headTurn + (turn - m_headTurn) * (1.0f - std::exp(-static_cast<float>(deltaSeconds) / HeadSettle));
+                Math::Vector3f lag = (m_headTurn - turn) * HeadLag;
+                if (const float angle = Math::Length(lag); angle > HeadMaxAngle) {
+                    lag = lag * (HeadMaxAngle / angle);
+                }
+                // Dans les axes du vaisseau, ramenée dans ceux du siège.
+                if (const float angle = Math::Length(lag); angle > 1.0e-3f) {
+                    const Math::Quaternionf shipRotation = scene.GetWorldRotation(ship);
+                    head = seatRotation.Conjugate() * shipRotation * Math::Quaternionf::FromAxisAngle(lag, angle * Radians)
+                         * shipRotation.Conjugate() * seatRotation;
+                }
+            }
+            camera.SetRotation(seatRotation * head * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
                                  * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch));
             Aim(camera); // en se relevant, elle regarde où regardait le pilote
             m_followShown = -1.0f; // en ressortant, la caméra se replace d'un coup derrière le personnage
@@ -226,6 +318,7 @@ namespace Flux {
         }
         m_lookYaw = 0.0f;
         m_lookPitch = 0.0f;
+        m_headTurn = {};
         m_followPitch = std::clamp(m_followPitch, -FollowMaxPitch, FollowMaxPitch);
         camera.SetRotation(m_followFrame * Math::Quaternionf::FromYawPitchRoll(m_followYaw, m_followPitch, 0.0f));
 

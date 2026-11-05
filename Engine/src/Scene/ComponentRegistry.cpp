@@ -277,8 +277,8 @@ namespace Flux {
             .Field("angularVelocity", "Rotation au départ (°/s)", &ShipComponent::angularVelocity, {.speed = 0.5, .min = -720.0, .max = 720.0})
             .Field("maxSpeed", "Vitesse max (m/s)", &ShipComponent::maxSpeed, {.speed = 0.5, .min = 0.0, .max = 1.0e5, .decimals = 1})
             .Field("acceleration", "Accélération (m/s²)", &ShipComponent::acceleration, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1})
-            .Field("turnRate", "Virage (°/s)", &ShipComponent::turnRate, {.speed = 0.5, .min = 0.0, .max = 720.0, .decimals = 1})
-            .Field("turnAcceleration", "Accélération du virage (°/s²)", &ShipComponent::turnAcceleration, {.speed = 1.0, .min = 0.0, .max = 1.0e4, .decimals = 1})
+            .Field("turnRates", "Virage : tangage, lacet, roulis (°/s)", &ShipComponent::turnRate, {.speed = 0.5, .min = 0.0, .max = 720.0, .decimals = 1})
+            .Field("turnAccelerations", "Accélération du virage (°/s²)", &ShipComponent::turnAcceleration, {.speed = 1.0, .min = 0.0, .max = 1.0e4, .decimals = 1})
             .Field("strafeSpeed", "Glissement (m/s)", &ShipComponent::strafeSpeed, {.speed = 0.1, .min = 0.0, .max = 1.0e4, .decimals = 1})
             .Field("levelAssist", "Stabiliser à plat", &ShipComponent::levelAssist)
             .Field("levelRate", "Retour à plat (1/s)", &ShipComponent::levelRate, {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 2})
@@ -286,7 +286,15 @@ namespace Flux {
             .Field("boost", "Boost (x)", &ShipComponent::boost, {.speed = 0.05, .min = 1.0, .max = 20.0, .decimals = 2})
             .Field("travelFactor", "Mode voyage (x)", &ShipComponent::travelFactor, {.speed = 0.1, .min = 1.0, .max = 1000.0, .decimals = 1})
             .Field("travelSpoolTime", "Mode voyage : mise en route (s)", &ShipComponent::travelSpoolTime, {.speed = 0.05, .min = 0.0, .max = 60.0, .decimals = 1})
-            .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot);
+            .Field("fallsWithoutPilot", "Tombe sans pilote", &ShipComponent::fallsWithoutPilot)
+            // Avant : une seule vitesse pour les trois axes, et une accélération réglée pour suivre la souris comme une
+            // caméra (360 °/s²), sans sens avec le manche. Vaisseau plus lent qu'avant (le chasseur de 90 °/s passe à
+            // 70 en tangage), lacet plus lent, roulis plus rapide, et chaque axe atteint sa vitesse en 0,8 s.
+            .ConvertedField("turnRate", [](ShipComponent& ship, double rate) {
+                ship.turnRate = Math::Vector3f{0.78f, 0.61f, 1.44f} * static_cast<float>(rate);
+                ship.turnAcceleration = ship.turnRate * 1.25f;
+            })
+            .RemovedField("turnAcceleration");
         registry.Register<SeatComponent>("seat", "Siège")
             .Field("pilot", "Poste de pilotage", &SeatComponent::pilot)
             .Field("eye", "Œil du pilote", &SeatComponent::eye, {.speed = 0.01})

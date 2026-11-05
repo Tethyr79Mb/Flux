@@ -2,9 +2,11 @@
 
 // Caméra du joueur pendant le jeu : derrière le personnage (molette : distance, puis vue à la première personne ;
 // clic droit : tourner autour), et aux commandes d'un vaisseau, vue cockpit ou vue extérieure tournée avec lui (V ou
-// molette). Aux commandes, la souris dirige le vaisseau (curseur caché ; Alt maintenu ou un menu de pause le libère).
+// molette). Aux commandes, la souris déplace un pointeur virtuel, un manche : son écart au centre de l'écran est la
+// vitesse de rotation demandée au vaisseau (curseur caché ; Alt maintenu ou un menu de pause le libère).
 
 #include "Flux/Math/Quaternion.hpp"
+#include "Flux/Math/Vector2.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Scene/Components.hpp"
 
@@ -26,8 +28,11 @@ namespace Flux {
         // Caméra replacée d'un coup derrière le personnage (chargement d'une partie).
         void Snap() { m_followShown = -1.0f; }
 
-        float GetSteerYaw() const { return m_steerYaw; }
-        float GetSteerPitch() const { return m_steerPitch; }
+        // Manche pour ShipInput (-1 à 1 ; lacet vers la gauche, tangage nez vers le haut), zone morte retirée.
+        float GetSteerYaw() const;
+        float GetSteerPitch() const;
+        // Pointeur virtuel, pour l'afficher : -1 à 1 (bord du cercle), x vers la droite, y vers le bas ; nul sans pilote.
+        Math::Vector2f GetSteerPointer() const { return m_pointer; }
         void ToggleCockpitView() { m_cockpitView = !m_cockpitView; }
         // Avant et droite de la caméra, ramenés à l'horizontale de l'endroit (sur une planète : tangente au sol).
         Math::Vector3f GetWalkForward() const;
@@ -39,6 +44,7 @@ namespace Flux {
         // Poste de pilotage d'où la caméra regarde (vue cockpit), NullEntity si elle suit le personnage.
         Entity GetCockpitSeat(const Scene& scene, Entity player) const;
         void TurnWithShip(Engine& engine, Entity player);
+        void WidenWithThrust(Engine& engine, Entity player, double deltaSeconds);
         // Lacet et tangage de la caméra suiveuse d'après où regarde la caméra (début du suivi, retour du cockpit).
         void Aim(const Camera& camera);
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
@@ -52,9 +58,18 @@ namespace Flux {
         float m_followShown = -1.0f; // distance réelle, raccourcie par les murs ; négative : pas encore placée
         Entity m_hiddenPlayer = NullEntity;
         bool m_followRotating = false; // clic droit maintenu : la souris tourne autour du personnage
-        // Rotation du vaisseau demandée à cette image, en radians.
-        float m_steerYaw = 0.0f;
-        float m_steerPitch = 0.0f;
+        // Pointeur virtuel, dans le disque unité : il reste où la souris l'a laissé, le vaisseau continue donc à
+        // tourner tant qu'il n'est pas ramené au centre.
+        Math::Vector2f m_pointer;
+        // Tête du pilote en vue cockpit : vitesse de rotation du vaisseau lissée (°/s, ses axes) ; la tête est en
+        // retard sur les changements de rotation, puis se recale.
+        Math::Vector3f m_headTurn;
+        // Champ de vision élargi par l'accélération du vaisseau piloté (°, lissé), et sa vitesse dans le monde à
+        // l'image d'avant pour la mesurer.
+        float m_fovExtra = 0.0f;
+        bool m_fovWidened = false;
+        Entity m_fovShip = NullEntity;
+        Math::Vector3f m_fovVelocity;
         // Vaisseau où se trouve le joueur, et sa rotation à la dernière image : la caméra tourne avec lui.
         Entity m_followShip = NullEntity;
         Math::Quaternionf m_followShipRotation;
