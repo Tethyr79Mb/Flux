@@ -36,6 +36,12 @@ namespace Flux {
         RecordCost,       // CPU : commandes de dessin
         WaitGpuCost,      // CPU arrêté : attente du GPU
         WaitImageCost,    // CPU arrêté : attente d'une image libre et présentation (V-Sync, plafond)
+        // Parties de la préparation du rendu (RenderTimings::prepareSky…).
+        PrepareSkyCost,
+        PrepareEntitiesCost,
+        PrepareGroundCost,
+        PrepareTreesCost,
+        PrepareUploadsCost,
         CostCount,
     };
 

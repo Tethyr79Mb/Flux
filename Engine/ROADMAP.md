@@ -23,6 +23,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   - ✅ 2. Plusieurs listes primaires par image (choix de Bruno) : `CommandList::Fork` insère des listes à remplir sur d'autres fils, jouées dans l'ordre en une seule soumission ; un pool par command buffer, créé une fois. Aussi dans `Device::Submit`.
   - 🔧 3. Graphe de rendu enregistré en parallèle : préparation et barrières des textures prévues d'abord sur un fil, puis passes réparties en groupes de temps CPU égal (moyenne mesurée par passe), un groupe par liste de Fork, 8 listes au plus. Case « Enregistrement parallèle » et temps CPU par passe au panneau Moteur. Une passe ne se coupe qu'en étapes (3b) : la plus lourde (objets ou sol) fixe le temps.
   - ✅ 3b. Passes lourdes en command buffers secondaires : `CommandList::BeginParallelRenderPass` et `RenderGraph::PassBuilder::BeginParallel`, une liste secondaire par étape remplie par un fil. Scène (objets, arbres, sol, ciel, océan) et ombres (une étape par cascade).
+  - 🔧 4. Préparation du rendu en parallèle : chaque entité dessinée (sphère, champ, matrices, contour) calculée par les fils en tranches de 64, poses et listes gardées sur un fil dans l'ordre ; traçantes préparées à côté. Temps par partie au panneau Moteur (« Préparation (CPU) ») et dans les mesures. Reste sur un fil : le parcours des tuiles du sol, les plaines d'arbres, les envois.
   - Plus tard : Jolt sur le `JobSystem` (il a aujourd'hui ses propres fils, cœurs moins un aussi).
 
 ### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)

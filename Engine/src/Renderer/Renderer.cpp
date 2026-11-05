@@ -290,6 +290,7 @@ namespace Flux {
             }
             frameBegun = true;
             prepareStart = Clock::now();
+            timings.prepareSky = timings.prepareEntities = timings.prepareGround = timings.prepareTrees = timings.prepareUploads = 0.0;
             ReadTimings();
             return true;
         }
@@ -410,6 +411,7 @@ namespace Flux {
                 post->SkipTemporal();
             }
             const float renderHeight = static_cast<float>(frame.render.height);
+            const Clock::time_point skyStart = Clock::now();
             // L'exposition d'abord : toute la lumière de la scène en est multipliée (pré-exposition).
             const Exposure::Settings exposureSettings = SkyRenderer::GetExposureSettings(scene, camera);
             frame.autoExposure = exposureSettings.automatic;
@@ -428,12 +430,33 @@ namespace Flux {
             lighting.irradiance = &environment->GetIrradiance();
             lighting.environmentSampler = &environment->GetSampler();
             lighting.environmentMips = environment->GetReflectionMips();
+            timings.prepareSky = Milliseconds(Clock::now() - skyStart);
+            JobSystem* workers = parallelRecording ? jobs : nullptr;
+            // Les traçantes ne lisent que leurs projectiles : préparées sur un autre fil pendant les objets.
+            JobCounter tracersDone;
+            const auto prepareTracers = [this, &camera, aspect, renderHeight, frameIndex] {
+                tracers->Prepare(projectiles, impacts, camera, aspect, renderHeight, frame.temporal.jitter, frame.preExposure,
+                                 frameIndex);
+            };
+            if (workers) {
+                workers->Run(tracersDone, prepareTracers);
+            }
+            meshes->SetJobSystem(workers);
             meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
+            const MeshRenderer::PrepareTimes& parts = meshes->GetPrepareTimes();
+            timings.prepareEntities = parts.entities;
+            timings.prepareGround = parts.ground;
+            timings.prepareTrees = parts.trees;
+            timings.prepareUploads = parts.uploads;
             if (!meshes->HasClouds() || !temporal.continuous) {
                 clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
             }
             thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter, frame.preExposure);
-            tracers->Prepare(projectiles, impacts, camera, aspect, renderHeight, temporal.jitter, frame.preExposure, frameIndex);
+            if (workers) {
+                workers->Wait(tracersDone);
+            } else {
+                prepareTracers();
+            }
             return true;
         }
 

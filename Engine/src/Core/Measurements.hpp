@@ -20,7 +20,10 @@ namespace Flux {
     class MeasureRecorder {
         public:
         // Temps du CPU d'une image (ms, négatif : inconnu), dans l'ordre du panneau.
-        enum Cpu : std::size_t { Update, Game, Prepare, Record, WaitGpu, WaitImage, CpuCount };
+        enum Cpu : std::size_t {
+            Update, Game, Prepare, PrepareSky, PrepareEntities, PrepareGround, PrepareTrees, PrepareUploads, Record,
+            WaitGpu, WaitImage, CpuCount
+        };
 
         // Ce qui décrit le relevé, en tête du fichier.
         struct Context

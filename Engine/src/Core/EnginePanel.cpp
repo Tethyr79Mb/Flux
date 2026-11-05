@@ -78,11 +78,21 @@ namespace Flux {
                 }
             }
 
+            // Préparation du rendu, par partie : où partent les millisecondes avant l'enregistrement.
+            if (ui.CollapsingHeader("Préparation (CPU)", false)) {
+                ui.LabelText("Total", std::format("{:.3f} ms", stats.Get(PrepareCost)));
+                ui.LabelText("Ciel et exposition", std::format("{:.3f} ms", stats.Get(PrepareSkyCost)));
+                ui.LabelText("Entités", std::format("{:.3f} ms", stats.Get(PrepareEntitiesCost)));
+                ui.LabelText("Sol des planètes", std::format("{:.3f} ms", stats.Get(PrepareGroundCost)));
+                ui.LabelText("Arbres", std::format("{:.3f} ms", stats.Get(PrepareTreesCost)));
+                ui.LabelText("Envois et lots", std::format("{:.3f} ms", stats.Get(PrepareUploadsCost)));
+            }
+
             // Temps CPU d'enregistrement de chaque passe (moyenne glissante), sur le fil qui l'a faite : la somme dépasse
             // « rendu » quand plusieurs fils enregistrent en même temps.
             if (ui.CollapsingHeader("Enregistrement (CPU)", false)) {
                 bool parallel = renderer.IsParallelRecording();
-                if (ui.Checkbox("Enregistrement parallèle", parallel)) {
+                if (ui.Checkbox("Rendu sur plusieurs fils", parallel)) {
                     renderer.SetParallelRecording(parallel);
                 }
                 const RenderTimings& render = renderer.GetTimings();
@@ -157,6 +167,11 @@ namespace Flux {
         json["cpu"] = {{"updateMs", stats.Get(UpdateCost)},
                        {"gameMs", stats.Get(GameCost)},
                        {"prepareMs", stats.Get(PrepareCost)},
+                       {"prepareParts", {{"skyMs", stats.Get(PrepareSkyCost)},
+                                         {"entitiesMs", stats.Get(PrepareEntitiesCost)},
+                                         {"groundMs", stats.Get(PrepareGroundCost)},
+                                         {"treesMs", stats.Get(PrepareTreesCost)},
+                                         {"uploadsMs", stats.Get(PrepareUploadsCost)}}},
                        {"recordMs", stats.Get(RecordCost)},
                        {"waitGpuMs", stats.Get(WaitGpuCost)},
                        {"waitScreenMs", stats.Get(WaitImageCost)}};

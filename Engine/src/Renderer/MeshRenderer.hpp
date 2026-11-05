@@ -20,11 +20,13 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Flux {
     struct Camera;
     class ViewCone;
+    class JobSystem;
 
     // Maillages de la scène (cubes et modèles glTF, animés ou non) : préparés sur le CPU pour chaque image
     // (matrices relatives à la caméra, poses des squelettes, cascades d'ombres), dessinés d'abord vus du soleil dans
@@ -66,6 +68,8 @@ namespace Flux {
         // Voir Renderer::SetThrusterPreview.
         void SetThrusterPreview(bool preview) { m_thrusterPreview = preview; }
 
+        // Fils qui calculent les entités pendant Prepare (positions, champ, matrices) ; nul : tout sur le fil appelant.
+        void SetJobSystem(JobSystem* jobs) { m_jobs = jobs; }
         void Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                      const TemporalView& temporal, const std::filesystem::path& assetsDirectory, std::uint32_t frameIndex);
         // Calculs sur le GPU préparés par Prepare, avant toute passe et dans cet ordre : tuiles des planètes, arbres
@@ -99,6 +103,15 @@ namespace Flux {
         // cible (le graphe de rendu la rend ensuite lisible pour la scène). Une étape par cascade, chacune
         // enregistrable dans sa liste : elle pose son viewport et ses liaisons.
         RHI::RenderPassDesc GetShadowPassDesc() const;
+        // Temps CPU du dernier Prepare, par partie (millisecondes), pour le panneau Moteur.
+        struct PrepareTimes
+        {
+            double entities = 0.0; // positions, champ, matrices, lumières (sans les planètes)
+            double ground = 0.0;   // planètes : parcours des tuiles, tuiles demandées
+            double trees = 0.0;    // plaines d'arbres
+            double uploads = 0.0;  // envois au GPU, lots, tri des transparents
+        };
+        const PrepareTimes& GetPrepareTimes() const { return m_prepareTimes; }
         bool IsCascadeDrawn(std::uint32_t cascade) const { return m_drawCascade[cascade]; }
         void DrawShadowCascade(RHI::CommandList& commands, std::uint32_t frameIndex, std::uint32_t cascade) const;
         const RHI::Texture& GetShadowMap() const { return *m_shadowMap; }
@@ -193,6 +206,28 @@ namespace Flux {
             std::array<float, 4> tint;     // multiplie la couleur du matériau
             std::array<float, 4> emissive; // ajouté à celui du matériau ; w : 1 si surface remplace métal et rugosité
             std::array<float, 4> surface;  // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent)
+        };
+        // Une entité qui a un modèle, pendant Prepare : ce qu'en a lu le fil appelant, puis ce qu'en calcule un fil de
+        // travail (ComputeEntity).
+        struct EntityDraw
+        {
+            const RelativeTransform* transform = nullptr;
+            const GpuModel* model = nullptr;
+            const GpuModel* farModel = nullptr;
+            float farDistance = 0.0f;
+            Math::LinearColor tint;
+            Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
+            float metallic = 1.0f;
+            float roughness = 1.0f;
+            bool materialOverride = false;
+            // Calculé :
+            bool kept = false; // en vue ou dans une ombre
+            bool inView = false;
+            bool visible = true;
+            bool uniformScale = false;
+            Math::Vector3f center;
+            float radius = 0.0f;
+            DrawData data;
         };
         // Période (m) des coordonnées des textures du sol : multiple de leurs tailles (GroundScale dans Mesh.slang).
         static constexpr double GroundPeriod = 1024.0;
@@ -375,6 +410,9 @@ namespace Flux {
         bool TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass, bool drawnOnly = true) const;
         bool CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const;
         bool CastsAnyShadow(const Math::Vector3f& center, float radius) const;
+        // Sphère englobant `box` du modèle de l'entité, relative à la caméra.
+        static std::pair<Math::Vector3f, float> SphereOf(const RelativeTransform& transform, const Math::Box3f& box);
+        void ComputeEntity(const Scene& scene, const ViewCone& view, const TemporalView& temporal, Entity hidden, EntityDraw& draw);
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
         static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
@@ -471,6 +509,7 @@ namespace Flux {
             std::uint64_t computedTiles = 0; // m_computedTiles quand elle a été dessinée
         };
         std::array<DrawnCascade, ShadowCascadeCount> m_drawnCascades{};
+        PrepareTimes m_prepareTimes;
         std::array<bool, ShadowCascadeCount> m_drawCascade{}; // dessinée à cette image
         bool m_keepShadows = false;                            // au moins une gardée : la carte n'est pas effacée
         // Relief au loin : 2 cascades côte à côte, de m_terrainShadowResolution texels de côté chacune. Gardées tant
@@ -491,6 +530,8 @@ namespace Flux {
 
         // Préparés sur le CPU avant l'enregistrement des commandes, réutilisés d'une image à l'autre.
         std::vector<RelativeTransform> m_relativeTransforms;
+        std::vector<EntityDraw> m_entityDraws;
+        JobSystem* m_jobs = nullptr;
         std::vector<MeshDraw> m_draws;
         std::vector<DrawData> m_drawData; // une par entité de m_draws, envoyées au GPU
         // Par indice d'entité : sa matrice world de la dernière image où elle a été préparée, et le numéro de cette
