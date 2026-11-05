@@ -46,6 +46,14 @@ namespace Flux {
     struct RenderTimings
     {
         double prepare = 0.0;  // CPU : matrices, poses, lumières, cascades, envoi des données de l'image
+        // CPU, parties de `prepare` : exposition, ciel et environnement ; entités (positions, champ, matrices,
+        // lumières) ; sol des planètes (parcours des tuiles) ; arbres (plaines) ; envois et lots. Le reste (flammes,
+        // traçantes, compteurs) est la différence.
+        double prepareSky = 0.0;
+        double prepareEntities = 0.0;
+        double prepareGround = 0.0;
+        double prepareTrees = 0.0;
+        double prepareUploads = 0.0;
         double record = 0.0;   // CPU : enregistrement des commandes de dessin et soumission
         double waitGpu = 0.0;  // CPU arrêté : le GPU n'a pas fini l'image qui utilisait les mêmes ressources
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)
@@ -158,7 +166,8 @@ namespace Flux {
         // Fils qui enregistrent les passes de l'image en parallèle (ceux du moteur, qui vivent plus longtemps que le
         // Renderer) ; nul (par défaut) : tout sur le fil de Render.
         void SetJobSystem(JobSystem* jobs);
-        // Enregistrement en parallèle, avec des fils (activé par défaut) : désactivable pour comparer.
+        // Préparation (entités, traçantes) et enregistrement en parallèle, avec des fils (activé par défaut) :
+        // désactivable pour comparer.
         void SetParallelRecording(bool enabled);
         bool IsParallelRecording() const;
         // Grille au sol de l'éditeur (plan y = 0, lignes du mètre, des 10 m et des 100 m, axes X et Z en couleur),
