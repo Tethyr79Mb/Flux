@@ -1,0 +1,17 @@
+# Fichiers lourds du jeu (modèles, textures, sons) stockés par Git LFS : le dépôt ne garde qu'un pointeur, chaque
+# version n'est téléchargée qu'à la demande. Engine/assets (police des tests, logo) reste dans Git : la CI ne
+# télécharge pas les fichiers LFS (quota mensuel) et les tests n'ont besoin que de ceux du moteur.
+Game/Module/assets/**/*.glb filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.gltf filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.bin filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.png filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.ktx2 filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.hdr filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.exr filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.wav filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.flac filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.ttf filter=lfs diff=lfs merge=lfs -text
+Game/Module/assets/**/*.otf filter=lfs diff=lfs merge=lfs -text
