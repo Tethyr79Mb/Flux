@@ -51,6 +51,9 @@ namespace Flux {
         // before : frère devant lequel la placer (annuler une suppression la remet à sa place) ; NullEntity, ou une
         // entité qui n'est pas un enfant de parent : à la fin.
         bool SetParent(Entity entity, Entity parent, Entity before = NullEntity);
+        // SetParent, l'entité restant à la même place et avec la même orientation dans le monde (glisser dans la
+        // hiérarchie, sortir d'un vaisseau) ; SetParent seul garde sa transformation locale.
+        bool SetParentKeepingWorld(Entity entity, Entity parent, Entity before = NullEntity);
         // Frère suivant (NullEntity pour le dernier).
         Entity GetNextSibling(Entity entity) const { return m_registry.get<HierarchyComponent>(entity).nextSibling; }
         Entity GetParent(Entity entity) const { return m_registry.get<HierarchyComponent>(entity).parent; }

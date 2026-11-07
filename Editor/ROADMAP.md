@@ -24,7 +24,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Logo FluxEngine : icône du programme et de sa fenêtre (losange seul), écran d'accueil pendant le démarrage, en-tête du README.
 
 ### Scène
-- ✅ Onglet « Scènes » : scènes en vignettes rangées en dossiers, objets regroupés par type avec icônes, glisser-déposer pour l'ordre et la hiérarchie.
+- ✅ Onglet « Scènes » : scènes en vignettes rangées en dossiers, objets regroupés par type avec icônes, glisser-déposer pour l'ordre et la hiérarchie (l'objet garde sa place dans le monde).
 - ✅ Inspecteur généré depuis les composants (listes déroulantes, couleurs avec sélecteur Windows, choix de fichiers).
 - 🔧 Inspecteur en onglets à icônes, comme les Propriétés de Blender : une colonne à gauche (Objet, puis un onglet
   par composant, ou par groupe de réglages avec `.Group` : Relief, Sol, Climat, Océan, Atmosphère pour la planète),

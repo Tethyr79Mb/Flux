@@ -69,6 +69,39 @@ namespace Flux {
         return true;
     }
 
+    bool Scene::SetParentKeepingWorld(Entity entity, Entity parent, Entity before) {
+        const Math::WorldPosition position = GetWorldPosition(entity);
+        const Math::Quaternionf rotation = GetWorldRotation(entity);
+        if (!SetParent(entity, parent, before)) {
+            return false;
+        }
+        auto& transform = m_registry.get<TransformComponent>(entity);
+        if (parent == NullEntity) {
+            // Racine : la position garde son secteur, le décalage peut dépasser un secteur (WorldPosition le permet).
+            transform.position = position.offset;
+            transform.rotation = rotation;
+            if (position.sector != Math::Vector3i64{}) {
+                m_registry.emplace_or_replace<SectorComponent>(entity, position.sector);
+            } else {
+                m_registry.remove<SectorComponent>(entity);
+            }
+            return true;
+        }
+        // Échelle du parent dans le monde, axe par axe : exacte tant que les échelles sont uniformes (le cas courant).
+        Math::Vector3d scale{1.0, 1.0, 1.0};
+        for (Entity ancestor = parent; ancestor != NullEntity; ancestor = GetParent(ancestor)) {
+            const Math::Vector3f& own = m_registry.get<TransformComponent>(ancestor).scale;
+            scale = {scale.x * own.x, scale.y * own.y, scale.z * own.z};
+        }
+        const Math::Quaternionf parentRotation = GetWorldRotation(parent);
+        const Math::Vector3d local =
+            parentRotation.Conjugate().Rotate(Math::Delta(GetWorldPosition(parent), position));
+        transform.position = {scale.x != 0.0 ? local.x / scale.x : 0.0, scale.y != 0.0 ? local.y / scale.y : 0.0,
+                              scale.z != 0.0 ? local.z / scale.z : 0.0};
+        transform.rotation = Math::Normalize(parentRotation.Conjugate() * rotation);
+        return true;
+    }
+
     void Scene::Detach(Entity entity) {
         auto& hierarchy = m_registry.get<HierarchyComponent>(entity);
         if (hierarchy.previousSibling != NullEntity) {
