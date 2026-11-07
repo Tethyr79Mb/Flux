@@ -250,7 +250,10 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
 - ⬜ 5. Plateaux, terrasses et falaises (mesas, canyons). Une falaise restera une pente raide, pas un mur vertical.
 - ⬜ 6. Vallées et rivières par formule. Crédibles de loin, sans garantir que l'eau descende toujours.
 - ⬜ 7. Cratères, pour les lunes et les planètes sans air.
-- ⬜ 8. Types de planète (tellurique, lune, désert, glace, volcanique, océanique) qui règlent le poids de chaque couche.
+- ⬜ 8. Types de planète (demande de Bruno du 2026-11-07) : rocheuse, martienne, gelée, de lave ; plus tard lune,
+  océanique. Un type règle le poids de chaque couche du relief (cratères et canyons pour la martienne, plaines de
+  glace et crevasses pour la gelée, coulées et cônes pour la lave), les matières du sol, le climat, l'atmosphère et
+  la surface liquide (eau, glace ou lave émissive). Les couches nouvelles vont dans `Terrain::GetHeight` et `Height`.
 - ⬜ 9. (À décider par Bruno) Érosion hydraulique précalculée. C'est la plus réaliste, mais elle stocke une carte par
   planète, ce qui va contre la décision du 2026-10-07.
 - ⬜ 10. Rochers et cailloux posés sur le sol en instancing, plutôt que des octaves toujours plus fines.
