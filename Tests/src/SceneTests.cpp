@@ -100,5 +100,25 @@ bool RunSceneTests() {
     orbit = {.distance = 2.0, .angle = 90.0, .inclination = 0.0};
     Orbits::Update(scene);
     CHECK(Near(Math::Delta(scene.GetWorldPosition(sun), scene.GetWorldPosition(planet)), {0.0, 0.0, -2.0e9}, 1.0e-3));
+
+    // Glisser dans la hiérarchie : un vaisseau racine lâché sur une station tournée, loin dans un secteur, reste où il
+    // est (avant, sa position de racine devenait sa position dans le repère de la station : envoyé à 46 millions de km).
+    const Entity station = scene.CreateEntity("Station");
+    scene.Add<SectorComponent>(station, Math::Vector3i64{150, 0, 0});
+    scene.Get<TransformComponent>(station).position = {-400541046.7, 3072.4, 6321.7};
+    scene.Get<TransformComponent>(station).rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, 3.0f);
+    const Entity docked = scene.CreateEntity("Vaisseau");
+    scene.Add<SectorComponent>(docked, Math::Vector3i64{150, 0, 0});
+    scene.Get<TransformComponent>(docked).position = {-400541101.4, 3090.9, 6889.1};
+    scene.Get<TransformComponent>(docked).rotation = Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, 0.5f);
+    const Math::WorldPosition before = scene.GetWorldPosition(docked);
+    const Math::Quaternionf turned = scene.GetWorldRotation(docked);
+    CHECK(scene.SetParentKeepingWorld(docked, station));
+    CHECK(!scene.TryGet<SectorComponent>(docked) && Math::Length(scene.Get<TransformComponent>(docked).position) < 1000.0);
+    CHECK(Math::Length(Math::Delta(before, scene.GetWorldPosition(docked))) < 1.0e-3);
+    CHECK(std::abs(std::abs((turned.Conjugate() * scene.GetWorldRotation(docked)).w) - 1.0f) < 1.0e-4f); // même cap
+    CHECK(scene.SetParentKeepingWorld(docked, NullEntity)); // et ressorti à la racine, dans son secteur
+    CHECK(Math::Length(Math::Delta(before, scene.GetWorldPosition(docked))) < 1.0e-3);
+    CHECK(scene.Get<SectorComponent>(docked).sector == (Math::Vector3i64{150, 0, 0}));
     return true;
 }

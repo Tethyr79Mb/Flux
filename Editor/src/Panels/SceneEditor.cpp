@@ -857,7 +857,9 @@ namespace FluxEditor {
                 }
                 const Uuid id = m_pendingMove.entity;
                 std::string previous = UndoHistory::Capture(engine, id);
-                if (scene.SetParent(entity, parent, before)) {
+                // À la même place dans le monde : un vaisseau lâché sur la station reste où il est, au lieu de
+                // prendre sa position de racine comme position dans le repère de la station.
+                if (scene.SetParentKeepingWorld(entity, parent, before)) {
                     if (mounting) {
                         Mounts::Mount(scene, entity, parent);
                     }
