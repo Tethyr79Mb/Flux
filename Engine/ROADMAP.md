@@ -336,6 +336,9 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Ars Solaris.exe
   vérifie au démarrage qu'il est à jour.
 - ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
+- ⬜ Version alpha livrée (Bruno, 2026-11-08) : option CMake de build monolithique, FluxSim, FluxEngine et le module du jeu liés
+  statiquement avec LTO dans un seul exécutable, pour le client et pour le serveur. Le développement garde les DLL (module du jeu
+  rechargé à chaud). Références : Unreal (liaison modulaire ou monolithique, publié), Star Citizen (un seul StarCitizen.exe livré).
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
   - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
   - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
