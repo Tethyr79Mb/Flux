@@ -170,6 +170,13 @@ transfert d'autorité entre zones, shards, GameNetworkingSockets, PostgreSQL plu
 - ⬜ 9. Deux `ZoneServer`, transfert d'autorité, copies en lecture seule à la frontière.
 - ⬜ 10. Envoi selon la distance, test de charge avec des bots.
 
+### Missions en graphe de nœuds (Bruno, 2026-11-08 ; après tout le multijoueur)
+Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
+- ⬜ Mission décrite en JSON (`.fluxmission`) : étapes, déclencheurs, conditions, récompenses, reliés en graphe.
+- ⬜ Exécution par le serveur (`ZoneServer`), état de chaque mission par joueur ou groupe ; nœuds écrits en C++ dans le jeu.
+- ⬜ Éditeur visuel du graphe dans FluxEditor (voir `Editor/ROADMAP.md`).
+- ⬜ Plus tard : scripts Luau en complément, pour les cas spéciaux.
+
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
@@ -306,7 +313,7 @@ transfert d'autorité entre zones, shards, GameNetworkingSockets, PostgreSQL plu
   du vaisseau. Missions sans prefab : drones cubes armés. À améliorer : pas de factions ni de formations (voir plus bas).
 - ⬜ IA : factions (qui attaque qui), escortes, formations, appels de renforts ; arbres de comportement si besoin.
 - ⬜ Mort du joueur : son vaisseau ne peut pas être détruit aujourd'hui (Game::Weapons::ApplyHits le protège).
-- ⬜ Missions : récompenses, autres sortes (sur les planètes et dans l'espace).
+- ⬜ Missions : récompenses, autres sortes (sur les planètes et dans l'espace), par le graphe de nœuds (voir plus haut).
 - ⬜ Station, étape 3 : trafic de vaisseaux PNJ qui viennent s'amarrer aux quais libres, puis repartent.
 - ⬜ Station, étape 4 : marchands derrière les comptoirs et terminaux qui ouvrent une fenêtre ; vrai modèle Blender.
 - 🔨 Station orbitale (vrai modèle Blender, `Modeles/Station`, demande de Bruno du 2026-10-26) : tour de 4 km, anneau haut
