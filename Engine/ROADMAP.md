@@ -162,8 +162,8 @@ transfert d'autorité entre zones, shards, GameNetworkingSockets, PostgreSQL plu
 - 🔨 1. Pas fixe de 60 Hz pour tout le jeu (`SimulationClock`), touches retenues jusqu'au pas, rendu interpolé entre les deux derniers pas. Limites : projectiles et animations non interpolés (à 60 pas par seconde).
 - 🔧 2. Commandes de joueur (`PlayerCommand` : marche, manche, vue, un bit par action) remplies une fois par pas, seule lecture du clavier pendant un pas ; verrou et groupes d'armes rangés par joueur. Limites : un seul joueur a une commande, l'écran de changement de scène lit encore le clavier, l'état de la navigation et des missions reste global.
 - ✅ 3. `FluxSim` (simulation, sans Vulkan ni Win32) séparé de `FluxEngine` : FluxSim.dll dans `Sim/` (scène, physique, planètes côté CPU, modèles ; libFluxSim.so sous Linux), compilée par la CI Linux (GCC 14) avec ses tests (FluxSimTests).
-- ⬜ 4. `ArsSolarisServer.exe` sans rendu (`Game/Server/`).
-- ⬜ 5. Transport, session, vérification de version.
+- 🔨 4. `ArsSolarisServer.exe` sans rendu (`Game/Server/`). Fait : classe `Simulation` (FluxSim) sortie d'`Engine` (scène, physique, projectiles, pas fixe, systèmes du pas). À faire : code du jeu coupé en `GameSim` / `GameClient`, le serveur lui-même.
+- ⬜ 5. Transport, session, vérification de version (numéro de version du protocole dès le départ : mise à jour roulante des serveurs plus tard, vers l'alpha).
 - ⬜ 6. Réplication des champs marqués dans `ComponentRegistry`, interpolation des autres.
 - ⬜ 7. Prédiction et réconciliation du vaisseau du joueur.
 - ⬜ 8. Solo et « Jouer » de l'éditeur par un serveur local intégré.

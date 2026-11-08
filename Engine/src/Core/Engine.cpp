@@ -29,7 +29,6 @@
 #include "Flux/UI/Context.hpp"
 #include "Flux/UI/DrawList.hpp"
 #include "Core/EnginePanel.hpp"
-#include "Core/FlightSurroundings.hpp"
 #include "Core/Notice.hpp"
 #include "Core/InterfaceBindings.hpp"
 #include "Core/LoadingScreen.hpp"
@@ -59,8 +58,8 @@ namespace Flux {
         std::filesystem::path InputActionsFile() {
             return Platform::GetExecutableDirectory() / "Touches.json";
         }
-        // Projectiles réservés d'avance : un combat chargé n'alloue pas en pleine image.
-        constexpr std::size_t ReservedProjectiles = 4096;
+        // Éclats réservés d'avance : un combat chargé n'alloue pas en pleine image.
+        constexpr std::size_t ReservedImpacts = 4096;
         // Durée de l'éclat d'un impact (s).
         constexpr float ImpactSeconds = 0.12f;
         // Explosion d'un missile : plus grande et plus longue qu'un impact d'obus (vif, puis pâlit comme lui).
@@ -74,20 +73,17 @@ namespace Flux {
           m_showDebugOverlay(config.showDebugOverlay),
           m_drawScreenUi(config.drawScreenUi),
           m_freeCamera(config.freeCamera),
-          m_physicsContext(std::make_shared<PhysicsContext>()),
           m_audio(std::make_unique<AudioSystem>()),
           m_interfaces(std::make_unique<InterfaceLibrary>()),
           m_inputActions(std::make_unique<InputActions>()),
           m_interfaceBindings(std::make_unique<InterfaceBindings>()),
           m_playerCamera(std::make_unique<PlayerCamera>()),
-          m_flightSurroundings(std::make_unique<FlightSurroundings>()),
           m_notice(std::make_unique<Notice>()),
           m_loadingScreen(std::make_unique<LoadingScreen>(config.loadingScreen)),
           m_quickSave(std::make_unique<QuickSave>()),
           m_frameStats(std::make_unique<FrameStats>()),
           m_stepInput(std::make_unique<Input>()),
           m_interpolation(std::make_unique<TransformInterpolation>()) {
-        RegisterEngineComponents(m_components);
         Log::Info("Flux {}", GetFullVersion());
         if (!m_window->Create(config.title, config.windowSize, config.maximized, config.fullscreen)) {
             std::fputs("Flux : impossible de créer la fenêtre\n", stderr);
@@ -110,6 +106,10 @@ namespace Flux {
         m_renderer->SetGroundDetail(config.groundDetail);
         m_renderer->SetCloudQuality(config.cloudQuality);
         m_renderer->SetBloom(config.bloom ? Renderer::DefaultBloom : 0.0f);
+        // Les modèles sont chargés par le rendu : la simulation y lit la durée des animations des sièges.
+        m_simulation.SetAnimationDurations([renderer = m_renderer.get()](const std::filesystem::path& model, const std::string& animation) {
+            return renderer->GetAnimationDuration(model, animation);
+        });
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
@@ -191,9 +191,8 @@ namespace Flux {
         m_actions.quickLoad = actions.Add("Chargement rapide", "Partie", Key::F9);
         // Repartir du début au prochain lancement (la sauvegarde est sinon reprise, voir ResumeQuickSave).
         m_actions.deleteSave = actions.Add("Effacer la sauvegarde", "Partie", Key::F7);
-        m_projectiles.reserve(ReservedProjectiles);
-        m_projectileHits.reserve(ReservedProjectiles);
-        m_impacts.reserve(ReservedProjectiles);
+        m_simulation.SetCharacterActions({.run = m_actions.run, .jump = m_actions.jump, .interact = m_actions.interact});
+        m_impacts.reserve(ReservedImpacts);
         if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
             const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             if (auto loaded = actions.LoadFromString(text); !loaded) {
@@ -221,8 +220,7 @@ namespace Flux {
     }
 
     const PlayerCommand& Engine::GetPlayerCommand(Entity player) const {
-        static const PlayerCommand None;
-        return player == GetFollowedPlayer() ? m_playerCommand : None;
+        return m_simulation.GetPlayerCommand(player);
     }
 
     void Engine::SampleLocalCommand() {
@@ -235,9 +233,9 @@ namespace Flux {
         }
         view.position = m_camera.position;
         view.forward = m_camera.GetForward();
-        m_playerCommand = Flux::SampleLocalCommand(*m_stepInput, *m_inputActions, IsKeyboardFree(), view,
-                                                   {m_actions.forward, m_actions.back, m_actions.left, m_actions.right},
-                                                   m_clock.GetStep());
+        m_simulation.SetLocalCommand(Flux::SampleLocalCommand(*m_stepInput, *m_inputActions, IsKeyboardFree(), view,
+                                                              {m_actions.forward, m_actions.back, m_actions.left, m_actions.right},
+                                                              m_simulation.GetClock().GetStep()));
     }
 
     const Input& Engine::GetCurrentInput() const {
@@ -410,11 +408,11 @@ namespace Flux {
                 // Pause : celle de l'éditeur (F6), ou un menu ouvert qui la demande.
                 const bool running = m_gameState == GameState::Running && !m_interfacePaused;
                 const FrameClock::time_point gameStart = FrameClock::now();
-                m_interpolation->Restore(m_scene);
-                const int steps = m_clock.Advance(running ? deltaSeconds : 0.0);
+                m_interpolation->Restore(GetScene());
+                const int steps = m_simulation.GetClock().Advance(running ? deltaSeconds : 0.0);
                 for (int step = 0; step < steps; ++step) {
                     if (step == steps - 1) {
-                        m_interpolation->BeginStep(m_scene);
+                        m_interpolation->BeginStep(GetScene());
                     }
                     SampleLocalCommand();
                     m_inStep = true;
@@ -426,9 +424,9 @@ namespace Flux {
                     m_stepInput->ClearEdges();
                 }
                 if (steps > 0) {
-                    m_interpolation->EndStep(m_scene);
+                    m_interpolation->EndStep(GetScene());
                 }
-                m_interpolation->Apply(m_scene, m_clock.GetAlpha());
+                m_interpolation->Apply(GetScene(), m_simulation.GetClock().GetAlpha());
                 stats.AddSteps(steps);
                 if (!running) {
                     m_stepInput->ClearEdges(); // une touche de la pause ne part pas à la reprise
@@ -445,22 +443,22 @@ namespace Flux {
                 m_playerCamera->Reset();
             }
             // Sons des entités, à la caméra de cette image (qui suit le joueur ou vole librement).
-            m_audio->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
-            m_audio->Update(m_scene, m_camera, m_gameState != GameState::Stopped,
+            m_audio->SetAssetsDirectory(GetProject() ? GetProject()->assetsDirectory : std::filesystem::path{});
+            m_audio->Update(GetScene(), m_camera, m_gameState != GameState::Stopped,
                             m_gameState == GameState::Paused || m_interfacePaused || m_loadingScreen->IsActive(), deltaSeconds);
             if (m_editorUpdate) {
                 m_editorUpdate(*this, deltaSeconds);
             }
-            Orbits::Update(m_scene); // après l'inspecteur : une orbite changée place la planète dès cette image
+            Orbits::Update(GetScene()); // après l'inspecteur : une orbite changée place la planète dès cette image
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             // HUD sous les interfaces de la scène (menus, inventaire) ; rien sous un menu opaque plein écran, connu à
             // l'image précédente (les interfaces sont dessinées après).
             if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi && !m_interfaceCovered) {
                 // Aussi en pause (infos de vol, destinations), avec le temps du jeu : arrêté, les messages attendent.
-                RunGameSystems(GameStage::Hud, m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
+                RunHudSystems(m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
             }
             if (m_drawScreenUi) {
-                ScreenUi::Draw(m_scene, m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
+                ScreenUi::Draw(GetScene(), m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
                                GetScreenUiOptions());
             }
             if (m_drawScreenUi) {
@@ -491,12 +489,12 @@ namespace Flux {
             updateMilliseconds = Milliseconds(FrameClock::now() - now);
             stats.Add(UpdateCost, updateMilliseconds);
 
-            m_renderer->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
+            m_renderer->SetAssetsDirectory(GetProject() ? GetProject()->assetsDirectory : std::filesystem::path{});
             m_renderer->SetThrusterPreview(m_gameState == GameState::Stopped); // éditeur, jeu arrêté
             // Menu opaque plein écran (dessiné plus haut, à cette image) : la scène derrière ne coûte plus rien au GPU.
             m_renderer->SetSceneCovered(m_interfaceCoversNow);
-            m_renderer->SetProjectiles(m_projectiles, m_impacts);
-            if (!m_renderer->BeginFrame() || !m_renderer->Render(m_scene, m_camera, m_playerCamera->GetHiddenPlayer())
+            m_renderer->SetProjectiles(m_simulation.GetProjectiles(), m_impacts);
+            if (!m_renderer->BeginFrame() || !m_renderer->Render(GetScene(), m_camera, m_playerCamera->GetHiddenPlayer())
                 || !m_renderer->EndFrame()) {
                 return 1;
             }
@@ -527,117 +525,45 @@ namespace Flux {
                             || ((input.WasKeyPressed(Key::Enter) || input.WasKeyPressed(Key::NumpadEnter)
                                  || input.WasKeyPressed(Key::Space))
                                 && !m_ui->WantsKeyboard());
-        if (std::optional<std::string> next = SceneChange::Update(m_scene, deltaSeconds, confirmed)) {
+        if (std::optional<std::string> next = SceneChange::Update(GetScene(), deltaSeconds, confirmed)) {
             RequestScene(std::move(*next));
         }
         // Sauvegarde rapide : celle du joueur de cet écran, même sans personnage.
         if (!m_loadingScreen->IsActive()) { // pendant le chargement, la scène n'est pas encore celle que voit le joueur
-            if (m_playerCommand.WasPressed(m_actions.quickSave)) {
+            const PlayerCommand& command = m_simulation.GetPlayerCommand(m_simulation.GetPlayer());
+            if (command.WasPressed(m_actions.quickSave)) {
                 m_quickSave->RequestSave();
             }
-            if (m_playerCommand.WasPressed(m_actions.quickLoad)) {
+            if (command.WasPressed(m_actions.quickLoad)) {
                 m_quickSave->RequestLoad(false);
             }
-            if (m_playerCommand.WasPressed(m_actions.deleteSave)) {
+            if (command.WasPressed(m_actions.deleteSave)) {
                 DeleteQuickSave();
             }
         }
 
-        if (!m_physics) {
-            StartPhysics(); // scène changée sans LoadScene (par le code du jeu) : préparée maintenant
+        // Vue du cockpit ou de dehors : la caméra est au moteur, la commande arrive avec celle du pas.
+        const Entity player = m_simulation.GetPlayer();
+        const Scene& scene = m_simulation.GetScene();
+        if (const auto* character = player != NullEntity ? scene.TryGet<CharacterComponent>(player) : nullptr;
+            character && character->seat != NullEntity && m_simulation.GetPlayerCommand(player).WasPressed(m_actions.changeView)) {
+            m_playerCamera->ToggleCockpitView();
         }
-        const Entity player = m_physics->GetPlayer();
-        const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;
-        const bool seated = playerCharacter && playerCharacter->seat != NullEntity;
-        const PlayerCommand& command = GetPlayerCommand(player);
-
-        // Personnage du joueur, par rapport à sa vue ; assis, les mêmes actions pilotent le vaisseau (poste de
-        // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, F par défaut).
-        CharacterInput character;
-        // Systèmes du jeu d'abord : F près d'un donneur de missions sert à lui parler, pas à s'asseoir.
-        m_interactionPending = command.WasPressed(m_actions.interact);
-        RunGameSystems(GameStage::Interaction, deltaSeconds);
-        SeatInput seatInput{.interact = m_interactionPending};
-        m_interactionPending = false;
-        // Commandes du jeu (étape Interaction, SetPilotInput), complétées ici de la souris et de ce qui entoure le
-        // vaisseau ; reprises à zéro à chaque image.
-        ShipInput shipInput = std::exchange(m_pilotInput, ShipInput{});
-        if (seated) {
-            shipInput.stickYaw = command.stickYaw;
-            shipInput.stickPitch = command.stickPitch;
-            if (command.WasPressed(m_actions.changeView)) {
-                m_playerCamera->ToggleCockpitView();
-            }
-            // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
-            if (const Entity ship = Ships::GetPilotedShip(m_scene, player); ship != NullEntity) {
-                if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
-                    shipInput.up = Math::Normalize(gravity) * -1.0f;
-                }
-                const FlightState flight = m_flightSurroundings->Get(m_scene, m_physics.get(), ship);
-                shipInput.air = flight.air;
-                if (flight.nearPlanet) {
-                    shipInput.planetUp = Math::Vector3f(flight.up);
-                    shipInput.planetDistance = static_cast<float>(flight.boundary);
-                    shipInput.planetCenter = static_cast<float>(flight.center);
-                }
-            }
-        } else {
-            character.move = command.move;
-            character.run = command.IsDown(m_actions.run);
-            character.jump = command.WasPressed(m_actions.jump);
-        }
-        Seats::Update(m_scene, player, deltaSeconds, seatInput, [this](Entity entity) {
-            // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
-            const auto* animator = m_scene.TryGet<AnimatorComponent>(entity);
-            const auto* model = m_scene.TryGet<ModelComponent>(entity);
-            if (!m_project || !animator || !model || model->model.empty() || animator->speed <= 0.0f) {
-                return Seats::Durations{};
-            }
-            const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(model->model);
-            const auto duration = [&](const std::string& name) {
-                return name.empty() ? 0.0f : m_renderer->GetAnimationDuration(path, name) / animator->speed;
-            };
-            return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
-        });
-        Ships::Update(m_scene, Ships::GetPilotedShip(m_scene, player), deltaSeconds, shipInput);
-        RunGameSystems(GameStage::BeforePhysics, deltaSeconds); // pilote automatique, warp et IA du jeu, après le pilote
-        m_physics->Update(m_scene, deltaSeconds, character);
-        // Projectiles après la physique, avant les dégâts et les armes du jeu (étape AfterPhysics) : les vaisseaux sont à leur place
-        // de cette image, les nouveaux tirs partent de la bouche des canons (avant, ils naîtraient en retard d'une
-        // image : 16 m à 1 000 m/s). Les anciens avancent d'abord.
-        m_projectileHits.clear();
-        Projectiles::GuideMissiles(m_scene, m_projectiles, deltaSeconds);
-        Projectiles::Update(
-            m_projectiles, deltaSeconds,
-            [this](const Math::WorldPosition& from, const Math::Vector3f& segment, Entity ship) -> std::optional<std::pair<Entity, float>> {
-                if (const auto hit = m_physics->CastRay(m_scene, from, segment, ship)) {
-                    return std::pair{hit->entity, hit->fraction};
-                }
-                return std::nullopt;
-            },
-            &m_projectileHits);
+        m_simulation.Step(deltaSeconds);
+        // Éclats des projectiles arrivés pendant le pas : seulement à dessiner.
         Projectiles::UpdateImpacts(m_impacts, deltaSeconds);
-        for (const ProjectileHit& hit : m_projectileHits) {
+        for (const ProjectileHit& hit : m_simulation.GetProjectileHits()) {
             m_impacts.push_back(hit.missile ? Impact{hit.position, hit.color, ExplosionSeconds, ExplosionSize}
                                             : Impact{hit.position, hit.color, ImpactSeconds});
         }
-        RunGameSystems(GameStage::AfterPhysics, deltaSeconds); // dégâts (GetProjectileHits), armes du joueur et des ennemis
-        Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de cette image
-    }
-
-    void Engine::StartPhysics() {
-        m_physicsContext->SetAssetsDirectory(m_project ? m_project->assetsDirectory : std::filesystem::path{});
-        m_physics = std::make_unique<PhysicsWorld>(m_physicsContext);
-        m_physics->Prepare(m_scene);
     }
 
     void Engine::SetProject(Project project) {
-        m_prefabReader = SceneSerializer::ReadPrefabsFrom(project.assetsDirectory);
-        m_project = std::move(project);
+        m_simulation.SetProject(std::move(project));
     }
 
     std::expected<void, std::string> Engine::LoadScene(const std::filesystem::path& path) {
-        if (auto loaded = SceneSerializer::Load(m_scene, m_components, path, GetPrefabReader()); !loaded) {
+        if (auto loaded = SceneSerializer::Load(GetScene(), GetComponents(), path, GetPrefabReader()); !loaded) {
             return loaded;
         }
         m_quickSave->SetScene(path);
@@ -646,14 +572,11 @@ namespace Flux {
     }
 
     void Engine::SceneLoaded() {
-        m_physics.reset(); // les corps de l'ancienne scène
         m_interpolation->Clear(); // entités de l'ancienne scène
-        m_clock.Reset();
-        m_projectiles.clear();
         m_impacts.clear();
-        ResetGameState();
+        m_simulation.SceneReplaced();
         if (m_gameState != GameState::Stopped) {
-            StartPhysics();
+            m_simulation.Start(); // déjà lancée : SceneReplaced a préparé le nouveau monde physique
             m_loadingScreen->Begin();
         }
     }
@@ -662,16 +585,13 @@ namespace Flux {
         const bool starting = m_gameState == GameState::Stopped && state != GameState::Stopped;
         m_gameState = state;
         if (starting) {
-            m_clock.Reset();
-            StartPhysics(); // lancement du jeu (éditeur) : la scène est prête
+            m_simulation.Start(); // lancement du jeu (éditeur) : la scène est prête
             m_loadingScreen->Begin();
         }
         if (state == GameState::Stopped) {
             m_interpolation->Clear();
-            m_physics.reset();
-            m_projectiles.clear();
             m_impacts.clear();
-            ResetGameState();
+            m_simulation.Stop();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceBindings->ClearActions();
@@ -681,11 +601,7 @@ namespace Flux {
     }
 
     Entity Engine::GetFollowedPlayer() const {
-        if (m_gameState == GameState::Stopped || !m_physics) {
-            return NullEntity;
-        }
-        const Entity player = m_physics->GetPlayer();
-        return m_scene.IsValid(player) ? player : NullEntity;
+        return m_gameState != GameState::Stopped ? m_simulation.GetPlayer() : NullEntity;
     }
 
     void Engine::LoadRequestedScene() {
@@ -693,11 +609,11 @@ namespace Flux {
         if (!requested || m_gameState == GameState::Stopped) {
             return; // demande faite juste avant l'arrêt du jeu (éditeur) : la scène éditée est déjà restaurée
         }
-        if (!m_project) {
+        if (!GetProject()) {
             Log::Warning("changement de scène sans projet ouvert ({})", *requested);
             return;
         }
-        const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(*requested);
+        const std::filesystem::path path = GetProject()->assetsDirectory / Platform::PathFromUtf8(*requested);
         if (auto loaded = LoadScene(path); !loaded) {
             // Le jeu reste sur la scène en cours ; le joueur doit savoir pourquoi il ne change pas de scène.
             Log::Error("scène {} : {}", *requested, loaded.error());
@@ -733,7 +649,7 @@ namespace Flux {
             return; // jeu arrêté dans l'éditeur à la même image : la scène éditée est déjà restaurée
         }
         if (requests.save) {
-            if (auto saved = m_quickSave->Write(*this, m_physics ? m_physics->GetPlayer() : NullEntity); !saved) {
+            if (auto saved = m_quickSave->Write(*this, m_simulation.GetPlayer()); !saved) {
                 Log::Error("sauvegarde rapide : {}", saved.error());
                 m_notice->Show("Sauvegarde impossible : " + saved.error());
             } else {
@@ -772,7 +688,7 @@ namespace Flux {
         }
         m_audio->StopAll();
         m_playerCamera->Snap();
-        m_quickSave->Restore(*this, m_physics ? m_physics->GetPlayer() : NullEntity);
+        m_quickSave->Restore(*this, m_simulation.GetPlayer());
         // Sauvegarde sans sa scène de départ (faite avant la fusion, ou dans une scène jamais enregistrée) : les
         // modifications de l'éditeur ne peuvent pas y entrer ; le dire, sinon elles semblent ignorées.
         m_notice->Show(merges    ? "Partie reprise dans la scène modifiée (F7 : effacer la sauvegarde)"
@@ -791,12 +707,12 @@ namespace Flux {
         Scene base;
         Scene saved;
         for (auto [scene, path] : {std::pair{&base, QuickSave::GetBaseSceneFile()}, std::pair{&saved, QuickSave::GetSceneFile()},
-                                   std::pair{&m_scene, scenePath}}) {
-            if (auto loaded = SceneSerializer::Load(*scene, m_components, path, GetPrefabReader()); !loaded) {
+                                   std::pair{&GetScene(), scenePath}}) {
+            if (auto loaded = SceneSerializer::Load(*scene, GetComponents(), path, GetPrefabReader()); !loaded) {
                 return std::unexpected(std::format("{} : {}", Platform::ToGenericUtf8(path.filename()), loaded.error()));
             }
         }
-        for (const std::string& problem : SceneMerge::ApplyChanges(m_scene, base, saved, m_components)) {
+        for (const std::string& problem : SceneMerge::ApplyChanges(GetScene(), base, saved, GetComponents())) {
             Log::Warning("reprise de la partie, non repris : {}", problem);
         }
         SceneLoaded();
@@ -851,15 +767,31 @@ namespace Flux {
 
     void Engine::AddGameSystem(GameStage stage, std::string name, UpdateFunction function) {
         RemoveGameSystem(name);
-        m_gameSystems.push_back({stage, std::move(name), std::move(function)});
+        if (stage == GameStage::Hud) {
+            m_hudSystems.push_back({stage, std::move(name), std::move(function)});
+            return;
+        }
+        // Les étapes d'un pas tournent dans la simulation ; le jeu reçoit encore le moteur.
+        const Simulation::Stage simulationStage = stage == GameStage::Interaction     ? Simulation::Stage::Interaction
+                                                : stage == GameStage::BeforePhysics ? Simulation::Stage::BeforePhysics
+                                                : stage == GameStage::AfterPhysics  ? Simulation::Stage::AfterPhysics
+                                                                                    : Simulation::Stage::Reset;
+        m_simulation.AddSystem(simulationStage, std::move(name),
+                               [this, function = std::move(function)](Simulation&, double deltaSeconds) {
+                                   if (function) {
+                                       function(*this, deltaSeconds);
+                                   }
+                               });
     }
 
     void Engine::RemoveGameSystem(std::string_view name) {
-        std::erase_if(m_gameSystems, [&](const GameSystem& system) { return system.name == name; });
+        std::erase_if(m_hudSystems, [&](const GameSystem& system) { return system.name == name; });
+        m_simulation.RemoveSystem(name);
     }
 
     void Engine::ClearGameSystems() {
-        m_gameSystems.clear();
+        m_hudSystems.clear();
+        m_simulation.ClearSystems();
         m_quickSave->ClearData();
     }
 
@@ -871,36 +803,26 @@ namespace Flux {
         m_quickSave->RemoveData(name);
     }
 
-    void Engine::RunGameSystems(GameStage stage, double deltaSeconds) {
+    void Engine::RunHudSystems(double deltaSeconds) {
         // Par indice : un système peut en ajouter ou en retirer un autre.
-        for (std::size_t i = 0; i < m_gameSystems.size(); ++i) {
-            if (m_gameSystems[i].stage == stage && m_gameSystems[i].function) {
-                const UpdateFunction function = m_gameSystems[i].function;
+        for (std::size_t i = 0; i < m_hudSystems.size(); ++i) {
+            if (m_hudSystems[i].function) {
+                const UpdateFunction function = m_hudSystems[i].function;
                 function(*this, deltaSeconds);
             }
         }
     }
 
     bool Engine::ConsumeInteraction() {
-        return std::exchange(m_interactionPending, false);
+        return m_simulation.ConsumeInteraction();
     }
 
     Math::Vector2f Engine::GetSteerPointer() const {
         return m_playerCamera->GetSteerPointer();
     }
 
-    void Engine::SetPilotInput(const ShipInput& input) {
-        m_pilotInput = input;
-    }
-
     FlightState Engine::GetFlightState(Entity ship) {
-        return ship != NullEntity && m_scene.IsValid(ship) ? m_flightSurroundings->Get(m_scene, m_physics.get(), ship) : FlightState{};
-    }
-
-    void Engine::ResetGameState() {
-        m_pilotInput = {};
-        m_playerCommand = {};
-        RunGameSystems(GameStage::Reset, 0.0);
+        return m_simulation.GetFlightState(ship);
     }
 
     void Engine::SetEditorUpdate(UpdateFunction update) {
@@ -924,24 +846,24 @@ namespace Flux {
     }
 
     std::optional<UI::TextureInfo> Engine::LoadAssetTexture(std::string_view relativePath) {
-        if (!m_project || relativePath.empty()) {
+        if (!GetProject() || relativePath.empty()) {
             return std::nullopt;
         }
-        return m_renderer->LoadTexture(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+        return m_renderer->LoadTexture(GetProject()->assetsDirectory / Platform::PathFromUtf8(relativePath));
     }
 
     std::optional<UI::FontRef> Engine::LoadAssetFont(std::string_view relativePath) {
-        if (!m_project || relativePath.empty()) {
+        if (!GetProject() || relativePath.empty()) {
             return std::nullopt;
         }
-        return m_renderer->LoadFont(m_project->assetsDirectory / Platform::PathFromUtf8(relativePath));
+        return m_renderer->LoadFont(GetProject()->assetsDirectory / Platform::PathFromUtf8(relativePath));
     }
 
     const Interface::Document* Engine::LoadInterface(std::string_view relativePath) {
-        if (!m_project || relativePath.empty()) {
+        if (!GetProject() || relativePath.empty()) {
             return nullptr;
         }
-        return m_interfaces->Get(m_project->assetsDirectory, relativePath);
+        return m_interfaces->Get(GetProject()->assetsDirectory, relativePath);
     }
 
     ScreenUi::DrawOptions Engine::GetScreenUiOptions() {
@@ -962,10 +884,10 @@ namespace Flux {
         const Interface::Document* document = nullptr;
         Interface::DrawOptions options{.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
                                        .placeholders = placeholders};
-        if (m_gameState != GameState::Stopped && m_project && !file.empty()) {
+        if (m_gameState != GameState::Stopped && GetProject() && !file.empty()) {
             // En jeu : la copie de l'entité (NullEntity : celle du menu du projet), que la souris modifie.
             if (InterfaceLibrary::Instance* instance =
-                    m_interfaces->GetInstance(m_project->assetsDirectory, owner, file, m_frame)) {
+                    m_interfaces->GetInstance(GetProject()->assetsDirectory, owner, file, m_frame)) {
                 Interface::ToggleWindowsByAction(
                     instance->document, [this](std::string_view action) { return WasActionPressed(action); }, !m_interfacePaused);
                 const Input& input = m_window->GetInput();
@@ -1032,30 +954,30 @@ namespace Flux {
     }
 
     std::vector<std::string> Engine::GetAnimationNames(Entity entity) {
-        const auto* model = m_scene.TryGet<ModelComponent>(entity);
-        if (!m_project || !model || model->model.empty()) {
+        const auto* model = GetScene().TryGet<ModelComponent>(entity);
+        if (!GetProject() || !model || model->model.empty()) {
             return {};
         }
-        return m_renderer->GetAnimationNames(m_project->assetsDirectory / Platform::PathFromUtf8(model->model));
+        return m_renderer->GetAnimationNames(GetProject()->assetsDirectory / Platform::PathFromUtf8(model->model));
     }
 
     std::optional<Math::Box3f> Engine::GetMeshBounds(Entity entity) {
-        if (m_scene.TryGet<MeshRendererComponent>(entity)) {
+        if (GetScene().TryGet<MeshRendererComponent>(entity)) {
             return Math::Box3f{};
         }
-        if (const auto* model = m_scene.TryGet<ModelComponent>(entity)) {
-            if (m_project && !model->model.empty()) {
-                if (auto bounds = m_renderer->LoadModel(m_project->assetsDirectory / Platform::PathFromUtf8(model->model))) {
+        if (const auto* model = GetScene().TryGet<ModelComponent>(entity)) {
+            if (GetProject() && !model->model.empty()) {
+                if (auto bounds = m_renderer->LoadModel(GetProject()->assetsDirectory / Platform::PathFromUtf8(model->model))) {
                     return bounds;
                 }
             }
             return Math::Box3f{}; // pas (encore) de fichier : le cube unité, pour pouvoir le sélectionner quand même
         }
         // Invisibles en jeu, mais sélectionnables dans l'éditeur : un personnage sans modèle, un mur invisible.
-        if (const auto* character = m_scene.TryGet<CharacterComponent>(entity)) {
+        if (const auto* character = GetScene().TryGet<CharacterComponent>(entity)) {
             return Math::Box3f{{-character->radius, 0.0f, -character->radius}, {character->radius, character->height, character->radius}};
         }
-        if (const auto* collider = m_scene.TryGet<ColliderComponent>(entity)) {
+        if (const auto* collider = GetScene().TryGet<ColliderComponent>(entity)) {
             Math::Vector3f half = collider->size * 0.5f;
             if (collider->shape == ColliderShape::Sphere) {
                 half = {collider->radius, collider->radius, collider->radius};

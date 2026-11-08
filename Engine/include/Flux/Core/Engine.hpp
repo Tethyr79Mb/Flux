@@ -2,6 +2,7 @@
 
 #include "Flux/Core/EditorExtensions.hpp"
 #include "Flux/Core/Project.hpp"
+#include "Flux/Core/Simulation.hpp"
 #include "Flux/Core/SimulationClock.hpp"
 #include "Flux/Export.hpp"
 #include "Flux/Graphics/Camera.hpp"
@@ -35,14 +36,12 @@
 
 namespace Flux {
     class AudioSystem;
-    class FlightSurroundings;
     class Notice;
     class InputActions;
     class InterfaceBindings;
     class InterfaceLibrary;
     class JobSystem;
     class LoadingScreen;
-    class PhysicsContext;
     class PhysicsWorld;
     class FrameStats;
     class Input;
@@ -123,21 +122,23 @@ namespace Flux {
         UI::Context& GetUi();
         Camera& GetCamera() { return m_camera; }
         FlyCameraController& GetCameraController() { return m_cameraController; }
-        Scene& GetScene() { return m_scene; }
+        // Le monde simulé (scène, physique, projectiles, pas fixe), sans ce qui s'affiche.
+        Simulation& GetSimulation() { return m_simulation; }
+        Scene& GetScene() { return m_simulation.GetScene(); }
         // Types de composants sauvegardés et affichés dans l'inspecteur : ceux du moteur, puis ceux du jeu
         // (à enregistrer dans FluxRegisterGame, avant de charger une scène qui les utilise).
-        ComponentRegistry& GetComponents() { return m_components; }
+        ComponentRegistry& GetComponents() { return m_simulation.GetComponents(); }
         // Ce que le jeu ajoute à l'éditeur (objets du panneau Placer) : l'éditeur ne connaît pas les composants du jeu.
         EditorExtensions& GetEditorExtensions() { return m_editorExtensions; }
 
         // Projet ouvert (nullptr sans projet) : dossier des assets, scène de démarrage.
         void SetProject(Project project);
-        const Project* GetProject() const { return m_project ? &*m_project : nullptr; }
-        Project* GetProject() { return m_project ? &*m_project : nullptr; }
+        const Project* GetProject() const { return m_simulation.GetProject(); }
+        Project* GetProject() { return m_simulation.GetProject(); }
         // Lecture des prefabs du projet (assets), pour charger et enregistrer les scènes qui en ont ; sans projet,
         // aucun prefab n'est lisible. Une seule pour tout le projet : les textes lus y restent tant que les fichiers
         // ne changent pas.
-        const SceneSerializer::PrefabReader& GetPrefabReader() const { return m_prefabReader; }
+        const SceneSerializer::PrefabReader& GetPrefabReader() const { return m_simulation.GetPrefabReader(); }
 
         // Image du projet (chemin relatif au dossier des assets, « textures/logo.png ») chargée pour l'overlay :
         // voir Renderer::LoadTexture. nullopt sans projet, ou si le fichier est absent ou illisible.
@@ -227,7 +228,7 @@ namespace Flux {
 
         // Monde physique du jeu en cours, préparé au lancement du jeu et à chaque changement de scène ; nullptr à
         // l'arrêt. Tous partagent le contexte physique du moteur, créé avec lui. Voir PhysicsWorld, PhysicsContext.
-        PhysicsWorld* GetPhysics() { return m_physics.get(); }
+        PhysicsWorld* GetPhysics() { return m_simulation.GetPhysics(); }
         // Son : volume général, sons lancés par le jeu. Voir AudioSystem.
         AudioSystem& GetAudio() { return *m_audio; }
 
@@ -279,17 +280,17 @@ namespace Flux {
         // sans personnage (GetPlayer() == NullEntity : vol libre de l'éditeur).
         const PlayerCommand& GetPlayerCommand(Entity player) const;
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent, touchent et sont dessinés par le moteur.
-        std::vector<Projectile>& GetProjectiles() { return m_projectiles; }
+        std::vector<Projectile>& GetProjectiles() { return m_simulation.GetProjectiles(); }
         // Projectiles arrivés sur un corps à cette image (l'éclat d'impact est déjà montré) : au jeu d'en retirer
         // les dégâts, à l'étape AfterPhysics.
-        std::span<const ProjectileHit> GetProjectileHits() const { return m_projectileHits; }
+        std::span<const ProjectileHit> GetProjectileHits() const { return m_simulation.GetProjectileHits(); }
         // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
         // elle est alors prise (les sièges ne la voient plus).
         bool ConsumeInteraction();
         // Commandes du vaisseau piloté pour cette image (poussée, roulis, frein, boost, mode voyage), données par le jeu
         // à l'étape Interaction. Le moteur y ajoute la souris et ce qui entoure le vaisseau (gravité, air, planète),
         // puis le fait voler (Ships::Update) ; sans appel, le vaisseau ne reçoit aucune commande.
-        void SetPilotInput(const ShipInput& input);
+        void SetPilotInput(const ShipInput& input) { m_simulation.SetPilotInput(input); }
         // Pointeur virtuel du pilote (le manche de la souris), pour l'afficher : -1 à 1 au bord de son cercle, x vers
         // la droite, y vers le bas ; nul quand le joueur ne pilote pas ou que la souris est libérée (Alt, menu).
         Math::Vector2f GetSteerPointer() const;
@@ -301,7 +302,7 @@ namespace Flux {
         GameState GetGameState() const { return m_gameState; }
         // Pas de simulation : leur nombre depuis le lancement du jeu, et où l'image dessinée tombe entre les deux
         // derniers (GetAlpha).
-        const SimulationClock& GetSimulationClock() const { return m_clock; }
+        const SimulationClock& GetSimulationClock() const { return m_simulation.GetClock(); }
         // Écran de chargement affiché (EngineConfig::loadingScreen) : le jeu (physique, module du jeu) attend.
         bool IsLoading() const;
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
@@ -315,11 +316,9 @@ namespace Flux {
         std::unique_ptr<JobSystem> m_jobs;
         std::unique_ptr<Renderer> m_renderer;
         std::unique_ptr<UI::Context> m_ui;
-        ComponentRegistry m_components;
+        // Scène, composants, physique, projectiles et pas fixe : ce qu'un serveur ferait tourner sans affichage.
+        Simulation m_simulation;
         EditorExtensions m_editorExtensions;
-        std::optional<Project> m_project;
-        SceneSerializer::PrefabReader m_prefabReader;
-        Scene m_scene;
         UpdateFunction m_gameUpdate;
         struct GameSystem
         {
@@ -327,8 +326,7 @@ namespace Flux {
             std::string name;
             UpdateFunction function;
         };
-        std::vector<GameSystem> m_gameSystems;
-        bool m_interactionPending = false; // Interagir enfoncée à cette image, pas encore prise
+        std::vector<GameSystem> m_hudSystems; // étape Hud ; les autres tournent dans la simulation
         GameState m_gameState = GameState::Running;
         UpdateFunction m_editorUpdate;
         CloseFunction m_closeRequestHandler;
@@ -340,24 +338,18 @@ namespace Flux {
         bool m_drawScreenUi = true;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
-        std::shared_ptr<PhysicsContext> m_physicsContext;
-        std::unique_ptr<PhysicsWorld> m_physics;
         std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
         std::unique_ptr<InputActions> m_inputActions;
         // Services privés du moteur (src/Core) : leur détail ne recompile ni l'éditeur ni le jeu.
         std::unique_ptr<InterfaceBindings> m_interfaceBindings; // valeurs, fonctions et actions des interfaces
         std::unique_ptr<PlayerCamera> m_playerCamera;           // caméra qui suit le joueur, cockpit, vue extérieure
-        std::unique_ptr<FlightSurroundings> m_flightSurroundings; // planète, altitude et air autour du vaisseau piloté
         std::unique_ptr<Notice> m_notice;                       // message court en haut de l'écran
-        ShipInput m_pilotInput;                                 // commandes du jeu pour cette image (SetPilotInput)
         std::unique_ptr<LoadingScreen> m_loadingScreen;
         std::unique_ptr<QuickSave> m_quickSave;                 // F7 / F8 / F9
         std::unique_ptr<FrameStats> m_frameStats;               // temps moyens du panneau Moteur
-        SimulationClock m_clock;
         std::unique_ptr<Input> m_stepInput; // touches retenues pour le prochain pas (Input::Accumulate)
-        bool m_inStep = false;              // pendant un pas : le jeu lit m_playerCommand, pas le clavier
-        PlayerCommand m_playerCommand;      // du joueur de cet écran, pour le pas en cours (SampleLocalCommand)
+        bool m_inStep = false;              // pendant un pas : le jeu lit GetPlayerCommand, pas le clavier
         // Actions du moteur, par leur bit dans PlayerCommand.
         struct EngineActions
         {
@@ -379,18 +371,14 @@ namespace Flux {
         void CaptureKeyRebinding();
         void SaveInputActions() const;
         InterfaceFunction m_gameQuitHandler;
-        // Projectiles en vol (Projectiles), vidés quand le jeu s'arrête ou qu'une scène se charge.
-        std::vector<Projectile> m_projectiles;
-        std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
-        std::vector<Impact> m_impacts;
+        std::vector<Impact> m_impacts; // éclats des projectiles arrivés (GetProjectileHits), à dessiner
 
-        // Un pas de simulation : composants du moteur qui agissent pendant le jeu (changement de scène, sièges, vol,
-        // physique, projectiles) et systèmes du jeu.
+        // Un pas : changement de scène, sauvegarde rapide et vue du joueur, puis la simulation (Simulation::Step).
         void UpdateGameSystems(double deltaSeconds);
         // Entrées que voit le jeu : celles retenues pour le pas pendant un pas, sinon celles de l'image.
         const Input& GetCurrentInput() const;
         bool IsKeyboardFree() const; // ni saisie dans un champ, ni touche en cours de réassignation
-        // Avant chaque pas : m_playerCommand d'après les touches retenues, la souris et la caméra.
+        // Avant chaque pas : commande du joueur de cet écran d'après les touches retenues, la souris et la caméra.
         void SampleLocalCommand();
         void LoadRequestedScene();
         // Sauvegarde et chargement rapides demandés pendant l'image (F8 / F9), faits à la fin.
@@ -402,13 +390,9 @@ namespace Flux {
         std::expected<void, std::string> LoadMergedQuickSave(const std::filesystem::path& scenePath);
         // Nouvelle scène en place : ancien monde physique, projectiles et état du jeu oubliés, nouveau monde préparé.
         void SceneLoaded();
-        // Nouveau monde physique pour la scène actuelle, corps déjà créés.
-        void StartPhysics();
         // Personnage suivi par la caméra (celui du joueur), NullEntity sans jeu en cours ou sans personnage.
         Entity GetFollowedPlayer() const;
-        void RunGameSystems(GameStage stage, double deltaSeconds);
-        // Scène chargée ou jeu arrêté : lignes du jeu effacées, systèmes du jeu prévenus.
-        void ResetGameState();
+        void RunHudSystems(double deltaSeconds);
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterface(const ScreenUi::InterfaceRequest& request);
         // owner : l'entité dont c'est l'interface, ou NullEntity pour le menu du projet (sa copie en jeu).
         std::optional<std::pair<Math::Vector2f, Math::Vector2f>> DrawInterfaceFile(Entity owner, const std::string& file,

@@ -18,6 +18,7 @@ int main() {
         {"animation squelettique", RunAnimationTests},
         {"fils de travail (JobSystem)", RunJobSystemTests},
         {"espèces et biomes des arbres", RunVegetationTests},
+        {"simulation sans rendu", RunSimulationTests},
     };
 
     int failures = 0;
