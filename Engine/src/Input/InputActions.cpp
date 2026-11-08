@@ -29,9 +29,16 @@ namespace Flux {
             return action->id;
         }
         InputActionId id = GetId(name);
-        if (id == NoInputAction && m_ids.size() < MaxInputActions) {
-            id = static_cast<InputActionId>(m_ids.size());
-            m_ids.emplace(name, id);
+        if (id == NoInputAction) {
+            if (!m_simulated) {
+                id = m_ids.size() < MaxInputActions ? static_cast<InputActionId>(m_ids.size()) : NoInputAction;
+            } else if (id = m_simulated->GetId(name); id == NoInputAction
+                       && m_simulated->GetCount() + m_localCount < MaxInputActions) {
+                id = static_cast<InputActionId>(MaxInputActions - 1 - m_localCount++);
+            }
+            if (id != NoInputAction) {
+                m_ids.emplace(name, id);
+            }
         }
         m_actions.push_back({std::move(name), std::move(category), keys, defaults, id});
         return id;

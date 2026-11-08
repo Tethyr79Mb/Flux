@@ -37,19 +37,24 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   serveur en fera tourner une sans affichage.
 - **FluxEngine.dll** (`Engine/`) exporte ce qui porte `FLUX_API` et lie FluxSim publiquement. Vulkan, FreeType,
   msdfgen, miniaudio et bc7enc restent privés : aucun en-tête public ne les expose.
-- **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
-  (`Engine::AddGameSystem`, à une étape du pas de simulation : `Interaction` avant les sièges, `BeforePhysics` et
-  `AfterPhysics` autour de la physique ; à chaque image, `Hud` pour l'écran ; `Reset` à
-  chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
-  comme `Projectiles::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`, avec leur composant et
-  leurs briques dans `MissionGiver.cpp`),
-  IA de combat (`CombatAI.cpp`) et sa cible (`Combat.cpp`), amarrage et warp (`Docking.cpp`, `Warp.cpp`, avec leurs
-  touches et leur affichage dans `Navigation.cpp`), armes, emports et points de vie (`Weapons.cpp`) et commandes des armes du joueur (`PlayerWeapons.cpp`), commandes du vaisseau (`Piloting.cpp`, données au moteur par
-  `Engine::SetPilotInput`) et infos de vol (`FlightInfo.cpp`, lignes des autres systèmes par `FlightInfo::SetExtra`). Le jeu ajoute aussi ses
-  objets au panneau Placer de l'éditeur (`Engine::GetEditorExtensions`, `PlaceItems.cpp` : chasseur armé, cible,
-  stations à quais) et l'aimant qui fixe une arme sur un emport (`MountRule`) : l'éditeur ne connaît pas les composants du jeu, ce qui évite qu'il lise une ancienne disposition
-  après un rechargement à chaud. Le code du jeu est une bibliothèque statique, `GameLogic` (`Game/Module/src`), liée par
-  la DLL (qui n'a que ses points d'entrée, `Game/Module/Dll`) et par FluxTests (tests du jeu dans `Tests/src/Game`).
+- **Le code du jeu** est en deux bibliothèques statiques. `GameSim` (`Game/Sim/src`, FluxSim seule, compilée aussi
+  sous Linux) est le jeu qui se simule : `Game::RegisterSimulation` enregistre ses composants, déclare ses actions
+  (`CommandActions` de la `Simulation` : mêmes bits sur le client et le serveur) et ajoute ses systèmes au pas
+  (`Simulation::AddSystem` : `Interaction` avant les sièges, `BeforePhysics` et `AfterPhysics` autour de la physique,
+  `Reset` à chaque scène remplacée). Son état (navigation, mission en cours, armes du joueur, messages) est un
+  `Game::SimState` par simulation, partagé par ses systèmes : aucun état global. Le moteur garde les briques
+  (composants, `Projectiles::Update`), le jeu leur déroulement : missions (`Missions.cpp`, avec leur composant et leurs
+  briques dans `MissionGiver.cpp`), IA de combat (`CombatAI.cpp`) et sa cible (`Combat.cpp`), amarrage et warp
+  (`Docking.cpp`, `Warp.cpp`, touches L et J dans `Navigation.cpp`), armes, emports et points de vie (`Weapons.cpp`),
+  armes du joueur (`PlayerWeapons.cpp`) et commandes du vaisseau (`Piloting.cpp`, données par
+  `Simulation::SetPilotInput`). `GameClient` (`Game/Module/src`, avec FluxEngine) est ce que voit et touche le joueur :
+  touches par défaut des actions (`Game.cpp`), affichages à l'étape `Hud` du moteur (`FlightInfo.cpp`,
+  `NavigationHud.cpp`, `MissionsHud.cpp`, `PlayerWeaponsHud.cpp`, qui lisent le `SimState` et ne changent la
+  simulation que par les fonctions de GameSim), objets du panneau Placer de l'éditeur et aimant des armes
+  (`PlaceItems.cpp`, `Engine::GetEditorExtensions`) : l'éditeur ne connaît pas les composants du jeu, ce qui évite qu'il
+  lise une ancienne disposition après un rechargement à chaud.
+- **GameModule.dll** lie GameClient et n'a que ses points d'entrée (`Game/Module/Dll`) ; FluxTests lie aussi GameClient
+  (tests du jeu dans `Tests/src/Game`).
   L'éditeur charge une copie
   (`.hotreload/`) pour pouvoir recompiler la DLL pendant qu'il tourne. `GameModuleApiVersion` refuse une DLL compilée
   contre un autre moteur.

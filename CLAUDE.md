@@ -20,9 +20,12 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   Vulkan), Scene (ScreenUi, Picking), UI (FluxUI).
 - `Editor/` : FluxEditor.exe (panneaux dans `src/Panels`, documents dans `src/Document`, éditeur d'interfaces dans
   `src/Interface`). Recharge à chaud la DLL du jeu.
-- `Game/Module/` : GameModule.dll (code du jeu, `FluxRegisterGame`) et le projet `Game.fluxproject` avec ses `assets/`.
+- `Game/Sim/` : GameSim, le jeu qui se simule (FluxSim seule, aussi sous Linux) ; son état est un `SimState` par
+  simulation, jamais global.
+- `Game/Module/` : GameModule.dll (GameClient : touches, affichages, éditeur ; `FluxRegisterGame`) et le projet
+  `Game.fluxproject` avec ses `assets/`.
 - `Game/Client/` : « Ars Solaris.exe » (cible CMake `Game`).
-- `Tests/` : FluxSimTests.exe (`Tests/Sim`, la simulation, aussi sous Linux) et FluxTests.exe (`Tests/src`, moteur et
+- `Tests/` : FluxSimTests.exe (`Tests/Sim`, la simulation et le jeu simulé, aussi sous Linux) et FluxTests.exe (`Tests/src`, moteur et
   jeu) ; un fichier `*Tests.cpp` par domaine, fonctions `Run…Tests` appelées depuis le `main.cpp` de chacun.
 - Git LFS (`.gitattributes`) : modèles, textures, sons et polices de `Game/Module/assets/`. Sources lourdes (`.blend`,
   textures 4K) hors du dépôt, sur le PC ou le OneDrive de Bruno. La CI ne télécharge pas les fichiers LFS.

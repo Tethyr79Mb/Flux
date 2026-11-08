@@ -25,6 +25,18 @@ namespace Flux {
     class PhysicsContext;
     class PhysicsWorld;
 
+    // Actions du personnage, déclarées par la simulation dans cet ordre : les touches du client s'y rattachent par ces
+    // noms. Hors de la classe : une constante membre d'une classe exportée serait importée de la DLL.
+    namespace CharacterActions {
+        inline constexpr std::string_view Forward = "Avancer";
+        inline constexpr std::string_view Back = "Reculer";
+        inline constexpr std::string_view Left = "Aller à gauche";
+        inline constexpr std::string_view Right = "Aller à droite";
+        inline constexpr std::string_view Run = "Courir";
+        inline constexpr std::string_view Jump = "Sauter";
+        inline constexpr std::string_view Interact = "Interagir";
+    }
+
     // Le monde simulé, sans rendu ni fenêtre : scène, composants, physique, projectiles, pas fixe et systèmes du jeu.
     // Le moteur (Engine) en possède une et la fait avancer à chaque image ; le serveur de jeu en fera tourner une seule,
     // sans affichage. Ce qui se voit (caméra, impacts, interfaces, son) reste au moteur.
@@ -42,14 +54,6 @@ namespace Flux {
             BeforePhysics, // après le vol des vaisseaux : pilote automatique, warp, IA (mener des vaisseaux)
             AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Reset,         // scène remplacée ou simulation arrêtée : oublier l'ancienne scène (deltaSeconds = 0)
-        };
-
-        // Actions du personnage, par leur bit dans PlayerCommand (déclarées par qui lit le clavier).
-        struct CharacterActions
-        {
-            InputActionId run = NoInputAction;
-            InputActionId jump = NoInputAction;
-            InputActionId interact = NoInputAction;
         };
 
         Simulation();
@@ -94,9 +98,11 @@ namespace Flux {
         // Commande du joueur qui dirige ce personnage pour le pas en cours ; vide pour un personnage sans joueur.
         // Pour l'instant, seul le joueur de cet écran en a une, et il l'a aussi sans personnage (vol libre).
         const PlayerCommand& GetPlayerCommand(Entity player) const;
+        // Actions que lit la simulation, par leur bit dans PlayerCommand : celles du personnage, puis celles du jeu.
+        CommandActions& GetActions() { return m_actions; }
+        const CommandActions& GetActions() const { return m_actions; }
         // Commande du joueur de cet écran pour le prochain pas.
         void SetLocalCommand(const PlayerCommand& command) { m_localCommand = command; }
-        void SetCharacterActions(const CharacterActions& actions) { m_characterActions = actions; }
         void SetAnimationDurations(AnimationDurationFunction durations) { m_animationDurations = std::move(durations); }
 
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent et touchent ici, sont dessinés par le
@@ -137,7 +143,13 @@ namespace Flux {
             StepFunction function;
         };
         std::vector<System> m_systems;
-        CharacterActions m_characterActions;
+        CommandActions m_actions;
+        struct CharacterBits
+        {
+            InputActionId run = NoInputAction;
+            InputActionId jump = NoInputAction;
+            InputActionId interact = NoInputAction;
+        } m_characterActions;
         AnimationDurationFunction m_animationDurations;
         PlayerCommand m_localCommand;
         ShipInput m_pilotInput;            // commandes du jeu pour ce pas (SetPilotInput)

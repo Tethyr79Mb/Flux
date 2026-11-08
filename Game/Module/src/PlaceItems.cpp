@@ -527,4 +527,28 @@ namespace Game {
                                  .distance = OrbitalStationDistance, .level = true, .below = 17.0, .dropToGround = false,
                                  .build = [](Scene& scene, Entity entity) { AddOrbitalStation(scene, entity); }});
     }
+
+    void RegisterWeaponMount(EditorExtensions& extensions) {
+        extensions.AddMountRule(MountRule{
+            .title = "Emport",
+            .isPart = [](const Scene& scene, Entity entity) { return scene.TryGet<WeaponComponent>(entity) != nullptr; },
+            .isMount = [](const Scene& scene, Entity entity) { return scene.TryGet<HardpointComponent>(entity) != nullptr; },
+            .refusal = [](const Scene& scene, Entity weapon, Entity hardpoint) -> std::string {
+                const auto* component = scene.TryGet<WeaponComponent>(weapon);
+                const auto* mount = scene.TryGet<HardpointComponent>(hardpoint);
+                if (!component || !mount) {
+                    return {};
+                }
+                if (std::string refusal = Weapons::GetRefusal(*mount, *component); !refusal.empty()) {
+                    return refusal;
+                }
+                for (const Entity other : scene.GetRegistry().view<const WeaponComponent>()) {
+                    if (other != weapon && scene.GetParent(other) == hardpoint) {
+                        return "cet emport porte déjà une arme (« " + scene.Get<NameComponent>(other).name + " »)";
+                    }
+                }
+                return {};
+            },
+        });
+    }
 }

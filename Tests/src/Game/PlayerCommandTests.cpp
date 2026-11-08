@@ -5,6 +5,7 @@
 #include "Core/LocalPlayerCommand.hpp"
 #include "Piloting.hpp"
 
+#include "Flux/Core/Simulation.hpp"
 #include "Flux/Input/InputActions.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/Scene.hpp"
@@ -29,32 +30,41 @@ namespace {
 }
 
 bool RunPlayerCommandTests() {
-    InputActions actions;
+    // Bits des actions : ceux de la simulation (personnage, puis jeu) d'abord, les mêmes sur le serveur ; les
+    // touches du client s'y rattachent par le nom.
+    Simulation simulation;
+    const PilotActions pilot = Piloting::DeclareActions(simulation.GetActions());
+    InputActions actions(&simulation.GetActions());
     const WalkActions walk = DeclareWalk(actions);
-    const PilotActions pilot = DeclarePilotActions(actions);
+    actions.Add(std::string(Piloting::Brake), "Vaisseau", Key::X);
+    actions.Add(std::string(Piloting::Travel), "Vaisseau", Key::Tab);
     CHECK(walk.forward == 0 && walk.right == 3);
     CHECK(pilot.forward == walk.forward && pilot.right == walk.right);
     CHECK(pilot.brake != NoInputAction && pilot.level != NoInputAction && pilot.brake != pilot.level);
+    CHECK(actions.GetId(Piloting::Brake) == pilot.brake && actions.GetId(Piloting::Travel) == pilot.travel);
+    // Action du client seul (vue, sauvegarde) : un bit du haut, qui ne décale pas ceux de la simulation.
+    const InputActionId view = actions.Add("Changer de vue", "Vaisseau", Key::V);
+    CHECK(view == MaxInputActions - 1);
+    CHECK(Piloting::DeclareActions(simulation.GetActions()).level == pilot.level);
 
     // Module de jeu rechargé : ses actions retirées puis redéclarées gardent leurs bits.
-    RemovePilotActions(actions);
-    CHECK(actions.Find("Freiner") == nullptr);
-    CHECK(actions.GetId("Freiner") == pilot.brake);
-    const PilotActions again = DeclarePilotActions(actions);
-    CHECK(again.brake == pilot.brake && again.level == pilot.level && again.rollRight == pilot.rollRight);
+    actions.Remove(Piloting::Brake);
+    CHECK(actions.Find(Piloting::Brake) == nullptr);
+    CHECK(actions.GetId(Piloting::Brake) == pilot.brake);
+    CHECK(actions.Add(std::string(Piloting::Brake), "Vaisseau", Key::X) == pilot.brake);
 
     // Marche : avant et droite de la vue, selon les touches tenues.
-    const LocalView view{.walkForward = {0.0f, 0.0f, -1.0f}, .walkRight = {1.0f, 0.0f, 0.0f}, .stickYaw = 0.5f};
+    const LocalView eye{.walkForward = {0.0f, 0.0f, -1.0f}, .walkRight = {1.0f, 0.0f, 0.0f}, .stickYaw = 0.5f};
     Input input;
     input.BeginFrame();
     SetKey(input, Key::W, true);
     SetKey(input, Key::D, true);
-    PlayerCommand command = SampleLocalCommand(input, actions, true, view, walk, 7);
+    PlayerCommand command = SampleLocalCommand(input, actions, true, eye, walk, 7);
     CHECK(command.step == 7 && command.stickYaw == 0.5f);
     CHECK(command.move == (Math::Vector3f{1.0f, 0.0f, -1.0f}));
     CHECK(command.IsDown(walk.forward) && command.WasPressed(walk.forward) && !command.IsDown(walk.back));
     // Clavier pris (saisie dans un champ) : aucune action, la vue reste.
-    command = SampleLocalCommand(input, actions, false, view, walk, 8);
+    command = SampleLocalCommand(input, actions, false, eye, walk, 8);
     CHECK(command.held.none() && command.pressed.none() && command.move == Math::Vector3f{} && command.stickYaw == 0.5f);
     SetKey(input, Key::D, false);
 
@@ -67,7 +77,7 @@ bool RunPlayerCommandTests() {
     const auto steps = [&](double seconds) {
         ShipInput last;
         for (int step = 0; step < static_cast<int>(std::lround(seconds / Frame)); ++step) {
-            last = ReadShipInput(SampleLocalCommand(input, actions, true, view, walk, static_cast<std::uint64_t>(step)), pilot);
+            last = Piloting::ReadShipInput(SampleLocalCommand(input, actions, true, eye, walk, static_cast<std::uint64_t>(step)), pilot);
             input.BeginFrame(); // les appuis ne servent qu'au premier pas
             Ships::Update(scene, ship, Frame, last);
             world.Update(scene, Frame, {});
@@ -82,11 +92,11 @@ bool RunPlayerCommandTests() {
 
     input.BeginFrame();
     SetKey(input, Key::Tab, true);
-    PlayerCommand pressed = SampleLocalCommand(input, actions, true, view, walk, 0);
-    CHECK(ReadShipInput(pressed, pilot).travel);
+    PlayerCommand pressed = SampleLocalCommand(input, actions, true, eye, walk, 0);
+    CHECK(Piloting::ReadShipInput(pressed, pilot).travel);
     input.BeginFrame();
-    PlayerCommand held = SampleLocalCommand(input, actions, true, view, walk, 1);
-    CHECK(held.IsDown(pilot.travel) && !ReadShipInput(held, pilot).travel);
+    PlayerCommand held = SampleLocalCommand(input, actions, true, eye, walk, 1);
+    CHECK(held.IsDown(pilot.travel) && !Piloting::ReadShipInput(held, pilot).travel);
     SetKey(input, Key::Tab, false);
 
     SetKey(input, Key::W, false);

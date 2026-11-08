@@ -1,7 +1,7 @@
 # Tests de la simulation (FluxSim) : Windows et Linux (CI .github/workflows/linux.yml).
 add_executable(FluxSimTests)
 flux_add_sources(FluxSimTests Sim)
-target_link_libraries(FluxSimTests PRIVATE Flux::Sim meshoptimizer) # meshoptimizer : modèles compressés
+target_link_libraries(FluxSimTests PRIVATE Flux::Sim GameSim meshoptimizer) # GameSim : le jeu simulé ; meshoptimizer : modèles compressés
 # En-têtes internes de FluxSim (semis des arbres, bibliothèque de végétation).
 target_include_directories(FluxSimTests PRIVATE ${PROJECT_SOURCE_DIR}/Sim/src)
 # Les biomes livrés avec le jeu sont lus là où ils sont rangés (VegetationTests.cpp).
@@ -17,7 +17,7 @@ endif()
 # Tests du moteur et du jeu (rendu, interface, son…), dans un exe lancé par ctest.
 add_executable(FluxTests)
 flux_add_sources(FluxTests src)
-target_link_libraries(FluxTests PRIVATE Flux::Engine GameLogic bc7enc) # GameLogic : code du jeu (tests dans src/Game) # bc7enc : décodeur BC7 des tests
+target_link_libraries(FluxTests PRIVATE Flux::Engine GameClient bc7enc) # GameClient : code du jeu (tests dans src/Game) # bc7enc : décodeur BC7 des tests
 # Client réseau du test du serveur HTTP local (LocalHttpServerTests.cpp).
 target_link_libraries(FluxTests PRIVATE ws2_32)
 # Les tests du RHI (calculs sur le GPU) voient les en-têtes internes du moteur ; seul RHI::Device::Create* est exporté.
