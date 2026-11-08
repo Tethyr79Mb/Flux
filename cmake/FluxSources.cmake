@@ -5,11 +5,18 @@
 # revérifie ces dossiers et relance la configuration si un fichier est apparu ou a disparu. Coût : un parcours
 # des dossiers par compilation, négligeable à notre taille. Revers : tout .cpp posé dans ces dossiers est compilé,
 # même un brouillon oublié.
+#
+# Code propre à un système : un dossier Win32/ n'est compilé que sous Windows, un dossier Posix/ ailleurs (Linux).
 function(flux_add_sources target)
     foreach(directory IN LISTS ARGN)
         file(GLOB_RECURSE sources CONFIGURE_DEPENDS
                 ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/*.cpp
                 ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/*.hpp)
+        if(WIN32)
+            list(FILTER sources EXCLUDE REGEX "/Posix/")
+        else()
+            list(FILTER sources EXCLUDE REGEX "/Win32/")
+        endif()
         target_sources(${target} PRIVATE ${sources})
     endforeach()
 endfunction()

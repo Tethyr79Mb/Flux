@@ -1,5 +1,5 @@
 #include "Flux/Scene/SceneSerializer.hpp"
-#include "Flux/Core/GameModule.hpp"
+#include "Flux/Core/ApiVersion.hpp"
 #include "Flux/Core/Log.hpp"
 
 #include "Flux/Platform/Filesystem.hpp"
