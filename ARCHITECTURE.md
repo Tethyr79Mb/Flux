@@ -75,8 +75,12 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **ArsSolarisServer** (`Game/Server/`, Windows et Linux) : serveur sans rendu, qui ne lie que GameSim (statique) et
   FluxSim. `GameServer` charge le projet et une scène (`--projet`, `--scene`), enregistre le jeu simulé et avance la
   `Simulation` au rythme de `SimulationClock` (attente entre deux pas, `timeBeginPeriod(1)` sous Windows), jusqu'à
-  Ctrl+C ou SIGTERM (`Platform::CatchConsoleClose`, dans FluxSim). `--pas N` simule N pas sans attendre : la CI
-  (ctest) le lance ainsi.
+  Ctrl+C ou SIGTERM (`Platform::CatchConsoleClose`, dans FluxSim). `--pas N` simule N pas sans attendre ni réseau : la
+  CI (ctest) le lance ainsi. Sinon il accueille les clients (FluxNet) sur le port UDP `--port` (27015 par défaut,
+  `Game::DefaultServerPort`) ; la version du protocole du jeu est `Game::GameProtocolVersion` (`GameProtocol.hpp`,
+  GameSim). « Ars Solaris.exe --serveur adresse[:port] » s'y connecte (`ServerConnection.cpp` de GameClient, qui lit
+  la ligne de commande par `Platform::GetCommandLineArguments`) ; connexions, refus et déconnexions vont au journal des
+  deux côtés. Aucun joueur dans le monde avant la réplication (étape 6) : le client simule encore sa scène seul.
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage (les menus sont des interfaces des scènes). Les assets sont copiés à côté
   des exécutables (`bin/assets/`), serveur compris.
 - Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à

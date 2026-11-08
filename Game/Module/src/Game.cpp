@@ -4,6 +4,7 @@
 #include "GameSim.hpp"
 #include "Hud.hpp"
 #include "PlaceItems.hpp"
+#include "ServerConnection.hpp"
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
@@ -88,6 +89,7 @@ namespace Game {
         RegisterNavigationHud(engine, state);
         RegisterMissionsHud(engine, state);
         RegisterPlayerWeaponsHud(engine);
+        RegisterServerConnection(engine);
         RegisterPlaceItems(engine.GetEditorExtensions()); // retirés par le moteur au déchargement
         RegisterWeaponMount(engine.GetEditorExtensions());
         // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
@@ -105,6 +107,7 @@ namespace Game {
         UnregisterNavigationHud(engine);
         UnregisterMissionsHud(engine);
         UnregisterPlayerWeaponsHud(engine);
+        UnregisterServerConnection(engine);
         UnregisterFlightInfo(engine);
         engine.UnregisterInterfaceFunction("Exemple");
         engine.UnbindInterfaceValue("Vitesse de la démo");

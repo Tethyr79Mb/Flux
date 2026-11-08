@@ -2,7 +2,7 @@
 # - GameSim (Sim/src) : ce qui se simule (composants, pilotage, navigation, missions, armes, combat), FluxSim seule.
 #   Compilée aussi sous Linux : c'est le jeu que fera tourner le serveur (Game/Server).
 # - GameClient (Module/src) : ce que voit et touche le joueur (touches, affichages, interfaces, objets de l'éditeur).
-# ArsSolarisServer (Server/src), le serveur sans rendu, ne lie que GameSim.
+# ArsSolarisServer (Server/src), le serveur sans rendu, ne lie que GameSim et FluxNet.
 # GameModule.dll (chargée par l'éditeur et par Ars Solaris.exe) n'a que ses points d'entrée (Module/Dll) ; FluxTests
 # lie GameClient pour tester le jeu.
 add_library(GameSim STATIC)
@@ -30,7 +30,7 @@ add_custom_target(GameProject DEPENDS ${gameProjectOutput} SOURCES Module/Game.f
 # Serveur de jeu sans rendu (Windows et Linux) : GameSim y est lié en statique, rien n'est chargé à part FluxSim.
 add_executable(ArsSolarisServer)
 flux_add_sources(ArsSolarisServer Server/src)
-target_link_libraries(ArsSolarisServer PRIVATE GameSim)
+target_link_libraries(ArsSolarisServer PRIVATE GameSim Flux::Net)
 if(WIN32)
     target_link_libraries(ArsSolarisServer PRIVATE winmm) # timeBeginPeriod : pas réguliers
 endif()
@@ -44,7 +44,7 @@ endif()
 add_library(GameClient STATIC)
 flux_add_sources(GameClient Module/src)
 target_include_directories(GameClient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Module/src)
-target_link_libraries(GameClient PUBLIC GameSim Flux::Engine)
+target_link_libraries(GameClient PUBLIC GameSim Flux::Engine Flux::Net)
 flux_set_warnings(GameClient)
 
 add_library(GameModule SHARED)

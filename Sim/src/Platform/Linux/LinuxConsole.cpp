@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <csignal>
+#include <fstream>
+#include <iterator>
 
 namespace Flux::Platform {
     namespace {
@@ -32,4 +34,22 @@ namespace Flux::Platform {
 
     // Rien n'attend : le processus finit quand la boucle a rangé.
     void ConsoleCloseHandled() {}
+
+    std::vector<std::string> GetCommandLineArguments() {
+        // Arguments séparés par des zéros, le premier est le programme.
+        std::ifstream file("/proc/self/cmdline", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::vector<std::string> result;
+        std::size_t start = 0;
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '\0') {
+                result.emplace_back(text, start, i - start);
+                start = i + 1;
+            }
+        }
+        if (!result.empty()) {
+            result.erase(result.begin());
+        }
+        return result;
+    }
 }

@@ -1,3 +1,4 @@
+#include "GameProtocol.hpp"
 #include "GameServer.hpp"
 
 #include <Flux/Core/Log.hpp>
@@ -19,17 +20,20 @@
 #include <timeapi.h>
 #endif
 
-// Serveur de jeu sans rendu : une zone d'Ars Solaris simulée à 60 pas par seconde, jusqu'à Ctrl+C.
-//     ArsSolarisServer [--projet Game.fluxproject] [--scene scenes/Demo.scene.json] [--pas 600]
+// Serveur de jeu sans rendu : une zone d'Ars Solaris simulée à 60 pas par seconde, jusqu'à Ctrl+C, qui accueille les
+// clients sur un port UDP.
+//     ArsSolarisServer [--projet Game.fluxproject] [--scene scenes/Demo.scene.json] [--port 27015] [--pas 600]
 namespace {
     constexpr std::string_view Usage = "ArsSolarisServer [--projet fichier.fluxproject] [--scene scène relative aux assets] "
-                                       "[--pas nombre (simule ce nombre de pas sans attendre, puis s'arrête)]";
+                                       "[--port port UDP (27015 par défaut)] "
+                                       "[--pas nombre (simule ce nombre de pas sans attendre, sans réseau, puis s'arrête)]";
 
     struct Options
     {
         std::filesystem::path project;
         std::filesystem::path scene;
         std::optional<std::uint64_t> steps;
+        std::uint16_t port = Game::DefaultServerPort;
     };
 
     std::optional<Options> ReadOptions(int argc, char** argv) {
@@ -53,6 +57,12 @@ namespace {
                     return std::nullopt;
                 }
                 options.steps = steps;
+            } else if (name == "--port") {
+                const std::string_view text = value;
+                if (std::from_chars(text.data(), text.data() + text.size(), options.port).ec != std::errc{} ||
+                    options.port == 0) {
+                    return std::nullopt;
+                }
             } else {
                 return std::nullopt;
             }
@@ -90,6 +100,9 @@ int main(int argc, char** argv) {
         } else if (options->steps) {
             server.RunSteps(*options->steps);
             Log::Info("{} pas simulés", *options->steps);
+        } else if (auto listening = server.Listen(options->port); !listening) {
+            Log::Error("{}", listening.error());
+            result = 1;
         } else {
             Log::Info("Serveur lancé (Ctrl+C pour l'arrêter)");
             server.Run([] { return Platform::ConsoleCloseRequested(); });

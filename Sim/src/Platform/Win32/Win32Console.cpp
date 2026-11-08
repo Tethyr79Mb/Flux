@@ -1,8 +1,11 @@
 #include "Flux/Platform/Console.hpp"
 
+#include "Platform/Win32/Win32Utf.hpp"
+
 #include <atomic>
 
 #include <windows.h>
+#include <shellapi.h>
 
 namespace Flux::Platform {
     namespace {
@@ -44,5 +47,16 @@ namespace Flux::Platform {
         if (closeHandled) {
             SetEvent(closeHandled);
         }
+    }
+
+    std::vector<std::string> GetCommandLineArguments() {
+        int count = 0;
+        LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
+        std::vector<std::string> result;
+        for (int i = 1; arguments != nullptr && i < count; ++i) {
+            result.push_back(Win32::ToUtf8(arguments[i]));
+        }
+        LocalFree(arguments);
+        return result;
     }
 }

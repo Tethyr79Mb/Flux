@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Flux/NetExport.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -44,5 +46,6 @@ namespace Flux::Net {
     // du jeu commencent par 1 à 255 et FluxNet ne leur ajoute aucun octet.
     inline constexpr std::byte ReservedMessageType{0};
 
-    const char* ToString(DisconnectReason reason);
+    // En français, pour le journal.
+    FLUX_NET_API const char* ToString(DisconnectReason reason);
 }

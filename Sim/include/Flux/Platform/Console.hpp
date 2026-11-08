@@ -2,6 +2,9 @@
 
 #include "Flux/SimExport.hpp"
 
+#include <string>
+#include <vector>
+
 namespace Flux::Platform {
     // Les messages du moteur sont en UTF-8, mais la console Windows affiche par défaut dans la page de code OEM
     // (850 en français) : « scène » y devient « scÃ¨ne ». À appeler en tout début de main().
@@ -14,4 +17,8 @@ namespace Flux::Platform {
     FLUX_SIM_API void CatchConsoleClose();
     FLUX_SIM_API bool ConsoleCloseRequested();
     FLUX_SIM_API void ConsoleCloseHandled();
+
+    // Arguments de la ligne de commande du processus, en UTF-8, sans le nom du programme : lisibles par le module du
+    // jeu, qui n'a pas le main (Ars Solaris.exe --serveur 127.0.0.1).
+    FLUX_SIM_API std::vector<std::string> GetCommandLineArguments();
 }
