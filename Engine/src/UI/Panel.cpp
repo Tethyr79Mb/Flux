@@ -2,6 +2,8 @@
 // (Docking.cpp décide de leur place).
 #include "ContextImpl.hpp"
 
+#include <utility>
+
 namespace Flux::UI {
     namespace {
         constexpr float MinPanelWidth = 120.0f;

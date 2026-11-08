@@ -63,6 +63,15 @@ if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
     endif()
 endif()
 
+# Cache de compilation pour la CI (-DFLUX_COMPILER_CACHE=sccache, .github/workflows/msvc.yml) : un .cpp déjà compilé
+# avec les mêmes en-têtes et les mêmes options est repris du cache au lieu d'être recompilé (Jolt surtout). Ajouté
+# après la vérification de /showIncludes ci-dessus, et vide par défaut : rien ne change dans Visual Studio.
+set(FLUX_COMPILER_CACHE "" CACHE FILEPATH "Lanceur de cache de compilation (sccache), vide pour aucun")
+if(FLUX_COMPILER_CACHE)
+    list(APPEND CMAKE_C_COMPILER_LAUNCHER ${FLUX_COMPILER_CACHE})
+    list(APPEND CMAKE_CXX_COMPILER_LAUNCHER ${FLUX_COMPILER_CACHE})
+endif()
+
 include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
 include(cmake/FluxResources.cmake) # shaders du rendu (slangc, avec le moteur seulement) et assets
