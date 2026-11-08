@@ -32,6 +32,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   Jolt, cgltf, meshoptimizer, stb et nlohmann_json y restent privés ; EnTT est public (le jeu manipule la scène
   directement). Elle n'inclut jamais FluxEngine : la CI Linux la compile seule. Ses en-têtes internes partagés avec le
   rendu (semis des arbres, photométrie) sont visibles de FluxEngine par `Sim/src`.
+  Le monde simulé y est une classe, `Simulation` (`Flux/Core/Simulation.hpp`) : scène, composants, physique,
+  projectiles, pas fixe et systèmes du pas. `Engine` en possède une (`Engine::GetSimulation`) et la fait avancer ; le
+  serveur en fera tourner une sans affichage.
 - **FluxEngine.dll** (`Engine/`) exporte ce qui porte `FLUX_API` et lie FluxSim publiquement. Vulkan, FreeType,
   msdfgen, miniaudio et bc7enc restent privés : aucun en-tête public ne les expose.
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
@@ -75,7 +78,9 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - commande du joueur (`PlayerCommand`, `SampleLocalCommand`) : les touches retenues, le manche et la vue, lus une
      seule fois ; les systèmes du moteur et du jeu ne lisent qu'elle (`Engine::GetPlayerCommand`), pour tourner tels
      quels sur un serveur qui recevra les commandes par le réseau (`IsActionDown` refusé pendant un pas) ;
-   - changement de scène demandé, sauvegarde rapide ;
+   - changement de scène demandé, sauvegarde rapide, vue du cockpit ;
+   - puis le pas de la simulation (`Simulation::Step`, sans rendu), décrit ci-dessous ; ensuite, le moteur tire les
+     éclats d'impact des projectiles arrivés ;
    - systèmes du jeu à l'étape `Interaction` (ils peuvent prendre la touche Interagir : `ConsumeInteraction`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes avec les commandes du jeu, `Engine::SetPilotInput`, complétées du manche de la souris
@@ -83,7 +88,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
      entoure le vaisseau ; moteurs des autres coupés) ;
    - physique (`PhysicsWorld::Update`, un pas) : personnages, objets simulés, vaisseaux, sol des planètes ;
    - projectiles, après la physique (les vaisseaux sont à leur place du pas) : ils avancent et touchent
-     (`Projectiles::GuideMissiles`, `Update`), les éclats d'impact sont créés ;
+     (`Projectiles::GuideMissiles`, `Update`) ;
    - systèmes du jeu à l'étape `AfterPhysics` : dégâts des projectiles arrivés (`Engine::GetProjectileHits`,
      `Game::Weapons::ApplyHits`), puis armes du joueur et des ennemis (`Game::Weapons::Update`, `CombatAI::Fire`), qui
      ajoutent leurs tirs à `Engine::GetProjectiles` ;
@@ -105,7 +110,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 vers des types seulement déclarés dans `Engine.hpp`, pour que les changer ne recompile ni l'éditeur ni le jeu) :
 `PlayerCamera` (caméra qui suit le personnage, vue cockpit, vue extérieure), `QuickSave` (fichiers de la sauvegarde
 rapide, données des systèmes du jeu), `InterfaceBindings` (valeurs liées, fonctions et actions des boutons),
-`FlightSurroundings` (planète, altitude et air autour du vaisseau piloté, `Engine::GetFlightState`), `Notice`
+`Notice`
 (message court en haut de l'écran), `LoadingScreen` et `EnginePanel` (temps d'image et panneau
 Moteur). Elles passent par l'interface publique d'`Engine` (`GetScene`, `GetPhysics`...) ou reçoivent ce qu'il leur
 faut en argument.

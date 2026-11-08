@@ -14,7 +14,7 @@ namespace Flux {
         class Terrain;
     }
 
-    // Ce qui entoure un vaisseau en vol (Engine::GetFlightState) : planète la plus proche, altitude, air. Pour l'aide
+    // Ce qui entoure un vaisseau en vol (Simulation::GetFlightState) : planète la plus proche, altitude, air. Pour l'aide
     // au pilotage (ShipInput) et les infos de vol du jeu.
     class FlightSurroundings {
         public:
