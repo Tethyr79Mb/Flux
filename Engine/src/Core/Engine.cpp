@@ -297,6 +297,11 @@ namespace Flux {
             const RenderTimings& render = m_renderer->GetTimings();
             stats.Add(PrepareCost, render.prepare);
             stats.Add(RecordCost, render.record);
+            stats.Add(PrepareSkyCost, render.prepareSky);
+            stats.Add(PrepareEntitiesCost, render.prepareEntities);
+            stats.Add(PrepareGroundCost, render.prepareGround);
+            stats.Add(PrepareTreesCost, render.prepareTrees);
+            stats.Add(PrepareUploadsCost, render.prepareUploads);
             stats.Add(WaitGpuCost, render.waitGpu);
             stats.Add(WaitImageCost, render.waitImage + render.present);
             stats.AddGpu(render.gpu);
@@ -304,8 +309,9 @@ namespace Flux {
                 measures.Start(std::exchange(automaticMeasure, 0.0));
             }
             if (measures.Add(frameMilliseconds,
-                             {updateMilliseconds, gameMilliseconds, render.prepare, render.record, render.waitGpu,
-                              render.waitImage + render.present},
+                             {updateMilliseconds, gameMilliseconds, render.prepare, render.prepareSky, render.prepareEntities,
+                              render.prepareGround, render.prepareTrees, render.prepareUploads, render.record,
+                              render.waitGpu, render.waitImage + render.present},
                              render)) {
                 const Math::Vector2i view = m_window->GetSize();
                 const MeasureRecorder::Context context{

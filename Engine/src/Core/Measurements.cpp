@@ -11,7 +11,8 @@
 namespace Flux {
     namespace {
         constexpr std::array<const char*, MeasureRecorder::CpuCount> CpuNames{
-            "CPU mise à jour", "  dont jeu", "CPU préparation du rendu", "CPU commandes", "Attente du GPU", "Attente de l'écran"};
+            "CPU mise à jour", "  dont jeu", "CPU préparation du rendu", "  dont ciel", "  dont entités", "  dont sol",
+            "  dont arbres", "  dont envois", "CPU commandes", "Attente du GPU", "Attente de l'écran"};
 
         std::tm LocalTime() {
             const std::time_t now = std::time(nullptr);

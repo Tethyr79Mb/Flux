@@ -734,15 +734,7 @@ namespace Flux {
                 }
             }
             for (const Entity entity : leavingShips) {
-                const Math::WorldPosition position = scene.GetWorldPosition(entity);
-                const Math::Quaternionf rotation = scene.GetWorldRotation(entity);
-                scene.SetParent(entity, NullEntity);
-                TransformComponent& transform = scene.Get<TransformComponent>(entity);
-                transform.position = position.offset;
-                transform.rotation = rotation;
-                if (position.sector != Math::Vector3i64{}) {
-                    scene.GetRegistry().emplace_or_replace<SectorComponent>(entity, position.sector);
-                }
+                scene.SetParentKeepingWorld(entity, NullEntity);
             }
         }
 

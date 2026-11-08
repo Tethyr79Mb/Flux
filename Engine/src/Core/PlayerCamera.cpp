@@ -173,6 +173,41 @@ namespace Flux {
         m_chaseRadius = std::max(1.0f, Math::Length(max - min) * 0.5f);
     }
 
+    void PlayerCamera::FollowHeading(Engine& engine, Entity ship, const Math::Quaternionf& shipRotation, double deltaSeconds) {
+        const Math::Vector3f z{0.0f, 0.0f, -1.0f};
+        const Math::Vector3f y{0.0f, 1.0f, 0.0f};
+        const Math::Vector3f forward = shipRotation.Rotate(z);
+        const bool snap = !m_chaseFrameSet;
+        if (snap) {
+            m_chaseFrame = shipRotation;
+            m_chaseFrameSet = true;
+        }
+        // Au plus court vers le nouvel avant du vaisseau : lacet et tangage suivis, le roulis (rotation autour de
+        // l'avant) n'a pas d'effet. Le haut de la caméra est donc transporté d'une image à l'autre.
+        m_chaseFrame = Math::Normalize(Math::Quaternionf::FromTo(m_chaseFrame.Rotate(z), forward) * m_chaseFrame);
+        // Près d'une planète (ou dans un hangar posé dessus), le haut se redresse sur la verticale : horizon droit.
+        // Dans l'espace, pas de haut : la caméra garde le sien.
+        const Math::Vector3f gravity = engine.GetPhysics()->GetOutsideGravity(engine.GetScene(), ship);
+        const float gravityLength = Math::Length(gravity);
+        if (gravityLength < 0.01f) {
+            return;
+        }
+        const Math::Vector3f vertical = gravity * (-1.0f / gravityLength);
+        // Verticale et haut de la caméra ramenés dans le plan de l'écran ; en vol presque vertical, la verticale
+        // n'y a plus de direction : on garde le haut actuel.
+        const Math::Vector3f wanted = vertical - forward * Math::Dot(vertical, forward);
+        const float wantedLength = Math::Length(wanted);
+        if (wantedLength < 0.2f) {
+            return;
+        }
+        const Math::Vector3f up = m_chaseFrame.Rotate(y);
+        const Math::Vector3f target = wanted * (1.0f / wantedLength);
+        const float angle = std::atan2(Math::Dot(Math::Cross(up, target), forward), Math::Dot(up, target));
+        constexpr double LevelRate = 4.0; // 1/s : redressée en environ une demi-seconde, sans à-coup
+        const float share = snap ? 1.0f : static_cast<float>(1.0 - std::exp(-LevelRate * deltaSeconds));
+        m_chaseFrame = Math::Normalize(Math::Quaternionf::FromAxisAngle(forward, angle * share) * m_chaseFrame);
+    }
+
     void PlayerCamera::PlaceChase(Engine& engine, Entity seat, double deltaSeconds) {
         Scene& scene = engine.GetScene();
         Camera& camera = engine.GetCamera();
@@ -183,12 +218,14 @@ namespace Flux {
         if (ship != m_chaseShip) {
             MeasureShip(engine, ship);
             m_chaseShown = -1.0f;
+            m_chaseFrameSet = false;
         }
-        // Derrière le vaisseau, un peu au-dessus (on regarde légèrement vers le bas), tournée avec lui, roulis compris ;
-        // le clic droit tourne autour.
+        // Derrière le vaisseau, un peu au-dessus (on regarde légèrement vers le bas), dans son cap mais sans son roulis
+        // (demande de Bruno) : on voit le vaisseau s'incliner. Le clic droit tourne autour.
         constexpr float LookDown = 0.2f;
         const Math::Quaternionf shipRotation = scene.GetWorldRotation(ship);
-        const Math::Quaternionf rotation = shipRotation * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
+        FollowHeading(engine, ship, shipRotation, deltaSeconds);
+        const Math::Quaternionf rotation = m_chaseFrame * Math::Quaternionf::FromAxisAngle({0.0f, 1.0f, 0.0f}, m_lookYaw)
                                          * Math::Quaternionf::FromAxisAngle({1.0f, 0.0f, 0.0f}, m_lookPitch - LookDown);
         Math::WorldPosition target = scene.GetWorldPosition(ship);
         target += Math::Vector3d(shipRotation.Rotate(m_chaseCenter));
@@ -282,6 +319,7 @@ namespace Flux {
             return;
         }
         m_chaseShown = -1.0f;
+        m_chaseFrameSet = false; // en ressortant, la vue extérieure repart derrière le vaisseau, dans son axe
         if (const Entity seat = GetCockpitSeat(scene, player); seat != NullEntity) {
             // Vue cockpit : depuis l'œil du pilote, dans l'axe du siège (roulis du vaisseau compris).
             const Math::Quaternionf seatRotation = scene.GetWorldRotation(seat);

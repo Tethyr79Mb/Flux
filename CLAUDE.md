@@ -19,6 +19,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - `Game/Module/` : GameModule.dll (code du jeu, `FluxRegisterGame`) et le projet `Game.fluxproject` avec ses `assets/`.
 - `Game/Client/` : « Ars Solaris.exe » (cible CMake `Game`).
 - `Tests/` : FluxTests.exe (un fichier `*Tests.cpp` par domaine, fonctions `Run…Tests` appelées depuis `main.cpp`).
+- Git LFS (`.gitattributes`) : modèles, textures, sons et polices de `Game/Module/assets/`. Sources lourdes (`.blend`,
+  textures 4K) hors du dépôt, sur le PC ou le OneDrive de Bruno. La CI ne télécharge pas les fichiers LFS.
 - `cmake/` : sources trouvées automatiquement (`flux_add_sources`, pas de liste de fichiers à tenir), dépendances
   (FetchContent), shaders, en-têtes précompilés, avertissements, version.
 

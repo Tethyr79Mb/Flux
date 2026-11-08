@@ -98,7 +98,8 @@ faut en argument.
 vol de tâches entre fils, et le fil qui attend un lot (`Wait`) exécute des tâches au lieu de dormir. Aucune
 allocation par tâche (case fixe de 48 octets, captures copiables seulement). Le travail long (lecture des modèles,
 compression des textures du sol) garde ses propres fils, pour ne jamais retenir une image. Jolt a encore son propre
-groupe de fils. `Engine` possède le `JobSystem` (privé au moteur) et le donne au `Renderer`.
+groupe de fils. `Engine` possède le `JobSystem` (privé au moteur) et le donne au `Renderer`, qui s'en sert pour préparer les
+entités (`MeshRenderer::ComputeEntity`) et enregistrer les passes.
 
 ## Rendu
 

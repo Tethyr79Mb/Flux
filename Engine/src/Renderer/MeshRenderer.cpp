@@ -1,11 +1,14 @@
 #include "Renderer/MeshRenderer.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
+
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Renderer/Photometry.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -646,6 +649,12 @@ namespace Flux {
     void MeshRenderer::Prepare(const Scene& scene, const Camera& camera, float aspect, Entity hidden, const SkyLighting& sky,
                                const TemporalView& temporal, const std::filesystem::path& assetsDirectory,
                                std::uint32_t frameIndex) {
+        using Clock = std::chrono::steady_clock;
+        const auto since = [](Clock::time_point start) {
+            return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        };
+        const Clock::time_point start = Clock::now();
+        double groundMilliseconds = 0.0;
         m_models->Update();
         // La lumière de contour est un effet, pas une lumière : la même à l'écran à toute exposition (réglée pour
         // l'exposition 1, le plein soleil), sinon elle éblouirait dans un intérieur ou dans le noir de l'espace.
@@ -689,11 +698,17 @@ namespace Flux {
         m_planets->BeginFrame(frameIndex);
         m_vegetation->BeginFrame(frameIndex);
         m_vegetationComponent = nullptr;
+        // Trois temps : sur ce fil, ce qui touche un état partagé (planètes, lumières, modèles cherchés dans le cache) ;
+        // puis, en parallèle, le calcul de chaque entité dessinée (sphère, champ, matrices), dans sa case ; enfin, sur
+        // ce fil et dans l'ordre des entités, les poses (un seul évaluateur), les blocs et les listes de l'image.
+        m_entityDraws.clear();
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
+                const Clock::time_point planetStart = Clock::now();
                 AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity),
                           scene.TryGet<CloudsComponent>(transform.entity), scene.TryGet<VegetationComponent>(transform.entity), view,
                           assetsDirectory);
+                groundMilliseconds += since(planetStart);
             }
             if (const auto* light = scene.TryGet<LightComponent>(transform.entity)) {
                 AddLight(camera, aspect, transform, *light);
@@ -713,129 +728,89 @@ namespace Flux {
                                          outside(local.z, interior->size.z, transform.scale.z)};
                 m_interiors.push_back({transform, interior, Math::Length(gap)});
             }
-            const GpuModel* model = nullptr;
-            Math::LinearColor tint;
-            Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
-            float metallic = 1.0f;
-            float roughness = 1.0f;
-            bool materialOverride = false;
-            const GpuModel* farModel = nullptr;
-            float farDistance = 0.0f;
+            EntityDraw draw{.transform = &transform};
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
-                model = &m_models->GetCube();
-                tint = renderer->color;
+                draw.model = &m_models->GetCube();
+                draw.tint = renderer->color;
                 const float luminance = Photometry::FromNits(std::max(renderer->luminance, 0.0f));
-                emissive = {tint.r * luminance, tint.g * luminance, tint.b * luminance};
-                metallic = std::clamp(renderer->metallic, 0.0f, 1.0f);
-                roughness = std::clamp(renderer->roughness, 0.0f, 1.0f);
+                draw.emissive = {draw.tint.r * luminance, draw.tint.g * luminance, draw.tint.b * luminance};
+                draw.metallic = std::clamp(renderer->metallic, 0.0f, 1.0f);
+                draw.roughness = std::clamp(renderer->roughness, 0.0f, 1.0f);
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
                        component && !component->model.empty() && !assetsDirectory.empty()) {
-                model = m_models->Find(assetsDirectory, component->model);
+                draw.model = m_models->Find(assetsDirectory, component->model);
                 if (!component->farModel.empty()) {
-                    farModel = m_models->Find(assetsDirectory, component->farModel);
-                    farDistance = component->farDistance;
-                    if (!model) {
-                        std::swap(model, farModel); // complet pas encore chargé : la version lointaine, même de près
+                    draw.farModel = m_models->Find(assetsDirectory, component->farModel);
+                    draw.farDistance = component->farDistance;
+                    if (!draw.model) {
+                        std::swap(draw.model, draw.farModel); // complet pas encore chargé : la version lointaine, même de près
                     }
                 }
-                tint = component->tint;
+                draw.tint = component->tint;
                 if (component->overrideMaterial) {
-                    materialOverride = true;
-                    metallic = std::clamp(component->metallic, 0.0f, 1.0f);
-                    roughness = std::clamp(component->roughness, 0.0f, 1.0f);
+                    draw.materialOverride = true;
+                    draw.metallic = std::clamp(component->metallic, 0.0f, 1.0f);
+                    draw.roughness = std::clamp(component->roughness, 0.0f, 1.0f);
                 }
             }
-            if (!model) {
+            if (!draw.model) {
                 continue;
             }
-            // Sphère englobant une boîte du modèle, relative à la caméra.
-            const auto sphereOf = [&transform](const Math::Box3f& box) {
-                const Math::Vector3f center = box.GetCenter();
-                const Math::Vector3f half = box.GetSize() * 0.5f;
-                const Math::Vector3f scaledHalf{half.x * std::abs(transform.scale.x), half.y * std::abs(transform.scale.y),
-                                                half.z * std::abs(transform.scale.z)};
-                const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y,
-                                                  center.z * transform.scale.z};
-                return std::pair{Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter),
-                                 Math::Length(scaledHalf)};
-            };
-            // Celle de tout le modèle (un modèle animé peut sortir de sa boîte : ombre coupée au pire).
-            const auto [relativeCenter, radius] = sphereOf(model->bounds);
-            // Loin du modèle (de sa sphère, pas de son centre : une station de 4 km), sa version allégée. Même place et
-            // même taille : la sphère du modèle complet sert aux deux.
-            if (farModel && Math::Length(relativeCenter) - radius > farDistance) {
-                model = farModel;
-            }
-            // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
-            const bool inView = view.Contains(relativeCenter, model->IsAnimated() ? 1.5f * radius : radius);
-            // Ni en vue ni dans une ombre : rien à dessiner, ni pose à calculer (personnage loin derrière la caméra).
-            if (!inView && !CastsAnyShadow(relativeCenter, radius)) {
-                continue;
-            }
-            const Math::Matrix4f world = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
-                                       * transform.rotation.ToMatrix()
-                                       * Math::Matrix4f::Scale(transform.scale);
-            // Normales : rotation x inverse de l'échelle (une échelle non uniforme penche les normales).
-            // Échelle nulle (objet aplati) : un grand nombre plutôt qu'une division par zéro.
-            const auto inverse = [](float scale) { return std::abs(scale) > 1.0e-12f ? 1.0f / scale : 1.0e12f; };
-            const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{inverse(transform.scale.x), 0.0f, 0.0f});
-            const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, inverse(transform.scale.y), 0.0f});
-            const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, inverse(transform.scale.z)});
-            std::uint32_t firstJoint = 0;
-            if (!model->skeleton.joints.empty()) {
-                firstJoint = static_cast<std::uint32_t>(m_jointMatrices.size());
-                Pose(*model, scene.TryGet<AnimatorComponent>(transform.entity));
-                const std::span<const Math::Matrix4f> joints = m_poseEvaluator.GetJointMatrices();
-                m_jointMatrices.insert(m_jointMatrices.end(), joints.begin(), joints.end());
-            }
-            // Lumière de contour : celle de l'entité ou du plus proche parent qui en a une (tout un vaisseau).
-            std::array<float, 4> rim{};
-            for (Entity owner = transform.entity; owner != NullEntity; owner = scene.GetParent(owner)) {
-                if (const auto* component = scene.TryGet<RimLightComponent>(owner)) {
-                    if (component->intensity > 0.0f) {
-                        const float intensity = component->intensity * m_rimScale;
-                        rim = {component->color.r * intensity, component->color.g * intensity, component->color.b * intensity,
-                               std::max(component->sharpness, 0.5f)};
-                    }
-                    break;
-                }
-            }
-            // Où était l'entité à l'image précédente, vue de l'ancienne caméra : sa matrice d'alors si elle était déjà
-            // là, sinon la même place dans le monde (immobile).
+            // Agrandi ici, une fois : chaque fil n'écrit ensuite que la case de son entité.
             const auto index = static_cast<std::size_t>(entt::to_entity(transform.entity));
             if (index >= m_previousWorld.size()) {
                 m_previousWorld.resize(index + 1);
                 m_previousFrame.resize(index + 1, 0);
             }
-            const bool moved = temporal.continuous && m_previousFrame[index] + 1 == m_preparedFrame;
-            const Math::Matrix4f previous = moved ? m_previousWorld[index] : Math::Matrix4f::Translation(temporal.cameraDelta) * world;
-            m_previousWorld[index] = world;
-            m_previousFrame[index] = m_preparedFrame;
-            m_drawData.push_back({world,
-                                  {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, std::bit_cast<float>(firstJoint)}, {z.x, z.y, z.z, 0.0f}}},
-                                  rim, {}, previous,
-                                  {tint.r, tint.g, tint.b, tint.a},
-                                  {emissive.r, emissive.g, emissive.b, materialOverride ? 1.0f : 0.0f},
-                                  {metallic, roughness, 0.0f, 0.0f}});
+            m_entityDraws.push_back(draw);
+        }
 
+        const auto computeEntities = [&](std::uint32_t begin, std::uint32_t end) {
+            for (std::uint32_t i = begin; i < end; ++i) {
+                ComputeEntity(scene, view, temporal, hidden, m_entityDraws[i]);
+            }
+        };
+        const auto entityCount = static_cast<std::uint32_t>(m_entityDraws.size());
+        // Par tranches de 64 : en dessous, lancer une tâche coûte autant que le calcul.
+        if (m_jobs) {
+            m_jobs->ParallelFor(entityCount, 64, computeEntities);
+        } else {
+            computeEntities(0, entityCount);
+        }
+
+        for (EntityDraw& draw : m_entityDraws) {
+            if (!draw.kept) {
+                continue;
+            }
+            const GpuModel& model = *draw.model;
+            if (!model.skeleton.joints.empty()) {
+                const auto firstJoint = static_cast<std::uint32_t>(m_jointMatrices.size());
+                Pose(model, scene.TryGet<AnimatorComponent>(draw.transform->entity));
+                const std::span<const Math::Matrix4f> joints = m_poseEvaluator.GetJointMatrices();
+                m_jointMatrices.insert(m_jointMatrices.end(), joints.begin(), joints.end());
+                draw.data.normal[1][3] = std::bit_cast<float>(firstJoint);
+            }
+            m_drawData.push_back(draw.data);
             // Blocs d'un grand modèle : chacun écarté à part, du champ ici et des cascades au rangement des ombres.
             const auto firstCluster = static_cast<std::uint32_t>(m_clusters.size());
-            for (const Math::Box3f& cluster : model->clusters) {
-                const auto [clusterCenter, clusterRadius] = sphereOf(cluster);
-                m_clusters.push_back({clusterCenter, clusterRadius, inView && view.Contains(clusterCenter, clusterRadius)});
+            for (const Math::Box3f& cluster : model.clusters) {
+                const auto [clusterCenter, clusterRadius] = SphereOf(*draw.transform, cluster);
+                m_clusters.push_back({clusterCenter, clusterRadius, draw.inView && view.Contains(clusterCenter, clusterRadius)});
             }
-
-            const float smallest = std::min({transform.scale.x, transform.scale.y, transform.scale.z});
-            const float largest = std::max({transform.scale.x, transform.scale.y, transform.scale.z});
-            const bool uniformScale = smallest > 0.0f && largest <= smallest * 1.001f;
-            m_draws.push_back({model, tint, emissive, metallic, roughness, materialOverride, relativeCenter, radius,
-                               Math::Length(relativeCenter), !IsInside(scene, transform.entity, hidden), inView, uniformScale,
-                               firstCluster});
+            m_draws.push_back({draw.model, draw.tint, draw.emissive, draw.metallic, draw.roughness, draw.materialOverride,
+                               draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
+                               draw.uniformScale, firstCluster});
         }
+        m_prepareTimes.entities = since(start) - groundMilliseconds;
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
+        Clock::time_point partStart = Clock::now();
         m_planets->EndFrame(frameIndex);
         m_computedTiles += m_planets->GetScheduledTileCount();
+        m_prepareTimes.ground = groundMilliseconds + since(partStart);
+        partStart = Clock::now();
         PrepareVegetation(camera, aspect, assetsDirectory, frameIndex);
+        m_prepareTimes.trees = since(partStart);
+        partStart = Clock::now();
         if (!m_boundEnvironment[frameIndex]) {
             ClearDraws(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
@@ -877,6 +852,79 @@ namespace Flux {
         if (!BuildModelBatches(frameIndex)) {
             m_modelPasses = {};
         }
+        m_prepareTimes.uploads = since(partStart);
+    }
+
+    std::pair<Math::Vector3f, float> MeshRenderer::SphereOf(const RelativeTransform& transform, const Math::Box3f& box) {
+        const Math::Vector3f center = box.GetCenter();
+        const Math::Vector3f half = box.GetSize() * 0.5f;
+        const Math::Vector3f scaledHalf{half.x * std::abs(transform.scale.x), half.y * std::abs(transform.scale.y),
+                                        half.z * std::abs(transform.scale.z)};
+        const Math::Vector3f scaledCenter{center.x * transform.scale.x, center.y * transform.scale.y, center.z * transform.scale.z};
+        return {Math::Vector3f(transform.position) + transform.rotation.Rotate(scaledCenter), Math::Length(scaledHalf)};
+    }
+
+    // Sur un fil de travail : ne lit que la scène et l'état fixé avant (cascades, caméra), et n'écrit que `draw` et la
+    // case de son entité dans m_previousWorld.
+    void MeshRenderer::ComputeEntity(const Scene& scene, const ViewCone& view, const TemporalView& temporal, Entity hidden,
+                                     EntityDraw& draw) {
+        const RelativeTransform& transform = *draw.transform;
+        draw.kept = false;
+        // Celle de tout le modèle (un modèle animé peut sortir de sa boîte : ombre coupée au pire).
+        const auto [relativeCenter, radius] = SphereOf(transform, draw.model->bounds);
+        // Loin du modèle (de sa sphère, pas de son centre : une station de 4 km), sa version allégée. Même place et
+        // même taille : la sphère du modèle complet sert aux deux.
+        if (draw.farModel && Math::Length(relativeCenter) - radius > draw.farDistance) {
+            draw.model = draw.farModel;
+        }
+        // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
+        draw.inView = view.Contains(relativeCenter, draw.model->IsAnimated() ? 1.5f * radius : radius);
+        // Ni en vue ni dans une ombre : rien à dessiner, ni pose à calculer (personnage loin derrière la caméra).
+        if (!draw.inView && !CastsAnyShadow(relativeCenter, radius)) {
+            return;
+        }
+        draw.kept = true;
+        draw.center = relativeCenter;
+        draw.radius = radius;
+        const Math::Matrix4f world = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
+                                   * transform.rotation.ToMatrix()
+                                   * Math::Matrix4f::Scale(transform.scale);
+        // Normales : rotation x inverse de l'échelle (une échelle non uniforme penche les normales).
+        // Échelle nulle (objet aplati) : un grand nombre plutôt qu'une division par zéro.
+        const auto inverse = [](float scale) { return std::abs(scale) > 1.0e-12f ? 1.0f / scale : 1.0e12f; };
+        const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{inverse(transform.scale.x), 0.0f, 0.0f});
+        const Math::Vector3f y = transform.rotation.Rotate(Math::Vector3f{0.0f, inverse(transform.scale.y), 0.0f});
+        const Math::Vector3f z = transform.rotation.Rotate(Math::Vector3f{0.0f, 0.0f, inverse(transform.scale.z)});
+        // Lumière de contour : celle de l'entité ou du plus proche parent qui en a une (tout un vaisseau).
+        std::array<float, 4> rim{};
+        for (Entity owner = transform.entity; owner != NullEntity; owner = scene.GetParent(owner)) {
+            if (const auto* component = scene.TryGet<RimLightComponent>(owner)) {
+                if (component->intensity > 0.0f) {
+                    const float intensity = component->intensity * m_rimScale;
+                    rim = {component->color.r * intensity, component->color.g * intensity, component->color.b * intensity,
+                           std::max(component->sharpness, 0.5f)};
+                }
+                break;
+            }
+        }
+        // Où était l'entité à l'image précédente, vue de l'ancienne caméra : sa matrice d'alors si elle était déjà
+        // là, sinon la même place dans le monde (immobile).
+        const auto index = static_cast<std::size_t>(entt::to_entity(transform.entity));
+        const bool moved = temporal.continuous && m_previousFrame[index] + 1 == m_preparedFrame;
+        const Math::Matrix4f previous = moved ? m_previousWorld[index] : Math::Matrix4f::Translation(temporal.cameraDelta) * world;
+        m_previousWorld[index] = world;
+        m_previousFrame[index] = m_preparedFrame;
+        // normal[1][3] : premier os, posé ensuite avec la pose (sur un seul fil).
+        draw.data = {world,
+                     {{{x.x, x.y, x.z, 0.0f}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, 0.0f}}},
+                     rim, {}, previous,
+                     {draw.tint.r, draw.tint.g, draw.tint.b, draw.tint.a},
+                     {draw.emissive.r, draw.emissive.g, draw.emissive.b, draw.materialOverride ? 1.0f : 0.0f},
+                     {draw.metallic, draw.roughness, 0.0f, 0.0f}};
+        const float smallest = std::min({transform.scale.x, transform.scale.y, transform.scale.z});
+        const float largest = std::max({transform.scale.x, transform.scale.y, transform.scale.z});
+        draw.uniformScale = smallest > 0.0f && largest <= smallest * 1.001f;
+        draw.visible = !IsInside(scene, transform.entity, hidden);
     }
 
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
