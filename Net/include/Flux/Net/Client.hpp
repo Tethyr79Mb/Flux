@@ -11,8 +11,10 @@
 
 namespace Flux::Net {
     struct ClientConfig {
-        std::string address;            // adresse IP du serveur (IPv4 ou IPv6), sans nom de domaine pour l'instant
-        std::uint16_t port = 0;
+        // Adresse IP du serveur, avec ou sans port : « 192.168.1.10 », « 192.168.1.10:27015 », « [::1]:27015 ». Pas
+        // encore de nom de domaine.
+        std::string address;
+        std::uint16_t port = 0;         // quand l'adresse n'en donne pas
         std::uint32_t gameVersion = 0;  // version du protocole du jeu, vérifiée par le serveur
     };
 

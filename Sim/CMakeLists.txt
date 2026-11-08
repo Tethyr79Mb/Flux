@@ -27,6 +27,7 @@ target_include_directories(FluxSim
 
 if(WIN32)
     target_compile_definitions(FluxSim PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    target_link_libraries(FluxSim PRIVATE shell32) # CommandLineToArgvW (arguments du processus)
 else()
     # dlopen (SharedLibrary) ; fils du JobSystem.
     find_package(Threads REQUIRED)

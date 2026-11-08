@@ -116,12 +116,14 @@ namespace Flux::Net {
         if (!address.ParseString(config.address.c_str())) {
             return std::unexpected(std::format("adresse IP invalide : « {} »", config.address));
         }
-        address.m_port = config.port;
+        if (address.m_port == 0) {
+            address.m_port = config.port;
+        }
         SteamNetworkingConfigValue_t options[2];
         m_impl->library.FillOptions(options);
         m_impl->connection = m_impl->sockets->ConnectByIPAddress(address, 2, options);
         if (m_impl->connection == k_HSteamNetConnection_Invalid) {
-            return std::unexpected(std::format("connexion impossible vers {}:{}", config.address, config.port));
+            return std::unexpected(std::format("connexion impossible vers {} (port {})", config.address, address.m_port));
         }
         return {};
     }

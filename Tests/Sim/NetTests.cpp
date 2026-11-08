@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -120,7 +121,9 @@ namespace {
         Net::Server server;
         CHECK(ListenOnFreePort(server, 7));
         Net::Client client;
-        CHECK(client.Connect({.address = "127.0.0.1", .port = server.GetPort(), .gameVersion = 8}));
+        // Port dans l'adresse : il l'emporte sur celui de la configuration.
+        const std::string address = "127.0.0.1:" + std::to_string(server.GetPort());
+        CHECK(client.Connect({.address = address, .port = 1, .gameVersion = 8}));
 
         std::vector<Received> serverEvents;
         std::vector<Received> clientEvents;
