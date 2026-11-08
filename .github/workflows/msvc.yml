@@ -45,11 +45,27 @@ jobs:
           path: out/deps/${{ matrix.preset }}
           key: deps-${{ matrix.preset }}-${{ hashFiles('cmake/FluxDependencies.cmake') }}
 
+      # Cache de compilation (sccache, rangé dans le cache de GitHub Actions) : sans lui, chaque PR recompilait tout,
+      # Jolt compris (8 min en Release, 13 en Debug). Pour qu'un .obj puisse être repris, les symboles de débogage vont
+      # dans chaque .obj (/Z7 au lieu d'un .pdb partagé, /Zi) et les en-têtes précompilés sont coupés (sccache ne sait
+      # pas les reprendre avec MSVC) : la CI vérifie aussi que chaque .cpp inclut ce dont il a besoin. Rien ne change
+      # dans Visual Studio.
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Configurer
-        run: cmake --preset ${{ matrix.preset }}
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DFLUX_COMPILER_CACHE=sccache
+          -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+          -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
 
       - name: Compiler
+        env:
+          SCCACHE_GHA_ENABLED: "true" # cache dans celui de GitHub Actions, gardé d'une PR à l'autre
         run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Cache de compilation
+        run: sccache --show-stats
 
       # GPU logiciel (lavapipe de Mesa, compilé pour Windows par mesa-dist-win) et chargeur Vulkan de LunarG : les tests
       # GPU (compute, tuiles de planète, arbres) tournent au lieu d'être ignorés. FLUX_TESTS_GPU=1 les fait échouer si
@@ -86,8 +102,9 @@ jobs:
           "FLUX_TESTS_GPU=1" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "lavapipe : $($archive.Name) ; chargeur : $($loader.FullName)"
 
+      # -V : la durée de chaque groupe de tests s'affiche (FluxTests prend 7 min en Debug).
       - name: Tests
-        run: ctest --test-dir out/build/${{ matrix.preset }} --output-on-failure
+        run: ctest --test-dir out/build/${{ matrix.preset }} --output-on-failure -V
 
       # Ninja doit connaître les en-têtes de chaque .cpp (sinon un .hpp modifié ne recompile rien) : voir CMakeLists.txt.
       - name: Suivi des en-têtes

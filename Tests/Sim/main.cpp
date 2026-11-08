@@ -1,6 +1,8 @@
 // Lance les tests de la simulation (FluxSim) ; code de sortie 0 si tout passe (lancer FluxSimTests ou ctest).
 #include "Check.hpp"
 
+#include <chrono>
+
 int main() {
     struct Group {
         const char* name;
@@ -24,8 +26,11 @@ int main() {
 
     int failures = 0;
     for (const Group& group : groups) {
+        // Durée de chaque groupe : la CI les affiche (ctest -V), pour voir lesquels la ralentissent.
+        const auto start = std::chrono::steady_clock::now();
         const bool passed = group.run();
-        std::printf("%s %s\n", passed ? "OK    " : "ÉCHEC ", group.name);
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        std::printf("%s %s (%.1f s)\n", passed ? "OK    " : "ÉCHEC ", group.name, seconds);
         failures += passed ? 0 : 1;
     }
     std::printf(failures == 0 ? "tous les tests passent\n" : "%d groupe(s) en échec\n", failures);
