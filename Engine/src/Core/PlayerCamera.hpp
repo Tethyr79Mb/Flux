@@ -44,6 +44,8 @@ namespace Flux {
         // Vue extérieure d'un vaisseau piloté depuis seat ; calcule sa boîte (m_chaseCenter, m_chaseRadius).
         void PlaceChase(Engine& engine, Entity seat, double deltaSeconds);
         void MeasureShip(Engine& engine, Entity ship);
+        // Fait suivre à m_chaseFrame le cap du vaisseau sans son roulis, redressé sur la verticale d'une planète.
+        void FollowHeading(Engine& engine, Entity ship, const Math::Quaternionf& shipRotation, double deltaSeconds);
 
         // Derrière le personnage, à cette distance (molette). Molette vers l'avant au plus près : vue à la première
         // personne (depuis ses yeux, personnage non dessiné) ; vers l'arrière : retour.
@@ -76,5 +78,8 @@ namespace Flux {
         Entity m_chaseShip = NullEntity;
         Math::Vector3f m_chaseCenter;
         float m_chaseRadius = 10.0f;
+        // Orientation de la vue extérieure : l'avant du vaisseau, avec un haut à elle (pas de roulis).
+        Math::Quaternionf m_chaseFrame;
+        bool m_chaseFrameSet = false;
     };
 }
