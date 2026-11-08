@@ -30,6 +30,11 @@ namespace Flux {
 
     class FLUX_API InputActions {
         public:
+        // simulated : actions de la simulation, qui donnent leur bit aux actions du même nom ; les autres (vue,
+        // sauvegarde rapide : le client seul) prennent les bits du haut, pour ne jamais décaler ceux de la simulation.
+        // Sans elles (tests), les bits sont donnés dans l'ordre de déclaration.
+        explicit InputActions(const CommandActions* simulated = nullptr) : m_simulated(simulated) {}
+
         // Déclare une action, ou change ses touches par défaut si elle existe (les touches du joueur restent). Rend son
         // identifiant, le même à chaque déclaration du même nom (NoInputAction au-delà de MaxInputActions noms).
         InputActionId Add(std::string name, std::string category, Key primary, Key secondary = Key::Unknown);
@@ -65,6 +70,8 @@ namespace Flux {
         std::vector<InputAction> m_actions; // dans l'ordre de déclaration
         std::map<std::string, InputActionKeys, std::less<>> m_chosen; // touches du joueur, par nom d'action
         std::map<std::string, InputActionId, std::less<>> m_ids;      // jamais retirés : un nom garde son bit
+        const CommandActions* m_simulated = nullptr;
+        std::size_t m_localCount = 0; // bits du haut déjà donnés aux actions du client seul
         std::function<std::string(Key)> m_namer;
     };
 }

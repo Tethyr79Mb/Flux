@@ -75,7 +75,7 @@ namespace Flux {
           m_freeCamera(config.freeCamera),
           m_audio(std::make_unique<AudioSystem>()),
           m_interfaces(std::make_unique<InterfaceLibrary>()),
-          m_inputActions(std::make_unique<InputActions>()),
+          m_inputActions(std::make_unique<InputActions>(&m_simulation.GetActions())),
           m_interfaceBindings(std::make_unique<InterfaceBindings>()),
           m_playerCamera(std::make_unique<PlayerCamera>()),
           m_notice(std::make_unique<Notice>()),
@@ -177,13 +177,14 @@ namespace Flux {
         // Actions du moteur (personnage, vaisseau), puis les touches choisies par le joueur. ZQSD en AZERTY : les
         // touches sont des positions sur le clavier (Key::W est la touche Z en AZERTY).
         InputActions& actions = *m_inputActions;
-        m_actions.forward = actions.Add("Avancer", "Déplacement", Key::W, Key::Up);
-        m_actions.back = actions.Add("Reculer", "Déplacement", Key::S, Key::Down);
-        m_actions.left = actions.Add("Aller à gauche", "Déplacement", Key::A, Key::Left);
-        m_actions.right = actions.Add("Aller à droite", "Déplacement", Key::D, Key::Right);
-        m_actions.run = actions.Add("Courir", "Déplacement", Key::LeftShift);
-        m_actions.jump = actions.Add("Sauter", "Déplacement", Key::Space);
-        m_actions.interact = actions.Add("Interagir", "Déplacement", Key::F);
+        // Celles du personnage sont déclarées par la simulation (même bit sur le serveur) : ici, leurs touches.
+        m_actions.forward = actions.Add(std::string(CharacterActions::Forward), "Déplacement", Key::W, Key::Up);
+        m_actions.back = actions.Add(std::string(CharacterActions::Back), "Déplacement", Key::S, Key::Down);
+        m_actions.left = actions.Add(std::string(CharacterActions::Left), "Déplacement", Key::A, Key::Left);
+        m_actions.right = actions.Add(std::string(CharacterActions::Right), "Déplacement", Key::D, Key::Right);
+        actions.Add(std::string(CharacterActions::Run), "Déplacement", Key::LeftShift);
+        actions.Add(std::string(CharacterActions::Jump), "Déplacement", Key::Space);
+        actions.Add(std::string(CharacterActions::Interact), "Déplacement", Key::F);
         // Vue du cockpit ou de dehors : la caméra est au moteur ; les commandes du vaisseau sont au jeu (SetPilotInput).
         m_actions.changeView = actions.Add("Changer de vue", "Vaisseau", Key::V);
         // F5 / F6 servent déjà à l'éditeur (jouer, pause).
@@ -191,7 +192,6 @@ namespace Flux {
         m_actions.quickLoad = actions.Add("Chargement rapide", "Partie", Key::F9);
         // Repartir du début au prochain lancement (la sauvegarde est sinon reprise, voir ResumeQuickSave).
         m_actions.deleteSave = actions.Add("Effacer la sauvegarde", "Partie", Key::F7);
-        m_simulation.SetCharacterActions({.run = m_actions.run, .jump = m_actions.jump, .interact = m_actions.interact});
         m_impacts.reserve(ReservedImpacts);
         if (std::ifstream file(InputActionsFile(), std::ios::binary); file) {
             const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

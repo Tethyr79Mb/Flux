@@ -19,6 +19,13 @@ namespace Flux {
         : m_physicsContext(std::make_shared<PhysicsContext>()),
           m_flightSurroundings(std::make_unique<FlightSurroundings>()) {
         RegisterEngineComponents(m_components);
+        // Dans cet ordre, sur le client comme sur le serveur : leurs bits sont les mêmes.
+        for (const std::string_view name : {CharacterActions::Forward, CharacterActions::Back, CharacterActions::Left, CharacterActions::Right}) {
+            m_actions.Declare(name);
+        }
+        m_characterActions = {.run = m_actions.Declare(CharacterActions::Run),
+                              .jump = m_actions.Declare(CharacterActions::Jump),
+                              .interact = m_actions.Declare(CharacterActions::Interact)};
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
     }

@@ -2,15 +2,20 @@
 
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Math/WorldPosition.hpp"
+#include "Flux/SimExport.hpp"
 
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <map>
+#include <string>
+#include <string_view>
 
 namespace Flux {
-    // Identifiant d'une action d'entrée (InputActions::Add) : sa place dans les bits de PlayerCommand. Il ne change pas
-    // pour un même nom tant que le programme tourne (module de jeu rechargé compris) ; le client et le serveur, qui
-    // déclarent leurs actions dans le même ordre, ont donc les mêmes.
+    // Identifiant d'une action : sa place dans les bits de PlayerCommand. Celles que lit la simulation sont déclarées
+    // par elle et par le code du jeu qui y tourne (CommandActions), dans le même ordre sur le client et le serveur : ils
+    // ont donc les mêmes. Celles du seul client (vue, sauvegarde rapide) prennent les bits du haut (InputActions).
     using InputActionId = std::uint8_t;
     inline constexpr InputActionId NoInputAction = 0xFF;
     inline constexpr std::size_t MaxInputActions = 128;
@@ -40,5 +45,20 @@ namespace Flux {
         float GetAxis(InputActionId positive, InputActionId negative) const {
             return (IsDown(positive) ? 1.0f : 0.0f) - (IsDown(negative) ? 1.0f : 0.0f);
         }
+    };
+
+    // Actions lues par la simulation (marcher, tirer, warp...), par nom : leur bit dans PlayerCommand. Un nom garde son
+    // bit tant que le programme tourne, même retiré puis redéclaré (module de jeu rechargé). Les touches qui les
+    // déclenchent sont au client (InputActions).
+    class FLUX_SIM_API CommandActions {
+        public:
+        // Rend le bit de l'action, attribué à la première déclaration de son nom (NoInputAction au-delà de
+        // MaxInputActions).
+        InputActionId Declare(std::string_view name);
+        InputActionId GetId(std::string_view name) const;
+        std::size_t GetCount() const { return m_ids.size(); }
+
+        private:
+        std::map<std::string, InputActionId, std::less<>> m_ids;
     };
 }

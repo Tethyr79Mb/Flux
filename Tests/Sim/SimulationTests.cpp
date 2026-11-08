@@ -57,9 +57,10 @@ namespace {
 
     bool InteractionTakenOnce() {
         Simulation simulation;
-        simulation.SetCharacterActions({.interact = 3});
+        const InputActionId interact = simulation.GetActions().GetId(CharacterActions::Interact);
+        CHECK(interact != NoInputAction);
         PlayerCommand command;
-        command.pressed[3] = true;
+        command.pressed[interact] = true;
         simulation.SetLocalCommand(command); // sans personnage : la commande du vol libre
         int taken = 0;
         simulation.AddSystem(Simulation::Stage::Interaction, "premier", [&](Simulation& s, double) { taken += s.ConsumeInteraction() ? 1 : 0; });
@@ -69,8 +70,19 @@ namespace {
         CHECK(taken == 1);
         return true;
     }
+
+    // Bits des actions : ceux du personnage d'abord, dans l'ordre, puis ceux du jeu ; un nom garde le sien.
+    bool ActionsKeepTheirBits() {
+        Simulation simulation;
+        CommandActions& actions = simulation.GetActions();
+        CHECK(actions.GetId(CharacterActions::Forward) == 0 && actions.GetId(CharacterActions::Interact) == 6);
+        const InputActionId warp = actions.Declare("Warp");
+        CHECK(warp == 7 && actions.Declare("Warp") == warp && actions.GetCount() == 8);
+        CHECK(actions.GetId("Inconnue") == NoInputAction);
+        return true;
+    }
 }
 
 bool RunSimulationTests() {
-    return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce();
+    return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce() && ActionsKeepTheirBits();
 }

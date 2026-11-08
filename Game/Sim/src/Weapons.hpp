@@ -11,8 +11,6 @@
 
 namespace Flux {
     class ComponentRegistry;
-    class EditorExtensions;
-    class Engine;
     class Scene;
 }
 
@@ -95,7 +93,7 @@ namespace Game {
         std::string GetRefusal(const HardpointComponent& hardpoint, const WeaponComponent& weapon);
 
         // Vaisseau piloté (NullEntity : aucun) : ses armes pivotent vers le point visé et tirent. Les projectiles
-        // tirés sont ajoutés à `projectiles` (Engine::GetProjectiles). Les armes des autres vaisseaux ne bougent pas.
+        // tirés sont ajoutés à `projectiles` (Simulation::GetProjectiles). Les armes des autres vaisseaux ne bougent pas.
         // Après la physique (le vaisseau est à sa place de cette image). Au plus un missile part par image : retourne
         // le groupe (bit) qui l'a lancé, 0 sinon, pour que l'appelant désactive ce groupe (un appui, un missile).
         std::uint16_t Update(Flux::Scene& scene, Flux::Entity ship, double deltaSeconds, const WeaponInput& input,
@@ -123,9 +121,4 @@ namespace Game {
 
     // Emports, armes et points de vie dans l'inspecteur et les scènes (mêmes clés JSON qu'au temps du moteur).
     void RegisterWeaponComponents(Flux::ComponentRegistry& registry);
-    // Aimant de l'éditeur : une arme lâchée sur un emport, ou près de lui, s'y fixe s'il l'accepte.
-    void RegisterWeaponMount(Flux::EditorExtensions& extensions);
-    // Dégâts des projectiles arrivés de l'image (Engine::GetProjectileHits), avant les tirs du joueur et des ennemis.
-    void RegisterDamage(Flux::Engine& engine);
-    void UnregisterDamage(Flux::Engine& engine);
 }

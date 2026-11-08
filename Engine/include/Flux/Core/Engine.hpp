@@ -350,10 +350,10 @@ namespace Flux {
         std::unique_ptr<FrameStats> m_frameStats;               // temps moyens du panneau Moteur
         std::unique_ptr<Input> m_stepInput; // touches retenues pour le prochain pas (Input::Accumulate)
         bool m_inStep = false;              // pendant un pas : le jeu lit GetPlayerCommand, pas le clavier
-        // Actions du moteur, par leur bit dans PlayerCommand.
+        // Actions lues par le moteur, par leur bit dans PlayerCommand : la marche (SampleLocalCommand) et celles du client.
         struct EngineActions
         {
-            InputActionId forward, back, left, right, run, jump, interact, changeView, quickSave, quickLoad, deleteSave;
+            InputActionId forward, back, left, right, changeView, quickSave, quickLoad, deleteSave;
         } m_actions{};
         std::unique_ptr<TransformInterpolation> m_interpolation; // places dessinées entre deux pas
         std::uint64_t m_frame = 0;

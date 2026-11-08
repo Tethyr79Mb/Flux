@@ -1,6 +1,7 @@
 // Armes des vaisseaux (Weapons, code du jeu) et projectiles du moteur : emports, visée dans le cône, cadence, projectiles, dégâts, missiles guidés, sauvegarde.
 #include "../Check.hpp"
 
+#include "PlaceItems.hpp" // aimant des armes (éditeur)
 #include "Weapons.hpp"
 
 #include "Flux/Core/EditorExtensions.hpp"

@@ -25,3 +25,4 @@ bool RunPhysicsTests();
 bool RunAnimationTests();
 bool RunVegetationTests();
 bool RunSimulationTests();
+bool RunGameSimTests();

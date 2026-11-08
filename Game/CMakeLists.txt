@@ -1,16 +1,31 @@
-# Code du jeu : composants et systèmes. Chargé en DLL par l'éditeur et par le client (Ars Solaris.exe).
-# GameLogic : tout le code du jeu, en bibliothèque statique, liée par la DLL et par FluxTests (tests du jeu). La DLL
-# n'a que ses points d'entrée (Module/Dll).
-add_library(GameLogic STATIC)
-flux_add_sources(GameLogic Module/src)
-target_include_directories(GameLogic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Module/src)
-target_link_libraries(GameLogic PUBLIC Flux::Engine)
-flux_set_warnings(GameLogic)
+# Code du jeu, en deux bibliothèques statiques :
+# - GameSim (Sim/src) : ce qui se simule (composants, pilotage, navigation, missions, armes, combat), FluxSim seule.
+#   Compilée aussi sous Linux : c'est le jeu que fera tourner le serveur (Game/Server).
+# - GameClient (Module/src) : ce que voit et touche le joueur (touches, affichages, interfaces, objets de l'éditeur).
+# GameModule.dll (chargée par l'éditeur et par Ars Solaris.exe) n'a que ses points d'entrée (Module/Dll) ; FluxTests
+# lie GameClient pour tester le jeu.
+add_library(GameSim STATIC)
+flux_add_sources(GameSim Sim/src)
+target_include_directories(GameSim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Sim/src)
+target_link_libraries(GameSim PUBLIC Flux::Sim)
+# Liée dans GameModule.dll (et un jour dans un module .so) : code relogeable.
+set_target_properties(GameSim PROPERTIES POSITION_INDEPENDENT_CODE ON)
+flux_set_warnings(GameSim)
+
+if(NOT FLUX_BUILD_ENGINE)
+    return()
+endif()
+
+add_library(GameClient STATIC)
+flux_add_sources(GameClient Module/src)
+target_include_directories(GameClient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Module/src)
+target_link_libraries(GameClient PUBLIC GameSim Flux::Engine)
+flux_set_warnings(GameClient)
 
 add_library(GameModule SHARED)
 flux_add_sources(GameModule Module/Dll)
 set_target_properties(GameModule PROPERTIES PREFIX "")
-target_link_libraries(GameModule PRIVATE GameLogic)
+target_link_libraries(GameModule PRIVATE GameClient)
 flux_set_warnings(GameModule)
 
 # Scènes et autres données du jeu, copiées dans bin/assets/ à côté de celles du moteur.

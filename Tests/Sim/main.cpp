@@ -19,6 +19,7 @@ int main() {
         {"fils de travail (JobSystem)", RunJobSystemTests},
         {"espèces et biomes des arbres", RunVegetationTests},
         {"simulation sans rendu", RunSimulationTests},
+        {"jeu simulé (GameSim)", RunGameSimTests},
     };
 
     int failures = 0;

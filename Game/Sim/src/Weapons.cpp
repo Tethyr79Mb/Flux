@@ -1,8 +1,5 @@
 #include "Weapons.hpp"
 
-#include <Flux/Core/EditorExtensions.hpp>
-#include <Flux/Core/Engine.hpp>
-#include <Flux/Core/Log.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/Scene/Ships.hpp>
@@ -306,19 +303,6 @@ namespace Game::Weapons {
 namespace Game {
     using namespace Flux;
 
-    namespace {
-        constexpr const char* DamageSystem = "Armes : dégâts";
-        std::vector<std::string> g_destroyed; // noms de l'image, gardés d'une image à l'autre : pas d'allocation
-
-        void Damage(Engine& engine, double) {
-            g_destroyed.clear();
-            Weapons::ApplyHits(engine.GetScene(), engine.GetProjectileHits(), engine.GetPlayer(), &g_destroyed);
-            for (const std::string& name : g_destroyed) {
-                Log::Info("« {} » détruit", name);
-            }
-        }
-    }
-
     void RegisterWeaponComponents(ComponentRegistry& registry) {
         const std::initializer_list<EnumValue<WeaponKind>> weaponKinds{{"gun", "Canon", WeaponKind::Gun},
                                                                        {"missile", "Missiles", WeaponKind::Missile}};
@@ -344,32 +328,4 @@ namespace Game {
         registry.Register<HealthComponent>("health", "Points de vie")
             .Field("health", "Points de vie", &HealthComponent::health, {.speed = 1.0, .min = 0.0, .max = 1.0e9, .decimals = 0});
     }
-
-    void RegisterWeaponMount(EditorExtensions& extensions) {
-        extensions.AddMountRule(MountRule{
-            .title = "Emport",
-            .isPart = [](const Scene& scene, Entity entity) { return scene.TryGet<WeaponComponent>(entity) != nullptr; },
-            .isMount = [](const Scene& scene, Entity entity) { return scene.TryGet<HardpointComponent>(entity) != nullptr; },
-            .refusal = [](const Scene& scene, Entity weapon, Entity hardpoint) -> std::string {
-                const auto* component = scene.TryGet<WeaponComponent>(weapon);
-                const auto* mount = scene.TryGet<HardpointComponent>(hardpoint);
-                if (!component || !mount) {
-                    return {};
-                }
-                if (std::string refusal = Weapons::GetRefusal(*mount, *component); !refusal.empty()) {
-                    return refusal;
-                }
-                for (const Entity other : scene.GetRegistry().view<const WeaponComponent>()) {
-                    if (other != weapon && scene.GetParent(other) == hardpoint) {
-                        return "cet emport porte déjà une arme (« " + scene.Get<NameComponent>(other).name + " »)";
-                    }
-                }
-                return {};
-            },
-        });
-    }
-
-    void RegisterDamage(Engine& engine) { engine.AddGameSystem(Engine::GameStage::AfterPhysics, DamageSystem, Damage); }
-
-    void UnregisterDamage(Engine& engine) { engine.RemoveGameSystem(DamageSystem); }
 }
