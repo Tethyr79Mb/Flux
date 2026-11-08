@@ -81,6 +81,7 @@ include(cmake/FluxPrecompiled.cmake)
 include(cmake/FluxVersion.cmake)
 
 add_subdirectory(Sim)
+add_subdirectory(Net) # réseau : client et serveur, Windows et Linux
 if(FLUX_BUILD_ENGINE)
     add_subdirectory(Engine)
 endif()

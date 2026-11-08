@@ -22,6 +22,7 @@ int main() {
         {"espèces et biomes des arbres", RunVegetationTests},
         {"simulation sans rendu", RunSimulationTests},
         {"jeu simulé (GameSim)", RunGameSimTests},
+        {"réseau (FluxNet)", RunNetTests},
     };
 
     int failures = 0;

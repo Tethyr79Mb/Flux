@@ -14,6 +14,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - `Sim/` : FluxSim.dll (et libFluxSim.so sous Linux), la simulation sans rendu : Math, Scene, Physics, Animation,
   Assets (Model, Image), Planetology côté CPU, Core (Log, Uuid, JobSystem, Project, SimulationClock), Platform
   (Filesystem, SharedLibrary). Macro d'export `FLUX_SIM_API`. N'inclut jamais rien de `Engine/`.
+- `Net/` : FluxNet.dll (libFluxNet.so), le réseau du client et du serveur (GameNetworkingSockets, privé), au-dessus de
+  FluxSim, jamais du rendu ; interface publique petite et stable (`Flux/Net/`, `FLUX_NET_API`).
 - `Engine/` : FluxEngine.dll, lie FluxSim. En-têtes publics dans `include/Flux/<Domaine>/`, code dans `src/<Domaine>/`
   (même forme dans `Sim/`, mêmes chemins d'inclusion `Flux/<Domaine>/…`), shaders Slang dans `shaders/`. Domaines :
   Audio, Core, Graphics, Input, Interface, Planetology (rendu des planètes), Platform (fenêtre…), Renderer (RHI + backend
