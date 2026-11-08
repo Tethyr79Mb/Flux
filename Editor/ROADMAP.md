@@ -98,6 +98,9 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Création de sons (`.fluxsound`) : couches, variantes au hasard, réglages pilotés par le jeu, générateur de bruitages.
 - ⬜ (Optionnel) Musique dynamique ; composition dans un logiciel externe (Reaper, LMMS).
 
+### Missions (Bruno, 2026-11-08 ; après le multijoueur)
+- ⬜ Éditeur de graphe de nœuds (étapes, déclencheurs, conditions, récompenses), enregistré en `.fluxmission` (JSON) ; nœuds déclarés par le jeu.
+
 ## Plus tard
 - ⬜ Mise à l'échelle DPI (écrans 125 %, 150 %).
 - ⬜ Éditeur de matériaux.
