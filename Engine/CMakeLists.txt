@@ -17,13 +17,15 @@ target_include_directories(FluxEngine
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_BINARY_DIR}/include
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src)
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            # En-têtes internes de FluxSim que le rendu partage (semis des arbres, photométrie, Win32Utf).
+            ${PROJECT_SOURCE_DIR}/Sim/src)
 
 # windows.h reste confiné aux .cpp de Platform/Win32 et Renderer/RHI/Vulkan.
 target_compile_definitions(FluxEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 
-# EnTT est public : les modules de jeu manipulent directement la scène.
-target_link_libraries(FluxEngine PUBLIC EnTT::EnTT)
+# La simulation (scène, physique, planètes côté CPU) : publique, le jeu et l'éditeur s'en servent directement.
+target_link_libraries(FluxEngine PUBLIC Flux::Sim)
 
 # Vulkan est privé au moteur : aucun header public ne l'expose.
 target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
@@ -31,14 +33,8 @@ target_link_libraries(FluxEngine PRIVATE volk::volk vk-bootstrap::vk-bootstrap G
 target_link_libraries(FluxEngine PRIVATE fidelityfx_api)
 # FreeType et msdfgen servent à générer l'atlas de police ; eux aussi restent privés.
 target_link_libraries(FluxEngine PRIVATE freetype msdfgen::msdfgen-core nlohmann_json::nlohmann_json)
-# Lecture des images PNG et JPEG (textures de l'interface).
-target_link_libraries(FluxEngine PRIVATE stb_image stb_image_impl bc7enc)
-# Lecture des modèles 3D glTF.
-target_link_libraries(FluxEngine PRIVATE cgltf_header)
-# Paquets de triangles des modèles (meshlets).
-target_link_libraries(FluxEngine PRIVATE meshoptimizer)
-# Physique (Jolt), privée : ses types n'apparaissent dans aucun en-tête public.
-target_link_libraries(FluxEngine PRIVATE Jolt)
+# Compression BC7 des textures du sol.
+target_link_libraries(FluxEngine PRIVATE bc7enc)
 # Son.
 target_link_libraries(FluxEngine PRIVATE miniaudio)
 # Boîtes de dialogue d'ouverture et d'enregistrement (GetOpenFileNameW).

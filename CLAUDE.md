@@ -11,9 +11,13 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - Le propriétaire du projet, Bruno, débute avec Git : vocabulaire minimal, étapes de Visual Studio en français.
 
 ## Organisation du dépôt
-- `Engine/` : FluxEngine.dll. En-têtes publics dans `include/Flux/<Domaine>/`, code dans `src/<Domaine>/`, shaders Slang
-  dans `shaders/`. Domaines : Animation, Assets, Audio, Core, Graphics, Input, Interface, Math, Physics, Planetology
-  (tout ce qui concerne les planètes), Platform, Renderer (RHI + backend Vulkan), Scene, UI (FluxUI).
+- `Sim/` : FluxSim.dll (et libFluxSim.so sous Linux), la simulation sans rendu : Math, Scene, Physics, Animation,
+  Assets (Model, Image), Planetology côté CPU, Core (Log, Uuid, JobSystem, Project, SimulationClock), Platform
+  (Filesystem, SharedLibrary). Macro d'export `FLUX_SIM_API`. N'inclut jamais rien de `Engine/`.
+- `Engine/` : FluxEngine.dll, lie FluxSim. En-têtes publics dans `include/Flux/<Domaine>/`, code dans `src/<Domaine>/`
+  (même forme dans `Sim/`, mêmes chemins d'inclusion `Flux/<Domaine>/…`), shaders Slang dans `shaders/`. Domaines :
+  Audio, Core, Graphics, Input, Interface, Planetology (rendu des planètes), Platform (fenêtre…), Renderer (RHI + backend
+  Vulkan), Scene (ScreenUi, Picking), UI (FluxUI).
 - `Editor/` : FluxEditor.exe (panneaux dans `src/Panels`, documents dans `src/Document`, éditeur d'interfaces dans
   `src/Interface`). Recharge à chaud la DLL du jeu.
 - `Game/Module/` : GameModule.dll (code du jeu, `FluxRegisterGame`) et le projet `Game.fluxproject` avec ses `assets/`.
@@ -51,7 +55,7 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 
 ## Règles à respecter
 - Changer la disposition d'un composant ou une fonction de l'API du jeu : incrémenter `GameModuleApiVersion`
-  (`Engine/include/Flux/Core/ApiVersion.hpp`), une seule fois par PR.
+  (`Sim/include/Flux/Core/ApiVersion.hpp`), une seule fois par PR.
 - Relief des planètes en deux exemplaires : `Terrain::GetHeight` (C++) et `Height` dans `shaders/PlanetTile.slang`.
   Toute modification va dans les deux ; `PlanetGpuTests` vérifie qu'ils restent égaux.
 - Courbe de tons AgX en deux exemplaires : `shaders/ToneCurve.slang` et `ToneCurve.cpp` (couleur de fond des scènes

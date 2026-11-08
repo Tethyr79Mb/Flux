@@ -17,8 +17,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
-if(NOT WIN32)
-    message(FATAL_ERROR "Flux ne cible que Windows pour l'instant (Platform/Win32).")
+# Sous Linux, seulement la simulation (FluxSim : scène, physique, planètes côté CPU) et ses tests : de quoi faire tourner
+# un serveur de jeu sans rendu. Le moteur complet (rendu, son, fenêtre, éditeur, client) ne vise que Windows.
+if(WIN32)
+    set(FLUX_BUILD_ENGINE ON)
+else()
+    set(FLUX_BUILD_ENGINE OFF)
 endif()
 
 if(MSVC)
@@ -61,14 +65,19 @@ endif()
 
 include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
-include(cmake/FluxResources.cmake)
+if(FLUX_BUILD_ENGINE)
+    include(cmake/FluxResources.cmake) # slangc : shaders du rendu
+endif()
 include(cmake/FluxSources.cmake)
 include(cmake/FluxPrecompiled.cmake)
 include(cmake/FluxVersion.cmake)
 
-add_subdirectory(Engine)
-add_subdirectory(Game)
-add_subdirectory(Editor)
+add_subdirectory(Sim)
+if(FLUX_BUILD_ENGINE)
+    add_subdirectory(Engine)
+    add_subdirectory(Game)
+    add_subdirectory(Editor)
 
-enable_testing()
-add_subdirectory(Tests)
+    enable_testing()
+    add_subdirectory(Tests)
+endif()

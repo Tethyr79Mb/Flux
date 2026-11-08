@@ -5,7 +5,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
-#include "Renderer/Photometry.hpp"
+#include "Scene/Photometry.hpp"
 
 #include <algorithm>
 #include <chrono>

@@ -10,7 +10,7 @@
 #include "Renderer/Exposure.hpp"
 #include "Renderer/ExposureRenderer.hpp"
 #include "Renderer/SkyRenderer.hpp"
-#include "Renderer/Photometry.hpp"
+#include "Scene/Photometry.hpp"
 #include "Renderer/ToneCurve.hpp"
 
 #include <cmath>
