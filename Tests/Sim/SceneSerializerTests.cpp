@@ -2,7 +2,7 @@
 // composants illisibles gardés tels quels sans bloquer le reste.
 #include "Check.hpp"
 
-#include "Flux/Core/GameModule.hpp"
+#include "Flux/Core/ApiVersion.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/Scene.hpp"

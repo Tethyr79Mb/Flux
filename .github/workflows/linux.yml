@@ -1,0 +1,47 @@
+# Compile la simulation (FluxSim) sous Linux avec GCC 14 et lance FluxSimTests, pour chaque PR et chaque envoi sur
+# master : la base du futur serveur de jeu doit rester portable, et rien de FluxSim ne doit dépendre du rendu ni de
+# Win32 (le moteur complet n'est pas configuré sous Linux).
+name: Linux
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      # Sans les fichiers LFS : les tests de la simulation n'en ont pas besoin.
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Outils
+        run: sudo apt-get update -q && sudo apt-get install -y -q g++-14 ninja-build
+
+      # Dépendances téléchargées par FetchContent : gardées d'une exécution à l'autre.
+      - uses: actions/cache@v4
+        with:
+          path: out/deps/linux-${{ matrix.config }}
+          key: deps-linux-${{ matrix.config }}-${{ hashFiles('cmake/FluxDependencies.cmake') }}
+
+      - name: Configurer
+        run: >
+          cmake -S . -B out/build/linux-${{ matrix.config }} -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/out/deps/linux-${{ matrix.config }}
+
+      - name: Compiler
+        run: cmake --build out/build/linux-${{ matrix.config }}
+
+      - name: Tests
+        run: ctest --test-dir out/build/linux-${{ matrix.config }} --output-on-failure

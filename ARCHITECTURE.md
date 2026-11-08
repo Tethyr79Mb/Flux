@@ -611,8 +611,9 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   compilé optimisé même en Debug.
 - `cmake/FluxSources.cmake` trouve les sources tout seul ; `FluxPrecompiled.cmake` les en-têtes précompilés ;
   `FluxResources.cmake` les shaders ; `FluxVersion.cmake` la version affichée (numéro de `project()` + commit Git).
-- Sous Linux, seule FluxSim est compilée (`FLUX_BUILD_ENGINE` à OFF) ; dossiers `Platform/Win32` et `Platform/Posix`
+- Sous Linux, seule FluxSim est compilée (`FLUX_BUILD_ENGINE` à OFF) ; dossiers `Platform/Win32` et `Platform/Linux`
   choisis par `flux_add_sources`.
-- CI : `.github/workflows/msvc.yml`, Debug + Release, FluxTests ; les tests GPU tournent sur lavapipe (GPU logiciel de
+- CI : `.github/workflows/linux.yml` (GCC 14, Debug + Release, FluxSim et FluxSimTests) ;
+  `.github/workflows/msvc.yml`, Debug + Release, FluxSimTests et FluxTests ; les tests GPU tournent sur lavapipe (GPU logiciel de
   Mesa, `FLUX_TESTS_GPU=1` : un GPU absent les fait échouer au lieu de les ignorer).
 - FreeType, msdfgen et stb_image (`cmake/stb`) sont compilés optimisés même en Debug : ils tournent au démarrage.

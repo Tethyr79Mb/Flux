@@ -22,7 +22,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   `src/Interface`). Recharge à chaud la DLL du jeu.
 - `Game/Module/` : GameModule.dll (code du jeu, `FluxRegisterGame`) et le projet `Game.fluxproject` avec ses `assets/`.
 - `Game/Client/` : « Ars Solaris.exe » (cible CMake `Game`).
-- `Tests/` : FluxTests.exe (un fichier `*Tests.cpp` par domaine, fonctions `Run…Tests` appelées depuis `main.cpp`).
+- `Tests/` : FluxSimTests.exe (`Tests/Sim`, la simulation, aussi sous Linux) et FluxTests.exe (`Tests/src`, moteur et
+  jeu) ; un fichier `*Tests.cpp` par domaine, fonctions `Run…Tests` appelées depuis le `main.cpp` de chacun.
 - Git LFS (`.gitattributes`) : modèles, textures, sons et polices de `Game/Module/assets/`. Sources lourdes (`.blend`,
   textures 4K) hors du dépôt, sur le PC ou le OneDrive de Bruno. La CI ne télécharge pas les fichiers LFS.
 - `cmake/` : sources trouvées automatiquement (`flux_add_sources`, pas de liste de fichiers à tenir), dépendances
@@ -34,7 +35,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - Après une mise à jour : Tirer puis Générer suffit. Ne jamais conseiller « Tout régénérer » ni « Supprimer le cache et
   reconfigurer » (tout recompiler, Jolt compris). Si une mise à jour casse la compilation incrémentale, chercher la
   dépendance CMake manquante.
-- La CI GitHub (`.github/workflows/msvc.yml`) compile Debug + Release avec MSVC et lance FluxTests sur chaque PR.
+- La CI GitHub compile Debug + Release sur chaque PR : avec MSVC tout le projet, FluxSimTests et FluxTests
+  (`.github/workflows/msvc.yml`) ; avec GCC 14 sous Linux FluxSim et FluxSimTests (`linux.yml`).
 - Juger les performances en Release seulement, jamais en Debug.
 
 ## Choix d'architecture (décidés, ne pas remettre en cause sans le demander)

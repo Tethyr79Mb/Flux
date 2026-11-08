@@ -77,7 +77,7 @@ if(FLUX_BUILD_ENGINE)
     add_subdirectory(Engine)
     add_subdirectory(Game)
     add_subdirectory(Editor)
-
-    enable_testing()
-    add_subdirectory(Tests)
 endif()
+
+enable_testing()
+add_subdirectory(Tests)

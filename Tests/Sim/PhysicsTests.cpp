@@ -215,7 +215,7 @@ namespace {
         // Même saut quelle que soit la cadence : à 300 images/s, l'appui tombe le plus souvent sur une image sans pas
         // de physique (il était perdu), d'où les cinq places de l'appui parmi les images d'un pas ; à 20 images/s, trois
         // pas par image (il ne doit pas compter trois fois).
-        for (const auto [frameSeconds, phase] : {std::pair{1.0 / 300.0, 0}, std::pair{1.0 / 300.0, 1}, std::pair{1.0 / 300.0, 2},
+        for (const auto& [frameSeconds, phase] : {std::pair{1.0 / 300.0, 0}, std::pair{1.0 / 300.0, 1}, std::pair{1.0 / 300.0, 2},
                                                  std::pair{1.0 / 300.0, 3}, std::pair{1.0 / 300.0, 4}, std::pair{1.0 / 20.0, 0}}) {
             for (int frame = 0; frame < 150 + phase; ++frame) {
                 world.Update(scene, frameSeconds, {});
