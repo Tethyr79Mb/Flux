@@ -6,14 +6,14 @@
 # des dossiers par compilation, négligeable à notre taille. Revers : tout .cpp posé dans ces dossiers est compilé,
 # même un brouillon oublié.
 #
-# Code propre à un système : un dossier Win32/ n'est compilé que sous Windows, un dossier Posix/ ailleurs (Linux).
+# Code propre à un système : un dossier Win32/ n'est compilé que sous Windows, un dossier Linux/ que sous Linux.
 function(flux_add_sources target)
     foreach(directory IN LISTS ARGN)
         file(GLOB_RECURSE sources CONFIGURE_DEPENDS
                 ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/*.cpp
                 ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/*.hpp)
         if(WIN32)
-            list(FILTER sources EXCLUDE REGEX "/Posix/")
+            list(FILTER sources EXCLUDE REGEX "/Linux/")
         else()
             list(FILTER sources EXCLUDE REGEX "/Win32/")
         endif()
