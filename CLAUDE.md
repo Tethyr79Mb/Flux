@@ -51,7 +51,7 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 
 ## Règles à respecter
 - Changer la disposition d'un composant ou une fonction de l'API du jeu : incrémenter `GameModuleApiVersion`
-  (`Engine/include/Flux/Core/GameModule.hpp`), une seule fois par PR.
+  (`Engine/include/Flux/Core/ApiVersion.hpp`), une seule fois par PR.
 - Relief des planètes en deux exemplaires : `Terrain::GetHeight` (C++) et `Height` dans `shaders/PlanetTile.slang`.
   Toute modification va dans les deux ; `PlanetGpuTests` vérifie qu'ils restent égaux.
 - Courbe de tons AgX en deux exemplaires : `shaders/ToneCurve.slang` et `ToneCurve.cpp` (couleur de fond des scènes
