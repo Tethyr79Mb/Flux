@@ -92,7 +92,7 @@ FetchContent_Declare(cgltf
         GIT_SHALLOW TRUE
         SYSTEM)
 
-# Physique : Jolt Physics (licence MIT). Le CMakeLists est dans Build/. Bibliothèque statique, privée au moteur.
+# Physique : Jolt Physics (licence MIT). Le CMakeLists est dans Build/. Bibliothèque statique, privée à FluxSim.
 FetchContent_Declare(JoltPhysics
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
         GIT_TAG v5.6.0
@@ -115,7 +115,7 @@ set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
 set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
-# Ses symboles de debug en Release gonfleraient FluxEngine.dll pour rien.
+# Ses symboles de debug en Release gonfleraient FluxSim.dll pour rien.
 set(GENERATE_DEBUG_SYMBOLS OFF CACHE BOOL "" FORCE)
 
 # Son : miniaudio (domaine public ou MIT-0), un seul fichier C. Son CMakeLists (exemples, décodeurs Opus/Vorbis
@@ -144,9 +144,13 @@ FetchContent_Declare(meshoptimizer
         GIT_SHALLOW TRUE
         SYSTEM)
 
-# Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
-FetchContent_MakeAvailable(VulkanHeaders)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator EnTT nlohmann_json stb cgltf miniaudio bc7enc)
+# Simulation (FluxSim) : partout. Rendu, son et interface (FluxEngine) : seulement quand on le compile (Windows).
+FetchContent_MakeAvailable(EnTT nlohmann_json stb cgltf)
+if(FLUX_BUILD_ENGINE)
+    # Vulkan-Headers d'abord : vk-bootstrap réutilise sa cible Vulkan::Headers au lieu de chercher le SDK.
+    FetchContent_MakeAvailable(VulkanHeaders)
+    FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator miniaudio bc7enc)
+endif()
 
 # Jolt optimisé même en Debug : sans optimisation, la physique (coque du vaisseau contre le sol, personnages) prend
 # plusieurs fois le temps d'une image et le Debug devient inutilisable. On ne débogue jamais l'intérieur de Jolt.
@@ -177,15 +181,28 @@ else()
     set(CMAKE_C_FLAGS_DEBUG "-O2")
     set(CMAKE_CXX_FLAGS_DEBUG "-O2")
 endif()
-FetchContent_MakeAvailable(freetype msdfgen meshoptimizer)
+FetchContent_MakeAvailable(meshoptimizer)
 add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/stb ${CMAKE_BINARY_DIR}/stb_image_impl)
-add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/bc7enc ${CMAKE_BINARY_DIR}/bc7enc_impl)
+if(FLUX_BUILD_ENGINE)
+    FetchContent_MakeAvailable(freetype msdfgen)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/bc7enc ${CMAKE_BINARY_DIR}/bc7enc_impl)
+endif()
 set(CMAKE_C_FLAGS_DEBUG "${FLUX_SAVED_C_FLAGS_DEBUG}")
 set(CMAKE_CXX_FLAGS_DEBUG "${FLUX_SAVED_CXX_FLAGS_DEBUG}")
 
 # Le header seul : l'implémentation (CGLTF_IMPLEMENTATION) est compilée dans Model.cpp.
 add_library(cgltf_header INTERFACE)
 target_include_directories(cgltf_header SYSTEM INTERFACE ${cgltf_SOURCE_DIR})
+
+# Jolt en « unity build » : ses ~150 .cpp regroupés par paquets de 16 en une dizaine de gros fichiers ; les en-têtes
+# communs ne sont lus qu'une fois par paquet. Il n'est recompilé que si le dossier de compilation est vidé.
+# Indépendant de la position : lié dans FluxSim, bibliothèque partagée (.so) sous Linux.
+set_target_properties(Jolt PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16 POSITION_INDEPENDENT_CODE ON)
+set_target_properties(meshoptimizer PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+if(NOT FLUX_BUILD_ENGINE)
+    return()
+endif()
 
 # miniaudio compilé en C dans sa propre bibliothèque (Engine/src/Audio/Miniaudio.c : implémentation, plus
 # stb_vorbis pour les .ogg), liée dans FluxEngine.dll. Les mêmes options pour l'implémentation et pour AudioSystem.cpp :
@@ -201,10 +218,6 @@ if(MSVC)
 else()
     target_compile_options(miniaudio PRIVATE -w)
 endif()
-
-# Jolt en « unity build » : ses ~150 .cpp regroupés par paquets de 16 en une dizaine de gros fichiers ; les en-têtes
-# communs ne sont lus qu'une fois par paquet. Il n'est recompilé que si le dossier de compilation est vidé.
-set_target_properties(Jolt PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16)
 
 target_link_libraries(volk PUBLIC Vulkan::Headers)
 # Bibliothèques statiques liées dans FluxEngine.dll.

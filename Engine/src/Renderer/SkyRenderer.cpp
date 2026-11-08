@@ -5,7 +5,7 @@
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Planetology/PlanetRenderer.hpp"
-#include "Renderer/Photometry.hpp"
+#include "Scene/Photometry.hpp"
 
 #include <algorithm>
 #include <cmath>

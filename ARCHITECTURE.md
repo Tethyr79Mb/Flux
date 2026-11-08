@@ -7,7 +7,11 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 
 ```
                  ┌──────────────────────────────┐
-                 │        FluxEngine.dll        │  rendu, scène, physique, son, UI, plateforme
+                 │         FluxSim.dll          │  scène, physique, planètes (CPU), modèles, journal
+                 └──────────────────────────────┘     (aussi libFluxSim.so sous Linux : futur serveur)
+                                ▲ lie
+                 ┌──────────────┴───────────────┐
+                 │        FluxEngine.dll        │  rendu, son, UI, fenêtre, entrées, Engine
                  └──────────────────────────────┘
                    ▲             ▲            ▲
                    │             │            │ lie
@@ -24,8 +28,12 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
           └──────────────────────────┘
 ```
 
-- **FluxEngine.dll** exporte seulement ce qui porte `FLUX_API`. Vulkan, Jolt, FreeType, miniaudio, stb et bc7enc restent privés :
-  aucun en-tête public ne les expose. EnTT est public (le jeu manipule la scène directement).
+- **FluxSim.dll** (`Sim/`) exporte ce qui porte `FLUX_SIM_API` : tout ce qu'un serveur sans rendu doit faire tourner.
+  Jolt, cgltf, meshoptimizer, stb et nlohmann_json y restent privés ; EnTT est public (le jeu manipule la scène
+  directement). Elle n'inclut jamais FluxEngine : la CI Linux la compile seule. Ses en-têtes internes partagés avec le
+  rendu (semis des arbres, photométrie) sont visibles de FluxEngine par `Sim/src`.
+- **FluxEngine.dll** (`Engine/`) exporte ce qui porte `FLUX_API` et lie FluxSim publiquement. Vulkan, FreeType,
+  msdfgen, miniaudio et bc7enc restent privés : aucun en-tête public ne les expose.
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
   (`Engine::AddGameSystem`, à une étape du pas de simulation : `Interaction` avant les sièges, `BeforePhysics` et
   `AfterPhysics` autour de la physique ; à chaque image, `Hud` pour l'écran ; `Reset` à
@@ -603,6 +611,8 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   compilé optimisé même en Debug.
 - `cmake/FluxSources.cmake` trouve les sources tout seul ; `FluxPrecompiled.cmake` les en-têtes précompilés ;
   `FluxResources.cmake` les shaders ; `FluxVersion.cmake` la version affichée (numéro de `project()` + commit Git).
+- Sous Linux, seule FluxSim est compilée (`FLUX_BUILD_ENGINE` à OFF) ; dossiers `Platform/Win32` et `Platform/Posix`
+  choisis par `flux_add_sources`.
 - CI : `.github/workflows/msvc.yml`, Debug + Release, FluxTests ; les tests GPU tournent sur lavapipe (GPU logiciel de
   Mesa, `FLUX_TESTS_GPU=1` : un GPU absent les fait échouer au lieu de les ignorer).
 - FreeType, msdfgen et stb_image (`cmake/stb`) sont compilés optimisés même en Debug : ils tournent au démarrage.

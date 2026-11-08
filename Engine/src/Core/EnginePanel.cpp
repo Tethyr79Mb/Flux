@@ -5,7 +5,7 @@
 #include "Flux/Platform/Memory.hpp"
 #include "Flux/UI/Context.hpp"
 #include "Core/Measurements.hpp"
-#include "Renderer/Photometry.hpp"
+#include "Scene/Photometry.hpp"
 
 #include <nlohmann/json.hpp>
 
