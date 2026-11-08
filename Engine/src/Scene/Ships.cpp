@@ -14,8 +14,10 @@ namespace Flux::Ships {
         // monde (inertie) ; ses propulseurs, limités à ShipComponent::acceleration sur chaque axe, la ramènent vers
         // celle commandée : vers l'avant la vitesse de croisière (Z/S la changent, elle reste sans commande), sur les
         // côtés et en hauteur le glissement tant que les touches sont tenues, sinon zéro (il reste à sa hauteur). En
-        // virage, il dérive donc avant de repartir vers son nez. Le frein vise l'arrêt complet. Lacet et tangage à la
-        // souris, roulis aux touches, atteints au plus vite de ShipComponent::turnAcceleration. Posé au sol, il ne
+        // virage, il dérive donc avant de repartir vers son nez. Le frein vise l'arrêt complet. Lacet et tangage au manche
+        // (ShipInput::stickYaw, le pointeur de la souris), roulis aux touches : des vitesses de rotation, que les
+        // propulseurs prennent à ShipComponent::turnAcceleration (le vaisseau entre dans le virage et en ressort avec
+        // son inertie, au lieu de suivre la souris comme une caméra). Posé au sol, il ne
         // fait que décoller : ni rotation ni déplacement à plat. Avec ShipComponent::levelAssist et une gravité
         // (ShipInput::up), le lacet tourne autour de la verticale du lieu (virer garde l'horizon à plat) et, sans
         // roulis commandé, les ailes reviennent à plat ; le tangage reste où le pilote le laisse (piquer pour se poser).
@@ -52,13 +54,13 @@ namespace Flux::Ships {
             const float thin = 1.0f - thick * thick * (3.0f - 2.0f * thick);
             const float travel = 1.0f + (std::max(ship.travelFactor, 1.0f) - 1.0f) * ship.travelLevel * thin;
 
-            // Rotation voulue : le mouvement de la souris pendant cette image et le roulis, bornés à la vitesse de
-            // rotation (le tiers en mode voyage) ; la vitesse de rotation y va progressivement.
-            const float rate = ship.turnRate * (1.0f - 0.67f * ship.travelLevel);
-            constexpr float Degrees = 180.0f / std::numbers::pi_v<float>; // vitesses de rotation en °/s, souris en radians
-            Math::Vector3f turn{std::clamp(input.mousePitch * Degrees / delta, -rate, rate),
-                                std::clamp(input.mouseYaw * Degrees / delta, -rate, rate), // vers la gauche
-                                -input.roll * rate};                                       // +z : vers la gauche
+            // Rotation voulue : manche et roulis en fraction de la vitesse de rotation de chaque axe (le tiers en mode
+            // voyage) ; la vitesse de rotation y va progressivement.
+            const Math::Vector3f rate = ship.turnRate * (1.0f - 0.67f * ship.travelLevel);
+            constexpr float Degrees = 180.0f / std::numbers::pi_v<float>; // vitesses de rotation en °/s
+            Math::Vector3f turn{std::clamp(input.stickPitch, -1.0f, 1.0f) * rate.x,
+                                std::clamp(input.stickYaw, -1.0f, 1.0f) * rate.y, // vers la gauche
+                                -std::clamp(input.roll, -1.0f, 1.0f) * rate.z};  // +z : vers la gauche
             if (ship.levelAssist && Math::Length(input.up) > 0.5f) {
                 // Haut du lieu dans les axes du vaisseau.
                 const Math::Vector3f up = rotation.Conjugate().Rotate(input.up);
@@ -71,9 +73,9 @@ namespace Flux::Ships {
                     const float bank = std::atan2(up.x, up.y);
                     turn.z -= bank * Degrees * ship.levelRate * weight * weight * (3.0f - 2.0f * weight);
                 }
-                turn.x = std::clamp(turn.x, -rate, rate);
-                turn.y = std::clamp(turn.y, -rate, rate);
-                turn.z = std::clamp(turn.z, -rate, rate);
+                turn.x = std::clamp(turn.x, -rate.x, rate.x);
+                turn.y = std::clamp(turn.y, -rate.y, rate.y);
+                turn.z = std::clamp(turn.z, -rate.z, rate.z);
             }
             // Courbure de la planète : à plat, le vaisseau tourne avec l'horizon qui défile sous lui (vitesse horizontale /
             // distance au centre). Sinon son nez, fixe dans l'espace, pique peu à peu vers le sol, d'autant plus vite
@@ -90,10 +92,10 @@ namespace Flux::Ships {
                 turn = {};
                 ship.angularVelocity = {};
             }
-            const float turnStep = ship.turnAcceleration * delta;
-            approach(ship.angularVelocity.x, turn.x, turnStep);
-            approach(ship.angularVelocity.y, turn.y, turnStep);
-            approach(ship.angularVelocity.z, turn.z, turnStep);
+            const Math::Vector3f turnStep = ship.turnAcceleration * delta;
+            approach(ship.angularVelocity.x, turn.x, turnStep.x);
+            approach(ship.angularVelocity.y, turn.y, turnStep.y);
+            approach(ship.angularVelocity.z, turn.z, turnStep.z);
             // Inertie : la physique tourne le vaisseau de cette rotation pendant l'image ; sa vitesse, dans ses axes,
             // tourne d'autant dans l'autre sens pour rester la même dans le monde. Sauf la part due à la courbure : la
             // vitesse tourne avec le vaisseau et reste parallèle au sol.

@@ -23,7 +23,8 @@ namespace Flux::Steering {
     }
 
     // Tourne vers target : vitesse de rotation dans les axes du vaisseau, proportionnelle à l'angle restant, bornée
-    // par ShipComponent::turnRate et prise au rythme de turnAcceleration. Retourne l'angle restant (°).
+    // par ShipComponent::turnRate sur chaque axe (en gardant l'axe de rotation) et prise au rythme de turnAcceleration.
+    // Retourne l'angle restant (°).
     inline float Steer(ShipComponent& ship, const Math::Quaternionf& rotation, const Math::Quaternionf& target, float delta) {
         Math::Quaternionf error = rotation.Conjugate() * target;
         if (error.w < 0.0f) {
@@ -32,12 +33,25 @@ namespace Flux::Steering {
         const Math::Vector3f axis{error.x, error.y, error.z};
         const float sine = Math::Length(axis);
         const float angle = 2.0f * std::atan2(sine, error.w) * Degrees;
-        const Math::Vector3f wanted = sine > 1.0e-6f ? axis * (std::min(ship.turnRate, angle * TurnGain) / sine) : Math::Vector3f{};
-        const float step = std::max(ship.turnAcceleration, 1.0f) * delta;
-        const auto approach = [&](float& value, float goal) { value += std::clamp(goal - value, -step, step); };
-        approach(ship.angularVelocity.x, wanted.x);
-        approach(ship.angularVelocity.y, wanted.y);
-        approach(ship.angularVelocity.z, wanted.z);
+        Math::Vector3f wanted = sine > 1.0e-6f ? axis * (angle * TurnGain / sine) : Math::Vector3f{};
+        // Ramenée sous la vitesse de chaque axe d'un seul facteur : le vaisseau tourne toujours vers target.
+        float scale = 1.0f;
+        const auto bound = [&](float value, float limit) {
+            if (std::abs(value) > limit) {
+                scale = std::min(scale, limit / std::abs(value));
+            }
+        };
+        bound(wanted.x, ship.turnRate.x);
+        bound(wanted.y, ship.turnRate.y);
+        bound(wanted.z, ship.turnRate.z);
+        wanted = wanted * scale;
+        const auto approach = [&](float& value, float goal, float acceleration) {
+            const float step = std::max(acceleration, 1.0f) * delta;
+            value += std::clamp(goal - value, -step, step);
+        };
+        approach(ship.angularVelocity.x, wanted.x, ship.turnAcceleration.x);
+        approach(ship.angularVelocity.y, wanted.y, ship.turnAcceleration.y);
+        approach(ship.angularVelocity.z, wanted.z, ship.turnAcceleration.z);
         return angle;
     }
 }

@@ -34,7 +34,7 @@ namespace {
     Entity AddFighter(Scene& scene, const char* name, Math::Vector3d position) {
         const Entity ship = scene.CreateEntity(name);
         scene.Get<TransformComponent>(ship).position = position;
-        scene.Add<ShipComponent>(ship, ShipComponent{.turnRate = 90.0f});
+        scene.Add<ShipComponent>(ship, ShipComponent{.turnRate = {90.0f, 90.0f, 90.0f}, .turnAcceleration = {360.0f, 360.0f, 360.0f}});
         const Entity hull = scene.CreateEntity("Coque", ship);
         scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f}; // dessous à 1 m sous l'origine
         scene.Add<ColliderComponent>(hull);

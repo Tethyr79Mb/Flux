@@ -448,8 +448,11 @@ namespace Flux {
         Math::Vector3f angularVelocity; // °/s autour de ses axes (y : virer, x : tangage, z : roulis)
         float maxSpeed = 100.0f;       // m/s, en marche avant (le quart en arrière)
         float acceleration = 10.0f;    // m/s², moteurs à fond
-        float turnRate = 30.0f;        // °/s, lacet, tangage et roulis commandés par le pilote
-        float turnAcceleration = 360.0f; // °/s², la vitesse de rotation commandée est atteinte progressivement
+        // Rotation commandée par le pilote, par axe (x : tangage, y : lacet, z : roulis) : vitesse au plus (°/s), et
+        // accélération (°/s²) avec laquelle les propulseurs la prennent ou l'arrêtent. Une accélération faible donne
+        // un vaisseau lourd, qui met du temps à entrer dans un virage et à en sortir.
+        Math::Vector3f turnRate{30.0f, 25.0f, 50.0f};
+        Math::Vector3f turnAcceleration{60.0f, 50.0f, 100.0f};
         float strafeSpeed = 10.0f;     // m/s, glissement sur les côtés, montée et descente (décoller, se poser)
         // Aide au pilotage là où il y a une gravité (planète, sol) : sans roulis commandé, les ailes reviennent à plat
         // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Touche H en vol.

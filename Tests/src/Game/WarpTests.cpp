@@ -23,7 +23,7 @@ namespace {
 
     Entity AddFighter(Scene& scene) {
         const Entity ship = scene.CreateEntity("Chasseur");
-        scene.Add<ShipComponent>(ship, ShipComponent{.turnRate = 90.0f, .fallsWithoutPilot = false});
+        scene.Add<ShipComponent>(ship, ShipComponent{.turnRate = {90.0f, 90.0f, 90.0f}, .turnAcceleration = {360.0f, 360.0f, 360.0f}, .fallsWithoutPilot = false});
         scene.Add<WarpDriveComponent>(ship);
         const Entity hull = scene.CreateEntity("Coque", ship);
         scene.Get<TransformComponent>(hull).scale = {4.0f, 2.0f, 6.0f};

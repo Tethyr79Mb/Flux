@@ -222,13 +222,20 @@ namespace Game {
         // du hangar du joueur, qui regarde vers -z ; la tour est derrière, vers +z. Derrière le sas de cette porte et
         // son champ bleu (qui se traverse), le hangar du joueur est une pièce de la station, sans chargement (choix de
         // Bruno du 2026-10-27) ; sa plateforme est le quai du pilote automatique (L), qui y pose le vaisseau.
+        // Chasseur : vire bien plus vite qu'un transport (30 °/s par défaut), roulis rapide, lacet plus lent que le
+        // tangage comme un avion ; chaque axe prend sa vitesse en 0,8 s.
+        void AddFighterAgility(ShipComponent& ship) {
+            ship.turnRate = {70.0f, 55.0f, 130.0f};
+            ship.turnAcceleration = ship.turnRate * 1.25f;
+        }
+
         void AddOrbitalStation(Scene& scene, Entity station) {
             // Immobile (vaisseau sans moteur, comme la maquette) : ses quais servent au pilote automatique, ses enfants
             // (le hangar, ce qu'on y gare, qui y marche) sont à bord, dans sa gravité.
             ShipComponent& ship = scene.Add<ShipComponent>(station);
             ship.maxSpeed = 0.0f;
             ship.acceleration = 0.0f;
-            ship.turnRate = 0.0f;
+            ship.turnRate = {};
             ship.strafeSpeed = 0.0f;
             ship.levelAssist = false;
             ship.fallsWithoutPilot = false;
@@ -482,15 +489,14 @@ namespace Game {
         // Même ordre qu'avant dans le panneau : à la suite du personnage et de la maquette de vaisseau de l'éditeur.
         extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Chasseur", .name = "Chasseur",
                                  .icon = UI::Icon::Ship, .distance = FighterDistance, .build = [](Scene& scene, Entity entity) {
-                                     // Vire vite, pour suivre la souris (30 °/s par défaut, celle d'un transport, paraît mou).
-                                     scene.Add<ShipComponent>(entity).turnRate = 90.0f;
+                                     AddFighterAgility(scene.Add<ShipComponent>(entity));
                                      scene.Add<HealthComponent>(entity, HealthComponent{.health = 500.0f});
                                      scene.Add<WarpDriveComponent>(entity);
                                      AddFighter(scene, entity);
                                  }});
         extensions.AddPlaceItem({.category = "Physique (en mode Jouer)", .label = "Chasseur Manta", .name = "Manta",
                                  .icon = UI::Icon::Ship, .distance = FighterDistance, .build = [](Scene& scene, Entity entity) {
-                                     scene.Add<ShipComponent>(entity).turnRate = 90.0f;
+                                     AddFighterAgility(scene.Add<ShipComponent>(entity));
                                      scene.Add<HealthComponent>(entity, HealthComponent{.health = 400.0f});
                                      scene.Add<WarpDriveComponent>(entity);
                                      AddManta(scene, entity);
@@ -502,7 +508,7 @@ namespace Game {
                                      ShipComponent& ship = scene.Add<ShipComponent>(entity);
                                      ship.maxSpeed = 0.0f;
                                      ship.acceleration = 0.0f;
-                                     ship.turnRate = 0.0f;
+                                     ship.turnRate = {};
                                      ship.strafeSpeed = 0.0f;
                                      ship.levelAssist = false;
                                      ship.fallsWithoutPilot = false;

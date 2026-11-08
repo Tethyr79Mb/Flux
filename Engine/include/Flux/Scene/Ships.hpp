@@ -16,10 +16,10 @@ namespace Flux {
         bool boost = false;    // Maj : ShipComponent::boost, vers l'avant
         bool travel = false;   // Tab (pressée cette image) : allumer ou éteindre le mode voyage
         bool brake = false;    // X : ralentir jusqu'à l'arrêt
-        // Souris : rotation demandée pendant cette image (radians ; lacet vers la gauche, tangage nez vers le haut),
-        // ajoutée aux touches ; le vaisseau la suit sans dépasser sa vitesse de rotation.
-        float mouseYaw = 0.0f;
-        float mousePitch = 0.0f;
+        // Manche (le pointeur de la souris) : -1 à 1, lacet vers la gauche, tangage nez vers le haut. Une vitesse de
+        // rotation demandée, en fraction de ShipComponent::turnRate, gardée tant que le manche reste incliné.
+        float stickYaw = 0.0f;
+        float stickPitch = 0.0f;
         // Haut du lieu où est le vaisseau piloté (dans le monde, unitaire ; opposé à la gravité du dehors), pour
         // ShipComponent::levelAssist ; nul sans gravité (pas d'aide).
         Math::Vector3f up{};

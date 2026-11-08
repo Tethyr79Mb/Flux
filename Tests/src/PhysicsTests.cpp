@@ -487,27 +487,37 @@ namespace {
         // Aux commandes : 2 s de poussée à 10 m/s² (vitesse de croisière 20 m/s, suivie à 10 m/s² près), puis le
         // vaisseau roule à droite tant que E est tenue, sa vitesse de rotation atteinte à 360 °/s².
         frames(2.0, {.thrust = 1.0f});
-        const ShipComponent& shipComponent = scene.Get<ShipComponent>(ship);
+        ShipComponent& shipComponent = scene.Get<ShipComponent>(ship);
         CHECK(std::abs(shipComponent.velocity.z + 20.0f) < 0.5f && std::abs(shipComponent.cruiseSpeed - 20.0f) < 0.5f);
+        shipComponent.turnRate = {30.0f, 30.0f, 30.0f};
+        shipComponent.turnAcceleration = {360.0f, 360.0f, 360.0f};
         frames(Frame, {.roll = 1.0f});
         CHECK(std::abs(shipComponent.angularVelocity.z + 6.0f) < 1.0e-3f); // 360 °/s² pendant 1/60 s
         frames(0.25, {.roll = 1.0f});
-        CHECK(shipComponent.angularVelocity.z == -shipComponent.turnRate && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
+        CHECK(shipComponent.angularVelocity.z == -shipComponent.turnRate.z && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
         frames(0.25, {});
         CHECK(shipComponent.angularVelocity == Math::Vector3f{});
-        // Souris : le vaisseau vise la rotation de ce qu'elle a bougé pendant l'image (nez vers le haut), sans
-        // dépasser sa vitesse de rotation ; immobile, il cesse de tourner.
-        frames(Frame, {.mousePitch = 0.1f * static_cast<float>(Frame)});
-        CHECK(std::abs(shipComponent.angularVelocity.x - 0.1f * 180.0f / std::numbers::pi_v<float>) < 1.0e-3f
-              && shipComponent.angularVelocity.y == 0.0f); // en °/s
+        // Manche à mi-course (nez vers le haut) : la moitié de la vitesse de tangage, prise à son accélération, et
+        // gardée tant que le manche reste incliné ; ramené au centre, le vaisseau cesse de tourner.
+        frames(Frame, {.stickPitch = 0.5f});
+        CHECK(std::abs(shipComponent.angularVelocity.x - 6.0f) < 1.0e-3f && shipComponent.angularVelocity.y == 0.0f);
+        frames(0.5, {.stickPitch = 0.5f});
+        CHECK(shipComponent.angularVelocity.x == 15.0f);
+        frames(0.25, {});
+        CHECK(shipComponent.angularVelocity == Math::Vector3f{});
+        // Lacet lourd (60 °/s²) : au bout d'une demi-seconde à fond, il n'a pris que 30 °/s des 90 demandés.
+        shipComponent.turnRate = {90.0f, 90.0f, 90.0f};
+        shipComponent.turnAcceleration.y = 60.0f;
+        frames(0.5, {.stickYaw = 1.0f});
+        CHECK(std::abs(shipComponent.angularVelocity.y - 30.0f) < 1.0e-3f);
         // Virage serré (90 °/s pendant 0,5 s, bien plus vite que ses propulseurs ne corrigent).
-        scene.Get<ShipComponent>(ship).turnRate = 90.0f;
-        frames(0.5, {.mouseYaw = 100.0f});
-        CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate);
+        shipComponent.turnAcceleration.y = 360.0f;
+        frames(0.5, {.stickYaw = 1.0f});
+        CHECK(shipComponent.angularVelocity.y == shipComponent.turnRate.y);
         // Inertie : il a tourné à gauche, sa vitesse va encore vers l'ancienne direction (sa droite), puis les
         // propulseurs le remettent dans l'axe à la vitesse de croisière.
         CHECK(shipComponent.velocity.x > 5.0f);
-        scene.Get<ShipComponent>(ship).turnRate = 30.0f;
+        shipComponent.turnRate = {30.0f, 30.0f, 30.0f};
         frames(3.0, {});
         CHECK(shipComponent.angularVelocity == Math::Vector3f{} && std::abs(shipComponent.velocity.x) < 1.0e-3f
               && std::abs(shipComponent.velocity.z + 20.0f) < 0.5f);
@@ -619,7 +629,7 @@ namespace {
         ShipComponent& flight = scene.Get<ShipComponent>(ship);
         flight.levelAssist = false;
         frames(0.5, {.roll = 1.0f, .up = up});
-        frames(0.2, {.up = up}); // le roulis s'arrête
+        frames(0.5, {.up = up}); // le roulis s'arrête (100 °/s² par défaut)
         const float kept = bank();
         frames(1.0, {.up = up});
         CHECK(kept < -8.0f && std::abs(bank() - kept) < 1.0f);
