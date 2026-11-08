@@ -54,6 +54,7 @@ bool RunExposureTests();
 bool RunExposureGpuTests();
 bool RunAudioTests();
 bool RunInputTests();
+bool RunSimulationClockTests();
 bool RunPlanetTests();
 bool RunComputeTests();
 bool RunTransferTests();

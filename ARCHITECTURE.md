@@ -27,8 +27,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 - **FluxEngine.dll** exporte seulement ce qui porte `FLUX_API`. Vulkan, Jolt, FreeType, miniaudio, stb et bc7enc restent privés :
   aucun en-tête public ne les expose. EnTT est public (le jeu manipule la scène directement).
 - **GameModule.dll** enregistre ses composants, ses fonctions d'interface, sa mise à jour et ses systèmes
-  (`Engine::AddGameSystem`, à une étape de l'image : `Interaction` avant les sièges, `BeforePhysics` et
-  `AfterPhysics` autour de la physique, `Hud` pour l'écran, `Reset` à
+  (`Engine::AddGameSystem`, à une étape du pas de simulation : `Interaction` avant les sièges, `BeforePhysics` et
+  `AfterPhysics` autour de la physique ; à chaque image, `Hud` pour l'écran ; `Reset` à
   chaque scène chargée ou jeu arrêté ; retirés au déchargement). Le moteur garde les briques (composants, fonctions
   comme `Projectiles::Update`), le jeu leur déroulement : missions (`Game/Module/src/Missions.cpp`, avec leur composant et
   leurs briques dans `MissionGiver.cpp`),
@@ -58,15 +58,20 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
 
 1. Fenêtre : événements Win32, entrées clavier et souris.
 2. FluxUI commence l'image (`UI::Context::BeginFrame`) ; la caméra suit le joueur ou vole librement (éditeur).
-3. Si le jeu tourne et que la scène est prête (`UpdateGameSystems`) :
+3. Si le jeu tourne et que la scène est prête : 0 à 4 pas fixes de 1/60 s (`SimulationClock`, le même que celui du
+   futur serveur), selon le temps écoulé. Les touches enfoncées depuis le dernier pas sont retenues pour lui
+   (`Input::Accumulate`) : une image sans pas n'en perd aucune, une image à deux pas ne la donne qu'au premier. Ce qui a
+   bougé au dernier pas est ensuite dessiné entre sa place d'avant et d'après (`TransformInterpolation` écrit les places
+   interpolées dans la scène pour l'image et remet l'état simulé avant le pas suivant). Chaque pas
+   (`UpdateGameSystems`) :
    - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
    - systèmes du jeu à l'étape `Interaction` (ils peuvent prendre la touche Interagir : `ConsumeInteraction`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes avec les commandes du jeu, `Engine::SetPilotInput`, complétées du manche de la souris
      (pointeur virtuel de `PlayerCamera`, `Engine::GetSteerPointer` pour l'afficher) et de ce qui
      entoure le vaisseau ; moteurs des autres coupés) ;
-   - physique (`PhysicsWorld::Update`, pas fixe de 1/60 s) : personnages, objets simulés, vaisseaux, sol des planètes ;
-   - projectiles, après la physique (les vaisseaux sont à leur place de l'image) : ils avancent et touchent
+   - physique (`PhysicsWorld::Update`, un pas) : personnages, objets simulés, vaisseaux, sol des planètes ;
+   - projectiles, après la physique (les vaisseaux sont à leur place du pas) : ils avancent et touchent
      (`Projectiles::GuideMissiles`, `Update`), les éclats d'impact sont créés ;
    - systèmes du jeu à l'étape `AfterPhysics` : dégâts des projectiles arrivés (`Engine::GetProjectileHits`,
      `Game::Weapons::ApplyHits`), puis armes du joueur et des ennemis (`Game::Weapons::Update`, `CombatAI::Fire`), qui

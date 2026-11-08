@@ -100,6 +100,12 @@ namespace Flux {
         // Les caractères de contrôle (retour arrière, entrée...) n'y sont pas : voir WasKeyTyped.
         std::string_view GetTextInput() const { return m_textInput; }
 
+        // Entrées de la simulation (pas fixes, SimulationClock) : l'état enfoncé de la dernière image, les appuis
+        // et la souris cumulés depuis le dernier pas qui les a lus. Une image sans pas ne perd ainsi aucun appui, une
+        // image à deux pas ne le compte qu'au premier (ClearEdges après lui). Le texte tapé n'y est pas.
+        void Accumulate(const Input& frame);
+        void ClearEdges();
+
         // Utilisés par la couche plateforme.
         void BeginFrame();
         void SetKey(std::uint16_t scancode, bool down);

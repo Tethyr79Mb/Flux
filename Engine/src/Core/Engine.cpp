@@ -36,6 +36,7 @@
 #include "Core/Measurements.hpp"
 #include "Core/PlayerCamera.hpp"
 #include "Core/QuickSave.hpp"
+#include "Core/TransformInterpolation.hpp"
 #include "Interface/InterfaceLibrary.hpp"
 
 #include <algorithm>
@@ -81,7 +82,9 @@ namespace Flux {
           m_notice(std::make_unique<Notice>()),
           m_loadingScreen(std::make_unique<LoadingScreen>(config.loadingScreen)),
           m_quickSave(std::make_unique<QuickSave>()),
-          m_frameStats(std::make_unique<FrameStats>()) {
+          m_frameStats(std::make_unique<FrameStats>()),
+          m_stepInput(std::make_unique<Input>()),
+          m_interpolation(std::make_unique<TransformInterpolation>()) {
         RegisterEngineComponents(m_components);
         Log::Info("Flux {}", GetFullVersion());
         if (!m_window->Create(config.title, config.windowSize, config.maximized, config.fullscreen)) {
@@ -203,12 +206,16 @@ namespace Flux {
 
     bool Engine::IsActionDown(std::string_view name) const {
         return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard()
-            && m_inputActions->IsDown(m_window->GetInput(), name);
+            && m_inputActions->IsDown(GetCurrentInput(), name);
     }
 
     bool Engine::WasActionPressed(std::string_view name) const {
         return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard()
-            && m_inputActions->WasPressed(m_window->GetInput(), name);
+            && m_inputActions->WasPressed(GetCurrentInput(), name);
+    }
+
+    const Input& Engine::GetCurrentInput() const {
+        return m_inStep ? *m_stepInput : m_window->GetInput();
     }
 
     void Engine::StartKeyRebinding(std::string action) {
@@ -369,16 +376,40 @@ namespace Flux {
                     m_window->SetCursorLocked(false); // personnage retiré pendant un clic droit
                 }
             }
+            // Pas fixes de simulation (SimulationClock) : 0 à 4 dans cette image selon le temps écoulé. Les touches
+            // retenues depuis le dernier pas y servent une seule fois ; ce qui a bougé est ensuite dessiné entre les
+            // deux derniers pas.
+            m_stepInput->Accumulate(m_window->GetInput());
             if (m_gameState != GameState::Stopped && !m_loadingScreen->IsActive()) {
                 // Pause : celle de l'éditeur (F6), ou un menu ouvert qui la demande.
-                const double gameDelta = m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0;
+                const bool running = m_gameState == GameState::Running && !m_interfacePaused;
                 const FrameClock::time_point gameStart = FrameClock::now();
-                UpdateGameSystems(gameDelta);
-                if (m_gameUpdate) {
-                    m_gameUpdate(*this, gameDelta);
+                m_interpolation->Restore(m_scene);
+                const int steps = m_clock.Advance(running ? deltaSeconds : 0.0);
+                for (int step = 0; step < steps; ++step) {
+                    if (step == steps - 1) {
+                        m_interpolation->BeginStep(m_scene);
+                    }
+                    m_inStep = true;
+                    UpdateGameSystems(SimulationClock::StepSeconds);
+                    if (m_gameUpdate) {
+                        m_gameUpdate(*this, SimulationClock::StepSeconds);
+                    }
+                    m_inStep = false;
+                    m_stepInput->ClearEdges();
+                }
+                if (steps > 0) {
+                    m_interpolation->EndStep(m_scene);
+                }
+                m_interpolation->Apply(m_scene, m_clock.GetAlpha());
+                stats.AddSteps(steps);
+                if (!running) {
+                    m_stepInput->ClearEdges(); // une touche de la pause ne part pas à la reprise
                 }
                 gameMilliseconds = Milliseconds(FrameClock::now() - gameStart);
                 stats.Add(GameCost, gameMilliseconds);
+            } else {
+                m_stepInput->ClearEdges();
             }
             // Après la physique et le jeu : la caméra voit le personnage là où il est dessiné.
             if (const Entity player = GetFollowedPlayer(); player != NullEntity) {
@@ -464,7 +495,7 @@ namespace Flux {
             return; // en pause : ni minuterie ni clic
         }
         // Clic ou touche de confirmation, sauf s'ils visent l'interface (panneaux de l'éditeur, champ en saisie).
-        const Input& input = m_window->GetInput();
+        const Input& input = GetCurrentInput();
         const bool confirmed = (input.WasMouseButtonPressed(MouseButton::Left) && !m_ui->WantsMouse() && !m_interfaceWantsMouse)
                             || ((input.WasKeyPressed(Key::Enter) || input.WasKeyPressed(Key::NumpadEnter)
                                  || input.WasKeyPressed(Key::Space))
@@ -592,6 +623,8 @@ namespace Flux {
 
     void Engine::SceneLoaded() {
         m_physics.reset(); // les corps de l'ancienne scène
+        m_interpolation->Clear(); // entités de l'ancienne scène
+        m_clock.Reset();
         m_projectiles.clear();
         m_impacts.clear();
         ResetGameState();
@@ -605,10 +638,12 @@ namespace Flux {
         const bool starting = m_gameState == GameState::Stopped && state != GameState::Stopped;
         m_gameState = state;
         if (starting) {
+            m_clock.Reset();
             StartPhysics(); // lancement du jeu (éditeur) : la scène est prête
             m_loadingScreen->Begin();
         }
         if (state == GameState::Stopped) {
+            m_interpolation->Clear();
             m_physics.reset();
             m_projectiles.clear();
             m_impacts.clear();
