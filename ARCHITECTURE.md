@@ -35,6 +35,14 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   Le monde simulé y est une classe, `Simulation` (`Flux/Core/Simulation.hpp`) : scène, composants, physique,
   projectiles, pas fixe et systèmes du pas. `Engine` en possède une (`Engine::GetSimulation`) et la fait avancer ; le
   serveur en fait tourner une sans affichage.
+- **FluxNet.dll** (`Net/`, aussi libFluxNet.so) : le réseau du client et du serveur, au-dessus de FluxSim, jamais du
+  rendu. Interface courte (`Flux/Net/Server.hpp`, `Client.hpp`, `NetTypes.hpp`, `FLUX_NET_API`, détail en pimpl) ;
+  GameNetworkingSockets (UDP chiffré, fiable ou non), protobuf et abseil y sont liés en statique, privés (chiffrement :
+  BCrypt sous Windows, OpenSSL du système sous Linux). Une connexion n'existe pour le jeu qu'après une poignée de main
+  où le client donne la version de FluxNet (`Net::ProtocolVersion`) et celle du protocole du jeu : le serveur refuse
+  toute différence (`DisconnectReason::VersionMismatch`). Le premier octet de chaque message est son type : 0 est à
+  FluxNet, 1 à 255 au jeu, sans octet ajouté. `Poll` rend les événements une fois par pas ; les messages reçus restent
+  valables jusqu'au `Poll` suivant (lus sans copie).
 - **FluxEngine.dll** (`Engine/`) exporte ce qui porte `FLUX_API` et lie FluxSim publiquement. Vulkan, FreeType,
   msdfgen, miniaudio et bc7enc restent privés : aucun en-tête public ne les expose.
 - **Le code du jeu** est en deux bibliothèques statiques. `GameSim` (`Game/Sim/src`, FluxSim seule, compilée aussi

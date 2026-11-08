@@ -1,5 +1,5 @@
-# Compile la simulation (FluxSim, GameSim) et le serveur ArsSolarisServer sous Linux avec GCC 14, puis lance
-# FluxSimTests et 600 pas du serveur, pour chaque PR et chaque envoi sur master : le serveur de jeu doit rester
+# Compile la simulation (FluxSim, GameSim), le réseau (FluxNet) et le serveur ArsSolarisServer sous Linux avec GCC 14,
+# puis lance FluxSimTests et 600 pas du serveur, pour chaque PR et chaque envoi sur master : le serveur de jeu doit rester
 # portable, et rien de FluxSim ne doit dépendre du rendu ni de Win32 (le moteur complet n'est pas configuré sous Linux).
 name: Linux
 
@@ -26,7 +26,7 @@ jobs:
           lfs: false
 
       - name: Outils
-        run: sudo apt-get update -q && sudo apt-get install -y -q g++-14 ninja-build
+        run: sudo apt-get update -q && sudo apt-get install -y -q g++-14 ninja-build libssl-dev # OpenSSL : chiffrement du réseau (FluxNet)
 
       # Dépendances téléchargées par FetchContent : gardées d'une exécution à l'autre.
       - uses: actions/cache@v4
@@ -34,14 +34,24 @@ jobs:
           path: out/deps/linux-${{ matrix.config }}
           key: deps-linux-${{ matrix.config }}-${{ hashFiles('cmake/FluxDependencies.cmake') }}
 
+      # Cache de compilation (sccache, dans le cache de GitHub Actions), comme pour MSVC : protobuf et abseil (réseau)
+      # ne sont compilés qu'une fois.
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Configurer
         run: >
           cmake -S . -B out/build/linux-${{ matrix.config }} -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.config }}
           -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/out/deps/linux-${{ matrix.config }}
+          -DFLUX_COMPILER_CACHE=sccache
 
       - name: Compiler
+        env:
+          SCCACHE_GHA_ENABLED: "true"
         run: cmake --build out/build/linux-${{ matrix.config }}
+
+      - name: Cache de compilation
+        run: sccache --show-stats
 
       - name: Tests
         run: ctest --test-dir out/build/linux-${{ matrix.config }} --output-on-failure

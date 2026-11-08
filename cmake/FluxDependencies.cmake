@@ -144,6 +144,33 @@ FetchContent_Declare(meshoptimizer
         GIT_SHALLOW TRUE
         SYSTEM)
 
+# Réseau (FluxNet) : GameNetworkingSockets de Valve (BSD-3), transport UDP fiable ou non, chiffré, en messages.
+# Lié en statique dans FluxNet, privé : ses types n'apparaissent dans aucun en-tête public. Il a besoin de protobuf
+# (ses messages internes ; ceux du jeu n'en utilisent pas), qui a besoin d'abseil : versions figées, celle d'abseil
+# étant celle que demande protobuf (cmake/dependencies.cmake de protobuf). Compilés une fois, gardés dans out/deps.
+FetchContent_Declare(absl
+        GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+        GIT_TAG 20250512.1
+        GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL # seulement ce dont FluxNet a besoin (ni générateurs upb ni outils)
+        SYSTEM)
+# OVERRIDE_FIND_PACKAGE : le find_package(Protobuf) de GameNetworkingSockets trouve ce protobuf-ci, pas celui du
+# système (protobuf_generate_cpp, qu'il attend aussi, est défini plus bas).
+FetchContent_Declare(protobuf
+        GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+        GIT_TAG v34.1
+        GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL
+        SYSTEM
+        OVERRIDE_FIND_PACKAGE)
+FetchContent_Declare(GameNetworkingSockets
+        GIT_REPOSITORY https://github.com/ValveSoftware/GameNetworkingSockets.git
+        GIT_TAG v1.6.1
+        GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL
+        GIT_SUBMODULES "" # WebRTC, abseil et vjson : seulement pour le pair à pair (ICE), coupé plus bas
+        SYSTEM)
+
 # Simulation (FluxSim) : partout. Rendu, son et interface (FluxEngine) : seulement quand on le compile (Windows).
 FetchContent_MakeAvailable(EnTT nlohmann_json stb cgltf)
 if(FLUX_BUILD_ENGINE)
@@ -199,6 +226,61 @@ target_include_directories(cgltf_header SYSTEM INTERFACE ${cgltf_SOURCE_DIR})
 # Indépendant de la position : lié dans FluxSim, bibliothèque partagée (.so) sous Linux.
 set_target_properties(Jolt PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16 POSITION_INDEPENDENT_CODE ON)
 set_target_properties(meshoptimizer PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Réseau. Tout en statique, indépendant de la position (lié dans libFluxNet.so sous Linux), sans tests, exemples
+# ni installation. Leurs options, en cache comme ailleurs dans ce fichier ; les variables CMAKE_* ne valent que dans
+# ce bloc.
+block()
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_TESTING OFF)
+    # Pas de règles d'installation : celles de GameNetworkingSockets exportent ses cibles, qui dépendent de protobuf
+    # non installé, et CMake refuserait de générer le projet. Flux n'installe rien.
+    set(CMAKE_SKIP_INSTALL_RULES ON)
+
+    set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+    set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+
+    set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+    set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
+    set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE) # runtime C++ en DLL (/MD), comme le reste du projet
+    set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+    set(protobuf_LOCAL_DEPENDENCIES_ONLY ON CACHE BOOL "" FORCE) # abseil vient d'ici, jamais d'un second téléchargement
+
+    # Chiffrement : BCrypt de Windows, OpenSSL du système sous Linux (paquet libssl-dev) ; rien à compiler.
+    # Courbes 25519 (échange de clés à la connexion seulement) : implémentation de référence, partout.
+    if(WIN32)
+        set(USE_CRYPTO BCrypt CACHE STRING "" FORCE)
+    else()
+        set(USE_CRYPTO OpenSSL CACHE STRING "" FORCE)
+    endif()
+    set(USE_CRYPTO25519 Reference CACHE STRING "" FORCE)
+    set(BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(ENABLE_ICE OFF CACHE BOOL "" FORCE) # connexions pair à pair à travers les NAT : nos serveurs sont dédiés
+    set(Protobuf_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(absl protobuf)
+    # protoc ne sert qu'à la compilation : pas à côté du jeu.
+    set_target_properties(protoc PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools)
+    include(${protobuf_SOURCE_DIR}/cmake/protobuf-generate.cmake)
+    # Ce que FindProtobuf de CMake et le protobuf installé fournissent, et que notre protobuf compilé ici n'a pas.
+    function(protobuf_generate_cpp sources headers)
+        protobuf_generate(LANGUAGE cpp APPEND_PATH OUT_VAR files PROTOS ${ARGN})
+        list(FILTER files INCLUDE REGEX "\\.cc$")
+        set(${sources} ${files} PARENT_SCOPE)
+        list(TRANSFORM files REPLACE "\\.cc$" ".h")
+        set(${headers} ${files} PARENT_SCOPE)
+    endfunction()
+    FetchContent_MakeAvailable(GameNetworkingSockets)
+endblock()
 
 if(NOT FLUX_BUILD_ENGINE)
     return()

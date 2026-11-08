@@ -1,7 +1,7 @@
 # Tests de la simulation (FluxSim) : Windows et Linux (CI .github/workflows/linux.yml).
 add_executable(FluxSimTests)
 flux_add_sources(FluxSimTests Sim)
-target_link_libraries(FluxSimTests PRIVATE Flux::Sim GameSim meshoptimizer) # GameSim : le jeu simulé ; meshoptimizer : modèles compressés
+target_link_libraries(FluxSimTests PRIVATE Flux::Sim Flux::Net GameSim meshoptimizer) # GameSim : le jeu simulé ; meshoptimizer : modèles compressés
 # En-têtes internes de FluxSim (semis des arbres, bibliothèque de végétation).
 target_include_directories(FluxSimTests PRIVATE ${PROJECT_SOURCE_DIR}/Sim/src)
 # Les biomes livrés avec le jeu sont lus là où ils sont rangés (VegetationTests.cpp).
