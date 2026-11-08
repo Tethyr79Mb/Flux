@@ -2,6 +2,7 @@
 
 #include "Flux/Export.hpp"
 #include "Flux/Platform/Input.hpp"
+#include "Flux/Scene/PlayerCommand.hpp"
 
 #include <array>
 #include <expected>
@@ -24,14 +25,17 @@ namespace Flux {
         std::string category; // « Déplacement », « Vaisseau » : pour ranger l'écran des touches
         InputActionKeys keys{};
         InputActionKeys defaults{};
+        InputActionId id = NoInputAction; // son bit dans PlayerCommand
     };
 
     class FLUX_API InputActions {
         public:
-        // Déclare une action, ou change ses touches par défaut si elle existe (les touches du joueur restent).
-        void Add(std::string name, std::string category, Key primary, Key secondary = Key::Unknown);
+        // Déclare une action, ou change ses touches par défaut si elle existe (les touches du joueur restent). Rend son
+        // identifiant, le même à chaque déclaration du même nom (NoInputAction au-delà de MaxInputActions noms).
+        InputActionId Add(std::string name, std::string category, Key primary, Key secondary = Key::Unknown);
         void Remove(std::string_view name);
         const InputAction* Find(std::string_view name) const;
+        InputActionId GetId(std::string_view name) const;
         const std::vector<InputAction>& GetActions() const { return m_actions; }
 
         // Une des touches de l'action est enfoncée, ou vient de l'être (false pour une action inconnue).
@@ -39,6 +43,8 @@ namespace Flux {
         bool WasPressed(const Input& input, std::string_view name) const;
         // +1 si positive est tenue, -1 si negative l'est, 0 pour les deux ou aucune.
         float GetAxis(const Input& input, std::string_view positive, std::string_view negative) const;
+        // Bits des actions tenues et enfoncées (PlayerCommand::held, pressed), pour toutes les actions déclarées.
+        void ReadKeys(const Input& input, PlayerCommand& command) const;
 
         // Touche choisie par le joueur (slot 0 : principale, 1 : secondaire ; Key::Unknown l'efface).
         bool SetKey(std::string_view name, std::size_t slot, Key key);
@@ -58,6 +64,7 @@ namespace Flux {
 
         std::vector<InputAction> m_actions; // dans l'ordre de déclaration
         std::map<std::string, InputActionKeys, std::less<>> m_chosen; // touches du joueur, par nom d'action
+        std::map<std::string, InputActionId, std::less<>> m_ids;      // jamais retirés : un nom garde son bit
         std::function<std::string(Key)> m_namer;
     };
 }

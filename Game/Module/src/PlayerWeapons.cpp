@@ -33,57 +33,80 @@ namespace Game {
         // Les tourelles visent le point regardé, à cette distance devant la caméra (m) : leurs tirs s'y croisent.
         constexpr float AimDistance = 700.0f;
 
-        Entity g_lockTarget = NullEntity; // cible verrouillée par les armes du vaisseau piloté
-        std::uint16_t g_activeGroups = 0;  // groupes en tir automatique (bit 0 : touche 1)
-        std::string g_info;                // lignes ajoutées aux infos de vol, gardée d'une image à l'autre
+        // Armes d'un joueur, sur son personnage : chacun a son verrou et ses groupes actifs. Le temps du jeu
+        // seulement (ni inspecteur ni sauvegarde) : un chargement repart sans verrou.
+        struct PilotWeaponsComponent
+        {
+            Entity lockTarget = NullEntity; // cible verrouillée par les armes du vaisseau piloté
+            std::uint16_t activeGroups = 0; // groupes en tir automatique (bit 0 : touche 1)
+        };
 
-        void Fire(Engine& engine, double deltaSeconds) {
+        std::array<InputActionId, 10> g_groupActions; // bits des groupes dans PlayerCommand
+        std::string g_info; // lignes ajoutées aux infos de vol, gardée d'une image à l'autre
+
+        // Les armes du vaisseau que pilote player, d'après sa commande.
+        void FireFor(Engine& engine, Entity player, double deltaSeconds) {
             Scene& scene = engine.GetScene();
-            const Camera& camera = engine.GetCamera();
-            const Entity player = engine.GetPlayer();
             const auto* character = player != NullEntity ? scene.TryGet<CharacterComponent>(player) : nullptr;
             const Entity ship = player != NullEntity ? Ships::GetPilotedShip(scene, player) : NullEntity;
-            WeaponInput input;
             if (!character || character->seat == NullEntity || ship == NullEntity) {
-                g_lockTarget = NullEntity; // lâche le verrou en quittant les commandes
-                g_activeGroups = 0;
-            } else {
-                // Tir automatique (choix de Bruno) : un appui active le groupe, un nouvel appui l'arrête. Ses canons
-                // tirent seuls dès que la cible verrouillée est à leur portée ; ses lance-missiles en lancent un, puis
-                // le groupe s'arrête (un appui, un missile).
-                std::uint16_t pressed = 0;
-                for (std::size_t group = 0; group < GroupActions.size(); ++group) {
-                    pressed |= engine.WasActionPressed(GroupActions[group]) ? static_cast<std::uint16_t>(1u << group) : 0;
+                if (player != NullEntity) {
+                    scene.GetRegistry().remove<PilotWeaponsComponent>(player); // lâche le verrou en quittant les commandes
                 }
-                g_activeGroups ^= pressed;
-                input.aim = true;
-                input.aimPoint = camera.position;
-                input.aimPoint += Math::Vector3d(camera.GetForward() * AimDistance);
-                // Verrouillage à l'appui sur une touche de tir (choix de Bruno) : la cible au centre de la vue. Rien
-                // dans le viseur : le verrou d'avant reste. Il tient ensuite hors du viseur, tant que la cible est à
-                // portée.
-                if (pressed != 0) {
-                    if (const Entity target = Weapons::FindLockTarget(scene, ship, camera.position, camera.GetForward());
-                        target != NullEntity) {
-                        g_lockTarget = target;
-                    }
-                }
-                if (!Weapons::KeepsLock(scene, ship, g_lockTarget, camera.position)) {
-                    g_lockTarget = NullEntity;
-                    g_activeGroups = 0; // cible perdue ou détruite : tout s'arrête
-                }
-                input.target = g_lockTarget;
-                input.active = g_activeGroups;
+                return;
             }
-            g_activeGroups &= static_cast<std::uint16_t>(~Weapons::Update(scene, ship, deltaSeconds, input, engine.GetProjectiles()));
+            const PlayerCommand& command = engine.GetPlayerCommand(player);
+            PilotWeaponsComponent& state = scene.GetRegistry().get_or_emplace<PilotWeaponsComponent>(player);
+            WeaponInput input;
+            // Tir automatique (choix de Bruno) : un appui active le groupe, un nouvel appui l'arrête. Ses canons
+            // tirent seuls dès que la cible verrouillée est à leur portée ; ses lance-missiles en lancent un, puis
+            // le groupe s'arrête (un appui, un missile).
+            std::uint16_t pressed = 0;
+            for (std::size_t group = 0; group < g_groupActions.size(); ++group) {
+                pressed |= command.WasPressed(g_groupActions[group]) ? static_cast<std::uint16_t>(1u << group) : 0;
+            }
+            state.activeGroups ^= pressed;
+            input.aim = true;
+            input.aimPoint = command.viewPosition;
+            input.aimPoint += Math::Vector3d(command.viewForward * AimDistance);
+            // Verrouillage à l'appui sur une touche de tir (choix de Bruno) : la cible au centre de la vue. Rien
+            // dans le viseur : le verrou d'avant reste. Il tient ensuite hors du viseur, tant que la cible est à
+            // portée.
+            if (pressed != 0) {
+                if (const Entity target = Weapons::FindLockTarget(scene, ship, command.viewPosition, command.viewForward);
+                    target != NullEntity) {
+                    state.lockTarget = target;
+                }
+            }
+            if (!Weapons::KeepsLock(scene, ship, state.lockTarget, command.viewPosition)) {
+                state.lockTarget = NullEntity;
+                state.activeGroups = 0; // cible perdue ou détruite : tout s'arrête
+            }
+            input.target = state.lockTarget;
+            input.active = state.activeGroups;
+            state.activeGroups &= static_cast<std::uint16_t>(~Weapons::Update(scene, ship, deltaSeconds, input, engine.GetProjectiles()));
+        }
 
-            // Infos de vol : groupes actifs et missiles restants (moins de 30 caractères : pas d'allocation après la
-            // première image).
+        const PilotWeaponsComponent* FindState(const Scene& scene, Entity player) {
+            return player != NullEntity && scene.IsValid(player) ? scene.GetRegistry().try_get<PilotWeaponsComponent>(player) : nullptr;
+        }
+
+        void Fire(Engine& engine, double deltaSeconds) {
+            // Un seul joueur pour l'instant ; le serveur bouclera sur les siens.
+            const Entity player = engine.GetPlayer();
+            FireFor(engine, player, deltaSeconds);
+
+            // Infos de vol du joueur de cet écran : groupes actifs et missiles restants (moins de 30 caractères : pas
+            // d'allocation après la première image).
+            const Scene& scene = engine.GetScene();
+            const PilotWeaponsComponent* state = FindState(scene, player);
+            const std::uint16_t activeGroups = state ? state->activeGroups : 0;
+            const Entity ship = player != NullEntity ? Ships::GetPilotedShip(scene, player) : NullEntity;
             g_info.clear();
-            if (g_activeGroups != 0) {
+            if (activeGroups != 0) {
                 g_info += "Tir auto ";
                 for (int group = 0; group < 10; ++group) {
-                    if (g_activeGroups & (1u << group)) {
+                    if (activeGroups & (1u << group)) {
                         std::format_to(std::back_inserter(g_info), " {}", (group + 1) % 10); // groupe 10 : touche 0
                     }
                 }
@@ -101,13 +124,15 @@ namespace Game {
         // Cible verrouillée : quatre coins autour d'elle et sa distance.
         void DrawLock(Engine& engine, double) {
             const Scene& scene = engine.GetScene();
-            if (g_lockTarget == NullEntity || !scene.IsValid(g_lockTarget)) {
+            const PilotWeaponsComponent* state = FindState(scene, engine.GetPlayer());
+            const Entity lockTarget = state ? state->lockTarget : NullEntity;
+            if (lockTarget == NullEntity || !scene.IsValid(lockTarget)) {
                 return;
             }
             const Camera& camera = engine.GetCamera();
             const Math::Vector2i size = engine.GetWindow().GetSize();
             const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
-            const Math::Vector3d offset = Math::Delta(camera.position, scene.GetWorldPosition(g_lockTarget));
+            const Math::Vector3d offset = Math::Delta(camera.position, scene.GetWorldPosition(lockTarget));
             const auto point = ScreenProjection(camera, {}, screen).ToScreen(offset);
             if (!point) {
                 return;
@@ -129,9 +154,8 @@ namespace Game {
             list.AddText({point->x - labelExtent.x * 0.5f, point->y + Half + 4.0f}, label, LabelSize, LockColor);
         }
 
-        void Reset(Engine&, double) {
-            g_lockTarget = NullEntity;
-            g_activeGroups = 0;
+        void Reset(Engine& engine, double) {
+            engine.GetScene().GetRegistry().clear<PilotWeaponsComponent>();
             g_info.clear();
         }
 
@@ -143,7 +167,7 @@ namespace Game {
     void RegisterPlayerWeapons(Engine& engine) {
         InputActions& actions = engine.GetInputActions();
         for (std::size_t group = 0; group < GroupActions.size(); ++group) {
-            actions.Add(std::string(GroupActions[group]), "Vaisseau", GroupKeys[group]);
+            g_groupActions[group] = actions.Add(std::string(GroupActions[group]), "Vaisseau", GroupKeys[group]);
         }
         engine.AddGameSystem(Engine::GameStage::AfterPhysics, FireSystem, Fire);
         engine.AddGameSystem(Engine::GameStage::Hud, HudSystem, DrawLock);

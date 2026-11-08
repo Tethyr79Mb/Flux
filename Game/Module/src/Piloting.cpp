@@ -5,7 +5,6 @@
 #include <Flux/Input/InputActions.hpp>
 #include <Flux/Scene/Components.hpp>
 #include <Flux/Scene/Scene.hpp>
-#include <Flux/Scene/Ships.hpp>
 
 #include <array>
 #include <string_view>
@@ -16,19 +15,7 @@ namespace Game {
 
         constexpr const char* PilotSystem = "Pilotage : commandes";
 
-        struct ShipAction
-        {
-            std::string_view name;
-            Key key;
-        };
-        // Comme Star Citizen : Espace monte, Ctrl descend, X freine ; Maj boost et Tab mode voyage, comme X4. Avancer,
-        // reculer et glisser sont les touches de déplacement du moteur (celles du personnage).
-        constexpr std::array ShipActions{
-            ShipAction{"Freiner", Key::X},          ShipAction{"Boost", Key::LeftShift},
-            ShipAction{"Mode voyage", Key::Tab},    ShipAction{"Monter", Key::Space},
-            ShipAction{"Descendre", Key::LeftControl}, ShipAction{"Rouler à gauche", Key::Q},
-            ShipAction{"Rouler à droite", Key::E},  ShipAction{"Stabiliser à plat", Key::H},
-        };
+        PilotActions g_actions; // identifiants, les mêmes pour tous les joueurs
 
         // Étape Interaction (avant les sièges, comme au temps du moteur) : assis aux commandes, les touches pilotent.
         void Pilot(Engine& engine, double) {
@@ -38,19 +25,9 @@ namespace Game {
             if (!character || character->seat == NullEntity) {
                 return;
             }
-            const auto axis = [&](std::string_view positive, std::string_view negative) {
-                return (engine.IsActionDown(positive) ? 1.0f : 0.0f) - (engine.IsActionDown(negative) ? 1.0f : 0.0f);
-            };
-            ShipInput input;
-            input.thrust = axis("Avancer", "Reculer");
-            input.strafe = axis("Aller à droite", "Aller à gauche");
-            input.lift = axis("Monter", "Descendre");
-            input.roll = axis("Rouler à droite", "Rouler à gauche");
-            input.brake = engine.IsActionDown("Freiner");
-            input.boost = engine.IsActionDown("Boost");
-            input.travel = engine.WasActionPressed("Mode voyage");
-            engine.SetPilotInput(input);
-            if (engine.WasActionPressed("Stabiliser à plat")) {
+            const PlayerCommand& command = engine.GetPlayerCommand(player);
+            engine.SetPilotInput(ReadShipInput(command, g_actions));
+            if (command.WasPressed(g_actions.level)) {
                 if (const Entity ship = Ships::GetPilotedShip(scene, player); ship != NullEntity) {
                     ShipComponent& component = scene.Get<ShipComponent>(ship);
                     component.levelAssist = !component.levelAssist;
@@ -60,17 +37,50 @@ namespace Game {
         }
     }
 
-    void RegisterPiloting(Engine& engine) {
-        for (const ShipAction& action : ShipActions) {
-            engine.GetInputActions().Add(std::string(action.name), "Vaisseau", action.key);
+    PilotActions DeclarePilotActions(InputActions& actions) {
+        // Comme Star Citizen : Espace monte, Ctrl descend, X freine ; Maj boost et Tab mode voyage, comme X4.
+        PilotActions ids;
+        ids.forward = actions.GetId("Avancer");
+        ids.back = actions.GetId("Reculer");
+        ids.left = actions.GetId("Aller à gauche");
+        ids.right = actions.GetId("Aller à droite");
+        ids.brake = actions.Add("Freiner", "Vaisseau", Key::X);
+        ids.boost = actions.Add("Boost", "Vaisseau", Key::LeftShift);
+        ids.travel = actions.Add("Mode voyage", "Vaisseau", Key::Tab);
+        ids.up = actions.Add("Monter", "Vaisseau", Key::Space);
+        ids.down = actions.Add("Descendre", "Vaisseau", Key::LeftControl);
+        ids.rollLeft = actions.Add("Rouler à gauche", "Vaisseau", Key::Q);
+        ids.rollRight = actions.Add("Rouler à droite", "Vaisseau", Key::E);
+        ids.level = actions.Add("Stabiliser à plat", "Vaisseau", Key::H);
+        return ids;
+    }
+
+    void RemovePilotActions(InputActions& actions) {
+        for (const std::string_view name : {"Freiner", "Boost", "Mode voyage", "Monter", "Descendre", "Rouler à gauche",
+                                            "Rouler à droite", "Stabiliser à plat"}) {
+            actions.Remove(name);
         }
+    }
+
+    ShipInput ReadShipInput(const PlayerCommand& command, const PilotActions& actions) {
+        ShipInput input;
+        input.thrust = command.GetAxis(actions.forward, actions.back);
+        input.strafe = command.GetAxis(actions.right, actions.left);
+        input.lift = command.GetAxis(actions.up, actions.down);
+        input.roll = command.GetAxis(actions.rollRight, actions.rollLeft);
+        input.brake = command.IsDown(actions.brake);
+        input.boost = command.IsDown(actions.boost);
+        input.travel = command.WasPressed(actions.travel);
+        return input;
+    }
+
+    void RegisterPiloting(Engine& engine) {
+        g_actions = DeclarePilotActions(engine.GetInputActions());
         engine.AddGameSystem(Engine::GameStage::Interaction, PilotSystem, Pilot);
     }
 
     void UnregisterPiloting(Engine& engine) {
-        for (const ShipAction& action : ShipActions) {
-            engine.GetInputActions().Remove(action.name);
-        }
+        RemovePilotActions(engine.GetInputActions());
         engine.RemoveGameSystem(PilotSystem);
     }
 }

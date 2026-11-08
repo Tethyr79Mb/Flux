@@ -160,7 +160,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 Pensé dès le départ pour un MMO : serveur qui fait autorité, un programme `ZoneServer` par zone (espace, sol, instance),
 transfert d'autorité entre zones, shards, GameNetworkingSockets, PostgreSQL plus tard, serveur portable Linux.
 - 🔨 1. Pas fixe de 60 Hz pour tout le jeu (`SimulationClock`), touches retenues jusqu'au pas, rendu interpolé entre les deux derniers pas. Limites : projectiles et animations non interpolés (à 60 pas par seconde).
-- ⬜ 2. Commandes de joueur (`PlayerCommand`) au lieu du clavier dans les systèmes du jeu.
+- 🔧 2. Commandes de joueur (`PlayerCommand` : marche, manche, vue, un bit par action) remplies une fois par pas, seule lecture du clavier pendant un pas ; verrou et groupes d'armes rangés par joueur. Limites : un seul joueur a une commande, l'écran de changement de scène lit encore le clavier, l'état de la navigation et des missions reste global.
 - ⬜ 3. `FluxSim` (simulation, sans Vulkan ni Win32) séparé de `FluxEngine`, compilé sous Linux par la CI.
 - ⬜ 4. `ArsSolarisServer.exe` sans rendu (`Game/Server/`).
 - ⬜ 5. Transport, session, vérification de version.

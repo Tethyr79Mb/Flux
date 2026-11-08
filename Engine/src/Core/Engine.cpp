@@ -33,6 +33,7 @@
 #include "Core/Notice.hpp"
 #include "Core/InterfaceBindings.hpp"
 #include "Core/LoadingScreen.hpp"
+#include "Core/LocalPlayerCommand.hpp"
 #include "Core/Measurements.hpp"
 #include "Core/PlayerCamera.hpp"
 #include "Core/QuickSave.hpp"
@@ -40,6 +41,7 @@
 #include "Interface/InterfaceLibrary.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -175,20 +177,20 @@ namespace Flux {
         // Actions du moteur (personnage, vaisseau), puis les touches choisies par le joueur. ZQSD en AZERTY : les
         // touches sont des positions sur le clavier (Key::W est la touche Z en AZERTY).
         InputActions& actions = *m_inputActions;
-        actions.Add("Avancer", "Déplacement", Key::W, Key::Up);
-        actions.Add("Reculer", "Déplacement", Key::S, Key::Down);
-        actions.Add("Aller à gauche", "Déplacement", Key::A, Key::Left);
-        actions.Add("Aller à droite", "Déplacement", Key::D, Key::Right);
-        actions.Add("Courir", "Déplacement", Key::LeftShift);
-        actions.Add("Sauter", "Déplacement", Key::Space);
-        actions.Add("Interagir", "Déplacement", Key::F);
+        m_actions.forward = actions.Add("Avancer", "Déplacement", Key::W, Key::Up);
+        m_actions.back = actions.Add("Reculer", "Déplacement", Key::S, Key::Down);
+        m_actions.left = actions.Add("Aller à gauche", "Déplacement", Key::A, Key::Left);
+        m_actions.right = actions.Add("Aller à droite", "Déplacement", Key::D, Key::Right);
+        m_actions.run = actions.Add("Courir", "Déplacement", Key::LeftShift);
+        m_actions.jump = actions.Add("Sauter", "Déplacement", Key::Space);
+        m_actions.interact = actions.Add("Interagir", "Déplacement", Key::F);
         // Vue du cockpit ou de dehors : la caméra est au moteur ; les commandes du vaisseau sont au jeu (SetPilotInput).
-        actions.Add("Changer de vue", "Vaisseau", Key::V);
+        m_actions.changeView = actions.Add("Changer de vue", "Vaisseau", Key::V);
         // F5 / F6 servent déjà à l'éditeur (jouer, pause).
-        actions.Add("Sauvegarde rapide", "Partie", Key::F8);
-        actions.Add("Chargement rapide", "Partie", Key::F9);
+        m_actions.quickSave = actions.Add("Sauvegarde rapide", "Partie", Key::F8);
+        m_actions.quickLoad = actions.Add("Chargement rapide", "Partie", Key::F9);
         // Repartir du début au prochain lancement (la sauvegarde est sinon reprise, voir ResumeQuickSave).
-        actions.Add("Effacer la sauvegarde", "Partie", Key::F7);
+        m_actions.deleteSave = actions.Add("Effacer la sauvegarde", "Partie", Key::F7);
         m_projectiles.reserve(ReservedProjectiles);
         m_projectileHits.reserve(ReservedProjectiles);
         m_impacts.reserve(ReservedProjectiles);
@@ -205,13 +207,37 @@ namespace Flux {
     }
 
     bool Engine::IsActionDown(std::string_view name) const {
-        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard()
-            && m_inputActions->IsDown(GetCurrentInput(), name);
+        assert(!m_inStep && "pendant un pas de simulation, lire GetPlayerCommand");
+        return IsKeyboardFree() && m_inputActions->IsDown(GetCurrentInput(), name);
     }
 
     bool Engine::WasActionPressed(std::string_view name) const {
-        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard()
-            && m_inputActions->WasPressed(GetCurrentInput(), name);
+        assert(!m_inStep && "pendant un pas de simulation, lire GetPlayerCommand");
+        return IsKeyboardFree() && m_inputActions->WasPressed(GetCurrentInput(), name);
+    }
+
+    bool Engine::IsKeyboardFree() const {
+        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard();
+    }
+
+    const PlayerCommand& Engine::GetPlayerCommand(Entity player) const {
+        static const PlayerCommand None;
+        return player == GetFollowedPlayer() ? m_playerCommand : None;
+    }
+
+    void Engine::SampleLocalCommand() {
+        LocalView view;
+        if (GetFollowedPlayer() != NullEntity) {
+            view.walkForward = m_playerCamera->GetWalkForward();
+            view.walkRight = m_playerCamera->GetWalkRight();
+            view.stickYaw = m_playerCamera->GetSteerYaw();
+            view.stickPitch = m_playerCamera->GetSteerPitch();
+        }
+        view.position = m_camera.position;
+        view.forward = m_camera.GetForward();
+        m_playerCommand = Flux::SampleLocalCommand(*m_stepInput, *m_inputActions, IsKeyboardFree(), view,
+                                                   {m_actions.forward, m_actions.back, m_actions.left, m_actions.right},
+                                                   m_clock.GetStep());
     }
 
     const Input& Engine::GetCurrentInput() const {
@@ -390,6 +416,7 @@ namespace Flux {
                     if (step == steps - 1) {
                         m_interpolation->BeginStep(m_scene);
                     }
+                    SampleLocalCommand();
                     m_inStep = true;
                     UpdateGameSystems(SimulationClock::StepSeconds);
                     if (m_gameUpdate) {
@@ -503,14 +530,15 @@ namespace Flux {
         if (std::optional<std::string> next = SceneChange::Update(m_scene, deltaSeconds, confirmed)) {
             RequestScene(std::move(*next));
         }
+        // Sauvegarde rapide : celle du joueur de cet écran, même sans personnage.
         if (!m_loadingScreen->IsActive()) { // pendant le chargement, la scène n'est pas encore celle que voit le joueur
-            if (WasActionPressed("Sauvegarde rapide")) {
+            if (m_playerCommand.WasPressed(m_actions.quickSave)) {
                 m_quickSave->RequestSave();
             }
-            if (WasActionPressed("Chargement rapide")) {
+            if (m_playerCommand.WasPressed(m_actions.quickLoad)) {
                 m_quickSave->RequestLoad(false);
             }
-            if (WasActionPressed("Effacer la sauvegarde")) {
+            if (m_playerCommand.WasPressed(m_actions.deleteSave)) {
                 DeleteQuickSave();
             }
         }
@@ -521,15 +549,13 @@ namespace Flux {
         const Entity player = m_physics->GetPlayer();
         const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;
         const bool seated = playerCharacter && playerCharacter->seat != NullEntity;
-        const auto axis = [&](std::string_view positive, std::string_view negative) {
-            return (IsActionDown(positive) ? 1.0f : 0.0f) - (IsActionDown(negative) ? 1.0f : 0.0f);
-        };
+        const PlayerCommand& command = GetPlayerCommand(player);
 
-        // Personnage du joueur, par rapport à la caméra ; assis, les mêmes actions pilotent le vaisseau (poste de
+        // Personnage du joueur, par rapport à sa vue ; assis, les mêmes actions pilotent le vaisseau (poste de
         // pilotage). Touches : actions d'entrée (ZQSD, Maj, Espace, F par défaut).
         CharacterInput character;
         // Systèmes du jeu d'abord : F près d'un donneur de missions sert à lui parler, pas à s'asseoir.
-        m_interactionPending = WasActionPressed("Interagir");
+        m_interactionPending = command.WasPressed(m_actions.interact);
         RunGameSystems(GameStage::Interaction, deltaSeconds);
         SeatInput seatInput{.interact = m_interactionPending};
         m_interactionPending = false;
@@ -537,9 +563,9 @@ namespace Flux {
         // vaisseau ; reprises à zéro à chaque image.
         ShipInput shipInput = std::exchange(m_pilotInput, ShipInput{});
         if (seated) {
-            shipInput.stickYaw = m_playerCamera->GetSteerYaw();
-            shipInput.stickPitch = m_playerCamera->GetSteerPitch();
-            if (WasActionPressed("Changer de vue")) {
+            shipInput.stickYaw = command.stickYaw;
+            shipInput.stickPitch = command.stickPitch;
+            if (command.WasPressed(m_actions.changeView)) {
                 m_playerCamera->ToggleCockpitView();
             }
             // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
@@ -556,11 +582,9 @@ namespace Flux {
                 }
             }
         } else {
-            // Avant et droite de la caméra, ramenés à l'horizontale de l'endroit (sur une planète : tangente au sol).
-            character.move = m_playerCamera->GetWalkForward() * axis("Avancer", "Reculer")
-                           + m_playerCamera->GetWalkRight() * axis("Aller à droite", "Aller à gauche");
-            character.run = IsActionDown("Courir");
-            character.jump = WasActionPressed("Sauter");
+            character.move = command.move;
+            character.run = command.IsDown(m_actions.run);
+            character.jump = command.WasPressed(m_actions.jump);
         }
         Seats::Update(m_scene, player, deltaSeconds, seatInput, [this](Entity entity) {
             // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
@@ -875,6 +899,7 @@ namespace Flux {
 
     void Engine::ResetGameState() {
         m_pilotInput = {};
+        m_playerCommand = {};
         RunGameSystems(GameStage::Reset, 0.0);
     }
 

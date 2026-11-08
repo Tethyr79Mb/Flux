@@ -38,6 +38,7 @@ namespace {
 
     // Multiplie la vitesse de toutes les rotations (liée à « Vitesse de la démo » pour les interfaces).
     float g_timeScale = 1.0f;
+    InputActionId g_jumpAction = NoInputAction; // « Saut d'une année-lumière », son bit dans PlayerCommand
 
     void JumpSector(Engine& engine) {
         // Même point de vue, un autre secteur.
@@ -56,7 +57,7 @@ namespace {
             });
 
         // Action d'entrée du jeu (touche T par défaut, réassignable) ; muette pendant la saisie dans un champ.
-        if (engine.WasActionPressed("Saut d'une année-lumière")) {
+        if (engine.GetPlayerCommand(engine.GetPlayer()).WasPressed(g_jumpAction)) {
             JumpSector(engine);
         }
     }
@@ -85,7 +86,7 @@ namespace Game {
         RegisterCombat(engine);
         RegisterPlaceItems(engine.GetEditorExtensions()); // retirés par le moteur au déchargement
         RegisterWeaponMount(engine.GetEditorExtensions());
-        engine.GetInputActions().Add("Saut d'une année-lumière", "Démo", Key::T);
+        g_jumpAction = engine.GetInputActions().Add("Saut d'une année-lumière", "Démo", Key::T);
         // Exemple d'action « Fonction C++ » d'un bouton d'interface (cible : « Exemple »).
         engine.RegisterInterfaceFunction("Exemple", [](Engine&) { Log::Info("bouton d'interface : fonction Exemple appelée"); });
         // Exemple de liaison : un curseur lié à « Vitesse de la démo » la change, un texte ou une barre l'affiche.

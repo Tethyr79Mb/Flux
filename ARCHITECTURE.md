@@ -64,7 +64,10 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    bougé au dernier pas est ensuite dessiné entre sa place d'avant et d'après (`TransformInterpolation` écrit les places
    interpolées dans la scène pour l'image et remet l'état simulé avant le pas suivant). Chaque pas
    (`UpdateGameSystems`) :
-   - changement de scène demandé, actions d'entrée lues (`InputActions`) ;
+   - commande du joueur (`PlayerCommand`, `SampleLocalCommand`) : les touches retenues, le manche et la vue, lus une
+     seule fois ; les systèmes du moteur et du jeu ne lisent qu'elle (`Engine::GetPlayerCommand`), pour tourner tels
+     quels sur un serveur qui recevra les commandes par le réseau (`IsActionDown` refusé pendant un pas) ;
+   - changement de scène demandé, sauvegarde rapide ;
    - systèmes du jeu à l'étape `Interaction` (ils peuvent prendre la touche Interagir : `ConsumeInteraction`) ;
    - sièges (`Seats::Update` : s'asseoir, se relever), puis vol des vaisseaux (`Ships::Update` : pilotage du
      vaisseau aux commandes avec les commandes du jeu, `Engine::SetPilotInput`, complétées du manche de la souris
