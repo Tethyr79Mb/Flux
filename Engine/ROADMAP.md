@@ -156,6 +156,20 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 
 ## Prochaines étapes
 
+### Multijoueur (Bruno, 2026-11-08 ; plan : https://claude.ai/artifact/KpJC18BJG7EqMyQzbWAruu)
+Pensé dès le départ pour un MMO : serveur qui fait autorité, un programme `ZoneServer` par zone (espace, sol, instance),
+transfert d'autorité entre zones, shards, GameNetworkingSockets, PostgreSQL plus tard, serveur portable Linux.
+- 🔨 1. Pas fixe de 60 Hz pour tout le jeu (`SimulationClock`), touches retenues jusqu'au pas, rendu interpolé entre les deux derniers pas. Limites : projectiles et animations non interpolés (à 60 pas par seconde).
+- ⬜ 2. Commandes de joueur (`PlayerCommand`) au lieu du clavier dans les systèmes du jeu.
+- ⬜ 3. `FluxSim` (simulation, sans Vulkan ni Win32) séparé de `FluxEngine`, compilé sous Linux par la CI.
+- ⬜ 4. `ArsSolarisServer.exe` sans rendu (`Game/Server/`).
+- ⬜ 5. Transport, session, vérification de version.
+- ⬜ 6. Réplication des champs marqués dans `ComponentRegistry`, interpolation des autres.
+- ⬜ 7. Prédiction et réconciliation du vaisseau du joueur.
+- ⬜ 8. Solo et « Jouer » de l'éditeur par un serveur local intégré.
+- ⬜ 9. Deux `ZoneServer`, transfert d'autorité, copies en lecture seule à la frontière.
+- ⬜ 10. Envoi selon la distance, test de charge avec des bots.
+
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
@@ -311,10 +325,6 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.
 
 ## Plus tard
-- ⬜ Réseau, géré par le moteur : domaine `Network` du moteur. Transport UDP avec messages fiables et non fiables (bibliothèque à choisir :
-  GameNetworkingSockets ou ENet), serveur qui fait autorité, composants à répliquer marqués dans `ComponentRegistry`
-  (comme l'inspecteur et la sauvegarde), positions en secteurs + double, prédiction du joueur et interpolation des
-  autres. Les mondes physiques par vaisseau tournent sur le serveur.
 - ⬜ Mises à jour, gérées par le moteur : manifeste de version (liste des fichiers et de leurs empreintes) publié en HTTPS, seuls les fichiers
   changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Ars Solaris.exe
   vérifie au démarrage qu'il est à jour.

@@ -2,6 +2,7 @@
 
 #include "Flux/Core/EditorExtensions.hpp"
 #include "Flux/Core/Project.hpp"
+#include "Flux/Core/SimulationClock.hpp"
 #include "Flux/Export.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Graphics/FlyCameraController.hpp"
@@ -43,9 +44,11 @@ namespace Flux {
     class PhysicsContext;
     class PhysicsWorld;
     class FrameStats;
+    class Input;
     class PlayerCamera;
     class QuickSave;
     class Renderer;
+    class TransformInterpolation;
     class Window;
 
     namespace UI {
@@ -91,7 +94,8 @@ namespace Flux {
 
     class FLUX_API Engine {
         public:
-        // Appelée à chaque frame, après le déplacement de la caméra et avant le rendu ; peut décrire des panneaux FluxUI.
+        // Fonction du jeu ou de l'éditeur ; quand elle est appelée (chaque image ou chaque pas) : voir SetGameUpdate,
+        // AddGameSystem, SetEditorUpdate.
         using UpdateFunction = std::function<void(Engine& engine, double deltaSeconds)>;
         // Demande de fermeture de la fenêtre : retourne false pour l'annuler (modifications à enregistrer...).
         using CloseFunction = std::function<bool(Engine& engine)>;
@@ -240,10 +244,12 @@ namespace Flux {
         const std::string& GetKeyRebinding() const { return m_rebindingAction; }
         void ResetInputActions();
 
-        // Mise à jour du jeu ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
+        // Mise à jour du jeu, à chaque pas de simulation (deltaSeconds = SimulationClock::StepSeconds, jamais en
+        // pause) ; un module de jeu doit la retirer (nullptr) avant d'être déchargé.
         void SetGameUpdate(UpdateFunction update);
-        // Systèmes du jeu (missions...) : fonctions du module de jeu appelées pendant le jeu à une étape précise de
-        // l'image, dans l'ordre d'ajout. Le moteur garde les briques (composants, projectiles, vol...), le jeu
+        // Systèmes du jeu (missions...) : fonctions du module de jeu appelées pendant le jeu à une étape précise,
+        // dans l'ordre d'ajout. Interaction, BeforePhysics et AfterPhysics tournent à chaque pas de simulation (pas
+        // fixe, 0 à 4 par image) et y lisent les touches retenues depuis le pas précédent ; Hud, à chaque image. Le moteur garde les briques (composants, projectiles, vol...), le jeu
         // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
         enum class GameStage {
             Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
@@ -287,6 +293,9 @@ namespace Flux {
         // Arrêter le jeu efface aussi son monde physique : il sera recréé d'après la scène au prochain lancement.
         void SetGameState(GameState state);
         GameState GetGameState() const { return m_gameState; }
+        // Pas de simulation : leur nombre depuis le lancement du jeu, et où l'image dessinée tombe entre les deux
+        // derniers (GetAlpha).
+        const SimulationClock& GetSimulationClock() const { return m_clock; }
         // Écran de chargement affiché (EngineConfig::loadingScreen) : le jeu (physique, module du jeu) attend.
         bool IsLoading() const;
         // Outils (panneaux de l'éditeur), appelés après le jeu : ils voient la scène telle que le jeu l'a laissée.
@@ -339,6 +348,10 @@ namespace Flux {
         std::unique_ptr<LoadingScreen> m_loadingScreen;
         std::unique_ptr<QuickSave> m_quickSave;                 // F7 / F8 / F9
         std::unique_ptr<FrameStats> m_frameStats;               // temps moyens du panneau Moteur
+        SimulationClock m_clock;
+        std::unique_ptr<Input> m_stepInput; // touches retenues pour le prochain pas (Input::Accumulate)
+        bool m_inStep = false;              // pendant un pas : IsActionDown et WasActionPressed lisent m_stepInput
+        std::unique_ptr<TransformInterpolation> m_interpolation; // places dessinées entre deux pas
         std::uint64_t m_frame = 0;
         bool m_interfaceWantsMouse = false; // à l'image précédente
         bool m_interfaceMouseNow = false;   // à l'image en cours, d'après les interfaces déjà dessinées
@@ -359,8 +372,11 @@ namespace Flux {
         std::vector<ProjectileHit> m_projectileHits; // de l'image, gardés d'une image à l'autre : pas d'allocation
         std::vector<Impact> m_impacts;
 
-        // Composants du moteur qui agissent pendant le jeu (changement de scène), avant la mise à jour du jeu.
+        // Un pas de simulation : composants du moteur qui agissent pendant le jeu (changement de scène, sièges, vol,
+        // physique, projectiles) et systèmes du jeu.
         void UpdateGameSystems(double deltaSeconds);
+        // Entrées que voit le jeu : celles retenues pour le pas pendant un pas, sinon celles de l'image.
+        const Input& GetCurrentInput() const;
         void LoadRequestedScene();
         // Sauvegarde et chargement rapides demandés pendant l'image (F8 / F9), faits à la fin.
         void RunQuickSave();

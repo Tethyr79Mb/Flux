@@ -8,30 +8,7 @@ namespace Flux {
     namespace {
         using Math::Quaternionf;
         using Math::Vector3f;
-
-        float Dot(const Quaternionf& a, const Quaternionf& b) {
-            return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-        }
-
-        // Interpolation sphérique, par le plus court chemin ; linéaire puis normalisée quand les deux sont presque
-        // confondues (le sinus s'annule).
-        Quaternionf Slerp(const Quaternionf& a, Quaternionf b, float t) {
-            float cosine = Dot(a, b);
-            if (cosine < 0.0f) {
-                b = {-b.x, -b.y, -b.z, -b.w};
-                cosine = -cosine;
-            }
-            float wa = 1.0f - t;
-            float wb = t;
-            if (cosine < 0.9995f) {
-                const float angle = std::acos(cosine);
-                const float sine = std::sin(angle);
-                wa = std::sin((1.0f - t) * angle) / sine;
-                wb = std::sin(t * angle) / sine;
-            }
-            return Math::Normalize(Quaternionf{a.x * wa + b.x * wb, a.y * wa + b.y * wb, a.z * wa + b.z * wb,
-                                               a.w * wa + b.w * wb});
-        }
+        using Math::Slerp;
 
         Vector3f Lerp(const Vector3f& a, const Vector3f& b, float t) {
             return a + (b - a) * t;

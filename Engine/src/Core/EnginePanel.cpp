@@ -48,6 +48,8 @@ namespace Flux {
             // travaille peu, la cadence vient de l'extérieur (V-Sync, pilote) ; si le GPU est long, c'est le
             // dessin ; sinon, le CPU. Le détail est replié en sections, pour tenir dans l'écran.
             ui.LabelText("Images/s", std::format("{:.0f} ({:.2f} ms)", stats.GetFps(), stats.GetFrameMilliseconds()));
+            // Moins de 60 : la machine ne suit plus, le jeu ralentit (au plus 4 pas par image).
+            ui.LabelText("Pas de simulation/s", std::format("{:.0f}", stats.GetStepsPerSecond()));
             ui.LabelText("Pire image (10 s)", std::format("{:.1f} ms", stats.GetWorstMilliseconds()));
             ui.LabelText("CPU màj + rendu", std::format("{:.2f} + {:.2f} ms (jeu {:.2f})", stats.Get(UpdateCost),
                                                         stats.Get(PrepareCost) + stats.Get(RecordCost), stats.Get(GameCost)));
@@ -162,6 +164,7 @@ namespace Flux {
         const RenderTimings& render = renderer.GetTimings();
         Json json;
         json["fps"] = stats.GetFps();
+        json["stepsPerSecond"] = stats.GetStepsPerSecond();
         json["frameMs"] = stats.GetFrameMilliseconds();
         json["worstFrameMs"] = stats.GetWorstMilliseconds();
         json["cpu"] = {{"updateMs", stats.Get(UpdateCost)},

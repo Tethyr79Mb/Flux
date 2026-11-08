@@ -61,6 +61,8 @@ namespace Flux {
             const std::chrono::duration<double> elapsed = now - m_windowStart;
             if (elapsed.count() >= 0.5) {
                 m_fps = m_frames / elapsed.count();
+                m_stepsPerSecond = m_steps / elapsed.count();
+                m_steps = 0;
                 m_frameMilliseconds = 1000.0 * elapsed.count() / m_frames;
                 for (std::size_t i = 0; i < CostCount; ++i) {
                     m_averages[i] = m_counts[i] > 0 ? m_sums[i] / m_counts[i] : -1.0;
@@ -76,6 +78,9 @@ namespace Flux {
                 m_windowStart = now;
             }
         }
+
+        // Pas de simulation faits dans l'image (SimulationClock) : 60 par seconde quand le jeu tourne à l'heure.
+        void AddSteps(int steps) { m_steps += steps; }
 
         void Add(Cost cost, double milliseconds) {
             if (milliseconds >= 0.0) {
@@ -98,6 +103,7 @@ namespace Flux {
         }
 
         double GetFps() const { return m_fps; }
+        double GetStepsPerSecond() const { return m_stepsPerSecond; }
         double GetFrameMilliseconds() const { return m_frameMilliseconds; }
         double Get(Cost cost) const { return m_averages[cost]; }
         // La plus longue image des 5 à 10 dernières secondes : un à-coup (chargement) que la moyenne cache.
@@ -120,6 +126,8 @@ namespace Flux {
         double m_previousWorst = 0.0;
         int m_frames = 0;
         double m_fps = 0.0;
+        int m_steps = 0;
+        double m_stepsPerSecond = 0.0;
         double m_frameMilliseconds = 0.0;
         std::array<double, CostCount> m_sums{};
         std::array<int, CostCount> m_counts{};

@@ -96,6 +96,29 @@ namespace Flux::Math {
         return length > 0.0f ? Quaternionf{q.x / length, q.y / length, q.z / length, q.w / length} : Quaternionf{};
     }
 
+    inline float Dot(const Quaternionf& a, const Quaternionf& b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    }
+
+    // Interpolation sphérique, par le plus court chemin ; linéaire puis normalisée quand les deux sont presque
+    // confondues (le sinus s'annule).
+    inline Quaternionf Slerp(const Quaternionf& a, Quaternionf b, float t) {
+        float cosine = Dot(a, b);
+        if (cosine < 0.0f) {
+            b = {-b.x, -b.y, -b.z, -b.w};
+            cosine = -cosine;
+        }
+        float wa = 1.0f - t;
+        float wb = t;
+        if (cosine < 0.9995f) {
+            const float angle = std::acos(cosine);
+            const float sine = std::sin(angle);
+            wa = std::sin((1.0f - t) * angle) / sine;
+            wb = std::sin(t * angle) / sine;
+        }
+        return Normalize(Quaternionf{a.x * wa + b.x * wb, a.y * wa + b.y * wb, a.z * wa + b.z * wb, a.w * wa + b.w * wb});
+    }
+
     // Tourne la direction `from` vers `to` (unitaires) d'au plus `angle` radians. Opposées : autour d'un axe
     // quelconque perpendiculaire.
     inline Vector3f TurnToward(const Vector3f& from, const Vector3f& to, float angle) {

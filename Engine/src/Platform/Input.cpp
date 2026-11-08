@@ -12,6 +12,29 @@ namespace Flux {
         m_textInput.clear();
     }
 
+    void Input::Accumulate(const Input& frame) {
+        m_keys = frame.m_keys;
+        m_buttons = frame.m_buttons;
+        for (std::size_t i = 0; i < KeyCount; ++i) {
+            m_pressed[i] = m_pressed[i] || frame.m_pressed[i];
+            m_typed[i] = m_typed[i] || frame.m_typed[i];
+        }
+        for (std::size_t i = 0; i < m_letterPressed.size(); ++i) {
+            m_letterPressed[i] = m_letterPressed[i] || frame.m_letterPressed[i];
+        }
+        for (std::size_t i = 0; i < ButtonCount; ++i) {
+            m_buttonPressed[i] = m_buttonPressed[i] || frame.m_buttonPressed[i];
+            m_buttonReleased[i] = m_buttonReleased[i] || frame.m_buttonReleased[i];
+        }
+        m_mousePosition = frame.m_mousePosition;
+        m_mouseDelta += frame.m_mouseDelta;
+        m_wheelDelta += frame.m_wheelDelta;
+    }
+
+    void Input::ClearEdges() {
+        BeginFrame();
+    }
+
     void Input::SetKey(std::uint16_t scancode, bool down) {
         if (scancode < KeyCount) {
             if (down && !m_keys[scancode]) {
