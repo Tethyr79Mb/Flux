@@ -12,6 +12,7 @@
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
+#include "Flux/Scene/PlayerCommand.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
 #include "Flux/Scene/ScreenUi.hpp"
@@ -235,7 +236,8 @@ namespace Flux {
         // de l'exécutable.
         InputActions& GetInputActions() { return *m_inputActions; }
         // Action tenue, ou enfoncée à cette image ; false pendant la saisie dans un champ et pendant qu'une touche
-        // est en cours de réassignation.
+        // est en cours de réassignation. Pour l'affichage et les menus seulement : pendant un pas de simulation, le
+        // jeu lit GetPlayerCommand (refusé en Debug), pour que la même simulation tourne demain sur un serveur.
         bool IsActionDown(std::string_view name) const;
         bool WasActionPressed(std::string_view name) const;
         // Réassignation de la touche principale d'une action (bouton d'interface « Changer une touche ») : la
@@ -272,6 +274,10 @@ namespace Flux {
         void RemoveGameSaveData(std::string_view name);
         // Personnage du joueur pendant le jeu, NullEntity sinon.
         Entity GetPlayer() const { return GetFollowedPlayer(); }
+        // Commande du joueur qui dirige ce personnage pour le pas en cours (touches, manche, vue) ; vide pour un
+        // personnage sans joueur. Pour l'instant, seul le joueur de cet écran (GetPlayer) en a une, et il l'a aussi
+        // sans personnage (GetPlayer() == NullEntity : vol libre de l'éditeur).
+        const PlayerCommand& GetPlayerCommand(Entity player) const;
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent, touchent et sont dessinés par le moteur.
         std::vector<Projectile>& GetProjectiles() { return m_projectiles; }
         // Projectiles arrivés sur un corps à cette image (l'éclat d'impact est déjà montré) : au jeu d'en retirer
@@ -350,7 +356,13 @@ namespace Flux {
         std::unique_ptr<FrameStats> m_frameStats;               // temps moyens du panneau Moteur
         SimulationClock m_clock;
         std::unique_ptr<Input> m_stepInput; // touches retenues pour le prochain pas (Input::Accumulate)
-        bool m_inStep = false;              // pendant un pas : IsActionDown et WasActionPressed lisent m_stepInput
+        bool m_inStep = false;              // pendant un pas : le jeu lit m_playerCommand, pas le clavier
+        PlayerCommand m_playerCommand;      // du joueur de cet écran, pour le pas en cours (SampleLocalCommand)
+        // Actions du moteur, par leur bit dans PlayerCommand.
+        struct EngineActions
+        {
+            InputActionId forward, back, left, right, run, jump, interact, changeView, quickSave, quickLoad, deleteSave;
+        } m_actions{};
         std::unique_ptr<TransformInterpolation> m_interpolation; // places dessinées entre deux pas
         std::uint64_t m_frame = 0;
         bool m_interfaceWantsMouse = false; // à l'image précédente
@@ -377,6 +389,9 @@ namespace Flux {
         void UpdateGameSystems(double deltaSeconds);
         // Entrées que voit le jeu : celles retenues pour le pas pendant un pas, sinon celles de l'image.
         const Input& GetCurrentInput() const;
+        bool IsKeyboardFree() const; // ni saisie dans un champ, ni touche en cours de réassignation
+        // Avant chaque pas : m_playerCommand d'après les touches retenues, la souris et la caméra.
+        void SampleLocalCommand();
         void LoadRequestedScene();
         // Sauvegarde et chargement rapides demandés pendant l'image (F8 / F9), faits à la fin.
         void RunQuickSave();

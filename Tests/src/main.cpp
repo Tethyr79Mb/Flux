@@ -45,6 +45,7 @@ int main() {
         {"collisions des vaisseaux et amarrage", RunDockingAutopilotTests},
         {"missions", RunMissionTests},
         {"warp", RunWarpTests},
+        {"commandes du joueur", RunPlayerCommandTests},
         {"IA de combat", RunCombatAITests},
         {"objets du jeu à placer (éditeur)", RunPlaceItemsTests},
         {"géométrie partagée des modèles", RunGeometryTests},

@@ -23,6 +23,8 @@ namespace Game {
 
         constexpr const char* AutopilotAction = "Pilote automatique";
         constexpr const char* WarpAction = "Warp";
+        InputActionId g_autopilotAction = NoInputAction; // leurs bits dans PlayerCommand
+        InputActionId g_warpAction = NoInputAction;
         constexpr const char* InfoSource = "Navigation"; // ligne des infos de vol (FlightInfo::SetExtra)
 
         // Destinations du vaisseau piloté (recalculées à chaque image, mémoire gardée), celle que vise son nez (-1 :
@@ -104,11 +106,12 @@ namespace Game {
             Scene& scene = engine.GetScene();
             const Entity player = engine.GetPlayer();
             const Entity ship = player != NullEntity ? Ships::GetPilotedShip(scene, player) : NullEntity;
-            if (ship != NullEntity && engine.WasActionPressed(AutopilotAction)) {
+            const PlayerCommand& command = engine.GetPlayerCommand(player);
+            if (ship != NullEntity && command.WasPressed(g_autopilotAction)) {
                 ToggleAutopilot(engine, ship);
             }
             Docking::Update(scene, deltaSeconds);
-            UpdateWarp(engine, ship, ship != NullEntity && engine.WasActionPressed(WarpAction));
+            UpdateWarp(engine, ship, ship != NullEntity && command.WasPressed(g_warpAction));
             Warp::Update(scene, deltaSeconds);
             g_info = ship != NullEntity ? Docking::Describe(scene, ship) : std::string{};
             FlightInfo::SetExtra(InfoSource, g_info);
@@ -186,9 +189,9 @@ namespace Game {
 
     void RegisterNavigation(Engine& engine) {
         // Près d'une station : se faire conduire au quai libre le plus proche ; amarré : repartir (choix de Bruno).
-        engine.GetInputActions().Add(AutopilotAction, "Vaisseau", Key::L);
+        g_autopilotAction = engine.GetInputActions().Add(AutopilotAction, "Vaisseau", Key::L);
         // Vers la destination que vise le nez (station, planète, objectif de mission) ; en warp : le couper.
-        engine.GetInputActions().Add(WarpAction, "Vaisseau", Key::J);
+        g_warpAction = engine.GetInputActions().Add(WarpAction, "Vaisseau", Key::J);
         engine.AddGameSystem(Engine::GameStage::BeforePhysics, TravelSystem, Travel);
         engine.AddGameSystem(Engine::GameStage::Hud, HudSystem, DrawHud);
         engine.AddGameSystem(Engine::GameStage::Reset, ResetSystem, Reset);

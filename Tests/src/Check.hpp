@@ -66,6 +66,7 @@ bool RunWeaponsTests();
 bool RunDockingAutopilotTests();
 bool RunMissionTests();
 bool RunWarpTests();
+bool RunPlayerCommandTests();
 bool RunCombatAITests();
 bool RunPlaceItemsTests(); // Game/ : code du jeu (GameLogic)
 bool RunGeometryTests();

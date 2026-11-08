@@ -18,7 +18,7 @@ namespace Flux {
         }
     }
 
-    void InputActions::Add(std::string name, std::string category, Key primary, Key secondary) {
+    InputActionId InputActions::Add(std::string name, std::string category, Key primary, Key secondary) {
         const InputActionKeys defaults{primary, secondary};
         const auto chosen = m_chosen.find(name);
         const InputActionKeys keys = chosen != m_chosen.end() ? chosen->second : defaults;
@@ -26,9 +26,34 @@ namespace Flux {
             action->category = std::move(category);
             action->defaults = defaults;
             action->keys = keys;
-            return;
+            return action->id;
         }
-        m_actions.push_back({std::move(name), std::move(category), keys, defaults});
+        InputActionId id = GetId(name);
+        if (id == NoInputAction && m_ids.size() < MaxInputActions) {
+            id = static_cast<InputActionId>(m_ids.size());
+            m_ids.emplace(name, id);
+        }
+        m_actions.push_back({std::move(name), std::move(category), keys, defaults, id});
+        return id;
+    }
+
+    InputActionId InputActions::GetId(std::string_view name) const {
+        const auto found = m_ids.find(name);
+        return found != m_ids.end() ? found->second : NoInputAction;
+    }
+
+    void InputActions::ReadKeys(const Input& input, PlayerCommand& command) const {
+        for (const InputAction& action : m_actions) {
+            if (action.id == NoInputAction) {
+                continue;
+            }
+            for (const Key key : action.keys) {
+                if (IsValidKey(key)) {
+                    command.held[action.id] = command.held[action.id] || input.IsKeyDown(key);
+                    command.pressed[action.id] = command.pressed[action.id] || input.WasKeyPressed(key);
+                }
+            }
+        }
     }
 
     void InputActions::Remove(std::string_view name) {
