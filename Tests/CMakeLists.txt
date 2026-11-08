@@ -9,6 +9,9 @@ target_compile_definitions(FluxSimTests PRIVATE FLUX_GAME_ASSETS="${PROJECT_SOUR
 flux_set_warnings(FluxSimTests)
 flux_precompile_headers(FluxSimTests)
 add_test(NAME FluxSimTests COMMAND FluxSimTests WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+# Le serveur charge le projet et sa scène de démarrage, puis simule 10 s de jeu (sans les fichiers LFS en CI : les
+# modèles de collision manquants sont signalés, pas bloquants).
+add_test(NAME ArsSolarisServer COMMAND ArsSolarisServer --pas 600 WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 if(NOT FLUX_BUILD_ENGINE)
     return()

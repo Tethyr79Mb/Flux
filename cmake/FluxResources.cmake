@@ -1,9 +1,11 @@
 # Ressources copiées à côté des exe : shaders Slang compilés en SPIR-V (bin/shaders/) et assets (bin/assets/).
-# slangc est fourni par le SDK Vulkan (dossier Bin).
-find_program(FLUX_SLANGC
-        NAMES slangc
-        HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin"
-        REQUIRED)
+# slangc est fourni par le SDK Vulkan (dossier Bin) ; seulement pour le rendu (sous Linux, les assets du serveur).
+if(FLUX_BUILD_ENGINE)
+    find_program(FLUX_SLANGC
+            NAMES slangc
+            HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin"
+            REQUIRED)
+endif()
 
 # flux_add_shaders(<cible> <fichiers .slang>...) : crée la cible qui compile chaque shader en <nom>.spv.
 function(flux_add_shaders target)

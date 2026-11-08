@@ -65,9 +65,7 @@ endif()
 
 include(cmake/FluxWarnings.cmake)
 include(cmake/FluxDependencies.cmake)
-if(FLUX_BUILD_ENGINE)
-    include(cmake/FluxResources.cmake) # slangc : shaders du rendu
-endif()
+include(cmake/FluxResources.cmake) # shaders du rendu (slangc, avec le moteur seulement) et assets
 include(cmake/FluxSources.cmake)
 include(cmake/FluxPrecompiled.cmake)
 include(cmake/FluxVersion.cmake)
@@ -76,7 +74,7 @@ add_subdirectory(Sim)
 if(FLUX_BUILD_ENGINE)
     add_subdirectory(Engine)
 endif()
-add_subdirectory(Game) # sous Linux, la simulation du jeu seulement (GameSim)
+add_subdirectory(Game) # sous Linux, la simulation du jeu (GameSim) et le serveur seulement
 if(FLUX_BUILD_ENGINE)
     add_subdirectory(Editor)
 endif()
