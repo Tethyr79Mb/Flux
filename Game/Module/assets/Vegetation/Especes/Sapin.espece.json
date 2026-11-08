@@ -11,12 +11,12 @@
       "farModel": "Modeles/Coniferes/Sapin-2-loin.glb"
     }
   ],
-  "minScale": 1.2,
-  "maxScale": 2,
+  "minScale": 0.8,
+  "maxScale": 1.25,
   "maxSlope": 35,
   "tint": 0.1,
-  "trunkRadius": 0.32,
-  "trunkHeight": 22,
+  "trunkRadius": 0.39,
+  "trunkHeight": 34,
   "spacing": 15,
-  "canopyColor": [0.016, 0.042, 0.013]
+  "canopyColor": [0.024, 0.048, 0.02]
 }

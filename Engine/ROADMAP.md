@@ -191,9 +191,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   une planète liste jusqu'à 8 biomes, chacun avec ses conditions (plaines, collines, montagnes et piémonts, altitude,
   température, humidité), ses forêts et jusqu'à 4 espèces avec leur part ; le premier qui convient prend le sol.
   Livrés : marais, désert, montagne (épicéas et sapins), taïga, pinède, plaine (feuillus). Teinte propre à chaque
-  arbre, couleur des forêts lointaines selon le biome. Tailles d'arbres adultes (2026-11-04) : épicéa 29-50 m, sapin
-  28-46 m, pin 26-43 m, feuillu 20-33 m (le chasseur fait 21 m de long) ; à faire : conifères au tronc nu sur 40-50 %
-  de la hauteur, comme les forêts de Star Citizen (branches presque jusqu'au sol aujourd'hui). Humidité en bandes de latitude comme sur Terre (déserts vers
+  arbre, couleur des forêts lointaines selon le biome. Tailles d'arbres adultes : épicéa 32-49 m, sapin 29-45 m, pin
+  25-41 m, feuillu 20-33 m (le chasseur fait 21 m de long) ; conifères au tronc nu (chicots) sur 40 à 70 % de la
+  hauteur, comme en forêt. À améliorer : feuillu encore branchu bas (modèle de 12,6 m agrandi). Humidité en bandes de latitude comme sur Terre (déserts vers
   25-30°, taïga vers 55-65°, toundra au-delà). Espacement par espèce (m) et facteur par biome (demande de Bruno du
   2026-10-28) : une place sur k×k de la grille garde l'arbre, posé au hasard dans son bloc ; deux arbres d'une même
   espèce restent à 40 % de l'espacement au moins, et les places qu'aucun bloc ne garde sont écartées avant le relief.

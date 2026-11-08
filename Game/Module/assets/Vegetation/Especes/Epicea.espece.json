@@ -11,12 +11,12 @@
       "farModel": "Modeles/Coniferes/Epicea-2-loin.glb"
     }
   ],
-  "minScale": 1.1,
-  "maxScale": 1.9,
+  "minScale": 0.8,
+  "maxScale": 1.2,
   "maxSlope": 35,
   "tint": 0.12,
-  "trunkRadius": 0.4,
-  "trunkHeight": 25,
+  "trunkRadius": 0.45,
+  "trunkHeight": 38,
   "spacing": 15,
-  "canopyColor": [0.023, 0.051, 0.013]
+  "canopyColor": [0.026, 0.05, 0.014]
 }
