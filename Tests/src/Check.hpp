@@ -1,20 +1,12 @@
 #pragma once
 
+#include "../Sim/Check.hpp" // CHECK et groupes de la simulation (FluxSimTests)
 #include "Flux/Platform/Environment.hpp"
 
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <string>
-
-// Mini-cadre de test : chaque groupe est une fonction bool, CHECK sort du groupe au premier échec.
-#define CHECK(condition)                                                                    \
-    do {                                                                                    \
-        if (!(condition)) {                                                                 \
-            std::printf("ÉCHEC %s:%d : %s\n", __FILE__, __LINE__, #condition);              \
-            return false;                                                                   \
-        }                                                                                   \
-    } while (0)
 
 // Groupe qui demande un GPU, sur une machine qui n'en a pas : ignoré (réussi), sauf si FLUX_TESTS_GPU vaut 1 (la CI,
 // qui installe un GPU logiciel) : là, un GPU absent par erreur fait échouer au lieu de passer inaperçu.
@@ -28,14 +20,8 @@ inline bool GpuMissing(const char* group, const char* error) {
     return true;
 }
 
-bool RunSceneTests();
 bool RunRenderGraphTests();
-bool RunJobSystemTests();
-bool RunSceneSerializerTests();
-bool RunSceneMergeTests();
-bool RunPrefabTests();
 bool RunUiTests();
-bool RunProjectTests();
 bool RunGameSettingsTests();
 bool RunPickingTests();
 bool RunScreenUiTests();
@@ -43,10 +29,6 @@ bool RunInterfaceTests();
 bool RunImageTests();
 bool RunLocalHttpServerTests();
 bool RunTextureCompressionTests();
-bool RunSceneChangeTests();
-bool RunModelTests();
-bool RunPhysicsTests();
-bool RunAnimationTests();
 bool RunShadowTests();
 bool RunSkyTests();
 bool RunEnvironmentGpuTests();
@@ -60,7 +42,6 @@ bool RunComputeTests();
 bool RunTransferTests();
 bool RunPlanetGpuTests();
 bool RunCloudNoiseTests();
-bool RunVegetationTests();
 bool RunVegetationGpuTests();
 bool RunWeaponsTests();
 bool RunDockingAutopilotTests();

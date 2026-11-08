@@ -1,4 +1,5 @@
-// Lance tous les groupes de tests ; code de sortie 0 si tout passe (lancer FluxTests ou ctest).
+// Lance les tests du moteur et du jeu ; code de sortie 0 si tout passe (lancer FluxTests ou ctest). Ceux de la
+// simulation sont dans FluxSimTests (Tests/Sim).
 #include "Check.hpp"
 
 int main() {
@@ -7,25 +8,15 @@ int main() {
         bool (*run)();
     };
     constexpr Group groups[] = {
-        {"scène", RunSceneTests},
-        {"sauvegarde de scène", RunSceneSerializerTests},
-        {"partie reprise dans une scène modifiée", RunSceneMergeTests},
-        {"prefabs", RunPrefabTests},
         {"interface (FluxUI) et rotations", RunUiTests},
-        {"projet", RunProjectTests},
         {"réglages du jeu", RunGameSettingsTests},
         {"sélection dans la vue 3D", RunPickingTests},
         {"images et textures", RunImageTests},
         {"textures compressées (BC7)", RunTextureCompressionTests},
         {"textes et images à l'écran", RunScreenUiTests},
         {"interfaces (.fluxui)", RunInterfaceTests},
-        {"changement de scène", RunSceneChangeTests},
-        {"modèles 3D (glTF)", RunModelTests},
-        {"physique (Jolt)", RunPhysicsTests},
-        {"animation squelettique", RunAnimationTests},
         {"cascades d'ombres", RunShadowTests},
         {"graphe de rendu", RunRenderGraphTests},
-        {"fils de travail (JobSystem)", RunJobSystemTests},
         {"ciel", RunSkyTests},
         {"reflets et lumière du ciel sur le GPU", RunEnvironmentGpuTests},
         {"exposition automatique et courbe de tons", RunExposureTests},
@@ -39,7 +30,6 @@ int main() {
         {"envois vers le GPU (file de transfert)", RunTransferTests},
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
         {"bruit 3D des nuages sur le GPU", RunCloudNoiseTests},
-        {"espèces et biomes des arbres", RunVegetationTests},
         {"arbres des planètes sur le GPU", RunVegetationGpuTests},
         {"armes des vaisseaux", RunWeaponsTests},
         {"collisions des vaisseaux et amarrage", RunDockingAutopilotTests},
