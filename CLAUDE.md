@@ -25,6 +25,7 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
 - `Game/Module/` : GameModule.dll (GameClient : touches, affichages, éditeur ; `FluxRegisterGame`) et le projet
   `Game.fluxproject` avec ses `assets/`.
 - `Game/Client/` : « Ars Solaris.exe » (cible CMake `Game`).
+- `Game/Server/` : ArsSolarisServer, le serveur sans rendu (GameSim seule, Windows et Linux).
 - `Tests/` : FluxSimTests.exe (`Tests/Sim`, la simulation et le jeu simulé, aussi sous Linux) et FluxTests.exe (`Tests/src`, moteur et
   jeu) ; un fichier `*Tests.cpp` par domaine, fonctions `Run…Tests` appelées depuis le `main.cpp` de chacun.
 - Git LFS (`.gitattributes`) : modèles, textures, sons et polices de `Game/Module/assets/`. Sources lourdes (`.blend`,
@@ -39,7 +40,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   reconfigurer » (tout recompiler, Jolt compris). Si une mise à jour casse la compilation incrémentale, chercher la
   dépendance CMake manquante.
 - La CI GitHub compile Debug + Release sur chaque PR : avec MSVC tout le projet, FluxSimTests et FluxTests
-  (`.github/workflows/msvc.yml`) ; avec GCC 14 sous Linux FluxSim et FluxSimTests (`linux.yml`).
+  (`.github/workflows/msvc.yml`) ; avec GCC 14 sous Linux FluxSim, FluxSimTests et le
+  serveur (`linux.yml`).
 - Juger les performances en Release seulement, jamais en Debug.
 
 ## Choix d'architecture (décidés, ne pas remettre en cause sans le demander)

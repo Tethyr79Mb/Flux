@@ -34,7 +34,7 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   rendu (semis des arbres, photométrie) sont visibles de FluxEngine par `Sim/src`.
   Le monde simulé y est une classe, `Simulation` (`Flux/Core/Simulation.hpp`) : scène, composants, physique,
   projectiles, pas fixe et systèmes du pas. `Engine` en possède une (`Engine::GetSimulation`) et la fait avancer ; le
-  serveur en fera tourner une sans affichage.
+  serveur en fait tourner une sans affichage.
 - **FluxEngine.dll** (`Engine/`) exporte ce qui porte `FLUX_API` et lie FluxSim publiquement. Vulkan, FreeType,
   msdfgen, miniaudio et bc7enc restent privés : aucun en-tête public ne les expose.
 - **Le code du jeu** est en deux bibliothèques statiques. `GameSim` (`Game/Sim/src`, FluxSim seule, compilée aussi
@@ -64,8 +64,13 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   ces réglages sur le moteur et réécrit le fichier (créé dès le premier lancement ; fermer la console arrête aussi la
   boucle proprement, `Platform::CatchConsoleClose`). Comme dans Unreal, le moteur possède la boucle et
   appelle le jeu (même boucle que le mode Jouer de l'éditeur, condition du rechargement à chaud).
+- **ArsSolarisServer** (`Game/Server/`, Windows et Linux) : serveur sans rendu, qui ne lie que GameSim (statique) et
+  FluxSim. `GameServer` charge le projet et une scène (`--projet`, `--scene`), enregistre le jeu simulé et avance la
+  `Simulation` au rythme de `SimulationClock` (attente entre deux pas, `timeBeginPeriod(1)` sous Windows), jusqu'à
+  Ctrl+C ou SIGTERM (`Platform::CatchConsoleClose`, dans FluxSim). `--pas N` simule N pas sans attendre : la CI
+  (ctest) le lance ainsi.
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage (les menus sont des interfaces des scènes). Les assets sont copiés à côté
-  des exécutables (`bin/assets/`).
+  des exécutables (`bin/assets/`), serveur compris.
 - Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à
   lancer) ; `out/build/` garde les fichiers intermédiaires et `out/deps/` les dépendances téléchargées
   (`FLUX_OUTPUT_DIRECTORY`).

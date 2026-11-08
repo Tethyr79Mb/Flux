@@ -1,6 +1,6 @@
-# Compile la simulation (FluxSim et GameSim, le jeu simulé) sous Linux avec GCC 14 et lance FluxSimTests, pour chaque PR et chaque envoi sur
-# master : la base du futur serveur de jeu doit rester portable, et rien de FluxSim ne doit dépendre du rendu ni de
-# Win32 (le moteur complet n'est pas configuré sous Linux).
+# Compile la simulation (FluxSim, GameSim) et le serveur ArsSolarisServer sous Linux avec GCC 14, puis lance
+# FluxSimTests et 600 pas du serveur, pour chaque PR et chaque envoi sur master : le serveur de jeu doit rester
+# portable, et rien de FluxSim ne doit dépendre du rendu ni de Win32 (le moteur complet n'est pas configuré sous Linux).
 name: Linux
 
 on:
