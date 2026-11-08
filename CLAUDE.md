@@ -76,6 +76,8 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   composants restent des données simples (pas de méthodes virtuelles ni d'héritage), la logique va dans des systèmes
   (`Weapons::Update`…). Le gameplay va dans le module du jeu, le moteur ne garde que les briques réutilisables.
 - Ne jamais désactiver ni sauter un test pour obtenir une CI verte.
+- Build monolithique de l'alpha (`Engine/ROADMAP.md`) : le code ne dépend pas d'être en DLL. Pas de chargement dynamique
+  obligatoire hors module du jeu en développement, pas d'état global qui supposerait une copie par DLL.
 
 ## Façon de travailler avec Bruno
 - Une PR par étape, depuis une branche `claude/<sujet>` partant de master à jour.
