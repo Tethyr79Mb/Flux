@@ -51,5 +51,6 @@ namespace FluxEditor {
         bool m_sharpnessChanged = false; // pas encore enregistré (curseur tenu)
         Flux::GroundDetail m_groundDetail = Flux::DefaultGroundDetail;
         Flux::CloudQuality m_cloudQuality = Flux::DefaultCloudQuality;
+        Flux::VegetationDistance m_vegetationDistance = Flux::DefaultVegetationDistance;
     };
 }

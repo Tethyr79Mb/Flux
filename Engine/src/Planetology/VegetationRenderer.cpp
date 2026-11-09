@@ -176,7 +176,7 @@ namespace Flux::Planetology {
 
     void VegetationRenderer::SetPlanet(Entity entity, const Terrain& terrain, const PlanetComponent& planet,
                                        const VegetationComponent& vegetation, const VegetationSet& biomes,
-                                       const Math::Quaternionf& rotation, std::span<const PlanetRenderer::Plain> plains) {
+                                       const Math::Quaternionf& rotation, std::span<const PlanetRenderer::Plain> plains, float rangeScale) {
         if (m_entity != NullEntity) {
             return;
         }
@@ -222,7 +222,7 @@ namespace Flux::Planetology {
         m_rotation = rotation;
         m_lodDistance = std::max(vegetation.lodDistance, 0.0f);
         m_farDistance = std::max(vegetation.farDistance, m_lodDistance);
-        m_range = std::max(vegetation.range, 0.0f);
+        m_range = std::max(vegetation.range * rangeScale, 0.0f);
         for (const PlanetRenderer::Plain& plain : plains) {
             if (plain.distance < m_range) {
                 (plain.ahead ? m_ahead : m_visible).push_back(plain);

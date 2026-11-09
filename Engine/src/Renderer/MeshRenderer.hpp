@@ -2,6 +2,7 @@
 
 #include "Flux/Animation/Animation.hpp"
 #include "Flux/Graphics/ShadowCascades.hpp"
+#include "Flux/Planetology/VegetationDistance.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Planetology/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
@@ -99,6 +100,8 @@ namespace Flux {
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
+        void SetVegetationDistance(VegetationDistance distance) { m_vegetationDistance = distance; }
+        VegetationDistance GetVegetationDistance() const { return m_vegetationDistance; }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
         // cible (le graphe de rendu la rend ensuite lisible pour la scène). Une étape par cascade, chacune
         // enregistrable dans sa liste : elle pose son viewport et ses liaisons.
@@ -552,6 +555,7 @@ namespace Flux {
         std::vector<Planetology::PlanetRenderer::Tile> m_planetTiles;
         std::vector<Planetology::PlanetRenderer::Plain> m_plains;
         const VegetationComponent* m_vegetationComponent = nullptr; // de la planète à arbres de l'image
+        VegetationDistance m_vegetationDistance = DefaultVegetationDistance;
         std::uint32_t m_treeDraw = 0; // DrawData neutre des arbres (teinte blanche, sans contour)
         std::vector<TileDraw> m_tileDraws;
         std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData

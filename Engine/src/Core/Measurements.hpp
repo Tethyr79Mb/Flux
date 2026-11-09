@@ -38,6 +38,7 @@ namespace Flux {
             Math::Vector2i renderSize; // scène dessinée à cette taille, puis agrandie par FSR
             GroundDetail groundDetail = DefaultGroundDetail;
             CloudQuality cloudQuality = DefaultCloudQuality;
+            VegetationDistance vegetationDistance = DefaultVegetationDistance;
             bool occlusionCulling = false;  // « Objets cachés écartés »
             bool groundGeometryOnly = false; // « Sol sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets

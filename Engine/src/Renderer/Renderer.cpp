@@ -1073,6 +1073,14 @@ namespace Flux {
         return m_impl->meshes->GetGroundDetail();
     }
 
+    void Renderer::SetVegetationDistance(VegetationDistance distance) {
+        m_impl->meshes->SetVegetationDistance(distance);
+    }
+
+    VegetationDistance Renderer::GetVegetationDistance() const {
+        return m_impl->meshes->GetVegetationDistance();
+    }
+
     void Renderer::SetCloudQuality(CloudQuality quality) {
         m_impl->clouds->SetQuality(quality);
     }

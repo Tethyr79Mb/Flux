@@ -75,9 +75,10 @@ namespace Flux::Planetology {
         void BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
         // La planète à arbres de l'image (une seule : les suivantes sont ignorées) et ses plaines en vue ou à semer
         // d'avance (PlanetRenderer::Collect). rotation : celle de la planète, relative à la caméra.
-        // biomes : ceux de vegetation (VegetationLibrary).
+        // biomes : ceux de vegetation (VegetationLibrary). rangeScale : facteur de vegetation.range (VegetationDistance).
         void SetPlanet(Entity entity, const Terrain& terrain, const PlanetComponent& planet, const VegetationComponent& vegetation,
-                       const VegetationSet& biomes, const Math::Quaternionf& rotation, std::span<const PlanetRenderer::Plain> plains);
+                       const VegetationSet& biomes, const Math::Quaternionf& rotation, std::span<const PlanetRenderer::Plain> plains,
+                       float rangeScale = 1.0f);
 
         // Champ de la caméra, comme ViewCone (MeshRenderer.cpp).
         struct View
