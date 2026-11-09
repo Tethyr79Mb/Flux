@@ -18,6 +18,10 @@ namespace Flux {
         // Monde répliqué : vitesse verticale au-delà de laquelle un personnage est en l'air (saut, chute), m/s. Assez
         // haute pour qu'une course dans une pente ou un escalier n'y passe pas.
         constexpr double ReplicatedAirSpeed = 2.0;
+        // Chute arrêtée sous cette vitesse verticale : posé, m/s.
+        constexpr double ReplicatedLandingSpeed = 0.5;
+        // Au-delà, un saut de place (téléporté, changé de secteur) et non un mouvement, m/s.
+        constexpr double ReplicatedTeleportSpeed = 1000.0;
     }
 
     Simulation::Simulation()
@@ -56,7 +60,7 @@ namespace Flux {
         m_clock.Reset();
         m_projectiles.clear();
         m_projectileHits.clear();
-        m_characterPlaces.clear(); // les entités de l'ancienne scène
+        m_characterMotions.clear(); // les entités de l'ancienne scène
         m_localCommand = {};
         m_commands.clear();
         RunSystems(Stage::Reset, 0.0);
@@ -79,7 +83,7 @@ namespace Flux {
         m_physics.reset();
         m_projectiles.clear();
         m_projectileHits.clear();
-        m_characterPlaces.clear(); // les entités de l'ancienne scène
+        m_characterMotions.clear(); // les entités de l'ancienne scène
         m_localCommand = {};
         m_commands.clear();
         RunSystems(Stage::Reset, 0.0);
@@ -251,25 +255,31 @@ namespace Flux {
     void Simulation::AnimateReplicated(double deltaSeconds) {
         // Le serveur n'envoie que la place : vitesse au sol et temps en l'air des personnages mesurés ici, d'un pas à
         // l'autre, pour que l'animateur choisisse repos, marche, course ou chute comme sur le serveur.
-        std::swap(m_characterPlaces, m_previousCharacterPlaces);
-        m_characterPlaces.clear();
+        std::swap(m_characterMotions, m_previousCharacterMotions);
+        m_characterMotions.clear();
         for (const auto [entity, character] : m_scene.GetRegistry().view<CharacterComponent>().each()) {
-            const Math::WorldPosition place = m_scene.GetWorldPosition(entity);
-            m_characterPlaces.emplace_back(entity, place);
-            const auto previous = std::ranges::lower_bound(m_previousCharacterPlaces, entity, {}, &std::pair<Entity, Math::WorldPosition>::first);
-            if (previous == m_previousCharacterPlaces.end() || previous->first != entity || deltaSeconds <= 0.0) {
-                character.groundSpeed = 0.0f; // arrivé à ce pas
+            const TransformComponent& transform = m_scene.Get<TransformComponent>(entity);
+            CharacterMotion& motion = m_characterMotions.emplace_back(
+                CharacterMotion{.entity = entity, .parent = m_scene.GetParent(entity), .position = transform.position});
+            const auto previous = std::ranges::lower_bound(m_previousCharacterMotions, entity, {}, &CharacterMotion::entity);
+            const bool known = previous != m_previousCharacterMotions.end() && previous->entity == entity
+                && previous->parent == motion.parent && deltaSeconds > 0.0;
+            const Math::Vector3d velocity = known ? (motion.position - previous->position) * (1.0 / deltaSeconds) : Math::Vector3d{};
+            if (!known || Math::Length(velocity) > ReplicatedTeleportSpeed) {
+                character.groundSpeed = 0.0f; // arrivé, monté à bord ou déplacé d'un coup
                 character.airTime = 0.0f;
                 continue;
             }
-            const Math::Vector3d velocity = Math::Delta(previous->second, place) * (1.0 / deltaSeconds);
-            const Math::Vector3d up(m_scene.GetWorldRotation(entity).Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f}));
-            const double vertical = Math::Dot(velocity, up);
-            const bool inAir = std::abs(vertical) > ReplicatedAirSpeed;
-            character.groundSpeed = inAir ? 0.0f : static_cast<float>(Math::Length(velocity - up * vertical));
-            character.airTime = inAir ? character.airTime + static_cast<float>(deltaSeconds) : 0.0f;
+            const Math::Vector3d up(transform.rotation.Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f}));
+            motion.vertical = Math::Dot(velocity, up);
+            // Parti : vite vers le haut ou le bas. Retombé : une chute qui s'arrête. Le haut du saut, où la vitesse
+            // verticale passe par zéro, reste en l'air.
+            motion.inAir = previous->inAir ? !(previous->vertical < -ReplicatedLandingSpeed && motion.vertical > -ReplicatedLandingSpeed)
+                                           : std::abs(motion.vertical) > ReplicatedAirSpeed;
+            character.groundSpeed = motion.inAir ? 0.0f : static_cast<float>(Math::Length(velocity - up * motion.vertical));
+            character.airTime = motion.inAir ? character.airTime + static_cast<float>(deltaSeconds) : 0.0f;
         }
-        std::ranges::sort(m_characterPlaces, {}, &std::pair<Entity, Math::WorldPosition>::first);
+        std::ranges::sort(m_characterMotions, {}, &CharacterMotion::entity);
         Animator::Update(m_scene, deltaSeconds);
     }
 

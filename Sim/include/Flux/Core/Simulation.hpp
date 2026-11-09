@@ -187,9 +187,17 @@ namespace Flux {
         std::vector<std::pair<Entity, ShipInput>> m_shipInputs;
         std::vector<Projectile> m_projectiles;
         std::vector<ProjectileHit> m_projectileHits; // du pas, gardés d'un pas à l'autre : pas d'allocation
-        // Monde répliqué : place de chaque personnage au pas précédent, triée par entité (AnimateReplicated).
-        std::vector<std::pair<Entity, Math::WorldPosition>> m_characterPlaces;
-        std::vector<std::pair<Entity, Math::WorldPosition>> m_previousCharacterPlaces;
+        // Monde répliqué : mouvement de chaque personnage au pas précédent, trié par entité (AnimateReplicated).
+        struct CharacterMotion
+        {
+            Entity entity = NullEntity;
+            Entity parent = NullEntity;
+            Math::Vector3d position; // dans le repère du parent : le vaisseau qui avance ne fait pas marcher
+            double vertical = 0.0;   // vitesse le long de son haut, m/s
+            bool inAir = false;
+        };
+        std::vector<CharacterMotion> m_characterMotions;
+        std::vector<CharacterMotion> m_previousCharacterMotions;
 
         void StartPhysics();
         void CollectPlayers();

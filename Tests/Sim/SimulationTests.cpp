@@ -180,11 +180,26 @@ namespace {
         }
         CHECK(std::abs(scene.Get<CharacterComponent>(walker).groundSpeed - 2.0f) < 0.01f);
         CHECK(animator.playing == "Marche");
-        for (int i = 0; i < 20; ++i) {
-            scene.Get<TransformComponent>(walker).position.y -= 5.0 * step; // chute
+        // Saut sur place (4,5 m/s, 9,81 m/s²) : en l'air jusqu'à la retombée, haut du saut compris.
+        double vertical = 4.5;
+        bool airborneAtTop = false;
+        while (true) {
+            double& y = scene.Get<TransformComponent>(walker).position.y;
+            vertical -= 9.81 * step;
+            y += vertical * step;
+            if (y <= 0.0) {
+                y = 0.0;
+                simulation.Step(step);
+                break;
+            }
             simulation.Step(step);
+            if (std::abs(vertical) < 0.5) {
+                airborneAtTop = animator.playing == "Chute";
+            }
         }
-        CHECK(animator.playing == "Chute");
+        CHECK(airborneAtTop);
+        simulation.Step(step);
+        CHECK(animator.playing == "Repos");
         return true;
     }
 
