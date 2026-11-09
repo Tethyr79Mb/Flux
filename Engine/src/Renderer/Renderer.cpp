@@ -515,6 +515,7 @@ namespace Flux {
             const auto tiles = graph.AddResource("tuiles de planète", Lifetime::Previous);
             const auto pyramid = graph.AddResource("pyramide de profondeur", Lifetime::Previous);
             const auto culled = graph.AddResource("arbres et objets retenus");
+            const auto impostors = graph.AddResource("imposteurs des arbres"); // atlas de TreeImpostors
             // Textures du ciel et des ombres, à leurs renderers : le graphe pose leurs barrières, seulement avec une scène.
             const auto texture = [this](const char* name, Lifetime lifetime, auto source) {
                 return graph.AddTexture(name, lifetime, [this, source]() -> const RHI::Texture* {
@@ -594,6 +595,12 @@ namespace Flux {
                 .Writes(reflections)
                 .Writes(irradiance)
                 .Step("environnement", [this](RHI::CommandList& commands) { environment->Bake(commands, frame.index); });
+            // Une espèce d'arbre photographiée sous toutes ses vues, à sa première apparition (une par image au plus).
+            graph.AddPass("imposteurs des arbres")
+                .When([this] { return sceneVisible && meshes->ImpostorPending(frame.index); })
+                .Reads(cpu)
+                .Writes(impostors)
+                .Step("imposteurs des arbres", [this](RHI::CommandList& commands) { meshes->BakeImpostor(commands, frame.index); });
             graph.AddPass("ombres")
                 .When(scene)
                 .Reads(cpu)
@@ -621,6 +628,7 @@ namespace Flux {
                 .Reads(cpu)
                 .Reads(tiles)
                 .Reads(culled)
+                .Reads(impostors)
                 .Reads(shadowMap)
                 .Reads(terrainShadowMap)
                 .Reads(skyBackground)

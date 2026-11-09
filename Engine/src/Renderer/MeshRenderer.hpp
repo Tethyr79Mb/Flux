@@ -13,6 +13,7 @@
 #include "Renderer/SkyRenderer.hpp"
 #include "Renderer/TemporalView.hpp"
 #include "Renderer/ThrusterRenderer.hpp"
+#include "Renderer/TreeImpostors.hpp"
 
 #include <array>
 #include <chrono>
@@ -128,6 +129,10 @@ namespace Flux {
         // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le
         // Renderer mesure chacun au GPU.
         void DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Capture d'un imposteur d'arbre (TreeImpostors), hors d'une passe, avant la passe principale ; rien à faire à
+        // cette image si ImpostorPending est faux.
+        bool ImpostorPending(std::uint32_t frameIndex) const { return m_impostors->GetCapture(frameIndex).has_value(); }
+        void BakeImpostor(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Arbres des planètes (VegetationRenderer), après les objets et avant le sol qu'ils cachent en partie.
         void DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const;
@@ -441,6 +446,10 @@ namespace Flux {
         std::unique_ptr<ModelCache> m_models;
         std::unique_ptr<Planetology::PlanetRenderer> m_planets;
         std::unique_ptr<Planetology::VegetationRenderer> m_vegetation;
+        std::unique_ptr<TreeImpostors> m_impostors; // avant m_models dans la destruction : il lui rend ses cases
+        std::unique_ptr<RHI::Pipeline> m_impostorBake; // capture (vertexImpostorBake)
+        std::unique_ptr<RHI::Pipeline> m_impostor;     // dessin au loin (vertexImpostor)
+        std::unique_ptr<RHI::Buffer> m_impostorIndices; // un carré : 0 1 2 2 1 3
         Planetology::VegetationLibrary m_vegetationLibrary; // biomes des planètes
         std::vector<Planetology::VegetationRenderer::Models> m_treeModels; // de chaque espèce, à cette image
         std::unique_ptr<OcclusionCulling> m_occlusion;

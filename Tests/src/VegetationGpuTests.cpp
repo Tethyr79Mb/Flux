@@ -167,6 +167,31 @@ bool RunVegetationGpuTests() {
     std::vector<std::vector<VegetationRenderer::Tree>> first;
     CHECK(Sow(**device, terrain, planet, everywhere, keys, first));
     CHECK(SameAsCpu(terrain, planet, everywhere, keys, first, "partout"));
+
+    // Listes de dessin : au loin, l'imposteur d'une espèce (une commande, un carré par arbre) à la place des primitives
+    // de son modèle lointain ; une espèce sans imposteur garde son modèle lointain.
+    {
+        auto renderer = VegetationRenderer::Create(**device);
+        CHECK(renderer.has_value());
+        GpuModel detailed;
+        detailed.primitives = {{0, 300, 0}, {300, 600, 1}};
+        GpuModel simplified;
+        simplified.primitives = {{0, 30, 0}};
+        GpuModel distant;
+        distant.primitives = {{0, 12, 0}, {12, 12, 1}};
+        const std::array models{VegetationRenderer::Models{&detailed, &simplified, nullptr, 7},
+                                VegetationRenderer::Models{&detailed, &simplified, &distant, 0}};
+        const std::vector<Planetology::PlanetRenderer::Plain> plains{{keys[0], Planetology::GetTileBounds(terrain, keys[0]).origin, 0.0}};
+        (*renderer)->BeginFrame(0);
+        (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, VegetationComponent{}, everywhere, Math::Quaternionf{}, plains);
+        (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, models);
+        const auto far = (*renderer)->GetDraws(VegetationRenderer::Far);
+        CHECK(far.size() == 3);
+        CHECK(far[0].impostor == 7 && far[0].model == &detailed);
+        CHECK(far[1].impostor == 0 && far[1].model == &distant && far[2].model == &distant && far[2].primitive == 1);
+        CHECK((*renderer)->GetDraws(VegetationRenderer::Near).size() == 4);
+        CHECK((*renderer)->GetDraws(VegetationRenderer::Middle).size() == 2);
+    }
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
     for (std::size_t k = 0; k < keys.size(); ++k) {
         // Forêt partout et densité 1 : presque toutes les places.

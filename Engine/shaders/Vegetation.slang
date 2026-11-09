@@ -193,15 +193,11 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             if (distance < distances.y) {
                 Append(distance < distances.x ? 0 : 1, species, tint, position, scale, rotation);
             } else {
-                // Au loin, un arbre couvre de moins en moins de pixels et il y en a de plus en plus : passé deux fois
-                // la distance des imposteurs, une part d'eux seulement (inverse de la distance), toujours les mêmes
-                // (hasard tiré de leur place), un peu plus grands pour couvrir autant. La couleur des forêts sur le
-                // sol (fragmentPlanet) comble le reste. Près de la portée, ils rapetissent jusqu'à disparaître.
-                const float keep = saturate(2.0 * distances.y / distance);
-                if (Random(placed.xyz) < keep) {
-                    const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
-                    Append(2, species, tint, position, scale * min(rsqrt(keep), 1.6) * shrink, rotation);
-                }
+                // Au loin, l'imposteur (vertexImpostor, deux triangles) : tous gardés, aucun arbre n'apparaît en
+                // approchant (on n'en gardait qu'une part, qui grandissait avec la proximité). Près de la portée, ils
+                // rapetissent jusqu'à disparaître ; la couleur des forêts sur le sol (fragmentPlanet) prend le relais.
+                const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
+                Append(2, species, tint, position, scale * shrink, rotation);
             }
         }
         // Ombres : le modèle simplifié, dans chaque cascade qu'il touche et dont la tranche peut recevoir son ombre.

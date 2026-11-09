@@ -195,7 +195,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - 🔨 Océan : tuiles plus grossières et moins nombreuses. Fait : l'eau, le fond et les terres basses sous l'horizon de la mer ne sont plus gardés (scène d'essai à 1 300 m : 20 tuiles d'eau → 10, 313 tuiles → 291). Reste : tuiles d'eau plus grossières que celles du sol ; eau cachée derrière une montagne écartée par la pyramide de profondeur seulement avec les mesh shaders.
 - ✅ Réglage « Qualité des nuages » (Bas, Moyen, Élevé par défaut : pas le long du rayon et vers le soleil), aux mêmes endroits que « Détail du sol ».
-- 🔧 Réglage « Distance de la végétation » (Bas 50 %, Moyen 75 %, Élevé 100 % par défaut, Ultra 150 % de la portée de la planète), aux mêmes endroits que « Détail du sol » et dans les préréglages. Limite : en Ultra, au-delà de 256 plaines en vue, les plus lointaines restent sans arbres.
+- 🔧 Réglage « Distance de la végétation » (Bas 50 %, Moyen 75 %, Élevé 100 % par défaut, Ultra 150 % de la portée de la planète), aux mêmes endroits que « Détail du sol » et dans les préréglages. Limite : au-delà de 512 plaines en vue, les plus lointaines restent sans arbres.
 - 🔧 Réglage « Détail du sol » (Bas, Moyen, Élevé par défaut, Ultra : tuile coupée à 3, 4, 5 ou 6 fois son bord), dans les Paramètres de l'éditeur, les réglages du jeu et les listes déroulantes des interfaces. Limite : choisi à la main, pas encore selon la carte graphique ni la vitesse mesurée.
 
 ### Rendu
@@ -211,8 +211,11 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Ray tracing pour l'éclairage et les reflets (Bruno, 2026-10-22) : beaucoup plus tard, une fois le moteur abouti et stable ; facultatif et détecté au démarrage comme les mesh shaders (la configuration minimum n'en a pas).
 - 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents, vraies montagnes : sommets placés un par un, aux versants de pentes différentes, creusés de ravines en arbre (bruit d'érosion), largeur des montagnes en mètres quel que soit le rayon (réglage « Largeur des montagnes »). À améliorer : la raideur dépend du rapport relief / largeur (trop de relief = aiguilles) ; pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire, voir plus bas) ; contreforts encore réguliers, pas de rochers posés sur les versants.
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
-  aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des forêts sur le sol (visible de
-  haut et de l'espace). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
+  aussi les ombres, imposteur octaédrique au loin), vent, jusqu'à 5 km par défaut, puis la couleur des forêts sur le
+  sol (visible de haut et de l'espace). Imposteurs (`TreeImpostors`) : le modèle détaillé de chaque espèce pris par le
+  GPU sous 8×8 vues de la demi-sphère du haut à sa première apparition (atlas couleur et normales 1024², environ
+  11 Mo par espèce), un carré par arbre qui mélange les trois vues les plus proches ; tous les arbres gardés jusqu'à la
+  portée (plus d'éclaircissement au loin). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
   au-dessus des forêts de montagne). Plaines semées d'avance autour de la caméra et sur son trajet (800 m, 64 au
   plus), arbres d'une plaine semée en vue qui apparaissent un à un en 0,5 s ; budget de 4 plaines semées par image
   encore à régler sur mesure. Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
@@ -230,8 +233,9 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   espèce restent à 40 % de l'espacement au moins, et les places qu'aucun bloc ne garde sont écartées avant le relief.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m) et pas garanti entre deux
-  espèces d'espacements différents ; 8 variantes d'arbres au plus par planète ; imposteurs en 3 quads croisés (plats vus
-  d'en haut) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas
+  espèces d'espacements différents ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
+  pixel : ils ne se croisent pas exactement entre eux ni avec le sol), feuillage clairsemé qui s'amincit dans les
+  petits mips (seuil d'alpha fixe) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas
   d'occlusion (un arbre derrière une montagne ou derrière d'autres arbres est quand même dessiné : prochaine étape,
   avec la pyramide de profondeur des objets) ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
   s'enfoncer un peu sur le sol plus grossier.

@@ -354,7 +354,7 @@ namespace Flux::Planetology {
         frame.sown = static_cast<std::uint32_t>(m_jobs.size());
         m_stats.sown = frame.sown;
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
-        const auto loaded = [](const Models& m) { return m.near && m.middle && m.far; };
+        const auto loaded = [](const Models& m) { return m.near && m.middle && (m.far || m.impostor != 0); };
         if (m_cells.empty() || std::ranges::none_of(models, loaded)) {
             return;
         }
@@ -373,6 +373,13 @@ namespace Flux::Planetology {
             data.capacities[list] = Capacities[list];
             for (std::uint32_t species = 0; species < std::min<std::size_t>(models.size(), MaxSpecies); ++species) {
                 if (!loaded(models[species])) {
+                    continue;
+                }
+                if (list == Far && models[species].impostor != 0 && m_commands.size() < MaxCommands) {
+                    // Imposteur : un carré par arbre, sans sommets (vertexImpostor).
+                    data.commandLists[m_commands.size()] = list * MaxSpecies + species;
+                    m_lists[list].push_back({models[species].near, 0, static_cast<std::uint32_t>(m_commands.size()), models[species].impostor});
+                    m_commands.push_back({ImpostorIndices, 0, 0, 0, 0});
                     continue;
                 }
                 const GpuModel& model = list == Near ? *models[species].near : list == Far ? *models[species].far : *models[species].middle;

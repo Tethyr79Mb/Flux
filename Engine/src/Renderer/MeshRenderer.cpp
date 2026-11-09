@@ -210,6 +210,17 @@ namespace Flux {
             return std::unexpected(vegetation.error());
         }
         renderer->m_vegetation = std::move(*vegetation);
+        auto impostors = TreeImpostors::Create(device, *renderer->m_models);
+        if (!impostors) {
+            return std::unexpected(impostors.error());
+        }
+        renderer->m_impostors = std::move(*impostors);
+        constexpr std::array<std::uint32_t, Planetology::VegetationRenderer::ImpostorIndices> quad{0, 1, 2, 2, 1, 3};
+        auto quadIndices = device.CreateBuffer({sizeof(quad), RHI::BufferUsage::Index}, quad.data());
+        if (!quadIndices) {
+            return std::unexpected(quadIndices.error());
+        }
+        renderer->m_impostorIndices = std::move(*quadIndices);
         auto occlusion = OcclusionCulling::Create(device);
         if (!occlusion) {
             return std::unexpected(occlusion.error());
@@ -517,6 +528,39 @@ namespace Flux {
                                              "fragmentTreeOpaque", "fragmentTree", true, true, false, nullptr, "vertexTreeDepth"});
             !result) {
             return result;
+        }
+        // Imposteurs des arbres : capture des vues dans les deux atlas (TreeImpostors), puis dessin au loin, un carré
+        // par arbre sans tampon de sommets. Les deux faces : le carré, tourné vers la caméra, et les feuilles capturées.
+        {
+            RHI::PipelineDesc desc;
+            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
+            desc.bindGroupLayouts = layouts;
+            desc.pushConstantsSize = sizeof(DrawParams);
+            desc.depthTest = true;
+            desc.depthWrite = true;
+            desc.depthCompare = RHI::CompareOp::Greater;
+            desc.cullMode = RHI::CullMode::None;
+            desc.vertexEntryPoint = "vertexImpostorBake";
+            desc.fragmentEntryPoint = "fragmentImpostorBake";
+            desc.vertexBuffers = staticBuffers;
+            desc.vertexAttributes = staticAttributes;
+            desc.colorFormat = TreeImpostors::ColorFormat;
+            desc.secondColorFormat = TreeImpostors::NormalFormat;
+            desc.writeSecondColor = true;
+            desc.depthFormat = TreeImpostors::DepthFormat;
+            if (auto result = create(m_impostorBake, desc); !result) {
+                return result;
+            }
+            desc.vertexEntryPoint = "vertexImpostor";
+            desc.fragmentEntryPoint = "fragmentImpostor";
+            desc.vertexBuffers = {};
+            desc.vertexAttributes = {};
+            desc.colorFormat = colorFormat;
+            desc.secondColorFormat = motionFormat;
+            desc.depthFormat = depthFormat;
+            if (auto result = create(m_impostor, desc); !result) {
+                return result;
+            }
         }
         if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
                                                "fragmentPlanet", "fragmentMain", true, false, false, "fragmentPlanetGeometry"});
@@ -1008,15 +1052,16 @@ namespace Flux {
                                            std::max(rim->sharpness, 0.5f)};
             }
             if (vegetation && !biomes.biomes.empty()) {
-                // Les forêts sur le sol à partir des imposteurs, où les arbres s'espacent (voir computeCull), selon les
-                // biomes ; elles s'arrêtent sur les pentes trop raides pour toutes les espèces.
+                // Les forêts sur le sol à partir de la moitié de la portée, entières à la portée, où les arbres
+                // finissent de rapetisser (voir computeCull) : elles prennent leur relais au loin. Selon les biomes ;
+                // elles s'arrêtent sur les pentes trop raides pour toutes les espèces.
                 float slope = 0.0f;
                 for (const Planetology::VegetationSet::Species& species : biomes.species) {
                     slope = std::max(slope, species.maxSlope);
                 }
                 const auto count = std::min<std::size_t>(biomes.biomes.size(), Planetology::VegetationSet::MaxBiomes);
                 m_planetData[index].forest = {static_cast<float>(count), 1.0f, std::cos(slope * (std::numbers::pi_v<float> / 180.0f)),
-                                              std::max(vegetation->farDistance, 1.0f)};
+                                              std::max(0.5f * vegetation->range * rangeScale, 1.0f)};
                 std::copy_n(biomes.biomes.begin(), count, m_planetData[index].biomes.begin());
             }
             if (clouds) {
@@ -1072,9 +1117,12 @@ namespace Flux {
                         models = {};
                     }
                 }
+                // Imposteur, tiré du modèle détaillé : capturé à sa première demande.
+                models.impostor = models.near ? m_impostors->Find(*models.near) : 0u;
                 m_treeModels.push_back(models);
             }
         }
+        m_impostors->EndFrame(frameIndex);
         const float tanY = std::tan(0.5f * camera.verticalFov);
         m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, m_shadowReceivers, m_treeModels);
         // surface.zw : éclairage du feuillage (ShadeFoliage), du composant.
@@ -1958,6 +2006,26 @@ namespace Flux {
         const bool shadow = list >= Planetology::VegetationRenderer::Shadow;
         for (const Planetology::VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
             const GpuModel& model = *draw.model;
+            if (draw.impostor != 0) {
+                if (depthOnly) {
+                    continue; // pas de pré-passe : deux triangles par arbre, peu de pixels recouverts
+                }
+                BindPipeline(commands, state, frameIndex, *m_impostor);
+                if (state.group != &m_models->GetWhiteGroup()) {
+                    state.group = &m_models->GetWhiteGroup();
+                    commands.SetBindGroup(0, *state.group);
+                }
+                state.page = BindState::NoPage; // indices du carré liés à la place de ceux d'une page
+                commands.BindIndexBuffer(*m_impostorIndices);
+                // color : sphère du modèle détaillé, celle de la capture ; material : atlas de couleur.
+                const Math::Vector3f center = model.bounds.GetCenter();
+                const DrawParams params{{center.x, center.y, center.z, Math::Length(model.bounds.GetSize() * 0.5f)},
+                                        {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                        draw.impostor, m_treeDraw, {}};
+                commands.PushConstants(&params, sizeof(params));
+                commands.DrawIndexedIndirect(m_vegetation->GetCommands(frameIndex), draw.command * sizeof(RHI::DrawIndexedCommand), 1);
+                continue;
+            }
             const GpuMaterial& material = model.materials[model.primitives[draw.primitive].material];
             if (model.resources.page != state.page) {
                 state.page = model.resources.page;
@@ -1983,6 +2051,45 @@ namespace Flux {
             commands.PushConstants(&params, sizeof(params));
             commands.DrawIndexedIndirect(m_vegetation->GetCommands(frameIndex), draw.command * sizeof(RHI::DrawIndexedCommand), 1);
         }
+    }
+
+    // Les Grid² vues du modèle détaillé, en une passe : un appel indirect par primitive, une instance par vue
+    // (vertexImpostorBake la place dans sa case). Puis les niveaux de mip, qui finissent lus par les shaders.
+    void MeshRenderer::BakeImpostor(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        const std::optional<TreeImpostors::Capture> capture = m_impostors->GetCapture(frameIndex);
+        if (!capture) {
+            return;
+        }
+        const GpuModel& model = *capture->model;
+        const std::array<RHI::TextureUse, 3> targets{RHI::TextureUse{capture->color, RHI::TextureAccess::ColorTarget, true},
+                                                     RHI::TextureUse{capture->normal, RHI::TextureAccess::ColorTarget, true},
+                                                     RHI::TextureUse{capture->depth, RHI::TextureAccess::DepthTarget, true}};
+        commands.UseTextures(targets);
+        commands.BeginRenderPass({.clearColor = {0.0f, 0.0f, 0.0f, 0.0f}, .depth = capture->depth, .clearDepth = 0.0f,
+                                  .colorTarget = capture->color, .secondColorTarget = capture->normal});
+        constexpr auto size = static_cast<float>(TreeImpostors::Size);
+        commands.SetViewport({0.0f, 0.0f, size, size});
+        commands.SetScissor({0, 0, TreeImpostors::Size, TreeImpostors::Size});
+        BindState state;
+        BindPipeline(commands, state, frameIndex, *m_impostorBake);
+        commands.SetBindGroup(0, m_models->GetWhiteGroup());
+        const GeometryPage& page = m_models->GetPage(model.resources.page);
+        const std::array<const RHI::Buffer*, 1> vertexBuffers{page.vertices.get()};
+        commands.BindVertexBuffers(0, vertexBuffers);
+        commands.BindIndexBuffer(*page.indices);
+        const Math::Vector3f center = model.bounds.GetCenter();
+        const float radius = Math::Length(model.bounds.GetSize() * 0.5f);
+        for (std::uint32_t p = 0; p < capture->primitiveCount; ++p) {
+            const GpuMaterial& material = model.materials[model.primitives[p].material];
+            const DrawParams params{{center.x, center.y, center.z, radius}, {0.0f, 0.0f, 0.0f, 0.0f}, 0u, 0.0f, 0u, 1.0f, 1.0f,
+                                    0.0f, 0.0f, material.index, 0u, {}};
+            commands.PushConstants(&params, sizeof(params));
+            commands.DrawIndexedIndirect(*capture->commands, p * sizeof(RHI::DrawIndexedCommand), 1);
+        }
+        commands.EndRenderPass();
+        commands.GenerateMipmaps(*capture->color);
+        commands.GenerateMipmaps(*capture->normal);
+        m_impostors->Captured();
     }
 
     void MeshRenderer::ComputeTiles(RHI::CommandList& commands, std::uint32_t frameIndex) {

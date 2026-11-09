@@ -591,10 +591,14 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   (« Lumière enveloppante » 0,3 et « Lumière traversante » 0,4 du composant Végétation, passées par la `DrawData` neutre
   des arbres, `surface.zw`). L'air et l'ombre des nuages sont calculés par sommet. Modèles :
   `assets/Modeles/Arbre`, générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à
-  la portée du composant (3 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
-  Au loin, les imposteurs s'espacent (une part inverse de la distance, un peu agrandis) et rapetissent près de la
-  portée ; `fragmentPlanet` peint la cime des forêts sur le sol (mêmes taches et climat, `ForestAt`, calculés par
-  sommet) à partir de la distance des imposteurs. L'air des arbres est calculé par sommet (`TreeVertexOutput`).
+  la portée du composant (5 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
+  Au loin, imposteurs octaédriques (`Renderer/TreeImpostors`) : le modèle détaillé est pris par le GPU sous 8×8 vues
+  de la demi-sphère du haut (`vertexImpostorBake`, une instance par vue, passe « imposteurs des arbres », une espèce
+  par image), dans deux atlas à mips rangés dans la table des images (couleur, normales du repère de l'arbre) ;
+  `vertexImpostor` dessine un carré tourné vers la caméra sans tampon de sommets et projette le point sur les trois
+  vues les plus proches, mélangées. Tous les arbres sont gardés ; ils rapetissent près de la portée, et
+  `fragmentPlanet` peint la cime des forêts sur le sol (mêmes taches et climat, `ForestAt`, calculés par sommet) à
+  partir de la moitié de la portée. L'air des arbres est calculé par sommet (`TreeVertexOutput`).
 
 ## Interface (FluxUI)
 

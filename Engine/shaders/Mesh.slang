@@ -42,7 +42,7 @@ struct PlanetData
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
     float4 cloudShape;        // x : couverture ; y : opacité ; z : 1 / taille des formations (1/m) ; w : angle de dérive
     float4 cloudColor;        // rgb : couleur linéaire ; w : épaisseur de la couche (m)
-    // Forêts (VegetationComponent), vues comme une couleur du sol là où les arbres s'espacent puis s'arrêtent :
+    // Forêts (VegetationComponent), vues comme une couleur du sol au loin, jusqu'où les arbres s'arrêtent et au-delà :
     // x : nombre de biomes ; y : 1 s'il y a des forêts ; z : cosinus de la pente maximale (celle des espèces qui
     // montent le plus haut) ; w : distance où la couleur commence (m), entière au double.
     float4 forest;
@@ -401,6 +401,7 @@ ShadowOutput vertexTreeDepth(VertexInput input, uint instance : SV_VulkanInstanc
     ShadowOutput output;
     output.position = TreeClipPosition(input.position, instance, worldPosition, rotation);
     output.uv = input.uv;
+    output.toEye = toEye;
     output.material = params.material;
     return output;
 }
@@ -1432,8 +1433,8 @@ float4 PlanetColor(PlanetVertexOutput input)
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
                                            temperature, foot, snow, surface.roughness);
     }
-    // Forêts au loin : la cime des arbres là où ils s'espacent (VegetationRenderer garde moins d'arbres au loin) puis
-    // s'arrêtent. Mêmes limites que computeTrees : pente, plage, neige, roche.
+    // Forêts au loin : la cime des arbres de la moitié de leur portée, où elle comble les trous entre les imposteurs, à
+    // la portée, où ils s'arrêtent, et au-delà. Mêmes limites que computeTrees : pente, plage, neige, roche.
     if (planet.forest.y > 0.0 && input.forest > 0.0) {
         const float treeLine = planet.shape.z - 0.1 * relief;
         const float canopy = input.forest * smoothstep(planet.forest.w, planet.forest.w * 2.0, distance)
@@ -1716,6 +1717,7 @@ struct ShadowOutput
 {
     float4 position : SV_Position;
     float2 uv       : TEXCOORD;
+    nointerpolation float3 toEye : TO_EYE;
     nointerpolation uint material : MATERIAL;
 };
 
@@ -1762,6 +1764,7 @@ ShadowOutput vertexTreeShadow(VertexInput input, uint instance : SV_VulkanInstan
     ShadowOutput output;
     output.position = Transform(m, TreePosition(treeInstances[instance * 2], input.position, rotation, instance));
     output.uv = input.uv;
+    output.toEye = toEye;
     output.material = params.material;
     return output;
 }
@@ -1779,4 +1782,212 @@ void fragmentShadow(ShadowOutput input)
     if (material.alphaCutoff > 0.0 && SampleMaterial(material.baseColorImage, input.uv).a * material.color.a < material.alphaCutoff) {
         discard;
     }
+}
+
+// Imposteurs des arbres (Planetology::TreeImpostors) : chaque espèce photographiée une fois, au chargement, sous
+// ImpostorGrid x ImpostorGrid directions de la demi-sphère du haut (un arbre ne se voit jamais par-dessous), rangées
+// en demi-octaèdre dans un atlas : couleur (alpha : couverture) et normales du repère de l'arbre. Au loin, un arbre est
+// un carré tourné vers la caméra, qui mélange les trois vues les plus proches de la direction d'où on le regarde : il
+// garde son volume et sa lumière de tous les côtés, pour le prix de deux triangles.
+// Doit correspondre à TreeImpostors::Grid.
+static const uint ImpostorGrid = 8;
+
+// Direction de la demi-sphère du haut (y >= 0) <-> point de [-1, 1]² (demi-octaèdre tourné d'un quart de tour, qui
+// remplit le carré).
+float2 EncodeHemiOctahedron(float3 d)
+{
+    const float2 p = d.xz / (abs(d.x) + abs(d.y) + abs(d.z));
+    return float2(p.x + p.y, p.x - p.y);
+}
+
+float3 DecodeHemiOctahedron(float2 e)
+{
+    const float2 p = float2(e.x + e.y, e.x - e.y) * 0.5;
+    return normalize(float3(p.x, 1.0 - abs(p.x) - abs(p.y), p.y));
+}
+
+// Direction de la vue (i, j) de la grille : les coins compris, pour que l'horizon ait ses vues.
+float3 ImpostorViewDirection(uint2 view)
+{
+    return DecodeHemiOctahedron(float2(view) / float(ImpostorGrid - 1) * 2.0 - 1.0);
+}
+
+// Repère d'une vue regardée depuis `toEye` (unitaire, repère de l'arbre) : droite et haut de l'image. Le même à la
+// capture et au dessin.
+void ImpostorBasis(float3 toEye, out float3 right, out float3 up)
+{
+    const float3 reference = abs(toEye.y) > 0.999 ? float3(0.0, 0.0, -1.0) : float3(0.0, 1.0, 0.0);
+    right = normalize(cross(reference, toEye));
+    up = cross(toEye, right);
+}
+
+struct ImpostorBakeOutput
+{
+    float4 position : SV_Position;
+    float3 normal   : NORMAL;
+    float2 uv       : TEXCOORD;
+    nointerpolation float3 toEye : TO_EYE;
+    nointerpolation uint material : MATERIAL;
+};
+
+// Capture : une primitive du modèle détaillé, vue `instance` (j x ImpostorGrid + i), projetée sans perspective dans sa
+// case de l'atlas. params.color : sphère du modèle (centre, rayon) ; params.material : matériau de la primitive.
+[shader("vertex")]
+ImpostorBakeOutput vertexImpostorBake(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const uint2 view = uint2(instance % ImpostorGrid, instance / ImpostorGrid);
+    const float3 toEye = ImpostorViewDirection(view);
+    float3 right;
+    float3 up;
+    ImpostorBasis(toEye, right, up);
+    const float4 sphere = params.color;
+    const float3 local = (input.position - sphere.xyz) / sphere.w; // dans la sphère unité
+    const float cell = 2.0 / float(ImpostorGrid);
+    ImpostorBakeOutput output;
+    // y de Vulkan vers le bas : le haut de l'arbre en haut de sa case. Profondeur en reverse-Z (plus grand = plus près).
+    output.position = float4(-1.0 + cell * (float(view.x) + 0.5 + 0.5 * dot(local, right)),
+                             -1.0 + cell * (float(view.y) + 0.5 - 0.5 * dot(local, up)),
+                             saturate(0.5 + 0.5 * dot(local, toEye)), 1.0);
+    output.normal = input.normal;
+    output.uv = input.uv;
+    output.toEye = toEye;
+    output.material = params.material;
+    return output;
+}
+
+struct ImpostorBakeTargets
+{
+    float4 color  : SV_Target0; // linéaire (cible sRGB) ; alpha 1 là où il y a l'arbre, 0 ailleurs (effacée)
+    float4 normal : SV_Target1; // repère de l'arbre, de [-1, 1] vers [0, 1] ; alpha 1 de même
+};
+
+[shader("fragment")]
+ImpostorBakeTargets fragmentImpostorBake(ImpostorBakeOutput input)
+{
+    const MaterialData material = materials[input.material];
+    const float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color;
+    if (material.alphaCutoff > 0.0 && base.a < material.alphaCutoff) {
+        discard;
+    }
+    // Face vue de dos (feuille double face) : éclairée comme vue de son côté, comme MeshColor. L'écorce, fermée, ne
+    // montre que des faces avant.
+    float3 normal = normalize(input.normal);
+    normal = dot(normal, input.toEye) < 0.0 ? -normal : normal;
+    ImpostorBakeTargets output;
+    output.color = float4(base.rgb, 1.0);
+    output.normal = float4(normal * 0.5 + 0.5, 1.0);
+    return output;
+}
+
+struct ImpostorVertexOutput
+{
+    float4 position : SV_Position;
+    float3 worldPosition : POSITION;
+    // Le point du carré vu dans chacune des trois vues mélangées : projeté sur leur image comme à la capture, de
+    // (0, 0) en haut à gauche de sa case à (1, 1). Linéaire sur le carré, donc exact une fois interpolé.
+    float2 uv0 : TEXCOORD0;
+    float2 uv1 : TEXCOORD1;
+    float2 uv2 : TEXCOORD2;
+    float3 airTransmittance : AIR_TRANSMITTANCE;
+    float3 airScattered : AIR_SCATTERED;
+    float clouds : CLOUDS;
+    nointerpolation float3 tint : TINT;
+    nointerpolation uint3 views : VIEWS;      // les trois vues mélangées (j x ImpostorGrid + i)
+    nointerpolation float3 weights : WEIGHTS; // leur part (somme 1)
+    nointerpolation float4 rotation : ROTATION; // de l'arbre (quaternion), pour ses normales
+};
+
+// Point `local` (repère de l'arbre, sphère unité) sur l'image de la vue `view`, comme vertexImpostorBake.
+float2 ImpostorUv(uint view, float3 local)
+{
+    float3 right;
+    float3 up;
+    ImpostorBasis(ImpostorViewDirection(uint2(view % ImpostorGrid, view / ImpostorGrid)), right, up);
+    return float2(0.5 + 0.5 * dot(local, right), 0.5 - 0.5 * dot(local, up));
+}
+
+// Un arbre au loin (liste Far de VegetationRenderer) : sommets 0 à 3 de son carré (index 0 1 2 2 1 3), sans tampon
+// de sommets. params.color : sphère du modèle détaillé ; params.material : case de l'atlas de couleur (normales : la
+// suivante) ; params.draw : entité neutre des arbres.
+// Le carré fait face à la caméra ; chaque vue y est projetée selon sa propre direction (et non collée au carré) : la
+// cime reste en place quand on tourne autour ou qu'on passe au-dessus. Un peu plus grand que la sphère, pour garder
+// les bords de l'arbre vus d'une vue voisine (jusqu'à 1 / cos de l'écart entre deux vues).
+[shader("vertex")]
+ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : SV_VulkanInstanceID)
+{
+    const float4 placement = treeInstances[instance * 2];
+    float4 rotation = treeInstances[instance * 2 + 1];
+    rotation.w = sqrt(saturate(1.0 - dot(rotation.xyz, rotation.xyz)));
+    const float4 sphere = params.color;
+    const float3 center = placement.xyz + TreeRotate(rotation, sphere.xyz * placement.w);
+    const float radius = sphere.w * placement.w;
+    // D'où on le regarde, dans son repère ; jamais par-dessous (vu d'en bas, la vue de l'horizon).
+    const float4 inverse = float4(-rotation.xyz, rotation.w);
+    float3 toEye = TreeRotate(inverse, normalize(-center));
+    toEye = normalize(float3(toEye.x, max(toEye.y, 0.0), toEye.z) + float3(0.0, 1.0e-4, 0.0));
+    // Les trois vues autour : la case de la grille où tombe la direction, coupée en deux triangles.
+    const float2 grid = (EncodeHemiOctahedron(toEye) * 0.5 + 0.5) * float(ImpostorGrid - 1);
+    const float2 cell = min(floor(grid), float(ImpostorGrid - 2));
+    const float2 f = saturate(grid - cell);
+    const uint2 c = uint2(cell);
+    ImpostorVertexOutput output;
+    if (f.x + f.y < 1.0) {
+        output.views = uint3(c.y * ImpostorGrid + c.x, c.y * ImpostorGrid + c.x + 1, (c.y + 1) * ImpostorGrid + c.x);
+        output.weights = float3(1.0 - f.x - f.y, f.x, f.y);
+    } else {
+        output.views = uint3((c.y + 1) * ImpostorGrid + c.x + 1, (c.y + 1) * ImpostorGrid + c.x, c.y * ImpostorGrid + c.x + 1);
+        output.weights = float3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
+    }
+    float3 right;
+    float3 up;
+    ImpostorBasis(toEye, right, up);
+    const float2 corner = float2((vertex & 1u) != 0u ? 1.0 : -1.0, (vertex & 2u) != 0u ? -1.0 : 1.0) * 1.15;
+    const float3 local = right * corner.x + up * corner.y;
+    output.uv0 = ImpostorUv(output.views.x, local);
+    output.uv1 = ImpostorUv(output.views.y, local);
+    output.uv2 = ImpostorUv(output.views.z, local);
+    output.worldPosition = center + TreeRotate(rotation, local) * radius;
+    output.position = Transform(frame[0].viewProjection, output.worldPosition);
+    output.airScattered = AirTo(output.worldPosition, output.airTransmittance);
+    output.clouds = CloudShadow(output.worldPosition);
+    output.tint = TreeTint(instance);
+    output.rotation = rotation;
+    return output;
+}
+
+[shader("fragment")]
+SceneOutput fragmentImpostor(ImpostorVertexOutput input)
+{
+    float4 color = float4(0.0);
+    float4 packed = float4(0.0);
+    const float2 uvs[3] = {input.uv0, input.uv1, input.uv2};
+    [unroll]
+    for (uint k = 0; k < 3; ++k) {
+        const uint view = input.views[k];
+        // Hors de sa case : le bord, vide (la sphère y est inscrite), plutôt que la case voisine.
+        const float2 uv = (float2(view % ImpostorGrid, view / ImpostorGrid) + clamp(uvs[k], 0.002, 0.998)) / float(ImpostorGrid);
+        color += SampleMaterial(params.material, uv) * input.weights[k];
+        packed += SampleMaterial(params.material + 1, uv) * input.weights[k];
+    }
+    // Alpha : part de l'arbre dans le texel (les niveaux de mip moyennent la couverture). La couleur et les normales,
+    // moyennées avec le fond noir de l'atlas, sont ramenées à celles de l'arbre seul.
+    if (color.a < 0.5) {
+        discard;
+    }
+    const float3 base = color.rgb / color.a * input.tint;
+    const float3 normal = normalize(TreeRotate(input.rotation, packed.rgb / max(packed.a, 1.0e-3) * 2.0 - 1.0));
+    const DrawData draw = draws[params.draw];
+    Surface surface;
+    surface.normal = normal;
+    surface.toEye = normalize(-input.worldPosition);
+    surface.diffuse = base * draw.tint.rgb;
+    surface.f0 = float3(0.04);
+    surface.roughness = 0.8; // feuillage mat (comme MeshColor, foliage)
+    float inside;
+    float3 lit = LightSurface(surface, normal, input.worldPosition, 1.0, input.clouds, inside, true, draw.surface.zw);
+    lit = lit * input.airTransmittance + input.airScattered;
+    SceneOutput output;
+    output.color = float4(Radiance(lit), 1.0);
+    output.motion = float2(0.0); // arbres immobiles
+    return output;
 }

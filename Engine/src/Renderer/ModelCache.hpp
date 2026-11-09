@@ -149,6 +149,13 @@ namespace Flux {
         // Modèles demandés et pas encore visibles.
         std::size_t GetLoadingCount() const { return m_loader.GetPending() + m_ready.size() + m_installing.size(); }
 
+        // Cases de la table des images pour des textures faites ailleurs (imposteurs des arbres) : `count` cases à la
+        // suite, la première rendue, ou rien si la table est pleine. SetImage y range une texture (lue avec le
+        // filtrage des modèles) ; FreeImages les rend, une fois que le GPU ne les lit plus.
+        std::optional<std::uint32_t> AllocateImages(std::uint32_t count) { return m_imageSlots.Allocate(count); }
+        void SetImage(std::uint32_t slot, const RHI::Texture& texture);
+        void FreeImages(std::uint32_t first, std::uint32_t count) { m_imageSlots.Free(first, count); }
+
         // Modèle du fichier, demandé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
         // tant qu'il n'est pas arrivé, ou s'il est illisible (message dans la console).
         const GpuModel* Find(const std::filesystem::path& path);
