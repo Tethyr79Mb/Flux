@@ -13,6 +13,8 @@
 #include <Flux/Scene/Scene.hpp>
 
 #include <array>
+#include <string>
+#include <utility>
 #include <string_view>
 
 namespace Game {
@@ -40,7 +42,7 @@ namespace Game {
 
         void Damage(Simulation& simulation, SimState& state) {
             state.destroyed.clear();
-            Weapons::ApplyHits(simulation.GetScene(), simulation.GetProjectileHits(), simulation.GetPlayer(), &state.destroyed);
+            Weapons::ApplyHits(simulation.GetScene(), simulation.GetProjectileHits(), simulation.GetPlayers(), &state.destroyed);
             for (const std::string& name : state.destroyed) {
                 Log::Info("« {} » détruit", name);
             }
@@ -58,6 +60,21 @@ namespace Game {
         constexpr std::string_view ResetSystem = "Jeu : oubli";
         constexpr std::array Systems{PilotSystem, MissionSystem, TravelSystem,    SteerSystem, DamageSystem,
                                      FireSystem,  EnemyFireSystem, SpinSystem, ResetSystem};
+    }
+
+    PlayerStateComponent& GetPlayerState(Scene& scene, Entity player) {
+        return scene.GetRegistry().get_or_emplace<PlayerStateComponent>(player);
+    }
+
+    PlayerStateComponent* FindPlayerState(Scene& scene, Entity player) {
+        return player != NullEntity && scene.IsValid(player) ? scene.GetRegistry().try_get<PlayerStateComponent>(player) : nullptr;
+    }
+
+    void AddNotice(PlayerStateComponent& state, std::string notice) {
+        if (state.notices.size() >= PlayerStateComponent::MaxNotices) {
+            state.notices.erase(state.notices.begin());
+        }
+        state.notices.push_back(std::move(notice));
     }
 
     std::shared_ptr<SimState> RegisterSimulation(Simulation& simulation) {
@@ -81,10 +98,11 @@ namespace Game {
         simulation.AddSystem(Stage::Interaction, std::string(PilotSystem),
                              [state](Simulation& s, double) { Piloting::Pilot(s, state->pilot); });
         simulation.AddSystem(Stage::Interaction, std::string(MissionSystem),
-                             [state](Simulation& s, double) { Missions::Interact(s, *state); });
+                             [](Simulation& s, double) { Missions::Interact(s); });
         simulation.AddSystem(Stage::BeforePhysics, std::string(TravelSystem),
                              [state](Simulation& s, double dt) { Navigation::Travel(s, *state, dt); });
-        simulation.AddSystem(Stage::BeforePhysics, std::string(SteerSystem), Combat::Steer);
+        simulation.AddSystem(Stage::BeforePhysics, std::string(SteerSystem),
+                             [state](Simulation& s, double dt) { Combat::Steer(s, state->combatTargets, dt); });
         // Les dégâts du pas avant les nouveaux tirs ; le joueur tire avant les ennemis.
         simulation.AddSystem(Stage::AfterPhysics, std::string(DamageSystem), [state](Simulation& s, double) { Damage(s, *state); });
         simulation.AddSystem(Stage::AfterPhysics, std::string(FireSystem),
@@ -93,10 +111,8 @@ namespace Game {
         simulation.AddSystem(Stage::AfterPhysics, std::string(SpinSystem),
                              [state](Simulation& s, double dt) { Spin(s, state->spinSpeed, dt); });
         simulation.AddSystem(Stage::Reset, std::string(ResetSystem), [state](Simulation& s, double) {
-            Navigation::Reset(state->navigation);
-            Missions::Reset(state->missions);
+            s.GetScene().GetRegistry().clear<PlayerStateComponent>(); // missions, navigation et messages des joueurs
             PlayerWeapons::Reset(s.GetScene(), state->weapons);
-            state->notices.clear();
         });
         return state;
     }
@@ -105,6 +121,8 @@ namespace Game {
         for (const std::string_view system : Systems) {
             simulation.RemoveSystem(system);
         }
-        simulation.GetScene().GetRegistry().clear<PilotWeaponsComponent>(); // son type est dans le module déchargé
+        // Leurs types sont dans le module déchargé.
+        simulation.GetScene().GetRegistry().clear<PilotWeaponsComponent>();
+        simulation.GetScene().GetRegistry().clear<PlayerStateComponent>();
     }
 }

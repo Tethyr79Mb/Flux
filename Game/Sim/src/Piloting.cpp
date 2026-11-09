@@ -39,18 +39,18 @@ namespace Game::Piloting {
 
     void Pilot(Simulation& simulation, const PilotActions& actions) {
         Scene& scene = simulation.GetScene();
-        const Entity player = simulation.GetPlayer();
-        const auto* character = player != NullEntity ? scene.TryGet<CharacterComponent>(player) : nullptr;
-        if (!character || character->seat == NullEntity) {
-            return;
-        }
-        const PlayerCommand& command = simulation.GetPlayerCommand(player);
-        simulation.SetPilotInput(ReadShipInput(command, actions));
-        if (command.WasPressed(actions.level)) {
-            if (const Entity ship = Ships::GetPilotedShip(scene, player); ship != NullEntity) {
-                ShipComponent& component = scene.Get<ShipComponent>(ship);
-                component.levelAssist = !component.levelAssist;
-                Log::Info("Stabilisation à plat : {}", component.levelAssist ? "oui" : "non");
+        for (const Entity player : simulation.GetPlayers()) {
+            if (scene.Get<CharacterComponent>(player).seat == NullEntity) {
+                continue;
+            }
+            const PlayerCommand& command = simulation.GetPlayerCommand(player);
+            simulation.SetPilotInput(player, ReadShipInput(command, actions));
+            if (command.WasPressed(actions.level)) {
+                if (const Entity ship = Ships::GetPilotedShip(scene, player); ship != NullEntity) {
+                    ShipComponent& component = scene.Get<ShipComponent>(ship);
+                    component.levelAssist = !component.levelAssist;
+                    Log::Info("Stabilisation à plat : {}", component.levelAssist ? "oui" : "non");
+                }
             }
         }
     }

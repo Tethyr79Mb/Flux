@@ -3,6 +3,9 @@
 #include "Flux/SimExport.hpp"
 #include "Flux/Scene/Components.hpp"
 
+#include <span>
+#include <utility>
+
 namespace Flux {
     class Scene;
 
@@ -52,8 +55,10 @@ namespace Flux {
     // Vol des vaisseaux : pilotage du vaisseau aux commandes et moteurs des autres. La physique (PhysicsWorld) les
     // déplace ensuite selon ShipComponent::velocity et angularVelocity.
     namespace Ships {
-        // piloted : vaisseau aux commandes du joueur (NullEntity : aucun, voir GetPilotedShip). Pendant le jeu, après
-        // Seats::Update et avant la physique.
+        // piloted : vaisseaux aux commandes d'un joueur (voir GetPilotedShip), chacun avec ses commandes ; les autres
+        // coupent leurs moteurs. Pendant le jeu, après Seats::Update et avant la physique.
+        FLUX_SIM_API void Update(Scene& scene, std::span<const std::pair<Entity, ShipInput>> piloted, double deltaSeconds);
+        // Un seul vaisseau piloté (NullEntity : aucun).
         FLUX_SIM_API void Update(Scene& scene, Entity piloted, double deltaSeconds, const ShipInput& input);
 
         // Vaisseau du poste de pilotage où le joueur est assis, NullEntity sinon.

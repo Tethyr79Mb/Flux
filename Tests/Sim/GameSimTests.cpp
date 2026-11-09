@@ -15,7 +15,7 @@ bool RunGameSimTests() {
     // Les actions du jeu suivent celles du personnage, dans l'ordre de leur déclaration.
     CHECK(state->pilot.forward == first.GetActions().GetId(CharacterActions::Forward));
     CHECK(state->pilot.brake == 7);
-    CHECK(state->navigation.warpAction != NoInputAction && state->weapons.groupActions[9] != NoInputAction);
+    CHECK(state->navigation.warp != NoInputAction && state->weapons.groupActions[9] != NoInputAction);
 
     // Une seconde simulation (une autre zone) a son propre état et les mêmes bits.
     Simulation second;
@@ -28,12 +28,30 @@ bool RunGameSimTests() {
     for (int step = 0; step < 120; ++step) {
         first.Step(SimulationClock::StepSeconds);
     }
-    CHECK(first.GetScene().IsValid(cube) && state->notices.empty() && state->navigation.destinations.empty());
+    CHECK(first.GetScene().IsValid(cube));
 
-    // Objectif de mission oublié avec la scène.
-    Game::Navigation::SetWarpObjective(state->navigation, "Mission : test", Math::WorldPosition{});
-    first.SceneReplaced();
-    CHECK(!state->navigation.objective && state->navigation.objectiveName.empty());
+    // Deux joueurs : chacun son état de jeu, sur son personnage.
+    Scene& scene = first.GetScene();
+    const Entity one = scene.CreateEntity("Un");
+    const Entity two = scene.CreateEntity("Deux");
+    scene.Add<CharacterComponent>(one);
+    scene.Add<CharacterComponent>(two);
+    first.Step(SimulationClock::StepSeconds);
+    Game::PlayerStateComponent* oneState = Game::FindPlayerState(scene, one);
+    CHECK(oneState && Game::FindPlayerState(scene, two) && oneState != Game::FindPlayerState(scene, two));
+    Game::Navigation::SetWarpObjective(oneState->navigation, "Mission : test", Math::WorldPosition{});
+    CHECK(!Game::FindPlayerState(scene, two)->navigation.objective);
+    // Un serveur n'affiche rien : les messages d'un joueur ne s'entassent pas.
+    for (int notice = 0; notice < 100; ++notice) {
+        Game::AddNotice(*oneState, "message");
+    }
+    CHECK(oneState->notices.size() == Game::PlayerStateComponent::MaxNotices);
+    CHECK(!Game::Missions::Accept(first, one, NullEntity)); // pas de donneur
+
+    // Oubliés à l'arrêt.
+    first.Stop();
+    CHECK(!Game::FindPlayerState(scene, one));
+    first.Start();
 
     // Retirés : les systèmes ne gardent plus l'état.
     Game::UnregisterSimulation(first);

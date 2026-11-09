@@ -83,7 +83,7 @@ namespace Game::CombatAI {
         }
     }
 
-    void Steer(Scene& scene, double deltaSeconds, Entity target) {
+    void Steer(Scene& scene, double deltaSeconds, std::span<const Entity> targets) {
         const float delta = static_cast<float>(deltaSeconds);
         if (delta <= 0.0f) {
             return; // pause
@@ -110,6 +110,19 @@ namespace Game::CombatAI {
             }
             const bool hit = current < ai.lastHealth;
             ai.lastHealth = current;
+
+            ai.target = NullEntity;
+            double nearest = std::numeric_limits<double>::infinity();
+            for (const Entity candidate : targets) {
+                if (IsTarget(scene, entity, candidate)) {
+                    const double distance = Math::Length(Math::Delta(position, scene.GetWorldPosition(candidate)));
+                    if (distance < nearest) {
+                        nearest = distance;
+                        ai.target = candidate;
+                    }
+                }
+            }
+            const Entity target = ai.target;
 
             const bool hasTarget = IsTarget(scene, entity, target);
             const Math::Vector3d offset = hasTarget ? Math::Delta(position, scene.GetWorldPosition(target)) : Math::Vector3d{};
@@ -186,13 +199,14 @@ namespace Game::CombatAI {
         }
     }
 
-    void Fire(Scene& scene, double deltaSeconds, Entity target, std::vector<Projectile>& projectiles) {
+    void Fire(Scene& scene, double deltaSeconds, std::vector<Projectile>& projectiles) {
         if (deltaSeconds <= 0.0) {
             return;
         }
         auto view = scene.GetRegistry().view<CombatAIComponent, ShipComponent>();
         for (const Entity entity : view) {
             CombatAIComponent& ai = view.get<CombatAIComponent>(entity);
+            const Entity target = ai.target;
             const bool shooting = ai.firing && IsTarget(scene, entity, target);
             // Sans tir, les tourelles reviennent vers l'avant et les canons refroidissent.
             WeaponInput input;

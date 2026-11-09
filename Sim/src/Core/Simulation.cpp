@@ -7,6 +7,7 @@
 #include "Flux/Scene/Seats.hpp"
 #include "Core/FlightSurroundings.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace Flux {
@@ -51,8 +52,8 @@ namespace Flux {
         m_clock.Reset();
         m_projectiles.clear();
         m_projectileHits.clear();
-        m_pilotInput = {};
         m_localCommand = {};
+        m_commands.clear();
         RunSystems(Stage::Reset, 0.0);
         if (m_started) {
             StartPhysics();
@@ -73,8 +74,8 @@ namespace Flux {
         m_physics.reset();
         m_projectiles.clear();
         m_projectileHits.clear();
-        m_pilotInput = {};
         m_localCommand = {};
+        m_commands.clear();
         RunSystems(Stage::Reset, 0.0);
     }
 
@@ -94,71 +95,126 @@ namespace Flux {
 
     const PlayerCommand& Simulation::GetPlayerCommand(Entity player) const {
         static const PlayerCommand None;
+        for (const auto& [entity, command] : m_commands) {
+            if (entity == player) {
+                return command;
+            }
+        }
         return player == GetPlayer() ? m_localCommand : None;
+    }
+
+    void Simulation::SetPlayerCommand(Entity player, const PlayerCommand& command) {
+        for (auto& [entity, existing] : m_commands) {
+            if (entity == player) {
+                existing = command;
+                return;
+            }
+        }
+        m_commands.emplace_back(player, command);
+    }
+
+    void Simulation::CollectPlayers() {
+        m_players.clear();
+        for (const auto [entity, character] : m_scene.GetRegistry().view<const CharacterComponent>().each()) {
+            if (character.player) {
+                m_players.push_back(entity);
+            }
+        }
+        // Ordre fixe d'une scène à l'autre (pas celui du stockage d'EnTT) : les mêmes commandes donnent le même pas.
+        std::ranges::sort(m_players, {}, [this](Entity entity) {
+            const auto* id = m_scene.TryGet<IdComponent>(entity);
+            return std::pair{id ? id->id.value : 0, static_cast<std::uint32_t>(entity)};
+        });
+        m_playerSteps.clear();
+        for (const Entity player : m_players) {
+            const PlayerCommand& command = GetPlayerCommand(player);
+            m_playerSteps.push_back({.entity = player,
+                                     .command = command,
+                                     .interactionPending = command.WasPressed(m_characterActions.interact)});
+        }
+    }
+
+    Simulation::PlayerStep* Simulation::FindPlayerStep(Entity player) {
+        for (PlayerStep& step : m_playerSteps) {
+            if (step.entity == player) {
+                return &step;
+            }
+        }
+        return nullptr;
+    }
+
+    Seats::Durations Simulation::GetSeatDurations(Entity character) const {
+        // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
+        const auto* animator = m_scene.TryGet<AnimatorComponent>(character);
+        const auto* model = m_scene.TryGet<ModelComponent>(character);
+        if (!m_animationDurations || !m_project || !animator || !model || model->model.empty() || animator->speed <= 0.0f) {
+            return Seats::Durations{};
+        }
+        const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(model->model);
+        const auto duration = [&](const std::string& name) {
+            return name.empty() ? 0.0f : m_animationDurations(path, name) / animator->speed;
+        };
+        return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
     }
 
     void Simulation::Step(double deltaSeconds) {
         if (m_replicated) {
             m_localCommand = {};
-            m_pilotInput = {};
+            m_commands.clear();
             RunSystems(Stage::Replication, deltaSeconds);
             return;
         }
         if (!m_physics) {
             StartPhysics(); // scène changée sans LoadScene (par le code du jeu) : préparée maintenant
         }
-        const Entity player = m_physics->GetPlayer();
-        const auto* playerCharacter = m_scene.IsValid(player) ? m_scene.TryGet<CharacterComponent>(player) : nullptr;
-        const bool seated = playerCharacter && playerCharacter->seat != NullEntity;
-        const PlayerCommand& command = GetPlayerCommand(player);
-
-        // Personnage du joueur, par rapport à sa vue ; assis, les mêmes actions pilotent le vaisseau (poste de
-        // pilotage).
-        CharacterInput character;
         // Systèmes du jeu d'abord : Interagir près d'un donneur de missions sert à lui parler, pas à s'asseoir.
-        m_interactionPending = command.WasPressed(m_characterActions.interact);
+        CollectPlayers();
         RunSystems(Stage::Interaction, deltaSeconds);
-        const SeatInput seatInput{.interact = std::exchange(m_interactionPending, false)};
-        // Commandes du jeu (étape Interaction, SetPilotInput), complétées ici du manche et de ce qui entoure le
-        // vaisseau ; reprises à zéro à chaque pas.
-        ShipInput shipInput = std::exchange(m_pilotInput, ShipInput{});
-        if (seated) {
-            shipInput.stickYaw = command.stickYaw;
-            shipInput.stickPitch = command.stickPitch;
-            // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
-            if (const Entity ship = Ships::GetPilotedShip(m_scene, player); ship != NullEntity) {
-                if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
-                    shipInput.up = Math::Normalize(gravity) * -1.0f;
-                }
-                const FlightState flight = m_flightSurroundings->Get(m_scene, m_physics.get(), ship);
-                shipInput.air = flight.air;
-                if (flight.nearPlanet) {
-                    shipInput.planetUp = Math::Vector3f(flight.up);
-                    shipInput.planetDistance = static_cast<float>(flight.boundary);
-                    shipInput.planetCenter = static_cast<float>(flight.center);
-                }
+
+        // Chaque personnage joué, par rapport à sa vue ; assis, les mêmes actions pilotent le vaisseau (poste de
+        // pilotage).
+        m_characterInputs.clear();
+        m_shipInputs.clear();
+        const Seats::DurationsFunction durations = [this](Entity character) { return GetSeatDurations(character); };
+        for (PlayerStep& player : m_playerSteps) {
+            if (!m_scene.IsValid(player.entity)) {
+                continue; // détruit par un système du jeu
             }
-        } else {
-            character.move = command.move;
-            character.run = command.IsDown(m_characterActions.run);
-            character.jump = command.WasPressed(m_characterActions.jump);
+            const PlayerCommand& command = player.command;
+            const bool seated = m_scene.Get<CharacterComponent>(player.entity).seat != NullEntity;
+            // Commandes du jeu (étape Interaction, SetPilotInput), complétées ici du manche et de ce qui entoure le
+            // vaisseau.
+            ShipInput shipInput = player.pilotInput;
+            if (seated) {
+                shipInput.stickYaw = command.stickYaw;
+                shipInput.stickPitch = command.stickPitch;
+                // Aide au pilotage : selon la gravité du dehors (planète, sol), rien dans l'espace.
+                if (const Entity ship = Ships::GetPilotedShip(m_scene, player.entity); ship != NullEntity) {
+                    if (const Math::Vector3f gravity = m_physics->GetOutsideGravity(m_scene, ship); Math::Length(gravity) > 0.01f) {
+                        shipInput.up = Math::Normalize(gravity) * -1.0f;
+                    }
+                    const FlightState flight = m_flightSurroundings->Get(m_scene, m_physics.get(), ship);
+                    shipInput.air = flight.air;
+                    if (flight.nearPlanet) {
+                        shipInput.planetUp = Math::Vector3f(flight.up);
+                        shipInput.planetDistance = static_cast<float>(flight.boundary);
+                        shipInput.planetCenter = static_cast<float>(flight.center);
+                    }
+                }
+            } else {
+                m_characterInputs.emplace_back(player.entity, CharacterInput{.move = command.move,
+                                                                             .run = command.IsDown(m_characterActions.run),
+                                                                             .jump = command.WasPressed(m_characterActions.jump)});
+            }
+            Seats::Update(m_scene, player.entity, deltaSeconds, {.interact = std::exchange(player.interactionPending, false)},
+                          durations);
+            if (const Entity ship = Ships::GetPilotedShip(m_scene, player.entity); ship != NullEntity) {
+                m_shipInputs.emplace_back(ship, shipInput);
+            }
         }
-        Seats::Update(m_scene, player, deltaSeconds, seatInput, [this](Entity entity) {
-            // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
-            const auto* animator = m_scene.TryGet<AnimatorComponent>(entity);
-            const auto* model = m_scene.TryGet<ModelComponent>(entity);
-            if (!m_animationDurations || !m_project || !animator || !model || model->model.empty() || animator->speed <= 0.0f) {
-                return Seats::Durations{};
-            }
-            const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(model->model);
-            const auto duration = [&](const std::string& name) {
-                return name.empty() ? 0.0f : m_animationDurations(path, name) / animator->speed;
-            };
-            return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
-        });
-        Ships::Update(m_scene, Ships::GetPilotedShip(m_scene, player), deltaSeconds, shipInput);
+        Ships::Update(m_scene, m_shipInputs, deltaSeconds);
         RunSystems(Stage::BeforePhysics, deltaSeconds); // pilote automatique, warp et IA du jeu, après le pilote
-        m_physics->Update(m_scene, deltaSeconds, character);
+        m_physics->UpdatePlayers(m_scene, deltaSeconds, m_characterInputs);
         // Projectiles après la physique, avant les dégâts et les armes du jeu (étape AfterPhysics) : les vaisseaux
         // sont à leur place de ce pas, les nouveaux tirs partent de la bouche des canons (avant, ils naîtraient en
         // retard d'un pas : 16 m à 1 000 m/s). Les anciens avancent d'abord.
@@ -175,10 +231,20 @@ namespace Flux {
             &m_projectileHits);
         RunSystems(Stage::AfterPhysics, deltaSeconds); // dégâts (GetProjectileHits), armes du joueur et des ennemis
         Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de ce pas
+        // Les commandes des autres joueurs ne valent que pour ce pas (celle de cet écran reste : vol libre, caméra).
+        m_playerSteps.clear();
+        m_commands.clear();
     }
 
-    bool Simulation::ConsumeInteraction() {
-        return std::exchange(m_interactionPending, false);
+    bool Simulation::ConsumeInteraction(Entity player) {
+        PlayerStep* step = FindPlayerStep(player);
+        return step && std::exchange(step->interactionPending, false);
+    }
+
+    void Simulation::SetPilotInput(Entity player, const ShipInput& input) {
+        if (PlayerStep* step = FindPlayerStep(player)) {
+            step->pilotInput = input;
+        }
     }
 
     FlightState Simulation::GetFlightState(Entity ship) {

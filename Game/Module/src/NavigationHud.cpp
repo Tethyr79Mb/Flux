@@ -18,13 +18,15 @@ namespace Game {
         using namespace Flux;
 
         // Destinations du warp à l'écran, la visée en clair avec la touche ; en warp, la sienne et un bandeau.
-        void DrawHud(Engine& engine, const NavigationState& state) {
-            const Scene& scene = engine.GetScene();
+        void DrawHud(Engine& engine) {
+            Scene& scene = engine.GetScene();
             const Entity player = engine.GetPlayer();
             const Entity ship = player != NullEntity ? Ships::GetPilotedShip(scene, player) : NullEntity;
-            if (ship == NullEntity || state.destinations.empty()) {
+            const PlayerStateComponent* playerState = FindPlayerState(scene, player);
+            if (ship == NullEntity || !playerState || playerState->navigation.destinations.empty()) {
                 return;
             }
+            const NavigationState& state = playerState->navigation;
             const auto* drive = scene.TryGet<WarpDriveComponent>(ship);
             const WarpStage stage = drive ? drive->stage : WarpStage::Off;
             const Math::Vector2i size = engine.GetWindow().GetSize();
@@ -71,9 +73,8 @@ namespace Game {
         constexpr const char* HudSystem = "Navigation : affichage";
     }
 
-    void RegisterNavigationHud(Engine& engine, std::shared_ptr<SimState> state) {
-        engine.AddGameSystem(Engine::GameStage::Hud, HudSystem,
-                             [state = std::move(state)](Engine& e, double) { DrawHud(e, state->navigation); });
+    void RegisterNavigationHud(Engine& engine) {
+        engine.AddGameSystem(Engine::GameStage::Hud, HudSystem, [](Engine& e, double) { DrawHud(e); });
     }
 
     void UnregisterNavigationHud(Engine& engine) {

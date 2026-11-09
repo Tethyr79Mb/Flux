@@ -250,7 +250,9 @@ namespace Flux {
         double time = 0.0; // simulé, en secondes
         // Saut demandé pendant une image sans pas de physique (plus de 60 images/s) : gardé pour le pas suivant, sinon
         // l'appui serait perdu avant d'être vu.
-        bool pendingJump = false;
+        // Commandes des personnages joués, reçues depuis le dernier pas de physique (gardées sans pas : moins d'un pas
+        // écoulé), le saut retenu jusqu'au pas suivant.
+        std::vector<std::pair<Entity, CharacterInput>> pendingInputs;
         // Dernier passage de chaque personnage d'un monde à l'autre : pas de nouveau passage juste après (au bas de
         // la rampe, il toucherait les deux sols à la fois).
         std::unordered_map<Entity, double> transfers;
@@ -1311,10 +1313,17 @@ namespace Flux {
             return true;
         }
 
-        void UpdateCharacters(Grid& grid, const Scene& scene, const CharacterInput& input) {
+        const CharacterInput* FindInput(Entity entity) const {
+            for (const auto& [player, input] : pendingInputs) {
+                if (player == entity) {
+                    return &input;
+                }
+            }
+            return nullptr;
+        }
+
+        void UpdateCharacters(Grid& grid, const Scene& scene, bool jumpStep) {
             JPH::PhysicsSystem& system = *grid.system;
-            // Commandes dans le repère du monde, ramenées dans celui du vaisseau.
-            const Math::Vector3f move = grid.frameRotation.Conjugate().Rotate(input.move);
             for (auto& [entity, character] : grid.characters) {
                 const CharacterComponent& component = scene.Get<CharacterComponent>(entity);
                 JPH::CharacterVirtual& body = *character.character;
@@ -1330,14 +1339,15 @@ namespace Flux {
 
                 JPH::Vec3 wanted = JPH::Vec3::sZero();
                 bool jump = false;
-                if (component.player && entity == player) {
-                    wanted = ToJolt(grid.frame == NullEntity ? input.move : move);
+                if (const CharacterInput* input = component.player ? FindInput(entity) : nullptr) {
+                    // Commande dans le repère du monde, ramenée dans celui du vaisseau.
+                    wanted = ToJolt(grid.frame == NullEntity ? input->move : grid.frameRotation.Conjugate().Rotate(input->move));
                     wanted -= up * wanted.Dot(up); // dans le plan du sol
                     if (wanted.LengthSq() > 1.0f) {
                         wanted = wanted.Normalized();
                     }
-                    wanted *= input.run ? component.runSpeed : component.walkSpeed;
-                    jump = input.jump;
+                    wanted *= input->run ? component.runSpeed : component.walkSpeed;
+                    jump = jumpStep && input->jump;
                 }
                 // La marche rejoint la commande à l'accélération voulue, pour démarrer comme pour s'arrêter : les pas
                 // de l'animation suivent groundSpeed, ils restent ainsi en accord avec le chemin parcouru. Ramenée
@@ -1467,7 +1477,19 @@ namespace Flux {
             planetGround.Update(scene, anchor, probes, *grids.front()->system, shared.assetsDirectory, true);
         }
 
-        void Update(Scene& scene, double deltaSeconds, const CharacterInput& input) {
+        void Update(Scene& scene, double deltaSeconds, std::span<const std::pair<Entity, CharacterInput>> inputs) {
+            // Commandes de ce pas ; d'un appel sans pas de physique ne reste que le saut.
+            for (auto& [entity, input] : pendingInputs) {
+                input = {.jump = input.jump};
+            }
+            for (const auto& [entity, input] : inputs) {
+                const auto found = std::ranges::find(pendingInputs, entity, &std::pair<Entity, CharacterInput>::first);
+                if (found == pendingInputs.end()) {
+                    pendingInputs.emplace_back(entity, input);
+                } else {
+                    found->second = {.move = input.move, .run = input.run, .jump = found->second.jump || input.jump};
+                }
+            }
             if (!anchored) {
                 ChooseAnchor(scene);
                 if (!anchored) {
@@ -1481,7 +1503,6 @@ namespace Flux {
             CollectProbes(scene);
             planetGround.Update(scene, anchor, probes, *grids.front()->system, shared.assetsDirectory, false);
 
-            pendingJump = pendingJump || input.jump;
             accumulator = std::min(accumulator + deltaSeconds, static_cast<double>(StepSeconds * MaxStepsPerUpdate));
             const int steps = static_cast<int>(accumulator / StepSeconds);
             if (steps == 0) {
@@ -1492,10 +1513,8 @@ namespace Flux {
             for (int step = 0; step < steps; ++step) {
                 // Le saut au premier pas seulement : plusieurs pas dans une image (moins de 60 images/s) le
                 // donneraient plusieurs fois, le personnage touchant encore le sol au deuxième.
-                CharacterInput stepInput = input;
-                stepInput.jump = step == 0 && pendingJump;
                 for (const std::unique_ptr<Grid>& grid : grids) {
-                    UpdateCharacters(*grid, scene, stepInput);
+                    UpdateCharacters(*grid, scene, step == 0);
                     ApplyOutsideForces(*grid);
                     JPH::JobSystem* jobs = grid->system->GetNumActiveBodies(JPH::EBodyType::RigidBody) < ParallelBodyCount
                                                ? static_cast<JPH::JobSystem*>(shared.serialJobs.get())
@@ -1503,7 +1522,7 @@ namespace Flux {
                     grid->system->Update(StepSeconds, 1, shared.tempAllocator.get(), jobs);
                 }
             }
-            pendingJump = false;
+            pendingInputs.clear();
             time += steps * static_cast<double>(StepSeconds);
             for (const std::unique_ptr<Grid>& grid : grids) {
                 WriteBack(scene, *grid);
@@ -1634,8 +1653,13 @@ namespace Flux {
         m_impl->Prepare(scene);
     }
 
+    void PhysicsWorld::UpdatePlayers(Scene& scene, double deltaSeconds, std::span<const std::pair<Entity, CharacterInput>> inputs) {
+        m_impl->Update(scene, deltaSeconds, inputs);
+    }
+
     void PhysicsWorld::Update(Scene& scene, double deltaSeconds, const CharacterInput& input) {
-        m_impl->Update(scene, deltaSeconds, input);
+        const std::pair<Entity, CharacterInput> player{m_impl->player, input};
+        m_impl->Update(scene, deltaSeconds, std::span(&player, m_impl->player != NullEntity ? 1 : 0));
     }
 
     void PhysicsWorld::SetGravity(const Math::Vector3f& gravity) {

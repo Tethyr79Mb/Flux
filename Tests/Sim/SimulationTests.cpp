@@ -5,6 +5,7 @@
 #include "Flux/Core/Simulation.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 
+#include <cmath>
 #include <string>
 
 using namespace Flux;
@@ -59,15 +60,63 @@ namespace {
         Simulation simulation;
         const InputActionId interact = simulation.GetActions().GetId(CharacterActions::Interact);
         CHECK(interact != NoInputAction);
+        const Entity hero = simulation.GetScene().CreateEntity("Joueur");
+        simulation.GetScene().Add<CharacterComponent>(hero);
         PlayerCommand command;
         command.pressed[interact] = true;
-        simulation.SetLocalCommand(command); // sans personnage : la commande du vol libre
+        simulation.SetLocalCommand(command);
         int taken = 0;
-        simulation.AddSystem(Simulation::Stage::Interaction, "premier", [&](Simulation& s, double) { taken += s.ConsumeInteraction() ? 1 : 0; });
-        simulation.AddSystem(Simulation::Stage::Interaction, "second", [&](Simulation& s, double) { taken += s.ConsumeInteraction() ? 10 : 0; });
+        simulation.AddSystem(Simulation::Stage::Interaction, "premier",
+                             [&](Simulation& s, double) { taken += s.ConsumeInteraction(hero) ? 1 : 0; });
+        simulation.AddSystem(Simulation::Stage::Interaction, "second",
+                             [&](Simulation& s, double) { taken += s.ConsumeInteraction(hero) ? 10 : 0; });
         simulation.Start();
         simulation.Step(SimulationClock::StepSeconds);
         CHECK(taken == 1);
+        return true;
+    }
+
+    // Deux joueurs dans la même scène (un serveur) : chacun sa commande, son Interagir et sa marche.
+    bool TwoPlayers() {
+        Simulation simulation;
+        Scene& scene = simulation.GetScene();
+        const Entity floor = scene.CreateEntity("Sol");
+        scene.Get<TransformComponent>(floor).position = {0.0, -0.5, 0.0};
+        scene.Get<TransformComponent>(floor).scale = {100.0f, 1.0f, 100.0f};
+        scene.Add<ColliderComponent>(floor);
+        const Entity first = scene.CreateEntity("Premier");
+        const Entity second = scene.CreateEntity("Second");
+        scene.Get<TransformComponent>(second).position = {0.0, 0.0, 10.0};
+        scene.Add<CharacterComponent>(first);
+        scene.Add<CharacterComponent>(second);
+        const Entity bystander = scene.CreateEntity("Passant"); // personnage sans joueur : pas dans GetPlayers
+        scene.Get<TransformComponent>(bystander).position = {0.0, 0.0, -10.0};
+        scene.Add<CharacterComponent>(bystander).player = false;
+
+        const InputActionId interact = simulation.GetActions().GetId(CharacterActions::Interact);
+        std::size_t players = 0;
+        bool firstInteracts = true;
+        bool secondInteracts = false;
+        simulation.AddSystem(Simulation::Stage::Interaction, "joueurs", [&](Simulation& s, double) {
+            players = s.GetPlayers().size();
+            firstInteracts = s.ConsumeInteraction(first);
+            secondInteracts = s.ConsumeInteraction(second);
+        });
+        simulation.Start();
+        for (int step = 0; step < 60; ++step) {
+            // Le second marche vers +x et appuie sur Interagir ; le premier ne fait rien.
+            PlayerCommand command;
+            command.move = {1.0f, 0.0f, 0.0f};
+            command.pressed[interact] = true;
+            simulation.SetPlayerCommand(second, command);
+            simulation.Step(SimulationClock::StepSeconds);
+            CHECK(players == 2 && !firstInteracts && secondInteracts);
+        }
+        CHECK(std::abs(scene.Get<TransformComponent>(first).position.x) < 0.01);
+        CHECK(scene.Get<TransformComponent>(second).position.x > 1.0);
+        // Une commande ne vaut que pour son pas : sans nouvelle commande, il n'appuie plus.
+        simulation.Step(SimulationClock::StepSeconds);
+        CHECK(!secondInteracts && simulation.GetPlayerCommand(second).move.x == 0.0f);
         return true;
     }
 
@@ -84,5 +133,6 @@ namespace {
 }
 
 bool RunSimulationTests() {
-    return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce() && ActionsKeepTheirBits();
+    return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce() && TwoPlayers()
+        && ActionsKeepTheirBits();
 }

@@ -5,6 +5,7 @@
 #include "Weapons.hpp"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace Flux {
@@ -40,6 +41,7 @@ namespace Game {
         float startHealth = -1.0f;   // points de vie au premier passage (-1 : pas encore lus)
         float lastHealth = 0.0f;     // à l'image d'avant : touché s'ils baissent
         float missileCooldown = 0.0f; // s avant de pouvoir lancer un missile
+        Flux::Entity target = Flux::NullEntity; // vaisseau de joueur le plus proche (Steer), visé par Fire
         bool firing = false;         // la cible est devant lui : il tire (CombatAI::Fire)
         bool hasHome = false;
         Flux::Math::WorldPosition home;
@@ -53,11 +55,11 @@ namespace Game {
     // fuite) qui mène le vaisseau comme le pilote automatique (vitesse et rotation de ShipComponent) et tire avec ses
     // armes (Weapons::Update). Seulement les vaisseaux à la racine de la scène, hors warp et pilote automatique.
     namespace CombatAI {
-        // Choix de l'état et du cap. target : le vaisseau du joueur (NullEntity : aucun, ils patrouillent). Pendant le
-        // jeu, avant la physique (comme Ships::Update).
-        void Steer(Flux::Scene& scene, double deltaSeconds, Flux::Entity target);
+        // Choix de la cible, de l'état et du cap. targets : les vaisseaux des joueurs (aucun : ils patrouillent) ;
+        // chacun prend le plus proche. Pendant le jeu, avant la physique (comme Ships::Update).
+        void Steer(Flux::Scene& scene, double deltaSeconds, std::span<const Flux::Entity> targets);
 
-        // Tir de ceux qui ont la cible devant eux ; après la physique, comme les armes du joueur.
-        void Fire(Flux::Scene& scene, double deltaSeconds, Flux::Entity target, std::vector<Flux::Projectile>& projectiles);
+        // Tir de ceux qui ont leur cible devant eux ; après la physique, comme les armes du joueur.
+        void Fire(Flux::Scene& scene, double deltaSeconds, std::vector<Flux::Projectile>& projectiles);
     }
 }

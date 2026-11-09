@@ -33,17 +33,27 @@ namespace Flux {
         if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
             return flight;
         }
-        if (!m_terrain || m_terrain->GetRadius() != nearest->radius || m_terrain->GetRelief() != nearest->relief
-            || m_terrainSeed != nearest->seed || m_terrainWidth != nearest->mountainWidth) {
-            m_terrain = std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief, nearest->seed, nearest->mountainWidth);
-            m_terrainSeed = nearest->seed;
-            m_terrainWidth = nearest->mountainWidth;
+        const auto same = [&](const Relief& relief) {
+            return relief.terrain->GetRadius() == nearest->radius && relief.terrain->GetRelief() == nearest->relief
+                && relief.seed == nearest->seed && relief.width == nearest->mountainWidth;
+        };
+        auto found = std::ranges::find_if(m_reliefs, same);
+        if (found == m_reliefs.end()) {
+            // Planète réglée autrement (éditeur) ou trop de planètes à la fois : la plus ancienne laisse sa place.
+            if (m_reliefs.size() >= MaxReliefs) {
+                m_reliefs.erase(m_reliefs.begin());
+            }
+            m_reliefs.push_back({std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief,
+                                                                              nearest->seed, nearest->mountainWidth),
+                                 nearest->seed, nearest->mountainWidth});
+            found = m_reliefs.end() - 1;
         }
+        const Planetology::Terrain* terrain = found->terrain.get();
         flight.nearPlanet = true;
         flight.up = Math::Normalize(offset);
         flight.center = Math::Length(offset);
         const Math::Vector3d direction = rotation.Conjugate().Rotate(flight.up);
-        double ground = m_terrain->GetHeight(direction, m_terrain->GetOctaves(m_terrain->GetMaxLevel()));
+        double ground = terrain->GetHeight(direction, terrain->GetOctaves(terrain->GetMaxLevel()));
         if (nearest->ocean) {
             ground = std::max(ground, nearest->seaLevel * 0.01 * nearest->relief);
         }

@@ -61,14 +61,19 @@ namespace {
         actions.Remove(JumpAction);
     }
 
-    // Lignes et messages que la simulation laisse pour le joueur, passés aux infos de vol avant leur dessin.
-    void ShowSimulationInfo(SimState& state) {
-        FlightInfo::SetExtra("Navigation", state.navigation.info);
+    // Lignes et messages que la simulation laisse pour le joueur de cet écran, passés aux infos de vol avant leur
+    // dessin.
+    void ShowSimulationInfo(Engine& engine, const SimState& state) {
+        PlayerStateComponent* player = FindPlayerState(engine.GetScene(), engine.GetPlayer());
+        FlightInfo::SetExtra("Navigation", player ? player->navigation.info : std::string{});
         FlightInfo::SetExtra("Armes", state.weapons.info);
-        for (std::string& notice : state.notices) {
+        if (!player) {
+            return;
+        }
+        for (std::string& notice : player->notices) {
             FlightInfo::ShowMessage(std::move(notice));
         }
-        state.notices.clear();
+        player->notices.clear();
     }
 }
 
@@ -84,10 +89,10 @@ namespace Game {
                 camera.position.sector.z = camera.position.sector.z == 0 ? FarSectorZ : 0;
             }
         });
-        engine.AddGameSystem(Engine::GameStage::Hud, SimulationInfoSystem, [state](Engine&, double) { ShowSimulationInfo(*state); });
+        engine.AddGameSystem(Engine::GameStage::Hud, SimulationInfoSystem, [state](Engine& e, double) { ShowSimulationInfo(e, *state); });
         RegisterFlightInfo(engine); // avant les autres affichages du jeu : dessinées dessous
-        RegisterNavigationHud(engine, state);
-        RegisterMissionsHud(engine, state);
+        RegisterNavigationHud(engine);
+        RegisterMissionsHud(engine);
         RegisterPlayerWeaponsHud(engine);
         RegisterServerConnection(engine);
         RegisterPlaceItems(engine.GetEditorExtensions()); // retirés par le moteur au déchargement

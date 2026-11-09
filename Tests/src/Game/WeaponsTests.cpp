@@ -231,12 +231,12 @@ namespace {
         Projectiles::Update(projectiles, 0.02, cast, &hits);
         CHECK(hits.size() == 1 && projectiles.empty());
         CHECK(hits[0].entity == target && Near(hits[0].position.offset.z, -48.0, 1.0e-2) && hits[0].damage == 10.0f);
-        Weapons::ApplyHits(scene, hits, NullEntity, &destroyed);
+        Weapons::ApplyHits(scene, hits, {}, &destroyed);
         CHECK(scene.Get<HealthComponent>(target).health == 15.0f && destroyed.empty());
 
         // Deux impacts de plus : détruite, avec ses enfants ; un impact sur une entité disparue ne casse rien.
         const std::vector<ProjectileHit> two{hits[0], hits[0], hits[0]};
-        Weapons::ApplyHits(scene, two, NullEntity, &destroyed);
+        Weapons::ApplyHits(scene, two, {}, &destroyed);
         CHECK(!scene.IsValid(target) && !scene.IsValid(part));
         CHECK(destroyed.size() == 1 && destroyed[0] == "Cible");
 
@@ -245,7 +245,7 @@ namespace {
         scene.Add<HealthComponent>(carrier).health = 5.0f;
         const Entity pilot = scene.CreateEntity("Pilote", carrier);
         const ProjectileHit onCarrier{carrier, {}, 10.0f, {}};
-        Weapons::ApplyHits(scene, std::span(&onCarrier, 1), pilot, nullptr);
+        Weapons::ApplyHits(scene, std::span(&onCarrier, 1), std::span(&pilot, 1), nullptr);
         CHECK(scene.IsValid(carrier) && scene.Get<HealthComponent>(carrier).health == 0.0f);
 
         // Les éclats d'impact s'éteignent.

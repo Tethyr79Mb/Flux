@@ -53,8 +53,7 @@ namespace Game {
             return name ? name->name : std::string("le donneur");
         }
 
-        void DrawWindow(Engine& engine, SimState& state, Entity player, Math::Vector2f screen) {
-            MissionState& missions = state.missions;
+        void DrawWindow(Engine& engine, MissionState& missions, Entity player, Math::Vector2f screen) {
             Scene& scene = engine.GetScene();
             if (missions.window == NullEntity || !scene.IsValid(missions.window) || !scene.TryGet<MissionGiverComponent>(missions.window)
                 || Missions::FindGiver(scene, player) != missions.window) {
@@ -78,7 +77,7 @@ namespace Game {
                     ui.Text(std::format("Mission en cours : {} ennemi{} restant{}", alive, alive > 1 ? "s" : "", alive > 1 ? "s" : ""));
                     ui.TextDisabled("Aux commandes : nez vers son marqueur, J pour le warp.");
                     if (ui.Button("Abandonner")) {
-                        Missions::Abandon(engine.GetSimulation(), state);
+                        Missions::Abandon(engine.GetSimulation(), player);
                         open = false;
                     }
                 } else if (missions.mission) {
@@ -88,7 +87,8 @@ namespace Game {
                     ui.Text(std::format("Cible : {} ennemi{}, à {} de la station", count, count > 1 ? "s" : "",
                                         FormatDistance(mission.distance)));
                     if (ui.Button("Accepter")) {
-                        (void)Missions::Accept(engine.GetSimulation(), state, giver); // un échec est annoncé en haut de l'écran
+                        // Un échec est annoncé en haut de l'écran.
+                        (void)Missions::Accept(engine.GetSimulation(), player, giver);
                         open = false;
                     }
                     ui.SameLine();
@@ -164,23 +164,33 @@ namespace Game {
             }
         }
 
-        void DrawHud(Engine& engine, SimState& state, double deltaSeconds) {
+        // Missions du joueur de cet écran.
+        void DrawHud(Engine& engine, double deltaSeconds) {
             const Entity player = engine.GetPlayer();
+            PlayerStateComponent* state = FindPlayerState(engine.GetScene(), player);
+            if (!state) {
+                return;
+            }
             const Math::Vector2i size = engine.GetWindow().GetSize();
             const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
-            DrawInfo(engine, state.missions, player, screen, deltaSeconds);
-            DrawWindow(engine, state, player, screen);
+            DrawInfo(engine, state->missions, player, screen, deltaSeconds);
+            DrawWindow(engine, state->missions, player, screen);
         }
 
         constexpr const char* HudSystem = "Missions : affichage";
         constexpr const char* SaveData = "missions";
     }
 
-    void RegisterMissionsHud(Engine& engine, std::shared_ptr<SimState> state) {
-        engine.AddGameSystem(Engine::GameStage::Hud, HudSystem, [state](Engine& e, double dt) { DrawHud(e, *state, dt); });
+    void RegisterMissionsHud(Engine& engine) {
+        engine.AddGameSystem(Engine::GameStage::Hud, HudSystem, [](Engine& e, double dt) { DrawHud(e, dt); });
+        // Mission du joueur de cet écran (partie solo).
         engine.AddGameSaveData(
-            SaveData, [state](Engine& e) { return Missions::Save(e.GetScene(), state->missions); },
-            [state](Engine& e, std::string_view data) { Missions::Load(e.GetSimulation(), *state, data); });
+            SaveData,
+            [](Engine& e) {
+                const PlayerStateComponent* state = FindPlayerState(e.GetScene(), e.GetPlayer());
+                return state ? Missions::Save(e.GetScene(), state->missions) : std::string{};
+            },
+            [](Engine& e, std::string_view data) { Missions::Load(e.GetSimulation(), e.GetPlayer(), data); });
     }
 
     void UnregisterMissionsHud(Engine& engine) {

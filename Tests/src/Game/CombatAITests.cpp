@@ -61,7 +61,7 @@ bool RunCombatAITests() {
     std::vector<ProjectileHit> hits;
     const auto run = [&](double seconds, auto done) {
         for (int frame = 0; frame < static_cast<int>(std::lround(seconds / Frame)); ++frame) {
-            CombatAI::Steer(scene, Frame, player);
+            CombatAI::Steer(scene, Frame, std::span(&player, 1));
             world.Update(scene, Frame, {});
             hits.clear();
             Projectiles::Update(
@@ -73,8 +73,8 @@ bool RunCombatAITests() {
                     return std::nullopt;
                 },
                 &hits);
-            Weapons::ApplyHits(scene, hits, NullEntity);
-            CombatAI::Fire(scene, Frame, player, projectiles);
+            Weapons::ApplyHits(scene, hits, {});
+            CombatAI::Fire(scene, Frame, projectiles);
             if (done()) {
                 return true;
             }

@@ -185,7 +185,7 @@ namespace Flux {
         actions.Add(std::string(CharacterActions::Run), "Déplacement", Key::LeftShift);
         actions.Add(std::string(CharacterActions::Jump), "Déplacement", Key::Space);
         actions.Add(std::string(CharacterActions::Interact), "Déplacement", Key::F);
-        // Vue du cockpit ou de dehors : la caméra est au moteur ; les commandes du vaisseau sont au jeu (SetPilotInput).
+        // Vue du cockpit ou de dehors : la caméra est au moteur ; les commandes du vaisseau sont au jeu (Simulation::SetPilotInput).
         m_actions.changeView = actions.Add("Changer de vue", "Vaisseau", Key::V);
         // F5 / F6 servent déjà à l'éditeur (jouer, pause).
         m_actions.quickSave = actions.Add("Sauvegarde rapide", "Partie", Key::F8);
@@ -816,9 +816,6 @@ namespace Flux {
         }
     }
 
-    bool Engine::ConsumeInteraction() {
-        return m_simulation.ConsumeInteraction();
-    }
 
     Math::Vector2f Engine::GetSteerPointer() const {
         return m_playerCamera->GetSteerPointer();
