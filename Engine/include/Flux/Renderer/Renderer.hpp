@@ -7,6 +7,7 @@
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
+#include "Flux/Planetology/VegetationDistance.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -79,6 +80,7 @@ namespace Flux {
         std::array<std::uint32_t, 2> terrainShadowTriangles{};
         std::uint32_t treePlains = 0;
         std::uint32_t pendingTreePlains = 0;
+        std::uint32_t aheadTreePlains = 0; // hors du champ, à semer d'avance, pas encore semées
         std::uint32_t sownTreePlains = 0; // semées à cette image
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
         // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
@@ -185,6 +187,9 @@ namespace Flux {
         // Qualité des nuages volumétriques (DefaultCloudQuality par défaut) : moins de pas, moins de calcul.
         void SetCloudQuality(CloudQuality quality);
         CloudQuality GetCloudQuality() const;
+        // Distance d'affichage des arbres (DefaultVegetationDistance par défaut) : facteur de la portée de chaque planète.
+        void SetVegetationDistance(VegetationDistance distance);
+        VegetationDistance GetVegetationDistance() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

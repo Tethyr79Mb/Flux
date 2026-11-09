@@ -38,6 +38,7 @@ namespace Flux {
             Math::Vector2i renderSize; // scène dessinée à cette taille, puis agrandie par FSR
             GroundDetail groundDetail = DefaultGroundDetail;
             CloudQuality cloudQuality = DefaultCloudQuality;
+            VegetationDistance vegetationDistance = DefaultVegetationDistance;
             bool occlusionCulling = false;  // « Objets cachés écartés »
             bool groundGeometryOnly = false; // « Sol sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets
@@ -74,7 +75,7 @@ namespace Flux {
         std::vector<double> m_frames;
         std::array<Stat, CpuCount> m_cpu;
         std::vector<Stat> m_gpu; // passes et étapes, dans l'ordre de l'image
-        static constexpr std::size_t CounterCount = 20;
+        static constexpr std::size_t CounterCount = 21;
         std::array<Stat, CounterCount> m_counters;
     };
 }

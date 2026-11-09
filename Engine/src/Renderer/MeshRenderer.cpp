@@ -956,13 +956,15 @@ namespace Flux {
             const std::size_t t = distance < static_cast<double>(TerrainShadowCascadeEnds[0]) ? 0 : 1;
             return static_cast<double>(TerrainShadowVertexTexels * m_terrainCascades[t].texelSize);
         };
+        // Portée de la planète (réglage artistique) multipliée par la distance choisie par le joueur.
+        const float rangeScale = GetVegetationDistanceScale(m_vegetationDistance);
         m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
                            m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
-                           trees ? static_cast<double>(vegetation->range) : 0.0, &castsShadow, &shadowSpacing);
+                           trees ? static_cast<double>(vegetation->range * rangeScale) : 0.0, &castsShadow, &shadowSpacing);
         if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
             m_vegetationComponent = vegetation;
-            m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains);
+            m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains, rangeScale);
         }
         const Math::Matrix4f rotation = transform.rotation.ToMatrix();
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});

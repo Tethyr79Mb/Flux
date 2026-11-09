@@ -79,12 +79,13 @@ namespace Flux::Planetology {
             bool shadowOnly = false;
         };
         // Une tuile du niveau des plaines semées d'arbres (VegetationRenderer), en vue, qu'elle soit dessinée ou coupée
-        // en plus fines.
+        // en plus fines ; ou, avec ahead, autour de la caméra et de son trajet (AddPlainsAround).
         struct Plain
         {
             TileKey key;
             Math::Vector3d origin; // point de référence de ses sommets (TileBounds::origin), relatif à la caméra
             double distance;       // de la caméra à sa sphère englobante
+            bool ahead = false;    // à semer d'avance, pas à dessiner (peut aussi être en vue : alors en double)
         };
         // Champ de la caméra : la sphère (relative à la caméra) le touche.
         using ViewTest = std::function<bool(const Math::Vector3f& center, float radius)>;
@@ -97,7 +98,8 @@ namespace Flux::Planetology {
         void BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
         // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra. Avec
         // `plains`, y ajoute aussi les tuiles du niveau `plainLevel` en vue à moins de `plainRange` mètres : celles
-        // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre. Avec `castsShadow`, les tuiles hors
+        // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre ; puis, marquées ahead, celles
+        // proches de la caméra ou de là où elle va, en vue ou non. Avec `castsShadow`, les tuiles hors
         // du champ dont l'ombre peut y tomber sont ajoutées aussi (Tile::shadowOnly), sans plaines ni calcul en avance :
         // une montagne derrière la caméra, soleil dans le dos.
         void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
@@ -228,6 +230,7 @@ namespace Flux::Planetology {
         void VisitNode(Visit& visit, TileKey key, Node& node);
         void Prefetch(Visit& visit, TileKey key, Node& node);
         void AddPlains(Visit& visit, TileKey key);
+        void AddPlainsAround(Visit& visit, TileKey key, Node& node, double around);
         void AddTile(Visit& visit, TileKey key, const Node& node, const TileBounds& bounds, std::uint32_t quarter);
         PlanetState* FindOwner(std::uint64_t owner);
         bool Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex);

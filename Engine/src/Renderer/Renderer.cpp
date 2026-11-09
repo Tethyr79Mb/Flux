@@ -491,6 +491,7 @@ namespace Flux {
             }
             timings.treePlains = vegetation.plains;
             timings.pendingTreePlains = vegetation.pending;
+            timings.aheadTreePlains = vegetation.ahead;
             timings.sownTreePlains = vegetation.sown;
         }
 
@@ -1070,6 +1071,14 @@ namespace Flux {
 
     GroundDetail Renderer::GetGroundDetail() const {
         return m_impl->meshes->GetGroundDetail();
+    }
+
+    void Renderer::SetVegetationDistance(VegetationDistance distance) {
+        m_impl->meshes->SetVegetationDistance(distance);
+    }
+
+    VegetationDistance Renderer::GetVegetationDistance() const {
+        return m_impl->meshes->GetVegetationDistance();
     }
 
     void Renderer::SetCloudQuality(CloudQuality quality) {

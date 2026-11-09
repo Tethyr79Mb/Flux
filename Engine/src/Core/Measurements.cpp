@@ -57,7 +57,7 @@ namespace Flux {
         m_gpu.clear();
         constexpr std::array<const char*, CounterCount> counters{
             "Tuiles de planète", "  dont eau", "  gardées", "  calculées", "  en attente", "Arbres près",
-            "Arbres simplifiés", "Arbres loin", "Ombres d'arbres", "Plaines d'arbres", "  à semer", "  semées",
+            "Arbres simplifiés", "Arbres loin", "Ombres d'arbres", "Plaines d'arbres", "  à semer", "  d'avance", "  semées",
             "Objets testés", "  dont cachés", "Paquets des modèles", "  dont dessinés", "Ombres du relief près : tuiles",
             "  triangles", "Ombres du relief loin : tuiles", "  triangles"};
         for (std::size_t i = 0; i < CounterCount; ++i) {
@@ -101,7 +101,7 @@ namespace Flux {
         const std::array<std::uint32_t, CounterCount> counters{
             render.planetTiles, render.planetOceanTiles, render.planetStoredTiles, render.planetComputedTiles,
             render.planetPendingTiles, render.trees[0], render.trees[1], render.trees[2], render.shadowTrees,
-            render.treePlains, render.pendingTreePlains, render.sownTreePlains, render.occlusionTested,
+            render.treePlains, render.pendingTreePlains, render.aheadTreePlains, render.sownTreePlains, render.occlusionTested,
             render.occlusionHidden, render.modelMeshlets, render.modelMeshletsDrawn, render.terrainShadowTiles[0],
             render.terrainShadowTriangles[0], render.terrainShadowTiles[1], render.terrainShadowTriangles[1]};
         for (std::size_t i = 0; i < CounterCount; ++i) {
@@ -132,10 +132,11 @@ namespace Flux {
         std::string text;
         text += std::format("Mesures de Flux {} du {}\n", GetFullVersion(), Time(now, "%d/%m/%Y à %H:%M:%S"));
         text += std::format("GPU : {}\n", context.device);
-        text += std::format("Image : {} x {}, V-Sync {}, anticrénelage {}, détail du sol {}, nuages {}\n", context.width, context.height,
-                            context.vsync ? "oui" : "non", context.temporalAA ? "oui" : "non",
+        text += std::format("Image : {} x {}, V-Sync {}, anticrénelage {}, détail du sol {}, nuages {}, végétation {}\n", context.width,
+                            context.height, context.vsync ? "oui" : "non", context.temporalAA ? "oui" : "non",
                             GroundDetailLabels[static_cast<std::size_t>(context.groundDetail)],
-                            CloudQualityLabels[static_cast<std::size_t>(context.cloudQuality)]);
+                            CloudQualityLabels[static_cast<std::size_t>(context.cloudQuality)],
+                            VegetationDistanceLabels[static_cast<std::size_t>(context.vegetationDistance)]);
         text += std::format("Mise à l'échelle : {}, scène dessinée en {} x {}\n",
                             UpscalingLabels[static_cast<std::size_t>(context.upscaling)], context.renderSize.x,
                             context.renderSize.y);

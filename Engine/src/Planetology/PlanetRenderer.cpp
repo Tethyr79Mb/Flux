@@ -19,6 +19,9 @@ namespace Flux::Planetology {
         // rien ne change ; en vaisseau, des kilomètres, les tuiles sont prêtes quand il arrive. Elles ne sont dessinées
         // qu'à leur distance : le détail à l'écran ne dépend pas de la vitesse (sinon il retombe à l'arrêt).
         constexpr double LookAhead = 2.0;
+        // Plaines d'arbres semées d'avance à moins de cette distance (m) de la caméra ou de son trajet, en vue ou non : un
+        // regard qui tourne ou un vol rapide ne voit plus les arbres pousser devant lui (VegetationRenderer).
+        constexpr double AroundRange = 800.0;
         // Au-delà (m/s), la caméra a sauté (téléportation, autre scène) : pas de vitesse.
         constexpr double MaxCameraSpeed = 100000.0;
 
@@ -185,6 +188,14 @@ namespace Flux::Planetology {
             const TileKey key{face, 0, 0, 0};
             VisitNode(visit, key, GetNode(state, key));
         }
+        // Plus haut que la portée des arbres au-dessus du plus haut sommet : aucune plaine n'en aurait.
+        if (plains && Math::Length(camera) - maxRadius < plainRange) {
+            const double around = std::min(AroundRange, plainRange);
+            for (std::uint8_t face = 0; face < 6; ++face) {
+                const TileKey key{face, 0, 0, 0};
+                AddPlainsAround(visit, key, GetNode(state, key), around);
+            }
+        }
     }
 
     bool PlanetRenderer::IsCulled(const Visit& visit, const TileBounds& bounds) const {
@@ -348,6 +359,28 @@ namespace Flux::Planetology {
             } else {
                 AddPlains(visit, child);
             }
+        }
+    }
+
+    // Plaines à moins de `around` mètres du trajet de la caméra (de là où elle est à là où elle sera dans LookAhead
+    // secondes), derrière elle comprises. Écart mesuré sur la sphère du rayon de la planète : une tuile jamais calculée
+    // a des bornes de tout le relief, des kilomètres de haut, qui retiendraient bien trop de plaines. Le bord entier
+    // de la tuile en marge couvre sa diagonale, même déformée par la projection du cube.
+    void PlanetRenderer::AddPlainsAround(Visit& visit, TileKey key, Node& node, double around) {
+        node.lastUsed = m_frame;
+        const double radius = visit.state.terrain->GetRadius();
+        const auto onSphere = [radius](const Math::Vector3d& p) { return Math::Normalize(p) * radius; };
+        if (DistanceToPath(onSphere(visit.camera), onSphere(visit.ahead), onSphere(node.bounds.center)) - node.bounds.edge >= around) {
+            return;
+        }
+        if (key.level >= visit.plainLevel) {
+            const double distance = Math::Length(visit.camera - node.bounds.center) - node.bounds.radius;
+            visit.plains->push_back({key, visit.position + visit.rotation.Rotate(node.bounds.origin), std::max(distance, 0.0), true});
+            return;
+        }
+        for (std::uint32_t c = 0; c < 4; ++c) {
+            const TileKey child = key.Child(c);
+            AddPlainsAround(visit, child, GetNode(visit.state, child, &node), around);
         }
     }
 

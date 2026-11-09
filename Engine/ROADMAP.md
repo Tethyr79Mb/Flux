@@ -195,6 +195,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
 - 🔨 Océan : tuiles plus grossières et moins nombreuses. Fait : l'eau, le fond et les terres basses sous l'horizon de la mer ne sont plus gardés (scène d'essai à 1 300 m : 20 tuiles d'eau → 10, 313 tuiles → 291). Reste : tuiles d'eau plus grossières que celles du sol ; eau cachée derrière une montagne écartée par la pyramide de profondeur seulement avec les mesh shaders.
 - ✅ Réglage « Qualité des nuages » (Bas, Moyen, Élevé par défaut : pas le long du rayon et vers le soleil), aux mêmes endroits que « Détail du sol ».
+- 🔧 Réglage « Distance de la végétation » (Bas 50 %, Moyen 75 %, Élevé 100 % par défaut, Ultra 150 % de la portée de la planète), aux mêmes endroits que « Détail du sol » et dans les préréglages. Limite : en Ultra, au-delà de 256 plaines en vue, les plus lointaines restent sans arbres.
 - 🔧 Réglage « Détail du sol » (Bas, Moyen, Élevé par défaut, Ultra : tuile coupée à 3, 4, 5 ou 6 fois son bord), dans les Paramètres de l'éditeur, les réglages du jeu et les listes déroulantes des interfaces. Limite : choisi à la main, pas encore selon la carte graphique ni la vitesse mesurée.
 
 ### Rendu
@@ -212,7 +213,9 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
   aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des forêts sur le sol (visible de
   haut et de l'espace). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
-  au-dessus des forêts de montagne). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
+  au-dessus des forêts de montagne). Plaines semées d'avance autour de la caméra et sur son trajet (800 m, 64 au
+  plus), arbres d'une plaine semée en vue qui apparaissent un à un en 0,5 s ; budget de 4 plaines semées par image
+  encore à régler sur mesure. Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
   du feuillu ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
   Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud,
   réglés dans le panneau Végétation de l'éditeur avec aperçu en direct, `Planetology::SetVegetationPreview`) :

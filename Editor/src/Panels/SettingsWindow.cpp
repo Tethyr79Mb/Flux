@@ -85,6 +85,12 @@ namespace FluxEditor {
                 m_cloudQuality = static_cast<CloudQuality>(found - CloudQualityKeys.begin());
             }
         }
+        if (const auto distance = json.find("vegetationDistance"); distance != json.end() && distance->is_string()) {
+            const auto found = std::ranges::find(VegetationDistanceKeys, distance->get<std::string>());
+            if (found != VegetationDistanceKeys.end()) {
+                m_vegetationDistance = static_cast<VegetationDistance>(found - VegetationDistanceKeys.begin());
+            }
+        }
         ApplyGraphics(engine);
     }
 
@@ -100,7 +106,8 @@ namespace FluxEditor {
                         {"upscaling", UpscalingKeys[static_cast<std::size_t>(m_upscaling)]},
                         {"sharpness", m_sharpness},
                         {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]},
-                        {"cloudQuality", CloudQualityKeys[static_cast<std::size_t>(m_cloudQuality)]}};
+                        {"cloudQuality", CloudQualityKeys[static_cast<std::size_t>(m_cloudQuality)]},
+                        {"vegetationDistance", VegetationDistanceKeys[static_cast<std::size_t>(m_vegetationDistance)]}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -116,6 +123,7 @@ namespace FluxEditor {
         renderer.SetSharpness(m_sharpness);
         renderer.SetGroundDetail(m_groundDetail);
         renderer.SetCloudQuality(m_cloudQuality);
+        renderer.SetVegetationDistance(m_vegetationDistance);
     }
 
     void SettingsWindow::ApplyStyle(Engine& engine) const {
@@ -136,12 +144,13 @@ namespace FluxEditor {
             Upscaling upscaling;
             GroundDetail groundDetail;
             CloudQuality cloudQuality;
+            VegetationDistance vegetationDistance;
         };
         constexpr std::array<GraphicsPreset, 4> GraphicsPresets{{
-            {"Bas", Upscaling::FsrPerformance, GroundDetail::Low, CloudQuality::Low},
-            {"Moyen", Upscaling::FsrBalanced, GroundDetail::Medium, CloudQuality::Medium},
-            {"Élevé", DefaultUpscaling, DefaultGroundDetail, DefaultCloudQuality},
-            {"Ultra", Upscaling::FsrNativeAA, GroundDetail::Ultra, CloudQuality::High},
+            {"Bas", Upscaling::FsrPerformance, GroundDetail::Low, CloudQuality::Low, VegetationDistance::Low},
+            {"Moyen", Upscaling::FsrBalanced, GroundDetail::Medium, CloudQuality::Medium, VegetationDistance::Medium},
+            {"Élevé", DefaultUpscaling, DefaultGroundDetail, DefaultCloudQuality, DefaultVegetationDistance},
+            {"Ultra", Upscaling::FsrNativeAA, GroundDetail::Ultra, CloudQuality::High, VegetationDistance::Ultra},
         }};
 
         struct Category
@@ -207,7 +216,7 @@ namespace FluxEditor {
         bool custom = true;
         for (const GraphicsPreset& preset : GraphicsPresets) {
             bool active = m_upscaling == preset.upscaling && m_groundDetail == preset.groundDetail
-                       && m_cloudQuality == preset.cloudQuality;
+                       && m_cloudQuality == preset.cloudQuality && m_vegetationDistance == preset.vegetationDistance;
             custom = custom && !active;
             if (&preset != GraphicsPresets.data()) {
                 ui.SameLine();
@@ -216,12 +225,13 @@ namespace FluxEditor {
                 m_upscaling = preset.upscaling;
                 m_groundDetail = preset.groundDetail;
                 m_cloudQuality = preset.cloudQuality;
+                m_vegetationDistance = preset.vegetationDistance;
                 ApplyGraphics(engine);
                 Save();
             }
         }
         ui.HelpText(custom ? "Personnalisé : les réglages ne suivent aucun préréglage."
-                           : "Règle d'un coup la mise à l'échelle, le détail du sol et les nuages.");
+                           : "Règle d'un coup la mise à l'échelle, le détail du sol, les nuages et la végétation.");
 
         ui.SectionTitle("Affichage");
         bool vsync = renderer.IsVSyncEnabled();
@@ -268,6 +278,14 @@ namespace FluxEditor {
             Save();
         }
         ui.HelpText("Distance où le sol des planètes devient moins fin : plus élevé, plus de tuiles à calculer.");
+        int vegetation = static_cast<int>(m_vegetationDistance);
+        if (ui.Choice("Distance de la végétation", vegetation, VegetationDistanceLabels)) {
+            m_vegetationDistance = static_cast<VegetationDistance>(vegetation);
+            renderer.SetVegetationDistance(m_vegetationDistance);
+            Save();
+        }
+        ui.HelpText("Distance d'affichage des arbres : 50 %, 75 %, 100 % ou 150 % de la portée de chaque planète. Ultra "
+                    "dessine environ deux fois plus de plaines d'arbres qu'Élevé.");
         int clouds = static_cast<int>(m_cloudQuality);
         if (ui.Choice("Qualité des nuages", clouds, CloudQualityLabels)) {
             m_cloudQuality = static_cast<CloudQuality>(clouds);
@@ -302,6 +320,7 @@ namespace FluxEditor {
             m_temporalAA = true;
             m_groundDetail = DefaultGroundDetail;
             m_cloudQuality = DefaultCloudQuality;
+            m_vegetationDistance = DefaultVegetationDistance;
             m_bloomEnabled = true;
             m_bloom = Renderer::DefaultBloom;
             ApplyGraphics(engine);

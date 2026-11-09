@@ -105,6 +105,7 @@ namespace Flux {
         m_renderer->SetSharpness(config.sharpness);
         m_renderer->SetGroundDetail(config.groundDetail);
         m_renderer->SetCloudQuality(config.cloudQuality);
+        m_renderer->SetVegetationDistance(config.vegetationDistance);
         m_renderer->SetBloom(config.bloom ? Renderer::DefaultBloom : 0.0f);
         // Les modèles sont chargés par le rendu : la simulation y lit la durée des animations des sièges.
         m_simulation.SetAnimationDurations([renderer = m_renderer.get()](const std::filesystem::path& model, const std::string& animation) {
@@ -151,6 +152,15 @@ namespace Flux {
                                              },
                                              .getText = {},
                                              .options = {GroundDetailLabels.begin(), GroundDetailLabels.end()}});
+        // Numéro dans VegetationDistanceLabels (0 Bas à 3 Ultra).
+        m_interfaceBindings->SetEngineValue("Distance de la végétation", "Graphismes",
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetVegetationDistance()); },
+                                             .set = [this](double value) {
+                                                 m_renderer->SetVegetationDistance(static_cast<VegetationDistance>(
+                                                     std::clamp(std::lround(value), 0l, static_cast<long>(VegetationDistanceCount) - 1)));
+                                             },
+                                             .getText = {},
+                                             .options = {VegetationDistanceLabels.begin(), VegetationDistanceLabels.end()}});
         // Numéro dans CloudQualityLabels (0 Bas à 2 Élevé).
         m_interfaceBindings->SetEngineValue("Qualité des nuages", "Graphismes",
                                             {.get = [this] { return static_cast<double>(m_renderer->GetCloudQuality()); },
@@ -359,6 +369,7 @@ namespace Flux {
                     .renderSize = m_renderer->GetRenderSize(),
                     .groundDetail = m_renderer->GetGroundDetail(),
                     .cloudQuality = m_renderer->GetCloudQuality(),
+                    .vegetationDistance = m_renderer->GetVegetationDistance(),
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
                     .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
                     .groundMeshThreads = render.groundMeshThreads,
