@@ -3,11 +3,65 @@
 #include "Check.hpp"
 
 #include "GameSim.hpp"
+#include "SpawnPoint.hpp"
 
 #include "Flux/Core/Simulation.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Scene/SceneSerializer.hpp"
+
+#include <cmath>
+#include <filesystem>
+#include <fstream>
 
 using namespace Flux;
+
+namespace {
+    // Arrivée d'un joueur sur le serveur : personnage du solo retiré, prefab créé au point d'apparition, dans la
+    // station qui le porte.
+    bool SpawnPoints() {
+        Simulation simulation;
+        const std::shared_ptr<Game::SimState> state = Game::RegisterSimulation(simulation);
+        const std::filesystem::path assets = std::filesystem::temp_directory_path() / "FluxSpawnTests";
+        std::filesystem::create_directories(assets / "Prefabs");
+        {
+            Scene source;
+            const Entity hero = source.CreateEntity("Héros");
+            source.Add<CharacterComponent>(hero).player = false;
+            const auto prefab = SceneSerializer::SavePrefab(source, simulation.GetComponents(), hero,
+                                                            SceneSerializer::PrefabIds::ForInstance);
+            CHECK(prefab.has_value());
+            std::ofstream(assets / "Prefabs" / "Joueur.prefab.json") << *prefab;
+        }
+        simulation.SetProject({.name = "test", .file = {}, .assetsDirectory = assets, .startupScene = {}});
+
+        Scene& scene = simulation.GetScene();
+        CHECK(!Game::SpawnPoints::Spawn(simulation, "", "Bruno")); // pas de point d'apparition
+        const Entity station = scene.CreateEntity("Station");
+        scene.Add<ShipComponent>(station);
+        const Entity hangar = scene.CreateEntity("Hangar", station);
+        scene.Get<TransformComponent>(hangar).position = {100.0, 0.0, 0.0};
+        const Entity point = scene.CreateEntity("Apparition", hangar);
+        scene.Get<TransformComponent>(point).position = {5.0, 1.0, -2.0};
+        scene.Add<Game::SpawnPointComponent>(point).prefab = "Prefabs/Joueur.prefab.json";
+        const Entity solo = scene.CreateEntity("Joueur du solo", station);
+        scene.Add<CharacterComponent>(solo);
+
+        CHECK(Game::SpawnPoints::RemovePlacedPlayers(scene) == 1 && !scene.IsValid(solo));
+        // Un prefab qu'aucun point ne propose : celui du point (un client ne crée pas ce qu'il veut).
+        const auto spawned = Game::SpawnPoints::Spawn(simulation, "Prefabs/Autre.prefab.json", "Bruno");
+        CHECK(spawned.has_value());
+        const Entity character = *spawned;
+        CHECK(scene.GetParent(character) == station); // enfant direct de la station : il y marche
+        CHECK(scene.Get<CharacterComponent>(character).player);
+        CHECK(scene.Get<NameComponent>(character).name == "Joueur : Bruno");
+        const Math::Vector3d gap = Math::Delta(scene.GetWorldPosition(point), scene.GetWorldPosition(character));
+        CHECK(Math::Length(gap) < 1.0e-6);
+
+        std::filesystem::remove_all(assets);
+        Game::UnregisterSimulation(simulation);
+        return true;
+    }
+}
 
 bool RunGameSimTests() {
     Simulation first;
@@ -56,5 +110,5 @@ bool RunGameSimTests() {
     // Retirés : les systèmes ne gardent plus l'état.
     Game::UnregisterSimulation(first);
     CHECK(state.use_count() == 1);
-    return true;
+    return SpawnPoints();
 }

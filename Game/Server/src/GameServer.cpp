@@ -2,11 +2,13 @@
 
 #include "GameProtocol.hpp"
 #include "GameSim.hpp"
+#include "SpawnPoint.hpp"
 
 #include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <thread>
@@ -37,6 +39,10 @@ namespace Game {
         m_simulation.SetProject(std::move(project));
         if (auto loaded = m_simulation.LoadScene(path); !loaded) {
             return std::unexpected(std::format("scène {} : {}", Flux::Platform::ToUtf8(path), loaded.error()));
+        }
+        // Les personnages du solo partent : chaque joueur connecté aura le sien (point d'apparition).
+        if (const int removed = SpawnPoints::RemovePlacedPlayers(m_simulation.GetScene()); removed > 0) {
+            Flux::Log::Info("{} personnage(s) joueur(s) du solo retiré(s) : les joueurs apparaissent en se connectant", removed);
         }
         m_simulation.Start();
         m_scene = Flux::Platform::ToGenericUtf8(path.lexically_normal().lexically_relative(
@@ -70,7 +76,10 @@ namespace Game {
                     SendWelcome(event.connection);
                     break;
                 case Flux::Net::EventKind::Disconnected:
-                    m_clients.erase(event.connection);
+                    if (const auto client = m_clients.find(event.connection); client != m_clients.end()) {
+                        Leave(client->second);
+                        m_clients.erase(client);
+                    }
                     Flux::Log::Info("Client {} déconnecté : {} ({} en tout)", event.connection,
                                     Flux::Net::ToString(event.reason), m_network.GetConnectionCount());
                     break;
@@ -78,12 +87,21 @@ namespace Game {
                     Flux::ByteReader reader(event.payload);
                     const auto type = static_cast<MessageType>(reader.Read<std::uint8_t>());
                     const auto client = m_clients.find(event.connection);
-                    if (type == MessageType::SnapshotAck && client != m_clients.end()) {
-                        const auto sequence = reader.Read<std::uint32_t>();
-                        // Le plus récent seulement : un accusé non fiable peut arriver après un plus récent.
-                        if (reader.IsValid() && sequence > client->second.acknowledged) {
-                            client->second.acknowledged = sequence;
+                    if (client == m_clients.end()) {
+                        break;
+                    }
+                    switch (type) {
+                        case MessageType::SnapshotAck: {
+                            const auto sequence = reader.Read<std::uint32_t>();
+                            // Le plus récent seulement : un accusé non fiable peut arriver après un plus récent.
+                            if (reader.IsValid() && sequence > client->second.acknowledged) {
+                                client->second.acknowledged = sequence;
+                            }
+                            break;
                         }
+                        case MessageType::Join: Join(event.connection, client->second, reader); break;
+                        case MessageType::Command: ReadCommands(client->second, reader); break;
+                        default: break; // message du serveur ou inconnu : ignoré
                     }
                     break;
                 }
@@ -98,6 +116,85 @@ namespace Game {
         m_message.WriteString(m_scene);
         m_message.Write(m_simulation.GetClock().GetStep());
         m_network.Send(connection, m_message.GetBytes(), Flux::Net::Delivery::Reliable);
+    }
+
+    void GameServer::Join(Flux::Net::ConnectionId connection, Client& client, Flux::ByteReader& reader) {
+        std::string name = reader.ReadString();
+        const std::string prefab = reader.ReadString();
+        if (!reader.IsValid()) {
+            Flux::Log::Warning("Client {} : demande pour rejoindre abîmée", connection);
+            return;
+        }
+        if (client.player != Flux::NullEntity) {
+            return; // déjà dans la zone
+        }
+        constexpr std::size_t MaxName = 32;
+        if (name.empty() || name.size() > MaxName) {
+            name = std::format("Joueur {}", connection);
+        }
+        auto spawned = SpawnPoints::Spawn(m_simulation, prefab, name);
+        if (!spawned) {
+            Flux::Log::Error("Client {} ({}) : pas de personnage, {}", connection, name, spawned.error());
+            return;
+        }
+        client.name = std::move(name);
+        client.player = *spawned;
+        Flux::Log::Info("{} a rejoint la zone (client {})", client.name, connection);
+        m_message.Clear();
+        m_message.Write(MessageType::PlayerEntity);
+        m_message.Write(m_simulation.GetScene().GetId(client.player).value);
+        m_network.Send(connection, m_message.GetBytes(), Flux::Net::Delivery::Reliable);
+    }
+
+    void GameServer::ReadCommands(Client& client, Flux::ByteReader& reader) {
+        const auto count = static_cast<std::size_t>(reader.Read<std::uint8_t>());
+        if (!reader.IsValid() || count > MaxCommandsPerMessage) {
+            return;
+        }
+        // De la plus récente à la plus ancienne : celles déjà reçues sont passées, les actions enfoncées des autres
+        // s'ajoutent (un message perdu ne fait pas perdre un tir).
+        for (std::size_t i = 0; i < count; ++i) {
+            Flux::PlayerCommand command;
+            if (!Flux::ReadCommand(reader, command)) {
+                return;
+            }
+            if (command.step <= client.lastCommandStep && client.lastCommandStep != 0) {
+                break;
+            }
+            client.pressed |= command.pressed;
+            if (i == 0) {
+                client.command = command;
+            }
+        }
+        if (count > 0) {
+            client.lastCommandStep = std::max(client.lastCommandStep, client.command.step);
+        }
+    }
+
+    void GameServer::Leave(Client& client) {
+        Flux::Scene& scene = m_simulation.GetScene();
+        if (client.player != Flux::NullEntity && scene.IsValid(client.player)) {
+            scene.DestroyEntity(client.player);
+            Flux::Log::Info("{} a quitté la zone", client.name);
+        }
+        client.player = Flux::NullEntity;
+    }
+
+    void GameServer::ApplyCommands() {
+        const Flux::Scene& scene = m_simulation.GetScene();
+        for (auto& [connection, client] : m_clients) {
+            if (client.player == Flux::NullEntity || !scene.IsValid(client.player)) {
+                continue;
+            }
+            Flux::PlayerCommand command = client.command;
+            command.pressed = std::exchange(client.pressed, {});
+            m_simulation.SetPlayerCommand(client.player, command);
+        }
+    }
+
+    void GameServer::Step() {
+        ApplyCommands();
+        m_simulation.Step(Flux::SimulationClock::StepSeconds);
     }
 
     void GameServer::SendSpawns(Flux::Net::ConnectionId connection, Client& client, const Flux::Replication::WorldState& state) {
@@ -117,6 +214,7 @@ namespace Game {
             m_message.Clear();
             m_message.Write(MessageType::EntitySpawn);
             m_message.Write(scene.GetId(root).value);
+            m_message.Write(state.step);
             m_message.WriteString(Flux::SceneSerializer::SaveEntity(scene, m_simulation.GetComponents(), root, true));
             m_network.Send(connection, m_message.GetBytes(), Flux::Net::Delivery::Reliable);
         }
@@ -141,7 +239,7 @@ namespace Game {
 
     void GameServer::RunSteps(std::uint64_t count) {
         for (std::uint64_t i = 0; i < count; ++i) {
-            m_simulation.Step(Flux::SimulationClock::StepSeconds);
+            Step();
         }
     }
 
@@ -159,7 +257,7 @@ namespace Game {
             previous = now;
             ServeNetwork();
             for (int i = 0; i < steps; ++i) {
-                m_simulation.Step(Flux::SimulationClock::StepSeconds);
+                Step();
             }
             if (clock.GetStep() >= m_lastSnapshotStep + SnapshotIntervalSteps) {
                 Replicate();

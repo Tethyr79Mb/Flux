@@ -86,8 +86,11 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   dernier instantané que le client a accusé (modèle de Quake 3), et envoie une fois en entier, en fiable, les entités
   créées pendant le jeu (`SceneSerializer::SaveEntity`). Avec `--serveur`, la `Simulation` du client est répliquée
   (`SetReplicated`) : `Step` ne simule plus et ne fait tourner que l'étape `Replication`, où le client charge la scène
-  du serveur et y écrit l'état reçu, interpolé 100 ms en retard (`SnapshotReceiver`). Le joueur ne fait que regarder
-  avant l'étape 6b (ses commandes envoyées au serveur).
+  du serveur et y écrit l'état reçu, interpolé 100 ms en retard (`SnapshotReceiver`). Avec `--joueur Nom`, le client
+  demande un personnage (`Join`) : le serveur l'instancie au point d'apparition (`SpawnPointComponent`, GameSim),
+  répond par son identifiant (`PlayerEntity`) et le retire au départ ; le client envoie sa `PlayerCommand` à chaque
+  pas (`Command`, non fiable, les 3 dernières répétées), que le serveur borne (`ReadCommand`) puis donne à
+  `Simulation::SetPlayerCommand`. Pas de prédiction avant l'étape 7.
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage (les menus sont des interfaces des scènes). Les assets sont copiés à côté
   des exécutables (`bin/assets/`), serveur compris.
 - Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à

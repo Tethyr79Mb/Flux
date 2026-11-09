@@ -4,6 +4,7 @@
 
 #include "Flux/Core/Simulation.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
+#include "Flux/Scene/Components.hpp"
 
 #include <cmath>
 #include <string>
@@ -120,6 +121,88 @@ namespace {
         return true;
     }
 
+    // Commande envoyée par le réseau : relue à l'identique, et ramenée dans ses bornes si elle en sort.
+    bool CommandBytes() {
+        PlayerCommand command;
+        command.step = 1234;
+        command.move = {0.6f, 0.0f, 0.8f};
+        command.stickYaw = -0.5f;
+        command.viewPosition = {{1, -2, 3}, {4.5, 6.0, -7.25}};
+        command.viewForward = {0.0f, 1.0f, 0.0f};
+        command.held[3] = true;
+        command.pressed[100] = true;
+        ByteWriter writer;
+        WriteCommand(writer, command);
+        CHECK(writer.GetBytes().size() == 120);
+        ByteReader reader(writer.GetBytes());
+        PlayerCommand read;
+        CHECK(ReadCommand(reader, read));
+        CHECK(read.step == 1234 && read.move == command.move && read.stickYaw == -0.5f);
+        CHECK(read.viewPosition == command.viewPosition && read.viewForward == command.viewForward);
+        CHECK(read.held == command.held && read.pressed == command.pressed);
+
+        // Client modifié : marche trop longue, manche hors bornes, nombre invalide.
+        command.move = {30.0f, 0.0f, 40.0f};
+        command.stickPitch = 9.0f;
+        command.stickYaw = std::nanf("");
+        command.viewForward = {};
+        writer.Clear();
+        WriteCommand(writer, command);
+        ByteReader cheated(writer.GetBytes());
+        CHECK(ReadCommand(cheated, read));
+        CHECK(std::abs(Math::Length(read.move) - 1.0f) < 1.0e-5f && read.stickPitch == 1.0f && read.stickYaw == 0.0f);
+        CHECK(std::abs(Math::Length(read.viewForward) - 1.0f) < 1.0e-5f);
+
+        // Tronquée : refusée, la commande d'avant reste.
+        ByteReader truncated(std::span(writer.GetBytes()).first(50));
+        const PlayerCommand before = read;
+        CHECK(!ReadCommand(truncated, read) && read.move == before.move);
+        return true;
+    }
+
+    // Monde répliqué : les personnages déplacés par le serveur (ici à la main) marchent, puis tombent, à l'écran.
+    bool ReplicatedCharactersAnimate() {
+        Simulation simulation;
+        simulation.SetReplicated(true);
+        Scene& scene = simulation.GetScene();
+        const Entity walker = scene.CreateEntity("Marcheur");
+        scene.Add<CharacterComponent>(walker);
+        AnimatorComponent& animator = scene.Add<AnimatorComponent>(walker);
+        animator.idleAnimation = "Repos";
+        animator.airAnimation = "Chute";
+        animator.animation = "Marche";
+        const double step = SimulationClock::StepSeconds;
+        simulation.Step(step);
+        CHECK(animator.playing == "Repos");
+        for (int i = 0; i < 10; ++i) {
+            scene.Get<TransformComponent>(walker).position.x += 2.0 * step; // 2 m/s
+            simulation.Step(step);
+        }
+        CHECK(std::abs(scene.Get<CharacterComponent>(walker).groundSpeed - 2.0f) < 0.01f);
+        CHECK(animator.playing == "Marche");
+        // Saut sur place (4,5 m/s, 9,81 m/s²) : en l'air jusqu'à la retombée, haut du saut compris.
+        double vertical = 4.5;
+        bool airborneAtTop = false;
+        while (true) {
+            double& y = scene.Get<TransformComponent>(walker).position.y;
+            vertical -= 9.81 * step;
+            y += vertical * step;
+            if (y <= 0.0) {
+                y = 0.0;
+                simulation.Step(step);
+                break;
+            }
+            simulation.Step(step);
+            if (std::abs(vertical) < 0.5) {
+                airborneAtTop = animator.playing == "Chute";
+            }
+        }
+        CHECK(airborneAtTop);
+        simulation.Step(step);
+        CHECK(animator.playing == "Repos");
+        return true;
+    }
+
     // Bits des actions : ceux du personnage d'abord, dans l'ordre, puis ceux du jeu ; un nom garde le sien.
     bool ActionsKeepTheirBits() {
         Simulation simulation;
@@ -134,5 +217,5 @@ namespace {
 
 bool RunSimulationTests() {
     return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce() && TwoPlayers()
-        && ActionsKeepTheirBits();
+        && CommandBytes() && ReplicatedCharactersAnimate() && ActionsKeepTheirBits();
 }

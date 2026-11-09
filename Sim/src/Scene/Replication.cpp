@@ -20,6 +20,7 @@ namespace Flux::Replication {
             SectorChanged = 1 << 0,
             ComponentsChanged = 1 << 1,
             NewEntity = 1 << 2, // absente de la base : toutes ses valeurs suivent
+            ParentChanged = 1 << 3,
         };
 
         std::uint32_t SizeOf(FieldType type) {
@@ -176,6 +177,8 @@ namespace Flux::Replication {
             state.id = id;
             const auto* sector = registry.try_get<SectorComponent>(entity);
             state.sector = sector ? sector->sector : Math::Vector3i64{};
+            const Entity parent = scene.GetParent(entity);
+            state.parent = parent != NullEntity ? scene.GetId(parent) : Uuid{};
             state.components = 0;
             std::byte* values = out.values.data() + i * stateSize;
             for (std::size_t c = 0; c < components.size(); ++c) {
@@ -228,10 +231,12 @@ namespace Flux::Replication {
             std::uint8_t flags = 0;
             if (!known) {
                 // Secteur 0 (presque toutes) : pas écrit, c'est celui d'une entité nouvelle.
-                flags = NewEntity | ComponentsChanged | (entity.sector != Math::Vector3i64{} ? SectorChanged : 0);
+                flags = NewEntity | ComponentsChanged | (entity.sector != Math::Vector3i64{} ? SectorChanged : 0)
+                    | (entity.parent ? ParentChanged : 0);
             } else {
                 flags |= entity.sector != base.entities[b].sector ? SectorChanged : 0;
                 flags |= entity.components != base.entities[b].components ? ComponentsChanged : 0;
+                flags |= entity.parent != base.entities[b].parent ? ParentChanged : 0;
             }
             // Champs changés, composant par composant (un composant ajouté depuis la base : tous ses champs).
             bool anyField = false;
@@ -257,6 +262,9 @@ namespace Flux::Replication {
             out.Write(flags);
             if (flags & SectorChanged) {
                 out.Write(entity.sector);
+            }
+            if (flags & ParentChanged) {
+                out.Write(entity.parent.value);
             }
             if (flags & ComponentsChanged) {
                 out.WriteVarint(entity.components);
@@ -349,7 +357,7 @@ namespace Flux::Replication {
             if (known == ((flags & NewEntity) != 0)) {
                 return std::unexpected("instantané abîmé (entité nouvelle ou non)");
             }
-            EntityState entity = known ? base.entities[b] : EntityState{.id = changedId, .sector = {}, .components = 0};
+            EntityState entity = known ? base.entities[b] : EntityState{.id = changedId, .sector = {}, .parent = {}, .components = 0};
             const std::size_t at = out.values.size();
             if (known) {
                 const std::span<const std::byte> values = base.GetValues(schema, b);
@@ -360,6 +368,9 @@ namespace Flux::Replication {
             }
             if (flags & SectorChanged) {
                 entity.sector = reader.Read<Math::Vector3i64>();
+            }
+            if (flags & ParentChanged) {
+                entity.parent = Uuid{reader.Read<std::uint64_t>()};
             }
             const std::uint64_t before = entity.components;
             if (flags & ComponentsChanged) {
@@ -415,8 +426,15 @@ namespace Flux::Replication {
                 continue;
             }
             const bool hasFrom = f < from.entities.size() && from.entities[f].id == state.id;
-            // Un saut de secteur ne s'interpole pas (positions de deux repères) : rare, d'un coup.
-            const bool interpolate = hasFrom && &from != &to && from.entities[f].sector == state.sector;
+            // Un saut de secteur ou un changement de parent ne s'interpole pas (positions de deux repères) : d'un coup.
+            const bool interpolate = hasFrom && &from != &to && from.entities[f].sector == state.sector
+                && from.entities[f].parent == state.parent;
+            // Monté à bord d'un vaisseau ou descendu : sa place locale qui suit est dans le repère du nouveau parent.
+            // Un parent pas encore connu du client (créé pendant le jeu, en route) : au prochain état.
+            const Entity parent = state.parent ? scene.FindById(state.parent) : NullEntity;
+            if ((parent != NullEntity || !state.parent) && scene.GetParent(entity) != parent) {
+                scene.SetParent(entity, parent);
+            }
             if (scene.GetParent(entity) == NullEntity) {
                 const auto* sector = registry.try_get<SectorComponent>(entity);
                 if ((sector ? sector->sector : Math::Vector3i64{}) != state.sector) {
@@ -452,7 +470,7 @@ namespace Flux::Replication {
         }
     }
 
-    void DestroyMissing(Scene& scene, const WorldState* previous, const WorldState& state) {
+    void DestroyMissing(Scene& scene, const WorldState* previous, const WorldState& state, std::span<const Uuid> keep) {
         if (previous != nullptr) {
             for (const EntityState& entity : previous->entities) {
                 if (state.Find(entity.id) < 0) {
@@ -463,9 +481,17 @@ namespace Flux::Replication {
             }
             return;
         }
+        const auto kept = [&](Entity entity) {
+            for (; entity != NullEntity; entity = scene.GetParent(entity)) {
+                if (std::ranges::find(keep, scene.GetId(entity)) != keep.end()) {
+                    return true;
+                }
+            }
+            return false;
+        };
         std::vector<Uuid> missing;
         for (const auto [entity, id] : scene.GetRegistry().view<const IdComponent>().each()) {
-            if (id.id && state.Find(id.id) < 0) {
+            if (id.id && state.Find(id.id) < 0 && !kept(entity)) {
                 missing.push_back(id.id);
             }
         }
