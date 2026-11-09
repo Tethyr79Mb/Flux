@@ -11,9 +11,12 @@
 #include <Flux/Scene/Replication.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
 
+#include <algorithm>
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -24,10 +27,11 @@ namespace Game {
         constexpr const char* ServerConnectionSystem = "Jeu : connexion au serveur";
         constexpr const char* ServerSceneSystem = "Jeu : scène du serveur";
 
-        std::optional<std::string> FindServerAddress() {
+        // Valeur de l'option `name` de la ligne de commande (« --serveur 127.0.0.1 »).
+        std::optional<std::string> FindArgument(std::string_view name) {
             const std::vector<std::string> arguments = Platform::GetCommandLineArguments();
             for (std::size_t i = 0; i + 1 < arguments.size(); ++i) {
-                if (arguments[i] == "--serveur") {
+                if (arguments[i] == name) {
                     return arguments[i + 1];
                 }
             }
@@ -40,8 +44,13 @@ namespace Game {
             Net::Client client;
             Replication::Schema schema;
             Replication::SnapshotReceiver receiver;
-            ByteWriter message; // accusés de réception, gardé d'un envoi à l'autre
+            ByteWriter message; // accusés de réception et commandes, gardé d'un envoi à l'autre
+            std::string playerName; // --joueur, envoyé pour rejoindre la zone (Join)
             std::string scene;  // relative au dossier des assets, donnée par le serveur (Welcome)
+            Uuid player;        // personnage de ce joueur, donné par le serveur (PlayerEntity) ; vide : pas encore
+            // Dernières commandes de cet écran, la plus récente d'abord : répétées dans chaque envoi (message perdu).
+            std::array<PlayerCommand, MaxCommandsPerMessage> commands{};
+            std::size_t commandCount = 0;
             bool sceneReady = false; // la scène chargée est celle du serveur : les instantanés s'y appliquent
             // Prochain état appliqué : regarder toute la scène (entités détruites par le serveur avant notre arrivée,
             // ou scène rechargée), pas seulement ce qui a disparu depuis le précédent.
@@ -49,7 +58,14 @@ namespace Game {
             std::uint32_t lastApplied = 0; // numéro de l'instantané « to » appliqué en dernier
             // Entités créées pendant le jeu (EntitySpawn), dans l'ordre d'arrivée : remises après un rechargement de la
             // scène (un enfant après son parent).
-            std::vector<std::pair<Uuid, std::string>> spawns;
+            struct Spawn
+            {
+                Uuid id;
+                std::uint64_t step = 0; // premier instantané qui la contient
+                std::string text;
+            };
+            std::vector<Spawn> spawns;
+            std::vector<Uuid> pendingSpawns; // créées après l'instantané affiché : DestroyMissing les garde
         };
 
         bool IsServerScene(Engine& engine, const ServerConnection& connection) {
@@ -88,11 +104,42 @@ namespace Game {
             connection.lastApplied = 0;
             connection.fullSync = true;
             connection.spawns.clear();
+            connection.player = {};
+            connection.commandCount = 0;
+            // Rejoindre la zone : un personnage au point d'apparition (celui du point : pas encore de choix).
+            connection.message.Clear();
+            connection.message.Write(MessageType::Join);
+            connection.message.WriteString(connection.playerName);
+            connection.message.WriteString("");
+            connection.client.Send(connection.message.GetBytes(), Net::Delivery::Reliable);
             connection.sceneReady = IsServerScene(engine, connection);
             if (!connection.sceneReady) {
                 Log::Info("Scène du serveur : {}", connection.scene);
                 engine.RequestScene(connection.scene); // chargée à la fin de l'image, puis l'étape Reset
             }
+        }
+
+        // La commande de cet écran pour ce pas, avec les précédentes. Le personnage est retrouvé à chaque pas : il
+        // arrive après PlayerEntity (EntitySpawn), et change d'entité quand la scène est rechargée.
+        void SendCommand(Engine& engine, ServerConnection& connection) {
+            Simulation& simulation = engine.GetSimulation();
+            const Entity player = connection.sceneReady && connection.player != Uuid{}
+                                      ? engine.GetScene().FindById(connection.player)
+                                      : NullEntity;
+            simulation.SetLocalPlayer(player);
+            if (player == NullEntity || !connection.client.IsConnected()) {
+                return;
+            }
+            std::shift_right(connection.commands.begin(), connection.commands.end(), 1);
+            connection.commands.front() = simulation.GetPlayerCommand(player);
+            connection.commandCount = std::min(connection.commandCount + 1, connection.commands.size());
+            connection.message.Clear();
+            connection.message.Write(MessageType::Command);
+            connection.message.Write(static_cast<std::uint8_t>(connection.commandCount));
+            for (std::size_t i = 0; i < connection.commandCount; ++i) {
+                WriteCommand(connection.message, connection.commands[i]);
+            }
+            connection.client.Send(connection.message.GetBytes(), Net::Delivery::Unreliable);
         }
 
         void ServeConnection(Engine& engine, ServerConnection& connection) {
@@ -123,8 +170,17 @@ namespace Game {
                                 }
                                 break;
                             }
+                            case MessageType::PlayerEntity: {
+                                const Uuid id{reader.Read<std::uint64_t>()};
+                                if (reader.IsValid()) {
+                                    connection.player = id;
+                                    Log::Info("Personnage reçu du serveur");
+                                }
+                                break;
+                            }
                             case MessageType::EntitySpawn: {
                                 const Uuid id{reader.Read<std::uint64_t>()};
+                                const auto step = reader.Read<std::uint64_t>();
                                 std::string text = reader.ReadString();
                                 if (!reader.IsValid()) {
                                     Log::Warning("Entité envoyée par le serveur : message abîmé");
@@ -133,15 +189,16 @@ namespace Game {
                                 if (connection.sceneReady) {
                                     RestoreSpawn(engine, text);
                                 }
-                                connection.spawns.emplace_back(id, std::move(text));
+                                connection.spawns.push_back({.id = id, .step = step, .text = std::move(text)});
                                 break;
                             }
-                            default: break; // message du client (SnapshotAck) ou inconnu : ignoré
+                            default: break; // message du client (SnapshotAck, Join, Command) ou inconnu : ignoré
                         }
                         break;
                     }
                 }
             }
+            SendCommand(engine, connection);
             connection.client.Flush();
 
             if (!connection.sceneReady) {
@@ -160,7 +217,15 @@ namespace Game {
                 // Sans précédent (premier état, scène rechargée, précédent déjà remplacé dans l'anneau) : toute la scène.
                 const Replication::WorldState* previous =
                     connection.fullSync ? nullptr : connection.receiver.Find(connection.lastApplied);
-                Replication::DestroyMissing(scene, previous, *to);
+                // Entités créées pendant le jeu que to devait avoir et n'a plus : détruites par le serveur, plus à remettre.
+                std::erase_if(connection.spawns, [&](const auto& spawn) { return spawn.step <= to->step && to->Find(spawn.id) < 0; });
+                connection.pendingSpawns.clear();
+                for (const auto& spawn : connection.spawns) {
+                    if (spawn.step > to->step) {
+                        connection.pendingSpawns.push_back(spawn.id);
+                    }
+                }
+                Replication::DestroyMissing(scene, previous, *to, connection.pendingSpawns);
                 connection.fullSync = false;
                 connection.lastApplied = to->sequence;
             }
@@ -174,22 +239,26 @@ namespace Game {
             if (!connection.sceneReady) {
                 return;
             }
-            // Entités créées pendant le jeu : remises, sauf celles qui ne sont plus dans le dernier instantané.
+            // Entités créées pendant le jeu : remises, sauf celles qui ne sont plus dans le dernier instantané (qui devait
+            // déjà les avoir).
             const Replication::WorldState* latest = connection.receiver.GetLatest();
-            std::erase_if(connection.spawns, [&](const auto& spawn) { return latest && latest->Find(spawn.first) < 0; });
-            for (const auto& [id, text] : connection.spawns) {
-                RestoreSpawn(engine, text);
+            std::erase_if(connection.spawns,
+                          [&](const auto& spawn) { return latest && spawn.step <= latest->step && latest->Find(spawn.id) < 0; });
+            for (const auto& spawn : connection.spawns) {
+                RestoreSpawn(engine, spawn.text);
             }
         }
     }
 
     void RegisterServerConnection(Engine& engine) {
-        const std::optional<std::string> address = FindServerAddress();
+        const std::optional<std::string> address = FindArgument("--serveur");
         if (!address) {
             return;
         }
         // Possédé par les systèmes : retiré au déchargement du module (rechargement à chaud), il se déconnecte.
         auto connection = std::make_shared<ServerConnection>();
+        // Pas encore de comptes (Bruno, 2026-11-09) : le nom suffit ; sans nom, le serveur en donne un.
+        connection->playerName = FindArgument("--joueur").value_or("");
         // Après l'enregistrement des composants du jeu (RegisterSimulation) : ses champs répliqués en font partie.
         connection->schema.Build(engine.GetComponents());
         if (auto connecting = connection->client.Connect(
@@ -212,6 +281,7 @@ namespace Game {
     void UnregisterServerConnection(Engine& engine) {
         engine.RemoveGameSystem(ServerConnectionSystem);
         engine.RemoveGameSystem(ServerSceneSystem);
+        engine.GetSimulation().SetLocalPlayer(NullEntity);
         engine.GetSimulation().SetReplicated(false);
     }
 }

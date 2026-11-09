@@ -56,7 +56,8 @@ namespace Flux {
             BeforePhysics, // après le vol des vaisseaux : pilote automatique, warp, IA (mener des vaisseaux)
             AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Reset,         // scène remplacée ou simulation arrêtée : oublier l'ancienne scène (deltaSeconds = 0)
-            Replication,   // monde répliqué (SetReplicated) : la seule étape d'un pas, où arrive l'état du serveur
+            Replication,   // monde répliqué (SetReplicated) : la seule étape d'un pas, où arrive l'état du serveur et
+                           // d'où part la commande de cet écran
         };
 
         Simulation();
@@ -102,8 +103,11 @@ namespace Flux {
 
         // Monde physique, nullptr à l'arrêt. Tous partagent le contexte physique de la simulation.
         PhysicsWorld* GetPhysics() { return m_physics.get(); }
-        // Personnage du joueur de cet écran (celui que suit la caméra), NullEntity à l'arrêt ou sans personnage.
+        // Personnage du joueur de cet écran (celui que suit la caméra), NullEntity à l'arrêt ou sans personnage : le
+        // premier personnage joué de la scène, ou dans un monde répliqué celui que le serveur a donné (SetLocalPlayer).
         Entity GetPlayer() const;
+        // Monde répliqué : le personnage de ce client, créé par le serveur (NullEntity : aucun pour l'instant).
+        void SetLocalPlayer(Entity player) { m_localPlayer = player; }
         // Personnages joués (CharacterComponent::player) pendant le pas en cours : les systèmes du jeu les parcourent.
         std::span<const Entity> GetPlayers() const { return m_players; }
         // Commande du joueur qui dirige ce personnage pour le pas en cours ; vide pour un personnage sans joueur. Le
@@ -166,6 +170,7 @@ namespace Flux {
         } m_characterActions;
         AnimationDurationFunction m_animationDurations;
         PlayerCommand m_localCommand;
+        Entity m_localPlayer = NullEntity; // monde répliqué seulement (SetLocalPlayer)
         std::vector<std::pair<Entity, PlayerCommand>> m_commands; // des autres joueurs, pour le prochain pas
         // Un joueur pendant le pas : sa commande, celles du jeu pour son vaisseau (SetPilotInput), et Interagir
         // enfoncée pas encore prise. Les vecteurs du pas gardent leur mémoire : pas d'allocation.

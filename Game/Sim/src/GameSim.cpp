@@ -4,6 +4,7 @@
 #include "CombatAI.hpp"
 #include "Docking.hpp"
 #include "MissionGiver.hpp"
+#include "SpawnPoint.hpp"
 #include "Warp.hpp"
 #include "Weapons.hpp"
 
@@ -87,6 +88,7 @@ namespace Game {
         RegisterWarpDrive(components);
         RegisterCombatAI(components);
         RegisterMissionGiver(components);
+        RegisterSpawnPoint(components);
 
         auto state = std::make_shared<SimState>();
         CommandActions& actions = simulation.GetActions();

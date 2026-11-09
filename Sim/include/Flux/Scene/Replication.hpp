@@ -120,8 +120,10 @@ namespace Flux::Replication {
     FLUX_SIM_API void Apply(Scene& scene, const Schema& schema, const WorldState& from, const WorldState& to, float t);
     // Détruit les entités de la scène que state n'a pas (détruites par le serveur). previous : dernier état appliqué,
     // pour ne regarder que les entités qui ont disparu depuis ; nullptr : toute la scène (premier état, scène
-    // rechargée).
-    FLUX_SIM_API void DestroyMissing(Scene& scene, const WorldState* previous, const WorldState& state);
+    // rechargée). keep : entités (et leurs descendants) que state ne peut pas encore avoir, créées par le serveur après
+    // lui (EntitySpawn arrivé avant l'instantané qui les contient).
+    FLUX_SIM_API void DestroyMissing(Scene& scene, const WorldState* previous, const WorldState& state,
+                                     std::span<const Uuid> keep = {});
 
     // Les derniers instantanés du serveur, en anneau : base des différences de chaque client.
     class FLUX_SIM_API SnapshotHistory {

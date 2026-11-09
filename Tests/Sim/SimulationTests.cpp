@@ -120,6 +120,45 @@ namespace {
         return true;
     }
 
+    // Commande envoyée par le réseau : relue à l'identique, et ramenée dans ses bornes si elle en sort.
+    bool CommandBytes() {
+        PlayerCommand command;
+        command.step = 1234;
+        command.move = {0.6f, 0.0f, 0.8f};
+        command.stickYaw = -0.5f;
+        command.viewPosition = {{1, -2, 3}, {4.5, 6.0, -7.25}};
+        command.viewForward = {0.0f, 1.0f, 0.0f};
+        command.held[3] = true;
+        command.pressed[100] = true;
+        ByteWriter writer;
+        WriteCommand(writer, command);
+        CHECK(writer.GetBytes().size() == 120);
+        ByteReader reader(writer.GetBytes());
+        PlayerCommand read;
+        CHECK(ReadCommand(reader, read));
+        CHECK(read.step == 1234 && read.move == command.move && read.stickYaw == -0.5f);
+        CHECK(read.viewPosition == command.viewPosition && read.viewForward == command.viewForward);
+        CHECK(read.held == command.held && read.pressed == command.pressed);
+
+        // Client modifié : marche trop longue, manche hors bornes, nombre invalide.
+        command.move = {30.0f, 0.0f, 40.0f};
+        command.stickPitch = 9.0f;
+        command.stickYaw = std::nanf("");
+        command.viewForward = {};
+        writer.Clear();
+        WriteCommand(writer, command);
+        ByteReader cheated(writer.GetBytes());
+        CHECK(ReadCommand(cheated, read));
+        CHECK(std::abs(Math::Length(read.move) - 1.0f) < 1.0e-5f && read.stickPitch == 1.0f && read.stickYaw == 0.0f);
+        CHECK(std::abs(Math::Length(read.viewForward) - 1.0f) < 1.0e-5f);
+
+        // Tronquée : refusée, la commande d'avant reste.
+        ByteReader truncated(std::span(writer.GetBytes()).first(50));
+        const PlayerCommand before = read;
+        CHECK(!ReadCommand(truncated, read) && read.move == before.move);
+        return true;
+    }
+
     // Bits des actions : ceux du personnage d'abord, dans l'ordre, puis ceux du jeu ; un nom garde le sien.
     bool ActionsKeepTheirBits() {
         Simulation simulation;
@@ -134,5 +173,5 @@ namespace {
 
 bool RunSimulationTests() {
     return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce() && TwoPlayers()
-        && ActionsKeepTheirBits();
+        && CommandBytes() && ActionsKeepTheirBits();
 }

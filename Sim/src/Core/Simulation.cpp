@@ -86,6 +86,9 @@ namespace Flux {
     }
 
     Entity Simulation::GetPlayer() const {
+        if (m_replicated) {
+            return m_scene.IsValid(m_localPlayer) ? m_localPlayer : NullEntity;
+        }
         if (!m_physics) {
             return NullEntity;
         }
@@ -130,6 +133,7 @@ namespace Flux {
             const PlayerCommand& command = GetPlayerCommand(player);
             m_playerSteps.push_back({.entity = player,
                                      .command = command,
+                                     .pilotInput = {},
                                      .interactionPending = command.WasPressed(m_characterActions.interact)});
         }
     }
@@ -159,9 +163,10 @@ namespace Flux {
 
     void Simulation::Step(double deltaSeconds) {
         if (m_replicated) {
+            // La commande de cet écran part au serveur pendant l'étape (GetPlayerCommand), puis est oubliée.
+            RunSystems(Stage::Replication, deltaSeconds);
             m_localCommand = {};
             m_commands.clear();
-            RunSystems(Stage::Replication, deltaSeconds);
             return;
         }
         if (!m_physics) {

@@ -256,7 +256,13 @@ namespace {
         CHECK(receiver.Sample(from, to, t));
         CHECK(from->step <= receiver.GetDisplayStep() && receiver.GetDisplayStep() <= to->step);
 
-        Replication::DestroyMissing(client, nullptr, *to);
+        // Créée par le serveur après to (EntitySpawn arrivé avant l'instantané qui la contient) : gardée, ses enfants
+        // avec elle.
+        const Entity spawned = client.CreateEntity("Arrivée");
+        const Entity spawnedChild = client.CreateEntity("Arrivée (enfant)", spawned);
+        const Uuid keep[] = {client.GetId(spawned)};
+        Replication::DestroyMissing(client, nullptr, *to, keep);
+        CHECK(client.IsValid(spawned) && client.IsValid(spawnedChild));
         CHECK(client.FindByName("Oubliée") == NullEntity);
         CHECK(client.FindByName("Épave") == NullEntity);
         CHECK(client.IsValid(clientShip));

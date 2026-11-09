@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Core/ByteStream.hpp"
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/SimExport.hpp"
@@ -46,6 +47,12 @@ namespace Flux {
             return (IsDown(positive) ? 1.0f : 0.0f) - (IsDown(negative) ? 1.0f : 0.0f);
         }
     };
+
+    // Commande en octets, du client au serveur (taille fixe : 120 octets). ReadCommand rend false pour un message
+    // tronqué ; ce qu'un client modifié pourrait envoyer hors des bornes (marche plus longue que 1, manche hors de -1 à
+    // 1, vue non unitaire, nombres invalides) est ramené dans les bornes : le serveur n'a jamais à s'en méfier.
+    FLUX_SIM_API void WriteCommand(ByteWriter& writer, const PlayerCommand& command);
+    FLUX_SIM_API bool ReadCommand(ByteReader& reader, PlayerCommand& command);
 
     // Actions lues par la simulation (marcher, tirer, warp...), par nom : leur bit dans PlayerCommand. Un nom garde son
     // bit tant que le programme tourne, même retiré puis redéclaré (module de jeu rechargé). Les touches qui les

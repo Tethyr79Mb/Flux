@@ -452,7 +452,7 @@ namespace Flux::Replication {
         }
     }
 
-    void DestroyMissing(Scene& scene, const WorldState* previous, const WorldState& state) {
+    void DestroyMissing(Scene& scene, const WorldState* previous, const WorldState& state, std::span<const Uuid> keep) {
         if (previous != nullptr) {
             for (const EntityState& entity : previous->entities) {
                 if (state.Find(entity.id) < 0) {
@@ -463,9 +463,17 @@ namespace Flux::Replication {
             }
             return;
         }
+        const auto kept = [&](Entity entity) {
+            for (; entity != NullEntity; entity = scene.GetParent(entity)) {
+                if (std::ranges::find(keep, scene.GetId(entity)) != keep.end()) {
+                    return true;
+                }
+            }
+            return false;
+        };
         std::vector<Uuid> missing;
         for (const auto [entity, id] : scene.GetRegistry().view<const IdComponent>().each()) {
-            if (id.id && state.Find(id.id) < 0) {
+            if (id.id && state.Find(id.id) < 0 && !kept(entity)) {
                 missing.push_back(id.id);
             }
         }
