@@ -69,6 +69,7 @@ namespace Flux::Replication {
     {
         Uuid id;
         Math::Vector3i64 sector; // racine seulement (SectorComponent), 0 sinon
+        Uuid parent;             // vide : racine (monter à bord d'un vaisseau change de parent)
         std::uint64_t components = 0; // bit i : Schema::GetComponents()[i] présent sur l'entité
     };
 

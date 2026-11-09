@@ -42,7 +42,7 @@ namespace {
         }
         for (std::size_t i = 0; i < a.entities.size(); ++i) {
             if (a.entities[i].id != b.entities[i].id || a.entities[i].sector != b.entities[i].sector
-                || a.entities[i].components != b.entities[i].components) {
+                || a.entities[i].parent != b.entities[i].parent || a.entities[i].components != b.entities[i].components) {
                 return false;
             }
         }
@@ -140,6 +140,14 @@ namespace {
         // Le même, depuis une base plus ancienne, et en entier.
         CHECK(RoundTrip(schema, moved, history.Find(1), movedSize));
         CHECK(RoundTrip(schema, moved, nullptr, movedSize));
+
+        // Le drone monte à bord du vaisseau (changement de parent) : le parent suit.
+        scene.SetParent(drone, ship);
+        Replication::WorldState& boarded = history.Next(15);
+        capturer.Capture(scene, schema, boarded);
+        CHECK(RoundTrip(schema, boarded, history.Find(3), movedSize));
+        CHECK(RoundTrip(schema, boarded, nullptr, movedSize));
+        scene.SetParent(drone, NullEntity);
 
         // Jauge retirée : le composant disparaît du masque.
         scene.GetRegistry().remove<Gauge>(ship);
@@ -312,9 +320,41 @@ namespace {
         CHECK(client.Get<TransformComponent>(clientGun).position.z == 2.0);
         return true;
     }
+    // Monté à bord d'un vaisseau sur le serveur : rattaché au vaisseau chez le client aussi, sa place locale dans le
+    // repère du vaisseau (sinon dessinée ailleurs, dans le repère de l'ancien parent).
+    bool ParentFollowsServer() {
+        ComponentRegistry components;
+        RegisterEngineComponents(components);
+        Replication::Schema schema;
+        schema.Build(components);
+        Scene server;
+        const Entity station = server.CreateEntity("Station");
+        const Entity ship = server.CreateEntity("Manta", station);
+        server.Get<TransformComponent>(ship).position = {10.0, 0.0, 0.0};
+        const Entity walker = server.CreateEntity("Marcheur", station);
+        Scene client;
+        client.CreateEntity("Station", NullEntity, server.GetId(station));
+        const Entity clientShip = client.CreateEntity("Manta", client.FindById(server.GetId(station)), server.GetId(ship));
+        const Entity clientWalker = client.CreateEntity("Marcheur", client.FindById(server.GetId(station)), server.GetId(walker));
+
+        server.SetParentKeepingWorld(walker, ship);
+        server.Get<TransformComponent>(walker).position = {1.0, 2.0, 0.0};
+        Replication::Capturer capturer;
+        Replication::WorldState state;
+        capturer.Capture(server, schema, state);
+        Replication::Apply(client, schema, state, state, 1.0f);
+        CHECK(client.GetParent(clientWalker) == clientShip);
+        CHECK(std::abs(client.GetWorldPosition(clientWalker).offset.x - 11.0) < 1e-9);
+        // Descendu : de nouveau sous la station.
+        server.SetParentKeepingWorld(walker, station);
+        capturer.Capture(server, schema, state);
+        Replication::Apply(client, schema, state, state, 1.0f);
+        CHECK(client.GetParent(clientWalker) == client.FindById(server.GetId(station)));
+        return true;
+    }
 }
 
 bool RunReplicationTests() {
     return SchemaFromRegistry() && SnapshotsAndDifferences() && DamagedMessages() && InterpolatedDisplay()
-        && SpawnedEntity();
+        && SpawnedEntity() && ParentFollowsServer();
 }
