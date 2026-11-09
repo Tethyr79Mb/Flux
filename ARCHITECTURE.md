@@ -80,7 +80,14 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   `Game::DefaultServerPort`) ; la version du protocole du jeu est `Game::GameProtocolVersion` (`GameProtocol.hpp`,
   GameSim). « Ars Solaris.exe --serveur adresse[:port] » s'y connecte (`ServerConnection.cpp` de GameClient, qui lit
   la ligne de commande par `Platform::GetCommandLineArguments`) ; connexions, refus et déconnexions vont au journal des
-  deux côtés. Aucun joueur dans le monde avant la réplication (étape 6) : le client simule encore sa scène seul.
+  deux côtés. Réplication (`Flux/Scene/Replication.hpp`, FluxSim, sans réseau) : les champs marqués
+  `ComponentBuilder::Replicated` forment un `Replication::Schema` dont l'empreinte est comparée à l'accueil ; le serveur
+  prend un instantané tous les 2 pas (30 par seconde), l'écrit en binaire en ne gardant que ce qui a changé depuis le
+  dernier instantané que le client a accusé (modèle de Quake 3), et envoie une fois en entier, en fiable, les entités
+  créées pendant le jeu (`SceneSerializer::SaveEntity`). Avec `--serveur`, la `Simulation` du client est répliquée
+  (`SetReplicated`) : `Step` ne simule plus et ne fait tourner que l'étape `Replication`, où le client charge la scène
+  du serveur et y écrit l'état reçu, interpolé 100 ms en retard (`SnapshotReceiver`). Le joueur ne fait que regarder
+  avant l'étape 6b (ses commandes envoyées au serveur).
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage (les menus sont des interfaces des scènes). Les assets sont copiés à côté
   des exécutables (`bin/assets/`), serveur compris.
 - Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à
@@ -371,7 +378,7 @@ planète donne directement le sien comme indice d'instance.
 ## Scène et composants
 
 - `Scene` enveloppe un registre EnTT, avec hiérarchie (parent, enfants, ordre), noms et `Uuid` stables.
-- Chaque composant est déclaré une fois dans `ComponentRegistry.cpp` : nom de sauvegarde, libellé, champs et bornes.
+- Chaque composant est déclaré une fois dans `Sim/src/Scene/Registration/` (un fichier par domaine) : nom de sauvegarde, libellé, champs et bornes.
   L'inspecteur de l'éditeur et la sauvegarde JSON (`flux.scene`) en sont générés. Le jeu enregistre les siens de la
   même façon.
   `.Group(clé, libellé)` range les champs suivants dans un groupe, un onglet de l'inspecteur (sans effet sur le

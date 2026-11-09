@@ -154,7 +154,7 @@ namespace Flux::Net {
         }
         return m_impl->sockets->SendMessageToConnection(m_impl->connection, payload.data(),
                                                         static_cast<std::uint32_t>(payload.size()),
-                                                        Detail::ToSendFlags(delivery),
+                                                        Detail::ToSendFlags(delivery, payload.size()),
                                                         nullptr) == k_EResultOK;
     }
 

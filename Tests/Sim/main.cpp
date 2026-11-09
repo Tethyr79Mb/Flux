@@ -23,6 +23,7 @@ int main() {
         {"simulation sans rendu", RunSimulationTests},
         {"jeu simulé (GameSim)", RunGameSimTests},
         {"réseau (FluxNet)", RunNetTests},
+        {"réplication", RunReplicationTests},
     };
 
     int failures = 0;

@@ -98,6 +98,12 @@ namespace Flux {
     }
 
     void Simulation::Step(double deltaSeconds) {
+        if (m_replicated) {
+            m_localCommand = {};
+            m_pilotInput = {};
+            RunSystems(Stage::Replication, deltaSeconds);
+            return;
+        }
         if (!m_physics) {
             StartPhysics(); // scène changée sans LoadScene (par le code du jeu) : préparée maintenant
         }
