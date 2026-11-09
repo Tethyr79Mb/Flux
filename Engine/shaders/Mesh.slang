@@ -401,7 +401,6 @@ ShadowOutput vertexTreeDepth(VertexInput input, uint instance : SV_VulkanInstanc
     ShadowOutput output;
     output.position = TreeClipPosition(input.position, instance, worldPosition, rotation);
     output.uv = input.uv;
-    output.toEye = toEye;
     output.material = params.material;
     return output;
 }
@@ -1717,7 +1716,6 @@ struct ShadowOutput
 {
     float4 position : SV_Position;
     float2 uv       : TEXCOORD;
-    nointerpolation float3 toEye : TO_EYE;
     nointerpolation uint material : MATERIAL;
 };
 
@@ -1764,7 +1762,6 @@ ShadowOutput vertexTreeShadow(VertexInput input, uint instance : SV_VulkanInstan
     ShadowOutput output;
     output.position = Transform(m, TreePosition(treeInstances[instance * 2], input.position, rotation, instance));
     output.uv = input.uv;
-    output.toEye = toEye;
     output.material = params.material;
     return output;
 }
