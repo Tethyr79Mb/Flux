@@ -2228,6 +2228,9 @@ namespace Flux {
             const std::uint32_t cascade = ForestCascade + slice;
             for (const VegetationRenderer::List list :
                  {VegetationRenderer::Middle, VegetationRenderer::Far, VegetationRenderer::ForestShadow}) {
+                if (list == VegetationRenderer::Middle && slice != 0) {
+                    continue; // à moins de 300 m : jamais lus dans la seconde carte, et coûteux (vrais modèles)
+                }
                 for (const VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
                     const GpuModel& model = *draw.model;
                     const RHI::Buffer& indirect = m_vegetation->GetCommands(frameIndex);
