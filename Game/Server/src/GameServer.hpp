@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Flux/Core/ByteStream.hpp>
 #include <Flux/Core/Project.hpp>
 #include <Flux/Core/Simulation.hpp>
 #include <Flux/Net/Server.hpp>
+#include <Flux/Scene/Replication.hpp>
 
 #include <cstdint>
 #include <expected>
@@ -10,13 +12,16 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace Game {
     struct SimState;
 
     // Une zone du jeu simulée sans rendu : projet, scène, jeu simulé (GameSim) et cadence de 60 pas par seconde.
-    // Accueille les clients (FluxNet) : connexion et déconnexion seulement, sans joueur dans le monde avant l'étape 6
-    // (réplication).
+    // Accueille les clients (FluxNet) et leur envoie le monde 30 fois par seconde (Replication.hpp) ; ils ne font que
+    // regarder pour l'instant (pas encore de joueur à eux dans le monde).
     class GameServer {
         public:
         GameServer();
@@ -35,12 +40,33 @@ namespace Game {
         void Run(const std::function<bool()>& shouldStop);
 
         Flux::Simulation& GetSimulation() { return m_simulation; }
+        // Relève le réseau (connexions, accusés de réception), puis envoie un instantané du monde à chaque client.
+        // Appelé par Run tous les SnapshotIntervalSteps pas ; à la main par les tests.
+        void ServeNetwork();
+        void Replicate();
 
         private:
-        void ServeNetwork();
+        struct Client
+        {
+            std::uint32_t acknowledged = 0; // dernier instantané reçu, base des différences ; 0 : aucun
+            std::unordered_set<Flux::Uuid> spawned; // entités créées pendant le jeu déjà envoyées (EntitySpawn)
+        };
+
+        void SendWelcome(Flux::Net::ConnectionId connection);
+        void SendSpawns(Flux::Net::ConnectionId connection, Client& client, const Flux::Replication::WorldState& state);
 
         Flux::Simulation m_simulation;
         Flux::Net::Server m_network;
         std::shared_ptr<SimState> m_state;
+        std::string m_scene; // relative au dossier des assets, envoyée aux clients
+        // Entités de la scène lue : les clients les ont dans leur fichier. Les autres, créées pendant le jeu, leur sont
+        // envoyées en entier une fois (EntitySpawn).
+        std::unordered_set<Flux::Uuid> m_sceneEntities;
+        Flux::Replication::Schema m_schema;
+        Flux::Replication::Capturer m_capturer;
+        Flux::Replication::SnapshotHistory m_history;
+        std::unordered_map<Flux::Net::ConnectionId, Client> m_clients;
+        Flux::ByteWriter m_message; // gardé d'un envoi à l'autre : pas d'allocation par instantané
+        std::uint64_t m_lastSnapshotStep = 0;
     };
 }

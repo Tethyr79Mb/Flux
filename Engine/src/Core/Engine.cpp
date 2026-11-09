@@ -567,6 +567,7 @@ namespace Flux {
             return loaded;
         }
         m_quickSave->SetScene(path);
+        m_scenePath = path;
         SceneLoaded();
         return {};
     }
@@ -715,6 +716,7 @@ namespace Flux {
         for (const std::string& problem : SceneMerge::ApplyChanges(GetScene(), base, saved, GetComponents())) {
             Log::Warning("reprise de la partie, non repris : {}", problem);
         }
+        m_scenePath = scenePath;
         SceneLoaded();
         return {};
     }
@@ -775,6 +777,7 @@ namespace Flux {
         const Simulation::Stage simulationStage = stage == GameStage::Interaction     ? Simulation::Stage::Interaction
                                                 : stage == GameStage::BeforePhysics ? Simulation::Stage::BeforePhysics
                                                 : stage == GameStage::AfterPhysics  ? Simulation::Stage::AfterPhysics
+                                                : stage == GameStage::Replication   ? Simulation::Stage::Replication
                                                                                     : Simulation::Stage::Reset;
         m_simulation.AddSystem(simulationStage, std::move(name),
                                [this, function = std::move(function)](Simulation&, double deltaSeconds) {

@@ -54,6 +54,7 @@ namespace Flux {
             BeforePhysics, // après le vol des vaisseaux : pilote automatique, warp, IA (mener des vaisseaux)
             AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Reset,         // scène remplacée ou simulation arrêtée : oublier l'ancienne scène (deltaSeconds = 0)
+            Replication,   // monde répliqué (SetReplicated) : la seule étape d'un pas, où arrive l'état du serveur
         };
 
         Simulation();
@@ -86,7 +87,13 @@ namespace Flux {
         bool IsStarted() const { return m_started; }
 
         // Un pas de simulation : sièges, vol des vaisseaux, physique, projectiles, animation et systèmes du jeu.
+        // Rien de tout cela quand le monde est répliqué.
         void Step(double deltaSeconds);
+        // Monde simulé ailleurs (client d'un serveur de jeu) : Step ne simule plus rien et ne fait tourner que l'étape
+        // Replication, où la scène reçoit l'état du serveur (Replication.hpp). L'horloge avance toujours, à qui fait
+        // tourner.
+        void SetReplicated(bool replicated) { m_replicated = replicated; }
+        bool IsReplicated() const { return m_replicated; }
         // Pas : leur nombre depuis le lancement, et la part du suivant déjà écoulée (avancée par qui fait tourner).
         SimulationClock& GetClock() { return m_clock; }
         const SimulationClock& GetClock() const { return m_clock; }
@@ -136,6 +143,7 @@ namespace Flux {
         std::unique_ptr<FlightSurroundings> m_flightSurroundings; // planète, altitude et air autour du vaisseau piloté
         SimulationClock m_clock;
         bool m_started = false;
+        bool m_replicated = false;
         struct System
         {
             Stage stage;

@@ -4,6 +4,7 @@
 // messages gardés jusqu'au Poll suivant).
 #include "Net/Library.hpp"
 
+#include <cstddef>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -63,7 +64,12 @@ namespace Flux::Net::Detail {
         return {static_cast<const std::byte*>(message.GetData()), static_cast<std::size_t>(message.GetSize())};
     }
 
-    inline int ToSendFlags(Delivery delivery) {
-        return delivery == Delivery::Reliable ? k_nSteamNetworkingSend_Reliable : k_nSteamNetworkingSend_Unreliable;
+    // Un message non fiable plus grand que ce que GameNetworkingSockets accepte ainsi (k_cbMaxUnreliableMsgSizeSend,
+    // 15 x 1100 octets) part en fiable : il le ferait de lui-même, avec un avertissement à chaque envoi.
+    inline constexpr std::size_t MaxUnreliableSize = 15 * 1100;
+
+    inline int ToSendFlags(Delivery delivery, std::size_t size) {
+        return delivery == Delivery::Reliable || size > MaxUnreliableSize ? k_nSteamNetworkingSend_Reliable
+                                                                           : k_nSteamNetworkingSend_Unreliable;
     }
 }

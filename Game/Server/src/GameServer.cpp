@@ -5,6 +5,7 @@
 
 #include <Flux/Core/Log.hpp>
 #include <Flux/Platform/Filesystem.hpp>
+#include <Flux/Scene/SceneSerializer.hpp>
 
 #include <chrono>
 #include <format>
@@ -17,6 +18,11 @@ namespace Game {
         using Seconds = std::chrono::duration<double>;
 
         constexpr Seconds ReportInterval{10.0};
+
+        void MarkSpawned(const Flux::Scene& scene, Flux::Entity entity, std::unordered_set<Flux::Uuid>& spawned) {
+            spawned.insert(scene.GetId(entity));
+            scene.ForEachChild(entity, [&](Flux::Entity child) { MarkSpawned(scene, child, spawned); });
+        }
     }
 
     GameServer::GameServer() : m_state(RegisterSimulation(m_simulation)) {}
@@ -33,6 +39,14 @@ namespace Game {
             return std::unexpected(std::format("scène {} : {}", Flux::Platform::ToUtf8(path), loaded.error()));
         }
         m_simulation.Start();
+        m_scene = Flux::Platform::ToGenericUtf8(path.lexically_normal().lexically_relative(
+            m_simulation.GetProject()->assetsDirectory.lexically_normal()));
+        m_sceneEntities.clear();
+        for (const auto [entity, id] : m_simulation.GetScene().GetRegistry().view<const Flux::IdComponent>().each()) {
+            m_sceneEntities.insert(id.id);
+        }
+        m_schema.Build(m_simulation.GetComponents());
+        m_history.Clear();
         Flux::Log::Info("Scène {} chargée, {} pas par seconde", Flux::Platform::ToUtf8(path),
                         static_cast<int>(1.0 / Flux::SimulationClock::StepSeconds + 0.5));
         return {};
@@ -52,14 +66,76 @@ namespace Game {
             switch (event.kind) {
                 case Flux::Net::EventKind::Connected:
                     Flux::Log::Info("Client {} connecté ({} en tout)", event.connection, m_network.GetConnectionCount());
+                    m_clients[event.connection] = {};
+                    SendWelcome(event.connection);
                     break;
                 case Flux::Net::EventKind::Disconnected:
+                    m_clients.erase(event.connection);
                     Flux::Log::Info("Client {} déconnecté : {} ({} en tout)", event.connection,
                                     Flux::Net::ToString(event.reason), m_network.GetConnectionCount());
                     break;
-                case Flux::Net::EventKind::Message:
-                    break; // aucun message du jeu avant l'étape 6
+                case Flux::Net::EventKind::Message: {
+                    Flux::ByteReader reader(event.payload);
+                    const auto type = static_cast<MessageType>(reader.Read<std::uint8_t>());
+                    const auto client = m_clients.find(event.connection);
+                    if (type == MessageType::SnapshotAck && client != m_clients.end()) {
+                        const auto sequence = reader.Read<std::uint32_t>();
+                        // Le plus récent seulement : un accusé non fiable peut arriver après un plus récent.
+                        if (reader.IsValid() && sequence > client->second.acknowledged) {
+                            client->second.acknowledged = sequence;
+                        }
+                    }
+                    break;
+                }
             }
+        }
+    }
+
+    void GameServer::SendWelcome(Flux::Net::ConnectionId connection) {
+        m_message.Clear();
+        m_message.Write(MessageType::Welcome);
+        m_message.Write(m_schema.GetHash());
+        m_message.WriteString(m_scene);
+        m_message.Write(m_simulation.GetClock().GetStep());
+        m_network.Send(connection, m_message.GetBytes(), Flux::Net::Delivery::Reliable);
+    }
+
+    void GameServer::SendSpawns(Flux::Net::ConnectionId connection, Client& client, const Flux::Replication::WorldState& state) {
+        const Flux::Scene& scene = m_simulation.GetScene();
+        for (const Flux::Replication::EntityState& entity : state.entities) {
+            if (m_sceneEntities.contains(entity.id) || client.spawned.contains(entity.id)) {
+                continue;
+            }
+            // La plus haute créée pendant le jeu, envoyée avec ses descendants : RestoreEntity la recrée sous son
+            // parent de la scène (ou à la racine).
+            Flux::Entity root = scene.FindById(entity.id);
+            for (Flux::Entity parent = scene.GetParent(root);
+                 parent != Flux::NullEntity && !m_sceneEntities.contains(scene.GetId(parent)); parent = scene.GetParent(parent)) {
+                root = parent;
+            }
+            MarkSpawned(scene, root, client.spawned);
+            m_message.Clear();
+            m_message.Write(MessageType::EntitySpawn);
+            m_message.Write(scene.GetId(root).value);
+            m_message.WriteString(Flux::SceneSerializer::SaveEntity(scene, m_simulation.GetComponents(), root, true));
+            m_network.Send(connection, m_message.GetBytes(), Flux::Net::Delivery::Reliable);
+        }
+    }
+
+    void GameServer::Replicate() {
+        if (m_clients.empty()) {
+            return; // personne à qui l'envoyer : pas d'instantané pris
+        }
+        Flux::Replication::WorldState& state = m_history.Next(m_simulation.GetClock().GetStep());
+        m_capturer.Capture(m_simulation.GetScene(), m_schema, state);
+        for (auto& [connection, client] : m_clients) {
+            SendSpawns(connection, client, state);
+            // Différences depuis le dernier instantané reçu, s'il est encore dans l'historique ; sinon en entier.
+            const Flux::Replication::WorldState* baseline = m_history.Find(client.acknowledged);
+            m_message.Clear();
+            m_message.Write(MessageType::Snapshot);
+            Flux::Replication::Encode(m_schema, state, baseline, m_message);
+            m_network.Send(connection, m_message.GetBytes(), Flux::Net::Delivery::Unreliable);
         }
     }
 
@@ -84,6 +160,10 @@ namespace Game {
             ServeNetwork();
             for (int i = 0; i < steps; ++i) {
                 m_simulation.Step(Flux::SimulationClock::StepSeconds);
+            }
+            if (clock.GetStep() >= m_lastSnapshotStep + SnapshotIntervalSteps) {
+                Replicate();
+                m_lastSnapshotStep = clock.GetStep();
             }
             m_network.Flush();
             reportSteps += static_cast<std::uint64_t>(steps);

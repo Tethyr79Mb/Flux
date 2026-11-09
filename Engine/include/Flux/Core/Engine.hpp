@@ -216,6 +216,8 @@ namespace Flux {
         // Charge tout de suite la scène du fichier (scène de démarrage du jeu) ; pendant le jeu, son monde physique
         // est préparé aussitôt (voir PhysicsWorld::Prepare). En cas d'échec, la scène actuelle reste.
         std::expected<void, std::string> LoadScene(const std::filesystem::path& path);
+        // Fichier de la scène chargée en dernier (LoadScene, changement de scène, reprise), vide sinon.
+        const std::filesystem::path& GetScenePath() const { return m_scenePath; }
         // Sauvegarde rapide (F8) : reprise à la fin de l'image au lancement du jeu, joueur remis sur son siège ; false
         // sans sauvegarde. Si la scène a été modifiée dans l'éditeur depuis, c'est sa version actuelle qui est chargée,
         // avec ce que la partie y avait changé (vaisseaux, joueur ; voir SceneMerge). Effacée par DeleteQuickSave (F7).
@@ -260,6 +262,7 @@ namespace Flux {
             AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Hud,         // indications à l'écran, après la scène et les infos de vol (jeu en cours, joueur présent)
             Reset,       // scène chargée ou jeu arrêté : oublier ce qui tenait à l'ancienne scène (deltaSeconds = 0)
+            Replication, // monde répliqué (Simulation::SetReplicated) : seule étape d'un pas, l'état du serveur arrive
         };
         // Remplace le système du même nom.
         void AddGameSystem(GameStage stage, std::string name, UpdateFunction function);
@@ -338,6 +341,7 @@ namespace Flux {
         bool m_drawScreenUi = true;
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
+        std::filesystem::path m_scenePath;
         std::unique_ptr<AudioSystem> m_audio;
         std::unique_ptr<InterfaceLibrary> m_interfaces;
         std::unique_ptr<InputActions> m_inputActions;

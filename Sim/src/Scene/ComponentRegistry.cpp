@@ -53,7 +53,9 @@ namespace Flux {
     void RegisterEngineComponents(ComponentRegistry& registry) {
         registry.Register<TransformComponent>("transform", "Transformation")
             .Field("position", "Position", &TransformComponent::position, {.speed = 0.05})
+            .Replicated()
             .Field("rotation", "Rotation (°)", &TransformComponent::rotation)
+            .Replicated()
             .Field("scale", "Échelle", &TransformComponent::scale, {.speed = 0.01, .min = 0.001, .max = 1.0e6})
             .NotRemovable();
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")

@@ -17,7 +17,8 @@ namespace Flux::Net {
 
     enum class Delivery : std::uint8_t {
         Reliable,   // arrive, dans l'ordre des envois fiables (commandes, événements)
-        Unreliable, // peut se perdre ou arriver avant un envoi fiable plus ancien (état répété à chaque envoi)
+        Unreliable, // peut se perdre ou arriver avant un envoi fiable plus ancien (état répété à chaque envoi) ;
+                    // au-delà de 16 Ko, part en fiable (trop de fragments à perdre)
     };
 
     enum class DisconnectReason : std::uint8_t {

@@ -9,6 +9,7 @@
 #include <entt/entity/registry.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -75,6 +76,8 @@ namespace Flux {
         FieldOptions options;
         AssetType asset = AssetType::None; // String seulement
         int group = -1; // index dans ComponentInfo::groups, -1 : aucun groupe
+        // Envoyé par le serveur aux clients à chaque instantané du monde (ComponentBuilder::Replicated, Replication.hpp).
+        bool replicated = false;
         // Adresse du champ dans une instance du composant.
         std::function<void*(void*)> access;
         // Enum seulement : valeurs possibles, et lecture / écriture de la valeur en entier.
@@ -239,6 +242,16 @@ namespace Flux {
             field.setEnum = [](void* value, std::int64_t number) { *static_cast<E*>(value) = static_cast<E>(number); };
             field.group = m_group;
             m_info->fields.push_back(std::move(field));
+            return *this;
+        }
+
+        // Le dernier champ décrit est envoyé aux clients par le serveur (instantanés du monde, Replication.hpp) : ce qui
+        // change pendant le jeu et que le client doit voir (place, vitesse). Pas pour un texte ni une énumération, dont
+        // la taille ou les valeurs ne sont pas fixes. Changer un champ répliqué change le protocole du jeu.
+        ComponentBuilder& Replicated() {
+            FieldInfo& field = m_info->fields.back();
+            assert(field.type != FieldType::String && field.type != FieldType::Enum && "champ répliqué de taille fixe");
+            field.replicated = true;
             return *this;
         }
 

@@ -5,9 +5,10 @@ namespace Flux {
 }
 
 namespace Game {
-    // Connexion à un serveur de jeu quand Ars Solaris est lancé avec --serveur adresse[:port] : connexion, refus
-    // (versions différentes) et déconnexion dans le journal. Rien d'autre ne passe avant la réplication (étape 6) ; le
-    // jeu continue de simuler sa scène lui-même. Sans --serveur (éditeur compris), rien n'est fait.
+    // Quand Ars Solaris est lancé avec --serveur adresse[:port] : le jeu ne simule plus son monde, il affiche celui du
+    // serveur. Il charge la scène que le serveur lui dit, puis y applique les instantanés reçus (interpolés, 100 ms en
+    // retard) et les entités créées pendant le jeu. Le joueur ne fait que regarder (ses commandes : étape 6b). Sans
+    // --serveur (éditeur compris), rien n'est fait.
     void RegisterServerConnection(Flux::Engine& engine);
     void UnregisterServerConnection(Flux::Engine& engine);
 }
