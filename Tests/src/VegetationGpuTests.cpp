@@ -185,10 +185,10 @@ bool RunVegetationGpuTests() {
         (*renderer)->BeginFrame(0);
         (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, VegetationComponent{}, everywhere, Math::Quaternionf{}, plains);
         (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, models);
-        const auto far = (*renderer)->GetDraws(VegetationRenderer::Far);
-        CHECK(far.size() == 3);
-        CHECK(far[0].impostor == 7 && far[0].model == &detailed);
-        CHECK(far[1].impostor == 0 && far[1].model == &distant && far[2].model == &distant && far[2].primitive == 1);
+        const auto lastList = (*renderer)->GetDraws(VegetationRenderer::Far);
+        CHECK(lastList.size() == 3);
+        CHECK(lastList[0].impostor == 7 && lastList[0].model == &detailed);
+        CHECK(lastList[1].impostor == 0 && lastList[1].model == &distant && lastList[2].model == &distant && lastList[2].primitive == 1);
         CHECK((*renderer)->GetDraws(VegetationRenderer::Near).size() == 4);
         CHECK((*renderer)->GetDraws(VegetationRenderer::Middle).size() == 2);
     }
