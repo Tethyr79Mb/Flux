@@ -375,7 +375,10 @@ namespace Flux::Planetology {
                 if (!loaded(models[species])) {
                     continue;
                 }
-                if (list == Far && models[species].impostor != 0 && m_commands.size() < MaxCommands) {
+                if (list == ForestShadow && models[species].impostor == 0) {
+                    continue; // ombre au loin : l'imposteur seulement
+                }
+                if ((list == Far || list == ForestShadow) && models[species].impostor != 0 && m_commands.size() < MaxCommands) {
                     // Imposteur : un carré par arbre, sans sommets (vertexImpostor).
                     data.commandLists[m_commands.size()] = list * MaxSpecies + species;
                     m_lists[list].push_back({models[species].near, 0, static_cast<std::uint32_t>(m_commands.size()), models[species].impostor});
@@ -424,6 +427,8 @@ namespace Flux::Planetology {
         }
         data.toSun = vector(receivers.GetToSun(), ShadowCasterDistance);
         data.counts = {static_cast<std::uint32_t>(m_commands.size()), frame.culled, 0, 0};
+        // Comme MeshRenderer : du dernier dixième de la dernière cascade proche à la portée.
+        data.forest = {0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1], m_range, 0.0f, 0.0f};
         frame.cullFrame->Write(&data, sizeof(data));
     }
 

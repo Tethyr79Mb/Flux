@@ -56,10 +56,12 @@ namespace Flux::Planetology {
         // Une par primitive de chaque espèce de chaque liste (13 pour une espèce à deux primitives).
         static constexpr std::uint32_t MaxCommands = 128;
         // Listes d'arbres de l'image.
-        enum List : std::uint32_t { Near, Middle, Far, Shadow, ListCount = Shadow + ShadowCascadeCount };
+        // ForestShadow : arbres hors du champ au-delà des cascades proches dont l'ombre peut y tomber (imposteurs
+        // seulement, carte des forêts au loin).
+        enum List : std::uint32_t { Near, Middle, Far, Shadow, ForestShadow = Shadow + ShadowCascadeCount, ListCount };
         // Arbres au plus par liste, toutes espèces ensemble (au-delà, les suivants ne sont pas dessinés).
         // Far : tous les arbres jusqu'à la portée, plus aucun écarté au loin (32 octets chacun, deux fois par image).
-        static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 393216, 16384, 16384, 16384, 16384};
+        static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 393216, 16384, 16384, 16384, 16384, 65536};
 
         // Planetology::GetPlainLevel.
         static std::uint32_t GetPlainLevel(const Terrain& terrain);
@@ -187,6 +189,7 @@ namespace Flux::Planetology {
             std::array<std::uint32_t, 8> capacities;
             std::array<std::uint32_t, MaxCommands> commandLists; // liste x MaxSpecies + espèce
             std::array<std::uint32_t, 4> counts;
+            std::array<float, 4> forest; // x, y : tranche des ombres des forêts au loin (m)
         };
         struct Frame
         {

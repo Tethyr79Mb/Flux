@@ -2051,7 +2051,8 @@ void fragmentImpostorShadow(ImpostorShadowOutput input)
 {
     const float2 uv = (float2(input.view % ImpostorGrid, input.view / ImpostorGrid) + clamp(input.uv, 0.002, 0.998))
                     / float(ImpostorGrid);
-    if (SampleMaterial(params.material, uv).a < 0.5) {
+    // Niveau 1 fixe : les mips lointains diluent l'alpha des branches fines et l'ombre des conifères disparaissait.
+    if (materialImages[NonUniformResourceIndex(params.material)].SampleLevel(uv, 1.0).a < 0.35) {
         discard;
     }
 }

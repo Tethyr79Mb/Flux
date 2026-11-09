@@ -2199,9 +2199,8 @@ namespace Flux {
         commands.EndRenderPass();
     }
 
-    // Les arbres du champ au-delà des cascades proches : imposteurs vus du soleil (liste Far), et les simplifiés entre
-    // 180 et 300 m (liste Middle, ceux plus près ne sont pas lus dans cette carte). Les arbres hors du champ n'y sont
-    // pas : leur ombre manque au bord de l'image.
+    // Les arbres au-delà des cascades proches, en imposteurs vus du soleil : ceux du champ (listes Middle et Far) et
+    // ceux hors du champ dont l'ombre y tombe (liste ForestShadow) ; sans eux, l'ombre apparaissait en tournant.
     void MeshRenderer::DrawForestShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         commands.BeginRenderPass({.clearColor = {}, .depth = m_forestShadowMap.get(), .clearDepth = 1.0f, .color = false});
         const RHI::Extent size = m_forestShadowMap->GetExtent();
@@ -2209,7 +2208,8 @@ namespace Flux {
         commands.SetScissor({0, 0, size.width, size.height});
         BindState state;
         using Planetology::VegetationRenderer;
-        for (const VegetationRenderer::List list : {VegetationRenderer::Middle, VegetationRenderer::Far}) {
+        for (const VegetationRenderer::List list :
+             {VegetationRenderer::Middle, VegetationRenderer::Far, VegetationRenderer::ForestShadow}) {
             for (const VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
                 const GpuModel& model = *draw.model;
                 const RHI::Buffer& indirect = m_vegetation->GetCommands(frameIndex);
