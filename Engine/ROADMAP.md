@@ -212,7 +212,9 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
   aussi les ombres, imposteur espacé au loin), vent, jusqu'à 3 km, puis la couleur des forêts sur le sol (visible de
   haut et de l'espace). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
-  au-dessus des forêts de montagne). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
+  au-dessus des forêts de montagne). Plaines semées d'avance autour de la caméra et sur son trajet (800 m, 64 au
+  plus), arbres d'une plaine semée en vue qui apparaissent un à un en 0,5 s ; budget de 4 plaines semées par image
+  encore à régler sur mesure. Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
   du feuillu ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
   Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud,
   réglés dans le panneau Végétation de l'éditeur avec aperçu en direct, `Planetology::SetVegetationPreview`) :

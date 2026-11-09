@@ -12,6 +12,7 @@
 #include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -32,6 +33,8 @@ namespace Flux::Planetology {
     // rangée par espèce. Chaque espèce d'une liste se dessine en un appel indirect par primitive de son modèle
     // (MeshRenderer) : le CPU ne voit aucun arbre.
     // Les plaines ne sont visitées par PlanetRenderer qu'à moins de 6 bords de tuile environ : au-delà, pas d'arbre.
+    // Celles proches de la caméra ou de son trajet sont semées d'avance, hors du champ (Plain::ahead), quand les plaines
+    // en vue le sont toutes ; une plaine semée en vue fait apparaître ses arbres un à un (FadeTime).
     // Exporté pour les tests (Tests/src/PlanetGpuTests.cpp).
     class FLUX_API VegetationRenderer {
         public:
@@ -40,11 +43,15 @@ namespace Flux::Planetology {
         static constexpr std::uint32_t TreesPerPlain = TreeGrid * TreeGrid;
         // Groupes de computeTrees par plaine semée : une place par thread, 256 threads (GroupSize de PlanetTile.slang).
         static constexpr std::uint32_t SowGroupsPerPlain = TreesPerPlain / 256;
-        // Plaines gardées semées (32 octets par place : 128 Ko par plaine).
-        static constexpr std::uint32_t MaxPlains = 256;
+        // Plaines gardées semées (32 octets par place : 128 Ko par plaine) : toutes celles en vue, plus celles semées
+        // d'avance.
+        static constexpr std::uint32_t MaxVisiblePlains = 256;
+        static constexpr std::uint32_t MaxAheadPlains = 64;
+        static constexpr std::uint32_t MaxPlains = MaxVisiblePlains + MaxAheadPlains;
         // Semées par image au plus : chacune coûte environ autant de relief que 8 tuiles de sol.
         static constexpr std::uint32_t MaxSownPerFrame = 4;
-        static constexpr std::uint32_t MaxVisiblePlains = 256;
+        // Temps (s) que met une plaine semée en vue à faire apparaître tous ses arbres.
+        static constexpr float FadeTime = 0.5f;
         static constexpr std::uint32_t MaxSpecies = VegetationSet::MaxSpecies;
         // Une par primitive de chaque espèce de chaque liste (13 pour une espèce à deux primitives).
         static constexpr std::uint32_t MaxCommands = 128;
@@ -63,10 +70,11 @@ namespace Flux::Planetology {
         VegetationRenderer(const VegetationRenderer&) = delete;
         VegetationRenderer& operator=(const VegetationRenderer&) = delete;
 
-        // Début d'une image, avant SetPlanet : le GPU a fini l'image précédente de même indice.
-        void BeginFrame(std::uint32_t frameIndex);
-        // La planète à arbres de l'image (une seule : les suivantes sont ignorées) et ses plaines en vue
-        // (PlanetRenderer::Collect). rotation : celle de la planète, relative à la caméra.
+        // Début d'une image, avant SetPlanet : le GPU a fini l'image précédente de même indice. `now` : heure de
+        // l'image, d'où vient l'apparition des arbres (FadeTime).
+        void BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+        // La planète à arbres de l'image (une seule : les suivantes sont ignorées) et ses plaines en vue ou à semer
+        // d'avance (PlanetRenderer::Collect). rotation : celle de la planète, relative à la caméra.
         // biomes : ceux de vegetation (VegetationLibrary).
         void SetPlanet(Entity entity, const Terrain& terrain, const PlanetComponent& planet, const VegetationComponent& vegetation,
                        const VegetationSet& biomes, const Math::Quaternionf& rotation, std::span<const PlanetRenderer::Plain> plains);
@@ -110,6 +118,7 @@ namespace Flux::Planetology {
             std::uint32_t plains = 0;   // triées à la dernière image
             std::uint32_t stored = 0;   // semées, en mémoire
             std::uint32_t pending = 0;  // en vue, pas encore semées
+            std::uint32_t ahead = 0;    // à semer d'avance, pas encore semées
             std::uint32_t sown = 0;     // semées à cette image (au plus MaxSownPerFrame)
         };
         Stats GetStats() const { return m_stats; }
@@ -150,6 +159,7 @@ namespace Flux::Planetology {
         struct CullCell
         {
             std::array<float, 4> origin;
+            std::array<float, 4> appear;
         };
         // Doit correspondre à CullFrame dans shaders/Vegetation.slang.
         struct CullFrame
@@ -187,11 +197,12 @@ namespace Flux::Planetology {
             std::uint32_t culled = 0;  // plaines à trier
             bool counted = false;      // stats écrit par cette image
         };
-        // Une plaine semée : sa case et la dernière image où elle a servi.
+        // Une plaine semée : sa case, la dernière image où elle a servi, l'heure de son semis.
         struct StoredPlain
         {
             std::uint32_t slot;
             std::uint64_t lastUsed;
+            std::chrono::steady_clock::time_point sown;
         };
         struct FreeSlot
         {
@@ -200,6 +211,8 @@ namespace Flux::Planetology {
         };
 
         std::uint32_t TakeSlot();
+        // Sème `plain` si une place du semis de l'image et une case restent ; sinon m_stored.end().
+        std::unordered_map<std::uint64_t, StoredPlain>::iterator Sow(const PlanetRenderer::Plain& plain, Frame& frame);
         void Forget();
 
         RHI::Device& m_device;
@@ -225,6 +238,8 @@ namespace Flux::Planetology {
         Math::Quaternionf m_rotation;
         float m_lodDistance = 0.0f, m_farDistance = 0.0f, m_range = 0.0f;
         std::vector<PlanetRenderer::Plain> m_visible;
+        std::vector<PlanetRenderer::Plain> m_ahead;
+        std::chrono::steady_clock::time_point m_now;
 
         std::unordered_map<std::uint64_t, StoredPlain> m_stored; // par TileKey::Pack
         std::vector<FreeSlot> m_freeSlots;

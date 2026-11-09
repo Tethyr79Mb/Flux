@@ -37,6 +37,7 @@ struct CullFrame
 struct CullCell
 {
     float4 origin; // point de référence de sa tuile, relatif à la caméra ; w : sa case (bits d'un entier)
+    float4 appear; // x : de 0 (tout juste semée) à 1 (VegetationRenderer::FadeTime plus tard, tous ses arbres)
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<CullFrame> cullFrame;
@@ -162,6 +163,7 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     const float4 planet = frame.rotation;
     const float4 distances = frame.distances;
     const float shadowEnd = frame.cascadeLimits[3].w;
+    const float appear = cell.appear.x;
     for (uint t = thread; t < count; t += GroupSize) {
         const uint at = (slot * TreesPerCell + t) * 2;
         const float4 placed = trees[at + 0];
@@ -173,7 +175,14 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float tint = (Random(placed.xyz + 0.37) - 0.5) * frame.tints[species / 4][species % 4] * 2.0;
         const float3 normal = Rotate(planet, up.xyz); // haut de l'arbre
         const float4 rotation = Multiply(Align(normal), float4(0.0, sin(angle), 0.0, cos(angle)));
-        const float scale = placed.w;
+        // Plaine tout juste semée en vue : chaque arbre apparaît à son heure (tirée de sa place), en grandissant vite,
+        // plutôt que toute la plaine d'un coup. Un fondu tramé au pixel demanderait un discard à l'écorce, qui perdrait
+        // le test de profondeur précoce de tous les arbres.
+        const float grow = saturate((appear - 0.7 * Random(placed.xyz + 0.71)) / 0.3);
+        if (grow <= 0.0) {
+            continue;
+        }
+        const float scale = placed.w * grow;
         const float3 center = position + Rotate(rotation, sphere.xyz * scale);
         const float radius = sphere.w * scale;
         const float distance = length(center);

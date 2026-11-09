@@ -161,8 +161,9 @@ namespace Flux::Planetology {
         }
     }
 
-    void VegetationRenderer::BeginFrame(std::uint32_t frameIndex) {
+    void VegetationRenderer::BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now) {
         ++m_frame;
+        m_now = now;
         Frame& frame = m_frames[frameIndex];
         if (std::exchange(frame.counted, false)) {
             frame.stats->Read(m_stats.trees.data(), sizeof(m_stats.trees));
@@ -170,6 +171,7 @@ namespace Flux::Planetology {
         m_entity = NullEntity;
         m_terrain = nullptr;
         m_visible.clear();
+        m_ahead.clear();
     }
 
     void VegetationRenderer::SetPlanet(Entity entity, const Terrain& terrain, const PlanetComponent& planet,
@@ -223,7 +225,7 @@ namespace Flux::Planetology {
         m_range = std::max(vegetation.range, 0.0f);
         for (const PlanetRenderer::Plain& plain : plains) {
             if (plain.distance < m_range) {
-                m_visible.push_back(plain);
+                (plain.ahead ? m_ahead : m_visible).push_back(plain);
             }
         }
     }
@@ -261,6 +263,26 @@ namespace Flux::Planetology {
         return slot;
     }
 
+    std::unordered_map<std::uint64_t, VegetationRenderer::StoredPlain>::iterator VegetationRenderer::Sow(const PlanetRenderer::Plain& plain,
+                                                                                                         Frame& frame) {
+        if (m_jobs.size() >= MaxSownPerFrame) {
+            return m_stored.end();
+        }
+        const std::uint32_t slot = TakeSlot();
+        if (slot == MaxPlains) {
+            return m_stored.end();
+        }
+        // Le relief au détail le plus fin : celui du sol sous les pieds.
+        PrepareTileGpu(*m_terrain, plain.key, m_inputs);
+        m_inputs.options[0] = m_terrain->GetOctaves(m_terrain->GetMaxLevel());
+        frame.inputs->Write(&m_inputs, sizeof(m_inputs), m_jobs.size() * sizeof(m_inputs));
+        TreeJob job = m_job;
+        job.cell = {plain.key.face, plain.key.level, plain.key.x, plain.key.y};
+        job.options[0] = slot;
+        m_jobs.push_back(job);
+        return m_stored.emplace(plain.key.Pack(), StoredPlain{slot, m_frame, m_now}).first;
+    }
+
     void VegetationRenderer::EndFrame(std::uint32_t frameIndex, const View& view,
                                       const std::array<ShadowCascade, ShadowCascadeCount>& cascades,
                                       const ShadowReceivers& receivers, std::span<const Models> models) {
@@ -272,9 +294,10 @@ namespace Flux::Planetology {
         }
         m_stats.plains = 0;
         m_stats.pending = 0;
+        m_stats.ahead = 0;
         m_stats.sown = 0;
         m_stats.stored = static_cast<std::uint32_t>(m_stored.size());
-        if (!m_terrain || m_visible.empty()) {
+        if (!m_terrain || (m_visible.empty() && m_ahead.empty())) {
             return;
         }
 
@@ -288,31 +311,41 @@ namespace Flux::Planetology {
         m_cells.clear();
         m_jobs.clear();
         for (const PlanetRenderer::Plain& plain : m_visible) {
-            const std::uint64_t key = plain.key.Pack();
-            auto stored = m_stored.find(key);
+            auto stored = m_stored.find(plain.key.Pack());
             if (stored == m_stored.end()) {
-                if (m_jobs.size() >= MaxSownPerFrame) {
+                stored = Sow(plain, frame);
+                if (stored == m_stored.end()) {
                     ++m_stats.pending;
                     continue;
                 }
-                const std::uint32_t slot = TakeSlot();
-                if (slot == MaxPlains) {
-                    ++m_stats.pending;
-                    continue;
-                }
-                // Le relief au détail le plus fin : celui du sol sous les pieds.
-                PrepareTileGpu(*m_terrain, plain.key, m_inputs);
-                m_inputs.options[0] = m_terrain->GetOctaves(m_terrain->GetMaxLevel());
-                frame.inputs->Write(&m_inputs, sizeof(m_inputs), m_jobs.size() * sizeof(m_inputs));
-                TreeJob job = m_job;
-                job.cell = {plain.key.face, plain.key.level, plain.key.x, plain.key.y};
-                job.options[0] = slot;
-                m_jobs.push_back(job);
-                stored = m_stored.emplace(key, StoredPlain{slot, m_frame}).first;
             }
             stored->second.lastUsed = m_frame;
+            // Semée il y a moins de FadeTime : une part de ses arbres seulement (computeCull).
+            const float appear = std::chrono::duration<float>(m_now - stored->second.sown).count() / FadeTime;
             m_cells.push_back({{static_cast<float>(plain.origin.x), static_cast<float>(plain.origin.y), static_cast<float>(plain.origin.z),
-                                std::bit_cast<float>(stored->second.slot)}});
+                                std::bit_cast<float>(stored->second.slot)},
+                               {std::clamp(appear, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f}});
+        }
+        // Puis, avec ce qui reste du semis de l'image, celles d'avance, les plus proches d'abord, sans celles en vue
+        // (déjà servies). Toutes marquées avant : une plaine semée d'avance ne prend pas la case d'une autre de la
+        // liste (qui serait resemée à l'image suivante).
+        std::erase_if(m_ahead, [this](const PlanetRenderer::Plain& plain) {
+            const auto stored = m_stored.find(plain.key.Pack());
+            return stored != m_stored.end() && stored->second.lastUsed == m_frame;
+        });
+        std::ranges::sort(m_ahead, {}, &PlanetRenderer::Plain::distance);
+        if (m_ahead.size() > MaxAheadPlains) {
+            m_ahead.resize(MaxAheadPlains);
+        }
+        for (const PlanetRenderer::Plain& plain : m_ahead) {
+            if (const auto stored = m_stored.find(plain.key.Pack()); stored != m_stored.end()) {
+                stored->second.lastUsed = m_frame;
+            }
+        }
+        for (const PlanetRenderer::Plain& plain : m_ahead) {
+            if (!m_stored.contains(plain.key.Pack()) && Sow(plain, frame) == m_stored.end()) {
+                ++m_stats.ahead;
+            }
         }
         if (!m_jobs.empty()) {
             frame.jobs->Write(m_jobs.data(), m_jobs.size() * sizeof(TreeJob));

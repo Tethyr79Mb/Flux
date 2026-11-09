@@ -491,6 +491,7 @@ namespace Flux {
             }
             timings.treePlains = vegetation.plains;
             timings.pendingTreePlains = vegetation.pending;
+            timings.aheadTreePlains = vegetation.ahead;
             timings.sownTreePlains = vegetation.sown;
         }
 

@@ -137,8 +137,8 @@ namespace Flux {
                                                      ? std::format("mesh shaders ({} threads)", render.groundMeshThreads)
                                                      : std::string("sommets"));
                 ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
-                ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer)", render.shadowTrees, render.treePlains,
-                                                             render.pendingTreePlains));
+                ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer, {} d'avance)", render.shadowTrees,
+                                                             render.treePlains, render.pendingTreePlains, render.aheadTreePlains));
             }
 
             // RAM utilisée : présente en RAM en ce moment, bibliothèques partagées comprises (le Gestionnaire des
@@ -212,7 +212,8 @@ namespace Flux {
                          {"trees", {{"near", render.trees[0]}, {"simplified", render.trees[1]}, {"far", render.trees[2]}}},
                          {"shadowTrees", render.shadowTrees},
                          {"treePlains", render.treePlains},
-                         {"pendingTreePlains", render.pendingTreePlains}};
+                         {"pendingTreePlains", render.pendingTreePlains},
+                         {"aheadTreePlains", render.aheadTreePlains}};
         const Platform::ProcessMemory memory = Platform::GetProcessMemory();
         const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
         constexpr double Megabyte = 1024.0 * 1024.0;

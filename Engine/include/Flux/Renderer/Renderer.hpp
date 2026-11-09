@@ -79,6 +79,7 @@ namespace Flux {
         std::array<std::uint32_t, 2> terrainShadowTriangles{};
         std::uint32_t treePlains = 0;
         std::uint32_t pendingTreePlains = 0;
+        std::uint32_t aheadTreePlains = 0; // hors du champ, à semer d'avance, pas encore semées
         std::uint32_t sownTreePlains = 0; // semées à cette image
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
         // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
