@@ -4,6 +4,7 @@
 
 #include "Flux/Core/Simulation.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
+#include "Flux/Scene/Components.hpp"
 
 #include <cmath>
 #include <string>
@@ -159,6 +160,34 @@ namespace {
         return true;
     }
 
+    // Monde répliqué : les personnages déplacés par le serveur (ici à la main) marchent, puis tombent, à l'écran.
+    bool ReplicatedCharactersAnimate() {
+        Simulation simulation;
+        simulation.SetReplicated(true);
+        Scene& scene = simulation.GetScene();
+        const Entity walker = scene.CreateEntity("Marcheur");
+        scene.Add<CharacterComponent>(walker);
+        AnimatorComponent& animator = scene.Add<AnimatorComponent>(walker);
+        animator.idleAnimation = "Repos";
+        animator.airAnimation = "Chute";
+        animator.animation = "Marche";
+        const double step = SimulationClock::StepSeconds;
+        simulation.Step(step);
+        CHECK(animator.playing == "Repos");
+        for (int i = 0; i < 10; ++i) {
+            scene.Get<TransformComponent>(walker).position.x += 2.0 * step; // 2 m/s
+            simulation.Step(step);
+        }
+        CHECK(std::abs(scene.Get<CharacterComponent>(walker).groundSpeed - 2.0f) < 0.01f);
+        CHECK(animator.playing == "Marche");
+        for (int i = 0; i < 20; ++i) {
+            scene.Get<TransformComponent>(walker).position.y -= 5.0 * step; // chute
+            simulation.Step(step);
+        }
+        CHECK(animator.playing == "Chute");
+        return true;
+    }
+
     // Bits des actions : ceux du personnage d'abord, dans l'ordre, puis ceux du jeu ; un nom garde le sien.
     bool ActionsKeepTheirBits() {
         Simulation simulation;
@@ -173,5 +202,5 @@ namespace {
 
 bool RunSimulationTests() {
     return StagesInOrder() && ProjectilesMoveAndAreForgotten() && InteractionTakenOnce() && TwoPlayers()
-        && CommandBytes() && ActionsKeepTheirBits();
+        && CommandBytes() && ReplicatedCharactersAnimate() && ActionsKeepTheirBits();
 }

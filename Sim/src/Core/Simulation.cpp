@@ -8,12 +8,16 @@
 #include "Core/FlightSurroundings.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace Flux {
     namespace {
         // Projectiles réservés d'avance : un combat chargé n'alloue pas en plein pas.
         constexpr std::size_t ReservedProjectiles = 4096;
+        // Monde répliqué : vitesse verticale au-delà de laquelle un personnage est en l'air (saut, chute), m/s. Assez
+        // haute pour qu'une course dans une pente ou un escalier n'y passe pas.
+        constexpr double ReplicatedAirSpeed = 2.0;
     }
 
     Simulation::Simulation()
@@ -52,6 +56,7 @@ namespace Flux {
         m_clock.Reset();
         m_projectiles.clear();
         m_projectileHits.clear();
+        m_characterPlaces.clear(); // les entités de l'ancienne scène
         m_localCommand = {};
         m_commands.clear();
         RunSystems(Stage::Reset, 0.0);
@@ -74,6 +79,7 @@ namespace Flux {
         m_physics.reset();
         m_projectiles.clear();
         m_projectileHits.clear();
+        m_characterPlaces.clear(); // les entités de l'ancienne scène
         m_localCommand = {};
         m_commands.clear();
         RunSystems(Stage::Reset, 0.0);
@@ -165,6 +171,7 @@ namespace Flux {
         if (m_replicated) {
             // La commande de cet écran part au serveur pendant l'étape (GetPlayerCommand), puis est oubliée.
             RunSystems(Stage::Replication, deltaSeconds);
+            AnimateReplicated(deltaSeconds);
             m_localCommand = {};
             m_commands.clear();
             return;
@@ -239,6 +246,31 @@ namespace Flux {
         // Les commandes des autres joueurs ne valent que pour ce pas (celle de cet écran reste : vol libre, caméra).
         m_playerSteps.clear();
         m_commands.clear();
+    }
+
+    void Simulation::AnimateReplicated(double deltaSeconds) {
+        // Le serveur n'envoie que la place : vitesse au sol et temps en l'air des personnages mesurés ici, d'un pas à
+        // l'autre, pour que l'animateur choisisse repos, marche, course ou chute comme sur le serveur.
+        std::swap(m_characterPlaces, m_previousCharacterPlaces);
+        m_characterPlaces.clear();
+        for (const auto [entity, character] : m_scene.GetRegistry().view<CharacterComponent>().each()) {
+            const Math::WorldPosition place = m_scene.GetWorldPosition(entity);
+            m_characterPlaces.emplace_back(entity, place);
+            const auto previous = std::ranges::lower_bound(m_previousCharacterPlaces, entity, {}, &std::pair<Entity, Math::WorldPosition>::first);
+            if (previous == m_previousCharacterPlaces.end() || previous->first != entity || deltaSeconds <= 0.0) {
+                character.groundSpeed = 0.0f; // arrivé à ce pas
+                character.airTime = 0.0f;
+                continue;
+            }
+            const Math::Vector3d velocity = Math::Delta(previous->second, place) * (1.0 / deltaSeconds);
+            const Math::Vector3d up(m_scene.GetWorldRotation(entity).Rotate(Math::Vector3f{0.0f, 1.0f, 0.0f}));
+            const double vertical = Math::Dot(velocity, up);
+            const bool inAir = std::abs(vertical) > ReplicatedAirSpeed;
+            character.groundSpeed = inAir ? 0.0f : static_cast<float>(Math::Length(velocity - up * vertical));
+            character.airTime = inAir ? character.airTime + static_cast<float>(deltaSeconds) : 0.0f;
+        }
+        std::ranges::sort(m_characterPlaces, {}, &std::pair<Entity, Math::WorldPosition>::first);
+        Animator::Update(m_scene, deltaSeconds);
     }
 
     bool Simulation::ConsumeInteraction(Entity player) {
