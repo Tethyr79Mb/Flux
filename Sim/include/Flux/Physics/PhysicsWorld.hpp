@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
+#include <utility>
 
 namespace Flux {
     class PhysicsContext;
@@ -50,6 +52,9 @@ namespace Flux {
         // avance la simulation par pas fixes de 1/60 s, puis reporte positions et rotations dans la scène
         // (corps dynamiques et personnages). Les réglages d'une forme ou d'un corps modifiés après sa création
         // sont ignorés jusqu'au prochain monde.
+        // inputs : commande de chaque personnage joué (CharacterComponent::player) ; sans commande, il s'arrête.
+        void UpdatePlayers(Scene& scene, double deltaSeconds, std::span<const std::pair<Entity, CharacterInput>> inputs);
+        // Un seul joueur : la commande de GetPlayer().
         void Update(Scene& scene, double deltaSeconds, const CharacterInput& input);
 
         // Dossier des assets de son contexte (voir PhysicsContext::SetAssetsDirectory).

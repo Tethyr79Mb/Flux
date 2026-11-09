@@ -270,7 +270,8 @@ namespace Game::Weapons {
         return NullEntity;
     }
 
-    void ApplyHits(Scene& scene, std::span<const ProjectileHit> hits, Entity protectedEntity, std::vector<std::string>* destroyed) {
+    void ApplyHits(Scene& scene, std::span<const ProjectileHit> hits, std::span<const Entity> protectedEntities,
+                   std::vector<std::string>* destroyed) {
         for (const ProjectileHit& hit : hits) {
             const Entity target = FindTarget(scene, hit.entity);
             if (target == NullEntity) {
@@ -285,8 +286,10 @@ namespace Game::Weapons {
                 continue;
             }
             bool carriesProtected = false;
-            for (Entity current = protectedEntity; current != NullEntity && scene.IsValid(current); current = scene.GetParent(current)) {
-                carriesProtected |= current == target;
+            for (const Entity protectedEntity : protectedEntities) {
+                for (Entity current = protectedEntity; current != NullEntity && scene.IsValid(current); current = scene.GetParent(current)) {
+                    carriesProtected |= current == target;
+                }
             }
             if (carriesProtected) {
                 continue;

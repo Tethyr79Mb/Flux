@@ -186,21 +186,27 @@ namespace Flux::Ships {
         }
     }
 
-    void Update(Scene& scene, Entity piloted, double deltaSeconds, const ShipInput& input) {
-        if (piloted != NullEntity && scene.IsValid(piloted)) {
-            // Mené par le jeu (warp, pilote automatique) : sinon le pilote, sans gaz, le freinait plus fort que le pilote
-            // automatique n'accélère (il sortait d'un hangar au pas).
-            if (auto* ship = scene.TryGet<ShipComponent>(piloted); ship && !ship->autopilot) {
-                Pilot(*ship, scene.GetWorldRotation(piloted), deltaSeconds, input);
+    void Update(Scene& scene, std::span<const std::pair<Entity, ShipInput>> piloted, double deltaSeconds) {
+        for (const auto& [entity, input] : piloted) {
+            // Mené par le jeu (warp, pilote automatique) : sinon le pilote, sans gaz, le freinait plus fort que le
+            // pilote automatique n'accélère (il sortait d'un hangar au pas).
+            auto* ship = entity != NullEntity && scene.IsValid(entity) ? scene.TryGet<ShipComponent>(entity) : nullptr;
+            if (ship && !ship->autopilot) {
+                Pilot(*ship, scene.GetWorldRotation(entity), deltaSeconds, input);
             }
         }
         // Moteurs des vaisseaux que personne ne pilote : ils se coupent (flammes au ralenti).
         const float step = ThrottleRate * static_cast<float>(std::max(deltaSeconds, 0.0));
         for (const auto [entity, ship] : scene.GetRegistry().view<ShipComponent>().each()) {
-            if (entity != piloted) {
+            if (!std::ranges::contains(piloted, entity, &std::pair<Entity, ShipInput>::first)) {
                 ship.throttle = std::max(ship.throttle - step, 0.0f);
             }
         }
+    }
+
+    void Update(Scene& scene, Entity piloted, double deltaSeconds, const ShipInput& input) {
+        const std::pair<Entity, ShipInput> ship{piloted, input};
+        Update(scene, std::span(&ship, piloted != NullEntity ? 1 : 0), deltaSeconds);
     }
 
     Entity GetPilotedShip(const Scene& scene, Entity player) {

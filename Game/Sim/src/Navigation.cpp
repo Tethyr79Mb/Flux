@@ -13,21 +13,21 @@ namespace Game::Navigation {
     namespace {
         using namespace Flux;
 
-        void ToggleAutopilot(Scene& scene, SimState& state, Entity ship) {
+        void ToggleAutopilot(Scene& scene, PlayerStateComponent& state, Entity ship) {
             Warp::Stop(scene, ship); // L en warp : il en sort et cherche un quai
             state.navigation.warpName.clear();
             switch (Docking::Toggle(scene, ship)) {
             case Docking::ToggleResult::Docking:
             case Docking::ToggleResult::Leaving: break; // l'étape s'affiche dans les infos de vol
-            case Docking::ToggleResult::Cancelled: state.notices.emplace_back("Pilote automatique coupé"); break;
+            case Docking::ToggleResult::Cancelled: AddNotice(state, "Pilote automatique coupé"); break;
             case Docking::ToggleResult::NoDock:
-                state.notices.push_back(std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
+                AddNotice(state, std::format("Aucun quai libre à moins de {:.0f} km", Docking::Range / 1000.0));
                 break;
             }
         }
 
         // Destinations à jour, visée, et J : partir vers la destination visée, ou couper le warp.
-        void UpdateWarp(Scene& scene, SimState& state, Entity ship, bool toggle) {
+        void UpdateWarp(Scene& scene, PlayerStateComponent& state, Entity ship, bool toggle) {
             NavigationState& navigation = state.navigation;
             navigation.aim = -1;
             if (ship == NullEntity) {
@@ -42,7 +42,7 @@ namespace Game::Navigation {
             const bool warping = drive && drive->stage != WarpStage::Off;
             // Arrivé, ou arrêté par une planète sur le chemin.
             if (!warping && !navigation.warpName.empty()) {
-                state.notices.push_back("Sortie du warp : " + navigation.warpName);
+                AddNotice(state, "Sortie du warp : " + navigation.warpName);
                 navigation.warpName.clear();
             }
             if (!warping) {
@@ -54,50 +54,49 @@ namespace Game::Navigation {
             if (warping) {
                 Warp::Stop(scene, ship);
                 navigation.warpName.clear();
-                state.notices.emplace_back("Warp coupé");
+                AddNotice(state, "Warp coupé");
                 return;
             }
             if (navigation.aim < 0) {
-                state.notices.emplace_back("Warp : tournez le nez vers une destination");
+                AddNotice(state, "Warp : tournez le nez vers une destination");
                 return;
             }
             const Warp::Destination& destination = navigation.destinations[static_cast<std::size_t>(navigation.aim)];
             switch (Warp::Engage(scene, ship, destination)) {
             case Warp::EngageResult::Started: navigation.warpName = GetDestinationName(scene, navigation, destination); break;
             case Warp::EngageResult::Unavailable:
-                state.notices.emplace_back("Warp impossible ici (posé, amarré, près d'une planète, sans moteur de warp)");
+                AddNotice(state, "Warp impossible ici (posé, amarré, près d'une planète, sans moteur de warp)");
                 break;
-            case Warp::EngageResult::TooClose: state.notices.emplace_back("Trop près pour le warp : mode voyage (Tab)"); break;
+            case Warp::EngageResult::TooClose: AddNotice(state, "Trop près pour le warp : mode voyage (Tab)"); break;
             }
         }
     }
 
-    void DeclareActions(NavigationState& state, CommandActions& actions) {
-        state.autopilotAction = actions.Declare(AutopilotAction);
-        state.warpAction = actions.Declare(WarpAction);
+    void DeclareActions(NavigationActions& actions, CommandActions& commandActions) {
+        actions.autopilot = commandActions.Declare(AutopilotAction);
+        actions.warp = commandActions.Declare(WarpAction);
     }
 
-    void Travel(Simulation& simulation, SimState& state, double deltaSeconds) {
+    void Travel(Simulation& simulation, const SimState& state, double deltaSeconds) {
         Scene& scene = simulation.GetScene();
-        const Entity player = simulation.GetPlayer();
-        const Entity ship = player != NullEntity ? Ships::GetPilotedShip(scene, player) : NullEntity;
-        const PlayerCommand& command = simulation.GetPlayerCommand(player);
-        if (ship != NullEntity && command.WasPressed(state.navigation.autopilotAction)) {
-            ToggleAutopilot(scene, state, ship);
+        // Dans cet ordre pour tous les joueurs : pilote automatique, amarrage, warp.
+        for (const Entity player : simulation.GetPlayers()) {
+            const Entity ship = Ships::GetPilotedShip(scene, player);
+            if (ship != NullEntity && simulation.GetPlayerCommand(player).WasPressed(state.navigation.autopilot)) {
+                ToggleAutopilot(scene, GetPlayerState(scene, player), ship);
+            }
         }
         Docking::Update(scene, deltaSeconds);
-        UpdateWarp(scene, state, ship, ship != NullEntity && command.WasPressed(state.navigation.warpAction));
+        for (const Entity player : simulation.GetPlayers()) {
+            const Entity ship = Ships::GetPilotedShip(scene, player);
+            const bool toggle = ship != NullEntity && simulation.GetPlayerCommand(player).WasPressed(state.navigation.warp);
+            UpdateWarp(scene, GetPlayerState(scene, player), ship, toggle);
+        }
         Warp::Update(scene, deltaSeconds);
-        state.navigation.info = ship != NullEntity ? Docking::Describe(scene, ship) : std::string{};
-    }
-
-    void Reset(NavigationState& state) {
-        state.destinations.clear();
-        state.aim = -1;
-        state.warpName.clear();
-        state.objective.reset();
-        state.objectiveName.clear();
-        state.info.clear();
+        for (const Entity player : simulation.GetPlayers()) {
+            const Entity ship = Ships::GetPilotedShip(scene, player);
+            GetPlayerState(scene, player).navigation.info = ship != NullEntity ? Docking::Describe(scene, ship) : std::string{};
+        }
     }
 
     void SetWarpObjective(NavigationState& state, std::string name, std::optional<Math::WorldPosition> position) {

@@ -257,7 +257,7 @@ namespace Flux {
         // fixe, 0 à 4 par image) et y lisent les touches retenues depuis le pas précédent ; Hud, à chaque image. Le moteur garde les briques (composants, projectiles, vol...), le jeu
         // décide de leur usage. Retirés tous quand le module de jeu est déchargé (leur code est dans sa DLL).
         enum class GameStage {
-            Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (ConsumeInteraction)
+            Interaction, // avant les sièges, hors pause : peut prendre la touche Interagir (Simulation::ConsumeInteraction)
             BeforePhysics, // après le vol des vaisseaux : pilote automatique, warp, IA (mener des vaisseaux)
             AfterPhysics,  // après les projectiles, avant l'animation : tout est à sa place, les tirs partent
             Hud,         // indications à l'écran, après la scène et les infos de vol (jeu en cours, joueur présent)
@@ -287,13 +287,6 @@ namespace Flux {
         // Projectiles arrivés sur un corps à cette image (l'éclat d'impact est déjà montré) : au jeu d'en retirer
         // les dégâts, à l'étape AfterPhysics.
         std::span<const ProjectileHit> GetProjectileHits() const { return m_simulation.GetProjectileHits(); }
-        // Étape Interaction : vrai si la touche Interagir a été enfoncée à cette image et que personne ne l'a prise ;
-        // elle est alors prise (les sièges ne la voient plus).
-        bool ConsumeInteraction();
-        // Commandes du vaisseau piloté pour cette image (poussée, roulis, frein, boost, mode voyage), données par le jeu
-        // à l'étape Interaction. Le moteur y ajoute la souris et ce qui entoure le vaisseau (gravité, air, planète),
-        // puis le fait voler (Ships::Update) ; sans appel, le vaisseau ne reçoit aucune commande.
-        void SetPilotInput(const ShipInput& input) { m_simulation.SetPilotInput(input); }
         // Pointeur virtuel du pilote (le manche de la souris), pour l'afficher : -1 à 1 au bord de son cercle, x vers
         // la droite, y vers le bas ; nul quand le joueur ne pilote pas ou que la souris est libérée (Alt, menu).
         Math::Vector2f GetSteerPointer() const;

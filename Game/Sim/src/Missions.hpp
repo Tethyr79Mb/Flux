@@ -29,6 +29,7 @@ namespace Game {
         Flux::Math::WorldPosition area; // où ils sont apparus : destination du warp
     };
 
+    // Missions d'un joueur (PlayerStateComponent) : chacun la sienne.
     struct MissionState
     {
         std::optional<ActiveMission> mission;
@@ -40,16 +41,15 @@ namespace Game {
     namespace Missions {
         inline constexpr double MessageSeconds = 5.0;
 
-        // Étape Interaction : mission accomplie quand tous ses ennemis sont détruits ; Interagir près d'un donneur
-        // ouvre ou ferme la discussion.
-        void Interact(Flux::Simulation& simulation, SimState& state);
-        // Accepte la mission du donneur : son groupe d'ennemis apparaît. En cas d'échec, rien ne change.
-        std::expected<void, std::string> Accept(Flux::Simulation& simulation, SimState& state, Flux::Entity giver);
-        // Abandonne la mission en cours : son groupe repart avec elle.
-        void Abandon(Flux::Simulation& simulation, SimState& state);
-        void Reset(MissionState& state);
+        // Étape Interaction, pour chaque joueur : mission accomplie quand tous ses ennemis sont détruits ; Interagir
+        // près d'un donneur ouvre ou ferme la discussion.
+        void Interact(Flux::Simulation& simulation);
+        // Le joueur accepte la mission du donneur : son groupe d'ennemis apparaît. En cas d'échec, rien ne change.
+        std::expected<void, std::string> Accept(Flux::Simulation& simulation, Flux::Entity player, Flux::Entity giver);
+        // Le joueur abandonne sa mission : son groupe repart avec elle.
+        void Abandon(Flux::Simulation& simulation, Flux::Entity player);
         // Sauvegarde rapide : le donneur puis les ennemis encore en vie, par identifiant ; vide sans mission.
         std::string Save(const Flux::Scene& scene, const MissionState& state);
-        void Load(Flux::Simulation& simulation, SimState& state, std::string_view data);
+        void Load(Flux::Simulation& simulation, Flux::Entity player, std::string_view data);
     }
 }

@@ -13,7 +13,7 @@ namespace Game::Missions {
     namespace {
         using namespace Flux;
 
-        void SetMission(SimState& state, std::optional<ActiveMission> mission) {
+        void SetMission(PlayerStateComponent& state, std::optional<ActiveMission> mission) {
             state.missions.mission = std::move(mission);
             const std::optional<ActiveMission>& current = state.missions.mission;
             Navigation::SetWarpObjective(state.navigation, current ? "Mission : " + current->title : std::string{},
@@ -21,36 +21,41 @@ namespace Game::Missions {
         }
     }
 
-    void Interact(Simulation& simulation, SimState& state) {
+    void Interact(Simulation& simulation) {
         Scene& scene = simulation.GetScene();
-        MissionState& missions = state.missions;
-        // Tous les ennemis détruits : mission accomplie.
-        if (missions.mission && CountAlive(scene, missions.mission->enemies) == 0) {
-            missions.message = "Mission accomplie : " + missions.mission->title;
-            missions.messageSeconds = MessageSeconds;
-            Log::Info("{}", missions.message);
-            SetMission(state, std::nullopt);
-        }
-        const Entity player = simulation.GetPlayer();
-        const auto* character = player != NullEntity ? scene.TryGet<CharacterComponent>(player) : nullptr;
-        if (character && character->seat != NullEntity) {
-            missions.window = NullEntity; // assis : Interagir sert au siège
-            return;
-        }
-        const Entity giver = FindGiver(scene, player);
-        if (giver != NullEntity && simulation.ConsumeInteraction()) {
-            missions.window = missions.window == giver ? NullEntity : giver; // encore : la referme
-        } else if (missions.window != NullEntity && giver != missions.window) {
-            missions.window = NullEntity; // parti, ou donneur disparu
+        for (const Entity player : simulation.GetPlayers()) {
+            PlayerStateComponent& state = GetPlayerState(scene, player);
+            MissionState& missions = state.missions;
+            // Tous les ennemis détruits : mission accomplie.
+            if (missions.mission && CountAlive(scene, missions.mission->enemies) == 0) {
+                missions.message = "Mission accomplie : " + missions.mission->title;
+                missions.messageSeconds = MessageSeconds;
+                Log::Info("{}", missions.message);
+                SetMission(state, std::nullopt);
+            }
+            if (scene.Get<CharacterComponent>(player).seat != NullEntity) {
+                missions.window = NullEntity; // assis : Interagir sert au siège
+                continue;
+            }
+            const Entity giver = FindGiver(scene, player);
+            if (giver != NullEntity && simulation.ConsumeInteraction(player)) {
+                missions.window = missions.window == giver ? NullEntity : giver; // encore : la referme
+            } else if (missions.window != NullEntity && giver != missions.window) {
+                missions.window = NullEntity; // parti, ou donneur disparu
+            }
         }
     }
 
-    std::expected<void, std::string> Accept(Simulation& simulation, SimState& state, Entity giver) {
+    std::expected<void, std::string> Accept(Simulation& simulation, Entity player, Entity giver) {
         Scene& scene = simulation.GetScene();
         const auto* component = scene.IsValid(giver) ? scene.TryGet<MissionGiverComponent>(giver) : nullptr;
         if (!component) {
             return std::unexpected("donneur introuvable");
         }
+        if (player == NullEntity || !scene.IsValid(player)) {
+            return std::unexpected("joueur introuvable");
+        }
+        PlayerStateComponent& state = GetPlayerState(scene, player);
         if (state.missions.mission) {
             return std::unexpected("une autre mission est déjà en cours");
         }
@@ -66,24 +71,19 @@ namespace Game::Missions {
         return {};
     }
 
-    void Abandon(Simulation& simulation, SimState& state) {
-        if (!state.missions.mission) {
+    void Abandon(Simulation& simulation, Entity player) {
+        Scene& scene = simulation.GetScene();
+        PlayerStateComponent* state = FindPlayerState(scene, player);
+        if (!state || !state->missions.mission) {
             return;
         }
-        Scene& scene = simulation.GetScene();
         // Le groupe repart avec la mission : rien ne reste à abattre pour rien.
-        for (const Entity enemy : state.missions.mission->enemies) {
+        for (const Entity enemy : state->missions.mission->enemies) {
             if (scene.IsValid(enemy)) {
                 scene.DestroyEntity(enemy);
             }
         }
-        SetMission(state, std::nullopt);
-    }
-
-    void Reset(MissionState& state) {
-        state.mission.reset(); // l'objectif du warp est effacé par la navigation avec la scène
-        state.window = NullEntity;
-        state.messageSeconds = 0.0;
+        SetMission(*state, std::nullopt);
     }
 
     std::string Save(const Scene& scene, const MissionState& state) {
@@ -101,8 +101,11 @@ namespace Game::Missions {
         return text;
     }
 
-    void Load(Simulation& simulation, SimState& state, std::string_view data) {
+    void Load(Simulation& simulation, Entity player, std::string_view data) {
         Scene& scene = simulation.GetScene();
+        if (player == NullEntity || !scene.IsValid(player)) {
+            return;
+        }
         std::istringstream words{std::string(data)};
         std::string word;
         if (!(words >> word)) {
@@ -123,6 +126,6 @@ namespace Game::Missions {
                 }
             }
         }
-        SetMission(state, std::move(mission)); // sans ennemi restant : accomplie au prochain pas
+        SetMission(GetPlayerState(scene, player), std::move(mission)); // sans ennemi restant : accomplie au prochain pas
     }
 }

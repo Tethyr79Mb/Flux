@@ -6,7 +6,9 @@
 #include "Flux/Scene/PlayerCommand.hpp"
 #include "Flux/Scene/Projectiles.hpp"
 #include "Flux/Scene/Scene.hpp"
+#include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
+#include "Flux/Scene/Seats.hpp"
 #include "Flux/Scene/Ships.hpp"
 #include "Flux/SimExport.hpp"
 
@@ -18,12 +20,12 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace Flux {
     class FlightSurroundings;
     class PhysicsContext;
-    class PhysicsWorld;
 
     // Actions du personnage, déclarées par la simulation dans cet ordre : les touches du client s'y rattachent par ces
     // noms. Hors de la classe : une constante membre d'une classe exportée serait importée de la DLL.
@@ -100,16 +102,20 @@ namespace Flux {
 
         // Monde physique, nullptr à l'arrêt. Tous partagent le contexte physique de la simulation.
         PhysicsWorld* GetPhysics() { return m_physics.get(); }
-        // Personnage du joueur (celui que suit la caméra), NullEntity à l'arrêt ou sans personnage.
+        // Personnage du joueur de cet écran (celui que suit la caméra), NullEntity à l'arrêt ou sans personnage.
         Entity GetPlayer() const;
-        // Commande du joueur qui dirige ce personnage pour le pas en cours ; vide pour un personnage sans joueur.
-        // Pour l'instant, seul le joueur de cet écran en a une, et il l'a aussi sans personnage (vol libre).
+        // Personnages joués (CharacterComponent::player) pendant le pas en cours : les systèmes du jeu les parcourent.
+        std::span<const Entity> GetPlayers() const { return m_players; }
+        // Commande du joueur qui dirige ce personnage pour le pas en cours ; vide pour un personnage sans joueur. Le
+        // joueur de cet écran a la sienne aussi sans personnage (vol libre).
         const PlayerCommand& GetPlayerCommand(Entity player) const;
         // Actions que lit la simulation, par leur bit dans PlayerCommand : celles du personnage, puis celles du jeu.
         CommandActions& GetActions() { return m_actions; }
         const CommandActions& GetActions() const { return m_actions; }
         // Commande du joueur de cet écran pour le prochain pas.
         void SetLocalCommand(const PlayerCommand& command) { m_localCommand = command; }
+        // Commande d'un autre joueur (reçue par le serveur) pour le prochain pas seulement : à redonner à chaque pas.
+        void SetPlayerCommand(Entity player, const PlayerCommand& command);
         void SetAnimationDurations(AnimationDurationFunction durations) { m_animationDurations = std::move(durations); }
 
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent et touchent ici, sont dessinés par le
@@ -118,13 +124,13 @@ namespace Flux {
         const std::vector<Projectile>& GetProjectiles() const { return m_projectiles; }
         // Projectiles arrivés sur un corps pendant le pas : au jeu d'en retirer les dégâts, à l'étape AfterPhysics.
         std::span<const ProjectileHit> GetProjectileHits() const { return m_projectileHits; }
-        // Étape Interaction : vrai si la touche Interagir a été enfoncée pour ce pas et que personne ne l'a prise ;
-        // elle est alors prise (les sièges ne la voient plus).
-        bool ConsumeInteraction();
-        // Commandes du vaisseau piloté pour ce pas (poussée, roulis, frein, boost, mode voyage), données par le jeu à
-        // l'étape Interaction. La simulation y ajoute le manche et ce qui entoure le vaisseau (gravité, air,
-        // planète), puis le fait voler ; sans appel, le vaisseau ne reçoit aucune commande.
-        void SetPilotInput(const ShipInput& input) { m_pilotInput = input; }
+        // Étape Interaction : vrai si ce joueur a enfoncé Interagir pour ce pas et que personne ne l'a prise ; elle
+        // est alors prise (les sièges ne la voient plus).
+        bool ConsumeInteraction(Entity player);
+        // Commandes du vaisseau que pilote ce joueur pour ce pas (poussée, roulis, frein, boost, mode voyage), données
+        // par le jeu à l'étape Interaction. La simulation y ajoute le manche et ce qui entoure le vaisseau (gravité,
+        // air, planète), puis le fait voler ; sans appel, le vaisseau ne reçoit aucune commande.
+        void SetPilotInput(Entity player, const ShipInput& input);
         // Planète la plus proche du vaisseau, altitude, air. Recrée le relief seulement quand la planète change.
         FlightState GetFlightState(Entity ship);
 
@@ -160,12 +166,27 @@ namespace Flux {
         } m_characterActions;
         AnimationDurationFunction m_animationDurations;
         PlayerCommand m_localCommand;
-        ShipInput m_pilotInput;            // commandes du jeu pour ce pas (SetPilotInput)
-        bool m_interactionPending = false; // Interagir enfoncée pour ce pas, pas encore prise
+        std::vector<std::pair<Entity, PlayerCommand>> m_commands; // des autres joueurs, pour le prochain pas
+        // Un joueur pendant le pas : sa commande, celles du jeu pour son vaisseau (SetPilotInput), et Interagir
+        // enfoncée pas encore prise. Les vecteurs du pas gardent leur mémoire : pas d'allocation.
+        struct PlayerStep
+        {
+            Entity entity = NullEntity;
+            PlayerCommand command;
+            ShipInput pilotInput;
+            bool interactionPending = false;
+        };
+        std::vector<Entity> m_players;
+        std::vector<PlayerStep> m_playerSteps; // dans l'ordre de m_players
+        std::vector<std::pair<Entity, CharacterInput>> m_characterInputs;
+        std::vector<std::pair<Entity, ShipInput>> m_shipInputs;
         std::vector<Projectile> m_projectiles;
         std::vector<ProjectileHit> m_projectileHits; // du pas, gardés d'un pas à l'autre : pas d'allocation
 
         void StartPhysics();
+        void CollectPlayers();
+        PlayerStep* FindPlayerStep(Entity player);
+        Seats::Durations GetSeatDurations(Entity character) const;
         void RunSystems(Stage stage, double deltaSeconds);
     };
 }

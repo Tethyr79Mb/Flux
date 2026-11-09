@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 namespace Flux {
     class Engine;
 }
@@ -10,12 +8,10 @@ namespace Flux {
 // verrou des armes. Chacun lit l'état à chaque image ; il ne change la simulation que par les fonctions de GameSim
 // (accepter une mission...).
 namespace Game {
-    struct SimState;
-
-    void RegisterNavigationHud(Flux::Engine& engine, std::shared_ptr<SimState> state);
+    void RegisterNavigationHud(Flux::Engine& engine);
     void UnregisterNavigationHud(Flux::Engine& engine);
     // Aussi la mission en cours dans la sauvegarde rapide.
-    void RegisterMissionsHud(Flux::Engine& engine, std::shared_ptr<SimState> state);
+    void RegisterMissionsHud(Flux::Engine& engine);
     void UnregisterMissionsHud(Flux::Engine& engine);
     // Le verrou est sur le personnage du joueur (PilotWeaponsComponent).
     void RegisterPlayerWeaponsHud(Flux::Engine& engine);

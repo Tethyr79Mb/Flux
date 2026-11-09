@@ -114,9 +114,10 @@ namespace Game {
         // Cible d'un corps touché : l'entité elle-même ou son ancêtre le plus proche qui a des points de vie.
         Flux::Entity FindTarget(const Flux::Scene& scene, Flux::Entity entity);
         // Retire les dégâts des impacts aux cibles. Celles qui tombent à 0 sont détruites avec leurs enfants, sauf
-        // si elles portent `protectedEntity` (le joueur) ; leurs noms sont ajoutés à `destroyed` s'il est donné.
-        void ApplyHits(Flux::Scene& scene, std::span<const Flux::ProjectileHit> hits, Flux::Entity protectedEntity,
-                       std::vector<std::string>* destroyed = nullptr);
+        // si elles portent une des `protectedEntities` (les joueurs) ; leurs noms sont ajoutés à `destroyed` s'il est
+        // donné.
+        void ApplyHits(Flux::Scene& scene, std::span<const Flux::ProjectileHit> hits,
+                       std::span<const Flux::Entity> protectedEntities, std::vector<std::string>* destroyed = nullptr);
     }
 
     // Emports, armes et points de vie dans l'inspecteur et les scènes (mêmes clés JSON qu'au temps du moteur).

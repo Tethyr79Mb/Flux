@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace Flux {
     class PhysicsWorld;
@@ -18,12 +19,17 @@ namespace Flux {
     // au pilotage (ShipInput) et les infos de vol du jeu.
     class FlightSurroundings {
         public:
-        // Garde le relief de la dernière planète : il n'est recréé que si elle change.
+        // Garde le relief des dernières planètes vues (un vaisseau par joueur, chacun près de la sienne).
         FlightState Get(Scene& scene, PhysicsWorld* physics, Entity ship);
 
         private:
-        std::shared_ptr<const Planetology::Terrain> m_terrain; // relief de la planète la plus proche
-        std::int32_t m_terrainSeed = 0;
-        float m_terrainWidth = 0.0f;
+        static constexpr std::size_t MaxReliefs = 8;
+        struct Relief
+        {
+            std::shared_ptr<const Planetology::Terrain> terrain;
+            std::int32_t seed = 0;
+            float width = 0.0f;
+        };
+        std::vector<Relief> m_reliefs;
     };
 }

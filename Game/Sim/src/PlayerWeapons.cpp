@@ -72,13 +72,14 @@ namespace Game::PlayerWeapons {
     }
 
     void Fire(Simulation& simulation, SimState& state, double deltaSeconds) {
-        // Un seul joueur pour l'instant ; le serveur bouclera sur les siens.
-        const Entity player = simulation.GetPlayer();
-        FireFor(simulation, state.weapons, player, deltaSeconds);
+        for (const Entity player : simulation.GetPlayers()) {
+            FireFor(simulation, state.weapons, player, deltaSeconds);
+        }
 
-        // Infos de vol du joueur : groupes actifs et missiles restants (moins de 30 caractères : pas d'allocation après
+        // Infos de vol du joueur de cet écran : groupes actifs et missiles restants (moins de 30 caractères : pas d'allocation après
         // le premier pas).
         const Scene& scene = simulation.GetScene();
+        const Entity player = simulation.GetPlayer();
         const PilotWeaponsComponent* weapons = FindState(scene, player);
         const std::uint16_t activeGroups = weapons ? weapons->activeGroups : 0;
         const Entity ship = player != NullEntity ? Ships::GetPilotedShip(scene, player) : NullEntity;
