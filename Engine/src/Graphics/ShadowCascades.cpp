@@ -97,6 +97,11 @@ namespace Flux {
         return cascades;
     }
 
+    ShadowCascade ComputeShadowSlice(const Camera& camera, float aspect, const Math::Vector3f& toSun, float start, float end,
+                                     std::uint32_t resolution, float casterDistance) {
+        return ComputeCascade(MakeLightFrame(camera, aspect, toSun), start, end, resolution, casterDistance);
+    }
+
     std::array<ShadowCascade, TerrainShadowCascadeCount> ComputeTerrainShadowCascades(const Camera& camera, float aspect,
                                                                                       const Math::Vector3f& toSun,
                                                                                       std::uint32_t resolution, float margin) {

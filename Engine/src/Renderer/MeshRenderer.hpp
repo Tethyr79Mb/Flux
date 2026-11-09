@@ -124,6 +124,11 @@ namespace Flux {
         bool TerrainShadowsPending() const;
         void DrawTerrainShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         const RHI::Texture& GetTerrainShadowMap() const { return *m_terrainShadowMap; }
+        // Ombres des forêts au loin : les arbres seuls (imposteurs vus du soleil), de la fin des cascades proches à leur
+        // portée, refaites à chaque image où il y a des arbres (ForestShadowsPending).
+        bool ForestShadowsPending() const { return m_forestShadows; }
+        void DrawForestShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        const RHI::Texture& GetForestShadowMap() const { return *m_forestShadowMap; }
         // Passe principale, dans cet ordre (le fond du ciel entre le sol et l'eau). Le sol après les entités : ce
         // qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres transparents : vue
         // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le
@@ -449,6 +454,7 @@ namespace Flux {
         std::unique_ptr<TreeImpostors> m_impostors; // avant m_models dans la destruction : il lui rend ses cases
         std::unique_ptr<RHI::Pipeline> m_impostorBake; // capture (vertexImpostorBake)
         std::unique_ptr<RHI::Pipeline> m_impostor;     // dessin au loin (vertexImpostor)
+        std::unique_ptr<RHI::Pipeline> m_impostorShadow; // ombre des forêts (vertexImpostorShadow)
         std::unique_ptr<RHI::Buffer> m_impostorIndices; // un carré : 0 1 2 2 1 3
         Planetology::VegetationLibrary m_vegetationLibrary; // biomes des planètes
         std::vector<Planetology::VegetationRenderer::Models> m_treeModels; // de chaque espèce, à cette image
@@ -529,6 +535,12 @@ namespace Flux {
         // m_terrainRefreshFrames images (tuiles arrivées entre-temps).
         std::unique_ptr<RHI::Texture> m_terrainShadowMap;
         std::uint32_t m_terrainShadowResolution = 0;
+        // Forêts au loin : une cascade, refaite à chaque image (les arbres retenus sont ceux du champ de cette image).
+        std::unique_ptr<RHI::Texture> m_forestShadowMap;
+        ShadowCascade m_forestCascade{};
+        float m_forestStart = 0.0f; // tranche couverte, mètres devant la caméra
+        float m_forestEnd = 0.0f;
+        bool m_forestShadows = false; // des arbres à cette image : la carte est dessinée et lue
         std::uint32_t m_terrainRefreshFrames = 0;
         std::array<ShadowCascade, TerrainShadowCascadeCount> m_terrainCascades{};
         std::array<DrawnCascade, TerrainShadowCascadeCount> m_drawnTerrain{};

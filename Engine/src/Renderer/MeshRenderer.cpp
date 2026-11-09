@@ -70,10 +70,11 @@ namespace Flux {
         {
             Math::Matrix4f viewProjection; // décalée d'un sous-pixel (TemporalView::jitter)
             Math::Matrix4f previousViewProjection; // de l'image précédente, sans décalage
-            std::array<Math::Matrix4f, ShadowCascadeCount + TerrainShadowCascadeCount> cascades;
+            std::array<Math::Matrix4f, ShadowCascadeCount + TerrainShadowCascadeCount + 1> cascades; // la dernière : forêts
             std::array<float, 4> cascadeEnds;
             std::array<float, 4> cascadeTexels;
             std::array<float, 4> terrainCascades; // xy : fin des tranches du relief ; zw : côté d'un texel
+            std::array<float, 4> forestCascade;   // x, y : tranche des forêts au loin ; z : côté d'un texel ; w : 1 si dessinée
             std::array<float, 4> cameraForward;
             std::array<float, 4> cameraDelta; // TemporalView::cameraDelta
             std::array<float, 4> toSun;
@@ -95,7 +96,7 @@ namespace Flux {
             std::array<std::uint32_t, 4> pyramidSize;
             std::array<std::uint32_t, 16> pyramidOffsets;
         };
-        static_assert(sizeof(FrameData) == 576 + 2 * 64 + 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
+        static_assert(sizeof(FrameData) == 576 + 3 * 64 + 2 * 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
                                                + sizeof(Planetology::AtmosphereGpu) + 80
                       && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
@@ -136,6 +137,9 @@ namespace Flux {
         constexpr std::uint32_t MeshletStatSlot = 13;
         constexpr std::uint32_t TerrainShadowMapSlot = 14;
         constexpr std::uint32_t IrradianceSlot = 15;
+        constexpr std::uint32_t ForestShadowMapSlot = 16;
+        // Cascade des forêts au loin dans FrameData::cascades.
+        constexpr std::uint32_t ForestCascade = ShadowCascadeCount + TerrainShadowCascadeCount;
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -164,6 +168,10 @@ namespace Flux {
         // environ 2 m en 4096 ; de 3 à 40 km, environ 25 m.
         constexpr std::uint32_t TerrainShadowResolution = 4096;
         constexpr std::uint32_t TerrainShadowResolutionMinimum = 2048;
+        // Forêts au loin : de 180 m à la portée des arbres (5 km), une sphère d'environ 6 km de rayon : un texel fait
+        // environ 3 m en 4096 (64 Mo), 6 m en 2048 (16 Mo) sur le minimum. La cime d'un arbre en couvre quelques-uns.
+        constexpr std::uint32_t ForestShadowResolution = 4096;
+        constexpr std::uint32_t ForestShadowResolutionMinimum = 2048;
         // Une cascade du relief refaite au moins toutes les N images même immobile (tuiles arrivées), à tour de rôle.
         constexpr std::uint32_t TerrainRefreshFrames = 30;
         constexpr std::uint32_t TerrainRefreshFramesMinimum = 60;
@@ -241,6 +249,12 @@ namespace Flux {
             return std::unexpected(terrainShadowMap.error());
         }
         renderer->m_terrainShadowMap = std::move(*terrainShadowMap);
+        const std::uint32_t forestResolution = recommended ? ForestShadowResolution : ForestShadowResolutionMinimum;
+        auto forestShadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {forestResolution, forestResolution}, true);
+        if (!forestShadowMap) {
+            return std::unexpected(forestShadowMap.error());
+        }
+        renderer->m_forestShadowMap = std::move(*forestShadowMap);
         auto shadowSampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Nearest,
                                                    .address = RHI::AddressMode::ClampToEdge, .compare = true});
         if (!shadowSampler) {
@@ -266,6 +280,7 @@ namespace Flux {
             RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -286,6 +301,7 @@ namespace Flux {
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetTexture(TerrainShadowMapSlot, *renderer->m_terrainShadowMap, *renderer->m_shadowSampler);
+            renderer->m_frameGroups[f]->SetTexture(ForestShadowMapSlot, *renderer->m_forestShadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
         }
         if (device.HasMeshShaders()) {
@@ -559,6 +575,19 @@ namespace Flux {
             desc.secondColorFormat = motionFormat;
             desc.depthFormat = depthFormat;
             if (auto result = create(m_impostor, desc); !result) {
+                return result;
+            }
+            // Ombre des forêts : profondeur seule vue du soleil (0 côté soleil), décalée comme les autres ombres.
+            desc.vertexEntryPoint = "vertexImpostorShadow";
+            desc.fragmentEntryPoint = "fragmentImpostorShadow";
+            desc.colorFormat = RHI::Format::Undefined;
+            desc.secondColorFormat = RHI::Format::Undefined;
+            desc.writeSecondColor = false;
+            desc.depthFormat = RHI::Format::D32Float;
+            desc.depthCompare = RHI::CompareOp::Less;
+            desc.depthBiasConstant = 1.0f;
+            desc.depthBiasSlope = 1.5f;
+            if (auto result = create(m_impostorShadow, desc); !result) {
                 return result;
             }
         }
@@ -1123,6 +1152,19 @@ namespace Flux {
             }
         }
         m_impostors->EndFrame(frameIndex);
+        // Ombres des forêts au loin : du dernier dixième de la dernière cascade proche (où elle s'efface) à la portée.
+        m_forestShadows = false;
+        if (m_vegetationComponent && !m_treeModels.empty()) {
+            const float rangeScale = GetVegetationDistanceScale(m_vegetationDistance);
+            m_forestStart = 0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1];
+            m_forestEnd = m_vegetationComponent->range * rangeScale;
+            if (m_forestEnd > m_forestStart) {
+                const auto resolution = m_forestShadowMap->GetExtent().width;
+                m_forestCascade = ComputeShadowSlice(camera, aspect, m_shadowReceivers.GetToSun(), m_forestStart, m_forestEnd,
+                                                     resolution, ForestShadowCasterDistance);
+                m_forestShadows = true;
+            }
+        }
         const float tanY = std::tan(0.5f * camera.verticalFov);
         m_vegetation->EndFrame(frameIndex, {camera.GetForward(), camera.GetRight(), camera.GetUp(), tanY * aspect, tanY}, m_cascades, m_shadowReceivers, m_treeModels);
         // surface.zw : éclairage du feuillage (ShadeFoliage), du composant.
@@ -1264,6 +1306,8 @@ namespace Flux {
             frame.terrainCascades[t] = TerrainShadowCascadeEnds[t];
             frame.terrainCascades[2 + t] = m_terrainCascades[t].texelSize;
         }
+        frame.cascades[ForestCascade] = m_forestCascade.lightViewProjection;
+        frame.forestCascade = {m_forestStart, m_forestEnd, m_forestCascade.texelSize, m_forestShadows ? 1.0f : 0.0f};
         // w : secondes écoulées (vagues des océans), repartent de 0 toutes les heures pour garder leur précision.
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
         frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
@@ -2151,6 +2195,58 @@ namespace Flux {
                 commands.ClearDepth({x, 0, size, size}, 1.0f);
             }
             DrawTiles(commands, state, frameIndex, FirstTerrainShadowPass + t, *m_planet.shadowDoubleSided);
+        }
+        commands.EndRenderPass();
+    }
+
+    // Les arbres du champ au-delà des cascades proches : imposteurs vus du soleil (liste Far), et les simplifiés entre
+    // 180 et 300 m (liste Middle, ceux plus près ne sont pas lus dans cette carte). Les arbres hors du champ n'y sont
+    // pas : leur ombre manque au bord de l'image.
+    void MeshRenderer::DrawForestShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        commands.BeginRenderPass({.clearColor = {}, .depth = m_forestShadowMap.get(), .clearDepth = 1.0f, .color = false});
+        const RHI::Extent size = m_forestShadowMap->GetExtent();
+        commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
+        commands.SetScissor({0, 0, size.width, size.height});
+        BindState state;
+        using Planetology::VegetationRenderer;
+        for (const VegetationRenderer::List list : {VegetationRenderer::Middle, VegetationRenderer::Far}) {
+            for (const VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
+                const GpuModel& model = *draw.model;
+                const RHI::Buffer& indirect = m_vegetation->GetCommands(frameIndex);
+                if (draw.impostor != 0) {
+                    BindPipeline(commands, state, frameIndex, *m_impostorShadow);
+                    if (state.group != &m_models->GetWhiteGroup()) {
+                        state.group = &m_models->GetWhiteGroup();
+                        commands.SetBindGroup(0, *state.group);
+                    }
+                    state.page = BindState::NoPage;
+                    commands.BindIndexBuffer(*m_impostorIndices);
+                    const Math::Vector3f center = model.bounds.GetCenter();
+                    const DrawParams params{{center.x, center.y, center.z, Math::Length(model.bounds.GetSize() * 0.5f)},
+                                            {0.0f, 0.0f, 0.0f, 0.0f}, ForestCascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                            draw.impostor, m_treeDraw, {}};
+                    commands.PushConstants(&params, sizeof(params));
+                    commands.DrawIndexedIndirect(indirect, draw.command * sizeof(RHI::DrawIndexedCommand), 1);
+                    continue;
+                }
+                const GpuMaterial& material = model.materials[model.primitives[draw.primitive].material];
+                if (model.resources.page != state.page) {
+                    state.page = model.resources.page;
+                    const GeometryPage& page = m_models->GetPage(model.resources.page);
+                    const std::array<const RHI::Buffer*, 1> vertexBuffers{page.vertices.get()};
+                    commands.BindVertexBuffers(0, vertexBuffers);
+                    commands.BindIndexBuffer(*page.indices);
+                }
+                BindPipeline(commands, state, frameIndex, ShadowPipeline(m_tree, material));
+                if (state.group != &m_models->GetWhiteGroup()) {
+                    state.group = &m_models->GetWhiteGroup();
+                    commands.SetBindGroup(0, *state.group);
+                }
+                const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, ForestCascade, 0.0f, 0u, 1.0f, 1.0f,
+                                        0.0f, 0.0f, material.index, m_treeDraw, {}};
+                commands.PushConstants(&params, sizeof(params));
+                commands.DrawIndexedIndirect(indirect, draw.command * sizeof(RHI::DrawIndexedCommand), 1);
+            }
         }
         commands.EndRenderPass();
     }

@@ -215,7 +215,10 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   sol (visible de haut et de l'espace). Imposteurs (`TreeImpostors`) : le modèle détaillé de chaque espèce pris par le
   GPU sous 8×8 vues de la demi-sphère du haut à sa première apparition (atlas couleur et normales 1024², environ
   11 Mo par espèce), un carré par arbre qui mélange les trois vues les plus proches ; tous les arbres gardés jusqu'à la
-  portée (plus d'éclaircissement au loin). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
+  portée (plus d'éclaircissement au loin). Ombres des forêts au loin (demande de Bruno du 2026-11-09) : une carte de
+  plus (4096², 2048 sur le minimum), de 180 m à la portée, refaite à chaque image avec les imposteurs vus du soleil ;
+  le sol et les arbres y prennent le plus sombre avec l'ombre du relief. Limites : texel d'environ 3 m (ombres
+  floues au loin), arbres hors du champ sans ombre au bord de l'image. Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
   au-dessus des forêts de montagne). Plaines semées d'avance autour de la caméra et sur son trajet (800 m, 64 au
   plus), arbres d'une plaine semée en vue qui apparaissent un à un en 0,5 s ; budget de 4 plaines semées par image
   encore à régler sur mesure. Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus

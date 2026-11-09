@@ -531,6 +531,7 @@ namespace Flux {
             const auto irradiance = texture("lumière du ciel", Lifetime::Previous, [this] { return &environment->GetIrradiance(); });
             const auto shadowMap = texture("carte d'ombres", Lifetime::Previous, [this] { return &meshes->GetShadowMap(); });
             const auto terrainShadowMap = texture("ombres du relief", Lifetime::Previous, [this] { return &meshes->GetTerrainShadowMap(); });
+            const auto forestShadowMap = texture("ombres des forêts", Lifetime::Previous, [this] { return &meshes->GetForestShadowMap(); });
             // Textures de travail, créées par le graphe à la taille de la vue 3D. Profondeur lisible : l'anticrénelage
             // y retrouve où était chaque point. L'historique a deux exemplaires : l'anticrénelage lit l'un, écrit l'autre.
             using TextureSize = RenderGraph::TextureSize;
@@ -623,6 +624,14 @@ namespace Flux {
                 .Reads(tiles)
                 .Writes(terrainShadowMap)
                 .Step("ombres du relief", [this](RHI::CommandList& commands) { meshes->DrawTerrainShadows(commands, frame.index); });
+            // Forêts au loin : les arbres retenus à cette image (tri des arbres), imposteurs pris.
+            graph.AddPass("ombres des forêts")
+                .When([this] { return sceneVisible && meshes->ForestShadowsPending(); })
+                .Reads(cpu)
+                .Reads(culled)
+                .Reads(impostors)
+                .Writes(forestShadowMap)
+                .Step("ombres des forêts", [this](RHI::CommandList& commands) { meshes->DrawForestShadows(commands, frame.index); });
             graph.AddPass("scène")
                 .When(scene)
                 .Reads(cpu)
@@ -631,6 +640,7 @@ namespace Flux {
                 .Reads(impostors)
                 .Reads(shadowMap)
                 .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
                 .Reads(skyBackground)
                 .Reads(skyRayleigh)
                 .Reads(skyMie)
@@ -725,6 +735,7 @@ namespace Flux {
                 .Reads(culled)
                 .Reads(shadowMap)
                 .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
                 .Reads(skyBackground)
                 .Reads(skyRayleigh)
                 .Reads(skyMie)

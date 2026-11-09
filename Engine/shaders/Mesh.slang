@@ -57,11 +57,13 @@ struct FrameData
     float4 viewProjection[4];  // décalée d'un sous-pixel pour l'anticrénelage temporel (cameraRight.w, cameraUp.w)
     float4 previousViewProjection[4]; // de l'image précédente, sans décalage, relative à sa caméra
     // Cascade c : colonnes [4c, 4c + 3] ; relatif caméra -> carte (xy dans [-1, 1], z dans [0, 1]). Les 4 premières
-    // dans shadowMap, les 2 suivantes (relief au loin) dans terrainShadowMap.
-    float4 cascades[6 * 4];
+    // dans shadowMap, les 2 suivantes (relief au loin) dans terrainShadowMap, la dernière (forêts au loin) dans
+    // forestShadowMap.
+    float4 cascades[7 * 4];
     float4 cascadeEnds;       // fin de chaque tranche, en mètres devant la caméra
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
     float4 terrainCascades;   // relief au loin : xy fin de ses deux tranches, zw côté d'un texel (mètres)
+    float4 forestCascade;     // forêts au loin : x début, y fin de la tranche (m), z côté d'un texel ; w 1 si dessinée
     float4 cameraForward;     // xyz ; w : secondes écoulées (vagues), repartent de 0 toutes les heures
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
     float4 toSun;             // xyz : direction du soleil (unitaire)
@@ -175,6 +177,9 @@ struct MaterialData
 // Relief au loin (cascades 4 et 5), côte à côte dans une texture deux fois plus large que haute : seul le sol des
 // planètes y est dessiné, gardé plusieurs images (MeshRenderer::ChooseTerrainCascades).
 [[vk::binding(14, 1)]] Sampler2DShadow terrainShadowMap;
+// Forêts au loin (cascade 6) : les arbres seuls, de la fin des cascades proches à leur portée, refaite à chaque image
+// (MeshRenderer::DrawForestShadows).
+[[vk::binding(16, 1)]] Sampler2DShadow forestShadowMap;
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour vu dans un reflet (EnvironmentRenderer, HDR) : un niveau de mip par rugosité, préfiltré GGX.
@@ -635,9 +640,23 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return lerp(next, lit, fade);
 }
 
+// Ombre des arbres au loin (cascade 6), à partir du dernier dixième de la dernière cascade proche, où celle-ci
+// s'efface ; 1 hors de sa tranche ou sans forêt.
+float ForestVisibility(float depth, float3 worldPosition, float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    if (f.forestCascade.w == 0.0 || depth < f.forestCascade.x || depth > f.forestCascade.y) {
+        return 1.0;
+    }
+    const float lit = CascadeVisibility(forestShadowMap, float2(1.0), float2(0.0), 6, f.forestCascade.z, worldPosition,
+                                        normal, sunFacing);
+    // Près de la portée, les arbres rapetissent jusqu'à disparaître : leur ombre aussi.
+    return lit < 0.0 ? 1.0 : lerp(1.0, lit, saturate((f.forestCascade.y - depth) / (0.1 * f.forestCascade.y)));
+}
+
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
 // le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
-// loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km.
+// loin vers le soleil) ; au-delà, le relief jusqu'à 40 km et les arbres jusqu'à leur portée.
 float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
@@ -646,7 +665,8 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
         ++cascade;
     }
-    const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
+    const float terrain = min(TerrainVisibility(worldPosition, normal, sunFacing),
+                              ForestVisibility(depth, worldPosition, normal, sunFacing));
     if (cascade >= 4) {
         return terrain;
     }
@@ -1987,4 +2007,51 @@ SceneOutput fragmentImpostor(ImpostorVertexOutput input)
     output.color = float4(Radiance(lit), 1.0);
     output.motion = float2(0.0); // arbres immobiles
     return output;
+}
+
+// Ombre d'un arbre au loin (cascade params.cascade, forêts au loin) : son imposteur vu du soleil, profondeur seule. Le
+// carré fait face au soleil (vu d'en dessous : la vue de l'horizon), la vue la plus proche de sa direction seulement.
+struct ImpostorShadowOutput
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD; // dans la case de la vue, comme ImpostorUv
+    nointerpolation uint view : VIEW;
+};
+
+[shader("vertex")]
+ImpostorShadowOutput vertexImpostorShadow(uint vertex : SV_VertexID, uint instance : SV_VulkanInstanceID)
+{
+    const FrameData f = frame[0];
+    const float4 placement = treeInstances[instance * 2];
+    float4 rotation = treeInstances[instance * 2 + 1];
+    rotation.w = sqrt(saturate(1.0 - dot(rotation.xyz, rotation.xyz)));
+    const float4 sphere = params.color;
+    const float3 center = placement.xyz + TreeRotate(rotation, sphere.xyz * placement.w);
+    const float radius = sphere.w * placement.w;
+    const float4 inverse = float4(-rotation.xyz, rotation.w);
+    float3 toSun = TreeRotate(inverse, f.toSun.xyz);
+    toSun = normalize(float3(toSun.x, max(toSun.y, 0.0), toSun.z) + float3(0.0, 1.0e-4, 0.0));
+    const uint2 nearest = uint2(round((EncodeHemiOctahedron(toSun) * 0.5 + 0.5) * float(ImpostorGrid - 1)));
+    float3 right;
+    float3 up;
+    ImpostorBasis(toSun, right, up);
+    const float2 corner = float2((vertex & 1u) != 0u ? 1.0 : -1.0, (vertex & 2u) != 0u ? -1.0 : 1.0) * 1.15;
+    const float3 local = right * corner.x + up * corner.y;
+    ImpostorShadowOutput output;
+    output.view = nearest.y * ImpostorGrid + nearest.x;
+    output.uv = ImpostorUv(output.view, local);
+    const uint c = params.cascade;
+    float4 m[4] = {f.cascades[c * 4 + 0], f.cascades[c * 4 + 1], f.cascades[c * 4 + 2], f.cascades[c * 4 + 3]};
+    output.position = Transform(m, center + TreeRotate(rotation, local) * radius);
+    return output;
+}
+
+[shader("fragment")]
+void fragmentImpostorShadow(ImpostorShadowOutput input)
+{
+    const float2 uv = (float2(input.view % ImpostorGrid, input.view / ImpostorGrid) + clamp(input.uv, 0.002, 0.998))
+                    / float(ImpostorGrid);
+    if (SampleMaterial(params.material, uv).a < 0.5) {
+        discard;
+    }
 }

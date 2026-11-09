@@ -52,6 +52,14 @@ namespace Flux {
                                                                                                std::uint32_t resolution,
                                                                                                float margin = 1.1f);
 
+    // Ombres des forêts au loin (MeshRenderer::DrawForestShadows) : une tranche de plus, de la fin des cascades proches
+    // jusqu'à la portée des arbres, dans sa propre carte où seuls les arbres sont dessinés, refaite à chaque image.
+    inline constexpr float ForestShadowCasterDistance = 300.0f;
+
+    // Une cascade pour la tranche [start, end] (mètres devant la caméra), comme celles de ComputeShadowCascades.
+    FLUX_API ShadowCascade ComputeShadowSlice(const Camera& camera, float aspect, const Math::Vector3f& toSun, float start,
+                                              float end, std::uint32_t resolution, float casterDistance);
+
     // La même cascade (même carte) vue d'une caméra déplacée de `cameraOffset` (nouvelle position - ancienne, en
     // mètres) : sa matrice prend les positions relatives à la nouvelle caméra. Sert à garder la carte d'une image
     // précédente.
