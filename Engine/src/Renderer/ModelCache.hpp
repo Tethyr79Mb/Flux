@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Animation/Animation.hpp"
+#include "Flux/Export.hpp"
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Math/Box3.hpp"
 #include "Flux/Math/Color.hpp"
@@ -42,7 +43,7 @@ namespace Flux {
     // Places d'un modèle dans les tables partagées de ModelCache (sommets et indices d'une page de géométrie, cases
     // de la table des images, de la table des matériaux), et ses images. Rendues à sa destruction : le GPU ne doit
     // plus dessiner le modèle (un modèle remplacé passe par RHI::Device::Retire).
-    class GpuModelResources {
+    class FLUX_API GpuModelResources { // exportée pour les tests (modèles faits à la main, VegetationGpuTests)
         public:
         GpuModelResources() = default;
         explicit GpuModelResources(ModelCache& owner) : m_owner(&owner) {}
