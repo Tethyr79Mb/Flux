@@ -341,6 +341,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Ars Solaris.exe
   vérifie au démarrage qu'il est à jour.
 - ⬜ Launcher (paramètres, bouton Jouer), par-dessus les mises à jour du moteur.
+- ⬜ Protection contre la triche (Bruno, 2026-11-09) : le serveur décide déjà de tout (un fichier modifié ne change que ce que voit le tricheur). Plus tard : assets en paquets `.pak` dont l'empreinte est vérifiée au lancement (manifeste ci-dessus), envoi limité à ce qui est près du joueur (étape 10 du multijoueur), anti-triche (Easy Anti-Cheat ou équivalent) vers la bêta.
 - ⬜ Version alpha livrée (Bruno, 2026-11-08) : option CMake de build monolithique, FluxSim, FluxEngine et le module du jeu liés
   statiquement avec LTO dans un seul exécutable, pour le client et pour le serveur. Le développement garde les DLL (module du jeu
   rechargé à chaud). Références : Unreal (liaison modulaire ou monolithique, publié), Star Citizen (un seul StarCitizen.exe livré).
