@@ -853,8 +853,9 @@ static const float GroundBounceAlbedo = 0.2;
 static const float GlassRoughness = 0.2;
 
 // foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
+// shadowLift : l'ombre lue ce nombre de mètres plus près du soleil (imposteurs, pour ne pas lire leur propre ombre).
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
-                    bool foliage = false, float2 leaves = float2(0.0))
+                    bool foliage = false, float2 leaves = float2(0.0), float shadowLift = 0.0)
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
@@ -864,7 +865,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         geometryNormal = -geometryNormal; // décalage de la lecture vers le soleil, comme pour la face éclairée
         sunFacing = -sunFacing;
     }
-    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition, geometryNormal, sunFacing) * clouds : 0.0;
+    const float sun = sunFacing > 0.0 ? SunVisibility(worldPosition + toSun * shadowLift, geometryNormal, sunFacing) * clouds : 0.0;
     float3 interiorLight;
     inside = InteriorAt(worldPosition, interiorLight);
     float3 sunColor = f.sunColor.rgb;
@@ -1912,6 +1913,7 @@ struct ImpostorVertexOutput
     nointerpolation uint3 views : VIEWS;      // les trois vues mélangées (j x ImpostorGrid + i)
     nointerpolation float3 weights : WEIGHTS; // leur part (somme 1)
     nointerpolation float4 rotation : ROTATION; // de l'arbre (quaternion), pour ses normales
+    nointerpolation float radius : RADIUS;
 };
 
 // Point `local` (repère de l'arbre, sphère unité) sur l'image de la vue `view`, comme vertexImpostorBake.
@@ -1969,6 +1971,7 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
     output.clouds = CloudShadow(output.worldPosition);
     output.tint = TreeTint(instance);
     output.rotation = rotation;
+    output.radius = radius;
     return output;
 }
 
@@ -2001,7 +2004,11 @@ SceneOutput fragmentImpostor(ImpostorVertexOutput input)
     surface.f0 = float3(0.04);
     surface.roughness = 0.8; // feuillage mat (comme MeshColor, foliage)
     float inside;
-    float3 lit = LightSurface(surface, normal, input.worldPosition, 1.0, input.clouds, inside, true, draw.surface.zw);
+    // Le carré fait face à la caméra, son ombre (vertexImpostorShadow) face au soleil : lue sur le carré, la moitié de
+    // l'arbre derrière ce second carré était dans sa propre ombre, et les forêts au loin bien plus sombres que de près.
+    // Lue à 1,2 rayon vers le soleil, devant son ombre ; celle des voisins reste.
+    float3 lit = LightSurface(surface, normal, input.worldPosition, 1.0, input.clouds, inside, true, draw.surface.zw,
+                              1.2 * input.radius);
     lit = lit * input.airTransmittance + input.airScattered;
     SceneOutput output;
     output.color = float4(Radiance(lit), 1.0);
