@@ -63,7 +63,7 @@ struct FrameData
     float4 cascadeEnds;       // fin de chaque tranche, en mètres devant la caméra
     float4 cascadeTexels;     // côté d'un texel de chaque cascade, en mètres
     float4 terrainCascades;   // relief au loin : xy fin de ses deux tranches, zw côté d'un texel (mètres)
-    float4 forestCascade;     // forêts au loin : x début, y fin de la première tranche, z de la seconde (m) ; w 1 si dessinée
+    float4 forestCascade;     // forêts au loin : x début (profondeur), y rayon de la première carte, z de la seconde (m) ; w 1 si dessinée
     float4 forestTexels;      // xy : côté d'un texel de chaque tranche (m)
     float4 cameraForward;     // xyz ; w : secondes écoulées (vagues), repartent de 0 toutes les heures
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
@@ -641,8 +641,8 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return lerp(next, lit, fade);
 }
 
-// Ombre des arbres au loin (cascades 6 et 7, côte à côte), à partir du dernier dixième de la dernière cascade proche,
-// où celle-ci s'efface ; 1 hors des tranches ou sans forêt.
+// Ombre des arbres au loin (cascades 6 et 7, côte à côte, centrées sur la caméra et choisies par la distance comme le
+// relief), à partir du dernier dixième de la dernière cascade proche, où celle-ci s'efface ; 1 au-delà ou sans forêt.
 float ForestSlice(uint slice, float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
@@ -653,23 +653,24 @@ float ForestSlice(uint slice, float3 worldPosition, float3 normal, float sunFaci
 float ForestVisibility(float depth, float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
-    if (f.forestCascade.w == 0.0 || depth < f.forestCascade.x || depth > f.forestCascade.z) {
+    const float distance = length(worldPosition);
+    if (f.forestCascade.w == 0.0 || depth < f.forestCascade.x || distance > f.forestCascade.z) {
         return 1.0;
     }
     float lit;
-    if (depth > f.forestCascade.y) {
+    if (distance > f.forestCascade.y) {
         lit = ForestSlice(1, worldPosition, normal, sunFacing);
     } else {
         lit = ForestSlice(0, worldPosition, normal, sunFacing);
-        // Dernier dixième de la première tranche : fondu vers la seconde, sans marche visible.
-        const float fade = saturate((f.forestCascade.y - depth) / (0.1 * f.forestCascade.y));
+        // Dernier dixième de la première carte : fondu vers la seconde, sans marche visible.
+        const float fade = saturate((f.forestCascade.y - distance) / (0.1 * f.forestCascade.y));
         if (fade < 1.0 && f.forestCascade.y < f.forestCascade.z) {
             const float next = ForestSlice(1, worldPosition, normal, sunFacing);
             lit = lerp(next < 0.0 ? lit : next, lit, fade);
         }
     }
     // Près de la portée, les arbres rapetissent jusqu'à disparaître : leur ombre aussi.
-    return lit < 0.0 ? 1.0 : lerp(1.0, lit, saturate((f.forestCascade.z - depth) / (0.1 * f.forestCascade.z)));
+    return lit < 0.0 ? 1.0 : lerp(1.0, lit, saturate((f.forestCascade.z - distance) / (0.1 * f.forestCascade.z)));
 }
 
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,

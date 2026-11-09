@@ -74,7 +74,7 @@ namespace Flux {
             std::array<float, 4> cascadeEnds;
             std::array<float, 4> cascadeTexels;
             std::array<float, 4> terrainCascades; // xy : fin des tranches du relief ; zw : côté d'un texel
-            std::array<float, 4> forestCascade;   // forêts au loin : x début, y fin de la première tranche, z de la seconde ; w : 1 si dessinée
+            std::array<float, 4> forestCascade;   // forêts au loin : x début (profondeur), y rayon de la première carte, z de la seconde ; w : 1 si dessinée
             std::array<float, 4> forestTexels;    // xy : côté d'un texel de chaque tranche
             std::array<float, 4> cameraForward;
             std::array<float, 4> cameraDelta; // TemporalView::cameraDelta
@@ -1163,15 +1163,15 @@ namespace Flux {
             m_forestStart = 0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1];
             m_forestEnd = m_vegetationComponent->range * rangeScale;
             if (m_forestEnd > m_forestStart) {
-                // Deux tranches : une seule, de 180 m à 5 km, donnait des texels de 3 m, et l'ombre d'un conifère
-                // (quelques mètres de large) se perdait dans le flou ; vue de haut, tout le sol tombe dans la première.
+                // Deux cartes centrées sur la caméra, choisies par la distance (comme le relief) : elles ne dépendent
+                // pas du regard, l'ombre d'un endroit ne change plus en tournant la tête. Une seule jusqu'à 5 km
+                // donnait des texels de 3 m, où l'ombre d'un conifère se perdait ; la première, 1 km, en a de 0,5 m.
                 m_forestSplit = std::min(ForestShadowSplit, m_forestEnd);
                 const auto resolution = m_forestShadowMap->GetExtent().height;
-                const std::array<float, ForestShadowSlices + 1> ends{m_forestStart, m_forestSplit, m_forestEnd};
+                const std::array<float, ForestShadowSlices> radii{m_forestSplit, m_forestEnd};
                 for (std::size_t s = 0; s < ForestShadowSlices; ++s) {
-                    m_forestCascades[s] = ComputeShadowSlice(camera, aspect, m_shadowReceivers.GetToSun(), ends[s],
-                                                             std::max(ends[s + 1], ends[s] + 1.0f), resolution,
-                                                             ForestShadowCasterDistance);
+                    m_forestCascades[s] = ComputeShadowAround(camera, m_shadowReceivers.GetToSun(), radii[s], resolution,
+                                                              ForestShadowCasterDistance);
                 }
                 m_forestShadows = true;
             }
