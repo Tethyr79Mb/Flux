@@ -535,10 +535,11 @@ namespace Flux {
         // m_terrainRefreshFrames images (tuiles arrivées entre-temps).
         std::unique_ptr<RHI::Texture> m_terrainShadowMap;
         std::uint32_t m_terrainShadowResolution = 0;
-        // Forêts au loin : une cascade, refaite à chaque image (les arbres retenus sont ceux du champ de cette image).
+        // Forêts au loin : deux tranches, refaites à chaque image (les arbres retenus sont ceux du champ de cette image).
         std::unique_ptr<RHI::Texture> m_forestShadowMap;
-        ShadowCascade m_forestCascade{};
-        float m_forestStart = 0.0f; // tranche couverte, mètres devant la caméra
+        std::array<ShadowCascade, 2> m_forestCascades{}; // côte à côte dans la carte
+        float m_forestStart = 0.0f; // tranches couvertes, mètres devant la caméra
+        float m_forestSplit = 0.0f;
         float m_forestEnd = 0.0f;
         bool m_forestShadows = false; // des arbres à cette image : la carte est dessinée et lue
         std::uint32_t m_terrainRefreshFrames = 0;

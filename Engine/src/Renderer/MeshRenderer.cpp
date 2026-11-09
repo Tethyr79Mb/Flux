@@ -70,11 +70,12 @@ namespace Flux {
         {
             Math::Matrix4f viewProjection; // décalée d'un sous-pixel (TemporalView::jitter)
             Math::Matrix4f previousViewProjection; // de l'image précédente, sans décalage
-            std::array<Math::Matrix4f, ShadowCascadeCount + TerrainShadowCascadeCount + 1> cascades; // la dernière : forêts
+            std::array<Math::Matrix4f, ShadowCascadeCount + TerrainShadowCascadeCount + 2> cascades; // les deux dernières : forêts
             std::array<float, 4> cascadeEnds;
             std::array<float, 4> cascadeTexels;
             std::array<float, 4> terrainCascades; // xy : fin des tranches du relief ; zw : côté d'un texel
-            std::array<float, 4> forestCascade;   // x, y : tranche des forêts au loin ; z : côté d'un texel ; w : 1 si dessinée
+            std::array<float, 4> forestCascade;   // forêts au loin : x début, y fin de la première tranche, z de la seconde ; w : 1 si dessinée
+            std::array<float, 4> forestTexels;    // xy : côté d'un texel de chaque tranche
             std::array<float, 4> cameraForward;
             std::array<float, 4> cameraDelta; // TemporalView::cameraDelta
             std::array<float, 4> toSun;
@@ -96,7 +97,7 @@ namespace Flux {
             std::array<std::uint32_t, 4> pyramidSize;
             std::array<std::uint32_t, 16> pyramidOffsets;
         };
-        static_assert(sizeof(FrameData) == 576 + 3 * 64 + 2 * 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
+        static_assert(sizeof(FrameData) == 576 + 4 * 64 + 3 * 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
                                                + sizeof(Planetology::AtmosphereGpu) + 80
                       && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
@@ -172,6 +173,9 @@ namespace Flux {
         // environ 3 m en 4096 (64 Mo), 6 m en 2048 (16 Mo) sur le minimum. La cime d'un arbre en couvre quelques-uns.
         constexpr std::uint32_t ForestShadowResolution = 4096;
         constexpr std::uint32_t ForestShadowResolutionMinimum = 2048;
+        // Ombres des forêts : deux tranches côte à côte dans la carte, la première jusqu'à 1 km.
+        constexpr std::uint32_t ForestShadowSlices = 2;
+        constexpr float ForestShadowSplit = 1000.0f;
         // Une cascade du relief refaite au moins toutes les N images même immobile (tuiles arrivées), à tour de rôle.
         constexpr std::uint32_t TerrainRefreshFrames = 30;
         constexpr std::uint32_t TerrainRefreshFramesMinimum = 60;
@@ -250,7 +254,7 @@ namespace Flux {
         }
         renderer->m_terrainShadowMap = std::move(*terrainShadowMap);
         const std::uint32_t forestResolution = recommended ? ForestShadowResolution : ForestShadowResolutionMinimum;
-        auto forestShadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {forestResolution, forestResolution}, true);
+        auto forestShadowMap = device.CreateRenderTarget(RHI::Format::D32Float, {ForestShadowSlices * forestResolution, forestResolution}, true);
         if (!forestShadowMap) {
             return std::unexpected(forestShadowMap.error());
         }
@@ -1159,9 +1163,16 @@ namespace Flux {
             m_forestStart = 0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1];
             m_forestEnd = m_vegetationComponent->range * rangeScale;
             if (m_forestEnd > m_forestStart) {
-                const auto resolution = m_forestShadowMap->GetExtent().width;
-                m_forestCascade = ComputeShadowSlice(camera, aspect, m_shadowReceivers.GetToSun(), m_forestStart, m_forestEnd,
-                                                     resolution, ForestShadowCasterDistance);
+                // Deux tranches : une seule, de 180 m à 5 km, donnait des texels de 3 m, et l'ombre d'un conifère
+                // (quelques mètres de large) se perdait dans le flou ; vue de haut, tout le sol tombe dans la première.
+                m_forestSplit = std::min(ForestShadowSplit, m_forestEnd);
+                const auto resolution = m_forestShadowMap->GetExtent().height;
+                const std::array<float, ForestShadowSlices + 1> ends{m_forestStart, m_forestSplit, m_forestEnd};
+                for (std::size_t s = 0; s < ForestShadowSlices; ++s) {
+                    m_forestCascades[s] = ComputeShadowSlice(camera, aspect, m_shadowReceivers.GetToSun(), ends[s],
+                                                             std::max(ends[s + 1], ends[s] + 1.0f), resolution,
+                                                             ForestShadowCasterDistance);
+                }
                 m_forestShadows = true;
             }
         }
@@ -1306,8 +1317,11 @@ namespace Flux {
             frame.terrainCascades[t] = TerrainShadowCascadeEnds[t];
             frame.terrainCascades[2 + t] = m_terrainCascades[t].texelSize;
         }
-        frame.cascades[ForestCascade] = m_forestCascade.lightViewProjection;
-        frame.forestCascade = {m_forestStart, m_forestEnd, m_forestCascade.texelSize, m_forestShadows ? 1.0f : 0.0f};
+        for (std::size_t s = 0; s < ForestShadowSlices; ++s) {
+            frame.cascades[ForestCascade + s] = m_forestCascades[s].lightViewProjection;
+            frame.forestTexels[s] = m_forestCascades[s].texelSize;
+        }
+        frame.forestCascade = {m_forestStart, m_forestSplit, m_forestEnd, m_forestShadows ? 1.0f : 0.0f};
         // w : secondes écoulées (vagues des océans), repartent de 0 toutes les heures pour garder leur précision.
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
         frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
@@ -2203,49 +2217,54 @@ namespace Flux {
     // ceux hors du champ dont l'ombre y tombe (liste ForestShadow) ; sans eux, l'ombre apparaissait en tournant.
     void MeshRenderer::DrawForestShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const {
         commands.BeginRenderPass({.clearColor = {}, .depth = m_forestShadowMap.get(), .clearDepth = 1.0f, .color = false});
-        const RHI::Extent size = m_forestShadowMap->GetExtent();
-        commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
-        commands.SetScissor({0, 0, size.width, size.height});
+        const std::uint32_t size = m_forestShadowMap->GetExtent().height;
         BindState state;
         using Planetology::VegetationRenderer;
-        for (const VegetationRenderer::List list :
-             {VegetationRenderer::Middle, VegetationRenderer::Far, VegetationRenderer::ForestShadow}) {
-            for (const VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
-                const GpuModel& model = *draw.model;
-                const RHI::Buffer& indirect = m_vegetation->GetCommands(frameIndex);
-                if (draw.impostor != 0) {
-                    BindPipeline(commands, state, frameIndex, *m_impostorShadow);
+        // Les arbres de toute la portée dans chaque tranche (la carte écarte ceux hors de sa sphère).
+        const std::uint32_t slices = m_forestSplit < m_forestEnd ? ForestShadowSlices : 1;
+        for (std::uint32_t slice = 0; slice < slices; ++slice) {
+            commands.SetViewport({static_cast<float>(slice * size), 0.0f, static_cast<float>(size), static_cast<float>(size)});
+            commands.SetScissor({static_cast<std::int32_t>(slice * size), 0, size, size});
+            const std::uint32_t cascade = ForestCascade + slice;
+            for (const VegetationRenderer::List list :
+                 {VegetationRenderer::Middle, VegetationRenderer::Far, VegetationRenderer::ForestShadow}) {
+                for (const VegetationRenderer::Draw& draw : m_vegetation->GetDraws(list)) {
+                    const GpuModel& model = *draw.model;
+                    const RHI::Buffer& indirect = m_vegetation->GetCommands(frameIndex);
+                    if (draw.impostor != 0) {
+                        BindPipeline(commands, state, frameIndex, *m_impostorShadow);
+                        if (state.group != &m_models->GetWhiteGroup()) {
+                            state.group = &m_models->GetWhiteGroup();
+                            commands.SetBindGroup(0, *state.group);
+                        }
+                        state.page = BindState::NoPage;
+                        commands.BindIndexBuffer(*m_impostorIndices);
+                        const Math::Vector3f center = model.bounds.GetCenter();
+                        const DrawParams params{{center.x, center.y, center.z, Math::Length(model.bounds.GetSize() * 0.5f)},
+                                                {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                                draw.impostor, m_treeDraw, {}};
+                        commands.PushConstants(&params, sizeof(params));
+                        commands.DrawIndexedIndirect(indirect, draw.command * sizeof(RHI::DrawIndexedCommand), 1);
+                        continue;
+                    }
+                    const GpuMaterial& material = model.materials[model.primitives[draw.primitive].material];
+                    if (model.resources.page != state.page) {
+                        state.page = model.resources.page;
+                        const GeometryPage& page = m_models->GetPage(model.resources.page);
+                        const std::array<const RHI::Buffer*, 1> vertexBuffers{page.vertices.get()};
+                        commands.BindVertexBuffers(0, vertexBuffers);
+                        commands.BindIndexBuffer(*page.indices);
+                    }
+                    BindPipeline(commands, state, frameIndex, ShadowPipeline(m_tree, material));
                     if (state.group != &m_models->GetWhiteGroup()) {
                         state.group = &m_models->GetWhiteGroup();
                         commands.SetBindGroup(0, *state.group);
                     }
-                    state.page = BindState::NoPage;
-                    commands.BindIndexBuffer(*m_impostorIndices);
-                    const Math::Vector3f center = model.bounds.GetCenter();
-                    const DrawParams params{{center.x, center.y, center.z, Math::Length(model.bounds.GetSize() * 0.5f)},
-                                            {0.0f, 0.0f, 0.0f, 0.0f}, ForestCascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
-                                            draw.impostor, m_treeDraw, {}};
+                    const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, 0u, 1.0f, 1.0f,
+                                            0.0f, 0.0f, material.index, m_treeDraw, {}};
                     commands.PushConstants(&params, sizeof(params));
                     commands.DrawIndexedIndirect(indirect, draw.command * sizeof(RHI::DrawIndexedCommand), 1);
-                    continue;
                 }
-                const GpuMaterial& material = model.materials[model.primitives[draw.primitive].material];
-                if (model.resources.page != state.page) {
-                    state.page = model.resources.page;
-                    const GeometryPage& page = m_models->GetPage(model.resources.page);
-                    const std::array<const RHI::Buffer*, 1> vertexBuffers{page.vertices.get()};
-                    commands.BindVertexBuffers(0, vertexBuffers);
-                    commands.BindIndexBuffer(*page.indices);
-                }
-                BindPipeline(commands, state, frameIndex, ShadowPipeline(m_tree, material));
-                if (state.group != &m_models->GetWhiteGroup()) {
-                    state.group = &m_models->GetWhiteGroup();
-                    commands.SetBindGroup(0, *state.group);
-                }
-                const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, ForestCascade, 0.0f, 0u, 1.0f, 1.0f,
-                                        0.0f, 0.0f, material.index, m_treeDraw, {}};
-                commands.PushConstants(&params, sizeof(params));
-                commands.DrawIndexedIndirect(indirect, draw.command * sizeof(RHI::DrawIndexedCommand), 1);
             }
         }
         commands.EndRenderPass();
