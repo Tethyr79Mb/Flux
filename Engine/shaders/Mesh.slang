@@ -1863,6 +1863,7 @@ struct ImpostorBakeOutput
     float4 position : SV_Position;
     float3 normal   : NORMAL;
     float2 uv       : TEXCOORD;
+    float3 local    : LOCAL; // dans la sphère unité de l'arbre
     nointerpolation float3 toEye : TO_EYE;
     nointerpolation uint material : MATERIAL;
 };
@@ -1887,6 +1888,7 @@ ImpostorBakeOutput vertexImpostorBake(VertexInput input, uint instance : SV_Vulk
                              saturate(0.5 + 0.5 * dot(local, toEye)), 1.0);
     output.normal = input.normal;
     output.uv = input.uv;
+    output.local = local;
     output.toEye = toEye;
     output.material = params.material;
     return output;
@@ -1895,7 +1897,7 @@ ImpostorBakeOutput vertexImpostorBake(VertexInput input, uint instance : SV_Vulk
 struct ImpostorBakeTargets
 {
     float4 color  : SV_Target0; // linéaire (cible sRGB) ; alpha 1 là où il y a l'arbre, 0 ailleurs (effacée)
-    float4 normal : SV_Target1; // repère de l'arbre, de [-1, 1] vers [0, 1] ; alpha 1 de même
+    float4 normal : SV_Target1; // repère de l'arbre, de [-1, 1] vers [0, 1] ; alpha : ombre du feuillage (ImpostorShade)
 };
 
 [shader("fragment")]
@@ -1910,9 +1912,15 @@ ImpostorBakeTargets fragmentImpostorBake(ImpostorBakeOutput input)
     // montre que des faces avant.
     float3 normal = normalize(input.normal);
     normal = dot(normal, input.toEye) < 0.0 ? -normal : normal;
+    // Ombre du feuillage sur lui-même, que le modèle détaillé reçoit des cascades et l'imposteur non (un seul carré) :
+    // les aiguilles près du tronc, au cœur de l'arbre, sont dans l'ombre des autres ; celles du bout des branches et
+    // du haut, éclairées. Approchée par la distance à l'axe (y, le haut de l'arbre) et la hauteur ; avec l'occlusion
+    // du matériau.
+    const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
+    const float open = saturate(0.35 + 2.0 * length(input.local.xz) + 0.25 * input.local.y);
     ImpostorBakeTargets output;
     output.color = float4(base.rgb, 1.0);
-    output.normal = float4(normal * 0.5 + 0.5, 1.0);
+    output.normal = float4(normal * 0.5 + 0.5, open * occlusion);
     return output;
 }
 
@@ -2014,7 +2022,10 @@ SceneOutput fragmentImpostor(ImpostorVertexOutput input)
         discard;
     }
     const float3 base = color.rgb / color.a * input.tint;
-    const float3 normal = normalize(TreeRotate(input.rotation, packed.rgb / max(packed.a, 1.0e-3) * 2.0 - 1.0));
+    // Normales ramenées par la couverture (alpha de la couleur) ; l'alpha des normales, moyenné de même, est l'ombre
+    // du feuillage capturée (fragmentImpostorBake).
+    const float3 normal = normalize(TreeRotate(input.rotation, packed.rgb / color.a * 2.0 - 1.0));
+    const float shade = saturate(packed.a / color.a);
     const DrawData draw = draws[params.draw];
     Surface surface;
     surface.normal = normal;
@@ -2026,8 +2037,9 @@ SceneOutput fragmentImpostor(ImpostorVertexOutput input)
     // Le carré fait face à la caméra, son ombre (vertexImpostorShadow) face au soleil : lue sur le carré, la moitié de
     // l'arbre derrière ce second carré était dans sa propre ombre, et les forêts au loin bien plus sombres que de près.
     // Lue à 1,2 rayon vers le soleil, devant son ombre ; celle des voisins reste.
-    float3 lit = LightSurface(surface, normal, input.worldPosition, 1.0, input.clouds, inside, true, draw.surface.zw,
-                              1.2 * input.radius);
+    // Le soleil aussi : le cœur de l'arbre est à l'ombre de ses branches (pas tout à fait : la lumière passe).
+    float3 lit = LightSurface(surface, normal, input.worldPosition, shade, input.clouds * lerp(1.0, shade, 0.7), inside,
+                              true, draw.surface.zw, 1.2 * input.radius);
     lit = lit * input.airTransmittance + input.airScattered;
     SceneOutput output;
     output.color = float4(Radiance(lit), 1.0);
