@@ -54,7 +54,7 @@ Vue technique d'ensemble : `ARCHITECTURE.md` ; planètes et relief : `PLANETOLOG
   configuration minimum (GTX 1060 / RX 5700) : version allégée ou coupée, choisie seule au démarrage. Le minimum doit
   tourner, mais ne bride jamais les fonctionnalités ni le rendu de la configuration recommandée.
 - Mondes géants : secteurs `int64` (1e9 m) + positions `double`, rendu relatif à la caméra, reverse-Z infini.
-- Scène EnTT. Chaque composant s'enregistre une fois dans `ComponentRegistry.cpp` : inspecteur et sauvegarde JSON en
+- Scène EnTT. Chaque composant s'enregistre une fois (`Sim/src/Scene/Registration/`, un fichier par domaine) : inspecteur et sauvegarde JSON en
   sont générés. Un champ retiré passe par `.RemovedField`, un champ remplacé par un autre de sens différent par
   `.ConvertedField` (conversion des anciennes scènes à la lecture).
 - Interface maison FluxUI en mode immédiat (`if (ui.Button(...))`), partagée éditeur/jeu. Jamais d'ImGui.

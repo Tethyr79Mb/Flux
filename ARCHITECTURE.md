@@ -378,7 +378,7 @@ planète donne directement le sien comme indice d'instance.
 ## Scène et composants
 
 - `Scene` enveloppe un registre EnTT, avec hiérarchie (parent, enfants, ordre), noms et `Uuid` stables.
-- Chaque composant est déclaré une fois dans `ComponentRegistry.cpp` : nom de sauvegarde, libellé, champs et bornes.
+- Chaque composant est déclaré une fois dans `Sim/src/Scene/Registration/` (un fichier par domaine) : nom de sauvegarde, libellé, champs et bornes.
   L'inspecteur de l'éditeur et la sauvegarde JSON (`flux.scene`) en sont générés. Le jeu enregistre les siens de la
   même façon.
   `.Group(clé, libellé)` range les champs suivants dans un groupe, un onglet de l'inspecteur (sans effet sur le
