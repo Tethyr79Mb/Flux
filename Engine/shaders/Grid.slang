@@ -67,10 +67,12 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     const float distance = -height / direction.y;
     const float3 hit = direction * distance;
 
-    // Caché par ce que la scène a dessiné devant (reverse-Z : plus proche = plus grand). Une marge relative : un sol
-    // posé à y = 0 laisse voir la grille au lieu de clignoter avec elle.
+    // Caché par ce que la scène a dessiné devant (reverse-Z : plus proche = plus grand). Une marge : un sol posé à
+    // y = 0 laisse voir la grille au lieu de clignoter avec elle. Relative, plus la pente de la profondeur sur un
+    // pixel : la profondeur de la scène est décalée d'un sous-pixel différent à chaque image (anticrénelage
+    // temporel), la grille non ; sur un sol vu en rasant, ce décalage dépassait la marge relative seule.
     const float depth = dot(grid.depthRow, float4(hit, 1.0)) / dot(grid.wRow, float4(hit, 1.0));
-    if (sceneDepth.SampleLevel(input.uv, 0.0).r > depth * 1.001) {
+    if (sceneDepth.SampleLevel(input.uv, 0.0).r > depth * 1.001 + fwidth(depth)) {
         discard;
     }
 
