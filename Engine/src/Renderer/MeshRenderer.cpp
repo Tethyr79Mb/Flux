@@ -94,9 +94,10 @@ namespace Flux {
             // de la source ; z niveaux ; w 1 si elle sert ; premier texel de chaque niveau.
             std::array<std::uint32_t, 4> pyramidSize;
             std::array<std::uint32_t, 16> pyramidOffsets;
+            std::array<std::uint32_t, 4> debug; // x : 1 pour teinter chaque pixel selon sa carte d'ombre (panneau Moteur)
         };
         static_assert(sizeof(FrameData) == 576 + 2 * 64 + 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
-                                               + sizeof(Planetology::AtmosphereGpu) + 80
+                                               + sizeof(Planetology::AtmosphereGpu) + 96
                       && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
 
@@ -1248,6 +1249,7 @@ namespace Flux {
             const float luminance = Photometry::FromNits(std::max(interior.luminance, 0.0f));
             data.ambient = {interior.ambient.r * luminance, interior.ambient.g * luminance, interior.ambient.b * luminance, 0.0f};
         }
+        frame.debug = {m_showShadowCascades ? 1u : 0u, 0u, 0u, 0u};
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
                             static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};
         std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
@@ -1277,16 +1279,25 @@ namespace Flux {
     // changement de scène) : la carte gardée ne couvrirait plus la vue.
     void MeshRenderer::ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun) {
         constexpr std::size_t FirstAlternateCascade = 2;
+        // Écart toléré entre la carte gardée et celle de l'image, en part de son rayon : le bord de la tranche, que
+        // la sphère serre au plus près, peut en sortir d'autant (il lit alors la cascade suivante, SunVisibility).
+        constexpr float KeptCascadeShift = 0.02f;
         m_keepShadows = false;
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
             DrawnCascade& drawn = m_drawnCascades[c];
+            // Gardée seulement si elle couvre encore presque la même tranche : la carte est placée devant le regard,
+            // tourner la caméra la déplace autant que d'avancer. Avant, seul le déplacement comptait : en tournant,
+            // une image sur deux, le bord de la vue sortait de la carte gardée (et ses obstacles avaient été choisis
+            // pour l'ancien regard), d'où des ombres qui apparaissaient et disparaissaient selon la direction.
             const Math::Vector3d moved = Math::Delta(drawn.eye, camera.position);
+            const ShadowCascade kept = drawn.valid ? MoveShadowCascade(drawn.cascade, Math::Vector3f(moved)) : ShadowCascade{};
             const bool keep = c >= FirstAlternateCascade && drawn.valid && drawn.toSun == toSun
-                           && Math::Length(moved) < 0.1 * static_cast<double>(drawn.cascade.radius)
+                           && kept.radius == m_cascades[c].radius
+                           && Math::Length(kept.center - m_cascades[c].center) < KeptCascadeShift * kept.radius
                            && m_preparedFrame % 2 != c % 2;
             m_drawCascade[c] = !keep;
             if (keep) {
-                m_cascades[c] = MoveShadowCascade(drawn.cascade, Math::Vector3f(moved));
+                m_cascades[c] = kept;
                 m_keepShadows = true;
             } else {
                 drawn = {true, m_cascades[c], camera.position, toSun};

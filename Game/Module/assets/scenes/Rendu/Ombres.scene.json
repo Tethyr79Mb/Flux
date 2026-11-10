@@ -1,0 +1,665 @@
+{
+  "format": "flux.scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": "f2a74de452e6b438",
+      "name": "Ciel (soleil rasant)",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "sky": {
+        "sunElevation": 12.0,
+        "sunAzimuth": 90.0
+      }
+    },
+    {
+      "id": "6513270e269e0d37",
+      "name": "Sol",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "0c5c7fd0a6a3a450",
+      "name": "Sol 400 m",
+      "parent": "6513270e269e0d37",
+      "transform": {
+        "position": [0, -0.05, -150],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [400, 0.1, 400]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.5, 0.5, 0.5, 1.0]
+      }
+    },
+    {
+      "id": "d23f0824128b2f33",
+      "name": "Poteaux fins (2, 5, 10 cm)",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "1818e811892f902b",
+      "name": "Poteau 2 cm",
+      "parent": "d23f0824128b2f33",
+      "transform": {
+        "position": [-2, 1.5, -5],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.02, 3, 0.02]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "9531985d5d9dc9f8",
+      "name": "Poteau 5 cm",
+      "parent": "d23f0824128b2f33",
+      "transform": {
+        "position": [0, 1.5, -5],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.05, 3, 0.05]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "e8e25d940ed90475",
+      "name": "Poteau 10 cm",
+      "parent": "d23f0824128b2f33",
+      "transform": {
+        "position": [2, 1.5, -5],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.1, 3, 0.1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "36f675cc81e74ef5",
+      "name": "Contact au sol",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "1600a35a099950d8",
+      "name": "Caisse 1 m",
+      "parent": "36f675cc81e74ef5",
+      "transform": {
+        "position": [-2, 0.5, -9],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "6b0d549b6f03675a",
+      "name": "Caisse 25 cm",
+      "parent": "36f675cc81e74ef5",
+      "transform": {
+        "position": [0, 0.125, -9],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.25, 0.25, 0.25]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "3d9c172411e20b8f",
+      "name": "Plaque à 5 cm du sol",
+      "parent": "36f675cc81e74ef5",
+      "transform": {
+        "position": [2, 0.06, -9],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.5, 0.02, 1.5]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8d116ece1738f7d9",
+      "name": "Caisse à 1 m du sol",
+      "parent": "36f675cc81e74ef5",
+      "transform": {
+        "position": [4.5, 1.5, -9],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0f21ddb66cad4a26",
+      "name": "Plans inclinés (acné)",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "90c192cfd3ac94af",
+      "name": "Plan 10°",
+      "parent": "0f21ddb66cad4a26",
+      "transform": {
+        "position": [-6, 1.2, -14],
+        "rotation": [0.087156, 0.0, 0.0, 0.996195],
+        "scale": [3, 0.1, 3]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "f28c105d1fb17c23",
+      "name": "Plan 30°",
+      "parent": "0f21ddb66cad4a26",
+      "transform": {
+        "position": [-2, 1.2, -14],
+        "rotation": [0.258819, 0.0, 0.0, 0.965926],
+        "scale": [3, 0.1, 3]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "a170b33839263059",
+      "name": "Plan 60°",
+      "parent": "0f21ddb66cad4a26",
+      "transform": {
+        "position": [2, 1.2, -14],
+        "rotation": [0.5, 0.0, 0.0, 0.866025],
+        "scale": [3, 0.1, 3]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "953f48f1a09f76b5",
+      "name": "Plan 80°",
+      "parent": "0f21ddb66cad4a26",
+      "transform": {
+        "position": [6, 1.2, -14],
+        "rotation": [0.642788, 0.0, 0.0, 0.766044],
+        "scale": [3, 0.1, 3]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0fd630f1f29d0da9",
+      "name": "Abri fin (fuites de lumière)",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "95e60af593bd04cf",
+      "name": "Mur arrière",
+      "parent": "0fd630f1f29d0da9",
+      "transform": {
+        "position": [0, 2, -22],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [6, 4, 0.1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "0cb1e29c658cda14",
+      "name": "Mur gauche",
+      "parent": "0fd630f1f29d0da9",
+      "transform": {
+        "position": [-3, 2, -20],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.1, 4, 4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "3898d190f9ebdacc",
+      "name": "Mur droit (côté soleil)",
+      "parent": "0fd630f1f29d0da9",
+      "transform": {
+        "position": [3, 2, -20],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.1, 4, 4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "8e81973e0becd7b0",
+      "name": "Toit",
+      "parent": "0fd630f1f29d0da9",
+      "transform": {
+        "position": [0, 4.05, -20],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [6.2, 0.1, 4.2]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "2217beaddbc496cb",
+      "name": "Grille de barreaux (scintillement)",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "6b4cb2424a23d596",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-3.0, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8a6a63ec24ede6a4",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-2.75, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "922766581e27a1c0",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-2.5, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "8f6d05584ef8aa38",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-2.25, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "ae97ba94d0eda82f",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-2.0, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "1a61dbe22e44158b",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-1.75, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "923a736994e3bf91",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-1.5, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "301850c5a38fd547",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-1.25, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "18f135d25f557203",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-1.0, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "b64ce4228c38fb29",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-0.75, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "907a70c31012f037",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-0.5, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "9e7769b10f4205b4",
+      "name": "Barreau",
+      "parent": "2217beaddbc496cb",
+      "transform": {
+        "position": [-0.25, 1, -28],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.04, 2, 0.04]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "7f15052434b9b5df",
+      "name": "Repères des cascades",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "881ed162ae2eb154",
+      "name": "Repère 5 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-8, 1.5, -5],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 3, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "c6f877186d76b07e",
+      "name": "Caisse 5 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-10, 0.5, -5],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.25, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "7731af10506bf2ef",
+      "name": "Repère 15 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-8, 1.5, -15],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 3, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "ec66a78795e761d1",
+      "name": "Caisse 15 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-10, 0.5, -15],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.25, 0.6, 0.3, 1.0]
+      }
+    },
+    {
+      "id": "5c90a9587403e430",
+      "name": "Repère 40 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-8, 1.5, -40],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 3, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "3f98e2774cbd87ad",
+      "name": "Caisse 40 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-10, 0.5, -40],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.2, 0.4, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "2e05319acb5c7427",
+      "name": "Repère 100 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-8, 1.5, -100],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 3, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "c7a2ea20b2f14c94",
+      "name": "Caisse 100 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-10, 0.5, -100],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.85, 0.65, 0.2, 1.0]
+      }
+    },
+    {
+      "id": "14f4733f3e7d1bfb",
+      "name": "Repère 180 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-8, 1.5, -180],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 3, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "4cdd2055930d6eaf",
+      "name": "Caisse 180 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-10, 0.5, -180],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.8, 0.8, 0.8, 1.0]
+      }
+    },
+    {
+      "id": "7ebff20686734721",
+      "name": "Repère 250 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-8, 1.5, -250],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [0.4, 3, 0.4]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.5, 0.5, 0.5, 1.0]
+      }
+    },
+    {
+      "id": "57ee05cde00902c7",
+      "name": "Caisse 250 m",
+      "parent": "7f15052434b9b5df",
+      "transform": {
+        "position": [-10, 0.5, -250],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1, 1, 1]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.5, 0.5, 0.5, 1.0]
+      }
+    },
+    {
+      "id": "72e6cc3ababced20",
+      "name": "Tour à 350 m vers le soleil (obstacle lointain)",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "id": "9be4bcfc49b64a08",
+      "name": "Tour 150 m",
+      "parent": "72e6cc3ababced20",
+      "transform": {
+        "position": [350, 75, -60],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [20, 150, 20]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [0.5, 0.5, 0.5, 1.0]
+      }
+    }
+  ]
+}

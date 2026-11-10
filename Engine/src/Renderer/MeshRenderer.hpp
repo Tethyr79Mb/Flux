@@ -98,6 +98,8 @@ namespace Flux {
         // Mesure : le sol des planètes sans le calcul de ses pixels (voir fragmentPlanetGeometry).
         void SetGroundGeometryOnly(bool enabled) { m_groundGeometryOnly = enabled; }
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
+        void SetShowShadowCascades(bool enabled) { m_showShadowCascades = enabled; }
+        bool IsShowingShadowCascades() const { return m_showShadowCascades; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         void SetVegetationDistance(VegetationDistance distance) { m_vegetationDistance = distance; }
@@ -451,6 +453,7 @@ namespace Flux {
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
         bool m_groundGeometryOnly = false;
+        bool m_showShadowCascades = false; // vue de débogage : une teinte par carte d'ombre
         // Le même sol en mesh shaders (shaders/PlanetMesh.slang), quand le GPU les a : nuls sinon. Le groupe 3 lit les
         // sommets et les boîtes des paquets d'une page de tuiles (un groupe par page, fait à sa première utilisation).
         std::unique_ptr<RHI::BindGroupLayout> m_tileMeshLayout;

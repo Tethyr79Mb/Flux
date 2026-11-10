@@ -1065,6 +1065,14 @@ namespace Flux {
         return m_impl->meshes->IsGroundGeometryOnly();
     }
 
+    void Renderer::SetShowShadowCascades(bool enabled) {
+        m_impl->meshes->SetShowShadowCascades(enabled);
+    }
+
+    bool Renderer::IsShowingShadowCascades() const {
+        return m_impl->meshes->IsShowingShadowCascades();
+    }
+
     void Renderer::SetGroundDetail(GroundDetail detail) {
         m_impl->meshes->SetGroundDetail(detail);
     }

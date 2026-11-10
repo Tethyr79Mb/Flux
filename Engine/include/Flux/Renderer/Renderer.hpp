@@ -181,6 +181,10 @@ namespace Flux {
         // « dont sol » dans le panneau Moteur donne le coût des pixels ; le reste, celui des sommets et des triangles.
         void SetGroundGeometryOnly(bool enabled);
         bool IsGroundGeometryOnly() const;
+        // Vue de débogage des ombres du soleil : chaque pixel teinté selon la carte qu'il lit (rouge, vert, bleu, jaune
+        // pour les 4 cascades proches ; magenta et cyan pour le relief au loin ; gris sans ombre).
+        void SetShowShadowCascades(bool enabled);
+        bool IsShowingShadowCascades() const;
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;
