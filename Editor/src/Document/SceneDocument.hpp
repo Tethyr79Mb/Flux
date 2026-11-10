@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -39,6 +40,9 @@ namespace FluxEditor {
         void OpenFile(Flux::Engine& engine, const std::filesystem::path& path);
         // Ouvre une scène sans rien demander (démarrage de l'éditeur) ; false et message d'erreur en cas d'échec.
         bool Load(Flux::Engine& engine, const std::filesystem::path& path);
+        // Pareil, sans fenêtre d'erreur (outils de Claude) : le message d'erreur est rendu.
+        std::expected<void, std::string> TryLoad(Flux::Engine& engine, const std::filesystem::path& path);
+        bool IsModified() const { return m_modified; }
         const std::filesystem::path& GetPath() const { return m_path; }
         // Le fichier de la scène ouverte a été supprimé : la scène reste en mémoire, sans titre et à enregistrer.
         void ForgetFile(const std::filesystem::path& path);

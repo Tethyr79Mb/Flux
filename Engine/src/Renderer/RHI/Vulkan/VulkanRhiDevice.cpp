@@ -377,6 +377,7 @@ namespace Flux::Vk {
         vkDesc.premultipliedBlend = desc.blend == RHI::BlendMode::Premultiplied;
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
+        vkDesc.depthClamp = desc.depthClamp;
         auto pipeline = Pipeline::CreateGraphics(m_device->GetHandle(), vkDesc);
         if (!pipeline) {
             return std::unexpected(pipeline.error());

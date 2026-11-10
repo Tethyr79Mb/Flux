@@ -1,5 +1,6 @@
 #include "Mcp/EditorTools.hpp"
 
+#include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Mcp/McpServer.hpp"
 #include "Panels/PlacePanel.hpp"
@@ -7,9 +8,11 @@
 
 #include <Flux/Assets/Image.hpp>
 #include <Flux/Core/Engine.hpp>
+#include <Flux/Core/Project.hpp>
 #include <Flux/Graphics/Camera.hpp>
 #include <Flux/Graphics/FlyCameraController.hpp>
 #include <Flux/Math/Quaternion.hpp>
+#include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
@@ -726,6 +729,65 @@ namespace FluxEditor {
                     return McpToolResult::Error(placed.error());
                 }
                 return McpToolResult::Text("posé : " + placed->ToString());
+            },
+        });
+
+        server.AddTool({
+            .name = "open_scene",
+            .description = "Ouvre une scène du projet (chemin relatif au dossier des assets, par exemple "
+                           "\"scenes/Rendu/Ombres.scene.json\" : scènes de test du rendu dans scenes/Rendu). Sans "
+                           "argument : la liste des scènes. Refusé si la scène ouverte a des modifications non "
+                           "enregistrées, sauf discard true (elles sont perdues : seulement si Bruno l'a dit).",
+            .inputSchema = Schema({{"scene", {{"type", "string"}}}, {"discard", {{"type", "boolean"}}}}),
+            .run = [&engine, &context](const Json& arguments) -> McpOutcome {
+                const Project* project = engine.GetProject();
+                if (!project || !context.document) {
+                    return McpToolResult::Error("aucun projet ouvert");
+                }
+                const std::string file = arguments.value("scene", std::string());
+                if (file.empty()) {
+                    std::string text;
+                    std::error_code error;
+                    for (auto it = std::filesystem::recursive_directory_iterator(project->assetsDirectory, error);
+                         !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
+                        const std::string name = Platform::ToGenericUtf8(it->path().filename());
+                        if (it->is_regular_file(error) && name.ends_with(".scene.json")) {
+                            text += Platform::ToGenericUtf8(it->path().lexically_relative(project->assetsDirectory)) + "\n";
+                        }
+                    }
+                    return McpToolResult::Text(text.empty() ? std::string("aucune scène") : text);
+                }
+                if (auto refused = RefuseWhilePlaying(context)) {
+                    return *refused;
+                }
+                const std::filesystem::path relative = Platform::PathFromUtf8(file).lexically_normal();
+                if (relative.has_root_path() || relative.empty() || *relative.begin() == "..") {
+                    return McpToolResult::Error(std::format("« {} » : chemin relatif au dossier des assets attendu", file));
+                }
+                if (context.document->IsModified() && !arguments.value("discard", false)) {
+                    return McpToolResult::Error("la scène ouverte a des modifications non enregistrées");
+                }
+                if (auto loaded = context.document->TryLoad(engine, project->assetsDirectory / relative); !loaded) {
+                    return McpToolResult::Error(loaded.error());
+                }
+                context.sceneEditor.Select(engine.GetScene(), NullEntity);
+                return McpToolResult::Text("scène ouverte : " + file);
+            },
+        });
+
+        server.AddTool({
+            .name = "debug_view",
+            .description = "Vues de débogage du rendu (comme les cases du panneau Moteur). shadow_cascades : chaque pixel "
+                           "teinté selon la carte d'ombre du soleil qu'il lit (rouge, vert, bleu, jaune : cascades proches "
+                           "jusqu'à 6, 20, 60 et 200 m ; magenta et cyan : relief jusqu'à 3 et 40 km ; gris : aucune). "
+                           "Sans argument : l'état actuel.",
+            .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}}),
+            .run = [&engine](const Json& arguments) -> McpOutcome {
+                Renderer& renderer = engine.GetRenderer();
+                if (arguments.contains("shadow_cascades")) {
+                    renderer.SetShowShadowCascades(arguments.value("shadow_cascades", false));
+                }
+                return McpToolResult::Text(std::format("shadow_cascades : {}", renderer.IsShowingShadowCascades()));
             },
         });
 

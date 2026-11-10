@@ -143,6 +143,7 @@ namespace Flux::Vk {
         rasterization.cullMode = desc.cullMode;
         rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterization.lineWidth = 1.0f;
+        rasterization.depthClampEnable = desc.depthClamp ? VK_TRUE : VK_FALSE;
         if (desc.depthBiasConstant != 0.0f || desc.depthBiasSlope != 0.0f) {
             rasterization.depthBiasEnable = VK_TRUE;
             rasterization.depthBiasConstantFactor = desc.depthBiasConstant;

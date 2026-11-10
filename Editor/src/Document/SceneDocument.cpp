@@ -138,17 +138,24 @@ namespace FluxEditor {
     }
 
     bool SceneDocument::Load(Engine& engine, const std::filesystem::path& path) {
+        if (auto loaded = TryLoad(engine, path); !loaded) {
+            Platform::ShowError(engine.GetWindow(), "Ouvrir une scène", loaded.error());
+            return false;
+        }
+        return true;
+    }
+
+    std::expected<void, std::string> SceneDocument::TryLoad(Engine& engine, const std::filesystem::path& path) {
         // En cas d'erreur, la scène en cours reste intacte (le chargement vérifie tout avant de la remplacer).
         if (auto loaded = SceneSerializer::Load(engine.GetScene(), engine.GetComponents(), path, engine.GetPrefabReader());
             !loaded) {
-            Platform::ShowError(engine.GetWindow(), "Ouvrir une scène", loaded.error());
-            return false;
+            return std::unexpected(loaded.error());
         }
         m_path = path;
         m_modified = false;
         m_replaced = true;
         Log::Info("scène ouverte : {}", FileName(path));
-        return true;
+        return {};
     }
 
     void SceneDocument::ForgetFile(const std::filesystem::path& path) {

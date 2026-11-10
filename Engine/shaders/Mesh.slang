@@ -88,6 +88,7 @@ struct FrameData
     // (pas de test). Premier texel de chaque niveau.
     uint4 pyramidSize;
     uint4 pyramidOffsets[4];
+    uint4 debug;              // x : 1 pour teinter chaque pixel selon sa carte d'ombre (CascadeDebugTint)
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -635,6 +636,28 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return lerp(next, lit, fade);
 }
 
+// Ombre des cascades proches : celle de la tranche du point, ou la suivante s'il sort de sa carte (carte gardée d'une
+// image précédente, MeshRenderer::ChooseShadowCascades) ; négatif hors de toutes, `used` dit laquelle a servi (4 :
+// aucune).
+float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float depth, out uint used)
+{
+    const FrameData f = frame[0];
+    uint cascade = 0;
+    while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
+        ++cascade;
+    }
+    for (; cascade < 4; ++cascade) {
+        const float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)),
+                                            cascade, f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
+        if (lit >= 0.0) {
+            used = cascade;
+            return lit;
+        }
+    }
+    used = 4;
+    return -1.0;
+}
+
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
 // le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
 // loin vers le soleil) ; au-delà, le relief seul jusqu'à 40 km.
@@ -642,21 +665,35 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
-    int cascade = 0;
-    while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
-        ++cascade;
-    }
     const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
-    if (cascade >= 4) {
+    if (depth > f.cascadeEnds[3]) {
         return terrain;
     }
-    float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
-                                  f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
+    uint used;
+    float lit = NearVisibility(worldPosition, normal, sunFacing, depth, used);
     lit = lit < 0.0 ? 1.0 : lit;
-    if (cascade == 3) {
-        lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
-    }
+    lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
     return min(lit, terrain);
+}
+
+// Vue de débogage (FrameData::debug.x) : teinte de la carte d'ombre que lit ce point.
+float3 CascadeDebugTint(float3 worldPosition, float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    const float depth = dot(worldPosition, f.cameraForward.xyz);
+    if (depth <= f.cascadeEnds[3]) {
+        uint used;
+        NearVisibility(worldPosition, normal, sunFacing, depth, used);
+        const float3 near[4] = {float3(1.0, 0.25, 0.25), float3(0.25, 1.0, 0.25), float3(0.3, 0.45, 1.0), float3(1.0, 1.0, 0.25)};
+        if (used < 4) {
+            return near[used];
+        }
+    }
+    const float distance = length(worldPosition);
+    if (distance <= f.terrainCascades.y) {
+        return distance > f.terrainCascades.x ? float3(0.25, 1.0, 1.0) : float3(1.0, 0.3, 1.0);
+    }
+    return float3(0.5);
 }
 
 // Surface vue en un pixel, de quoi l'éclairer (BRDF de Cook-Torrance : GGX, Smith, Schlick, comme glTF).
@@ -869,7 +906,11 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight + surface.diffuse * bounce;
     }
     const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
-    return direct + ambient + SceneLights(worldPosition, surface);
+    const float3 lit = direct + ambient + SceneLights(worldPosition, surface);
+    if (f.debug.x != 0) {
+        return lit * CascadeDebugTint(worldPosition, geometryNormal, max(sunFacing, 0.0));
+    }
+    return lit;
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa

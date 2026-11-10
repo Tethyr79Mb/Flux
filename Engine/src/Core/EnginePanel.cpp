@@ -116,6 +116,10 @@ namespace Flux {
                 if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
                     renderer.SetGroundGeometryOnly(geometryOnly);
                 }
+                bool cascades = renderer.IsShowingShadowCascades();
+                if (ui.Checkbox("Cartes d'ombre en couleur", cascades)) {
+                    renderer.SetShowShadowCascades(cascades);
+                }
                 const RenderTimings& render = renderer.GetTimings();
                 const float ev100 = ExposureToEv100(render.exposure);
                 ui.LabelText("Exposition", render.sceneLuminance > 0.0f
