@@ -12,7 +12,9 @@
       },
       "sky": {
         "sunElevation": 12.0,
-        "sunAzimuth": 135.0
+        "sunAzimuth": 135.0,
+        "autoExposure": false,
+        "exposure": 1.7
       }
     },
     {

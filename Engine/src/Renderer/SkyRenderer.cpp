@@ -292,7 +292,8 @@ namespace Flux {
             // Pas de fond (luminosité nulle) : seulement l'air d'une planète s'il y en a, et le disque d'un Soleil posé.
             lighting.toSun = sunDirection.value_or(SunDirection(DefaultSunElevation, DefaultSunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->illuminance) : DefaultSunColor;
-            data.toSun = ToArray(lighting.toSun, sun ? sunRadius(sun->size) : 0.0f);
+            lighting.sunRadius = sunRadius(sun ? sun->size : SkyComponent{}.sunSize);
+            data.toSun = ToArray(lighting.toSun, sun ? lighting.sunRadius : 0.0f);
             data.sunColor = ToArray(lighting.sunColor, preExposure);
         } else {
             const SkyComponent& sky = *component;
@@ -318,7 +319,8 @@ namespace Flux {
             }
 
             const SkyParameters parameters = generated ? *generated : MakeSkyParameters(sky);
-            data.toSun = ToArray(lighting.toSun, sunRadius(sun ? sun->size : sky.sunSize));
+            lighting.sunRadius = sunRadius(sun ? sun->size : sky.sunSize);
+            data.toSun = ToArray(lighting.toSun, lighting.sunRadius);
             data.sunColor = ToArray(lighting.sunColor, preExposure);
             data.nebulaColor = ToArray(parameters.nebulaColor, parameters.nebula);
             data.nebulaColor2 = ToArray(parameters.nebulaColor2, parameters.galaxy);

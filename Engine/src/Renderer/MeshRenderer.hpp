@@ -502,6 +502,8 @@ namespace Flux {
         // précédente ait fini de la lire.
         std::unique_ptr<RHI::Texture> m_shadowMap;
         std::unique_ptr<RHI::Sampler> m_shadowSampler;
+        std::unique_ptr<RHI::Sampler> m_shadowDepthSampler; // sans comparaison : profondeur des obstacles (pénombre)
+        std::uint32_t m_shadowTaps = 16;                    // lectures de la pénombre par pixel (ShadowTaps)
         std::array<ShadowCascade, ShadowCascadeCount> m_cascades{};
         ShadowReceivers m_shadowReceivers;
         // Les deux cascades lointaines sont refaites à tour de rôle, une image sur deux : celle qui attend garde sa
