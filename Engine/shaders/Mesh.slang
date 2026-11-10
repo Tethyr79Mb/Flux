@@ -793,6 +793,16 @@ float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float
     while (fine < 4 && depth > f.cascadeEnds[fine]) {
         ++fine;
     }
+    // Sur le dernier quart de la tranche, une part croissante des pixels lit déjà la suivante (tirage par pixel,
+    // moyenné par l'anticrénelage temporel) : le bord d'une petite ombre, filtré sur au moins MinPenumbraTexels de sa
+    // carte, s'élargit en fondu au lieu d'une coupure nette à la limite (plaque à 5 cm : 4 px puis 13 px).
+    if (fine < 3) {
+        const float start = fine == 0 ? 0.0 : f.cascadeEnds[fine - 1];
+        const float blend = saturate((depth - lerp(start, f.cascadeEnds[fine], 0.75)) / (0.25 * (f.cascadeEnds[fine] - start)));
+        if (ShadowRotation() * (1.0 / 6.2831853) < blend) {
+            ++fine;
+        }
+    }
     ShadowPoint finePoint;
     while (fine < 4 && !LocateNear(fine, worldPosition, normal, sunFacing, finePoint)) {
         ++fine;
