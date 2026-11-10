@@ -585,8 +585,9 @@ static const float2 PoissonDisk[16] = {
 // Pénombre la plus étroite, en texels de la carte : même un obstacle posé au sol garde un bord filtré sur deux texels
 // (sinon, sous un soleil rasant, chaque texel étiré au sol se voyait en escalier).
 static const float MinPenumbraTexels = 1.0;
-// La plus large : le rayon de la recherche des obstacles, qui coûte autant de lectures que le filtre.
-static const float MaxPenumbraTexels = 12.0;
+// La plus large qu'une carte filtre elle-même, en texels (rayon). Plus large, la pénombre est lue dans une cascade plus
+// grossière (NearVisibility) : sa largeur en mètres ne dépend pas de la carte, donc pas du regard.
+static const float MaxPenumbraTexels = 16.0;
 
 // Angle de rotation des lectures de ce pixel (bruit à gradient entrelacé), décalé à chaque image quand l'anticrénelage
 // temporel tourne : il moyenne le bruit en un bord lisse.
@@ -596,13 +597,21 @@ float ShadowRotation()
     return 6.2831853 * frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
 }
 
-// Part de la lumière du soleil vue par la cascade `cascade` (cases de `cells` x 1 ou 2 x 2 dans `map`, celle-ci en
-// `cell`) ; négatif si le point sort de sa carte. Pénombre comme sous un vrai soleil (PCSS) : nette au contact de
-// l'obstacle, plus large à mesure qu'il s'éloigne (distance obstacle-sol x tangente du rayon apparent du soleil).
-// `depthRange` : mètres couverts par la profondeur de la carte ; `maxBlocker` : distance obstacle-sol la plus grande
-// dont la pénombre est cherchée (mètres).
-float CascadeVisibility(Sampler2DShadow map, Sampler2D depthMap, float2 cells, float2 cell, uint cascade, float texel,
-                        float depthRange, float maxBlocker, float3 worldPosition, float3 normal, float sunFacing)
+// Un point vu par une carte d'ombre : où la lire, à quelle profondeur comparer.
+struct ShadowPoint
+{
+    float2 uv;         // dans la texture (atlas des cascades)
+    float2 low;        // bornes de la case de la cascade : les lectures n'en débordent pas sur la voisine
+    float2 high;
+    float2 atlasTexel; // un texel de la texture, en uv
+    float z;           // profondeur du point dans la carte (0 : côté soleil)
+    float texel;       // côté d'un texel, en mètres
+    float depthRange;  // mètres couverts par la profondeur de la carte
+};
+
+// Le point dans la cascade `cascade` (case `cell` parmi `cells` dans `map`) ; false s'il sort de sa carte.
+bool LocateShadow(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, float texel, float depthRange,
+                  float3 worldPosition, float3 normal, float sunFacing, out ShadowPoint p)
 {
     const FrameData f = frame[0];
     // Décalé le long de la normale (plus sur une face rasante) : une surface ne se fait pas d'ombre à elle-même.
@@ -611,54 +620,93 @@ float CascadeVisibility(Sampler2DShadow map, Sampler2D depthMap, float2 cells, f
                    f.cascades[cascade * 4 + 3]};
     const float3 light = Transform(m, offsetPosition).xyz;
     const float2 local = light.xy * 0.5 + 0.5;
+    p.uv = float2(0.0);
+    p.low = float2(0.0);
+    p.high = float2(0.0);
+    p.atlasTexel = float2(0.0);
+    p.z = 0.0;
+    p.texel = texel;
+    p.depthRange = depthRange;
     if (any(local < 0.0) || any(local > 1.0) || light.z > 1.0) {
-        return -1.0;
+        return false;
     }
-    // Case de la cascade dans la carte : les lectures n'en débordent pas sur la voisine (le filtre lit un texel autour).
     uint width;
     uint height;
     map.GetDimensions(width, height);
-    const float2 atlasTexel = 1.0 / float2(width, height);
+    p.atlasTexel = 1.0 / float2(width, height);
     const float2 size = 1.0 / cells;
-    const float2 low = cell * size + atlasTexel * 1.5;
-    const float2 high = (cell + 1.0) * size - atlasTexel * 1.5;
-    const float2 uv = clamp(cell * size + local * size, low, high);
+    p.low = cell * size + p.atlasTexel * 1.5;
+    p.high = (cell + 1.0) * size - p.atlasTexel * 1.5;
+    p.uv = clamp(cell * size + local * size, p.low, p.high);
+    p.z = light.z;
+    return true;
+}
 
-    const uint taps = max(f.shadowOptions.y, 1u);
-    const float angle = ShadowRotation();
-    const float2x2 rotation = float2x2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    const float tanSun = f.toSun.w;
-
-    // 1. Obstacles autour du point, jusqu'à la pénombre la plus large possible : leur profondeur moyenne.
-    const float search = clamp(maxBlocker * tanSun / texel, MinPenumbraTexels, MaxPenumbraTexels);
-    float blockerSum = 0.0;
-    float blockers = 0.0;
+// Obstacles dans un rayon de `radius` mètres autour du point (au plus MaxPenumbraTexels) : leur nombre parmi les
+// lectures, et leur distance moyenne au point vers le soleil (mètres) dans `distance`.
+float FindBlockers(Sampler2D depthMap, ShadowPoint p, float radius, float2x2 rotation, out float distance)
+{
+    const uint taps = max(frame[0].shadowOptions.y, 1u);
+    const float texels = clamp(radius / p.texel, MinPenumbraTexels, MaxPenumbraTexels);
+    float sum = 0.0;
+    float count = 0.0;
     for (uint i = 0; i < taps; ++i) {
-        const float2 at = clamp(uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (search * atlasTexel), low, high);
+        const float2 at = clamp(p.uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (texels * p.atlasTexel), p.low, p.high);
         const float depth = depthMap.SampleLevel(at, 0.0).r;
-        if (depth < light.z) {
-            blockerSum += depth;
-            blockers += 1.0;
+        if (depth < p.z) {
+            sum += depth;
+            count += 1.0;
         }
     }
-    if (blockers == 0.0) {
-        return 1.0; // aucun obstacle : en pleine lumière, sans filtrer
-    }
+    // Un obstacle plus loin que la carte n'en couvre y est aplati à 0 (depth clamp) : distance sous-estimée, au pire
+    // une pénombre un peu étroite.
+    distance = count > 0.0 ? (p.z - sum / count) * p.depthRange : 0.0;
+    return count;
+}
 
-    // 2. Pénombre : distance de l'obstacle au point (mètres) x tangente du rayon du soleil, en texels de la carte.
-    const float blocker = blockerSum / blockers;
-    const float penumbra = clamp((light.z - blocker) * depthRange * tanSun / texel, MinPenumbraTexels, search);
+// Part de lumière filtrée sur une pénombre de rayon `penumbra` mètres (bornée en texels de la carte).
+float FilterShadow(Sampler2DShadow map, ShadowPoint p, float penumbra, float2x2 rotation)
+{
+    const uint taps = max(frame[0].shadowOptions.y, 1u);
+    const float texels = clamp(penumbra / p.texel, MinPenumbraTexels, MaxPenumbraTexels);
     float lit = 0.0;
     for (uint i = 0; i < taps; ++i) {
-        const float2 at = clamp(uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (penumbra * atlasTexel), low, high);
-        lit += map.SampleCmpLevelZero(at, light.z); // chaque lecture compare 2 x 2 texels, filtrés
+        const float2 at = clamp(p.uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (texels * p.atlasTexel), p.low, p.high);
+        lit += map.SampleCmpLevelZero(at, p.z); // chaque lecture compare 2 x 2 texels, filtrés
     }
     return lit / float(taps);
 }
 
-// Distance obstacle-sol la plus grande dont la pénombre est cherchée (mètres) : objets proches, puis relief (une
-// montagne à quelques kilomètres). Au-delà, la pénombre reste celle de cette distance.
-static const float NearMaxBlocker = 50.0;
+float2x2 ShadowRotationMatrix()
+{
+    const float angle = ShadowRotation();
+    return float2x2(cos(angle), -sin(angle), sin(angle), cos(angle));
+}
+
+// Part de la lumière du soleil vue par la cascade `cascade` (cases de `cells` x 1 ou 2 x 2 dans `map`, celle-ci en
+// `cell`) ; négatif si le point sort de sa carte. Pénombre comme sous un vrai soleil (PCSS) : nette au contact de
+// l'obstacle, plus large à mesure qu'il s'éloigne (distance obstacle-sol x tangente du rayon apparent du soleil).
+// Sert au relief au loin ; les cascades proches passent par NearVisibility.
+float CascadeVisibility(Sampler2DShadow map, Sampler2D depthMap, float2 cells, float2 cell, uint cascade, float texel,
+                        float depthRange, float maxBlocker, float3 worldPosition, float3 normal, float sunFacing)
+{
+    ShadowPoint p;
+    if (!LocateShadow(map, cells, cell, cascade, texel, depthRange, worldPosition, normal, sunFacing, p)) {
+        return -1.0;
+    }
+    const float tanSun = frame[0].toSun.w;
+    const float2x2 rotation = ShadowRotationMatrix();
+    float distance;
+    if (FindBlockers(depthMap, p, maxBlocker * tanSun, rotation, distance) == 0.0) {
+        return 1.0; // aucun obstacle : en pleine lumière, sans filtrer
+    }
+    return FilterShadow(map, p, distance * tanSun, rotation);
+}
+
+// Distance obstacle-sol la plus grande dont la pénombre est cherchée (mètres) : objets (une tour, une station à
+// quelques centaines de mètres), puis relief (une montagne à quelques kilomètres). Au-delà, la pénombre reste celle
+// de cette distance.
+static const float NearMaxBlocker = 500.0;
 static const float TerrainMaxBlocker = 3000.0;
 
 // Ombre du relief, tranche `slice` (0 : jusqu'à 3 km, 1 : jusqu'à 40 km) ; négatif hors de sa carte.
@@ -700,27 +748,71 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return lerp(next, lit, fade);
 }
 
-// Ombre des cascades proches : celle de la tranche du point, ou la suivante s'il sort de sa carte (carte gardée d'une
-// image précédente, MeshRenderer::ChooseShadowCascades) ; négatif hors de toutes, `used` dit laquelle a servi (4 :
-// aucune).
+// Une cascade proche lue au point : false s'il sort de sa carte.
+bool LocateNear(uint cascade, float3 worldPosition, float3 normal, float sunFacing, out ShadowPoint p)
+{
+    const FrameData f = frame[0];
+    return LocateShadow(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
+                        f.cascadeTexels[cascade], f.cascadeDepthRanges[cascade], worldPosition, normal, sunFacing, p);
+}
+
+// Ombre des cascades proches, avec sa pénombre (PCSS). `used` dit quelle cascade a filtré (4 : aucune) ; négatif hors
+// de toutes. La cascade du point (sa tranche, ou la suivante s'il sort de sa carte, gardée d'une image précédente)
+// cherche les petits obstacles proches ; une cascade assez grossière pour couvrir NearMaxBlocker cherche les grands et
+// lointains (une tour à 300 m : plus d'un mètre de pénombre). La pénombre se filtre ensuite dans la plus fine qui la
+// contient : sa largeur en mètres est la même quelle que soit la tranche, donc quel que soit le regard (avant, chaque
+// carte la bornait à sa propre taille, et le bord d'une grande ombre changeait de flou en tournant la caméra).
 float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float depth, out uint used)
 {
     const FrameData f = frame[0];
-    uint cascade = 0;
-    while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
-        ++cascade;
+    used = 4;
+    uint fine = 0;
+    while (fine < 4 && depth > f.cascadeEnds[fine]) {
+        ++fine;
     }
-    for (; cascade < 4; ++cascade) {
-        const float lit = CascadeVisibility(shadowMap, shadowDepth, float2(2.0), float2(float(cascade % 2), float(cascade / 2)),
-                                            cascade, f.cascadeTexels[cascade], f.cascadeDepthRanges[cascade],
-                                            NearMaxBlocker, worldPosition, normal, sunFacing);
-        if (lit >= 0.0) {
-            used = cascade;
-            return lit;
+    ShadowPoint finePoint;
+    while (fine < 4 && !LocateNear(fine, worldPosition, normal, sunFacing, finePoint)) {
+        ++fine;
+    }
+    if (fine >= 4) {
+        return -1.0;
+    }
+    const float tanSun = f.toSun.w;
+    const float reach = NearMaxBlocker * tanSun; // pénombre la plus large cherchée (rayon, mètres)
+    const float2x2 rotation = ShadowRotationMatrix();
+
+    float distance;
+    float found = FindBlockers(shadowDepth, finePoint, reach, rotation, distance);
+    // Les grands obstacles lointains, dans la première cascade dont MaxPenumbraTexels couvrent `reach`.
+    if (found == 0.0 && reach > MaxPenumbraTexels * finePoint.texel) {
+        for (uint coarse = fine + 1; coarse < 4; ++coarse) {
+            ShadowPoint coarsePoint;
+            if ((reach <= MaxPenumbraTexels * f.cascadeTexels[coarse] || coarse == 3)
+                && LocateNear(coarse, worldPosition, normal, sunFacing, coarsePoint)) {
+                found = FindBlockers(shadowDepth, coarsePoint, reach, rotation, distance);
+                break;
+            }
         }
     }
-    used = 4;
-    return -1.0;
+    if (found == 0.0) {
+        used = fine;
+        return 1.0; // aucun obstacle : en pleine lumière, sans filtrer
+    }
+
+    // Pénombre filtrée dans la plus fine des cascades qui la contient.
+    const float penumbra = distance * tanSun;
+    for (uint c = fine; c < 4; ++c) {
+        ShadowPoint p = finePoint;
+        if (c != fine && !LocateNear(c, worldPosition, normal, sunFacing, p)) {
+            continue;
+        }
+        if (penumbra <= MaxPenumbraTexels * p.texel || c == 3) {
+            used = c;
+            return FilterShadow(shadowMap, p, penumbra, rotation);
+        }
+    }
+    used = fine;
+    return FilterShadow(shadowMap, finePoint, penumbra, rotation);
 }
 
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
