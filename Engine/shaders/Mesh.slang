@@ -582,9 +582,10 @@ static const float2 PoissonDisk[16] = {
     float2(0.4432, -0.9751), float2(0.5374, -0.4737), float2(-0.2650, -0.4189), float2(0.7920, 0.1909),
     float2(-0.2419, 0.9971), float2(-0.8141, 0.9144), float2(0.1998, 0.7864), float2(0.1438, -0.1410)};
 
-// Pénombre la plus étroite, en texels de la carte : même un obstacle posé au sol garde un bord filtré sur deux texels
-// (sinon, sous un soleil rasant, chaque texel étiré au sol se voyait en escalier).
-static const float MinPenumbraTexels = 1.0;
+// Pénombre la plus étroite, en texels de la carte : même un obstacle posé au sol garde un bord filtré sur quatre
+// texels. Sous un soleil rasant, un texel s'étire au sol (5 fois à 12°) : à 1 texel, le bord d'une plaque posée près
+// du sol gardait des dents.
+static const float MinPenumbraTexels = 2.0;
 // La plus large qu'une carte filtre elle-même, en texels (rayon). Plus large, la pénombre est lue dans une cascade plus
 // grossière (NearVisibility) : sa largeur en mètres ne dépend pas de la carte, donc pas du regard.
 static const float MaxPenumbraTexels = 16.0;
