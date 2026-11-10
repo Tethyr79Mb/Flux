@@ -405,7 +405,8 @@ namespace Flux {
             desc.depthFormat = RHI::Format::D32Float;
             desc.depthCompare = RHI::CompareOp::Less;
             desc.depthBiasConstant = 1.0f;
-            desc.depthBiasSlope = 1.5f;
+            desc.depthBiasSlope = 0.5f; // le reste par la pente du plan à la lecture (LocateShadow) ; à 1,5, l'ombre
+                                        // d'une plaque à 5 cm du sol pâlissait dès la deuxième cascade
             desc.depthClamp = true; // obstacles jusqu'à ShadowFlattenDistance vers le soleil (CastsShadow)
             // Les deux faces : une coque ouverte ou un matériau double face fait aussi de l'ombre.
             desc.cullMode = RHI::CullMode::None;
@@ -715,7 +716,7 @@ namespace Flux {
         m_groundGroup = planets ? m_ground.Get(m_device, *m_models, assetsDirectory) : nullptr;
         const ViewCone view(camera, aspect);
         // Avant les entités : celles qui ne sont ni en vue ni dans une ombre sont écartées dès maintenant.
-        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
+        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution, ShadowDepthDistance);
         m_shadowReceivers = ShadowReceivers(camera, aspect, sky.toSun);
         ChooseShadowCascades(camera, sky.toSun);
         ChooseTerrainCascades(camera, aspect, sky.toSun);
@@ -1406,7 +1407,7 @@ namespace Flux {
     bool MeshRenderer::CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const {
         constexpr float MinTexels = 1.5f; // rayon, en texels de la carte
         return radius >= MinTexels * m_cascades[cascade].texelSize
-            && InShadowVolume(m_cascades[cascade], center, radius, ShadowFlattenDistance - ShadowCasterDistance)
+            && InShadowVolume(m_cascades[cascade], center, radius, ShadowFlattenDistance - ShadowDepthDistance)
             && m_shadowReceivers.Reaches(center, radius, ShadowFlattenDistance, cascade);
     }
 

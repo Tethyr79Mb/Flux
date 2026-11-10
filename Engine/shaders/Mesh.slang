@@ -822,8 +822,9 @@ float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float
         return 1.0; // aucun obstacle : en pleine lumière, sans filtrer
     }
 
-    // Pénombre filtrée dans la plus fine des cascades qui la contient.
-    const float penumbra = distance * tanSun;
+    // Pénombre filtrée dans la plus fine des cascades qui la contient. Un obstacle plus loin que NearMaxBlocker
+    // (aplati devant la carte, distance inconnue) prend la pénombre de NearMaxBlocker, la même quel que soit le regard.
+    const float penumbra = min(distance, NearMaxBlocker) * tanSun;
     for (uint c = fine; c < 4; ++c) {
         ShadowPoint p = finePoint;
         if (c != fine && !LocateNear(c, worldPosition, normal, sunFacing, p)) {
