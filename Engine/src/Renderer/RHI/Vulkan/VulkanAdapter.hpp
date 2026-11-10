@@ -34,6 +34,11 @@ namespace Flux::Vk {
         bool HasMeshShaders() const { return m_meshShaders; }
         // maxPreferredMeshWorkGroupInvocations (0 sans mesh shaders).
         std::uint32_t GetMeshPreferredThreads() const { return m_meshPreferredThreads; }
+        // Ray tracing par ray queries : VK_KHR_acceleration_structure, VK_KHR_ray_query (et VK_KHR_deferred_host_operations
+        // qu'elle exige), avec les adresses des buffers (bufferDeviceAddress).
+        bool HasRayTracing() const { return m_rayTracing; }
+        // minAccelerationStructureScratchOffsetAlignment : alignement de la mémoire de travail d'une construction.
+        std::uint32_t GetScratchAlignment() const { return m_scratchAlignment; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
         bool HasBufferMarkers() const { return m_bufferMarkers; }
         // VK_EXT_device_fault activée : le pilote décrit la panne après la perte du device.
@@ -46,6 +51,8 @@ namespace Flux::Vk {
         bool m_textureCompressionBC = false;
         bool m_meshShaders = false;
         std::uint32_t m_meshPreferredThreads = 0;
+        bool m_rayTracing = false;
+        std::uint32_t m_scratchAlignment = 256;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;
     };

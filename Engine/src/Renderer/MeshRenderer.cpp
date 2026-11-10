@@ -211,6 +211,9 @@ namespace Flux {
             return std::unexpected(models.error());
         }
         renderer->m_models = std::move(*models);
+        if (device.HasRayTracing()) {
+            renderer->m_rayTracing = std::make_unique<RayTracingScene>(device);
+        }
         auto planets = Planetology::PlanetRenderer::Create(device);
         if (!planets) {
             return std::unexpected(planets.error());
@@ -826,6 +829,14 @@ namespace Flux {
                                draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
                                draw.uniformScale, firstCluster});
         }
+        // Ray tracing : toutes les entités gardées, en vue ou non (une hors du champ peut faire de l'ombre dedans).
+        if (m_rayTracing) {
+            m_rayTracing->Begin();
+            for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
+                m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
+            }
+            m_rayTracing->End(frameIndex);
+        }
         m_prepareTimes.entities = since(start) - groundMilliseconds;
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         Clock::time_point partStart = Clock::now();
@@ -878,6 +889,18 @@ namespace Flux {
             m_modelPasses = {};
         }
         m_prepareTimes.uploads = since(partStart);
+    }
+
+    void MeshRenderer::BuildRayTracingModels(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        if (m_rayTracing) {
+            m_rayTracing->BuildBottomLevels(commands, frameIndex);
+        }
+    }
+
+    void MeshRenderer::BuildRayTracingScene(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        if (m_rayTracing) {
+            m_rayTracing->BuildTopLevel(commands, frameIndex);
+        }
     }
 
     std::pair<Math::Vector3f, float> MeshRenderer::SphereOf(const RelativeTransform& transform, const Math::Box3f& box) {

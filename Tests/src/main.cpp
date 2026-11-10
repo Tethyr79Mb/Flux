@@ -29,6 +29,7 @@ int main() {
         {"serveur HTTP local (outils MCP)", RunLocalHttpServerTests},
         {"planètes (cube-sphère)", RunPlanetTests},
         {"calculs sur le GPU (compute)", RunComputeTests},
+        {"structures du ray tracing", RunRayTracingTests},
         {"envois vers le GPU (file de transfert)", RunTransferTests},
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
         {"bruit 3D des nuages sur le GPU", RunCloudNoiseTests},

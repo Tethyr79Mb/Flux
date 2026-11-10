@@ -87,6 +87,10 @@ namespace Flux {
         std::vector<Math::Box3f> clusters;            // ModelData::clusters ; vide : un seul bloc
         Math::Box3f bounds;
         bool animated = false; // page de modèles animés : os et poids (ModelSkinVertex) à côté des sommets
+        // Ray tracing (RHI::Device::HasRayTracing), modèles fixes : structure de ses triangles qui portent une ombre,
+        // construite par RayTracingScene à la première image où le modèle est dans la scène (bottomLevelBuilt).
+        std::unique_ptr<RHI::AccelerationStructure> bottomLevel;
+        mutable bool bottomLevelBuilt = false; // construction enregistrée : la structure peut entrer dans la scène
         bool loaded = false;
         bool loading = false; // fichier en lecture (ModelLoader) ; l'ancienne version, s'il y en a une, reste dessinée
         std::filesystem::file_time_type writeTime{};
@@ -167,6 +171,7 @@ namespace Flux {
         // Détruit le modèle quand le GPU ne s'en sert plus (rend ses places aux tables à ce moment-là).
         void Retire(GpuModel model);
         bool PlaceGeometry(const ModelData& data, GpuModelResources& resources);
+        void CreateBottomLevel(GpuModel& model, std::string_view name);
         void Release(GpuModelResources& resources);
         void Install(ModelLoader::Result& result);
         const GpuModel* Refresh(const std::string& key, const std::filesystem::path& path, GpuModel& model, bool created);
@@ -185,6 +190,7 @@ namespace Flux {
 
         RHI::Device& m_device;
         bool m_meshlets = false;
+        bool m_rayTracing = false;
         // Dans cet ordre : les groupes sont rendus avant leur layout, et les modèles (qui rendent leurs places aux
         // tables) avant les tables.
         std::unique_ptr<RHI::Sampler> m_sampler;

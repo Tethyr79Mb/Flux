@@ -612,15 +612,16 @@ struct ShadowPoint
 };
 
 // Le point dans la cascade `cascade` (case `cell` parmi `cells` dans `map`) ; false s'il sort de sa carte.
+// offset : décalage le long de la normale en texels, en plein soleil.
 bool LocateShadow(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, float texel, float depthRange,
-                  float3 worldPosition, float3 normal, float sunFacing, out ShadowPoint p)
+                  float3 worldPosition, float3 normal, float sunFacing, float offset, out ShadowPoint p)
 {
     const FrameData f = frame[0];
-    // Décalé d'un demi-texel le long de la normale : la pente du plan (plus bas) et celle des obstacles dessinés
-    // (depthBiasSlope) gardent une surface de sa propre ombre. Avant la pente du plan, ce décalage montait à 3 texels
-    // sous un soleil rasant (70 cm dans la dernière cascade) : l'ombre d'une caisse basse disparaissait au loin. Plus
-    // grand seulement tout près du terminateur, où la pente du plan est bornée.
-    const float3 offsetPosition = worldPosition + normal * texel * (0.5 + 2.5 * (1.0 - saturate(sunFacing / 0.1)));
+    // Décalé le long de la normale : un demi-texel pour les cascades proches, où la pente du plan (plus bas) et celle
+    // des obstacles dessinés (depthBiasSlope) gardent une surface de sa propre ombre. Avant la pente du plan, ce
+    // décalage montait à 3 texels sous un soleil rasant (70 cm dans la dernière cascade) : l'ombre d'une caisse basse
+    // disparaissait au loin. Plus grand tout près du terminateur, où la pente du plan est bornée.
+    const float3 offsetPosition = worldPosition + normal * texel * (offset + 2.5 * (1.0 - saturate(sunFacing / 0.1)));
     float4 m[4] = {f.cascades[cascade * 4 + 0], f.cascades[cascade * 4 + 1], f.cascades[cascade * 4 + 2],
                    f.cascades[cascade * 4 + 3]};
     const float3 light = Transform(m, offsetPosition).xyz;
@@ -714,7 +715,10 @@ float CascadeVisibility(Sampler2DShadow map, Sampler2D depthMap, float2 cells, f
                         float depthRange, float maxBlocker, float3 worldPosition, float3 normal, float sunFacing)
 {
     ShadowPoint p;
-    if (!LocateShadow(map, cells, cell, cascade, texel, depthRange, worldPosition, normal, sunFacing, p)) {
+    // Le relief des cartes du relief est dessiné avec des tuiles plus grossières que celles vues, et gardé plusieurs
+    // images : le sol vu s'écarte de celui de la carte de plus d'un demi-texel (taches d'ombre sur les collines avec
+    // 0,5). Deux texels, comme avant la pente du plan (#283) ; leurs texels de plusieurs mètres n'ombrent que le relief.
+    if (!LocateShadow(map, cells, cell, cascade, texel, depthRange, worldPosition, normal, sunFacing, 2.0, p)) {
         return -1.0;
     }
     const float tanSun = frame[0].toSun.w;
@@ -776,7 +780,7 @@ bool LocateNear(uint cascade, float3 worldPosition, float3 normal, float sunFaci
 {
     const FrameData f = frame[0];
     return LocateShadow(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
-                        f.cascadeTexels[cascade], f.cascadeDepthRanges[cascade], worldPosition, normal, sunFacing, p);
+                        f.cascadeTexels[cascade], f.cascadeDepthRanges[cascade], worldPosition, normal, sunFacing, 0.5, p);
 }
 
 // Ombre des cascades proches, avec sa pénombre (PCSS). `used` dit quelle cascade a filtré (4 : aucune) ; négatif hors

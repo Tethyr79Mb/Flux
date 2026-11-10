@@ -469,6 +469,14 @@ namespace Flux {
             timings.modelMeshlets = meshlets.sent;
             timings.modelMeshletsDrawn = meshlets.drawn;
             timings.modelMeshShaders = meshlets.meshShaders;
+            const RayTracingScene::Stats rays = meshes->GetRayTracingStats();
+            timings.rayTracing = meshes->HasRayTracing();
+            timings.rayInstances = rays.instances;
+            timings.rayModels = rays.models;
+            timings.rayModelsBuilt = rays.built;
+            timings.rayModelsWaiting = rays.waiting;
+            timings.rayModelBytes = rays.modelBytes;
+            timings.raySceneBytes = rays.sceneBytes;
             const MeshRenderer::PlanetTileStats tiles = meshes->GetPlanetTileStats();
             timings.planetTiles = tiles.drawn;
             timings.planetOceanTiles = tiles.ocean;
@@ -573,6 +581,15 @@ namespace Flux {
                 .Step("semis des arbres", [this](RHI::CommandList& commands) { meshes->SowTrees(commands, frame.index); })
                 .Step("tri des arbres", [this](RHI::CommandList& commands) { meshes->CullTrees(commands, frame.index); })
                 .Step("objets cachés", [this](RHI::CommandList& commands) { meshes->CullHidden(commands, frame.index); });
+            // Structures du ray tracing : celles des modèles qui viennent d'apparaître, puis celle de la scène, refaite à
+            // chaque image. Avant les passes qui y lanceront des rayons.
+            const auto rayScene = graph.AddResource("scène du ray tracing");
+            graph.AddPass("ray tracing")
+                .When([this] { return sceneVisible && meshes->HasRayTracing(); })
+                .Reads(cpu)
+                .Writes(rayScene)
+                .Step("structures des modèles", [this](RHI::CommandList& commands) { meshes->BuildRayTracingModels(commands, frame.index); })
+                .Step("structure de la scène", [this](RHI::CommandList& commands) { meshes->BuildRayTracingScene(commands, frame.index); });
             graph.AddPass("tables de l'air")
                 .When([this] { return sceneVisible && sky->TablesPending(); })
                 .Reads(cpu)

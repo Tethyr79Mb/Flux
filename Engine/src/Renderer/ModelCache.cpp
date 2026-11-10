@@ -182,6 +182,7 @@ namespace Flux {
     std::expected<std::unique_ptr<ModelCache>, std::string> ModelCache::Create(RHI::Device& device) {
         std::unique_ptr<ModelCache> cache(new ModelCache(device));
         cache->m_meshlets = device.HasMeshShaders();
+        cache->m_rayTracing = device.HasRayTracing();
 
         // Répété (les UV des modèles sortent souvent de [0, 1]), filtré entre les mips.
         auto sampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Linear,
@@ -291,10 +292,16 @@ namespace Flux {
             const std::uint32_t vertices = std::max(vertexCount, animated ? AnimatedPageVertices : PageVertices);
             const std::uint32_t indices = std::max(indexCount, animated ? AnimatedPageIndices : PageIndices);
             // Storage : les mesh shaders lisent les sommets eux-mêmes.
-            const RHI::BufferUsage vertexUsage = m_meshlets && !animated ? RHI::BufferUsage::Vertex | RHI::BufferUsage::Storage
-                                                                        : RHI::BufferUsage::Vertex;
+            RHI::BufferUsage vertexUsage = m_meshlets && !animated ? RHI::BufferUsage::Vertex | RHI::BufferUsage::Storage
+                                                                  : RHI::BufferUsage::Vertex;
+            RHI::BufferUsage indexUsage = RHI::BufferUsage::Index;
+            // Ray tracing : les structures des modèles fixes sont construites depuis les sommets et indices de la page.
+            if (m_rayTracing && !animated) {
+                vertexUsage = vertexUsage | RHI::BufferUsage::AccelerationInput;
+                indexUsage = indexUsage | RHI::BufferUsage::AccelerationInput;
+            }
             auto vertexBuffer = m_device.CreateBuffer({std::uint64_t{vertices} * sizeof(ModelVertex), vertexUsage});
-            auto indexBuffer = m_device.CreateBuffer({std::uint64_t{indices} * sizeof(std::uint32_t), RHI::BufferUsage::Index});
+            auto indexBuffer = m_device.CreateBuffer({std::uint64_t{indices} * sizeof(std::uint32_t), indexUsage});
             if (!vertexBuffer || !indexBuffer) {
                 Log::Error("géométrie des modèles : {}", !vertexBuffer ? vertexBuffer.error() : indexBuffer.error());
                 return false;
@@ -492,8 +499,44 @@ namespace Flux {
         }
         model.clusters = data.clusters;
         model.bounds = data.bounds;
+        if (m_rayTracing && !model.animated) {
+            CreateBottomLevel(model, name);
+        }
         model.loaded = true;
         return model;
+    }
+
+    // Structure du ray tracing d'un modèle fixe : les triangles qui portent une ombre (shadowPrimitives, sans les
+    // transparents), lus dans sa page. Construite plus tard, à sa première apparition (RayTracingScene). Les modèles
+    // animés n'en ont pas encore : il faudrait la refaire à chaque pose.
+    void ModelCache::CreateBottomLevel(GpuModel& model, std::string_view name) {
+        const GpuModelResources& resources = model.resources;
+        const GeometryPage& page = m_pages[resources.page];
+        std::vector<RHI::AccelerationGeometry> geometries;
+        geometries.reserve(model.shadowPrimitives.size());
+        for (const ModelPrimitive& primitive : model.shadowPrimitives) {
+            if (primitive.indexCount == 0) {
+                continue;
+            }
+            const bool masked = primitive.material < model.materials.size() && model.materials[primitive.material].alphaCutoff > 0.0f;
+            geometries.push_back({.vertices = page.vertices.get(),
+                                  .vertexOffset = std::uint64_t{resources.firstVertex} * sizeof(ModelVertex),
+                                  .vertexStride = sizeof(ModelVertex),
+                                  .vertexCount = resources.vertexCount,
+                                  .indices = page.indices.get(),
+                                  .indexOffset = std::uint64_t{primitive.firstIndex} * sizeof(std::uint32_t),
+                                  .indexCount = primitive.indexCount,
+                                  .opaque = !masked});
+        }
+        if (geometries.empty()) {
+            return; // rien qui porte une ombre (verre seul)
+        }
+        auto structure = m_device.CreateBottomLevel(geometries);
+        if (!structure) {
+            Log::Warning("modèle {} : structure du ray tracing : {}", name, structure.error());
+            return;
+        }
+        model.bottomLevel = std::move(*structure);
     }
 
     void ModelCache::Update() {

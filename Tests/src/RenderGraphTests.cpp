@@ -102,6 +102,8 @@ namespace {
         void ComputeBarrier() override {}
         void GenerateMipmaps(const RHI::Texture&) override {}
         void CopyBuffer(const RHI::Buffer&, std::uint64_t, RHI::Buffer&, std::uint64_t, std::uint64_t) override {}
+        void BuildBottomLevels(std::span<RHI::AccelerationStructure* const>, const RHI::Buffer&) override {}
+        void BuildTopLevel(RHI::AccelerationStructure&, std::span<const RHI::AccelerationInstance>, const RHI::Buffer&) override {}
         void WriteTimestamp(std::uint32_t slot) override { log.push_back("heure " + std::to_string(slot)); }
         void BeginStep(const char* name) override { log.push_back(std::string("étape ") + name); }
     };

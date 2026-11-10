@@ -6,7 +6,8 @@
 namespace Flux::Vk {
     std::expected<Buffer, std::string> Buffer::Create(VmaAllocator allocator, VkDeviceSize size,
                                                       VkBufferUsageFlags usage, Memory memory,
-                                                      std::span<const std::uint32_t> sharedFamilies) {
+                                                      std::span<const std::uint32_t> sharedFamilies,
+                                                      VkDeviceSize minAlignment) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
@@ -34,8 +35,8 @@ namespace Flux::Vk {
 
         Buffer buffer;
         VmaAllocationInfo allocated{};
-        if (!Check(vmaCreateBuffer(allocator, &bufferInfo, &allocationInfo,
-                                   &buffer.m_buffer, &buffer.m_allocation, &allocated), "vmaCreateBuffer")) {
+        if (!Check(vmaCreateBufferWithAlignment(allocator, &bufferInfo, &allocationInfo, minAlignment,
+                                                &buffer.m_buffer, &buffer.m_allocation, &allocated), "vmaCreateBuffer")) {
             return std::unexpected("allocation d'un buffer de " + std::to_string(size) + " octets");
         }
         buffer.m_allocator = allocator;
@@ -47,6 +48,12 @@ namespace Flux::Vk {
     void Buffer::Write(const void* data, VkDeviceSize size, VkDeviceSize offset) {
         std::memcpy(static_cast<std::byte*>(m_mapped) + offset, data, size);
         vmaFlushAllocation(m_allocator, m_allocation, offset, size);
+    }
+
+    void Buffer::Flush(VkDeviceSize offset, VkDeviceSize size) {
+        if (size > 0) {
+            vmaFlushAllocation(m_allocator, m_allocation, offset, size);
+        }
     }
 
     void Buffer::Read(void* data, VkDeviceSize size, VkDeviceSize offset) const {

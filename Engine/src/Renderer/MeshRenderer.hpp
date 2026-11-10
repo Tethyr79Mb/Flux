@@ -7,6 +7,7 @@
 #include "Planetology/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/OcclusionCulling.hpp"
+#include "Renderer/RayTracingScene.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/VegetationRenderer.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
@@ -124,6 +125,12 @@ namespace Flux {
         // faire à cette image si TerrainShadowsPending est faux.
         bool TerrainShadowsPending() const;
         void DrawTerrainShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Ray tracing (RHI::Device::HasRayTracing) : la scène des rayons préparée par Prepare (RayTracingScene), à
+        // construire avant les passes qui y lancent des rayons. Nuls sans ray tracing.
+        bool HasRayTracing() const { return m_rayTracing != nullptr; }
+        void BuildRayTracingModels(RHI::CommandList& commands, std::uint32_t frameIndex);
+        void BuildRayTracingScene(RHI::CommandList& commands, std::uint32_t frameIndex);
+        RayTracingScene::Stats GetRayTracingStats() const { return m_rayTracing ? m_rayTracing->GetStats() : RayTracingScene::Stats{}; }
         const RHI::Texture& GetTerrainShadowMap() const { return *m_terrainShadowMap; }
         // Passe principale, dans cet ordre (le fond du ciel entre le sol et l'eau). Le sol après les entités : ce
         // qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres transparents : vue
@@ -441,6 +448,8 @@ namespace Flux {
                        Planetology::VegetationRenderer::List list, std::uint32_t cascade, bool depthOnly = false) const;
 
         RHI::Device& m_device;
+        // Avant les modèles : détruite après eux, donc après l'attente du GPU (~ModelCache).
+        std::unique_ptr<RayTracingScene> m_rayTracing; // nul sans ray tracing
         std::unique_ptr<ModelCache> m_models;
         std::unique_ptr<Planetology::PlanetRenderer> m_planets;
         std::unique_ptr<Planetology::VegetationRenderer> m_vegetation;

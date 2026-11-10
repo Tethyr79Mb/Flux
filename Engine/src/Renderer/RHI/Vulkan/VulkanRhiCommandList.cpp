@@ -2,6 +2,7 @@
 
 #include "Renderer/RHI/Vulkan/VulkanCommandBatch.hpp"
 
+#include "Renderer/RHI/Vulkan/VulkanAccelerationStructure.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiBindGroup.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiBuffer.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiPipeline.hpp"
@@ -535,6 +536,45 @@ namespace Flux::Vk {
         barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
         barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_HOST_READ_BIT;
+        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+    }
+
+    void RhiCommandList::BuildBottomLevels(std::span<RHI::AccelerationStructure* const> structures, const RHI::Buffer& scratch) {
+        if (structures.empty()) {
+            return;
+        }
+        // Sans barrière entre elles : chacune a sa place de travail, le GPU les construit en même temps.
+        const VkBuffer scratchBuffer = static_cast<const RhiBuffer&>(scratch).GetHandle();
+        VkDeviceSize offset = 0;
+        for (RHI::AccelerationStructure* structure : structures) {
+            auto& bottom = static_cast<RhiAccelerationStructure&>(*structure);
+            bottom.RecordBuild(m_commandBuffer, scratchBuffer, offset);
+            offset += bottom.GetScratchSize();
+        }
+        AccelerationBarrier();
+    }
+
+    void RhiCommandList::BuildTopLevel(RHI::AccelerationStructure& structure, std::span<const RHI::AccelerationInstance> instances,
+                                       const RHI::Buffer& scratch) {
+        static_cast<RhiAccelerationStructure&>(structure).RecordBuild(m_commandBuffer, static_cast<const RhiBuffer&>(scratch).GetHandle(),
+                                                                      0, instances);
+        AccelerationBarrier();
+    }
+
+    void RhiCommandList::AccelerationBarrier() {
+        // Les rayons partent des shaders de dessin et de calcul (tâche et maillage compris).
+        VkMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+        barrier.srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                             | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+                             | MeshStages(m_meshShaders);
+        barrier.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &barrier;
         vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
     }
 
