@@ -406,7 +406,8 @@ namespace Flux {
         // Choisit les cascades à redessiner ; les autres gardent leur carte de l'image d'avant, recalée sur la caméra.
         void ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun);
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
-        static bool InShadowVolume(const ShadowCascade& cascade, const Math::Vector3f& center, float radius);
+        // `beyond` : mètres de plus vers le soleil (obstacles aplatis, CastsShadow).
+        static bool InShadowVolume(const ShadowCascade& cascade, const Math::Vector3f& center, float radius, float beyond = 0.0f);
         // Choisit les cascades du relief à redessiner (rarement : seulement le sol, gardé plusieurs images).
         void ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun);
         // La tuile (sa sphère) porte une ombre dans la carte de la passe `pass` (une passe d'ombres), redessinée à

@@ -46,6 +46,7 @@ namespace Flux::Vk {
         // Décalage de profondeur (cartes d'ombres) ; 0 et 0 : aucun.
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;
+        bool depthClamp = false; // VkPipelineRasterizationStateCreateInfo::depthClampEnable
     };
 
     struct ComputePipelineDesc {

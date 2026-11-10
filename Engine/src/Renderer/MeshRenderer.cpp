@@ -385,6 +385,7 @@ namespace Flux {
             desc.depthCompare = RHI::CompareOp::Less;
             desc.depthBiasConstant = 1.0f;
             desc.depthBiasSlope = 1.5f;
+            desc.depthClamp = true; // obstacles jusqu'à ShadowFlattenDistance vers le soleil (CastsShadow)
             // Les deux faces : une coque ouverte ou un matériau double face fait aussi de l'ombre.
             desc.cullMode = RHI::CullMode::None;
             if (auto result = create(pipelines.shadowDoubleSided, desc); !result) {
@@ -414,6 +415,7 @@ namespace Flux {
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
             desc.depthBiasConstant = 0.0f;
             desc.depthBiasSlope = 0.0f;
+            desc.depthClamp = false;
             const auto createMain = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent) {
                 desc.cullMode = cullMode;
                 // Transparents : mélangés à ce qui est déjà dessiné, cachés par les opaques plus proches, mais sans
@@ -1360,7 +1362,7 @@ namespace Flux {
         return InShadowVolume(m_cascades[cascade], center, radius);
     }
 
-    bool MeshRenderer::InShadowVolume(const ShadowCascade& c, const Math::Vector3f& center, float radius) {
+    bool MeshRenderer::InShadowVolume(const ShadowCascade& c, const Math::Vector3f& center, float radius, float beyond) {
         const auto& m = c.lightViewProjection.columns;
         const Math::Vector3f p = center;
         const float x = m[0][0] * p.x + m[1][0] * p.y + m[2][0] * p.z + m[3][0];
@@ -1368,16 +1370,20 @@ namespace Flux {
         const float z = m[0][2] * p.x + m[1][2] * p.y + m[2][2] * p.z + m[3][2];
         const float side = radius / c.radius;
         const float depth = radius / c.depthRange;
-        return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
+        return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth - beyond / c.depthRange
+            && z <= 1.0f + depth;
     }
 
-    // L'entité fait une ombre visible dans la cascade : dans son volume, son ombre peut tomber dans la tranche vue, et
-    // pas plus petite que quelques texels (au loin, un objet de quelques centimètres ne ferait qu'un point flou de la
-    // carte : il n'y est pas dessiné).
+    // L'entité fait une ombre visible dans la cascade : dans son volume (prolongé jusqu'à ShadowFlattenDistance vers le
+    // soleil, ces obstacles aplatis devant tout), son ombre peut tomber dans la tranche vue, et pas plus petite que
+    // quelques texels (au loin, un objet de quelques centimètres ne ferait qu'un point flou de la carte : il n'y est
+    // pas dessiné). Avant, un obstacle à plus de ShadowCasterDistance du centre de la carte, placée devant le regard,
+    // n'y était pas : l'ombre d'une tour à 350 m apparaissait ou disparaissait selon la direction de la caméra.
     bool MeshRenderer::CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const {
         constexpr float MinTexels = 1.5f; // rayon, en texels de la carte
-        return radius >= MinTexels * m_cascades[cascade].texelSize && InCascade(center, radius, cascade)
-            && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, cascade);
+        return radius >= MinTexels * m_cascades[cascade].texelSize
+            && InShadowVolume(m_cascades[cascade], center, radius, ShadowFlattenDistance - ShadowCasterDistance)
+            && m_shadowReceivers.Reaches(center, radius, ShadowFlattenDistance, cascade);
     }
 
     bool MeshRenderer::TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass, bool drawnOnly) const {
