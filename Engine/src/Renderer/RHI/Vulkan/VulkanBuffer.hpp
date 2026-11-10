@@ -42,6 +42,8 @@ namespace Flux::Vk {
 
         // Copie dans un buffer Upload puis flush (sans effet si la mémoire est cohérente, cas courant sur PC).
         void Write(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+        // Après une écriture directe dans GetMappedData (sans effet si la mémoire est cohérente).
+        void Flush(VkDeviceSize offset, VkDeviceSize size);
         // Relit un buffer Readback (invalide d'abord le cache du CPU si la mémoire n'est pas cohérente).
         void Read(void* data, VkDeviceSize size, VkDeviceSize offset = 0) const;
 

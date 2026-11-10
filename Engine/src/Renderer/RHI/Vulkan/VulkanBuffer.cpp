@@ -49,6 +49,12 @@ namespace Flux::Vk {
         vmaFlushAllocation(m_allocator, m_allocation, offset, size);
     }
 
+    void Buffer::Flush(VkDeviceSize offset, VkDeviceSize size) {
+        if (size > 0) {
+            vmaFlushAllocation(m_allocator, m_allocation, offset, size);
+        }
+    }
+
     void Buffer::Read(void* data, VkDeviceSize size, VkDeviceSize offset) const {
         vmaInvalidateAllocation(m_allocator, m_allocation, offset, size);
         std::memcpy(data, static_cast<const std::byte*>(m_mapped) + offset, size);

@@ -39,6 +39,7 @@ bool RunInputTests();
 bool RunSimulationClockTests();
 bool RunPlanetTests();
 bool RunComputeTests();
+bool RunRayTracingTests();
 bool RunTransferTests();
 bool RunPlanetGpuTests();
 bool RunCloudNoiseTests();

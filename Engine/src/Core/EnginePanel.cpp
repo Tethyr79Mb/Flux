@@ -131,6 +131,16 @@ namespace Flux {
                                                         ? std::format("{} dont {} dessinés", render.modelMeshlets,
                                                                       render.modelMeshletsDrawn)
                                                         : std::string("par les sommets"));
+                // Étape 1 du ray tracing : les structures seules (rien à l'écran), leur coût GPU dans « ray tracing ».
+                ui.LabelText("Ray tracing", render.rayTracing
+                                                ? std::format("{} instances, {} modèles (+{} construits, {} en attente)",
+                                                              render.rayInstances, render.rayModels, render.rayModelsBuilt,
+                                                              render.rayModelsWaiting)
+                                                : std::string("non (GPU sans ray tracing)"));
+                if (render.rayTracing) {
+                    ui.LabelText("  mémoire", std::format("{} modèles, {} scène", FormatMegabytes(render.rayModelBytes),
+                                                          FormatMegabytes(render.raySceneBytes)));
+                }
                 if (render.modelsLoading > 0) {
                     ui.LabelText("Modèles en chargement", std::format("{}", render.modelsLoading));
                 }
@@ -217,7 +227,14 @@ namespace Flux {
                          {"shadowTrees", render.shadowTrees},
                          {"treePlains", render.treePlains},
                          {"pendingTreePlains", render.pendingTreePlains},
-                         {"aheadTreePlains", render.aheadTreePlains}};
+                         {"aheadTreePlains", render.aheadTreePlains},
+                         {"rayTracing", {{"enabled", render.rayTracing},
+                                         {"instances", render.rayInstances},
+                                         {"models", render.rayModels},
+                                         {"modelsBuilt", render.rayModelsBuilt},
+                                         {"modelsWaiting", render.rayModelsWaiting},
+                                         {"modelMb", static_cast<double>(render.rayModelBytes) / (1024.0 * 1024.0)},
+                                         {"sceneMb", static_cast<double>(render.raySceneBytes) / (1024.0 * 1024.0)}}}};
         const Platform::ProcessMemory memory = Platform::GetProcessMemory();
         const auto [gpuDevice, gpuHost] = renderer.GetGpuMemory();
         constexpr double Megabyte = 1024.0 * 1024.0;

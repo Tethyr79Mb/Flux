@@ -72,6 +72,9 @@ namespace Flux::Vk {
         void GenerateMipmaps(const RHI::Texture& texture) override;
         void CopyBuffer(const RHI::Buffer& source, std::uint64_t sourceOffset, RHI::Buffer& target, std::uint64_t targetOffset,
                         std::uint64_t size) override;
+        void BuildBottomLevels(std::span<RHI::AccelerationStructure* const> structures, const RHI::Buffer& scratch) override;
+        void BuildTopLevel(RHI::AccelerationStructure& structure, std::span<const RHI::AccelerationInstance> instances,
+                           const RHI::Buffer& scratch) override;
         void WriteTimestamp(std::uint32_t slot) override;
         void BeginStep(const char* name) override;
         // Repères de l'image qui commence (après Begin) ; sans appel, BeginStep ne fait rien.
@@ -89,6 +92,8 @@ namespace Flux::Vk {
         void BeginDepthOnlyPass(const RHI::RenderPassDesc& desc, VkRenderingFlags flags);
         void BeginTexturePass(const RHI::RenderPassDesc& desc, VkRenderingFlags flags);
         VkRenderingAttachmentInfo BeginDepthAttachment(const RHI::RenderPassDesc& desc);
+        // Après des constructions de structures d'accélération : lisibles par les suivantes et par les shaders.
+        void AccelerationBarrier();
 
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
         CommandBatch* m_batch = nullptr; // nul pour une liste secondaire

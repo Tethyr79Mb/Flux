@@ -43,6 +43,7 @@ namespace Flux {
             bool groundGeometryOnly = false; // « Sol sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets
             bool modelMeshShaders = false;       // modèles fixes en mesh shaders
+            bool rayTracing = false;             // GPU qui a le ray tracing (structures construites)
         };
 
         void Start(double seconds);

@@ -4,6 +4,7 @@
 
 #include "Flux/Assets/Image.hpp"
 #include "Flux/Export.hpp"
+#include "Flux/Renderer/RHI/AccelerationStructure.hpp"
 #include "Flux/Renderer/RHI/BindGroup.hpp"
 #include "Flux/Renderer/RHI/Buffer.hpp"
 #include "Flux/Renderer/RHI/CommandList.hpp"
@@ -57,6 +58,9 @@ namespace Flux::RHI {
         virtual std::uint32_t GetMeshPreferredThreads() const = 0;
         // Formats compressés BC (textureCompressionBC) : tous les GPU de bureau, facultatif quand même.
         virtual bool HasTextureCompressionBC() const = 0;
+        // Ray tracing par ray queries (structures d'accélération, rayons lancés depuis n'importe quel shader) :
+        // RTX 20, RX 6000, Arc et plus récentes ; facultatif, les cartes d'ombre restent le repli.
+        virtual bool HasRayTracing() const = 0;
         // Attend que le GPU ait tout fini (fermeture) ; appelle les libérations différées (Retire).
         virtual void WaitIdle() = 0;
 
@@ -132,6 +136,13 @@ namespace Flux::RHI {
         // précédent, dessinés un à un ou réduits par CommandList::GenerateMipmaps.
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateCubeRenderTarget(Format format, std::uint32_t size,
                                                                                             std::uint32_t mipLevels = 1) = 0;
+        // Structure basse (HasRayTracing) des triangles donnés, vide jusqu'à sa construction (CommandList::BuildBottomLevels),
+        // qui lit les buffers désignés : ils doivent rester en place jusque-là.
+        virtual std::expected<std::unique_ptr<AccelerationStructure>, std::string>
+        CreateBottomLevel(std::span<const AccelerationGeometry> geometries) = 0;
+        // Structure haute (HasRayTracing) de `maxInstances` instances au plus, reconstruite à chaque fois
+        // (CommandList::BuildTopLevel) ; ses instances sont écrites par le CPU dans sa propre mémoire.
+        virtual std::expected<std::unique_ptr<AccelerationStructure>, std::string> CreateTopLevel(std::uint32_t maxInstances) = 0;
         virtual std::expected<std::unique_ptr<Sampler>, std::string> CreateSampler(const SamplerDesc& desc) = 0;
         virtual std::expected<std::unique_ptr<BindGroupLayout>, std::string> CreateBindGroupLayout(const BindGroupLayoutDesc& desc) = 0;
         // nullptr si le layout a atteint son maximum de groupes.

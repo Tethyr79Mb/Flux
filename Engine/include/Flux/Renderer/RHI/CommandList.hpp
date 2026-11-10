@@ -3,6 +3,7 @@
 // Liste de commandes d'une image et passes de dessin.
 
 #include "Flux/Math/Color.hpp"
+#include "Flux/Renderer/RHI/AccelerationStructure.hpp"
 #include "Flux/Renderer/RHI/BindGroup.hpp"
 #include "Flux/Renderer/RHI/Buffer.hpp"
 #include "Flux/Renderer/RHI/Pipeline.hpp"
@@ -119,6 +120,15 @@ namespace Flux::RHI {
         // le résultat est lisible par la suite et par le CPU (Readback, après Device::Submit). Hors d'une passe.
         virtual void CopyBuffer(const Buffer& source, std::uint64_t sourceOffset, Buffer& target, std::uint64_t targetOffset,
                                 std::uint64_t size) = 0;
+        // Ray tracing (Device::HasRayTracing), hors d'une passe. Construit les structures basses, toutes en même temps :
+        // chacune prend sa place de travail à la suite dans `scratch` (BufferUsage::AccelerationScratch, au moins la
+        // somme de leurs GetScratchSize), qu'aucune autre commande en vol n'utilise. Elles sont ensuite lisibles par
+        // BuildTopLevel. Une structure basse ne se construit qu'une fois.
+        virtual void BuildBottomLevels(std::span<AccelerationStructure* const> structures, const Buffer& scratch) = 0;
+        // Reconstruit la structure haute avec ces instances (au plus GetMaxInstances), écrites par le CPU dans sa
+        // mémoire : aucune image en vol ne doit la lire. Lisible ensuite par les shaders.
+        virtual void BuildTopLevel(AccelerationStructure& structure, std::span<const AccelerationInstance> instances,
+                                   const Buffer& scratch) = 0;
         // Note l'heure du GPU quand tout ce qui précède est fini, dans la case `slot` (< MaxTimestamps) de l'image en
         // cours ; relue deux images plus tard par Device::GetTimestamps. Sans effet si le GPU ne sait pas le faire.
         virtual void WriteTimestamp(std::uint32_t slot) = 0;

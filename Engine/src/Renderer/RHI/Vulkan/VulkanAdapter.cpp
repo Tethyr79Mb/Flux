@@ -100,6 +100,39 @@ namespace Flux::Vk {
             vkGetPhysicalDeviceProperties2(adapter.m_physicalDevice.physical_device, &properties);
             adapter.m_meshPreferredThreads = meshProperties.maxPreferredMeshWorkGroupInvocations;
         }
+        // Ray tracing par ray queries : rayons lancés depuis les shaders existants (ombres du soleil), sans pipeline de
+        // ray tracing. RTX 20, RX 6000, Arc et plus récentes ; sans lui (GTX 1060, RX 5700), les cartes d'ombre.
+        // FLUX_RAY_TRACING=0 l'ignore : comparaison avec les cartes d'ombre, diagnostic d'un pilote fautif.
+        const std::optional<std::string> rayTracingSetting = Platform::ReadEnvironment("FLUX_RAY_TRACING");
+        const bool rayTracingPresent = adapter.m_physicalDevice.is_extension_present(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)
+                                    && adapter.m_physicalDevice.is_extension_present(VK_KHR_RAY_QUERY_EXTENSION_NAME)
+                                    && adapter.m_physicalDevice.is_extension_present(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+        if (rayTracingPresent && rayTracingSetting != "0") {
+            VkPhysicalDeviceVulkan12Features address{};
+            address.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+            address.bufferDeviceAddress = VK_TRUE;
+            VkPhysicalDeviceAccelerationStructureFeaturesKHR structures{};
+            structures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+            structures.accelerationStructure = VK_TRUE;
+            VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{};
+            rayQuery.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+            rayQuery.rayQuery = VK_TRUE;
+            adapter.m_rayTracing = adapter.m_physicalDevice.enable_extension_features_if_present(address)
+                                && adapter.m_physicalDevice.enable_extension_features_if_present(structures)
+                                && adapter.m_physicalDevice.enable_extension_features_if_present(rayQuery)
+                                && adapter.m_physicalDevice.enable_extension_if_present(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME)
+                                && adapter.m_physicalDevice.enable_extension_if_present(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)
+                                && adapter.m_physicalDevice.enable_extension_if_present(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        }
+        if (adapter.m_rayTracing) {
+            VkPhysicalDeviceAccelerationStructurePropertiesKHR structureProperties{};
+            structureProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+            VkPhysicalDeviceProperties2 properties{};
+            properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            properties.pNext = &structureProperties;
+            vkGetPhysicalDeviceProperties2(adapter.m_physicalDevice.physical_device, &properties);
+            adapter.m_scratchAlignment = std::max(structureProperties.minAccelerationStructureScratchOffsetAlignment, 1u);
+        }
         // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
         adapter.m_bufferMarkers = adapter.m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
         if (adapter.m_physicalDevice.is_extension_present(VK_EXT_DEVICE_FAULT_EXTENSION_NAME)) {

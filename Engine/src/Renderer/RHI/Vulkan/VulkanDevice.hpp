@@ -50,6 +50,7 @@ namespace Flux::Vk {
         bool HasMeshShaders() const { return m_adapter.HasMeshShaders(); }
         std::uint32_t GetMeshPreferredThreads() const { return m_adapter.GetMeshPreferredThreads(); }
         bool HasTextureCompressionBC() const { return m_adapter.HasTextureCompressionBC(); }
+        bool HasRayTracing() const { return m_adapter.HasRayTracing(); }
         bool HasBufferMarkers() const { return m_adapter.HasBufferMarkers(); }
         bool HasDebugLabels() const { return m_instance->HasDebugLabels(); }
         // Après la perte du device : la description de la panne par le pilote (VK_EXT_device_fault), vide sans elle.
