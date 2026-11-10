@@ -616,8 +616,11 @@ bool LocateShadow(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, 
                   float3 worldPosition, float3 normal, float sunFacing, out ShadowPoint p)
 {
     const FrameData f = frame[0];
-    // Décalé le long de la normale (plus sur une face rasante) : une surface ne se fait pas d'ombre à elle-même.
-    const float3 offsetPosition = worldPosition + normal * texel * (1.5 + 2.0 * (1.0 - sunFacing));
+    // Décalé d'un demi-texel le long de la normale : la pente du plan (plus bas) et celle des obstacles dessinés
+    // (depthBiasSlope) gardent une surface de sa propre ombre. Avant la pente du plan, ce décalage montait à 3 texels
+    // sous un soleil rasant (70 cm dans la dernière cascade) : l'ombre d'une caisse basse disparaissait au loin. Plus
+    // grand seulement tout près du terminateur, où la pente du plan est bornée.
+    const float3 offsetPosition = worldPosition + normal * texel * (0.5 + 2.5 * (1.0 - saturate(sunFacing / 0.1)));
     float4 m[4] = {f.cascades[cascade * 4 + 0], f.cascades[cascade * 4 + 1], f.cascades[cascade * 4 + 2],
                    f.cascades[cascade * 4 + 3]};
     const float3 light = Transform(m, offsetPosition).xyz;
