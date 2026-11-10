@@ -103,7 +103,7 @@
       "name": "Caisse 1 m",
       "parent": "36f675cc81e74ef5",
       "transform": {
-        "position": [-2, 0.5, -9],
+        "position": [12, 0.5, -9],
         "rotation": [0.0, 0.0, 0.0, 1.0],
         "scale": [1, 1, 1]
       },
@@ -117,7 +117,7 @@
       "name": "Caisse 25 cm",
       "parent": "36f675cc81e74ef5",
       "transform": {
-        "position": [0, 0.125, -9],
+        "position": [14, 0.125, -9],
         "rotation": [0.0, 0.0, 0.0, 1.0],
         "scale": [0.25, 0.25, 0.25]
       },
@@ -131,7 +131,7 @@
       "name": "Plaque à 5 cm du sol",
       "parent": "36f675cc81e74ef5",
       "transform": {
-        "position": [2, 0.06, -9],
+        "position": [16, 0.06, -9],
         "rotation": [0.0, 0.0, 0.0, 1.0],
         "scale": [1.5, 0.02, 1.5]
       },
@@ -145,7 +145,7 @@
       "name": "Caisse à 1 m du sol",
       "parent": "36f675cc81e74ef5",
       "transform": {
-        "position": [4.5, 1.5, -9],
+        "position": [19, 1.5, -9],
         "rotation": [0.0, 0.0, 0.0, 1.0],
         "scale": [1, 1, 1]
       },
