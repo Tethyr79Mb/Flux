@@ -28,6 +28,7 @@ namespace Flux {
     {
         Math::Vector3f toSun;       // unitaire
         Math::Vector3f sunColor;    // couleur x intensité
+        float sunRadius = 0.0f;     // rayon apparent du disque du soleil (radians) : largeur de la pénombre des ombres
         float ambient = 1.0f;       // multiplie les textures de l'environnement (lumière ambiante et reflets)
         // Multiplie la lumière écrite dans l'image de la scène (pré-exposition : Radiance dans shaders/Mesh.slang).
         float preExposure = 1.0f;
