@@ -21,10 +21,13 @@ namespace Flux::Vk {
         };
 
         // sharedFamilies : files qui s'en servent sans transfert de propriété (VK_SHARING_MODE_CONCURRENT), à partir de
-        // deux ; sinon le buffer appartient à une seule famille.
+        // deux ; sinon le buffer appartient à une seule famille. minAlignment : alignement de l'adresse exigé au-delà de ce
+        // que le pilote annonce (instances d'une structure d'accélération : 16 octets, que vkGetBufferMemoryRequirements
+        // ne garantit pas).
         static std::expected<Buffer, std::string> Create(VmaAllocator allocator, VkDeviceSize size,
                                                          VkBufferUsageFlags usage, Memory memory,
-                                                         std::span<const std::uint32_t> sharedFamilies = {});
+                                                         std::span<const std::uint32_t> sharedFamilies = {},
+                                                         VkDeviceSize minAlignment = 0);
 
         Buffer() = default;
         ~Buffer();

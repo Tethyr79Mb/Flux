@@ -96,6 +96,10 @@ namespace Flux {
             m_toBuild.clear();
             m_toBuildModels.clear();
             m_instances.clear();
+        } else if (m_toBuild.empty() && frame.bottomScratch) {
+            // Jusqu'à 80 Mo par image en vol qui ne servent qu'à l'arrivée de nouveaux modèles (rare) : rendus aussitôt,
+            // quitte à les réallouer à la prochaine arrivée.
+            m_device.Retire([old = std::move(frame.bottomScratch)]() mutable { old.reset(); });
         }
 
         std::ranges::sort(m_used);

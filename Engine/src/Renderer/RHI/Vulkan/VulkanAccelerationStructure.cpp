@@ -59,7 +59,7 @@ namespace Flux::Vk {
                                         VkDeviceSize{structure->m_maxInstances} * sizeof(VkAccelerationStructureInstanceKHR),
                                         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
                                             | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                        Buffer::Memory::Upload);
+                                        Buffer::Memory::Upload, {}, 16); // adresse des instances : multiple de 16 (VUID 03715)
         if (!instances) {
             return std::unexpected(instances.error());
         }
