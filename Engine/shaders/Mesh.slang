@@ -608,6 +608,7 @@ struct ShadowPoint
     float z;           // profondeur du point dans la carte (0 : côté soleil)
     float texel;       // côté d'un texel, en mètres
     float depthRange;  // mètres couverts par la profondeur de la carte
+    float2 slope;      // pente du plan du point : profondeur par unité d'uv (voir LocateShadow)
 };
 
 // Le point dans la cascade `cascade` (case `cell` parmi `cells` dans `map`) ; false s'il sort de sa carte.
@@ -628,6 +629,7 @@ bool LocateShadow(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, 
     p.z = 0.0;
     p.texel = texel;
     p.depthRange = depthRange;
+    p.slope = float2(0.0);
     if (any(local < 0.0) || any(local > 1.0) || light.z > 1.0) {
         return false;
     }
@@ -640,6 +642,23 @@ bool LocateShadow(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, 
     p.high = (cell + 1.0) * size - p.atlasTexel * 1.5;
     p.uv = clamp(cell * size + local * size, p.low, p.high);
     p.z = light.z;
+
+    // Pente de la profondeur sur le plan du point (receiver plane) : une lecture voisine se compare à la profondeur
+    // de ce plan à son endroit, pas à celle du point. Sans elle, sous un soleil rasant, le sol à quelques texels côté
+    // soleil passait pour un obstacle : la recherche des obstacles trouvait toujours le sol (pénombre réduite au
+    // minimum, grands obstacles lointains jamais cherchés : bord de l'ombre de la tour coupé net, largeur variable).
+    // Deux directions du plan, l'une perpendiculaire au soleil, passées dans la carte, donnent sa pente.
+    const float3 side = cross(normal, f.toSun.xyz);
+    if (dot(side, side) > 1.0e-8) {
+        const float3 across = normalize(side);
+        const float3 along = cross(across, normal);
+        const float3 a = (m[0] * across.x + m[1] * across.y + m[2] * across.z).xyz;
+        const float3 b = (m[0] * along.x + m[1] * along.y + m[2] * along.z).xyz;
+        const float det = a.x * b.y - a.y * b.x; // tend vers 0 avec sunFacing : bornée en dessous de 3°
+        const float2 clipSlope = float2(a.z * b.y - b.z * a.y, a.x * b.z - b.x * a.z)
+                               / (det >= 0.0 ? max(det, 1.0e-30) : min(det, -1.0e-30));
+        p.slope = clipSlope * (2.0 * cells) * saturate(sunFacing / 0.05); // clip -> uv de l'atlas
+    }
     return true;
 }
 
@@ -654,7 +673,7 @@ float FindBlockers(Sampler2D depthMap, ShadowPoint p, float radius, float2x2 rot
     for (uint i = 0; i < taps; ++i) {
         const float2 at = clamp(p.uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (texels * p.atlasTexel), p.low, p.high);
         const float depth = depthMap.SampleLevel(at, 0.0).r;
-        if (depth < p.z) {
+        if (depth < p.z + dot(p.slope, at - p.uv)) {
             sum += depth;
             count += 1.0;
         }
@@ -673,7 +692,7 @@ float FilterShadow(Sampler2DShadow map, ShadowPoint p, float penumbra, float2x2 
     float lit = 0.0;
     for (uint i = 0; i < taps; ++i) {
         const float2 at = clamp(p.uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (texels * p.atlasTexel), p.low, p.high);
-        lit += map.SampleCmpLevelZero(at, p.z); // chaque lecture compare 2 x 2 texels, filtrés
+        lit += map.SampleCmpLevelZero(at, p.z + dot(p.slope, at - p.uv)); // compare 2 x 2 texels, filtrés
     }
     return lit / float(taps);
 }
