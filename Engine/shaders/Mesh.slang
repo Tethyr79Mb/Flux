@@ -741,7 +741,7 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     return min(lit, terrain);
 }
 
-// Vue de débogage (FrameData::debug.x) : teinte de la carte d'ombre que lit ce point.
+// Vue de débogage (FrameData::shadowOptions.x) : teinte de la carte d'ombre que lit ce point.
 float3 CascadeDebugTint(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
@@ -972,7 +972,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     }
     const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
     const float3 lit = direct + ambient + SceneLights(worldPosition, surface);
-    if (f.debug.x != 0) {
+    if (f.shadowOptions.x != 0) {
         return lit * CascadeDebugTint(worldPosition, geometryNormal, max(sunFacing, 0.0));
     }
     return lit;
