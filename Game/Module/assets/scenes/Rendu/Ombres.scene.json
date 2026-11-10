@@ -12,7 +12,7 @@
       },
       "sky": {
         "sunElevation": 12.0,
-        "sunAzimuth": 90.0
+        "sunAzimuth": 135.0
       }
     },
     {
@@ -652,7 +652,7 @@
       "name": "Tour 150 m",
       "parent": "72e6cc3ababced20",
       "transform": {
-        "position": [350, 75, -60],
+        "position": [290, 75, -210],
         "rotation": [0.0, 0.0, 0.0, 1.0],
         "scale": [20, 150, 20]
       },
