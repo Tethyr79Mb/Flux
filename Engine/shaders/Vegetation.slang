@@ -6,7 +6,7 @@
 // Les arbres eux-mêmes (place, haut, taille, espèce, angle) ont été semés une fois par computeTrees
 // (shaders/PlanetTile.slang).
 
-static const uint ListCount = 7;     // VegetationRenderer::ListCount
+static const uint ListCount = 8;     // VegetationRenderer::ListCount
 static const uint MaxSpecies = 8;    // VegetationRenderer::MaxSpecies
 static const uint MaxCommands = 128; // VegetationRenderer::MaxCommands
 static const uint SpeciesLists = ListCount * MaxSpecies;
@@ -31,6 +31,7 @@ struct CullFrame
     uint4 capacities[2];
     uint4 commandLists[MaxCommands / 4]; // liste x MaxSpecies + espèce de chaque commande
     uint4 counts;            // x : commandes ; y : plaines
+    float4 forest;           // x, y : tranche des ombres des forêts au loin (m)
 };
 
 // Doit correspondre à VegetationRenderer::CullCell : une plaine semée en vue.
@@ -126,6 +127,22 @@ bool ReachesView(float3 center, float radius, float length, uint c)
     return max(depthA, depthB) >= start && min(depthA, depthB) <= stop;
 }
 
+// Comme ReachesView, pour la tranche [start, stop] (mètres devant la caméra).
+bool ReachesSlice(float3 center, float radius, float length, float start, float stop)
+{
+    const float3 end = center - frame.toSun.xyz * length;
+    [unroll]
+    for (uint s = 0; s < 4; ++s) {
+        const float3 side = frame.receiverSides[s].xyz;
+        if (dot(center, side) > radius && dot(end, side) > radius) {
+            return false;
+        }
+    }
+    const float depthA = dot(center, frame.forward.xyz);
+    const float depthB = dot(end, frame.forward.xyz);
+    return max(depthA, depthB) >= start - radius && min(depthA, depthB) <= stop + radius;
+}
+
 // Nombre de 0 à 1 tiré de la place d'un arbre.
 float Random(float3 p)
 {
@@ -193,15 +210,21 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             if (distance < distances.y) {
                 Append(distance < distances.x ? 0 : 1, species, tint, position, scale, rotation);
             } else {
-                // Au loin, un arbre couvre de moins en moins de pixels et il y en a de plus en plus : passé deux fois
-                // la distance des imposteurs, une part d'eux seulement (inverse de la distance), toujours les mêmes
-                // (hasard tiré de leur place), un peu plus grands pour couvrir autant. La couleur des forêts sur le
-                // sol (fragmentPlanet) comble le reste. Près de la portée, ils rapetissent jusqu'à disparaître.
-                const float keep = saturate(2.0 * distances.y / distance);
-                if (Random(placed.xyz) < keep) {
-                    const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
-                    Append(2, species, tint, position, scale * min(rsqrt(keep), 1.6) * shrink, rotation);
-                }
+                // Au loin, l'imposteur (vertexImpostor, deux triangles) : tous gardés, aucun arbre n'apparaît en
+                // approchant (on n'en gardait qu'une part, qui grandissait avec la proximité). Près de la portée, ils
+                // rapetissent jusqu'à disparaître ; la couleur des forêts sur le sol (fragmentPlanet) prend le relais.
+                const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
+                Append(2, species, tint, position, scale * shrink, rotation);
+            }
+        } else if (distance + radius > frame.forest.x && distance - radius < frame.forest.y) {
+            // Hors du champ, au loin : son ombre peut tomber dans le champ (soleil de côté) ; sans elle, les ombres
+            // apparaissaient et disparaissaient en tournant. Imposteur vu du soleil seulement (carte des forêts).
+            const float sunHeight = dot(frame.toSun.xyz, normal);
+            const float top = dot(center - position, normal) + radius;
+            const float length = sunHeight > 0.0 ? min(frame.toSun.w, 2.0 * top / sunHeight) : frame.toSun.w;
+            if (ReachesSlice(center, radius, length, frame.forest.x, frame.forest.y)) {
+                const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
+                Append(7, species, tint, position, scale * shrink, rotation);
             }
         }
         // Ombres : le modèle simplifié, dans chaque cascade qu'il touche et dont la tranche peut recevoir son ombre.

@@ -535,6 +535,7 @@ namespace Flux {
             const auto tiles = graph.AddResource("tuiles de planète", Lifetime::Previous);
             const auto pyramid = graph.AddResource("pyramide de profondeur", Lifetime::Previous);
             const auto culled = graph.AddResource("arbres et objets retenus");
+            const auto impostors = graph.AddResource("imposteurs des arbres"); // atlas de TreeImpostors
             // Textures du ciel et des ombres, à leurs renderers : le graphe pose leurs barrières, seulement avec une scène.
             const auto texture = [this](const char* name, Lifetime lifetime, auto source) {
                 return graph.AddTexture(name, lifetime, [this, source]() -> const RHI::Texture* {
@@ -550,6 +551,7 @@ namespace Flux {
             const auto irradiance = texture("lumière du ciel", Lifetime::Previous, [this] { return &environment->GetIrradiance(); });
             const auto shadowMap = texture("carte d'ombres", Lifetime::Previous, [this] { return &meshes->GetShadowMap(); });
             const auto terrainShadowMap = texture("ombres du relief", Lifetime::Previous, [this] { return &meshes->GetTerrainShadowMap(); });
+            const auto forestShadowMap = texture("ombres des forêts", Lifetime::Previous, [this] { return &meshes->GetForestShadowMap(); });
             // Textures de travail, créées par le graphe à la taille de la vue 3D. Profondeur lisible : l'anticrénelage
             // y retrouve où était chaque point. L'historique a deux exemplaires : l'anticrénelage lit l'un, écrit l'autre.
             using TextureSize = RenderGraph::TextureSize;
@@ -630,6 +632,12 @@ namespace Flux {
                 .Writes(reflections)
                 .Writes(irradiance)
                 .Step("environnement", [this](RHI::CommandList& commands) { environment->Bake(commands, frame.index); });
+            // Une espèce d'arbre photographiée sous toutes ses vues, à sa première apparition (une par image au plus).
+            graph.AddPass("imposteurs des arbres")
+                .When([this] { return sceneVisible && meshes->ImpostorPending(frame.index); })
+                .Reads(cpu)
+                .Writes(impostors)
+                .Step("imposteurs des arbres", [this](RHI::CommandList& commands) { meshes->BakeImpostor(commands, frame.index); });
             graph.AddPass("ombres")
                 .When(scene)
                 .Reads(cpu)
@@ -652,6 +660,14 @@ namespace Flux {
                 .Reads(tiles)
                 .Writes(terrainShadowMap)
                 .Step("ombres du relief", [this](RHI::CommandList& commands) { meshes->DrawTerrainShadows(commands, frame.index); });
+            // Forêts au loin : les arbres retenus à cette image (tri des arbres), imposteurs pris.
+            graph.AddPass("ombres des forêts")
+                .When([this] { return sceneVisible && meshes->ForestShadowsPending(); })
+                .Reads(cpu)
+                .Reads(culled)
+                .Reads(impostors)
+                .Writes(forestShadowMap)
+                .Step("ombres des forêts", [this](RHI::CommandList& commands) { meshes->DrawForestShadows(commands, frame.index); });
             auto scenePass = graph.AddPass("scène");
             if (rayShadows) {
                 scenePass.Writes(targets.sceneSun); // lumière du soleil à part, ombrée ensuite en rayons
@@ -661,8 +677,10 @@ namespace Flux {
                 .Reads(cpu)
                 .Reads(tiles)
                 .Reads(culled)
+                .Reads(impostors)
                 .Reads(shadowMap)
                 .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
                 .Reads(skyBackground)
                 .Reads(skyRayleigh)
                 .Reads(skyMie)
@@ -803,6 +821,7 @@ namespace Flux {
                 .Reads(culled)
                 .Reads(shadowMap)
                 .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
                 .Reads(skyBackground)
                 .Reads(skyRayleigh)
                 .Reads(skyMie)

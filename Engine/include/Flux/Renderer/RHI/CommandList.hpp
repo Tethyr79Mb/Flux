@@ -38,7 +38,7 @@ namespace Flux::RHI {
         bool color = true;
         const Texture* colorTarget = nullptr;
         std::uint32_t colorLayer = 0;
-        std::uint32_t colorMip = 0; // texture cube seulement : la passe couvre ce niveau (sa taille)
+        std::uint32_t colorMip = 0; // texture cube ou à niveaux de mip : la passe couvre ce niveau (sa taille)
         // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0.
         const Texture* secondColorTarget = nullptr;
         // Avec secondColorTarget seulement : troisième texture de la même taille, effacée à 0.

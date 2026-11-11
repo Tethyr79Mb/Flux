@@ -307,13 +307,16 @@ namespace Flux::Vk {
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
         std::array<VkRenderingAttachmentInfo, 3> colorAttachments{colorAttachment, {}, {}};
-        // Seconde et troisième cibles (la troisième seulement avec la seconde), effacées à 0.
+        // Seconde et troisième cibles (la troisième seulement avec la seconde), effacées à 0 ; même couche et même
+        // niveau que la première quand elles en ont (atlas des imposteurs).
         const std::array<const RHI::Texture*, 2> extras{desc.secondColorTarget, desc.secondColorTarget ? desc.thirdColorTarget : nullptr};
         std::uint32_t colorCount = 1;
         for (const RHI::Texture* extra : extras) {
             if (extra) {
+                const auto& image = static_cast<const RhiTexture&>(*extra).GetImage();
+                const VkImageView extraView = image.GetFaceView(desc.colorLayer, desc.colorMip);
                 colorAttachments[colorCount] = colorAttachment;
-                colorAttachments[colorCount].imageView = static_cast<const RhiTexture&>(*extra).GetImage().GetView();
+                colorAttachments[colorCount].imageView = extraView != VK_NULL_HANDLE ? extraView : image.GetView();
                 colorAttachments[colorCount].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
                 ++colorCount;
             }

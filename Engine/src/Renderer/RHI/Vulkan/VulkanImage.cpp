@@ -64,8 +64,27 @@ namespace Flux::Vk {
     }
 
     std::expected<Image, std::string> Image::CreateAttachment(const Device& device, VkFormat format, VkExtent2D extent,
-                                                              VkImageUsageFlags usage, VkImageAspectFlags aspect) {
-        return Allocate(device, format, extent, usage, aspect);
+                                                              VkImageUsageFlags usage, VkImageAspectFlags aspect,
+                                                              std::uint32_t mipLevels) {
+        const std::uint32_t levels =
+            std::clamp(mipLevels, 1u, static_cast<std::uint32_t>(std::bit_width(std::max(extent.width, extent.height))));
+        auto image = Allocate(device, format, extent, usage, aspect, levels);
+        if (!image || levels == 1) {
+            return image;
+        }
+        image->m_faceViews.assign(levels, VK_NULL_HANDLE);
+        for (std::uint32_t mip = 0; mip < levels; ++mip) {
+            VkImageViewCreateInfo viewInfo{};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.image = image->m_image;
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            viewInfo.format = format;
+            viewInfo.subresourceRange = {aspect, mip, 1, 0, 1};
+            if (!Check(vkCreateImageView(image->m_device, &viewInfo, nullptr, &image->m_faceViews[mip]), "vkCreateImageView")) {
+                return std::unexpected("création de la vue d'un niveau de mip");
+            }
+        }
+        return image;
     }
 
     std::expected<Image, std::string> Image::CreateVolume(const Device& device, VkFormat format, VkExtent2D extent,
@@ -98,6 +117,7 @@ namespace Flux::Vk {
         if (!image) {
             return image;
         }
+        image->m_viewFaces = 6;
         image->m_faceViews.assign(static_cast<std::size_t>(levels) * 6, VK_NULL_HANDLE);
         for (std::uint32_t mip = 0; mip < levels; ++mip) {
             for (std::uint32_t face = 0; face < 6; ++face) {
@@ -226,6 +246,7 @@ namespace Flux::Vk {
           m_allocation(std::exchange(other.m_allocation, VK_NULL_HANDLE)),
           m_view(std::exchange(other.m_view, VK_NULL_HANDLE)),
           m_faceViews(std::exchange(other.m_faceViews, {})),
+          m_viewFaces(std::exchange(other.m_viewFaces, 1)),
           m_storageView(std::exchange(other.m_storageView, VK_NULL_HANDLE)),
           m_extent(std::exchange(other.m_extent, {})),
           m_depth(std::exchange(other.m_depth, 1)),
@@ -241,6 +262,7 @@ namespace Flux::Vk {
             m_allocation = std::exchange(other.m_allocation, VK_NULL_HANDLE);
             m_view = std::exchange(other.m_view, VK_NULL_HANDLE);
             m_faceViews = std::exchange(other.m_faceViews, {});
+            m_viewFaces = std::exchange(other.m_viewFaces, 1);
             m_storageView = std::exchange(other.m_storageView, VK_NULL_HANDLE);
             m_extent = std::exchange(other.m_extent, {});
             m_depth = std::exchange(other.m_depth, 1);
