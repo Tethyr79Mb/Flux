@@ -1,7 +1,7 @@
 // Ombres du soleil des modèles fixes en rayons (RayShadowRenderer), après la passe de la scène. Elle a écrit à part la
 // lumière directe du soleil de chaque pixel opaque (MeshRays.slang, SV_Target2), sans l'ombre des modèles tracés :
 // 1. computeTrace : un rayon par pixel qui reçoit du soleil, vers un point du disque du soleil tiré par pixel et par
-//    image ; visibilité (0 ou 1) et distance de l'obstacle.
+//    image ; visibilité (0 ou 1) et distance de l'obstacle (-1 : pas de soleil ici, rien de mesuré).
 // 2. computeFilter, deux fois (lignes puis colonnes) : moyenne pondérée des voisins de même profondeur, sur une
 //    largeur qui suit la pénombre (distance de l'obstacle x tangente du rayon apparent du soleil) : nette au contact,
 //    large loin de l'obstacle. L'anticrénelage temporel lisse ce qui reste.
@@ -24,7 +24,7 @@ struct RayShadowParams
 [[vk::binding(0, 0)]] Sampler2D sceneDepth;
 [[vk::binding(1, 0)]] Sampler2D sceneSun; // lumière directe du soleil (rgb), 0 sans soleil
 [[vk::binding(2, 0)]] [[vk::image_format("rg16f")]] RWTexture2D<float2> target;
-[[vk::binding(3, 0)]] Sampler2D source; // x : visibilité ; y : distance de l'obstacle (m), 0 sans obstacle
+[[vk::binding(3, 0)]] Sampler2D source; // x : visibilité ; y : distance de l'obstacle (m), 0 sans obstacle, -1 sans soleil
 [[vk::binding(4, 0)]] RaytracingAccelerationStructure sceneStructure;
 
 static const uint GroupSize = 8;
@@ -66,7 +66,9 @@ void computeTrace(uint3 id : SV_DispatchThreadID)
     const float viewDepth = ViewDepth(pixel);
     const float3 sun = sceneSun.Load(int3(pixel, 0)).rgb;
     if (viewDepth <= 0.0 || all(sun <= 0.0)) {
-        target[pixel] = float2(1.0, 0.0); // fond, ou pas de soleil ici (nuit, ombre du relief) : rien à chercher
+        // Fond, ou pas de soleil ici (nuit, ombre du relief, face tournée vers l'arrière) : rien à chercher. Marqué pour
+        // le lissage, qui ne le mélange pas aux voisins (un pilier dos au soleil éclaircissait le mur derrière lui).
+        target[pixel] = float2(1.0, -1.0);
         return;
     }
     const float3 position = PixelPosition(pixel, viewDepth);
@@ -105,7 +107,7 @@ void computeFilter(uint3 id : SV_DispatchThreadID)
     }
     const float2 center = source.Load(int3(pixel, 0)).xy;
     const float viewDepth = ViewDepth(pixel);
-    if (viewDepth <= 0.0) {
+    if (viewDepth <= 0.0 || center.y < 0.0) {
         target[pixel] = center;
         return;
     }
@@ -139,11 +141,15 @@ void computeFilter(uint3 id : SV_DispatchThreadID)
             continue;
         }
         const int2 at = clamp(pixel + step * i, int2(0), size - 1);
+        const float2 value = source.Load(int3(at, 0)).xy;
+        if (value.y < 0.0) {
+            continue; // pas de soleil là : aucune mesure
+        }
         const float depth = ViewDepth(at);
         // Même surface : profondeur à quelques pour cent près (plus loin à mesure qu'on s'écarte, pour un sol rasant).
         const float tolerance = viewDepth * (0.02 + 0.01 * abs(offset));
         const float weight = exp(-0.5 * offset * offset / (sigma * sigma)) * (abs(depth - viewDepth) < tolerance ? 1.0 : 0.0);
-        visibility += source.Load(int3(at, 0)).x * weight;
+        visibility += value.x * weight;
         total += weight;
     }
     target[pixel] = float2(total > 0.0 ? visibility / total : center.x, blocker);
