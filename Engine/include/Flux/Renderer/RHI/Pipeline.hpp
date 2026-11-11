@@ -47,6 +47,9 @@ namespace Flux::RHI {
         // writeSecondColor ; sinon laissée telle quelle (le shader n'a pas à l'écrire).
         Format secondColorFormat = Format::Undefined;
         bool writeSecondColor = false;
+        // Troisième cible (RenderPassDesc::thirdColorTarget), écrite par SV_Target2 si writeThirdColor.
+        Format thirdColorFormat = Format::Undefined;
+        bool writeThirdColor = false;
         // false : la couleur n'est pas écrite, seulement la profondeur (pré-passe de profondeur dans une passe avec
         // couleur).
         bool writeColor = true;

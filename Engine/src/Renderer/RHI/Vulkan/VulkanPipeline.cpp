@@ -190,15 +190,22 @@ namespace Flux::Vk {
             blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
         }
 
-        // Seconde cible : jamais mélangée (des données, pas de la lumière).
-        std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments{blendAttachment, {}};
+        // Seconde et troisième cibles : jamais mélangées (des données, pas la lumière de l'image).
+        std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachments{blendAttachment, {}, {}};
+        constexpr VkColorComponentFlags all = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT
+                                            | VK_COLOR_COMPONENT_A_BIT;
         if (desc.writeSecondColor) {
-            blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-                                               | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            blendAttachments[1].colorWriteMask = all;
         }
-        const std::array colorFormats{desc.colorFormat, desc.secondColorFormat};
+        if (desc.writeThirdColor) {
+            blendAttachments[2].colorWriteMask = all;
+        }
+        const std::array colorFormats{desc.colorFormat, desc.secondColorFormat, desc.thirdColorFormat};
         const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED; // sinon : profondeur seule
-        const uint32_t colorCount = !hasColor ? 0 : desc.secondColorFormat != VK_FORMAT_UNDEFINED ? 2 : 1;
+        const uint32_t colorCount = !hasColor                                        ? 0
+                                  : desc.secondColorFormat == VK_FORMAT_UNDEFINED ? 1
+                                  : desc.thirdColorFormat == VK_FORMAT_UNDEFINED  ? 2
+                                                                                  : 3;
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlend.attachmentCount = colorCount;

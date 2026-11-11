@@ -104,6 +104,25 @@ namespace Flux {
         // Ombres des modèles fixes en rayons (avec ray tracing, par défaut) ; sinon dans les cascades, pour comparer.
         void SetRayTracedShadows(bool enabled) { m_rayTracedShadows = enabled; }
         bool IsRayTracingShadows() const { return m_rayTracing && m_rayTracedShadows; }
+        // Troisième cible de la passe de la scène avec le ray tracing : la lumière directe du soleil des pixels opaques
+        // (shaders/MeshRays.slang), que RayShadowRenderer ombre en rayons.
+        static constexpr RHI::Format SunFormat = RHI::Format::RGBA16Float;
+        // À cette image, les modèles fixes opaques sont dans la structure haute et plus dans les cascades : leur ombre
+        // est à ajouter par RayShadowRenderer après la passe de la scène.
+        bool AreRayShadowsActive() const { return m_rayShadowsActive; }
+        const RHI::AccelerationStructure* GetSceneStructure(std::uint32_t frameIndex) const {
+            return m_rayTracing ? m_rayTracing->GetTopLevel(frameIndex) : nullptr;
+        }
+        // La caméra de la dernière image préparée, vue par RayShadowRenderer (voir RayShadowParams dans RayShadows.slang).
+        struct RayShadowView
+        {
+            std::array<float, 4> right;   // à l'échelle du champ ; w : décalage d'un sous-pixel
+            std::array<float, 4> up;
+            std::array<float, 4> forward; // w : plan proche
+            std::array<float, 4> toSun;   // w : tangente du rayon apparent du soleil
+            std::uint32_t noiseFrame = 0;
+        };
+        const RayShadowView& GetRayShadowView() const { return m_rayShadowView; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         void SetVegetationDistance(VegetationDistance distance) { m_vegetationDistance = distance; }
@@ -474,6 +493,7 @@ namespace Flux {
         // ne sont plus dessinés dans les cascades proches.
         bool m_rayShadowsActive = false;
         std::array<const RHI::AccelerationStructure*, RHI::FramesInFlight> m_boundStructure{}; // liée au groupe de l'image
+        RayShadowView m_rayShadowView;
         // Le même sol en mesh shaders (shaders/PlanetMesh.slang), quand le GPU les a : nuls sinon. Le groupe 3 lit les
         // sommets et les boîtes des paquets d'une page de tuiles (un groupe par page, fait à sa première utilisation).
         std::unique_ptr<RHI::BindGroupLayout> m_tileMeshLayout;

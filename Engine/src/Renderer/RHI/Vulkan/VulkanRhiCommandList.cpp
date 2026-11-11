@@ -306,12 +306,17 @@ namespace Flux::Vk {
         colorAttachment.loadOp = desc.loadColor ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
-        std::array<VkRenderingAttachmentInfo, 2> colorAttachments{colorAttachment, {}};
-        if (desc.secondColorTarget) {
-            const auto& second = static_cast<const RhiTexture&>(*desc.secondColorTarget);
-            colorAttachments[1] = colorAttachment;
-            colorAttachments[1].imageView = second.GetImage().GetView();
-            colorAttachments[1].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+        std::array<VkRenderingAttachmentInfo, 3> colorAttachments{colorAttachment, {}, {}};
+        // Seconde et troisième cibles (la troisième seulement avec la seconde), effacées à 0.
+        const std::array<const RHI::Texture*, 2> extras{desc.secondColorTarget, desc.secondColorTarget ? desc.thirdColorTarget : nullptr};
+        std::uint32_t colorCount = 1;
+        for (const RHI::Texture* extra : extras) {
+            if (extra) {
+                colorAttachments[colorCount] = colorAttachment;
+                colorAttachments[colorCount].imageView = static_cast<const RhiTexture&>(*extra).GetImage().GetView();
+                colorAttachments[colorCount].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+                ++colorCount;
+            }
         }
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -323,7 +328,7 @@ namespace Flux::Vk {
         renderingInfo.renderArea = {{0, 0}, area};
         renderingInfo.flags = flags;
         renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = desc.secondColorTarget ? 2 : 1;
+        renderingInfo.colorAttachmentCount = colorCount;
         renderingInfo.pColorAttachments = colorAttachments.data();
         renderingInfo.pDepthAttachment = desc.depth ? &depthAttachment : nullptr;
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
@@ -357,7 +362,7 @@ namespace Flux::Vk {
             return {};
         }
         // Formats de la passe, que les listes secondaires doivent connaître d'avance.
-        std::array<VkFormat, 2> colorFormats{};
+        std::array<VkFormat, 3> colorFormats{};
         VkCommandBufferInheritanceRenderingInfo rendering{};
         rendering.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO;
         if (desc.color) {
@@ -366,6 +371,10 @@ namespace Flux::Vk {
             if (desc.secondColorTarget) {
                 colorFormats[1] = ToVulkan(desc.secondColorTarget->GetFormat());
                 rendering.colorAttachmentCount = 2;
+                if (desc.thirdColorTarget) {
+                    colorFormats[2] = ToVulkan(desc.thirdColorTarget->GetFormat());
+                    rendering.colorAttachmentCount = 3;
+                }
             }
             rendering.pColorAttachmentFormats = colorFormats.data();
         }

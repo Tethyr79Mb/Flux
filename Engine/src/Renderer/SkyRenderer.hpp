@@ -56,9 +56,11 @@ namespace Flux {
     // l'espace (même sans SkyComponent, sur un fond noir).
     class SkyRenderer {
         public:
-        // `motionFormat` : seconde cible de la passe de la scène (PostRenderer::MotionFormat), laissée telle quelle.
+        // `motionFormat` : seconde cible de la passe de la scène (PostRenderer::MotionFormat), laissée telle quelle ;
+        // `sunFormat` : sa troisième avec le ray tracing (MeshRenderer::SunFormat), laissée à 0, sinon Undefined.
         static std::expected<std::unique_ptr<SkyRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                RHI::Format motionFormat, RHI::Format depthFormat);
+                                                                                RHI::Format motionFormat, RHI::Format depthFormat,
+                                                                                RHI::Format sunFormat = RHI::Format::Undefined);
 
         // Après Device::BeginFrame : les ressources de l'image frameIndex sont libres. `viewportHeight` en pixels.
         // Pas de décalage d'un sous-pixel (TemporalView::jitter), contrairement au reste de la scène : les étoiles, d'un

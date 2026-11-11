@@ -341,6 +341,8 @@ namespace Flux {
     }
 
     std::expected<void, std::string> MeshRenderer::CreatePipelines(RHI::Format colorFormat, RHI::Format motionFormat, RHI::Format depthFormat) {
+        // Troisième cible de la passe de la scène : la lumière du soleil à part, ombrée en rayons (RayShadowRenderer).
+        const RHI::Format sunFormat = m_rayTracing ? SunFormat : RHI::Format::Undefined;
         // Flux 0 : ModelVertex pour tous. Flux 1 : os et poids (modèles animés) ou forme parente (tuiles de planète).
         const std::array staticBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)}};
         const std::array skinnedBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
@@ -442,12 +444,15 @@ namespace Flux {
             desc.fragmentEntryPoint = kind.fragment;
             desc.colorFormat = colorFormat;
             desc.secondColorFormat = motionFormat;
+            desc.thirdColorFormat = sunFormat;
             desc.depthFormat = depthFormat;
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
             desc.depthBiasConstant = 0.0f;
             desc.depthBiasSlope = 0.0f;
             desc.depthClamp = false;
-            const auto createMain = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent) {
+            // scenePass : dessiné dans la passe de la scène (l'eau, mélangée, y est aussi), sinon dans celle des transparents.
+            const auto createMain = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent,
+                                        bool scenePass = true) {
                 desc.cullMode = cullMode;
                 // Transparents : mélangés à ce qui est déjà dessiné, cachés par les opaques plus proches, mais sans
                 // écrire la profondeur (un transparent ne doit pas masquer ce qui est derrière lui).
@@ -456,6 +461,10 @@ namespace Flux {
                 desc.blend = transparent ? RHI::BlendMode::Premultiplied : RHI::BlendMode::Opaque;
                 // Transparents : le mouvement reste celui de ce qu'on voit à travers.
                 desc.writeSecondColor = kind.motion && !transparent;
+                // Lumière du soleil à part (ray tracing) : écrite par les mêmes programmes que le mouvement (pas l'eau,
+                // mélangée) ; la passe des transparents n'a pas cette cible.
+                desc.thirdColorFormat = scenePass ? sunFormat : RHI::Format::Undefined;
+                desc.writeThirdColor = kind.motion && !transparent;
                 return create(pipeline, desc);
             };
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
@@ -482,6 +491,7 @@ namespace Flux {
                 desc.fragmentEntryPoint = "fragmentShadow";
                 desc.writeColor = false;
                 desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
+                desc.writeThirdColor = false;
                 desc.depthWrite = true;
                 desc.blend = RHI::BlendMode::Opaque;
                 // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
@@ -518,6 +528,8 @@ namespace Flux {
                 desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
                 desc.blend = RHI::BlendMode::Opaque;
                 desc.writeSecondColor = kind.motion;
+                desc.thirdColorFormat = sunFormat;
+                desc.writeThirdColor = kind.motion;
                 auto result = create(pipeline, desc);
                 desc.depthCompare = RHI::CompareOp::Greater;
                 return result;
@@ -531,11 +543,11 @@ namespace Flux {
             if (!kind.transparent) {
                 return {};
             }
-            desc.fragmentEntryPoint = "fragmentMain";
-            if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true); !result) {
+            desc.fragmentEntryPoint = "fragmentTransparent";
+            if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true, false); !result) {
                 return result;
             }
-            return createMain(pipelines.transparentBack, RHI::CullMode::Front, true);
+            return createMain(pipelines.transparentBack, RHI::CullMode::Front, true, false);
         };
         if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow",
                                                "fragmentOpaque", "fragmentMain", true, true});
@@ -578,6 +590,8 @@ namespace Flux {
             mesh.colorFormat = colorFormat;
             mesh.secondColorFormat = motionFormat;
             mesh.writeSecondColor = true;
+            mesh.thirdColorFormat = sunFormat;
+            mesh.writeThirdColor = sunFormat != RHI::Format::Undefined;
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -610,6 +624,8 @@ namespace Flux {
             mesh.colorFormat = colorFormat;
             mesh.secondColorFormat = motionFormat;
             mesh.writeSecondColor = true;
+            mesh.thirdColorFormat = sunFormat;
+            mesh.writeThirdColor = sunFormat != RHI::Format::Undefined;
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -1290,6 +1306,8 @@ namespace Flux {
         const float tanY = std::tan(0.5f * camera.verticalFov);
         frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
         frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);
+        m_rayShadowView = {frame.cameraRight, frame.cameraUp, ToArray(camera.GetForward(), camera.nearPlane), frame.toSun,
+                           temporal.noiseFrame};
         // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
         if (m_interiors.size() > MaxInteriors) {
             std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);

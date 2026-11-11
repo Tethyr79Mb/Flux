@@ -580,6 +580,12 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
 // Pixel de l'écran en cours (fragments) : fait tourner les lectures de la pénombre d'un pixel à l'autre. Reste à zéro
 // par sommet (océan, arbres lointains) : une rotation fixe.
 static float2 shadowPixel = float2(0.0);
+// Ray tracing (MeshRays.slang) : les pixels opaques écrivent à part la lumière directe du soleil (sunRadiance, sortie
+// SV_Target2), ombrée ensuite en rayons par RayShadows.slang. Seuls les transparents et l'eau lancent leur rayon ici
+// (traceSunHere, fixé par leur programme de pixel : les autres ne contiennent pas le code du rayon).
+static float3 sunDirect = float3(0.0);   // lumière directe du soleil de LightSurface
+static float3 sunRadiance = float3(0.0); // la même, telle qu'elle arrive dans l'image (air, exposition)
+static bool traceSunHere = false;
 
 // 16 points répartis dans le disque unité (disque de Poisson) : lectures de la pénombre, tournées à chaque pixel.
 static const float2 PoissonDisk[16] = {
@@ -868,7 +874,7 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     const float depth = dot(worldPosition, f.cameraForward.xyz);
     float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
 #ifdef FLUX_RAY_QUERY
-    if (f.shadowOptions.z != 0 && terrain > 0.0) {
+    if (f.shadowOptions.z != 0 && traceSunHere && terrain > 0.0) {
         terrain = min(terrain, TracedSunVisibility(worldPosition, normal));
     }
 #endif
@@ -1150,8 +1156,10 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
     const float3 lit = direct + ambient + SceneLights(worldPosition, surface);
     if (f.shadowOptions.x != 0) {
+        sunDirect = float3(0.0); // vue de débogage : pas d'ombre en rayons retirée de la teinte
         return lit * CascadeDebugTint(worldPosition, geometryNormal, max(sunFacing, 0.0));
     }
+    sunDirect = direct;
     return lit;
 }
 
@@ -1534,7 +1542,29 @@ struct SceneOutput
 {
     float4 color  : SV_Target0;
     float2 motion : SV_Target1;
+#ifdef FLUX_RAY_QUERY
+    float4 sun    : SV_Target2; // rgb : sunRadiance
+#endif
 };
+
+// Passe des transparents : ses deux cibles seulement.
+struct TransparentOutput
+{
+    float4 color  : SV_Target0;
+    float2 motion : SV_Target1;
+};
+
+// Sortie d'un pixel de la scène : couleur, mouvement et, avec le ray tracing, la lumière du soleil à part.
+SceneOutput SceneResult(float4 color, float2 motion)
+{
+    SceneOutput output;
+    output.color = color;
+    output.motion = motion;
+#ifdef FLUX_RAY_QUERY
+    output.sun = float4(sunRadiance, 0.0);
+#endif
+    return output;
+}
 
 // Mouvement propre à l'écran (en fraction de l'image, comme les uv) : où le point était à l'image précédente, moins
 // où il aurait été s'il n'avait pas bougé dans le monde. Nul pour tout ce qui est immobile, cockpit autour de la
@@ -1550,10 +1580,8 @@ float2 Motion(VertexOutput input)
 [shader("fragment")]
 SceneOutput fragmentPlanet(PlanetVertexOutput input)
 {
-    SceneOutput output;
-    output.color = PlanetColor(input);
-    output.motion = float2(0.0);
-    return output;
+    const float4 color = PlanetColor(input);
+    return SceneResult(color, float2(0.0));
 }
 
 // Mesure (panneau Moteur, « Sol sans pixels ») : le sol dessiné avec un pixel presque gratuit. Le temps qui reste est
@@ -1566,10 +1594,7 @@ SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
                              + input.airScattered, float3(1.0))
                        + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0)) + input.clouds
                        + float(input.base.draw);
-    SceneOutput output;
-    output.color = float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0);
-    output.motion = float2(0.0);
-    return output;
+    return SceneResult(float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0), float2(0.0));
 }
 
 float4 PlanetColor(PlanetVertexOutput input)
@@ -1731,6 +1756,7 @@ float4 PlanetColor(PlanetVertexOutput input)
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, input.clouds, inside);
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
     const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
+    sunRadiance = Radiance(sunDirect * input.airTransmittance);
     return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), 1.0);
 }
 
@@ -1816,6 +1842,7 @@ float4 fragmentOcean(OceanVertexOutput input) : SV_Target
 {
     const OceanSurface v = input.base;
     shadowPixel = v.position.xy;
+    traceSunHere = true; // mélangée à ce qui est dessous : pas de lumière du soleil à part
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float depth = v.uv.x;
@@ -1873,13 +1900,23 @@ float4 fragmentOcean(OceanVertexOutput input) : SV_Target
     return float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié
 }
 
-// Matériau à seuil d'alpha (feuillage, grillage) et transparents : les pixels sous le seuil sont jetés.
+// Matériau à seuil d'alpha (feuillage, grillage) : les pixels sous le seuil sont jetés.
 [shader("fragment")]
 SceneOutput fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    SceneOutput output;
+    const float4 color = MeshColor(input, frontFacing, true);
+    return SceneResult(color, Motion(input));
+}
+
+// Transparents (passe des transparents, sans la lumière du soleil à part) : avec le ray tracing, leur rayon vers le
+// soleil est lancé ici. Ils couvrent peu de pixels ; le code du rayon reste hors des programmes des opaques.
+[shader("fragment")]
+TransparentOutput fragmentTransparent(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    traceSunHere = true;
+    TransparentOutput output;
     output.color = MeshColor(input, frontFacing, true);
-    output.motion = Motion(input);
+    output.motion = Motion(input); // pas écrit (Pipelines::transparent) : le mouvement reste celui du fond
     return output;
 }
 
@@ -1888,10 +1925,8 @@ SceneOutput fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 [shader("fragment")]
 SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    SceneOutput output;
-    output.color = MeshColor(input, frontFacing, false);
-    output.motion = Motion(input);
-    return output;
+    const float4 color = MeshColor(input, frontFacing, false);
+    return SceneResult(color, Motion(input));
 }
 
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
@@ -1902,21 +1937,17 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 [shader("fragment")]
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
-    SceneOutput output;
-    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true, input.tint);
-    output.motion = Motion(input.base);
-    return output;
+    const float4 color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true, input.tint);
+    return SceneResult(color, Motion(input.base));
 }
 
 // Écorce des arbres : opaque, sans seuil.
 [shader("fragment")]
 SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    SceneOutput output;
-    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds, false,
-                             input.tint);
-    output.motion = Motion(input.base);
-    return output;
+    const float4 color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds, false,
+                                   input.tint);
+    return SceneResult(color, Motion(input.base));
 }
 
 // alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
@@ -1994,6 +2025,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     float3 transmittance = airTransmittance;
     const float3 scattered = airGiven ? airScattered : AirTo(input.worldPosition, transmittance);
     lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
+    sunRadiance = transparent ? float3(0.0) : Radiance(sunDirect * transmittance);
     return float4(Radiance(lit), alpha);
 }
 
