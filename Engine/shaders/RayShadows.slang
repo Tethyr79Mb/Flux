@@ -172,3 +172,18 @@ float4 fragmentComposite(VertexOutput input) : SV_Target
     const float3 sun = sceneSun.Load(pixel).rgb;
     return float4(-sun * (1.0 - visibility), 0.0);
 }
+
+// Vue de débogage (RayShadowRenderer::SetShowMask), à la place de l'image : rouge où le rayon est arrêté (`source` : les
+// rayons avant le lissage), vert selon la lumière du soleil reçue. Jaune : ombre juste ; vert seul : soleil reçu que
+// rien n'arrête ; noir : pas de soleil (rien à chercher).
+[shader("fragment")]
+float4 fragmentMask(VertexOutput input) : SV_Target
+{
+    const int3 pixel = int3(int2(input.position.xy), 0);
+    const float3 sun = sceneSun.Load(pixel).rgb;
+    const bool lit = any(sun > 0.0);
+    const float hit = lit ? 1.0 - saturate(source.Load(pixel).x) : 0.0;
+    const float received = lit ? 0.2 + 0.8 * saturate(dot(sun, float3(0.2126, 0.7152, 0.0722))) : 0.0;
+    return float4(hit, received, 0.0, 1.0);
+}
+

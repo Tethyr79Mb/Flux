@@ -781,8 +781,11 @@ namespace FluxEditor {
                            "teinté selon la carte d'ombre du soleil qu'il lit (rouge, vert, bleu, jaune : cascades proches "
                            "jusqu'à 6, 20, 60 et 200 m ; magenta et cyan : relief jusqu'à 3 et 40 km ; gris : aucune). "
                            "ray_shadows : ombres des modèles fixes en rayons (true, par défaut avec le ray tracing) ou dans "
-                           "les cartes d'ombre (false), pour comparer. Sans argument : l'état actuel.",
-            .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}, {"ray_shadows", {{"type", "boolean"}}}}),
+                           "les cartes d'ombre (false), pour comparer. ray_mask : à la place de l'image, rouge où le rayon vers le "
+                           "soleil est arrêté (avant le lissage), vert selon le soleil reçu (jaune : ombre ; vert seul : "
+                           "soleil que rien n'arrête). Sans argument : l'état actuel.",
+            .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}, {"ray_shadows", {{"type", "boolean"}}},
+                                   {"ray_mask", {{"type", "boolean"}}}}),
             .run = [&engine](const Json& arguments) -> McpOutcome {
                 Renderer& renderer = engine.GetRenderer();
                 if (arguments.contains("shadow_cascades")) {
@@ -791,8 +794,12 @@ namespace FluxEditor {
                 if (arguments.contains("ray_shadows")) {
                     renderer.SetRayTracedShadows(arguments.value("ray_shadows", true));
                 }
-                return McpToolResult::Text(std::format("shadow_cascades : {}, ray_shadows : {}", renderer.IsShowingShadowCascades(),
-                                                       renderer.IsRayTracingShadows()));
+                if (arguments.contains("ray_mask")) {
+                    renderer.SetShowRayShadowMask(arguments.value("ray_mask", false));
+                }
+                return McpToolResult::Text(std::format("shadow_cascades : {}, ray_shadows : {}, ray_mask : {}",
+                                                       renderer.IsShowingShadowCascades(), renderer.IsRayTracingShadows(),
+                                                       renderer.IsShowingRayShadowMask()));
             },
         });
 

@@ -199,6 +199,9 @@ namespace Flux {
         // d'ombre, pour comparer. Sans ray tracing, toujours dans les cartes.
         void SetRayTracedShadows(bool enabled);
         bool IsRayTracingShadows() const;
+        // Vue de débogage des ombres en rayons (RayShadowRenderer::SetShowMask) ; sans effet sans ray tracing.
+        void SetShowRayShadowMask(bool enabled);
+        bool IsShowingRayShadowMask() const;
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;

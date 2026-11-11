@@ -40,6 +40,11 @@ namespace Flux {
         // Dans une passe vers l'image de la scène (gardée), viewport compris.
         void Composite(RHI::CommandList& commands) const;
 
+        // Vue de débogage : à la place de la scène, rouge où le rayon est arrêté (avant le lissage), vert selon la
+        // lumière du soleil reçue ; vert seul : soleil reçu que rien n'arrête.
+        void SetShowMask(bool enabled) { m_showMask = enabled; }
+        bool IsShowingMask() const { return m_showMask; }
+
         private:
         explicit RayShadowRenderer(RHI::Device& device) : m_device(device) {}
         void Run(RHI::CommandList& commands, const RHI::Pipeline& pipeline, const RHI::BindGroup& group,
@@ -51,12 +56,15 @@ namespace Flux {
         std::unique_ptr<RHI::Pipeline> m_trace;
         std::unique_ptr<RHI::Pipeline> m_filter;
         std::unique_ptr<RHI::Pipeline> m_composite;
+        std::unique_ptr<RHI::Pipeline> m_maskView;
         // Rayons : un groupe par image en vol (la structure de la scène est celle de l'image).
         std::array<std::unique_ptr<RHI::BindGroup>, RHI::FramesInFlight> m_traceGroups;
         std::array<const RHI::AccelerationStructure*, RHI::FramesInFlight> m_boundScene{};
         std::unique_ptr<RHI::BindGroup> m_rowsGroup;
         std::unique_ptr<RHI::BindGroup> m_columnsGroup;
         std::unique_ptr<RHI::BindGroup> m_compositeGroup;
+        std::unique_ptr<RHI::BindGroup> m_maskGroup; // rayons avant le lissage
         Targets m_targets;
+        bool m_showMask = false;
     };
 }

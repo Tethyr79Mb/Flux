@@ -45,7 +45,7 @@ namespace Flux {
             RHI::Binding{SourceSlot, RHI::BindingType::Texture, both},
             RHI::Binding{SceneSlot, RHI::BindingType::AccelerationStructure, RHI::ShaderStage::Compute},
         };
-        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight + 3});
+        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight + 4});
         if (!layout) {
             return std::unexpected(layout.error());
         }
@@ -56,7 +56,8 @@ namespace Flux {
         renderer->m_rowsGroup = device.CreateBindGroup(*renderer->m_layout);
         renderer->m_columnsGroup = device.CreateBindGroup(*renderer->m_layout);
         renderer->m_compositeGroup = device.CreateBindGroup(*renderer->m_layout);
-        if (!renderer->m_traceGroups.back() || !renderer->m_compositeGroup) {
+        renderer->m_maskGroup = device.CreateBindGroup(*renderer->m_layout);
+        if (!renderer->m_traceGroups.back() || !renderer->m_compositeGroup || !renderer->m_maskGroup) {
             return std::unexpected("allocation des groupes des ombres en rayons");
         }
 
@@ -82,6 +83,13 @@ namespace Flux {
             return std::unexpected(composite.error());
         }
         renderer->m_composite = std::move(*composite);
+        desc.fragmentEntryPoint = "fragmentMask";
+        desc.blend = RHI::BlendMode::Opaque;
+        auto maskView = device.CreatePipeline(desc);
+        if (!maskView) {
+            return std::unexpected(maskView.error());
+        }
+        renderer->m_maskView = std::move(*maskView);
         return renderer;
     }
 
@@ -100,6 +108,8 @@ namespace Flux {
         m_columnsGroup->SetStorageTexture(TargetSlot, *targets.mask);
         m_compositeGroup->SetTexture(SunSlot, *targets.sun, *m_pointSampler);
         m_compositeGroup->SetTexture(SourceSlot, *targets.mask, *m_pointSampler);
+        m_maskGroup->SetTexture(SunSlot, *targets.sun, *m_pointSampler);
+        m_maskGroup->SetTexture(SourceSlot, *targets.rays, *m_pointSampler);
     }
 
     void RayShadowRenderer::Run(RHI::CommandList& commands, const RHI::Pipeline& pipeline, const RHI::BindGroup& group,
@@ -137,8 +147,8 @@ namespace Flux {
     }
 
     void RayShadowRenderer::Composite(RHI::CommandList& commands) const {
-        commands.BindPipeline(*m_composite);
-        commands.SetBindGroup(0, *m_compositeGroup);
+        commands.BindPipeline(m_showMask ? *m_maskView : *m_composite);
+        commands.SetBindGroup(0, m_showMask ? *m_maskGroup : *m_compositeGroup);
         commands.Draw(3, 0);
     }
 }

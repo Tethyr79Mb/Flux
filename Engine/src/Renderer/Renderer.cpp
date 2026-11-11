@@ -1176,6 +1176,16 @@ namespace Flux {
         return m_impl->meshes->IsRayTracingShadows();
     }
 
+    void Renderer::SetShowRayShadowMask(bool enabled) {
+        if (m_impl->rayShadows) {
+            m_impl->rayShadows->SetShowMask(enabled);
+        }
+    }
+
+    bool Renderer::IsShowingRayShadowMask() const {
+        return m_impl->rayShadows && m_impl->rayShadows->IsShowingMask();
+    }
+
     void Renderer::SetGroundDetail(GroundDetail detail) {
         m_impl->meshes->SetGroundDetail(detail);
     }
