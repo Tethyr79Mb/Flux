@@ -396,6 +396,12 @@ namespace Flux::Planetology {
     // Tuile confiée au GPU, calculée au début de l'image suivante (PlanetRenderer::Compute) : sa case est prête pour
     // tout dessin qui suit. false si l'image est pleine.
     bool PlanetRenderer::Schedule(PlanetState& state, TileKey key, Node& node, std::uint32_t frameIndex) {
+        // Image pleine : rien à prendre. Sans ce test, la 65e tuile demandée prenait une case avant d'être refusée ;
+        // MakeRoom n'en libère que pour MaxTilesPerFrame, si bien que, les cases toutes prises (après quelques sauts de
+        // la caméra), elle en réclamait une de trop : « trop de tuiles de planète ».
+        if (m_compute->IsFrameFull(frameIndex)) {
+            return false;
+        }
         // Une case libérée que le GPU ne lit plus, sinon une nouvelle.
         std::uint32_t tile = NoTile;
         const auto free = std::ranges::find_if(m_freeTiles, [this](const FreeTile& f) { return f.frame + RHI::FramesInFlight < m_frame; });

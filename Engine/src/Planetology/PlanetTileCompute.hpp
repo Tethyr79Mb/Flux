@@ -72,6 +72,8 @@ namespace Flux::Planetology {
         // Tuiles calculées la dernière fois que l'image `frameIndex` a servi, dans l'ordre des Add ; à lire une fois
         // le GPU passé (après Device::BeginFrame revenu sur cette image, ou Device::Submit).
         std::span<const Stats> GetStats(std::uint32_t frameIndex);
+        // L'image a déjà MaxTilesPerFrame tuiles : à demander avant de prendre une case pour Add.
+        bool IsFrameFull(std::uint32_t frameIndex) const { return m_frames[frameIndex].tiles.size() >= MaxTilesPerFrame; }
         // false si l'image a déjà MaxTilesPerFrame tuiles. La case ne doit plus être lue par le GPU (images en vol).
         bool Add(std::uint32_t frameIndex, const Terrain& terrain, TileKey key, std::uint32_t tile);
         // Calcule les tuiles ajoutées pour cette image, hors d'une passe ; lisibles par les commandes suivantes.

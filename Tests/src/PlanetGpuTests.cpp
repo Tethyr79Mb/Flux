@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdio>
 #include <expected>
+#include <format>
 #include <string>
 #include <cmath>
 #include <numbers>
@@ -112,6 +113,7 @@ namespace {
         {
             int drawn;  // niveau dessiné 4 km devant
             bool ready; // la tuile deux niveaux plus fine, là, est calculée
+            bool crowded; // plus de tuiles demandées en une image que le GPU n'en calcule
         };
         const auto run = [&](std::chrono::duration<double> step) -> std::expected<Ahead, std::string> {
             auto created = Planetology::PlanetRenderer::Create(device);
@@ -129,6 +131,8 @@ namespace {
             };
             std::vector<Planetology::PlanetRenderer::Tile> tiles;
             auto time = std::chrono::steady_clock::time_point{} + std::chrono::hours(1);
+            std::uint32_t scheduled = 0;
+            bool crowded = false;
             for (int n = 0; n < 200 + Frames; ++n) {
                 // Immobile jusqu'à ce que le sol soit prêt, puis en route.
                 const int moving = std::max(n - 200, 0);
@@ -140,6 +144,13 @@ namespace {
                 renderer.EndFrame(0);
                 if (!device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); })) {
                     return std::unexpected(std::string("envoi au GPU"));
+                }
+                // Image pleine : aucune case prise en trop. La tuile refusée en prenait une ; les cases toutes prises
+                // (après quelques sauts de la caméra), elle en réclamait au-delà du maximum (« trop de tuiles »).
+                scheduled += renderer.GetScheduledTileCount();
+                crowded = crowded || renderer.GetPendingTileCount() > Planetology::PlanetTileCompute::MaxTilesPerFrame;
+                if (renderer.GetTiles().GetTileCount() > scheduled) {
+                    return std::unexpected(std::format("{} cases prises pour {} tuiles calculées", renderer.GetTiles().GetTileCount(), scheduled));
                 }
             }
             // Le sol 4 km devant la caméra.
@@ -153,12 +164,17 @@ namespace {
             if (level < 0) {
                 return std::unexpected(std::string("sol 4 km devant non dessiné"));
             }
-            return Ahead{level, renderer.IsTileReady(static_cast<Entity>(1), Planetology::FindTile(ahead, static_cast<std::uint32_t>(level) + 2u))};
+            return Ahead{level, renderer.IsTileReady(static_cast<Entity>(1), Planetology::FindTile(ahead, static_cast<std::uint32_t>(level) + 2u)),
+                         crowded};
         };
         const auto flying = run(std::chrono::duration<double>(1.0 / 60.0));
         const auto jumping = run(std::chrono::duration<double>(1.0));
         if (!flying || !jumping) {
             std::printf("ÉCHEC %s\n", (!flying ? flying.error() : jumping.error()).c_str());
+            return false;
+        }
+        if (!flying->crowded) {
+            std::printf("ÉCHEC jamais plus de tuiles demandées que l'image n'en calcule : le cas de l'image pleine n'est pas vérifié\n");
             return false;
         }
         if (flying->drawn != jumping->drawn || !flying->ready || jumping->ready) {
