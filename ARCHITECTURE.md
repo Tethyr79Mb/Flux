@@ -562,7 +562,14 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   `BufferUsage::AccelerationInput`) ; `RayTracingScene` (à `MeshRenderer`) la construit à la première image où le
   modèle est dans la scène, et refait à chaque image la structure haute (une instance par entité gardée, matrice
   relative à la caméra, indice de ses `DrawData`). Une structure haute et une mémoire de travail par image en vol.
-  Passe « ray tracing » du graphe, avant les ombres.
+  Passe « ray tracing » du graphe, avant les ombres. Avec elle, les shaders de la scène sont les variantes
+  `MeshRays.slang` (de même `ModelMesh`, `PlanetMesh`, `PlanetMeshSmall`), qui déclarent la structure haute (liaison 18
+  du groupe de l'image) : un module qui la déclare ne se charge pas sans ray queries. Leurs pixels opaques écrivent à
+  part la lumière directe du soleil (troisième cible de la passe de la scène) ; `RayShadowRenderer`
+  (`RayShadows.slang`) lance ensuite un rayon par pixel éclairé vers un point du disque du soleil, lisse le masque
+  selon la largeur de la pénombre (lignes puis colonnes, profondeurs voisines seulement) et retire de l'image la
+  lumière qui n'arrive pas. Transparents et eau lancent leur rayon dans leur shader. Les modèles fixes opaques tracés
+  ne sont plus dessinés dans les cascades proches (`FrameData::shadowOptions.z`).
 - Sol en mesh shaders quand le GPU a `VK_EXT_mesh_shader` (choisi seul au démarrage, `FLUX_MESH_SHADERS=0` pour
   comparer) : `PlanetMesh.slang`, module SPIR-V à part (un module qui déclare la capacité MeshShadingEXT ne se charge
   pas sur une carte sans). Le calcul des tuiles écrit aussi la boîte de chacun des 16 paquets de 8×8 carrés (jupes
