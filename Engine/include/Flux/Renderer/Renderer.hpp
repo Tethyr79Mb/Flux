@@ -195,6 +195,13 @@ namespace Flux {
         // pour les 4 cascades proches ; magenta et cyan pour le relief au loin ; gris sans ombre).
         void SetShowShadowCascades(bool enabled);
         bool IsShowingShadowCascades() const;
+        // Ombres du soleil des modèles fixes en rayons (GPU avec ray tracing, par défaut) ; false : dans les cartes
+        // d'ombre, pour comparer. Sans ray tracing, toujours dans les cartes.
+        void SetRayTracedShadows(bool enabled);
+        bool IsRayTracingShadows() const;
+        // Vue de débogage des ombres en rayons (RayShadowRenderer::SetShowMask) ; sans effet sans ray tracing.
+        void SetShowRayShadowMask(bool enabled);
+        bool IsShowingRayShadowMask() const;
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;

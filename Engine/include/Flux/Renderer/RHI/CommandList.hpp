@@ -41,6 +41,8 @@ namespace Flux::RHI {
         std::uint32_t colorMip = 0; // texture cube ou à niveaux de mip : la passe couvre ce niveau (sa taille)
         // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0.
         const Texture* secondColorTarget = nullptr;
+        // Avec secondColorTarget seulement : troisième texture de la même taille, effacée à 0.
+        const Texture* thirdColorTarget = nullptr;
         // Tampon de profondeur gardé après la passe, pour être lu ensuite (CreateRenderTarget sampled).
         bool keepDepth = false;
         // La profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a déjà remplie) ; sans

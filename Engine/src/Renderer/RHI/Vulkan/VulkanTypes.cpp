@@ -77,6 +77,7 @@ namespace Flux::Vk {
         switch (type) {
             case RHI::BindingType::StorageBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             case RHI::BindingType::StorageTexture: return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            case RHI::BindingType::AccelerationStructure: return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
             case RHI::BindingType::Texture:
             case RHI::BindingType::TextureTable: break;
         }

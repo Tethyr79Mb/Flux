@@ -1,5 +1,6 @@
 #include "Renderer/RHI/Vulkan/VulkanRhiBindGroup.hpp"
 
+#include "Renderer/RHI/Vulkan/VulkanAccelerationStructure.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiBuffer.hpp"
 #include "Renderer/RHI/Vulkan/VulkanRhiTexture.hpp"
 
@@ -61,6 +62,22 @@ namespace Flux::Vk {
         write.descriptorCount = 1;
         write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+    }
+
+    void RhiBindGroup::SetAccelerationStructure(std::uint32_t slot, const RHI::AccelerationStructure& structure) {
+        const VkAccelerationStructureKHR handle = static_cast<const RhiAccelerationStructure&>(structure).GetHandle();
+        VkWriteDescriptorSetAccelerationStructureKHR structureInfo{};
+        structureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+        structureInfo.accelerationStructureCount = 1;
+        structureInfo.pAccelerationStructures = &handle;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.pNext = &structureInfo;
+        write.dstSet = m_set;
+        write.dstBinding = slot;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
     }
 }

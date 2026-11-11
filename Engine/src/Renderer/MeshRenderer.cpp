@@ -12,6 +12,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <numbers>
 #include <span>
 
@@ -148,6 +149,7 @@ namespace Flux {
         constexpr std::uint32_t ForestShadowMapSlot = 18;
         // Cascades des forêts au loin dans FrameData::cascades.
         constexpr std::uint32_t ForestCascade = ShadowCascadeCount + TerrainShadowCascadeCount;
+        constexpr std::uint32_t SceneStructureSlot = 19; // ray tracing seulement (shaders/MeshRays.slang)
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -308,8 +310,12 @@ namespace Flux {
             RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, RHI::ShaderStage::Fragment},
         };
-        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
+        // La structure de la scène n'existe qu'avec le ray tracing (sinon, type de liaison inconnu du pilote).
+        const std::span<const RHI::Binding> frameBindings = renderer->m_rayTracing ? std::span(bindings)
+                                                                                    : std::span(bindings).first(bindings.size() - 1);
+        auto layout = device.CreateBindGroupLayout({.bindings = frameBindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
             return std::unexpected(layout.error());
         }
@@ -366,6 +372,8 @@ namespace Flux {
     }
 
     std::expected<void, std::string> MeshRenderer::CreatePipelines(RHI::Format colorFormat, RHI::Format motionFormat, RHI::Format depthFormat) {
+        // Troisième cible de la passe de la scène : la lumière du soleil à part, ombrée en rayons (RayShadowRenderer).
+        const RHI::Format sunFormat = m_rayTracing ? SunFormat : RHI::Format::Undefined;
         // Flux 0 : ModelVertex pour tous. Flux 1 : os et poids (modèles animés) ou forme parente (tuiles de planète).
         const std::array staticBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)}};
         const std::array skinnedBuffers{RHI::VertexBufferLayout{0, sizeof(ModelVertex)},
@@ -421,7 +429,7 @@ namespace Flux {
         };
         const auto createAll = [&](Pipelines& pipelines, const Kind& kind) -> std::expected<void, std::string> {
             RHI::PipelineDesc desc;
-            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
+            desc.shaderPath = ShaderPath("Mesh");
             desc.vertexBuffers = kind.buffers;
             desc.bindGroupLayouts = layouts;
             desc.pushConstantsSize = sizeof(DrawParams);
@@ -467,12 +475,15 @@ namespace Flux {
             desc.fragmentEntryPoint = kind.fragment;
             desc.colorFormat = colorFormat;
             desc.secondColorFormat = motionFormat;
+            desc.thirdColorFormat = sunFormat;
             desc.depthFormat = depthFormat;
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
             desc.depthBiasConstant = 0.0f;
             desc.depthBiasSlope = 0.0f;
             desc.depthClamp = false;
-            const auto createMain = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent) {
+            // scenePass : dessiné dans la passe de la scène (l'eau, mélangée, y est aussi), sinon dans celle des transparents.
+            const auto createMain = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent,
+                                        bool scenePass = true) {
                 desc.cullMode = cullMode;
                 // Transparents : mélangés à ce qui est déjà dessiné, cachés par les opaques plus proches, mais sans
                 // écrire la profondeur (un transparent ne doit pas masquer ce qui est derrière lui).
@@ -481,6 +492,11 @@ namespace Flux {
                 desc.blend = transparent ? RHI::BlendMode::Premultiplied : RHI::BlendMode::Opaque;
                 // Transparents : le mouvement reste celui de ce qu'on voit à travers.
                 desc.writeSecondColor = kind.motion && !transparent;
+                // Lumière du soleil à part (ray tracing) : écrite par les mêmes programmes que le mouvement ; l'eau,
+                // mélangée, voile celle du fond (fragmentOcean). La passe des transparents n'a pas cette cible.
+                desc.thirdColorFormat = scenePass ? sunFormat : RHI::Format::Undefined;
+                desc.writeThirdColor = transparent ? scenePass && sunFormat != RHI::Format::Undefined : kind.motion;
+                desc.blendThirdColor = transparent;
                 return create(pipeline, desc);
             };
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
@@ -507,6 +523,8 @@ namespace Flux {
                 desc.fragmentEntryPoint = "fragmentShadow";
                 desc.writeColor = false;
                 desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
+                desc.writeThirdColor = false;
+                desc.blendThirdColor = false;
                 desc.depthWrite = true;
                 desc.blend = RHI::BlendMode::Opaque;
                 // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
@@ -543,6 +561,9 @@ namespace Flux {
                 desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
                 desc.blend = RHI::BlendMode::Opaque;
                 desc.writeSecondColor = kind.motion;
+                desc.thirdColorFormat = sunFormat;
+                desc.writeThirdColor = kind.motion;
+                desc.blendThirdColor = false;
                 auto result = create(pipeline, desc);
                 desc.depthCompare = RHI::CompareOp::Greater;
                 return result;
@@ -556,11 +577,11 @@ namespace Flux {
             if (!kind.transparent) {
                 return {};
             }
-            desc.fragmentEntryPoint = "fragmentMain";
-            if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true); !result) {
+            desc.fragmentEntryPoint = "fragmentTransparent";
+            if (auto result = createMain(pipelines.transparent, RHI::CullMode::Back, true, false); !result) {
                 return result;
             }
-            return createMain(pipelines.transparentBack, RHI::CullMode::Front, true);
+            return createMain(pipelines.transparentBack, RHI::CullMode::Front, true, false);
         };
         if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow",
                                                "fragmentOpaque", "fragmentMain", true, true});
@@ -581,7 +602,7 @@ namespace Flux {
         // par arbre sans tampon de sommets. Les deux faces : le carré, tourné vers la caméra, et les feuilles capturées.
         {
             RHI::PipelineDesc desc;
-            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
+            desc.shaderPath = ShaderPath("Mesh");
             desc.bindGroupLayouts = layouts;
             desc.pushConstantsSize = sizeof(DrawParams);
             desc.depthTest = true;
@@ -605,6 +626,8 @@ namespace Flux {
             desc.vertexAttributes = {};
             desc.colorFormat = colorFormat;
             desc.secondColorFormat = motionFormat;
+            desc.thirdColorFormat = sunFormat; // dans la passe de la scène : lumière du soleil à part, comme les arbres
+            desc.writeThirdColor = sunFormat != RHI::Format::Undefined;
             desc.depthFormat = depthFormat;
             if (auto result = create(m_impostor, desc); !result) {
                 return result;
@@ -615,6 +638,8 @@ namespace Flux {
             desc.colorFormat = RHI::Format::Undefined;
             desc.secondColorFormat = RHI::Format::Undefined;
             desc.writeSecondColor = false;
+            desc.thirdColorFormat = RHI::Format::Undefined;
+            desc.writeThirdColor = false;
             desc.depthFormat = RHI::Format::D32Float;
             desc.depthCompare = RHI::CompareOp::Less;
             desc.depthBiasConstant = 1.0f;
@@ -640,8 +665,7 @@ namespace Flux {
             RHI::PipelineDesc mesh;
             // Groupes de 128 threads, ou de 64 si le pilote préfère moins (NVIDIA) : PlanetMeshSmall.slang.
             m_planetMeshThreads = m_device.GetMeshPreferredThreads() >= 128 ? 128u : 64u;
-            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders"
-                            / (m_planetMeshThreads == 128 ? "PlanetMesh.spv" : "PlanetMeshSmall.spv");
+            mesh.shaderPath = ShaderPath(m_planetMeshThreads == 128 ? "PlanetMesh" : "PlanetMeshSmall");
             mesh.taskEntryPoint = "taskPlanet";
             mesh.meshEntryPoint = "meshPlanet";
             mesh.fragmentEntryPoint = "fragmentPlanet";
@@ -650,6 +674,8 @@ namespace Flux {
             mesh.colorFormat = colorFormat;
             mesh.secondColorFormat = motionFormat;
             mesh.writeSecondColor = true;
+            mesh.thirdColorFormat = sunFormat;
+            mesh.writeThirdColor = sunFormat != RHI::Format::Undefined;
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -674,7 +700,7 @@ namespace Flux {
         if (m_modelMeshLayout && m_models->HasMeshlets()) {
             const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_modelMeshLayout.get()};
             RHI::PipelineDesc mesh;
-            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "ModelMesh.spv";
+            mesh.shaderPath = ShaderPath("ModelMesh");
             mesh.taskEntryPoint = "taskModel";
             mesh.meshEntryPoint = "meshModel";
             mesh.bindGroupLayouts = meshLayouts;
@@ -682,6 +708,8 @@ namespace Flux {
             mesh.colorFormat = colorFormat;
             mesh.secondColorFormat = motionFormat;
             mesh.writeSecondColor = true;
+            mesh.thirdColorFormat = sunFormat;
+            mesh.writeThirdColor = sunFormat != RHI::Format::Undefined;
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -709,6 +737,11 @@ namespace Flux {
             }
         }
         return {};
+    }
+
+    // Avec le ray tracing, la variante *Rays du module : ombres du soleil en rayons (shaders/MeshRays.slang).
+    std::filesystem::path MeshRenderer::ShaderPath(std::string_view name) const {
+        return Platform::GetExecutableDirectory() / "shaders" / std::format("{}{}.spv", name, m_rayTracing ? "Rays" : "");
     }
 
     const RHI::Pipeline& MeshRenderer::ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material) {
@@ -904,15 +937,17 @@ namespace Flux {
             }
             m_draws.push_back({draw.model, draw.tint, draw.emissive, draw.metallic, draw.roughness, draw.materialOverride,
                                draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
-                               draw.uniformScale, firstCluster});
+                               draw.uniformScale, firstCluster, false});
         }
         // Ray tracing : toutes les entités gardées, en vue ou non (une hors du champ peut faire de l'ombre dedans).
+        // Une entité teintée transparente laisse passer la lumière : pas de rayon arrêté par elle.
+        m_rayShadowsActive = false;
         if (m_rayTracing) {
             m_rayTracing->Begin();
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
-                m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
+                m_draws[d].traced = m_draws[d].tint.a >= 1.0f && m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
             }
-            m_rayTracing->End(frameIndex);
+            m_rayShadowsActive = m_rayTracing->End(frameIndex) && m_rayTracedShadows;
         }
         m_prepareTimes.entities = since(start) - groundMilliseconds;
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
@@ -1384,6 +1419,8 @@ namespace Flux {
         const float tanY = std::tan(0.5f * camera.verticalFov);
         frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
         frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);
+        m_rayShadowView = {frame.cameraRight, frame.cameraUp, ToArray(camera.GetForward(), camera.nearPlane), frame.toSun,
+                           temporal.noiseFrame};
         // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
         if (m_interiors.size() > MaxInteriors) {
             std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);
@@ -1405,7 +1442,16 @@ namespace Flux {
             const float luminance = Photometry::FromNits(std::max(interior.luminance, 0.0f));
             data.ambient = {interior.ambient.r * luminance, interior.ambient.g * luminance, interior.ambient.b * luminance, 0.0f};
         }
-        frame.shadowOptions = {m_showShadowCascades ? 1u : 0u, m_shadowTaps, 0u, 0u};
+        // Structure de la scène : liée quand elle change (refaite plus grande). Toujours une liée dès qu'elle existe : les
+        // shaders *Rays la déclarent, même quand shadowOptions.z les en détourne.
+        if (m_rayTracing) {
+            const RHI::AccelerationStructure* structure = m_rayTracing->GetTopLevel(frameIndex);
+            if (structure && structure != m_boundStructure[frameIndex]) {
+                m_frameGroups[frameIndex]->SetAccelerationStructure(SceneStructureSlot, *structure);
+                m_boundStructure[frameIndex] = structure;
+            }
+        }
+        frame.shadowOptions = {m_showShadowCascades ? 1u : 0u, m_shadowTaps, m_rayShadowsActive ? 1u : 0u, 0u};
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
                             static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};
         std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
@@ -1920,6 +1966,11 @@ namespace Flux {
                 for (const ModelPrimitive& primitive : draw.model->shadowPrimitives) {
                     const GpuMaterial& material = draw.model->materials[primitive.material];
                     if (IsTransparent(draw, material)) {
+                        continue;
+                    }
+                    // Opaque et dans la structure du ray tracing : son ombre vient des rayons. Seuil d'alpha : pas
+                    // opaque pour les rayons (RAY_FLAG_CULL_NON_OPAQUE), il reste ici.
+                    if (m_rayShadowsActive && draw.traced && material.alphaCutoff <= 0.0f) {
                         continue;
                     }
                     if (const ClusterDraw* cluster = FindCluster(draw, primitive);

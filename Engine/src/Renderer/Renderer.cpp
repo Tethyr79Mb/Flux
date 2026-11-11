@@ -12,6 +12,7 @@
 #include "Planetology/CloudRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
 #include "Renderer/PostRenderer.hpp"
+#include "Renderer/RayShadowRenderer.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 #include "Renderer/RenderGraph.hpp"
 #include "Renderer/SkyRenderer.hpp"
@@ -114,6 +115,7 @@ namespace Flux {
         std::unique_ptr<OverlayRenderer> overlay;
         std::unique_ptr<PostRenderer> post;
         std::unique_ptr<Planetology::CloudRenderer> clouds;
+        std::unique_ptr<RayShadowRenderer> rayShadows; // nul sans ray tracing
         // FSR : créé pour la taille de la vue quand un mode FSR est choisi, libéré en Natif (sa mémoire vidéo).
         std::unique_ptr<RHI::Upscaler> upscaler;
         RHI::Extent upscalerExtent;
@@ -182,6 +184,11 @@ namespace Flux {
             RenderGraph::ResourceId cloudLight = 0;
             RenderGraph::ResourceId cloudDistances = 0;
             RenderGraph::ResourceId cloudHistory = 0;
+            // Ray tracing seulement (sinon 0) : lumière du soleil à part, puis rayons et lissages (RayShadowRenderer).
+            RenderGraph::ResourceId sceneSun = 0;
+            RenderGraph::ResourceId rays = 0;
+            RenderGraph::ResourceId rayRows = 0;
+            RenderGraph::ResourceId rayMask = 0;
         };
         Targets targets;
 
@@ -218,6 +225,11 @@ namespace Flux {
                 return {};
             }
             exposure->Bind(*graph.GetTexture(targets.sceneColor), graph.GetTexture(targets.sceneDepth));
+            if (rayShadows) {
+                rayShadows->Bind({.depth = graph.GetTexture(targets.sceneDepth), .sun = graph.GetTexture(targets.sceneSun),
+                                  .rays = graph.GetTexture(targets.rays), .rows = graph.GetTexture(targets.rayRows),
+                                  .mask = graph.GetTexture(targets.rayMask)});
+            }
             clouds->Bind({.sceneDepth = graph.GetTexture(targets.sceneDepth),
                           .light = graph.GetTexture(targets.cloudLight),
                           .distances = graph.GetTexture(targets.cloudDistances),
@@ -560,6 +572,13 @@ namespace Flux {
                                                          {Planetology::CloudRenderer::DistanceFormat, TextureSize::HalfView});
             targets.cloudHistory = graph.CreateTexture("historique des nuages", Lifetime::Previous,
                                                        {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
+            if (rayShadows) {
+                targets.sceneSun = graph.CreateTexture("lumière du soleil", Lifetime::Frame, {MeshRenderer::SunFormat, TextureSize::Render});
+                constexpr RenderGraph::TextureDesc work{RayShadowRenderer::WorkFormat, TextureSize::Render, true, true};
+                targets.rays = graph.CreateTexture("rayons du soleil", Lifetime::Frame, work);
+                targets.rayRows = graph.CreateTexture("ombres en rayons : lignes", Lifetime::Frame, work);
+                targets.rayMask = graph.CreateTexture("ombres en rayons", Lifetime::Frame, work);
+            }
             const auto sceneColor = targets.sceneColor;
             const auto motion = targets.motion;
             const auto fullMotion = targets.fullMotion;
@@ -649,7 +668,11 @@ namespace Flux {
                 .Reads(impostors)
                 .Writes(forestShadowMap)
                 .Step("ombres des forêts", [this](RHI::CommandList& commands) { meshes->DrawForestShadows(commands, frame.index); });
-            graph.AddPass("scène")
+            auto scenePass = graph.AddPass("scène");
+            if (rayShadows) {
+                scenePass.Writes(targets.sceneSun); // lumière du soleil à part, ombrée ensuite en rayons
+            }
+            scenePass
                 .When(scene)
                 .Reads(cpu)
                 .Reads(tiles)
@@ -676,7 +699,9 @@ namespace Flux {
                         return RHI::RenderPassDesc{.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
                                                    .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
                                                    .colorTarget = graph.GetTexture(targets.sceneColor),
-                                                   .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true};
+                                                   .secondColorTarget = graph.GetTexture(targets.motion),
+                                                   .thirdColorTarget = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr,
+                                                   .keepDepth = true};
                     },
                     [this](RHI::CommandList& commands) {
                         commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
@@ -687,6 +712,50 @@ namespace Flux {
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
                 .Step("fond du ciel", [this](RHI::CommandList& commands) { sky->Draw(commands, frame.index); })
                 .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); });
+            // Ombres des modèles fixes en rayons (RayShadowRenderer), ajoutées à l'image de la scène avant les nuages et
+            // les transparents. Une passe par étape : chacune lit ce que la précédente a écrit (barrières du graphe).
+            if (rayShadows) {
+                const auto rays = [this] { return sceneVisible && meshes->AreRayShadowsActive() && meshes->GetSceneStructure(frame.index); };
+                graph.AddPass("rayons du soleil")
+                    .When(rays)
+                    .Reads(cpu)
+                    .Reads(rayScene)
+                    .Reads(sceneDepth)
+                    .Reads(targets.sceneSun)
+                    .Writes(targets.rays, RHI::TextureAccess::Storage)
+                    .Step("rayons du soleil", [this](RHI::CommandList& commands) {
+                        rayShadows->Trace(commands, frame.index, *meshes->GetSceneStructure(frame.index), meshes->GetRayShadowView());
+                    });
+                graph.AddPass("lissage des ombres")
+                    .When(rays)
+                    .Reads(cpu)
+                    .Reads(sceneDepth)
+                    .Reads(targets.rays)
+                    .Writes(targets.rayRows, RHI::TextureAccess::Storage)
+                    .Step("lissage des ombres", [this](RHI::CommandList& commands) {
+                        rayShadows->FilterRows(commands, meshes->GetRayShadowView());
+                    });
+                graph.AddPass("lissage des ombres (colonnes)")
+                    .When(rays)
+                    .Reads(cpu)
+                    .Reads(sceneDepth)
+                    .Reads(targets.rayRows)
+                    .Writes(targets.rayMask, RHI::TextureAccess::Storage)
+                    .Step("lissage des ombres (colonnes)", [this](RHI::CommandList& commands) {
+                        rayShadows->FilterColumns(commands, meshes->GetRayShadowView());
+                    });
+                graph.AddPass("ombres en rayons")
+                    .When(rays)
+                    .Reads(targets.rayMask)
+                    .Reads(targets.sceneSun)
+                    .Writes(sceneColor)
+                    .Begin([this](RHI::CommandList& commands) {
+                        commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.sceneColor), .loadColor = true});
+                        commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
+                        commands.SetScissor({0, 0, frame.render.width, frame.render.height});
+                    })
+                    .Step("ombres en rayons", [this](RHI::CommandList& commands) { rayShadows->Composite(commands); });
+            }
             // Nuages : ils lisent la profondeur de la scène opaque (le relief, les vaisseaux les arrêtent), hors de sa passe.
             const auto hasClouds = [this] { return sceneVisible && meshes->HasClouds(); };
             const auto cloudLight = targets.cloudLight;
@@ -910,7 +979,9 @@ namespace Flux {
         // La scène est dessinée en HDR (PostRenderer) ; seules l'image finale et l'interface vont vers la fenêtre.
         constexpr RHI::Format sceneFormat = PostRenderer::SceneFormat;
         constexpr RHI::Format motionFormat = PostRenderer::MotionFormat;
-        auto sky = SkyRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        // Avec le ray tracing, la passe de la scène a une troisième cible : la lumière du soleil à part.
+        const RHI::Format sunFormat = impl->device->HasRayTracing() ? MeshRenderer::SunFormat : RHI::Format::Undefined;
+        auto sky = SkyRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat, sunFormat);
         if (!sky) {
             return std::unexpected(sky.error());
         }
@@ -930,6 +1001,13 @@ namespace Flux {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
+        if (impl->meshes->HasRayTracing()) {
+            auto rayShadows = RayShadowRenderer::Create(*impl->device, sceneFormat);
+            if (!rayShadows) {
+                return std::unexpected(rayShadows.error());
+            }
+            impl->rayShadows = std::move(*rayShadows);
+        }
         auto clouds = Planetology::CloudRenderer::Create(*impl->device, *impl->meshes, sceneFormat,
                                                        PostRenderer::ReactiveFormat);
         if (!clouds) {
@@ -1107,6 +1185,24 @@ namespace Flux {
 
     bool Renderer::IsShowingShadowCascades() const {
         return m_impl->meshes->IsShowingShadowCascades();
+    }
+
+    void Renderer::SetRayTracedShadows(bool enabled) {
+        m_impl->meshes->SetRayTracedShadows(enabled);
+    }
+
+    bool Renderer::IsRayTracingShadows() const {
+        return m_impl->meshes->IsRayTracingShadows();
+    }
+
+    void Renderer::SetShowRayShadowMask(bool enabled) {
+        if (m_impl->rayShadows) {
+            m_impl->rayShadows->SetShowMask(enabled);
+        }
+    }
+
+    bool Renderer::IsShowingRayShadowMask() const {
+        return m_impl->rayShadows && m_impl->rayShadows->IsShowingMask();
     }
 
     void Renderer::SetGroundDetail(GroundDetail detail) {

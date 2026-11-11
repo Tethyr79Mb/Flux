@@ -110,7 +110,8 @@ namespace Flux::RHI {
     // remplies ne doivent pas être lues ; une case que le GPU ne lit pas peut être remplie pendant qu'il dessine.
     // StorageTexture : texture écrite (et lue) pixel par pixel par les compute shaders, son niveau 0 seulement
     // (`RWTexture3D` dans les shaders ; CreateVolumeTexture), sans sampler.
-    enum class BindingType : std::uint8_t { Texture, StorageBuffer, TextureTable, StorageTexture };
+    // AccelerationStructure : structure haute du ray tracing (Device::HasRayTracing), lue par les ray queries.
+    enum class BindingType : std::uint8_t { Texture, StorageBuffer, TextureTable, StorageTexture, AccelerationStructure };
 
     enum class CullMode : std::uint8_t { None, Back, Front }; // faces avant : sens antihoraire
     enum class CompareOp : std::uint8_t { Greater, GreaterOrEqual, Less, LessOrEqual, Always };

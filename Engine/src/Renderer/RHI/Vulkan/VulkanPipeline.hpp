@@ -28,6 +28,9 @@ namespace Flux::Vk {
         // Seconde cible de la passe (UNDEFINED : aucune) ; sans writeSecondColor, masque d'écriture vide.
         VkFormat secondColorFormat = VK_FORMAT_UNDEFINED;
         bool writeSecondColor = false;
+        VkFormat thirdColorFormat = VK_FORMAT_UNDEFINED; // troisième cible, avec la seconde seulement
+        bool writeThirdColor = false;
+        bool blendThirdColor = false; // mélangée comme la première cible
         // false : masque d'écriture vide sur la première cible aussi (profondeur seule dans une passe avec couleur).
         bool writeColor = true;
         // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.

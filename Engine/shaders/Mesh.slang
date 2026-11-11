@@ -91,7 +91,8 @@ struct FrameData
     // (pas de test). Premier texel de chaque niveau.
     uint4 pyramidSize;
     uint4 pyramidOffsets[4];
-    // x : 1 pour teinter chaque pixel selon sa carte d'ombre (CascadeDebugTint) ; y : lectures de la pénombre par pixel
+    // x : 1 pour teinter chaque pixel selon sa carte d'ombre (CascadeDebugTint) ; y : lectures de la pénombre par pixel ;
+    // z : 1 si les modèles fixes opaques sont dans sceneStructure (ombres en rayons) et plus dans les cascades proches
     uint4 shadowOptions;
     float4 cascadeDepthRanges; // profondeur couverte par chaque cascade proche, en mètres (de 0 à 1 dans sa carte)
     float4 terrainDepthRanges; // xy : celle des deux cascades du relief
@@ -188,6 +189,11 @@ struct MaterialData
 // Forêts au loin (cascades 6 et 7) : les arbres seuls, de la fin des cascades proches à leur portée, refaite à chaque image
 // (MeshRenderer::DrawForestShadows).
 [[vk::binding(18, 1)]] Sampler2DShadow forestShadowMap;
+#ifdef FLUX_RAY_QUERY
+// Structure haute de l'image (RayTracingScene) : les modèles fixes, relatifs à la caméra. Seulement dans les variantes
+// *Rays.slang : un module qui la déclare ne se charge pas sur un GPU sans ray queries.
+[[vk::binding(19, 1)]] RaytracingAccelerationStructure sceneStructure;
+#endif
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour vu dans un reflet (EnvironmentRenderer, HDR) : un niveau de mip par rugosité, préfiltré GGX.
@@ -580,6 +586,24 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
 // Pixel de l'écran en cours (fragments) : fait tourner les lectures de la pénombre d'un pixel à l'autre. Reste à zéro
 // par sommet (océan, arbres lointains) : une rotation fixe.
 static float2 shadowPixel = float2(0.0);
+// Ray tracing (MeshRays.slang) : les pixels opaques écrivent à part la lumière directe du soleil (sunRadiance, sortie
+// SV_Target2), ombrée ensuite en rayons par RayShadows.slang. Seuls les transparents et l'eau lancent leur rayon ici
+// (traceSunHere, fixé par leur programme de pixel : les autres ne contiennent pas le code du rayon).
+static float3 sunDirect = float3(0.0);   // lumière directe du soleil de LightSurface
+static float3 sunRadiance = float3(0.0); // la même, telle qu'elle arrive dans l'image (air, exposition)
+static bool traceSunHere = false;
+
+// La lumière directe du soleil n'entre pas dans la couleur : écrite à part (SV_Target2), RayShadowRenderer l'ajoute
+// ensuite, multipliée par la part qui arrive. L'ajouter plutôt que retirer ce qui n'arrive pas : une soustraction de
+// deux grands nombres en demi-flottants laissait des restes négatifs (points magenta et verts sur un mur à l'ombre).
+bool SunApart()
+{
+#ifdef FLUX_RAY_QUERY
+    return frame[0].shadowOptions.z != 0 && !traceSunHere;
+#else
+    return false;
+#endif
+}
 
 // 16 points répartis dans le disque unité (disque de Poisson) : lectures de la pénombre, tournées à chaque pixel.
 static const float2 PoissonDisk[16] = {
@@ -904,8 +928,13 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
-    const float terrain = min(TerrainVisibility(worldPosition, normal, sunFacing),
-                              ForestVisibility(depth, worldPosition, normal, sunFacing));
+    float terrain = min(TerrainVisibility(worldPosition, normal, sunFacing),
+                        ForestVisibility(depth, worldPosition, normal, sunFacing));
+#ifdef FLUX_RAY_QUERY
+    if (f.shadowOptions.z != 0 && traceSunHere && terrain > 0.0) {
+        terrain = min(terrain, TracedSunVisibility(worldPosition, normal));
+    }
+#endif
     if (depth > f.cascadeEnds[3]) {
         return terrain;
     }
@@ -915,6 +944,42 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
     return min(lit, terrain);
 }
+
+#ifdef FLUX_RAY_QUERY
+// Plus loin, pas de rayon : l'ombre d'un objet sur un point à 20 km ne se voit plus.
+static const float MaxTracedShadow = 20000.0;
+
+// Lumière du soleil vue à travers les modèles fixes opaques (0 ou 1) : un rayon vers un point du disque du soleil, tiré
+// à chaque pixel et à chaque image (bruit à gradient entrelacé, comme ShadowRotation). L'anticrénelage temporel en fait
+// une pénombre : nette au contact, large loin de l'obstacle, comme sous le vrai soleil. Les géométries à seuil d'alpha
+// (grilles, feuilles) ne sont pas opaques dans la structure : elles restent dans les cascades.
+float TracedSunVisibility(float3 worldPosition, float3 normal)
+{
+    const FrameData f = frame[0];
+    const float distance = length(worldPosition);
+    if (distance > MaxTracedShadow) {
+        return 1.0;
+    }
+    const float angle = ShadowRotation();
+    const float2 p = shadowPixel.yx + float(frame[0].lightCount.w % 64u) * 7.123617;
+    const float radius = sqrt(frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715)))));
+    const float3 toSun = f.toSun.xyz;
+    const float3 side = normalize(abs(toSun.y) < 0.9 ? cross(toSun, float3(0.0, 1.0, 0.0)) : cross(toSun, float3(1.0, 0.0, 0.0)));
+    const float3 up = cross(side, toSun);
+    const float2 disk = radius * float2(cos(angle), sin(angle)) * f.toSun.w;
+    RayDesc ray;
+    // Départ décalé le long de la normale : la surface ne se touche pas elle-même (normales lissées d'un modèle
+    // anguleux, précision des positions relatives à la caméra, qui baisse avec la distance).
+    ray.Origin = worldPosition + normal * (0.01 + 2.0e-5 * distance);
+    ray.Direction = normalize(toSun + side * disk.x + up * disk.y);
+    ray.TMin = 0.0;
+    ray.TMax = MaxTracedShadow;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> query;
+    query.TraceRayInline(sceneStructure, 0, 0xFF, ray);
+    query.Proceed();
+    return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
+}
+#endif
 
 // Vue de débogage (FrameData::shadowOptions.x) : teinte de la carte d'ombre que lit ce point.
 float3 CascadeDebugTint(float3 worldPosition, float3 normal, float sunFacing)
@@ -1149,9 +1214,11 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
     const float3 lit = direct + ambient + SceneLights(worldPosition, surface);
     if (f.shadowOptions.x != 0) {
+        sunDirect = float3(0.0); // vue de débogage : pas d'ombre en rayons retirée de la teinte
         return lit * CascadeDebugTint(worldPosition, geometryNormal, max(sunFacing, 0.0));
     }
-    return lit;
+    sunDirect = direct;
+    return SunApart() ? lit - direct : lit;
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
@@ -1533,7 +1600,29 @@ struct SceneOutput
 {
     float4 color  : SV_Target0;
     float2 motion : SV_Target1;
+#ifdef FLUX_RAY_QUERY
+    float4 sun    : SV_Target2; // rgb : sunRadiance
+#endif
 };
+
+// Passe des transparents : ses deux cibles seulement.
+struct TransparentOutput
+{
+    float4 color  : SV_Target0;
+    float2 motion : SV_Target1;
+};
+
+// Sortie d'un pixel de la scène : couleur, mouvement et, avec le ray tracing, la lumière du soleil à part.
+SceneOutput SceneResult(float4 color, float2 motion)
+{
+    SceneOutput output;
+    output.color = color;
+    output.motion = motion;
+#ifdef FLUX_RAY_QUERY
+    output.sun = float4(sunRadiance, 0.0);
+#endif
+    return output;
+}
 
 // Mouvement propre à l'écran (en fraction de l'image, comme les uv) : où le point était à l'image précédente, moins
 // où il aurait été s'il n'avait pas bougé dans le monde. Nul pour tout ce qui est immobile, cockpit autour de la
@@ -1549,10 +1638,8 @@ float2 Motion(VertexOutput input)
 [shader("fragment")]
 SceneOutput fragmentPlanet(PlanetVertexOutput input)
 {
-    SceneOutput output;
-    output.color = PlanetColor(input);
-    output.motion = float2(0.0);
-    return output;
+    const float4 color = PlanetColor(input);
+    return SceneResult(color, float2(0.0));
 }
 
 // Mesure (panneau Moteur, « Sol sans pixels ») : le sol dessiné avec un pixel presque gratuit. Le temps qui reste est
@@ -1565,10 +1652,7 @@ SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
                              + input.airScattered, float3(1.0))
                        + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0)) + input.clouds
                        + float(input.base.draw);
-    SceneOutput output;
-    output.color = float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0);
-    output.motion = float2(0.0);
-    return output;
+    return SceneResult(float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0), float2(0.0));
 }
 
 float4 PlanetColor(PlanetVertexOutput input)
@@ -1730,6 +1814,7 @@ float4 PlanetColor(PlanetVertexOutput input)
     const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, input.clouds, inside);
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
     const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
+    sunRadiance = Radiance(sunDirect * input.airTransmittance);
     return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), 1.0);
 }
 
@@ -1810,11 +1895,22 @@ float3 WaveSlope(float3 x)
 // Surface de l'océan : reflet du ciel et du soleil (de plus en plus fort en regardant de biais), couleur de l'eau au
 // large ; là où elle est peu profonde, transparente (on voit le fond). Vaguelettes de près (pente d'un bruit qui
 // glisse avec le temps), effacées au loin où elles scintilleraient.
+// Eau : sa couleur (prémultipliée) et, avec le ray tracing, la part de la lumière du soleil à part du fond qu'elle
+// laisse voir (mélangée elle aussi : 1 - alpha).
+struct OceanOutput
+{
+    float4 color : SV_Target0;
+#ifdef FLUX_RAY_QUERY
+    float4 sun   : SV_Target2;
+#endif
+};
+
 [shader("fragment")]
-float4 fragmentOcean(OceanVertexOutput input) : SV_Target
+OceanOutput fragmentOcean(OceanVertexOutput input)
 {
     const OceanSurface v = input.base;
     shadowPixel = v.position.xy;
+    traceSunHere = true; // mélangée à ce qui est dessous : pas de lumière du soleil à part
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float depth = v.uv.x;
@@ -1869,16 +1965,31 @@ float4 fragmentOcean(OceanVertexOutput input) : SV_Target
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
     const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
-    return float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié
+    OceanOutput output;
+    output.color = float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié
+#ifdef FLUX_RAY_QUERY
+    output.sun = float4(0.0, 0.0, 0.0, alpha); // son propre soleil est dans sa couleur (rayon lancé ici)
+#endif
+    return output;
 }
 
-// Matériau à seuil d'alpha (feuillage, grillage) et transparents : les pixels sous le seuil sont jetés.
+// Matériau à seuil d'alpha (feuillage, grillage) : les pixels sous le seuil sont jetés.
 [shader("fragment")]
 SceneOutput fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    SceneOutput output;
+    const float4 color = MeshColor(input, frontFacing, true);
+    return SceneResult(color, Motion(input));
+}
+
+// Transparents (passe des transparents, sans la lumière du soleil à part) : avec le ray tracing, leur rayon vers le
+// soleil est lancé ici. Ils couvrent peu de pixels ; le code du rayon reste hors des programmes des opaques.
+[shader("fragment")]
+TransparentOutput fragmentTransparent(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    traceSunHere = true;
+    TransparentOutput output;
     output.color = MeshColor(input, frontFacing, true);
-    output.motion = Motion(input);
+    output.motion = Motion(input); // pas écrit (Pipelines::transparent) : le mouvement reste celui du fond
     return output;
 }
 
@@ -1887,10 +1998,8 @@ SceneOutput fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 [shader("fragment")]
 SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    SceneOutput output;
-    output.color = MeshColor(input, frontFacing, false);
-    output.motion = Motion(input);
-    return output;
+    const float4 color = MeshColor(input, frontFacing, false);
+    return SceneResult(color, Motion(input));
 }
 
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
@@ -1901,21 +2010,17 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
 [shader("fragment")]
 SceneOutput fragmentTree(TreeVertexOutput input)
 {
-    SceneOutput output;
-    output.color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true, input.tint);
-    output.motion = Motion(input.base);
-    return output;
+    const float4 color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true, input.tint);
+    return SceneResult(color, Motion(input.base));
 }
 
 // Écorce des arbres : opaque, sans seuil.
 [shader("fragment")]
 SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    SceneOutput output;
-    output.color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds, false,
-                             input.tint);
-    output.motion = Motion(input.base);
-    return output;
+    const float4 color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds, false,
+                                   input.tint);
+    return SceneResult(color, Motion(input.base));
 }
 
 // alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
@@ -1993,6 +2098,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     float3 transmittance = airTransmittance;
     const float3 scattered = airGiven ? airScattered : AirTo(input.worldPosition, transmittance);
     lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
+    sunRadiance = transparent ? float3(0.0) : Radiance(sunDirect * transmittance);
     return float4(Radiance(lit), alpha);
 }
 
@@ -2287,10 +2393,8 @@ SceneOutput fragmentImpostor(ImpostorVertexOutput input)
     float3 lit = LightSurface(surface, normal, input.worldPosition, shade, input.clouds * lerp(1.0, shade, 0.7), inside,
                               true, draw.surface.zw, 1.2 * input.radius);
     lit = lit * input.airTransmittance + input.airScattered;
-    SceneOutput output;
-    output.color = float4(Radiance(lit), 1.0);
-    output.motion = float2(0.0); // arbres immobiles
-    return output;
+    sunRadiance = Radiance(sunDirect * input.airTransmittance);
+    return SceneResult(float4(Radiance(lit), 1.0), float2(0.0)); // arbres immobiles
 }
 
 // Ombre d'un arbre au loin (cascade params.cascade, forêts au loin) : son imposteur vu du soleil, profondeur seule. Le

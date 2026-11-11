@@ -396,6 +396,9 @@ namespace Flux::Vk {
         vkDesc.colorFormat = Vk::ToVulkan(desc.colorFormat);
         vkDesc.secondColorFormat = Vk::ToVulkan(desc.secondColorFormat);
         vkDesc.writeSecondColor = desc.writeSecondColor;
+        vkDesc.thirdColorFormat = Vk::ToVulkan(desc.thirdColorFormat);
+        vkDesc.writeThirdColor = desc.writeThirdColor;
+        vkDesc.blendThirdColor = desc.blendThirdColor;
         vkDesc.writeColor = desc.writeColor;
         vkDesc.depthFormat = Vk::ToVulkan(desc.depthFormat);
         vkDesc.depthTest = desc.depthTest;

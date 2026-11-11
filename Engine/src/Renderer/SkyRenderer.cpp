@@ -69,7 +69,8 @@ namespace Flux {
     }
 
     std::expected<std::unique_ptr<SkyRenderer>, std::string> SkyRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                  RHI::Format motionFormat, RHI::Format depthFormat) {
+                                                                                  RHI::Format motionFormat, RHI::Format depthFormat,
+                                                                                  RHI::Format sunFormat) {
         std::unique_ptr<SkyRenderer> sky(new SkyRenderer(device));
 
         // Le panorama fait le tour en largeur : répété (sans couture à la jonction).
@@ -142,6 +143,7 @@ namespace Flux {
         desc.bindGroupLayouts = layouts;
         desc.colorFormat = colorFormat;
         desc.secondColorFormat = motionFormat; // le ciel ne bouge pas de lui-même : mouvement laissé à 0
+        desc.thirdColorFormat = sunFormat;     // pas de surface éclairée : lumière du soleil laissée à 0
         desc.depthFormat = depthFormat;
         desc.depthTest = true;
         desc.depthWrite = false;

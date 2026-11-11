@@ -2,6 +2,7 @@
 
 // Groupes de ressources liés aux shaders et leurs layouts.
 
+#include "Flux/Renderer/RHI/AccelerationStructure.hpp"
 #include "Flux/Renderer/RHI/Buffer.hpp"
 #include "Flux/Renderer/RHI/Texture.hpp"
 
@@ -40,5 +41,7 @@ namespace Flux::RHI {
         // Niveau 0 d'une texture écrite par les compute shaders (BindingType::StorageTexture), en TextureAccess::Storage
         // quand ils la lisent.
         virtual void SetStorageTexture(std::uint32_t slot, const Texture& texture) = 0;
+        // Structure haute (BindingType::AccelerationStructure), construite avant que les shaders la lisent.
+        virtual void SetAccelerationStructure(std::uint32_t slot, const AccelerationStructure& structure) = 0;
     };
 }
