@@ -77,7 +77,7 @@ namespace Flux {
         desc.fragmentEntryPoint = "fragmentComposite";
         desc.bindGroupLayouts = layouts;
         desc.colorFormat = sceneFormat;
-        desc.blend = RHI::BlendMode::Additive; // valeur négative : la lumière du soleil retirée là où elle n'arrive pas
+        desc.blend = RHI::BlendMode::Additive; // la lumière du soleil qui arrive, ajoutée à la scène
         auto composite = device.CreatePipeline(desc);
         if (!composite) {
             return std::unexpected(composite.error());

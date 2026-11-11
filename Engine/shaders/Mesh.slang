@@ -587,6 +587,18 @@ static float3 sunDirect = float3(0.0);   // lumière directe du soleil de LightS
 static float3 sunRadiance = float3(0.0); // la même, telle qu'elle arrive dans l'image (air, exposition)
 static bool traceSunHere = false;
 
+// La lumière directe du soleil n'entre pas dans la couleur : écrite à part (SV_Target2), RayShadowRenderer l'ajoute
+// ensuite, multipliée par la part qui arrive. L'ajouter plutôt que retirer ce qui n'arrive pas : une soustraction de
+// deux grands nombres en demi-flottants laissait des restes négatifs (points magenta et verts sur un mur à l'ombre).
+bool SunApart()
+{
+#ifdef FLUX_RAY_QUERY
+    return frame[0].shadowOptions.z != 0 && !traceSunHere;
+#else
+    return false;
+#endif
+}
+
 // 16 points répartis dans le disque unité (disque de Poisson) : lectures de la pénombre, tournées à chaque pixel.
 static const float2 PoissonDisk[16] = {
     float2(-0.9420, -0.3991), float2(0.9456, -0.7689), float2(-0.0942, -0.9294), float2(0.3450, 0.2939),
@@ -1160,7 +1172,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         return lit * CascadeDebugTint(worldPosition, geometryNormal, max(sunFacing, 0.0));
     }
     sunDirect = direct;
-    return lit;
+    return SunApart() ? lit - direct : lit;
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
@@ -1837,8 +1849,18 @@ float3 WaveSlope(float3 x)
 // Surface de l'océan : reflet du ciel et du soleil (de plus en plus fort en regardant de biais), couleur de l'eau au
 // large ; là où elle est peu profonde, transparente (on voit le fond). Vaguelettes de près (pente d'un bruit qui
 // glisse avec le temps), effacées au loin où elles scintilleraient.
+// Eau : sa couleur (prémultipliée) et, avec le ray tracing, la part de la lumière du soleil à part du fond qu'elle
+// laisse voir (mélangée elle aussi : 1 - alpha).
+struct OceanOutput
+{
+    float4 color : SV_Target0;
+#ifdef FLUX_RAY_QUERY
+    float4 sun   : SV_Target2;
+#endif
+};
+
 [shader("fragment")]
-float4 fragmentOcean(OceanVertexOutput input) : SV_Target
+OceanOutput fragmentOcean(OceanVertexOutput input)
 {
     const OceanSurface v = input.base;
     shadowPixel = v.position.xy;
@@ -1897,7 +1919,12 @@ float4 fragmentOcean(OceanVertexOutput input) : SV_Target
     // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
     const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
     const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
-    return float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié
+    OceanOutput output;
+    output.color = float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié
+#ifdef FLUX_RAY_QUERY
+    output.sun = float4(0.0, 0.0, 0.0, alpha); // son propre soleil est dans sa couleur (rayon lancé ici)
+#endif
+    return output;
 }
 
 // Matériau à seuil d'alpha (feuillage, grillage) : les pixels sous le seuil sont jetés.

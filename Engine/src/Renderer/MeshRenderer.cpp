@@ -461,10 +461,11 @@ namespace Flux {
                 desc.blend = transparent ? RHI::BlendMode::Premultiplied : RHI::BlendMode::Opaque;
                 // Transparents : le mouvement reste celui de ce qu'on voit à travers.
                 desc.writeSecondColor = kind.motion && !transparent;
-                // Lumière du soleil à part (ray tracing) : écrite par les mêmes programmes que le mouvement (pas l'eau,
-                // mélangée) ; la passe des transparents n'a pas cette cible.
+                // Lumière du soleil à part (ray tracing) : écrite par les mêmes programmes que le mouvement ; l'eau,
+                // mélangée, voile celle du fond (fragmentOcean). La passe des transparents n'a pas cette cible.
                 desc.thirdColorFormat = scenePass ? sunFormat : RHI::Format::Undefined;
-                desc.writeThirdColor = kind.motion && !transparent;
+                desc.writeThirdColor = transparent ? scenePass && sunFormat != RHI::Format::Undefined : kind.motion;
+                desc.blendThirdColor = transparent;
                 return create(pipeline, desc);
             };
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
@@ -492,6 +493,7 @@ namespace Flux {
                 desc.writeColor = false;
                 desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
                 desc.writeThirdColor = false;
+                desc.blendThirdColor = false;
                 desc.depthWrite = true;
                 desc.blend = RHI::BlendMode::Opaque;
                 // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
@@ -530,6 +532,7 @@ namespace Flux {
                 desc.writeSecondColor = kind.motion;
                 desc.thirdColorFormat = sunFormat;
                 desc.writeThirdColor = kind.motion;
+                desc.blendThirdColor = false;
                 auto result = create(pipeline, desc);
                 desc.depthCompare = RHI::CompareOp::Greater;
                 return result;

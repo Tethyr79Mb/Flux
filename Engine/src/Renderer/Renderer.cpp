@@ -694,7 +694,7 @@ namespace Flux {
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
                 .Step("fond du ciel", [this](RHI::CommandList& commands) { sky->Draw(commands, frame.index); })
                 .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); });
-            // Ombres des modèles fixes en rayons (RayShadowRenderer), retirées de l'image de la scène avant les nuages et
+            // Ombres des modèles fixes en rayons (RayShadowRenderer), ajoutées à l'image de la scène avant les nuages et
             // les transparents. Une passe par étape : chacune lit ce que la précédente a écrit (barrières du graphe).
             if (rayShadows) {
                 const auto rays = [this] { return sceneVisible && meshes->AreRayShadowsActive() && meshes->GetSceneStructure(frame.index); };

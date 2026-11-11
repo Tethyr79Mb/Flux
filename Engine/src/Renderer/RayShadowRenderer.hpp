@@ -12,8 +12,8 @@ namespace Flux {
     // Ombres du soleil des modèles fixes en rayons (shaders/RayShadows.slang), après la passe de la scène, quand le GPU a
     // le ray tracing et que MeshRenderer::AreRayShadowsActive : un rayon par pixel qui reçoit du soleil (Trace), un
     // lissage selon la largeur de la pénombre, sur les lignes puis les colonnes (FilterRows, FilterColumns), puis la
-    // lumière du soleil qui n'arrive pas retirée de l'image de la scène (Composite). Les rayons hors du shader
-    // d'éclairage : il garde son coût, et seuls les pixels éclairés en lancent.
+    // part de la lumière du soleil qui arrive ajoutée à l'image de la scène, qui ne l'avait pas (Composite). Les
+    // rayons hors du shader d'éclairage : il garde son coût, et seuls les pixels éclairés en lancent.
     class RayShadowRenderer {
         public:
         // `sceneFormat` : celui de l'image de la scène (Composite y dessine).

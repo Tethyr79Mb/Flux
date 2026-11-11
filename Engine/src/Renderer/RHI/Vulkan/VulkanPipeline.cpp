@@ -190,8 +190,13 @@ namespace Flux::Vk {
             blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
         }
 
-        // Seconde et troisième cibles : jamais mélangées (des données, pas la lumière de l'image).
+        // Seconde cible jamais mélangée (des données, pas la lumière de l'image) ; la troisième seulement sur demande
+        // (lumière du soleil à part, voilée par l'eau).
         std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachments{blendAttachment, {}, {}};
+        if (desc.blendThirdColor) {
+            blendAttachments[2] = blendAttachment;
+            blendAttachments[2].colorWriteMask = 0;
+        }
         constexpr VkColorComponentFlags all = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT
                                             | VK_COLOR_COMPONENT_A_BIT;
         if (desc.writeSecondColor) {

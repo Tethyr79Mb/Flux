@@ -1,12 +1,13 @@
 // Ombres du soleil des modèles fixes en rayons (RayShadowRenderer), après la passe de la scène. Elle a écrit à part la
-// lumière directe du soleil de chaque pixel opaque (MeshRays.slang, SV_Target2), sans l'ombre des modèles tracés :
+// lumière directe du soleil de chaque pixel opaque (MeshRays.slang, SV_Target2, hors de la couleur), sans l'ombre des
+// modèles tracés :
 // 1. computeTrace : un rayon par pixel qui reçoit du soleil, vers un point du disque du soleil tiré par pixel et par
 //    image ; visibilité (0 ou 1) et distance de l'obstacle (-1 : pas de soleil ici, rien de mesuré).
 // 2. computeFilter, deux fois (lignes puis colonnes) : moyenne pondérée des voisins de même profondeur, sur une
 //    largeur qui suit la pénombre (distance de l'obstacle x tangente du rayon apparent du soleil) : nette au contact,
 //    large loin de l'obstacle. L'anticrénelage temporel lisse ce qui reste.
-// 3. fragmentComposite : retire de l'image de la scène la lumière du soleil qui n'arrive pas (mélange additif d'une
-//    valeur négative). Exact : la lumière directe du soleil s'ajoute au reste.
+// 3. fragmentComposite : ajoute à l'image de la scène la part de cette lumière qui arrive (mélange additif). Exact : la
+//    lumière directe du soleil s'ajoute au reste.
 // Compilé seulement pour un GPU qui a les ray queries (RHI::Device::HasRayTracing).
 
 // Doit correspondre à RayShadowParams dans RayShadowRenderer.cpp.
@@ -176,7 +177,7 @@ float4 fragmentComposite(VertexOutput input) : SV_Target
     const int3 pixel = int3(int2(input.position.xy), 0);
     const float visibility = saturate(source.Load(pixel).x);
     const float3 sun = sceneSun.Load(pixel).rgb;
-    return float4(-sun * (1.0 - visibility), 0.0);
+    return float4(sun * visibility, 0.0);
 }
 
 // Vue de débogage (RayShadowRenderer::SetShowMask), à la place de l'image : rouge où le rayon est arrêté (`source` : les
