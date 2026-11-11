@@ -95,7 +95,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   construite à sa première apparition, 64 Mo de travail par image au plus), une structure haute par image (entités en
   vue ou dans une ombre, relatives à la caméra), passe « ray tracing » et compteurs dans le panneau Moteur. Fait
   (étape 2) : ombres des modèles fixes opaques en rayons, dans des passes à part (un rayon par pixel éclairé, lissage
-  selon la pénombre), retirés des cascades proches ; case « Ombres des objets en rayons » pour comparer. Limites : seuil d'alpha et modèles animés restent dans les cascades,
+  selon la pénombre, soleil ajouté selon ce qui arrive), retirés des cascades proches ; case « Ombres des objets en
+  rayons » pour comparer, vue `debug_view ray_mask`. Limites : seuil d'alpha et modèles animés restent dans les cascades,
   structures non compactées (143 Mo pour la station).
 - 🔨 Scènes de test du rendu (`assets/scenes/Rendu/`, 2026-11-10) et vue de débogage « Cartes d'ombre en couleur »
   (panneau Moteur). Fait : scène des ombres (poteaux fins, contact au sol, plans inclinés, abri, barreaux, repères de
