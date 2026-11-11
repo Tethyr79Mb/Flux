@@ -36,6 +36,7 @@ namespace Flux::Vk {
         bool HasMeshShaders() const override { return m_device->HasMeshShaders(); }
         std::uint32_t GetMeshPreferredThreads() const override { return m_device->GetMeshPreferredThreads(); }
         bool HasTextureCompressionBC() const override { return m_device->HasTextureCompressionBC(); }
+        bool HasRayTracing() const override { return m_device->HasRayTracing(); }
         RHI::MemoryUsage GetMemoryUsage() const override;
         void WaitIdle() override;
 
@@ -71,6 +72,9 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeRenderTarget(RHI::Format format,
                                                                                             std::uint32_t size,
                                                                                             std::uint32_t mipLevels) override;
+        std::expected<std::unique_ptr<RHI::AccelerationStructure>, std::string>
+        CreateBottomLevel(std::span<const RHI::AccelerationGeometry> geometries) override;
+        std::expected<std::unique_ptr<RHI::AccelerationStructure>, std::string> CreateTopLevel(std::uint32_t maxInstances) override;
         std::expected<std::unique_ptr<RHI::Sampler>, std::string> CreateSampler(const RHI::SamplerDesc& desc) override;
         std::expected<std::unique_ptr<RHI::BindGroupLayout>, std::string> CreateBindGroupLayout(const RHI::BindGroupLayoutDesc& desc) override;
         std::unique_ptr<RHI::BindGroup> CreateBindGroup(const RHI::BindGroupLayout& layout) override;

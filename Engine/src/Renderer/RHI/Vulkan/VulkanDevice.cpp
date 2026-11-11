@@ -90,6 +90,10 @@ namespace Flux::Vk {
         allocatorInfo.physicalDevice = device->m_adapter.GetHandle();
         allocatorInfo.device = device->m_device.device;
         allocatorInfo.pVulkanFunctions = &vmaFunctions;
+        // Ray tracing : les structures d'accélération désignent leurs buffers par adresse.
+        if (device->m_adapter.HasRayTracing()) {
+            allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+        }
         if (!Check(vmaCreateAllocator(&allocatorInfo, &device->m_allocator), "vmaCreateAllocator")) {
             return std::unexpected("création de l'allocateur VMA");
         }

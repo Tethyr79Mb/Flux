@@ -1,5 +1,6 @@
 #include "Renderer/RHI/Vulkan/VulkanRHI.hpp"
 
+#include "Renderer/RHI/Vulkan/VulkanAccelerationStructure.hpp"
 #include "Renderer/RHI/Vulkan/VulkanUpscaler.hpp"
 
 #include <algorithm>
@@ -102,6 +103,29 @@ namespace Flux::Vk {
             return std::unexpected("envoi d'un buffer au GPU");
         }
         return std::make_unique<RhiBuffer>(std::move(*buffer));
+    }
+
+    std::expected<std::unique_ptr<RHI::AccelerationStructure>, std::string>
+    RhiDevice::CreateBottomLevel(std::span<const RHI::AccelerationGeometry> geometries) {
+        if (!m_device->HasRayTracing()) {
+            return std::unexpected("le GPU n'a pas de ray tracing");
+        }
+        auto structure = RhiAccelerationStructure::CreateBottom(*m_device, geometries);
+        if (!structure) {
+            return std::unexpected(structure.error());
+        }
+        return std::unique_ptr<RHI::AccelerationStructure>(std::move(*structure));
+    }
+
+    std::expected<std::unique_ptr<RHI::AccelerationStructure>, std::string> RhiDevice::CreateTopLevel(std::uint32_t maxInstances) {
+        if (!m_device->HasRayTracing()) {
+            return std::unexpected("le GPU n'a pas de ray tracing");
+        }
+        auto structure = RhiAccelerationStructure::CreateTop(*m_device, maxInstances);
+        if (!structure) {
+            return std::unexpected(structure.error());
+        }
+        return std::unique_ptr<RHI::AccelerationStructure>(std::move(*structure));
     }
 
     bool RhiDevice::WriteBuffer(RHI::Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t size, bool inUse) {
@@ -383,6 +407,7 @@ namespace Flux::Vk {
         vkDesc.premultipliedBlend = desc.blend == RHI::BlendMode::Premultiplied;
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
+        vkDesc.depthClamp = desc.depthClamp;
         auto pipeline = Pipeline::CreateGraphics(m_device->GetHandle(), vkDesc);
         if (!pipeline) {
             return std::unexpected(pipeline.error());

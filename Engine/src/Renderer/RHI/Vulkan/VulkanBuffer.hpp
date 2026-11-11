@@ -21,10 +21,13 @@ namespace Flux::Vk {
         };
 
         // sharedFamilies : files qui s'en servent sans transfert de propriété (VK_SHARING_MODE_CONCURRENT), à partir de
-        // deux ; sinon le buffer appartient à une seule famille.
+        // deux ; sinon le buffer appartient à une seule famille. minAlignment : alignement de l'adresse exigé au-delà de ce
+        // que le pilote annonce (instances d'une structure d'accélération : 16 octets, que vkGetBufferMemoryRequirements
+        // ne garantit pas).
         static std::expected<Buffer, std::string> Create(VmaAllocator allocator, VkDeviceSize size,
                                                          VkBufferUsageFlags usage, Memory memory,
-                                                         std::span<const std::uint32_t> sharedFamilies = {});
+                                                         std::span<const std::uint32_t> sharedFamilies = {},
+                                                         VkDeviceSize minAlignment = 0);
 
         Buffer() = default;
         ~Buffer();
@@ -42,6 +45,8 @@ namespace Flux::Vk {
 
         // Copie dans un buffer Upload puis flush (sans effet si la mémoire est cohérente, cas courant sur PC).
         void Write(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+        // Après une écriture directe dans GetMappedData (sans effet si la mémoire est cohérente).
+        void Flush(VkDeviceSize offset, VkDeviceSize size);
         // Relit un buffer Readback (invalide d'abord le cache du CPU si la mémoire n'est pas cohérente).
         void Read(void* data, VkDeviceSize size, VkDeviceSize offset = 0) const;
 

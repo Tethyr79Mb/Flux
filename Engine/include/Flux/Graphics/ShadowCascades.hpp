@@ -17,6 +17,15 @@ namespace Flux {
     inline constexpr std::array<float, ShadowCascadeCount> ShadowCascadeEnds{6.0f, 20.0f, 60.0f, 200.0f};
     // Distance vers le soleil jusqu'où un obstacle fait encore de l'ombre dans une tranche, en mètres.
     inline constexpr float ShadowCasterDistance = 300.0f;
+    // Profondeur des cartes proches vers le soleil, en avant de chaque tranche : la pénombre cherche les obstacles
+    // jusqu'à 500 m d'un point (NearMaxBlocker, Mesh.slang), à 250 m au plus du centre de la dernière carte. Plus
+    // près (300 m), une tour à 320 m était aplatie devant la carte : sa distance, donc la largeur de sa pénombre,
+    // dépendait de la place de la carte, c'est-à-dire du regard.
+    inline constexpr float ShadowDepthDistance = 800.0f;
+    // Les objets (pas le sol des planètes, qu'ont les cartes du relief) font de l'ombre de plus loin encore : aplatis
+    // devant tout dans la carte (PipelineDesc::depthClamp), sans coûter de précision à sa profondeur. Une tour, une
+    // station ou un grand vaisseau sous un soleil rasant porte son ombre à des centaines de mètres.
+    inline constexpr float ShadowFlattenDistance = 3000.0f;
 
     // Ombres du relief au loin : deux tranches de plus, jusqu'à 3 km puis 40 km, dans leur propre carte où seul le
     // sol des planètes est dessiné. Une montagne de 2 km sous un soleil bas porte son ombre sur des dizaines de

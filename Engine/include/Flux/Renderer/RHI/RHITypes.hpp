@@ -61,6 +61,10 @@ namespace Flux::RHI {
         Index = 1 << 1,   // indices 32 bits
         Storage = 1 << 2, // lu par les shaders (matrices des os), écrit par les compute shaders
         Indirect = 1 << 3, // commandes de dessin lues par le GPU (CommandList::DrawIndexedIndirect)
+        // Sommets et indices lus par la construction des structures du ray tracing (AccelerationGeometry), et
+        // mémoire de travail de cette construction. Seulement si Device::HasRayTracing.
+        AccelerationInput = 1 << 4,
+        AccelerationScratch = 1 << 5,
     };
 
     enum class ShaderStage : std::uint8_t {

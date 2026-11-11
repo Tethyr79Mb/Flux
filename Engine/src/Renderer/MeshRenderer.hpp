@@ -7,6 +7,7 @@
 #include "Planetology/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/OcclusionCulling.hpp"
+#include "Renderer/RayTracingScene.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/VegetationRenderer.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
@@ -99,6 +100,8 @@ namespace Flux {
         // Mesure : le sol des planètes sans le calcul de ses pixels (voir fragmentPlanetGeometry).
         void SetGroundGeometryOnly(bool enabled) { m_groundGeometryOnly = enabled; }
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
+        void SetShowShadowCascades(bool enabled) { m_showShadowCascades = enabled; }
+        bool IsShowingShadowCascades() const { return m_showShadowCascades; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         void SetVegetationDistance(VegetationDistance distance) { m_vegetationDistance = distance; }
@@ -123,6 +126,12 @@ namespace Flux {
         // faire à cette image si TerrainShadowsPending est faux.
         bool TerrainShadowsPending() const;
         void DrawTerrainShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Ray tracing (RHI::Device::HasRayTracing) : la scène des rayons préparée par Prepare (RayTracingScene), à
+        // construire avant les passes qui y lancent des rayons. Nuls sans ray tracing.
+        bool HasRayTracing() const { return m_rayTracing != nullptr; }
+        void BuildRayTracingModels(RHI::CommandList& commands, std::uint32_t frameIndex);
+        void BuildRayTracingScene(RHI::CommandList& commands, std::uint32_t frameIndex);
+        RayTracingScene::Stats GetRayTracingStats() const { return m_rayTracing ? m_rayTracing->GetStats() : RayTracingScene::Stats{}; }
         const RHI::Texture& GetTerrainShadowMap() const { return *m_terrainShadowMap; }
         // Ombres des forêts au loin : les arbres seuls (imposteurs vus du soleil), de la fin des cascades proches à leur
         // portée, refaites à chaque image où il y a des arbres (ForestShadowsPending).
@@ -414,7 +423,8 @@ namespace Flux {
         // Choisit les cascades à redessiner ; les autres gardent leur carte de l'image d'avant, recalée sur la caméra.
         void ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun);
         bool InCascade(const Math::Vector3f& center, float radius, std::size_t cascade) const;
-        static bool InShadowVolume(const ShadowCascade& cascade, const Math::Vector3f& center, float radius);
+        // `beyond` : mètres de plus vers le soleil (obstacles aplatis, CastsShadow).
+        static bool InShadowVolume(const ShadowCascade& cascade, const Math::Vector3f& center, float radius, float beyond = 0.0f);
         // Choisit les cascades du relief à redessiner (rarement : seulement le sol, gardé plusieurs images).
         void ChooseTerrainCascades(const Camera& camera, float aspect, const Math::Vector3f& toSun);
         // La tuile (sa sphère) porte une ombre dans la carte de la passe `pass` (une passe d'ombres), redessinée à
@@ -448,6 +458,8 @@ namespace Flux {
                        Planetology::VegetationRenderer::List list, std::uint32_t cascade, bool depthOnly = false) const;
 
         RHI::Device& m_device;
+        // Avant les modèles : détruite après eux, donc après l'attente du GPU (~ModelCache).
+        std::unique_ptr<RayTracingScene> m_rayTracing; // nul sans ray tracing
         std::unique_ptr<ModelCache> m_models;
         std::unique_ptr<Planetology::PlanetRenderer> m_planets;
         std::unique_ptr<Planetology::VegetationRenderer> m_vegetation;
@@ -466,6 +478,7 @@ namespace Flux {
         // Tuiles de planète : un second flux (forme de la tuile parente), pour glisser d'un niveau de détail à l'autre.
         Pipelines m_planet;
         bool m_groundGeometryOnly = false;
+        bool m_showShadowCascades = false; // vue de débogage : une teinte par carte d'ombre
         // Le même sol en mesh shaders (shaders/PlanetMesh.slang), quand le GPU les a : nuls sinon. Le groupe 3 lit les
         // sommets et les boîtes des paquets d'une page de tuiles (un groupe par page, fait à sa première utilisation).
         std::unique_ptr<RHI::BindGroupLayout> m_tileMeshLayout;
@@ -513,6 +526,8 @@ namespace Flux {
         // précédente ait fini de la lire.
         std::unique_ptr<RHI::Texture> m_shadowMap;
         std::unique_ptr<RHI::Sampler> m_shadowSampler;
+        std::unique_ptr<RHI::Sampler> m_shadowDepthSampler; // sans comparaison : profondeur des obstacles (pénombre)
+        std::uint32_t m_shadowTaps = 16;                    // lectures de la pénombre par pixel (ShadowTaps)
         std::array<ShadowCascade, ShadowCascadeCount> m_cascades{};
         ShadowReceivers m_shadowReceivers;
         // Les deux cascades lointaines sont refaites à tour de rôle, une image sur deux : celle qui attend garde sa

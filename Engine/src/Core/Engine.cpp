@@ -373,7 +373,8 @@ namespace Flux {
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
                     .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
                     .groundMeshThreads = render.groundMeshThreads,
-                    .modelMeshShaders = render.modelMeshShaders};
+                    .modelMeshShaders = render.modelMeshShaders,
+                    .rayTracing = render.rayTracing};
                 if (auto written = measures.Write(Platform::GetExecutableDirectory() / "Mesures", context)) {
                     Log::Info("Mesures écrites dans {}", Platform::ToGenericUtf8(*written));
                     m_notice->Show("Mesures écrites dans Mesures/" + Platform::ToGenericUtf8(written->filename()));

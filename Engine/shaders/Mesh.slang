@@ -67,7 +67,7 @@ struct FrameData
     float4 forestTexels;      // xy : côté d'un texel de chaque tranche (m)
     float4 cameraForward;     // xyz ; w : secondes écoulées (vagues), repartent de 0 toutes les heures
     float4 cameraDelta;       // xyz : caméra moins celle de l'image précédente (relatif caméra -> relatif à l'ancienne)
-    float4 toSun;             // xyz : direction du soleil (unitaire)
+    float4 toSun;             // xyz : direction du soleil (unitaire) ; w : tangente de son rayon apparent
     float4 sunColor;          // rgb : couleur x intensité
     // x : multiplie les textures du ciel ; y : pré-exposition de cette image divisée par celle de la précédente (à
     // appliquer aux historiques) ; z : niveau de mip des reflets les plus flous (rugosité 1) ; w : pré-exposition (voir
@@ -91,6 +91,10 @@ struct FrameData
     // (pas de test). Premier texel de chaque niveau.
     uint4 pyramidSize;
     uint4 pyramidOffsets[4];
+    // x : 1 pour teinter chaque pixel selon sa carte d'ombre (CascadeDebugTint) ; y : lectures de la pénombre par pixel
+    uint4 shadowOptions;
+    float4 cascadeDepthRanges; // profondeur couverte par chaque cascade proche, en mètres (de 0 à 1 dans sa carte)
+    float4 terrainDepthRanges; // xy : celle des deux cascades du relief
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -178,9 +182,12 @@ struct MaterialData
 // Relief au loin (cascades 4 et 5), côte à côte dans une texture deux fois plus large que haute : seul le sol des
 // planètes y est dessiné, gardé plusieurs images (MeshRenderer::ChooseTerrainCascades).
 [[vk::binding(14, 1)]] Sampler2DShadow terrainShadowMap;
-// Forêts au loin (cascade 6) : les arbres seuls, de la fin des cascades proches à leur portée, refaite à chaque image
+// Les mêmes, lues sans comparaison : profondeur des obstacles, d'où la largeur de la pénombre (CascadeVisibility).
+[[vk::binding(16, 1)]] Sampler2D shadowDepth;
+[[vk::binding(17, 1)]] Sampler2D terrainShadowDepth;
+// Forêts au loin (cascades 6 et 7) : les arbres seuls, de la fin des cascades proches à leur portée, refaite à chaque image
 // (MeshRenderer::DrawForestShadows).
-[[vk::binding(16, 1)]] Sampler2DShadow forestShadowMap;
+[[vk::binding(18, 1)]] Sampler2DShadow forestShadowMap;
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour vu dans un reflet (EnvironmentRenderer, HDR) : un niveau de mip par rugosité, préfiltré GGX.
@@ -570,46 +577,179 @@ PlanetVertexOutput vertexPlanet(PlanetVertexInput input, uint draw : SV_VulkanIn
     return PlanetVertex(draw, input);
 }
 
-// Part de la lumière du soleil vue par la cascade `cascade` (cases de `cells` x 1 ou 2 x 2 dans `map`, celle-ci en
-// `cell`) ; négatif si le point sort de sa carte.
-float CascadeVisibility(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, float texel, float3 worldPosition,
-                        float3 normal, float sunFacing)
+// Pixel de l'écran en cours (fragments) : fait tourner les lectures de la pénombre d'un pixel à l'autre. Reste à zéro
+// par sommet (océan, arbres lointains) : une rotation fixe.
+static float2 shadowPixel = float2(0.0);
+
+// 16 points répartis dans le disque unité (disque de Poisson) : lectures de la pénombre, tournées à chaque pixel.
+static const float2 PoissonDisk[16] = {
+    float2(-0.9420, -0.3991), float2(0.9456, -0.7689), float2(-0.0942, -0.9294), float2(0.3450, 0.2939),
+    float2(-0.9159, 0.4577), float2(-0.8154, -0.8791), float2(-0.3828, 0.2768), float2(0.9748, 0.7565),
+    float2(0.4432, -0.9751), float2(0.5374, -0.4737), float2(-0.2650, -0.4189), float2(0.7920, 0.1909),
+    float2(-0.2419, 0.9971), float2(-0.8141, 0.9144), float2(0.1998, 0.7864), float2(0.1438, -0.1410)};
+
+// Pénombre la plus étroite, en texels de la carte : même un obstacle posé au sol garde un bord filtré sur quatre
+// texels. Sous un soleil rasant, un texel s'étire au sol (5 fois à 12°) : à 1 texel, le bord d'une plaque posée près
+// du sol gardait des dents.
+static const float MinPenumbraTexels = 2.0;
+// La plus large qu'une carte filtre elle-même, en texels (rayon). Plus large, la pénombre est lue dans une cascade plus
+// grossière (NearVisibility) : sa largeur en mètres ne dépend pas de la carte, donc pas du regard.
+static const float MaxPenumbraTexels = 16.0;
+
+// Angle de rotation des lectures de ce pixel (bruit à gradient entrelacé), décalé à chaque image quand l'anticrénelage
+// temporel tourne : il moyenne le bruit en un bord lisse.
+float ShadowRotation()
+{
+    const float2 p = shadowPixel + float(frame[0].lightCount.w % 64u) * 5.588238;
+    return 6.2831853 * frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+}
+
+// Un point vu par une carte d'ombre : où la lire, à quelle profondeur comparer.
+struct ShadowPoint
+{
+    float2 uv;         // dans la texture (atlas des cascades)
+    float2 low;        // bornes de la case de la cascade : les lectures n'en débordent pas sur la voisine
+    float2 high;
+    float2 atlasTexel; // un texel de la texture, en uv
+    float z;           // profondeur du point dans la carte (0 : côté soleil)
+    float texel;       // côté d'un texel, en mètres
+    float depthRange;  // mètres couverts par la profondeur de la carte
+    float2 slope;      // pente du plan du point : profondeur par unité d'uv (voir LocateShadow)
+};
+
+// Le point dans la cascade `cascade` (case `cell` parmi `cells` dans `map`) ; false s'il sort de sa carte.
+// offset : décalage le long de la normale en texels, en plein soleil.
+bool LocateShadow(Sampler2DShadow map, float2 cells, float2 cell, uint cascade, float texel, float depthRange,
+                  float3 worldPosition, float3 normal, float sunFacing, float offset, out ShadowPoint p)
 {
     const FrameData f = frame[0];
-    // Décalé le long de la normale (plus sur une face rasante) : une surface ne se fait pas d'ombre à elle-même.
-    const float3 offsetPosition = worldPosition + normal * texel * (1.5 + 2.0 * (1.0 - sunFacing));
+    // Décalé le long de la normale : un demi-texel pour les cascades proches, où la pente du plan (plus bas) et celle
+    // des obstacles dessinés (depthBiasSlope) gardent une surface de sa propre ombre. Avant la pente du plan, ce
+    // décalage montait à 3 texels sous un soleil rasant (70 cm dans la dernière cascade) : l'ombre d'une caisse basse
+    // disparaissait au loin. Plus grand tout près du terminateur, où la pente du plan est bornée.
+    const float3 offsetPosition = worldPosition + normal * texel * (offset + 2.5 * (1.0 - saturate(sunFacing / 0.1)));
     float4 m[4] = {f.cascades[cascade * 4 + 0], f.cascades[cascade * 4 + 1], f.cascades[cascade * 4 + 2],
                    f.cascades[cascade * 4 + 3]};
     const float3 light = Transform(m, offsetPosition).xyz;
     const float2 local = light.xy * 0.5 + 0.5;
+    p.uv = float2(0.0);
+    p.low = float2(0.0);
+    p.high = float2(0.0);
+    p.atlasTexel = float2(0.0);
+    p.z = 0.0;
+    p.texel = texel;
+    p.depthRange = depthRange;
+    p.slope = float2(0.0);
     if (any(local < 0.0) || any(local > 1.0) || light.z > 1.0) {
-        return -1.0;
+        return false;
     }
-    // Case de la cascade dans la carte, sans déborder sur la voisine (le filtre lit un texel autour).
     uint width;
     uint height;
     map.GetDimensions(width, height);
-    const float2 atlasTexel = 1.0 / float2(width, height);
+    p.atlasTexel = 1.0 / float2(width, height);
     const float2 size = 1.0 / cells;
-    const float2 inside = clamp(local * size, atlasTexel * 1.5, size - atlasTexel * 1.5);
-    const float2 uv = cell * size + inside;
-    // 4 lectures filtrées (chacune compare 2 x 2 texels) : bord doux sur 3 texels environ.
-    float lit = 0.0;
-    [unroll]
-    for (int i = 0; i < 4; ++i) {
-        const float2 offset = float2((i & 1) != 0 ? 0.5 : -0.5, (i & 2) != 0 ? 0.5 : -0.5) * atlasTexel;
-        lit += map.SampleCmpLevelZero(uv + offset, light.z);
+    p.low = cell * size + p.atlasTexel * 1.5;
+    p.high = (cell + 1.0) * size - p.atlasTexel * 1.5;
+    p.uv = clamp(cell * size + local * size, p.low, p.high);
+    p.z = light.z;
+
+    // Pente de la profondeur sur le plan du point (receiver plane) : une lecture voisine se compare à la profondeur
+    // de ce plan à son endroit, pas à celle du point. Sans elle, sous un soleil rasant, le sol à quelques texels côté
+    // soleil passait pour un obstacle : la recherche des obstacles trouvait toujours le sol (pénombre réduite au
+    // minimum, grands obstacles lointains jamais cherchés : bord de l'ombre de la tour coupé net, largeur variable).
+    // Deux directions du plan, l'une perpendiculaire au soleil, passées dans la carte, donnent sa pente.
+    const float3 side = cross(normal, f.toSun.xyz);
+    if (dot(side, side) > 1.0e-8) {
+        const float3 across = normalize(side);
+        const float3 along = cross(across, normal);
+        const float3 a = (m[0] * across.x + m[1] * across.y + m[2] * across.z).xyz;
+        const float3 b = (m[0] * along.x + m[1] * along.y + m[2] * along.z).xyz;
+        const float det = a.x * b.y - a.y * b.x; // tend vers 0 avec sunFacing : bornée en dessous de 3°
+        const float2 clipSlope = float2(a.z * b.y - b.z * a.y, a.x * b.z - b.x * a.z)
+                               / (det >= 0.0 ? max(det, 1.0e-30) : min(det, -1.0e-30));
+        p.slope = clipSlope * (2.0 * cells) * saturate(sunFacing / 0.05); // clip -> uv de l'atlas
     }
-    return lit * 0.25;
+    return true;
 }
+
+// Obstacles dans un rayon de `radius` mètres autour du point (au plus MaxPenumbraTexels) : leur nombre parmi les
+// lectures, et leur distance moyenne au point vers le soleil (mètres) dans `distance`.
+float FindBlockers(Sampler2D depthMap, ShadowPoint p, float radius, float2x2 rotation, out float distance)
+{
+    const uint taps = max(frame[0].shadowOptions.y, 1u);
+    const float texels = clamp(radius / p.texel, MinPenumbraTexels, MaxPenumbraTexels);
+    float sum = 0.0;
+    float count = 0.0;
+    for (uint i = 0; i < taps; ++i) {
+        const float2 at = clamp(p.uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (texels * p.atlasTexel), p.low, p.high);
+        const float depth = depthMap.SampleLevel(at, 0.0).r;
+        if (depth < p.z + dot(p.slope, at - p.uv)) {
+            sum += depth;
+            count += 1.0;
+        }
+    }
+    // Un obstacle plus loin que la carte n'en couvre y est aplati à 0 (depth clamp) : distance sous-estimée, au pire
+    // une pénombre un peu étroite.
+    distance = count > 0.0 ? (p.z - sum / count) * p.depthRange : 0.0;
+    return count;
+}
+
+// Part de lumière filtrée sur une pénombre de rayon `penumbra` mètres (bornée en texels de la carte).
+float FilterShadow(Sampler2DShadow map, ShadowPoint p, float penumbra, float2x2 rotation)
+{
+    const uint taps = max(frame[0].shadowOptions.y, 1u);
+    const float texels = clamp(penumbra / p.texel, MinPenumbraTexels, MaxPenumbraTexels);
+    float lit = 0.0;
+    for (uint i = 0; i < taps; ++i) {
+        const float2 at = clamp(p.uv + mul(rotation, PoissonDisk[i * 16 / taps]) * (texels * p.atlasTexel), p.low, p.high);
+        lit += map.SampleCmpLevelZero(at, p.z + dot(p.slope, at - p.uv)); // compare 2 x 2 texels, filtrés
+    }
+    return lit / float(taps);
+}
+
+float2x2 ShadowRotationMatrix()
+{
+    const float angle = ShadowRotation();
+    return float2x2(cos(angle), -sin(angle), sin(angle), cos(angle));
+}
+
+// Part de la lumière du soleil vue par la cascade `cascade` (cases de `cells` x 1 ou 2 x 2 dans `map`, celle-ci en
+// `cell`) ; négatif si le point sort de sa carte. Pénombre comme sous un vrai soleil (PCSS) : nette au contact de
+// l'obstacle, plus large à mesure qu'il s'éloigne (distance obstacle-sol x tangente du rayon apparent du soleil).
+// Sert au relief au loin ; les cascades proches passent par NearVisibility.
+float CascadeVisibility(Sampler2DShadow map, Sampler2D depthMap, float2 cells, float2 cell, uint cascade, float texel,
+                        float depthRange, float maxBlocker, float3 worldPosition, float3 normal, float sunFacing)
+{
+    ShadowPoint p;
+    // Le relief des cartes du relief est dessiné avec des tuiles plus grossières que celles vues, et gardé plusieurs
+    // images : le sol vu s'écarte de celui de la carte de plus d'un demi-texel (taches d'ombre sur les collines avec
+    // 0,5). Deux texels, comme avant la pente du plan (#283) ; leurs texels de plusieurs mètres n'ombrent que le relief.
+    if (!LocateShadow(map, cells, cell, cascade, texel, depthRange, worldPosition, normal, sunFacing, 2.0, p)) {
+        return -1.0;
+    }
+    const float tanSun = frame[0].toSun.w;
+    const float2x2 rotation = ShadowRotationMatrix();
+    float distance;
+    if (FindBlockers(depthMap, p, maxBlocker * tanSun, rotation, distance) == 0.0) {
+        return 1.0; // aucun obstacle : en pleine lumière, sans filtrer
+    }
+    return FilterShadow(map, p, distance * tanSun, rotation);
+}
+
+// Distance obstacle-sol la plus grande dont la pénombre est cherchée (mètres) : objets (une tour, une station à
+// quelques centaines de mètres), puis relief (une montagne à quelques kilomètres). Au-delà, la pénombre reste celle
+// de cette distance.
+static const float NearMaxBlocker = 500.0;
+static const float TerrainMaxBlocker = 3000.0;
 
 // Ombre du relief, tranche `slice` (0 : jusqu'à 3 km, 1 : jusqu'à 40 km) ; négatif hors de sa carte.
 float TerrainSlice(uint slice, float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float texel = slice == 0 ? f.terrainCascades.z : f.terrainCascades.w;
-    return CascadeVisibility(terrainShadowMap, float2(2.0, 1.0), float2(float(slice), 0.0), 4 + slice, texel,
-                             worldPosition, normal, sunFacing);
+    const float depthRange = slice == 0 ? f.terrainDepthRanges.x : f.terrainDepthRanges.y;
+    return CascadeVisibility(terrainShadowMap, terrainShadowDepth, float2(2.0, 1.0), float2(float(slice), 0.0), 4 + slice,
+                             texel, depthRange, TerrainMaxBlocker, worldPosition, normal, sunFacing);
 }
 
 // Ombre du relief. La tranche est choisie par la distance à la caméra, pas par la profondeur devant elle : un point
@@ -642,14 +782,20 @@ float TerrainVisibility(float3 worldPosition, float3 normal, float sunFacing)
 }
 
 // Ombre des arbres au loin (cascades 6 et 7, côte à côte, centrées sur la caméra et choisies par la distance comme le
-// relief), à partir du dernier dixième de la dernière cascade proche, où celle-ci s'efface ; 1 au-delà ou sans forêt.
+// relief), à partir du dernier dixième de la dernière cascade proche, où celle-ci s'efface. Pénombre fixe la plus
+// étroite (les arbres touchent le sol qu'ils ombrent) ; négatif hors de la carte.
 float ForestSlice(uint slice, float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
-    return CascadeVisibility(forestShadowMap, float2(2.0, 1.0), float2(float(slice), 0.0), 6 + slice, f.forestTexels[slice],
-                             worldPosition, normal, sunFacing);
+    ShadowPoint p;
+    if (!LocateShadow(forestShadowMap, float2(2.0, 1.0), float2(float(slice), 0.0), 6 + slice, f.forestTexels[slice], 1.0,
+                      worldPosition, normal, sunFacing, 2.0, p)) {
+        return -1.0;
+    }
+    return FilterShadow(forestShadowMap, p, 0.0, ShadowRotationMatrix());
 }
 
+// 1 au-delà de la portée ou sans forêt.
 float ForestVisibility(float depth, float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
@@ -673,6 +819,84 @@ float ForestVisibility(float depth, float3 worldPosition, float3 normal, float s
     return lit < 0.0 ? 1.0 : lerp(1.0, lit, saturate((f.forestCascade.z - distance) / (0.1 * f.forestCascade.z)));
 }
 
+// Une cascade proche lue au point : false s'il sort de sa carte.
+bool LocateNear(uint cascade, float3 worldPosition, float3 normal, float sunFacing, out ShadowPoint p)
+{
+    const FrameData f = frame[0];
+    return LocateShadow(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
+                        f.cascadeTexels[cascade], f.cascadeDepthRanges[cascade], worldPosition, normal, sunFacing, 0.5, p);
+}
+
+// Ombre des cascades proches, avec sa pénombre (PCSS). `used` dit quelle cascade a filtré (4 : aucune) ; négatif hors
+// de toutes. La cascade du point (sa tranche, ou la suivante s'il sort de sa carte, gardée d'une image précédente)
+// cherche les petits obstacles proches ; une cascade assez grossière pour couvrir NearMaxBlocker cherche les grands et
+// lointains (une tour à 300 m : plus d'un mètre de pénombre). La pénombre se filtre ensuite dans la plus fine qui la
+// contient : sa largeur en mètres est la même quelle que soit la tranche, donc quel que soit le regard (avant, chaque
+// carte la bornait à sa propre taille, et le bord d'une grande ombre changeait de flou en tournant la caméra).
+float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float depth, out uint used)
+{
+    const FrameData f = frame[0];
+    used = 4;
+    uint fine = 0;
+    while (fine < 4 && depth > f.cascadeEnds[fine]) {
+        ++fine;
+    }
+    // Sur le dernier quart de la tranche, une part croissante des pixels lit déjà la suivante (tirage par pixel,
+    // moyenné par l'anticrénelage temporel) : le bord d'une petite ombre, filtré sur au moins MinPenumbraTexels de sa
+    // carte, s'élargit en fondu au lieu d'une coupure nette à la limite (plaque à 5 cm : 4 px puis 13 px).
+    if (fine < 3) {
+        const float start = fine == 0 ? 0.0 : f.cascadeEnds[fine - 1];
+        const float blend = saturate((depth - lerp(start, f.cascadeEnds[fine], 0.75)) / (0.25 * (f.cascadeEnds[fine] - start)));
+        if (ShadowRotation() * (1.0 / 6.2831853) < blend) {
+            ++fine;
+        }
+    }
+    ShadowPoint finePoint;
+    while (fine < 4 && !LocateNear(fine, worldPosition, normal, sunFacing, finePoint)) {
+        ++fine;
+    }
+    if (fine >= 4) {
+        return -1.0;
+    }
+    const float tanSun = f.toSun.w;
+    const float reach = NearMaxBlocker * tanSun; // pénombre la plus large cherchée (rayon, mètres)
+    const float2x2 rotation = ShadowRotationMatrix();
+
+    float distance;
+    float found = FindBlockers(shadowDepth, finePoint, reach, rotation, distance);
+    // Les grands obstacles lointains, dans la première cascade dont MaxPenumbraTexels couvrent `reach`.
+    if (found == 0.0 && reach > MaxPenumbraTexels * finePoint.texel) {
+        for (uint coarse = fine + 1; coarse < 4; ++coarse) {
+            ShadowPoint coarsePoint;
+            if ((reach <= MaxPenumbraTexels * f.cascadeTexels[coarse] || coarse == 3)
+                && LocateNear(coarse, worldPosition, normal, sunFacing, coarsePoint)) {
+                found = FindBlockers(shadowDepth, coarsePoint, reach, rotation, distance);
+                break;
+            }
+        }
+    }
+    if (found == 0.0) {
+        used = fine;
+        return 1.0; // aucun obstacle : en pleine lumière, sans filtrer
+    }
+
+    // Pénombre filtrée dans la plus fine des cascades qui la contient. Un obstacle plus loin que NearMaxBlocker
+    // (aplati devant la carte, distance inconnue) prend la pénombre de NearMaxBlocker, la même quel que soit le regard.
+    const float penumbra = min(distance, NearMaxBlocker) * tanSun;
+    for (uint c = fine; c < 4; ++c) {
+        ShadowPoint p = finePoint;
+        if (c != fine && !LocateNear(c, worldPosition, normal, sunFacing, p)) {
+            continue;
+        }
+        if (penumbra <= MaxPenumbraTexels * p.texel || c == 3) {
+            used = c;
+            return FilterShadow(shadowMap, p, penumbra, rotation);
+        }
+    }
+    used = fine;
+    return FilterShadow(shadowMap, finePoint, penumbra, rotation);
+}
+
 // Part de la lumière du soleil qui atteint ce point (0 : dans l'ombre, 1 : éclairé). Jusqu'à 200 m devant la caméra,
 // le plus sombre des cascades proches (objets, arbres et sol, obstacles à 300 m au plus) et du relief (montagnes plus
 // loin vers le soleil) ; au-delà, le relief jusqu'à 40 km et les arbres jusqu'à leur portée.
@@ -680,22 +904,36 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
-    int cascade = 0;
-    while (cascade < 4 && depth > f.cascadeEnds[cascade]) {
-        ++cascade;
-    }
     const float terrain = min(TerrainVisibility(worldPosition, normal, sunFacing),
                               ForestVisibility(depth, worldPosition, normal, sunFacing));
-    if (cascade >= 4) {
+    if (depth > f.cascadeEnds[3]) {
         return terrain;
     }
-    float lit = CascadeVisibility(shadowMap, float2(2.0), float2(float(cascade % 2), float(cascade / 2)), cascade,
-                                  f.cascadeTexels[cascade], worldPosition, normal, sunFacing);
+    uint used;
+    float lit = NearVisibility(worldPosition, normal, sunFacing, depth, used);
     lit = lit < 0.0 ? 1.0 : lit;
-    if (cascade == 3) {
-        lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
-    }
+    lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
     return min(lit, terrain);
+}
+
+// Vue de débogage (FrameData::shadowOptions.x) : teinte de la carte d'ombre que lit ce point.
+float3 CascadeDebugTint(float3 worldPosition, float3 normal, float sunFacing)
+{
+    const FrameData f = frame[0];
+    const float depth = dot(worldPosition, f.cameraForward.xyz);
+    if (depth <= f.cascadeEnds[3]) {
+        uint used;
+        NearVisibility(worldPosition, normal, sunFacing, depth, used);
+        const float3 near[4] = {float3(1.0, 0.25, 0.25), float3(0.25, 1.0, 0.25), float3(0.3, 0.45, 1.0), float3(1.0, 1.0, 0.25)};
+        if (used < 4) {
+            return near[used];
+        }
+    }
+    const float distance = length(worldPosition);
+    if (distance <= f.terrainCascades.y) {
+        return distance > f.terrainCascades.x ? float3(0.25, 1.0, 1.0) : float3(1.0, 0.3, 1.0);
+    }
+    return float3(0.5);
 }
 
 // Surface vue en un pixel, de quoi l'éclairer (BRDF de Cook-Torrance : GGX, Smith, Schlick, comme glTF).
@@ -909,7 +1147,11 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
         ambient += (surface.diffuse + surface.f0 * (1.0 - surface.roughness)) * skyLight + surface.diffuse * bounce;
     }
     const float3 direct = foliage ? ShadeFoliage(surface, toSun, sunColor * sun, leaves) : Shade(surface, toSun, sunColor * sun);
-    return direct + ambient + SceneLights(worldPosition, surface);
+    const float3 lit = direct + ambient + SceneLights(worldPosition, surface);
+    if (f.shadowOptions.x != 0) {
+        return lit * CascadeDebugTint(worldPosition, geometryNormal, max(sunFacing, 0.0));
+    }
+    return lit;
 }
 
 // L'air entre la caméra et la surface (près d'une planète à atmosphère) : il voile ce qui est loin et ajoute sa
@@ -1332,6 +1574,7 @@ SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
 float4 PlanetColor(PlanetVertexOutput input)
 {
     const PlanetSurface v = input.base;
+    shadowPixel = v.position.xy;
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float3 local = input.planetPosition;
@@ -1571,6 +1814,7 @@ float3 WaveSlope(float3 x)
 float4 fragmentOcean(OceanVertexOutput input) : SV_Target
 {
     const OceanSurface v = input.base;
+    shadowPixel = v.position.xy;
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float depth = v.uv.x;
@@ -1683,6 +1927,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
                  float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0,
                  bool foliage = false, float3 tint = float3(1.0))
 {
+    shadowPixel = input.position.xy;
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
     float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
@@ -2005,6 +2250,7 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
 [shader("fragment")]
 SceneOutput fragmentImpostor(ImpostorVertexOutput input)
 {
+    shadowPixel = input.position.xy; // rotation des lectures de l'ombre (ShadowRotation)
     float4 color = float4(0.0);
     float4 packed = float4(0.0);
     const float2 uvs[3] = {input.uv0, input.uv1, input.uv2};

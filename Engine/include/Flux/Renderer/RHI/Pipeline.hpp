@@ -60,6 +60,9 @@ namespace Flux::RHI {
         // Décalage de la profondeur écrite (carte d'ombres) : constant, et selon la pente de la face.
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;
+        // Profondeur hors de [0, 1] ramenée au bord au lieu d'être coupée (cartes d'ombres : un obstacle plus loin vers
+        // le soleil que la carte n'en couvre y est aplati devant tout, il fait encore de l'ombre).
+        bool depthClamp = false;
     };
 
     // Pipeline de calcul : un point d'entrée [shader("compute")] lancé par CommandList::Dispatch.

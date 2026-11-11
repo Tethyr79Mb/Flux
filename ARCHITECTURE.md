@@ -556,6 +556,13 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol sans pixels ») pour séparer leur coût
   de celui des sommets. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
+- Ray tracing quand le GPU a les ray queries (`VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, choisi seul au
+  démarrage, `FLUX_RAY_TRACING=0` pour l'ignorer ; `Device::HasRayTracing`). `ModelCache` crée la structure basse
+  d'un modèle fixe (`GpuModel::bottomLevel`, ses `shadowPrimitives` lues dans la page de géométrie, créée avec
+  `BufferUsage::AccelerationInput`) ; `RayTracingScene` (à `MeshRenderer`) la construit à la première image où le
+  modèle est dans la scène, et refait à chaque image la structure haute (une instance par entité gardée, matrice
+  relative à la caméra, indice de ses `DrawData`). Une structure haute et une mémoire de travail par image en vol.
+  Passe « ray tracing » du graphe, avant les ombres.
 - Sol en mesh shaders quand le GPU a `VK_EXT_mesh_shader` (choisi seul au démarrage, `FLUX_MESH_SHADERS=0` pour
   comparer) : `PlanetMesh.slang`, module SPIR-V à part (un module qui déclare la capacité MeshShadingEXT ne se charge
   pas sur une carte sans). Le calcul des tuiles écrit aussi la boîte de chacun des 16 paquets de 8×8 carrés (jupes

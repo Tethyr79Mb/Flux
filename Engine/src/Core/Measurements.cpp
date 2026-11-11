@@ -144,7 +144,8 @@ namespace Flux {
                             context.occlusionCulling ? "oui" : "non", context.groundGeometryOnly ? "oui" : "non",
                             context.groundMeshThreads > 0 ? std::format("mesh shaders ({} threads)", context.groundMeshThreads)
                                                           : std::string("sommets"));
-        text += std::format("Modèles fixes dessinés par {}\n", context.modelMeshShaders ? "mesh shaders" : "sommets");
+        text += std::format("Modèles fixes dessinés par {}, ray tracing {}\n", context.modelMeshShaders ? "mesh shaders" : "sommets",
+                            context.rayTracing ? "oui" : "non");
         text += std::format("Caméra : {}\n", context.camera);
         text += std::format("Durée : {:.1f} s, {} images\n\n", total * 0.001, m_frames.size());
 

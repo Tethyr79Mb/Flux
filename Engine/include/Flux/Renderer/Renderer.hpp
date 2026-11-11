@@ -101,6 +101,16 @@ namespace Flux {
         std::uint32_t modelMeshlets = 0;
         std::uint32_t modelMeshletsDrawn = 0;
         bool modelMeshShaders = false;
+        // Ray tracing (GPU qui l'a) : instances de la structure de la scène, modèles différents qu'elle désigne, et
+        // dont construits à cette image ou reportés (entités) ; mémoire vidéo des structures des modèles en vue, puis
+        // celle des structures de la scène et de leur mémoire de travail.
+        bool rayTracing = false;
+        std::uint32_t rayInstances = 0;
+        std::uint32_t rayModels = 0;
+        std::uint32_t rayModelsBuilt = 0;
+        std::uint32_t rayModelsWaiting = 0;
+        std::uint64_t rayModelBytes = 0;
+        std::uint64_t raySceneBytes = 0;
     };
 
     // Aucun type d'API graphique ici : le rendu passe par le RHI (src/Renderer/RHI), implémenté avec Vulkan.
@@ -181,6 +191,10 @@ namespace Flux {
         // « dont sol » dans le panneau Moteur donne le coût des pixels ; le reste, celui des sommets et des triangles.
         void SetGroundGeometryOnly(bool enabled);
         bool IsGroundGeometryOnly() const;
+        // Vue de débogage des ombres du soleil : chaque pixel teinté selon la carte qu'il lit (rouge, vert, bleu, jaune
+        // pour les 4 cascades proches ; magenta et cyan pour le relief au loin ; gris sans ombre).
+        void SetShowShadowCascades(bool enabled);
+        bool IsShowingShadowCascades() const;
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;

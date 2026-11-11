@@ -96,9 +96,13 @@ namespace Flux {
             // de la source ; z niveaux ; w 1 si elle sert ; premier texel de chaque niveau.
             std::array<std::uint32_t, 4> pyramidSize;
             std::array<std::uint32_t, 16> pyramidOffsets;
+            // x : 1 pour teinter chaque pixel selon sa carte d'ombre (panneau Moteur) ; y : lectures de la pénombre (ShadowTaps)
+            std::array<std::uint32_t, 4> shadowOptions;
+            std::array<float, 4> cascadeDepthRanges; // profondeur couverte par chaque cascade proche (mètres)
+            std::array<float, 4> terrainDepthRanges; // xy : celle des deux cascades du relief
         };
         static_assert(sizeof(FrameData) == 576 + 4 * 64 + 3 * 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
-                                               + sizeof(Planetology::AtmosphereGpu) + 80
+                                               + sizeof(Planetology::AtmosphereGpu) + 128
                       && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
 
@@ -138,8 +142,11 @@ namespace Flux {
         constexpr std::uint32_t MeshletStatSlot = 13;
         constexpr std::uint32_t TerrainShadowMapSlot = 14;
         constexpr std::uint32_t IrradianceSlot = 15;
-        constexpr std::uint32_t ForestShadowMapSlot = 16;
-        // Cascade des forêts au loin dans FrameData::cascades.
+        // Les mêmes cartes d'ombres lues sans comparaison : profondeur des obstacles pour la pénombre (shaders/Mesh.slang).
+        constexpr std::uint32_t ShadowDepthSlot = 16;
+        constexpr std::uint32_t TerrainShadowDepthSlot = 17;
+        constexpr std::uint32_t ForestShadowMapSlot = 18;
+        // Cascades des forêts au loin dans FrameData::cascades.
         constexpr std::uint32_t ForestCascade = ShadowCascadeCount + TerrainShadowCascadeCount;
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
@@ -164,6 +171,10 @@ namespace Flux {
         // Carte d'ombres : 2 x 2 cascades de 2048 texels de côté (64 Mo en profondeur 32 bits).
         constexpr std::uint32_t ShadowCascadeResolution = 2048;
         constexpr std::uint32_t ShadowMapResolution = 2 * ShadowCascadeResolution;
+        // Lectures par pixel de la pénombre des ombres du soleil (recherche des obstacles, puis filtre) : 16 sur la
+        // configuration recommandée, 8 sur le minimum (bord un peu plus bruité avant l'anticrénelage).
+        constexpr std::uint32_t ShadowTaps = 16;
+        constexpr std::uint32_t ShadowTapsMinimum = 8;
         // Relief au loin (2 cascades côte à côte) : 4096 texels sur la configuration recommandée (128 Mo), 2048 sur le
         // minimum (32 Mo), reconnu à l'absence de mesh shaders (GTX 1060, RX 5700). De 200 m à 3 km, un texel fait
         // environ 2 m en 4096 ; de 3 à 40 km, environ 25 m.
@@ -212,6 +223,9 @@ namespace Flux {
             return std::unexpected(models.error());
         }
         renderer->m_models = std::move(*models);
+        if (device.HasRayTracing()) {
+            renderer->m_rayTracing = std::make_unique<RayTracingScene>(device);
+        }
         auto planets = Planetology::PlanetRenderer::Create(device);
         if (!planets) {
             return std::unexpected(planets.error());
@@ -265,6 +279,13 @@ namespace Flux {
             return std::unexpected(shadowSampler.error());
         }
         renderer->m_shadowSampler = std::move(*shadowSampler);
+        auto shadowDepthSampler = device.CreateSampler({.filter = RHI::Filter::Nearest, .mipFilter = RHI::Filter::Nearest,
+                                                        .address = RHI::AddressMode::ClampToEdge});
+        if (!shadowDepthSampler) {
+            return std::unexpected(shadowDepthSampler.error());
+        }
+        renderer->m_shadowDepthSampler = std::move(*shadowDepthSampler);
+        renderer->m_shadowTaps = recommended ? ShadowTaps : ShadowTapsMinimum;
 
         constexpr RHI::ShaderStage both = RHI::ShaderStage::Vertex | RHI::ShaderStage::Fragment;
         constexpr std::array bindings{
@@ -284,6 +305,8 @@ namespace Flux {
             RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
@@ -305,6 +328,8 @@ namespace Flux {
             }
             renderer->m_frameGroups[f]->SetTexture(ShadowMapSlot, *renderer->m_shadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetTexture(TerrainShadowMapSlot, *renderer->m_terrainShadowMap, *renderer->m_shadowSampler);
+            renderer->m_frameGroups[f]->SetTexture(ShadowDepthSlot, *renderer->m_shadowMap, *renderer->m_shadowDepthSampler);
+            renderer->m_frameGroups[f]->SetTexture(TerrainShadowDepthSlot, *renderer->m_terrainShadowMap, *renderer->m_shadowDepthSampler);
             renderer->m_frameGroups[f]->SetTexture(ForestShadowMapSlot, *renderer->m_forestShadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
         }
@@ -414,7 +439,9 @@ namespace Flux {
             desc.depthFormat = RHI::Format::D32Float;
             desc.depthCompare = RHI::CompareOp::Less;
             desc.depthBiasConstant = 1.0f;
-            desc.depthBiasSlope = 1.5f;
+            desc.depthBiasSlope = 0.5f; // le reste par la pente du plan à la lecture (LocateShadow) ; à 1,5, l'ombre
+                                        // d'une plaque à 5 cm du sol pâlissait dès la deuxième cascade
+            desc.depthClamp = true; // obstacles jusqu'à ShadowFlattenDistance vers le soleil (CastsShadow)
             // Les deux faces : une coque ouverte ou un matériau double face fait aussi de l'ombre.
             desc.cullMode = RHI::CullMode::None;
             if (auto result = create(pipelines.shadowDoubleSided, desc); !result) {
@@ -444,6 +471,7 @@ namespace Flux {
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
             desc.depthBiasConstant = 0.0f;
             desc.depthBiasSlope = 0.0f;
+            desc.depthClamp = false;
             const auto createMain = [&](std::unique_ptr<RHI::Pipeline>& pipeline, RHI::CullMode cullMode, bool transparent) {
                 desc.cullMode = cullMode;
                 // Transparents : mélangés à ce qui est déjà dessiné, cachés par les opaques plus proches, mais sans
@@ -768,7 +796,7 @@ namespace Flux {
         m_groundGroup = planets ? m_ground.Get(m_device, *m_models, assetsDirectory) : nullptr;
         const ViewCone view(camera, aspect);
         // Avant les entités : celles qui ne sont ni en vue ni dans une ombre sont écartées dès maintenant.
-        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution);
+        m_cascades = ComputeShadowCascades(camera, aspect, sky.toSun, ShadowCascadeResolution, ShadowDepthDistance);
         m_shadowReceivers = ShadowReceivers(camera, aspect, sky.toSun);
         ChooseShadowCascades(camera, sky.toSun);
         ChooseTerrainCascades(camera, aspect, sky.toSun);
@@ -878,6 +906,14 @@ namespace Flux {
                                draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
                                draw.uniformScale, firstCluster});
         }
+        // Ray tracing : toutes les entités gardées, en vue ou non (une hors du champ peut faire de l'ombre dedans).
+        if (m_rayTracing) {
+            m_rayTracing->Begin();
+            for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
+                m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
+            }
+            m_rayTracing->End(frameIndex);
+        }
         m_prepareTimes.entities = since(start) - groundMilliseconds;
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
         Clock::time_point partStart = Clock::now();
@@ -930,6 +966,18 @@ namespace Flux {
             m_modelPasses = {};
         }
         m_prepareTimes.uploads = since(partStart);
+    }
+
+    void MeshRenderer::BuildRayTracingModels(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        if (m_rayTracing) {
+            m_rayTracing->BuildBottomLevels(commands, frameIndex);
+        }
+    }
+
+    void MeshRenderer::BuildRayTracingScene(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        if (m_rayTracing) {
+            m_rayTracing->BuildTopLevel(commands, frameIndex);
+        }
     }
 
     std::pair<Math::Vector3f, float> MeshRenderer::SphereOf(const RelativeTransform& transform, const Math::Box3f& box) {
@@ -1311,11 +1359,13 @@ namespace Flux {
             frame.cascades[c] = m_cascades[c].lightViewProjection;
             frame.cascadeEnds[c] = ShadowCascadeEnds[c];
             frame.cascadeTexels[c] = m_cascades[c].texelSize;
+            frame.cascadeDepthRanges[c] = m_cascades[c].depthRange;
         }
         for (std::size_t t = 0; t < TerrainShadowCascadeCount; ++t) {
             frame.cascades[ShadowCascadeCount + t] = m_terrainCascades[t].lightViewProjection;
             frame.terrainCascades[t] = TerrainShadowCascadeEnds[t];
             frame.terrainCascades[2 + t] = m_terrainCascades[t].texelSize;
+            frame.terrainDepthRanges[t] = m_terrainCascades[t].depthRange;
         }
         for (std::size_t s = 0; s < ForestShadowSlices; ++s) {
             frame.cascades[ForestCascade + s] = m_forestCascades[s].lightViewProjection;
@@ -1325,7 +1375,8 @@ namespace Flux {
         // w : secondes écoulées (vagues des océans), repartent de 0 toutes les heures pour garder leur précision.
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
         frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
-        frame.toSun = ToArray(sky.toSun);
+        // w : tangente du rayon apparent du soleil, la pénombre d'une ombre par mètre entre l'obstacle et le sol.
+        frame.toSun = ToArray(sky.toSun, std::tan(sky.sunRadius));
         frame.sunColor = ToArray(sky.sunColor);
         // Reflets : un niveau de mip par rugosité, du miroir (0) au plus rugueux (le dernier niveau, rugosité 1).
         const float roughestMip = static_cast<float>(sky.environmentMips > 0 ? sky.environmentMips - 1 : 0);
@@ -1354,6 +1405,7 @@ namespace Flux {
             const float luminance = Photometry::FromNits(std::max(interior.luminance, 0.0f));
             data.ambient = {interior.ambient.r * luminance, interior.ambient.g * luminance, interior.ambient.b * luminance, 0.0f};
         }
+        frame.shadowOptions = {m_showShadowCascades ? 1u : 0u, m_shadowTaps, 0u, 0u};
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
                             static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};
         std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
@@ -1383,16 +1435,25 @@ namespace Flux {
     // changement de scène) : la carte gardée ne couvrirait plus la vue.
     void MeshRenderer::ChooseShadowCascades(const Camera& camera, const Math::Vector3f& toSun) {
         constexpr std::size_t FirstAlternateCascade = 2;
+        // Écart toléré entre la carte gardée et celle de l'image, en part de son rayon : le bord de la tranche, que
+        // la sphère serre au plus près, peut en sortir d'autant (il lit alors la cascade suivante, SunVisibility).
+        constexpr float KeptCascadeShift = 0.02f;
         m_keepShadows = false;
         for (std::size_t c = 0; c < ShadowCascadeCount; ++c) {
             DrawnCascade& drawn = m_drawnCascades[c];
+            // Gardée seulement si elle couvre encore presque la même tranche : la carte est placée devant le regard,
+            // tourner la caméra la déplace autant que d'avancer. Avant, seul le déplacement comptait : en tournant,
+            // une image sur deux, le bord de la vue sortait de la carte gardée (et ses obstacles avaient été choisis
+            // pour l'ancien regard), d'où des ombres qui apparaissaient et disparaissaient selon la direction.
             const Math::Vector3d moved = Math::Delta(drawn.eye, camera.position);
+            const ShadowCascade kept = drawn.valid ? MoveShadowCascade(drawn.cascade, Math::Vector3f(moved)) : ShadowCascade{};
             const bool keep = c >= FirstAlternateCascade && drawn.valid && drawn.toSun == toSun
-                           && Math::Length(moved) < 0.1 * static_cast<double>(drawn.cascade.radius)
+                           && kept.radius == m_cascades[c].radius
+                           && Math::Length(kept.center - m_cascades[c].center) < KeptCascadeShift * kept.radius
                            && m_preparedFrame % 2 != c % 2;
             m_drawCascade[c] = !keep;
             if (keep) {
-                m_cascades[c] = MoveShadowCascade(drawn.cascade, Math::Vector3f(moved));
+                m_cascades[c] = kept;
                 m_keepShadows = true;
             } else {
                 drawn = {true, m_cascades[c], camera.position, toSun};
@@ -1455,7 +1516,7 @@ namespace Flux {
         return InShadowVolume(m_cascades[cascade], center, radius);
     }
 
-    bool MeshRenderer::InShadowVolume(const ShadowCascade& c, const Math::Vector3f& center, float radius) {
+    bool MeshRenderer::InShadowVolume(const ShadowCascade& c, const Math::Vector3f& center, float radius, float beyond) {
         const auto& m = c.lightViewProjection.columns;
         const Math::Vector3f p = center;
         const float x = m[0][0] * p.x + m[1][0] * p.y + m[2][0] * p.z + m[3][0];
@@ -1463,16 +1524,20 @@ namespace Flux {
         const float z = m[0][2] * p.x + m[1][2] * p.y + m[2][2] * p.z + m[3][2];
         const float side = radius / c.radius;
         const float depth = radius / c.depthRange;
-        return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth && z <= 1.0f + depth;
+        return std::abs(x) <= 1.0f + side && std::abs(y) <= 1.0f + side && z >= -depth - beyond / c.depthRange
+            && z <= 1.0f + depth;
     }
 
-    // L'entité fait une ombre visible dans la cascade : dans son volume, son ombre peut tomber dans la tranche vue, et
-    // pas plus petite que quelques texels (au loin, un objet de quelques centimètres ne ferait qu'un point flou de la
-    // carte : il n'y est pas dessiné).
+    // L'entité fait une ombre visible dans la cascade : dans son volume (prolongé jusqu'à ShadowFlattenDistance vers le
+    // soleil, ces obstacles aplatis devant tout), son ombre peut tomber dans la tranche vue, et pas plus petite que
+    // quelques texels (au loin, un objet de quelques centimètres ne ferait qu'un point flou de la carte : il n'y est
+    // pas dessiné). Avant, un obstacle à plus de ShadowCasterDistance du centre de la carte, placée devant le regard,
+    // n'y était pas : l'ombre d'une tour à 350 m apparaissait ou disparaissait selon la direction de la caméra.
     bool MeshRenderer::CastsShadow(const Math::Vector3f& center, float radius, std::size_t cascade) const {
         constexpr float MinTexels = 1.5f; // rayon, en texels de la carte
-        return radius >= MinTexels * m_cascades[cascade].texelSize && InCascade(center, radius, cascade)
-            && m_shadowReceivers.Reaches(center, radius, ShadowCasterDistance, cascade);
+        return radius >= MinTexels * m_cascades[cascade].texelSize
+            && InShadowVolume(m_cascades[cascade], center, radius, ShadowFlattenDistance - ShadowDepthDistance)
+            && m_shadowReceivers.Reaches(center, radius, ShadowFlattenDistance, cascade);
     }
 
     bool MeshRenderer::TileCastsShadow(const Math::Vector3f& center, float radius, std::size_t pass, bool drawnOnly) const {
