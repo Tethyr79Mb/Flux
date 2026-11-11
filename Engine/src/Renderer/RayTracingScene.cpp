@@ -25,16 +25,16 @@ namespace Flux {
         m_stats = {};
     }
 
-    void RayTracingScene::Add(const GpuModel& model, const Math::Matrix4f& world, std::uint32_t index) {
+    bool RayTracingScene::Add(const GpuModel& model, const Math::Matrix4f& world, std::uint32_t index) {
         RHI::AccelerationStructure* bottom = model.bottomLevel.get();
         if (!bottom) {
-            return;
+            return false;
         }
         if (!model.bottomLevelBuilt) {
             const std::uint64_t scratch = bottom->GetScratchSize();
             if (!m_toBuild.empty() && m_toBuildScratch + scratch > BottomScratchBudget) {
                 ++m_stats.waiting; // une entité de plus qui attend (pas un modèle : compté par entité)
-                return;
+                return false;
             }
             model.bottomLevelBuilt = true;
             m_toBuild.push_back(bottom);
@@ -51,6 +51,7 @@ namespace Flux {
         instance.bottom = bottom;
         m_instances.push_back(instance);
         m_used.push_back(bottom);
+        return true;
     }
 
     bool RayTracingScene::Reserve(std::unique_ptr<RHI::Buffer>& buffer, std::uint64_t size) {

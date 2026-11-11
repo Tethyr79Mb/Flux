@@ -780,14 +780,19 @@ namespace FluxEditor {
             .description = "Vues de débogage du rendu (comme les cases du panneau Moteur). shadow_cascades : chaque pixel "
                            "teinté selon la carte d'ombre du soleil qu'il lit (rouge, vert, bleu, jaune : cascades proches "
                            "jusqu'à 6, 20, 60 et 200 m ; magenta et cyan : relief jusqu'à 3 et 40 km ; gris : aucune). "
-                           "Sans argument : l'état actuel.",
-            .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}}),
+                           "ray_shadows : ombres des modèles fixes en rayons (true, par défaut avec le ray tracing) ou dans "
+                           "les cartes d'ombre (false), pour comparer. Sans argument : l'état actuel.",
+            .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}, {"ray_shadows", {{"type", "boolean"}}}}),
             .run = [&engine](const Json& arguments) -> McpOutcome {
                 Renderer& renderer = engine.GetRenderer();
                 if (arguments.contains("shadow_cascades")) {
                     renderer.SetShowShadowCascades(arguments.value("shadow_cascades", false));
                 }
-                return McpToolResult::Text(std::format("shadow_cascades : {}", renderer.IsShowingShadowCascades()));
+                if (arguments.contains("ray_shadows")) {
+                    renderer.SetRayTracedShadows(arguments.value("ray_shadows", true));
+                }
+                return McpToolResult::Text(std::format("shadow_cascades : {}, ray_shadows : {}", renderer.IsShowingShadowCascades(),
+                                                       renderer.IsRayTracingShadows()));
             },
         });
 

@@ -1090,6 +1090,14 @@ namespace Flux {
         return m_impl->meshes->IsShowingShadowCascades();
     }
 
+    void Renderer::SetRayTracedShadows(bool enabled) {
+        m_impl->meshes->SetRayTracedShadows(enabled);
+    }
+
+    bool Renderer::IsRayTracingShadows() const {
+        return m_impl->meshes->IsRayTracingShadows();
+    }
+
     void Renderer::SetGroundDetail(GroundDetail detail) {
         m_impl->meshes->SetGroundDetail(detail);
     }

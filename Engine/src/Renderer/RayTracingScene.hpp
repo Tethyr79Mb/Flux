@@ -25,8 +25,8 @@ namespace Flux {
         void Begin();
         // Une entité : `world` sa matrice relative à la caméra, `index` ses données dans l'image (DrawData), rendu aux
         // shaders. Sans effet si son modèle n'a pas de structure basse (animé, verre seul) ; si elle n'est pas encore
-        // construite, demandée pour cette image dans la limite du budget.
-        void Add(const GpuModel& model, const Math::Matrix4f& world, std::uint32_t index);
+        // construite, demandée pour cette image dans la limite du budget. true si l'entité est dans la structure haute.
+        bool Add(const GpuModel& model, const Math::Matrix4f& world, std::uint32_t index);
         // Fin de la préparation : prépare la structure haute et les mémoires de travail de l'image (agrandies au
         // besoin). false si la mémoire manque : rien n'est construit à cette image.
         bool End(std::uint32_t frameIndex);

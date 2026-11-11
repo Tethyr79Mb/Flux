@@ -63,10 +63,14 @@ flux_add_shaders(FluxShaders
         shaders/Flame.slang
         shaders/Grid.slang
         shaders/Mesh.slang
+        shaders/MeshRays.slang
         shaders/ModelMesh.slang
+        shaders/ModelMeshRays.slang
         shaders/Overlay.slang
         shaders/PlanetMesh.slang
+        shaders/PlanetMeshRays.slang
         shaders/PlanetMeshSmall.slang
+        shaders/PlanetMeshSmallRays.slang
         shaders/PlanetTile.slang
         shaders/Post.slang
         shaders/Sky.slang

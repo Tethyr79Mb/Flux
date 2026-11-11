@@ -12,6 +12,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <numbers>
 #include <span>
 
@@ -143,6 +144,7 @@ namespace Flux {
         // Les mêmes cartes d'ombres lues sans comparaison : profondeur des obstacles pour la pénombre (shaders/Mesh.slang).
         constexpr std::uint32_t ShadowDepthSlot = 16;
         constexpr std::uint32_t TerrainShadowDepthSlot = 17;
+        constexpr std::uint32_t SceneStructureSlot = 18; // ray tracing seulement (shaders/MeshRays.slang)
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -278,8 +280,12 @@ namespace Flux {
             RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, RHI::ShaderStage::Fragment},
         };
-        auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
+        // La structure de la scène n'existe qu'avec le ray tracing (sinon, type de liaison inconnu du pilote).
+        const std::span<const RHI::Binding> frameBindings = renderer->m_rayTracing ? std::span(bindings)
+                                                                                    : std::span(bindings).first(bindings.size() - 1);
+        auto layout = device.CreateBindGroupLayout({.bindings = frameBindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
             return std::unexpected(layout.error());
         }
@@ -390,7 +396,7 @@ namespace Flux {
         };
         const auto createAll = [&](Pipelines& pipelines, const Kind& kind) -> std::expected<void, std::string> {
             RHI::PipelineDesc desc;
-            desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Mesh.spv";
+            desc.shaderPath = ShaderPath("Mesh");
             desc.vertexBuffers = kind.buffers;
             desc.bindGroupLayouts = layouts;
             desc.pushConstantsSize = sizeof(DrawParams);
@@ -563,8 +569,7 @@ namespace Flux {
             RHI::PipelineDesc mesh;
             // Groupes de 128 threads, ou de 64 si le pilote préfère moins (NVIDIA) : PlanetMeshSmall.slang.
             m_planetMeshThreads = m_device.GetMeshPreferredThreads() >= 128 ? 128u : 64u;
-            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders"
-                            / (m_planetMeshThreads == 128 ? "PlanetMesh.spv" : "PlanetMeshSmall.spv");
+            mesh.shaderPath = ShaderPath(m_planetMeshThreads == 128 ? "PlanetMesh" : "PlanetMeshSmall");
             mesh.taskEntryPoint = "taskPlanet";
             mesh.meshEntryPoint = "meshPlanet";
             mesh.fragmentEntryPoint = "fragmentPlanet";
@@ -597,7 +602,7 @@ namespace Flux {
         if (m_modelMeshLayout && m_models->HasMeshlets()) {
             const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_modelMeshLayout.get()};
             RHI::PipelineDesc mesh;
-            mesh.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "ModelMesh.spv";
+            mesh.shaderPath = ShaderPath("ModelMesh");
             mesh.taskEntryPoint = "taskModel";
             mesh.meshEntryPoint = "meshModel";
             mesh.bindGroupLayouts = meshLayouts;
@@ -632,6 +637,11 @@ namespace Flux {
             }
         }
         return {};
+    }
+
+    // Avec le ray tracing, la variante *Rays du module : ombres du soleil en rayons (shaders/MeshRays.slang).
+    std::filesystem::path MeshRenderer::ShaderPath(std::string_view name) const {
+        return Platform::GetExecutableDirectory() / "shaders" / std::format("{}{}.spv", name, m_rayTracing ? "Rays" : "");
     }
 
     const RHI::Pipeline& MeshRenderer::ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material) {
@@ -827,15 +837,17 @@ namespace Flux {
             }
             m_draws.push_back({draw.model, draw.tint, draw.emissive, draw.metallic, draw.roughness, draw.materialOverride,
                                draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
-                               draw.uniformScale, firstCluster});
+                               draw.uniformScale, firstCluster, false});
         }
         // Ray tracing : toutes les entités gardées, en vue ou non (une hors du champ peut faire de l'ombre dedans).
+        // Une entité teintée transparente laisse passer la lumière : pas de rayon arrêté par elle.
+        m_rayShadowsActive = false;
         if (m_rayTracing) {
             m_rayTracing->Begin();
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
-                m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
+                m_draws[d].traced = m_draws[d].tint.a >= 1.0f && m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
             }
-            m_rayTracing->End(frameIndex);
+            m_rayShadowsActive = m_rayTracing->End(frameIndex) && m_rayTracedShadows;
         }
         m_prepareTimes.entities = since(start) - groundMilliseconds;
         // Tuiles manquantes des planètes (calculées au début de l'image suivante, dessinées à partir d'elle).
@@ -1299,7 +1311,16 @@ namespace Flux {
             const float luminance = Photometry::FromNits(std::max(interior.luminance, 0.0f));
             data.ambient = {interior.ambient.r * luminance, interior.ambient.g * luminance, interior.ambient.b * luminance, 0.0f};
         }
-        frame.shadowOptions = {m_showShadowCascades ? 1u : 0u, m_shadowTaps, 0u, 0u};
+        // Structure de la scène : liée quand elle change (refaite plus grande). Toujours une liée dès qu'elle existe : les
+        // shaders *Rays la déclarent, même quand shadowOptions.z les en détourne.
+        if (m_rayTracing) {
+            const RHI::AccelerationStructure* structure = m_rayTracing->GetTopLevel(frameIndex);
+            if (structure && structure != m_boundStructure[frameIndex]) {
+                m_frameGroups[frameIndex]->SetAccelerationStructure(SceneStructureSlot, *structure);
+                m_boundStructure[frameIndex] = structure;
+            }
+        }
+        frame.shadowOptions = {m_showShadowCascades ? 1u : 0u, m_shadowTaps, m_rayShadowsActive ? 1u : 0u, 0u};
         frame.lightCount = {static_cast<std::uint32_t>(m_lightData.size()), static_cast<std::uint32_t>(m_interiors.size()),
                             static_cast<std::uint32_t>(m_planetData.size()), temporal.noiseFrame};
         std::ranges::copy(m_ground.GetMaxAngles(), frame.groundRotations.begin());
@@ -1814,6 +1835,11 @@ namespace Flux {
                 for (const ModelPrimitive& primitive : draw.model->shadowPrimitives) {
                     const GpuMaterial& material = draw.model->materials[primitive.material];
                     if (IsTransparent(draw, material)) {
+                        continue;
+                    }
+                    // Opaque et dans la structure du ray tracing : son ombre vient des rayons. Seuil d'alpha : pas
+                    // opaque pour les rayons (RAY_FLAG_CULL_NON_OPAQUE), il reste ici.
+                    if (m_rayShadowsActive && draw.traced && material.alphaCutoff <= 0.0f) {
                         continue;
                     }
                     if (const ClusterDraw* cluster = FindCluster(draw, primitive);

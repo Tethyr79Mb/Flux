@@ -88,7 +88,8 @@ struct FrameData
     // (pas de test). Premier texel de chaque niveau.
     uint4 pyramidSize;
     uint4 pyramidOffsets[4];
-    // x : 1 pour teinter chaque pixel selon sa carte d'ombre (CascadeDebugTint) ; y : lectures de la pénombre par pixel
+    // x : 1 pour teinter chaque pixel selon sa carte d'ombre (CascadeDebugTint) ; y : lectures de la pénombre par pixel ;
+    // z : 1 si les modèles fixes opaques sont dans sceneStructure (ombres en rayons) et plus dans les cascades proches
     uint4 shadowOptions;
     float4 cascadeDepthRanges; // profondeur couverte par chaque cascade proche, en mètres (de 0 à 1 dans sa carte)
     float4 terrainDepthRanges; // xy : celle des deux cascades du relief
@@ -182,6 +183,11 @@ struct MaterialData
 // Les mêmes, lues sans comparaison : profondeur des obstacles, d'où la largeur de la pénombre (CascadeVisibility).
 [[vk::binding(16, 1)]] Sampler2D shadowDepth;
 [[vk::binding(17, 1)]] Sampler2D terrainShadowDepth;
+#ifdef FLUX_RAY_QUERY
+// Structure haute de l'image (RayTracingScene) : les modèles fixes, relatifs à la caméra. Seulement dans les variantes
+// *Rays.slang : un module qui la déclare ne se charge pas sur un GPU sans ray queries.
+[[vk::binding(18, 1)]] RaytracingAccelerationStructure sceneStructure;
+#endif
 // Lumières de la scène qui touchent le champ de la caméra (frame[0].lightCount.x).
 [[vk::binding(4, 1)]] StructuredBuffer<LightData> lights;
 // Le ciel tout autour vu dans un reflet (EnvironmentRenderer, HDR) : un niveau de mip par rugosité, préfiltré GGX.
@@ -860,7 +866,12 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
 {
     const FrameData f = frame[0];
     const float depth = dot(worldPosition, f.cameraForward.xyz);
-    const float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
+    float terrain = TerrainVisibility(worldPosition, normal, sunFacing);
+#ifdef FLUX_RAY_QUERY
+    if (f.shadowOptions.z != 0 && terrain > 0.0) {
+        terrain = min(terrain, TracedSunVisibility(worldPosition, normal));
+    }
+#endif
     if (depth > f.cascadeEnds[3]) {
         return terrain;
     }
@@ -870,6 +881,42 @@ float SunVisibility(float3 worldPosition, float3 normal, float sunFacing)
     lit = lerp(1.0, lit, saturate((f.cascadeEnds[3] - depth) / (0.1 * f.cascadeEnds[3])));
     return min(lit, terrain);
 }
+
+#ifdef FLUX_RAY_QUERY
+// Plus loin, pas de rayon : l'ombre d'un objet sur un point à 20 km ne se voit plus.
+static const float MaxTracedShadow = 20000.0;
+
+// Lumière du soleil vue à travers les modèles fixes opaques (0 ou 1) : un rayon vers un point du disque du soleil, tiré
+// à chaque pixel et à chaque image (bruit à gradient entrelacé, comme ShadowRotation). L'anticrénelage temporel en fait
+// une pénombre : nette au contact, large loin de l'obstacle, comme sous le vrai soleil. Les géométries à seuil d'alpha
+// (grilles, feuilles) ne sont pas opaques dans la structure : elles restent dans les cascades.
+float TracedSunVisibility(float3 worldPosition, float3 normal)
+{
+    const FrameData f = frame[0];
+    const float distance = length(worldPosition);
+    if (distance > MaxTracedShadow) {
+        return 1.0;
+    }
+    const float angle = ShadowRotation();
+    const float2 p = shadowPixel.yx + float(frame[0].lightCount.w % 64u) * 7.123617;
+    const float radius = sqrt(frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715)))));
+    const float3 toSun = f.toSun.xyz;
+    const float3 side = normalize(abs(toSun.y) < 0.9 ? cross(toSun, float3(0.0, 1.0, 0.0)) : cross(toSun, float3(1.0, 0.0, 0.0)));
+    const float3 up = cross(side, toSun);
+    const float2 disk = radius * float2(cos(angle), sin(angle)) * f.toSun.w;
+    RayDesc ray;
+    // Départ décalé le long de la normale : la surface ne se touche pas elle-même (normales lissées d'un modèle
+    // anguleux, précision des positions relatives à la caméra, qui baisse avec la distance).
+    ray.Origin = worldPosition + normal * (0.01 + 2.0e-5 * distance);
+    ray.Direction = normalize(toSun + side * disk.x + up * disk.y);
+    ray.TMin = 0.0;
+    ray.TMax = MaxTracedShadow;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> query;
+    query.TraceRayInline(sceneStructure, 0, 0xFF, ray);
+    query.Proceed();
+    return query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
+}
+#endif
 
 // Vue de débogage (FrameData::shadowOptions.x) : teinte de la carte d'ombre que lit ce point.
 float3 CascadeDebugTint(float3 worldPosition, float3 normal, float sunFacing)

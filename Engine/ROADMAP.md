@@ -93,8 +93,10 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   3) débruitage si le TAA ne suffit pas ; 4) relief et arbres. Fait (étape 1) : détection au démarrage (ray queries,
   `FLUX_RAY_TRACING=0` pour l'ignorer), une structure basse par modèle fixe (triangles qui portent une ombre,
   construite à sa première apparition, 64 Mo de travail par image au plus), une structure haute par image (entités en
-  vue ou dans une ombre, relatives à la caméra), passe « ray tracing » et compteurs dans le panneau Moteur. Rien à
-  l'écran encore. Limites : modèles animés absents (structure à refaire à chaque pose), structures non compactées.
+  vue ou dans une ombre, relatives à la caméra), passe « ray tracing » et compteurs dans le panneau Moteur. Fait
+  (étape 2) : ombres des modèles fixes opaques en rayons (variantes `*Rays.slang`, case « Ombres des objets en rayons »
+  pour comparer), retirés des cascades proches. Limites : seuil d'alpha et modèles animés restent dans les cascades,
+  structures non compactées (143 Mo pour la station).
 - 🔨 Scènes de test du rendu (`assets/scenes/Rendu/`, 2026-11-10) et vue de débogage « Cartes d'ombre en couleur »
   (panneau Moteur). Fait : scène des ombres (poteaux fins, contact au sol, plans inclinés, abri, barreaux, repères de
   cascades, tour à 350 m). À faire : sphères de matériaux, intérieur sombre, lumières locales. Défauts relevés à

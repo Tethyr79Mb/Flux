@@ -121,6 +121,12 @@ namespace Flux {
                     renderer.SetShowShadowCascades(cascades);
                 }
                 const RenderTimings& render = renderer.GetTimings();
+                if (render.rayTracing) {
+                    bool rays = renderer.IsRayTracingShadows();
+                    if (ui.Checkbox("Ombres des objets en rayons", rays)) {
+                        renderer.SetRayTracedShadows(rays);
+                    }
+                }
                 const float ev100 = ExposureToEv100(render.exposure);
                 ui.LabelText("Exposition", render.sceneLuminance > 0.0f
                                                ? std::format("EV100 {:.1f} (luminance mesurée {:.3g} cd/m²)", ev100,

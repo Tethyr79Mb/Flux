@@ -35,6 +35,7 @@ namespace Flux::Vk {
         void SetBuffer(std::uint32_t slot, const RHI::Buffer& buffer) override;
         void SetTableTexture(std::uint32_t slot, std::uint32_t element, const RHI::Texture& texture, const RHI::Sampler& sampler) override;
         void SetStorageTexture(std::uint32_t slot, const RHI::Texture& texture) override;
+        void SetAccelerationStructure(std::uint32_t slot, const RHI::AccelerationStructure& structure) override;
         VkDescriptorSet GetHandle() const { return m_set; }
 
         private:

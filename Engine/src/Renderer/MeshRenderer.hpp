@@ -101,6 +101,9 @@ namespace Flux {
         bool IsGroundGeometryOnly() const { return m_groundGeometryOnly; }
         void SetShowShadowCascades(bool enabled) { m_showShadowCascades = enabled; }
         bool IsShowingShadowCascades() const { return m_showShadowCascades; }
+        // Ombres des modèles fixes en rayons (avec ray tracing, par défaut) ; sinon dans les cascades, pour comparer.
+        void SetRayTracedShadows(bool enabled) { m_rayTracedShadows = enabled; }
+        bool IsRayTracingShadows() const { return m_rayTracing && m_rayTracedShadows; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         void SetVegetationDistance(VegetationDistance distance) { m_vegetationDistance = distance; }
@@ -166,6 +169,7 @@ namespace Flux {
             bool inView = true;    // sa sphère touche le champ de la caméra ; sinon ombre seulement
             bool uniformScale = false; // échelle uniforme et positive : le cône des normales des paquets reste juste
             std::uint32_t firstCluster = 0; // dans m_clusters, si son modèle est découpé en blocs (GpuModel::clusters)
+            bool traced = false; // dans la structure haute du ray tracing de l'image
         };
         // Un bloc d'un grand modèle dessiné (GpuModel::clusters), relatif à la caméra.
         struct ClusterDraw
@@ -427,6 +431,7 @@ namespace Flux {
         static std::pair<Math::Vector3f, float> SphereOf(const RelativeTransform& transform, const Math::Box3f& box);
         void ComputeEntity(const Scene& scene, const ViewCone& view, const TemporalView& temporal, Entity hidden, EntityDraw& draw);
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
+        std::filesystem::path ShaderPath(std::string_view name) const;
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
         static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
         const RHI::Pipeline& ModelMeshPipeline(const GpuMaterial& material) const;
@@ -464,6 +469,11 @@ namespace Flux {
         Pipelines m_planet;
         bool m_groundGeometryOnly = false;
         bool m_showShadowCascades = false; // vue de débogage : une teinte par carte d'ombre
+        bool m_rayTracedShadows = true;    // choix de SetRayTracedShadows
+        // À cette image : la structure haute est construite et les modèles fixes opaques qui y sont (MeshDraw::traced)
+        // ne sont plus dessinés dans les cascades proches.
+        bool m_rayShadowsActive = false;
+        std::array<const RHI::AccelerationStructure*, RHI::FramesInFlight> m_boundStructure{}; // liée au groupe de l'image
         // Le même sol en mesh shaders (shaders/PlanetMesh.slang), quand le GPU les a : nuls sinon. Le groupe 3 lit les
         // sommets et les boîtes des paquets d'une page de tuiles (un groupe par page, fait à sa première utilisation).
         std::unique_ptr<RHI::BindGroupLayout> m_tileMeshLayout;
