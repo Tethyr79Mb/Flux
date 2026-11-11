@@ -165,6 +165,10 @@ namespace Flux {
         m_device.Retire([old = std::move(model)]() mutable { old = {}; });
     }
 
+    void ModelCache::SetImage(std::uint32_t slot, const RHI::Texture& texture) {
+        m_sceneGroup->SetTableTexture(ImageTableSlot, slot, texture, *m_sampler);
+    }
+
     void ModelCache::Release(GpuModelResources& resources) {
         GeometryPage& page = m_pages[resources.page];
         page.vertexRanges.Free(resources.firstVertex, resources.vertexCount);

@@ -310,7 +310,8 @@ namespace Flux::Vk {
         if (desc.secondColorTarget) {
             const auto& second = static_cast<const RhiTexture&>(*desc.secondColorTarget);
             colorAttachments[1] = colorAttachment;
-            colorAttachments[1].imageView = second.GetImage().GetView();
+            const VkImageView secondView = second.GetImage().GetFaceView(desc.colorLayer, desc.colorMip);
+            colorAttachments[1].imageView = secondView != VK_NULL_HANDLE ? secondView : second.GetImage().GetView();
             colorAttachments[1].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
         }
         VkRenderingInfo renderingInfo{};

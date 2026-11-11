@@ -127,10 +127,13 @@ namespace Flux::RHI {
                                                                                          bool mipmaps = false) = 0;
         // Cible de rendu vierge : tampon de profondeur, ou couleur (RenderPassDesc::colorTarget). sampled : lue
         // ensuite par les shaders (carte d'ombres, image de la scène avant le bloom) ; storage : aussi écrite par les
-        // compute shaders (TextureAccess::Storage), couleur seulement.
+        // compute shaders (TextureAccess::Storage), couleur seulement. mipLevels (couleur seulement) : niveaux de mip,
+        // chacun moitié du précédent, dessinés un à un (RenderPassDesc::colorMip) ou réduits par
+        // CommandList::GenerateMipmaps.
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateRenderTarget(Format format, Extent extent,
                                                                                         bool sampled = false,
-                                                                                        bool storage = false) = 0;
+                                                                                        bool storage = false,
+                                                                                        std::uint32_t mipLevels = 1) = 0;
         // Texture cube vierge dont chaque face de chaque niveau de mip est une cible de rendu (RenderPassDesc::colorTarget,
         // colorLayer, colorMip), lue ensuite par direction comme CreateCubeTexture. Plusieurs niveaux : chacun moitié du
         // précédent, dessinés un à un ou réduits par CommandList::GenerateMipmaps.

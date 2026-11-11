@@ -43,9 +43,9 @@ namespace Flux::Planetology {
         static constexpr std::uint32_t TreesPerPlain = TreeGrid * TreeGrid;
         // Groupes de computeTrees par plaine semée : une place par thread, 256 threads (GroupSize de PlanetTile.slang).
         static constexpr std::uint32_t SowGroupsPerPlain = TreesPerPlain / 256;
-        // Plaines gardées semées (32 octets par place : 128 Ko par plaine) : toutes celles en vue, plus celles semées
-        // d'avance.
-        static constexpr std::uint32_t MaxVisiblePlains = 256;
+        // Plaines gardées semées (32 octets par place : 128 Ko par plaine) : toutes celles en vue (jusqu'à 5 ou 6 km
+        // avec les imposteurs), plus celles semées d'avance.
+        static constexpr std::uint32_t MaxVisiblePlains = 512;
         static constexpr std::uint32_t MaxAheadPlains = 64;
         static constexpr std::uint32_t MaxPlains = MaxVisiblePlains + MaxAheadPlains;
         // Semées par image au plus : chacune coûte environ autant de relief que 8 tuiles de sol.
@@ -56,9 +56,12 @@ namespace Flux::Planetology {
         // Une par primitive de chaque espèce de chaque liste (13 pour une espèce à deux primitives).
         static constexpr std::uint32_t MaxCommands = 128;
         // Listes d'arbres de l'image.
-        enum List : std::uint32_t { Near, Middle, Far, Shadow, ListCount = Shadow + ShadowCascadeCount };
+        // ForestShadow : arbres hors du champ au-delà des cascades proches dont l'ombre peut y tomber (imposteurs
+        // seulement, carte des forêts au loin).
+        enum List : std::uint32_t { Near, Middle, Far, Shadow, ForestShadow = Shadow + ShadowCascadeCount, ListCount };
         // Arbres au plus par liste, toutes espèces ensemble (au-delà, les suivants ne sont pas dessinés).
-        static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 131072, 16384, 16384, 16384, 16384};
+        // Far : tous les arbres jusqu'à la portée, plus aucun écarté au loin (32 octets chacun, deux fois par image).
+        static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 393216, 16384, 16384, 16384, 16384, 65536};
 
         // Planetology::GetPlainLevel.
         static std::uint32_t GetPlainLevel(const Terrain& terrain);
@@ -87,12 +90,14 @@ namespace Flux::Planetology {
             float tanX, tanY;
         };
         // Les trois modèles d'une espèce (ModelCache) ; nullptr tant qu'un n'est pas chargé : les plaines sont semées,
-        // l'espèce n'est pas dessinée.
+        // l'espèce n'est pas dessinée. impostor : case de l'atlas de son imposteur (TreeImpostors), dessiné au loin à
+        // la place du modèle lointain ; 0 tant qu'il n'est pas capturé.
         struct Models
         {
             const GpuModel* near = nullptr;
             const GpuModel* middle = nullptr;
             const GpuModel* far = nullptr;
+            std::uint32_t impostor = 0;
         };
         // Fin de la préparation : plaines à semer, plaines à trier, commandes de dessin. models : de chaque espèce de
         // VegetationSet::species.
@@ -103,12 +108,16 @@ namespace Flux::Planetology {
         void Cull(RHI::CommandList& commands, std::uint32_t frameIndex);
 
         // Un appel de dessin : une primitive du modèle d'une espèce dans sa liste, sa commande dans GetCommands.
+        // Imposteur (impostor non nul) : model est le modèle détaillé (sa sphère), la commande dessine les 6 indices
+        // d'un carré par arbre (ImpostorIndices).
         struct Draw
         {
             const GpuModel* model;
             std::uint32_t primitive;
             std::uint32_t command;
+            std::uint32_t impostor = 0;
         };
+        static constexpr std::uint32_t ImpostorIndices = 6;
         std::span<const Draw> GetDraws(List list) const { return m_lists[list]; }
         const RHI::Buffer& GetCommands(std::uint32_t frameIndex) const { return *m_frames[frameIndex].commands; }
         const RHI::Buffer& GetInstances(std::uint32_t frameIndex) const { return *m_frames[frameIndex].instances; }
@@ -180,6 +189,7 @@ namespace Flux::Planetology {
             std::array<std::uint32_t, 8> capacities;
             std::array<std::uint32_t, MaxCommands> commandLists; // liste x MaxSpecies + espèce
             std::array<std::uint32_t, 4> counts;
+            std::array<float, 4> forest; // x, y : tranche des ombres des forêts au loin (m)
         };
         struct Frame
         {

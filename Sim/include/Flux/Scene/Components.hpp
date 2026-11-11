@@ -280,9 +280,10 @@ namespace Flux {
     // Végétation d'une planète (sur l'entité de son PlanetComponent) : des arbres semés par le GPU autour de la caméra,
     // toujours aux mêmes endroits (Planetology/VegetationRenderer.hpp). Seulement là où pousserait l'herbe du sol : pente
     // douce, assez humide, ni plage, ni neige, ni gel ; en forêts (cover : part de ces plaines couverte) plutôt
-    // qu'éparpillés. Trois modèles du même arbre : détaillé de près, simplifié au-delà de lodDistance (il fait aussi les
-    // ombres), imposteur (quelques plans) au-delà de farDistance, de plus en plus espacés, jusqu'à range ; plus loin,
-    // la couleur des forêts sur le sol. Pas de collision.
+    // qu'éparpillés. Détaillé de près, simplifié au-delà de lodDistance (il fait aussi les ombres), imposteur (le
+    // détaillé photographié sous 64 vues, deux triangles par arbre) au-delà de farDistance, tous gardés jusqu'à range ;
+    // plus loin, la couleur des forêts sur le sol. Le modèle lointain sert le temps que l'imposteur soit pris. Pas de
+    // collision.
     struct VegetationComponent
     {
         // Biomes de la planète (fichiers .biome.json, 8 au plus) : chacun dit où il pousse (zone du relief, altitude,
@@ -298,7 +299,7 @@ namespace Flux {
         std::string biome8;
         float lodDistance = 60.0f; // m
         float farDistance = 300.0f;
-        float range = 3000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)
+        float range = 5000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)
         // Éclairage du feuillage (shaders/Mesh.slang, ShadeFoliage) : de combien la lumière du soleil déborde sur les
         // feuilles tournées de l'autre côté (0 : pas du tout), et la part qui traverse une feuille vue à contre-jour.
         float leafWrap = 0.3f;

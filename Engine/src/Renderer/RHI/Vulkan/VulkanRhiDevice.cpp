@@ -222,7 +222,8 @@ namespace Flux::Vk {
     }
 
     std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateRenderTarget(RHI::Format format, RHI::Extent extent,
-                                                                                            bool sampled, bool storage) {
+                                                                                            bool sampled, bool storage,
+                                                                                            std::uint32_t mipLevels) {
         const bool depth = format == RHI::Format::D32Float;
         const VkImageAspectFlags aspect = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
         VkImageUsageFlags usage = depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -232,7 +233,12 @@ namespace Flux::Vk {
         if (storage && !depth) {
             usage |= VK_IMAGE_USAGE_STORAGE_BIT;
         }
-        auto image = Image::CreateAttachment(*m_device, ToVulkan(format), {extent.width, extent.height}, usage, aspect);
+        if (depth) {
+            mipLevels = 1;
+        } else if (mipLevels > 1) {
+            usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // niveaux réduits par blit
+        }
+        auto image = Image::CreateAttachment(*m_device, ToVulkan(format), {extent.width, extent.height}, usage, aspect, mipLevels);
         if (!image) {
             return std::unexpected(image.error());
         }

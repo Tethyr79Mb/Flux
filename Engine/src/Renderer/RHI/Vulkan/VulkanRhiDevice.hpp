@@ -67,7 +67,8 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateVolumeTexture(RHI::Format format, RHI::Extent extent,
                                                                                       std::uint32_t depth, bool mipmaps) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateRenderTarget(RHI::Format format, RHI::Extent extent,
-                                                                                     bool sampled, bool storage) override;
+                                                                                     bool sampled, bool storage,
+                                                                                     std::uint32_t mipLevels) override;
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateCubeRenderTarget(RHI::Format format,
                                                                                             std::uint32_t size,
                                                                                             std::uint32_t mipLevels) override;
