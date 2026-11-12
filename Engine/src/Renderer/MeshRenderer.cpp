@@ -155,6 +155,22 @@ namespace Flux {
         constexpr std::uint32_t MaxModelMeshPages = 64;
         // Tâches d'un appel DrawMeshTasks au plus : le minimum garanti par Vulkan (maxTaskWorkGroupCount).
         constexpr std::uint32_t MaxMeshTaskGroups = 65535;
+        // Herbe (shaders/Grass.slang) : commandes des tuiles où elle pousse, vertexOffset = case de la tuile dans sa page
+        // décalée de GrassVertexShift, firstInstance = sa DrawData décalée de GrassInstanceShift (plus le groupe de brins,
+        // chemin des sommets). Chemin des sommets : GrassClusterBlades brins de GrassVertexSegments segments par
+        // instance, moins denses et moins loin (repli des GPU sans mesh shaders).
+        constexpr std::uint32_t GrassVertexShift = 9;
+        constexpr std::uint32_t GrassInstanceShift = 12;
+        constexpr std::uint32_t GrassClusterBlades = 32;
+        constexpr std::uint32_t GrassVertexSegments = 2;
+        constexpr std::uint32_t GrassBladeVertices = 2 * GrassVertexSegments + 1;
+        constexpr std::uint32_t GrassBladeIndices = 3 * (2 * GrassVertexSegments - 1);
+        constexpr std::uint32_t GrassClusterIndices = GrassClusterBlades * GrassBladeIndices;
+        static_assert(GrassClusterBlades * GrassBladeVertices <= (1u << GrassVertexShift));
+        constexpr float GrassVertexDensity = 0.25f;
+        constexpr float GrassVertexRange = 0.6f;
+        constexpr float GrassFullDistance = 20.0f; // m, Grass.slang
+        constexpr float GrassMaxTileEdge = 80.0f; // 2,5 m entre sommets au plus
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -339,16 +355,17 @@ namespace Flux {
             renderer->m_frameGroups[f]->SetTexture(ForestShadowMapSlot, *renderer->m_forestShadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
         }
+        // Page de tuiles lue par les mesh shaders du sol et par l'herbe (mesh shaders ou sommets) : sommets, forme
+        // parente, boîtes des paquets.
+        constexpr std::array pageBindings{RHI::Binding{0, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+                                          RHI::Binding{1, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
+                                          RHI::Binding{2, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex}};
+        auto pageLayout = device.CreateBindGroupLayout({.bindings = pageBindings, .maxGroups = Planetology::PlanetTileCompute::MaxPages});
+        if (!pageLayout) {
+            return std::unexpected(pageLayout.error());
+        }
+        renderer->m_tileMeshLayout = std::move(*pageLayout);
         if (device.HasMeshShaders()) {
-            // Page de tuiles lue par les mesh shaders du sol : sommets, forme parente, boîtes des paquets.
-            constexpr std::array pageBindings{RHI::Binding{0, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
-                                              RHI::Binding{1, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
-                                              RHI::Binding{2, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex}};
-            auto pageLayout = device.CreateBindGroupLayout({.bindings = pageBindings, .maxGroups = Planetology::PlanetTileCompute::MaxPages});
-            if (!pageLayout) {
-                return std::unexpected(pageLayout.error());
-            }
-            renderer->m_tileMeshLayout = std::move(*pageLayout);
             // Page de modèles : sommets, paquets, leurs sommets et triangles (même forme, autre nombre de groupes).
             auto modelLayout = device.CreateBindGroupLayout({.bindings = pageBindings, .maxGroups = MaxModelMeshPages});
             if (!modelLayout) {
@@ -365,6 +382,33 @@ namespace Flux {
             }
         }
 
+        // Indices d'un groupe de brins d'herbe (chemin des sommets) : par brin, deux triangles par étage, un pour la
+        // pointe, comme GrassTriangle (shaders/Grass.slang).
+        {
+            std::array<std::uint32_t, GrassClusterIndices> indices{};
+            for (std::uint32_t blade = 0; blade < GrassClusterBlades; ++blade) {
+                const std::uint32_t v = blade * GrassBladeVertices;
+                std::uint32_t* out = indices.data() + blade * GrassBladeIndices;
+                for (std::uint32_t level = 0; level < GrassVertexSegments; ++level) {
+                    const std::uint32_t a = v + 2 * level;
+                    if (level + 1 == GrassVertexSegments) {
+                        *out++ = a;
+                        *out++ = a + 1;
+                        *out++ = a + 2;
+                    } else {
+                        for (const std::uint32_t index : {a, a + 1, a + 3, a, a + 3, a + 2}) {
+                            *out++ = index;
+                        }
+                    }
+                }
+            }
+            auto grassIndices = device.CreateBuffer({sizeof(indices), RHI::BufferUsage::Index, RHI::MemoryType::Upload});
+            if (!grassIndices) {
+                return std::unexpected(grassIndices.error());
+            }
+            (*grassIndices)->Write(indices.data(), sizeof(indices));
+            renderer->m_grassIndices = std::move(*grassIndices);
+        }
         if (auto pipelines = renderer->CreatePipelines(colorFormat, motionFormat, depthFormat); !pipelines) {
             return std::unexpected(pipelines.error());
         }
@@ -660,7 +704,7 @@ namespace Flux {
         }
         // Sol en mesh shaders, si le GPU les a : comme m_planet.opaque et geometryOnly, plus le groupe 3. En cas d'échec
         // (pilote), le sol reste sur le chemin des sommets.
-        if (m_tileMeshLayout) {
+        if (m_device.HasMeshShaders()) {
             const std::array<const RHI::BindGroupLayout*, 4> meshLayouts{layouts[0], layouts[1], layouts[2], m_tileMeshLayout.get()};
             RHI::PipelineDesc mesh;
             // Groupes de 128 threads, ou de 64 si le pilote préfère moins (NVIDIA) : PlanetMeshSmall.slang.
@@ -693,6 +737,43 @@ namespace Flux {
                 Log::Warning("Sol des planètes : mesh shaders indisponibles ({}), chemin des sommets", created.error());
                 m_planetMesh.reset();
                 m_planetMeshGeometry.reset();
+            }
+        }
+        // Herbe : mesh shaders si le GPU les a (GrassMesh.slang), sinon, ou si leur pipeline échoue, par les sommets
+        // (Grass.slang). Les deux faces des brins, sans tampon de sommets : tout est lu dans la page de tuiles.
+        {
+            const std::array<const RHI::BindGroupLayout*, 4> grassLayouts{layouts[0], layouts[1], layouts[2], m_tileMeshLayout.get()};
+            RHI::PipelineDesc grass;
+            grass.fragmentEntryPoint = "fragmentGrass";
+            grass.bindGroupLayouts = grassLayouts;
+            grass.pushConstantsSize = sizeof(DrawParams);
+            grass.colorFormat = colorFormat;
+            grass.secondColorFormat = motionFormat;
+            grass.writeSecondColor = true;
+            grass.thirdColorFormat = sunFormat;
+            grass.writeThirdColor = sunFormat != RHI::Format::Undefined;
+            grass.depthFormat = depthFormat;
+            grass.depthTest = true;
+            grass.depthWrite = true;
+            grass.depthCompare = RHI::CompareOp::Greater;
+            grass.cullMode = RHI::CullMode::None;
+            if (m_device.HasMeshShaders()) {
+                grass.shaderPath = ShaderPath("GrassMesh");
+                grass.taskEntryPoint = "taskGrass";
+                grass.meshEntryPoint = "meshGrass";
+                if (auto created = create(m_grassMesh, grass); !created) {
+                    Log::Warning("Herbe : mesh shaders indisponibles ({}), chemin des sommets", created.error());
+                    m_grassMesh.reset();
+                }
+                grass.taskEntryPoint = nullptr;
+                grass.meshEntryPoint = nullptr;
+            }
+            if (!m_grassMesh) {
+                grass.shaderPath = ShaderPath("Grass");
+                grass.vertexEntryPoint = "vertexGrass";
+                if (auto result = create(m_grassVertex, grass); !result) {
+                    return result;
+                }
             }
         }
         // Modèles fixes opaques en mesh shaders, si le GPU les a : comme m_static.opaque et ses variantes, plus le groupe
@@ -842,6 +923,7 @@ namespace Flux {
             }
         }
         m_vegetationComponent = nullptr;
+        m_grass = {};
         // Trois temps : sur ce fil, ce qui touche un état partagé (planètes, lumières, modèles cherchés dans le cache) ;
         // puis, en parallèle, le calcul de chaque entité dessinée (sphère, champ, matrices), dans sa case ; enfin, sur
         // ce fil et dans l'ordre des entités, les poses (un seul évaluateur), les blocs et les listes de l'image.
@@ -972,6 +1054,7 @@ namespace Flux {
         if (!BuildTileCommands(frameIndex)) {
             m_tileDraws.clear();
             m_tilePasses = {};
+            m_grassBatches = {};
         }
 
         // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
@@ -1128,9 +1211,18 @@ namespace Flux {
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
                            m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
                            trees ? static_cast<double>(vegetation->range * rangeScale) : 0.0, &castsShadow, &shadowSpacing);
+        bool grass = false;
         if (const Planetology::Terrain* terrain = m_planets->FindTerrain(transform.entity); trees && terrain == known) {
             m_vegetationComponent = vegetation;
             m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains, rangeScale);
+            // L'herbe de la même planète. Sans mesh shaders, moins dense et moins loin (environ 10 fois moins de brins).
+            const bool vertexPath = m_grassMesh == nullptr;
+            m_grass = {.density = std::clamp(vegetation->grassDensity, 0.0f, 400.0f) * (vertexPath ? GrassVertexDensity : 1.0f),
+                       .height = std::clamp(vegetation->grassHeight, 0.02f, 3.0f),
+                       .width = std::clamp(vegetation->grassWidth, 0.005f, 0.3f),
+                       .range = std::clamp(vegetation->grassRange, 0.0f, 300.0f) * (vertexPath ? GrassVertexRange : 1.0f),
+                       .wind = std::clamp(vegetation->grassWind, 0.0f, 1.0f)};
+            grass = m_grass.density > 0.0f && m_grass.range > 1.0f;
         }
         const Math::Matrix4f rotation = transform.rotation.ToMatrix();
         const Math::Vector3f x = transform.rotation.Rotate(Math::Vector3f{1.0f, 0.0f, 0.0f});
@@ -1161,6 +1253,8 @@ namespace Flux {
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                                      m_groundGroup ? 1.0f : 0.0f},
                                     {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), 0.0f, 0.0f}});
+            // Portée de l'herbe : le sol y montre de la terre sous les brins (PlanetColor).
+            m_planetData[index].shape[3] = grass ? m_grass.range : 0.0f;
             // Le contour lumineux dessine le bord de la planète vue de l'espace. Au sol, presque tout le terrain est vu
             // de biais et le prenait en plein : un voile bleu-blanc partout. Il apparaît donc entre une et deux fois la
             // hauteur de l'atmosphère (sans air : 5 % du rayon) au-dessus du sol.
@@ -1210,8 +1304,17 @@ namespace Flux {
             const Math::Vector3f sphere(tile.sphere);
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
+            // Herbe : sur les tuiles entières à sa portée, qui ne glissent pas encore vers leur parente (le pied des brins
+            // est lu sur les sommets tels quels) là où l'herbe pousse, pas jusqu'à toute sa portée : sinon, à 250 m, plus
+            // aucune tuile ne passe ; ce sont les plus fines, environ 1,5 m entre deux sommets. Une tuile
+            // grossière encore à portée (ses filles pas encore calculées) n'en a pas : des kilomètres carrés de brins.
+            const float distance = Math::Length(sphere) - tile.radius;
+            const bool grassTile = grass && !tile.shadowOnly && tile.indexCount == 4 * Planetology::TileQuarterIndices
+                                && tile.edge <= GrassMaxTileEdge && distance < m_grass.range
+                                && (tile.morphScale == 0.0f
+                                    || tile.morphStart >= std::min(m_grass.range, distance + 2.0f * tile.radius));
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius, tile.edge,
-                                   Math::Length(sphere) - tile.radius, water, tile.firstIndex, tile.indexCount, tile.shadowOnly});
+                                   distance, water, tile.firstIndex, tile.indexCount, tile.shadowOnly, grassTile});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
@@ -1645,6 +1748,7 @@ namespace Flux {
         m_clusters.clear();
         m_tileDraws.clear();
         m_tilePasses = {};
+        m_grassBatches = {};
         m_modelPasses = {};
         m_meshBatches.clear();
     }
@@ -1655,6 +1759,7 @@ namespace Flux {
         m_tileCommands.clear();
         m_tileBatches.clear();
         m_tilePasses = {};
+        m_grassBatches = {};
         m_terrainShadowTiles = {};
         m_terrainShadowTriangles = {};
         const RHI::Buffer* indices = m_planets->GetIndices();
@@ -1716,6 +1821,31 @@ namespace Flux {
             }
         }
         passStarts[TilePassCount] = m_tileBatches.size();
+        // Herbe : une commande par tuile où elle pousse, par page comme les autres (même ordre de près à loin). Chemin
+        // des sommets : autant de groupes de brins que la tuile en garde à son point le plus proche (GrassKeep dans
+        // shaders/Grass.slang) ; les mesh shaders comptent eux-mêmes, paquet par paquet.
+        const std::size_t grassStart = m_tileBatches.size();
+        for (const TileDraw& draw : m_tileDraws) {
+            if (!draw.grass) {
+                continue;
+            }
+            const float distance = std::max(draw.distance, 1.0e-3f);
+            const float keep = std::min(std::pow(GrassFullDistance / distance, 1.5f), 1.0f)
+                             * std::clamp((m_grass.range - distance) / (0.4f * m_grass.range), 0.0f, 1.0f);
+            const float blades = std::ceil(draw.edge * draw.edge * m_grass.density) * std::min(keep * 1.25f, 1.0f); // GrassKept
+            const auto clusters = std::min(static_cast<std::uint32_t>(std::ceil(blades / GrassClusterBlades)), (1u << GrassInstanceShift) - 1u);
+            if (clusters == 0) {
+                continue;
+            }
+            const std::uint32_t page = Planetology::PlanetTileCompute::GetPage(draw.tile);
+            if (m_tileBatches.size() == grassStart || m_tileBatches.back().page != page) {
+                m_tileBatches.push_back({page, static_cast<std::uint32_t>(m_tileCommands.size()), 0});
+            }
+            ++m_tileBatches.back().count;
+            const std::uint32_t tileInPage = Planetology::PlanetTileCompute::GetFirstVertex(draw.tile) / Planetology::TileVertexCount;
+            m_tileCommands.push_back({GrassClusterIndices, clusters, 0, static_cast<std::int32_t>(tileInPage << GrassVertexShift),
+                                      (firstData + draw.data) << GrassInstanceShift});
+        }
 
         std::unique_ptr<RHI::Buffer>& buffer = m_indirectBuffers[frameIndex];
         const std::uint64_t bytes = m_tileCommands.size() * sizeof(RHI::DrawIndexedCommand);
@@ -1731,8 +1861,8 @@ namespace Flux {
             m_frameGroups[frameIndex]->SetBuffer(TileCommandSlot, *buffer);
         }
         buffer->Write(m_tileCommands.data(), bytes);
-        // Groupe de chaque page lue par les mesh shaders (ses buffers ne changent jamais).
-        if (m_planetMesh) {
+        // Groupe de chaque page lue par les mesh shaders ou l'herbe (ses buffers ne changent jamais).
+        if (m_planetMesh || m_tileBatches.size() > grassStart) {
             const Planetology::PlanetTileCompute& tiles = m_planets->GetTiles();
             for (const TileBatch& batch : m_tileBatches) {
                 if (batch.page >= m_tileMeshGroups.size()) {
@@ -1754,6 +1884,7 @@ namespace Flux {
         for (std::size_t pass = 0; pass < TilePassCount; ++pass) {
             m_tilePasses[pass] = std::span(m_tileBatches).subspan(passStarts[pass], passStarts[pass + 1] - passStarts[pass]);
         }
+        m_grassBatches = std::span(m_tileBatches).subspan(grassStart);
         return true;
     }
 
@@ -2420,6 +2551,44 @@ namespace Flux {
         const RHI::Pipeline& pipeline = m_planetMesh ? (m_groundGeometryOnly ? *m_planetMeshGeometry : *m_planetMesh)
                                                      : (m_groundGeometryOnly ? *m_planet.geometryOnly : *m_planet.opaque);
         DrawTiles(commands, state, frameIndex, GroundPass, pipeline);
+    }
+
+    // Herbe : par page, une tâche par tuile (mesh shaders) ou un appel indirect pour toutes ses tuiles (sommets) ; les
+    // réglages dans les constantes (voir shaders/Grass.slang). Le sol neutre ou ses textures au groupe 0 : la couleur
+    // des brins est la moyenne de l'image de l'herbe.
+    void MeshRenderer::DrawGrass(RHI::CommandList& commands, std::uint32_t frameIndex) const {
+        if (m_grassBatches.empty()) {
+            return;
+        }
+        BindState state;
+        const RHI::Pipeline& pipeline = m_grassMesh ? *m_grassMesh : *m_grassVertex;
+        BindPipeline(commands, state, frameIndex, pipeline);
+        commands.SetBindGroup(0, m_groundGroup ? *m_groundGroup : m_models->GetWhiteGroup());
+        DrawParams params{{m_grass.density, m_grass.height, m_grass.range, m_grass.width}, {m_grass.wind, 0.0f, 0.0f, 0.0f},
+                          0u, 0.0f, 0u, 0.0f, 1.0f, 0.0f, 0.0f, 0u, 0u, {}};
+        if (m_grassMesh) {
+            for (const TileBatch& batch : m_grassBatches) {
+                params.draw = batch.first;
+                commands.PushConstants(&params, sizeof(params));
+                commands.SetBindGroup(3, *m_tileMeshGroups[batch.page]);
+                commands.DrawMeshTasks(batch.count);
+            }
+            return;
+        }
+        commands.PushConstants(&params, sizeof(params));
+        commands.BindIndexBuffer(*m_grassIndices);
+        for (const TileBatch& batch : m_grassBatches) {
+            commands.SetBindGroup(3, *m_tileMeshGroups[batch.page]);
+            commands.DrawIndexedIndirect(*m_indirectBuffers[frameIndex], batch.first * sizeof(RHI::DrawIndexedCommand), batch.count);
+        }
+    }
+
+    std::uint32_t MeshRenderer::GetGrassTileCount() const {
+        std::uint32_t count = 0;
+        for (const TileBatch& batch : m_grassBatches) {
+            count += batch.count;
+        }
+        return count;
     }
 
     void MeshRenderer::DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const {

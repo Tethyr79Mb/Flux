@@ -156,6 +156,8 @@ namespace Flux {
                 ui.LabelText("Sol dessiné par", render.groundMeshThreads > 0
                                                      ? std::format("mesh shaders ({} threads)", render.groundMeshThreads)
                                                      : std::string("sommets"));
+                ui.LabelText("Herbe", std::format("{} tuiles, par {}", render.grassTiles,
+                                                  render.grassMeshShaders ? "mesh shaders" : "les sommets"));
                 ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
                 ui.LabelText("  cachés", std::format("{}", render.hiddenTrees));
                 ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer, {} d'avance)", render.shadowTrees,
@@ -230,6 +232,7 @@ namespace Flux {
                          {"planetTileCapacity", render.planetTileCapacity},
                          {"planetPendingTiles", render.planetPendingTiles},
                          {"groundMeshThreads", render.groundMeshThreads},
+                         {"grassTiles", render.grassTiles},
                          {"trees", {{"near", render.trees[0]}, {"simplified", render.trees[1]}, {"far", render.trees[2]}}},
                          {"shadowTrees", render.shadowTrees},
                          {"hiddenTrees", render.hiddenTrees},
