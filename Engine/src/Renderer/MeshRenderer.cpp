@@ -169,7 +169,7 @@ namespace Flux {
         static_assert(GrassClusterBlades * GrassBladeVertices <= (1u << GrassVertexShift));
         constexpr float GrassVertexDensity = 0.25f;
         constexpr float GrassVertexRange = 0.6f;
-        constexpr float GrassFullShare = 0.25f; // Grass.slang
+        constexpr float GrassFullDistance = 20.0f; // m, Grass.slang
         constexpr float GrassMaxTileEdge = 80.0f; // 2,5 m entre sommets au plus
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
@@ -1220,7 +1220,7 @@ namespace Flux {
             m_grass = {.density = std::clamp(vegetation->grassDensity, 0.0f, 400.0f) * (vertexPath ? GrassVertexDensity : 1.0f),
                        .height = std::clamp(vegetation->grassHeight, 0.02f, 3.0f),
                        .width = std::clamp(vegetation->grassWidth, 0.005f, 0.3f),
-                       .range = std::clamp(vegetation->grassRange, 0.0f, 150.0f) * (vertexPath ? GrassVertexRange : 1.0f),
+                       .range = std::clamp(vegetation->grassRange, 0.0f, 300.0f) * (vertexPath ? GrassVertexRange : 1.0f),
                        .wind = std::clamp(vegetation->grassWind, 0.0f, 1.0f)};
             grass = m_grass.density > 0.0f && m_grass.range > 1.0f;
         }
@@ -1828,8 +1828,8 @@ namespace Flux {
                 continue;
             }
             const float distance = std::max(draw.distance, 1.0e-3f);
-            const float keep = std::min(GrassFullShare * m_grass.range / distance, 1.0f)
-                             * std::clamp((m_grass.range - distance) / (0.2f * m_grass.range), 0.0f, 1.0f);
+            const float keep = std::min(std::pow(GrassFullDistance / distance, 1.5f), 1.0f)
+                             * std::clamp((m_grass.range - distance) / (0.4f * m_grass.range), 0.0f, 1.0f);
             const float blades = std::ceil(draw.edge * draw.edge * m_grass.density) * std::min(keep * 1.25f, 1.0f); // GrassKept
             const auto clusters = std::min(static_cast<std::uint32_t>(std::ceil(blades / GrassClusterBlades)), (1u << GrassInstanceShift) - 1u);
             if (clusters == 0) {

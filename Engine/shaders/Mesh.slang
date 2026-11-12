@@ -1860,10 +1860,11 @@ float4 PlanetColor(PlanetVertexOutput input)
     // Sous l'herbe en brins (Grass.slang, avec la végétation) : le sol prend la couleur moyenne du pré, de près (pas de
     // gravier entre les brins) comme au loin (pas de limite là où les brins s'arrêtent).
     if (planet.forest.y > 0.0) {
-        // Face au soleil, on voit les brins par leur côté à l'ombre : le pré est plus sombre que de dos.
+        // Face au soleil, on voit les brins par leur côté à l'ombre : le pré est plus sombre que de dos. Au loin, on ne voit
+        // plus que leurs pointes claires : il s'éclaircit.
         const float againstSun = saturate(dot(surface.toEye, -frame[0].toSun.xyz));
         const float3 meadow = GrassBaseColor(planet) * GrassDryTint(temperature, macro, 0.0) * (0.9 + macro * 0.4)
-                            * GrassMeadowShade * lerp(1.0, 0.6, againstSun)
+                            * GrassMeadowShade * lerp(1.0, 0.6, againstSun) * lerp(1.0, 1.3, smoothstep(20.0, 150.0, distance))
                             * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
         const float meadowShare = saturate(GrassShare(cover) * 1.5);
         surface.diffuse = lerp(surface.diffuse, meadow, meadowShare);

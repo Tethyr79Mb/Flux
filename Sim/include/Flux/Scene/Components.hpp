@@ -310,7 +310,7 @@ namespace Flux {
         float grassDensity = 200.0f;
         float grassHeight = 0.5f;  // m
         float grassWidth = 0.03f;  // m
-        float grassRange = 80.0f;  // m
+        float grassRange = 150.0f;  // m
         float grassWind = 0.35f;
     };
 
