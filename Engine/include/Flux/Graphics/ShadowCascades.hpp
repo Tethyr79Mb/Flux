@@ -84,7 +84,8 @@ namespace Flux {
         ShadowReceivers(const Camera& camera, float aspect, const Math::Vector3f& toSun);
 
         // L'ombre de la sphère (relative à la caméra), prolongée de `length` mètres à l'opposé du soleil, peut tomber
-        // dans la tranche `cascade` du champ. Prudent : un obstacle gardé à tort coûte un peu, écarté à tort, une
+        // dans le champ entre la caméra et la fin de la tranche `cascade` (les tranches plus proches filtrent leurs
+        // pénombres larges dans cette cascade). Prudent : un obstacle gardé à tort coûte un peu, écarté à tort, une
         // ombre manque.
         bool Reaches(const Math::Vector3f& center, float radius, float length, std::size_t cascade) const;
         // Pareil pour la tranche [start, stop] (mètres devant la caméra), celles du relief au loin par exemple.
