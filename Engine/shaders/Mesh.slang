@@ -1667,7 +1667,7 @@ float3 GrassBaseColor(PlanetData planet)
 }
 
 // Clarté moyenne d'un pré en brins vu d'en haut (pied sombre, pointes claires : fragmentGrass), que le sol prend sous lui.
-static const float GrassMeadowShade = 0.6;
+static const float GrassMeadowShade = 0.5;
 
 // Sol des planètes : roche dans les pentes, plage en bas, neige en haut ou quand il gèle, ailleurs herbe, terre ou
 // désert selon le climat, avec des taches à grande échelle (les zones ne suivent pas des lignes droites). Chaque
@@ -1860,9 +1860,12 @@ float4 PlanetColor(PlanetVertexOutput input)
     // Sous l'herbe en brins (Grass.slang, avec la végétation) : le sol prend la couleur moyenne du pré, de près (pas de
     // gravier entre les brins) comme au loin (pas de limite là où les brins s'arrêtent).
     if (planet.forest.y > 0.0) {
+        // Face au soleil, on voit les brins par leur côté à l'ombre : le pré est plus sombre que de dos.
+        const float againstSun = saturate(dot(surface.toEye, -frame[0].toSun.xyz));
         const float3 meadow = GrassBaseColor(planet) * GrassDryTint(temperature, macro, 0.0) * (0.9 + macro * 0.4)
-                            * GrassMeadowShade * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
-        surface.diffuse = lerp(surface.diffuse, meadow, GrassShare(cover) * 0.85);
+                            * GrassMeadowShade * lerp(1.0, 0.6, againstSun)
+                            * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
+        surface.diffuse = lerp(surface.diffuse, meadow, saturate(GrassShare(cover) * 1.5));
     }
     // Forêts au loin : la cime des arbres de la moitié de leur portée, où elle comble les trous entre les imposteurs, à
     // la portée, où ils s'arrêtent, et au-delà. Mêmes limites que computeTrees : pente, plage, neige, roche.

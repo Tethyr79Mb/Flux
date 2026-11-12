@@ -263,9 +263,9 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     // fragmentPlanet, plus claire ou plus foncée selon les taches, et un peu différente d'un brin à l'autre.
     // Par brin : quelques-uns secs (r3.x), une teinte qui hésite entre vert bleuté et vert jaune (r3.y), et les
     // plages rases un peu plus sèches.
-    const float dry = max(pow(r3.x, 6.0) * 0.8, (1.0 - patch) * 0.3);
-    blade.tint = GrassDryTint(cover.temperature, cover.macro, dry) * (0.9 + cover.macro * 0.4)
-               * lerp(float3(0.9, 1.0, 0.95), float3(1.1, 1.05, 0.85), r3.y) * lerp(0.8, 1.15, r1.y);
+    const float dry = max(pow(r3.x, 6.0) * 0.8, (1.0 - patch) * 0.5);
+    blade.tint = GrassDryTint(cover.temperature, cover.macro, dry) * (0.9 + cover.macro * 0.4) * lerp(0.75, 1.15, patch)
+               * lerp(float3(0.85, 1.0, 0.95), float3(1.15, 1.05, 0.8), r3.y) * lerp(0.75, 1.2, r1.y);
     blade.airScattered = AirTo(blade.root, blade.airTransmittance);
     blade.clouds = CloudShadow(blade.root);
     blade.alive = true;
@@ -367,8 +367,9 @@ SceneOutput fragmentGrass(GrassVertexOutput input)
     const float height = input.tintHeight.a;
     // Pied sombre (les voisins lui cachent ciel et soleil), pointe claire et un peu sèche : en moyenne
     // GrassMeadowShade, la couleur que le sol prend sous l'herbe (PlanetColor).
-    const float occlusion = lerp(0.3, 1.0, height);
-    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.35, 1.0, height) * lerp(float3(1.0), float3(1.2, 1.15, 0.85), height * height);
+    // Ciel compté moins fort que sur le sol (occlusion 0,85 en haut) : sinon, à l'ombre, les brins bleuissent.
+    const float occlusion = lerp(0.15, 0.85, height);
+    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.2, 1.0, height * (2.0 - height)) * lerp(float3(1.0), float3(1.2, 1.15, 0.85), height * height);
     float inside;
     const float3 lit = LightSurface(surface, normal, input.worldPosition, occlusion, input.airTransmittance.a, inside, true,
                                     float2(0.4, 0.35));
