@@ -28,7 +28,7 @@ static const uint MaxInteriors = 8;
 // Doit correspondre à PlanetData dans MeshRenderer.cpp : le sol d'une planète (PlanetComponent).
 struct PlanetData
 {
-    float4 shape;             // x : rayon (m) ; y : relief (m) ; z : altitude de la neige (m)
+    float4 shape;             // x : rayon (m) ; y : relief (m) ; z : altitude de la neige (m) ; w : portée de l'herbe (m, 0 : aucune)
     float4 rock;              // rgb : couleur (linéaire ; avec les textures du sol : teinte) ; w : rugosité
     float4 grass;
     float4 sand;
@@ -1774,6 +1774,11 @@ float4 PlanetColor(PlanetVertexOutput input)
     surface.toEye = normalize(-v.worldPosition);
     surface.f0 = float3(0.04);
     float occlusion = 1.0;
+    // Terre sous les brins (Grass.slang) : à la portée de l'herbe (shape.w, 0 : aucune), la couche d'herbe du sol devient
+    // de la terre ; au-delà, l'image d'herbe figure le pré vu de loin. Fondu sur les 40 % du bout de la portée, où les
+    // brins rapetissent.
+    const float grassRange = planet.forest.y > 0.0 ? planet.shape.w : 0.0;
+    const float underBlades = grassRange > 0.0 ? smoothstep(grassRange, 0.6 * grassRange, distance) : 0.0;
     if (planet.climate.w > 0.0) {
         float weights[GroundLayers] = { 0.0, 0.0, 1.0, 0.0, 0.0 };
         CoverGround(weights, GroundGrass, grassy * (1.0 - patches));
@@ -1781,6 +1786,9 @@ float4 PlanetColor(PlanetVertexOutput input)
         CoverGround(weights, GroundSoil, foot);
         CoverGround(weights, GroundRock, rock);
         CoverGround(weights, GroundSnow, snow);
+        const float underGrass = weights[GroundGrass] * underBlades;
+        weights[GroundGrass] -= underGrass;
+        weights[GroundSoil] += underGrass;
         // Projections : pesées par l'orientation (puissance 4 : transitions courtes), deux au plus (la plus faible
         // est retirée des autres, comme les sommets du pavage), sans celles de profil.
         float3 blend = pow(abs(localNormal), float3(4.0));
@@ -1857,8 +1865,9 @@ float4 PlanetColor(PlanetVertexOutput input)
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
                                            temperature, foot, snow, surface.roughness);
     }
-    // Sous l'herbe en brins (Grass.slang, avec la végétation) : le sol prend la couleur moyenne du pré, de près (pas de
-    // gravier entre les brins) comme au loin (pas de limite là où les brins s'arrêtent).
+    // Sous l'herbe en brins (Grass.slang, avec la végétation) : de près, la terre (textures du sol) assombrie comme un
+    // humus à l'ombre des brins ; au loin, et sans textures, la couleur moyenne du pré (pas de limite là où les brins
+    // s'arrêtent).
     if (planet.forest.y > 0.0) {
         // Face au soleil, on voit les brins par leur côté à l'ombre : le pré est plus sombre que de dos. Au loin, on ne voit
         // plus que leurs pointes claires : il s'éclaircit.
@@ -1867,7 +1876,8 @@ float4 PlanetColor(PlanetVertexOutput input)
                             * GrassMeadowShade * lerp(1.0, 0.6, againstSun) * lerp(1.0, 1.3, smoothstep(20.0, 150.0, distance))
                             * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
         const float meadowShare = saturate(GrassShare(cover) * 1.5);
-        surface.diffuse = lerp(surface.diffuse, meadow, meadowShare);
+        const float3 humus = surface.diffuse * float3(0.45, 0.5, 0.4) * lerp(1.0, 0.6, againstSun);
+        surface.diffuse = lerp(surface.diffuse, planet.climate.w > 0.0 ? lerp(meadow, humus, underBlades) : meadow, meadowShare);
         // Ni reflet ni lustre : à contre-jour, le reflet rasant du sol faisait une bande claire entre les brins
         // et au-delà de leur portée.
         surface.f0 = lerp(surface.f0, float3(0.01), meadowShare);

@@ -1253,6 +1253,8 @@ namespace Flux {
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                                      m_groundGroup ? 1.0f : 0.0f},
                                     {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), 0.0f, 0.0f}});
+            // Portée de l'herbe : le sol y montre de la terre sous les brins (PlanetColor).
+            m_planetData[index].shape[3] = grass ? m_grass.range : 0.0f;
             // Le contour lumineux dessine le bord de la planète vue de l'espace. Au sol, presque tout le terrain est vu
             // de biais et le prenait en plein : un voile bleu-blanc partout. Il apparaît donc entre une et deux fois la
             // hauteur de l'atmosphère (sans air : 5 % du rayon) au-dessus du sol.

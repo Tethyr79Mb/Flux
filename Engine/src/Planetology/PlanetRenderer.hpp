@@ -21,7 +21,7 @@ namespace Flux::Planetology {
     // Sol d'une planète tel que le lit fragmentPlanet (PlanetData dans shaders/Mesh.slang).
     struct PlanetGpu
     {
-        std::array<float, 4> shape{}; // rayon, relief, altitude de la neige (m) ; w : inutilisé
+        std::array<float, 4> shape{}; // rayon, relief, altitude de la neige (m) ; w : portée de l'herbe (m, 0 : aucune)
         std::array<float, 4> rock{};  // couleur linéaire (avec les textures du sol : teinte) ; w : rugosité
         std::array<float, 4> grass{};
         std::array<float, 4> sand{};
