@@ -374,5 +374,7 @@ SceneOutput fragmentGrass(GrassVertexOutput input)
     const float3 lit = LightSurface(surface, normal, input.worldPosition, occlusion, input.airTransmittance.a, inside, true,
                                     float2(0.4, 0.35));
     sunRadiance = Radiance(sunDirect * input.airTransmittance.rgb);
-    return SceneResult(float4(Radiance(lit * input.airTransmittance.rgb + input.airScattered), 1.0), float2(0.0));
+    // Lumière de contour comme le sol (PlanetColor) : sinon le pré s'arrête sur une bande plus claire à sa portée.
+    const float3 rim = PlanetRim(planet, normalize(input.worldPosition - planet.clouds.xyz), surface.toEye);
+    return SceneResult(float4(Radiance(lit * input.airTransmittance.rgb + input.airScattered + rim), 1.0), float2(0.0));
 }

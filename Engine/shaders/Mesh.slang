@@ -1865,7 +1865,12 @@ float4 PlanetColor(PlanetVertexOutput input)
         const float3 meadow = GrassBaseColor(planet) * GrassDryTint(temperature, macro, 0.0) * (0.9 + macro * 0.4)
                             * GrassMeadowShade * lerp(1.0, 0.6, againstSun)
                             * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
-        surface.diffuse = lerp(surface.diffuse, meadow, saturate(GrassShare(cover) * 1.5));
+        const float meadowShare = saturate(GrassShare(cover) * 1.5);
+        surface.diffuse = lerp(surface.diffuse, meadow, meadowShare);
+        // Ni reflet ni lustre : à contre-jour, le reflet rasant du sol faisait une bande claire entre les brins
+        // et au-delà de leur portée.
+        surface.f0 = lerp(surface.f0, float3(0.01), meadowShare);
+        surface.roughness = lerp(surface.roughness, 1.0, meadowShare);
     }
     // Forêts au loin : la cime des arbres de la moitié de leur portée, où elle comble les trous entre les imposteurs, à
     // la portée, où ils s'arrêtent, et au-delà. Mêmes limites que computeTrees : pente, plage, neige, roche.
