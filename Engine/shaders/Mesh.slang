@@ -1877,7 +1877,7 @@ float4 PlanetColor(PlanetVertexOutput input)
                             * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
         const float meadowShare = saturate(GrassShare(cover) * 1.5);
         // Brun chaud et sombre d'une terre de prairie (la texture de terre est plutôt grise et minérale).
-        const float3 humus = surface.diffuse * float3(0.55, 0.42, 0.28) * lerp(1.0, 0.6, againstSun);
+        const float3 humus = surface.diffuse * float3(0.46, 0.38, 0.28) * lerp(1.0, 0.6, againstSun);
         surface.diffuse = lerp(surface.diffuse, planet.climate.w > 0.0 ? lerp(meadow, humus, underBlades) : meadow, meadowShare);
         // Ni reflet ni lustre : à contre-jour, le reflet rasant du sol faisait une bande claire entre les brins
         // et au-delà de leur portée.
