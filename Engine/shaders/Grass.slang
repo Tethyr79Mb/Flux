@@ -266,7 +266,9 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const float dry = max(pow(r3.x, 6.0) * 0.8, (1.0 - patch) * 0.5);
     blade.tint = GrassDryTint(cover.temperature, cover.macro, dry) * (0.9 + cover.macro * 0.4) * lerp(0.75, 1.15, patch)
                * lerp(float3(0.85, 1.0, 0.95), float3(1.15, 1.05, 0.8), r3.y) * lerp(0.75, 1.2, r1.y);
-    blade.airScattered = AirTo(blade.root, blade.airTransmittance);
+    // Lumière de contour comme le sol (PlanetColor), avec l'air : sinon le pré s'arrête sur une bande plus claire à sa
+    // portée.
+    blade.airScattered = AirTo(blade.root, blade.airTransmittance) + PlanetRim(planet, worldUp, normalize(-blade.root));
     blade.clouds = CloudShadow(blade.root);
     blade.alive = true;
     return blade;
@@ -374,7 +376,5 @@ SceneOutput fragmentGrass(GrassVertexOutput input)
     const float3 lit = LightSurface(surface, normal, input.worldPosition, occlusion, input.airTransmittance.a, inside, true,
                                     float2(0.4, 0.35));
     sunRadiance = Radiance(sunDirect * input.airTransmittance.rgb);
-    // Lumière de contour comme le sol (PlanetColor) : sinon le pré s'arrête sur une bande plus claire à sa portée.
-    const float3 rim = PlanetRim(planet, normalize(input.worldPosition - planet.clouds.xyz), surface.toEye);
-    return SceneResult(float4(Radiance(lit * input.airTransmittance.rgb + input.airScattered + rim), 1.0), float2(0.0));
+    return SceneResult(float4(Radiance(lit * input.airTransmittance.rgb + input.airScattered), 1.0), float2(0.0));
 }
