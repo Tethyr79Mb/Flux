@@ -1774,11 +1774,11 @@ float4 PlanetColor(PlanetVertexOutput input)
     surface.toEye = normalize(-v.worldPosition);
     surface.f0 = float3(0.04);
     float occlusion = 1.0;
-    // Terre sous les brins (Grass.slang) : à la portée de l'herbe (shape.w, 0 : aucune), la couche d'herbe du sol devient
-    // de la terre ; au-delà, l'image d'herbe figure le pré vu de loin. Fondu sur les 40 % du bout de la portée, où les
-    // brins rapetissent.
+    // Terre sous les brins (Grass.slang) : là où ils sont serrés (shape.w : portée de l'herbe, 0 : aucune), la couche
+    // d'herbe du sol devient de la terre. Plus loin, où ils s'éclaircissent (au-delà de 20 m), elle repasse vers le pré :
+    // la terre se verrait par plaques entre des brins clairsemés.
     const float grassRange = planet.forest.y > 0.0 ? planet.shape.w : 0.0;
-    const float underBlades = grassRange > 0.0 ? smoothstep(grassRange, 0.6 * grassRange, distance) : 0.0;
+    const float underBlades = grassRange > 0.0 ? smoothstep(min(50.0, grassRange), min(20.0, 0.5 * grassRange), distance) : 0.0;
     if (planet.climate.w > 0.0) {
         float weights[GroundLayers] = { 0.0, 0.0, 1.0, 0.0, 0.0 };
         CoverGround(weights, GroundGrass, grassy * (1.0 - patches));
@@ -1876,7 +1876,8 @@ float4 PlanetColor(PlanetVertexOutput input)
                             * GrassMeadowShade * lerp(1.0, 0.6, againstSun) * lerp(1.0, 1.3, smoothstep(20.0, 150.0, distance))
                             * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
         const float meadowShare = saturate(GrassShare(cover) * 1.5);
-        const float3 humus = surface.diffuse * float3(0.45, 0.5, 0.4) * lerp(1.0, 0.6, againstSun);
+        // Brun chaud et sombre d'une terre de prairie (la texture de terre est plutôt grise et minérale).
+        const float3 humus = surface.diffuse * float3(0.55, 0.42, 0.28) * lerp(1.0, 0.6, againstSun);
         surface.diffuse = lerp(surface.diffuse, planet.climate.w > 0.0 ? lerp(meadow, humus, underBlades) : meadow, meadowShare);
         // Ni reflet ni lustre : à contre-jour, le reflet rasant du sol faisait une bande claire entre les brins
         // et au-delà de leur portée.
