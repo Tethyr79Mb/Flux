@@ -1217,7 +1217,7 @@ namespace Flux {
             m_vegetation->SetPlanet(transform.entity, *terrain, planet, *vegetation, biomes, transform.rotation, m_plains, rangeScale);
             // L'herbe de la même planète. Sans mesh shaders, moins dense et moins loin (environ 10 fois moins de brins).
             const bool vertexPath = m_grassMesh == nullptr;
-            m_grass = {.density = std::clamp(vegetation->grassDensity, 0.0f, 200.0f) * (vertexPath ? GrassVertexDensity : 1.0f),
+            m_grass = {.density = std::clamp(vegetation->grassDensity, 0.0f, 400.0f) * (vertexPath ? GrassVertexDensity : 1.0f),
                        .height = std::clamp(vegetation->grassHeight, 0.02f, 3.0f),
                        .width = std::clamp(vegetation->grassWidth, 0.005f, 0.3f),
                        .range = std::clamp(vegetation->grassRange, 0.0f, 300.0f) * (vertexPath ? GrassVertexRange : 1.0f),

@@ -1652,6 +1652,23 @@ float GrassShare(GroundCover cover)
          * (1.0 - cover.rock) * (1.0 - cover.snow);
 }
 
+// Teinte de l'herbe (couche du sol et brins de Grass.slang) : jaunie dans le froid, par taches sèches, et de `dry` en plus.
+float3 GrassDryTint(float temperature, float macro, float dry)
+{
+    const float cold = smoothstep(6.0, -4.0, temperature) * 0.7;
+    return lerp(float3(1.0), float3(1.5, 1.2, 0.6), max(max(cold, saturate(macro * 1.6) * 0.4), dry));
+}
+
+// Couleur de l'herbe sans teinte : la moyenne de son image (textures du sol) ou la couleur de la planète.
+float3 GrassBaseColor(PlanetData planet)
+{
+    return planet.climate.w > 0.0 ? GroundAverage(GroundGrass, float3(0.0, 1.0, 0.0)).color * GroundTint(planet, GroundGrass)
+                                  : planet.grass.rgb;
+}
+
+// Clarté moyenne d'un pré en brins vu d'en haut (pied sombre, pointes claires : fragmentGrass), que le sol prend sous lui.
+static const float GrassMeadowShade = 0.6;
+
 // Sol des planètes : roche dans les pentes, plage en bas, neige en haut ou quand il gèle, ailleurs herbe, terre ou
 // désert selon le climat, avec des taches à grande échelle (les zones ne suivent pas des lignes droites). Chaque
 // matière est une image (GroundTextures) ; sans images, une couleur unie avec un grain de bruit de près (couleur et
@@ -1818,8 +1835,7 @@ float4 PlanetColor(PlanetVertexOutput input)
                 sample.color *= GroundTint(planet, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
-                    const float cold = smoothstep(6.0, -4.0, temperature) * 0.7;
-                    sample.color *= lerp(float3(1.0), float3(1.5, 1.2, 0.6), max(cold, saturate(macro * 1.6) * 0.4));
+                    sample.color *= GrassDryTint(temperature, macro, 0.0);
                 }
                 color += sample.color * weight;
                 groundNormal += sample.normal * weight;
@@ -1840,6 +1856,13 @@ float4 PlanetColor(PlanetVertexOutput input)
     } else {
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
                                            temperature, foot, snow, surface.roughness);
+    }
+    // Sous l'herbe en brins (Grass.slang, avec la végétation) : le sol prend la couleur moyenne du pré, de près (pas de
+    // gravier entre les brins) comme au loin (pas de limite là où les brins s'arrêtent).
+    if (planet.forest.y > 0.0) {
+        const float3 meadow = GrassBaseColor(planet) * GrassDryTint(temperature, macro, 0.0) * (0.9 + macro * 0.4)
+                            * GrassMeadowShade * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
+        surface.diffuse = lerp(surface.diffuse, meadow, GrassShare(cover) * 0.85);
     }
     // Forêts au loin : la cime des arbres de la moitié de leur portée, où elle comble les trous entre les imposteurs, à
     // la portée, où ils s'arrêtent, et au-delà. Mêmes limites que computeTrees : pente, plage, neige, roche.

@@ -179,6 +179,7 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const float2 r0 = GroundRandom(h0);
     const float2 r1 = GroundRandom(h1);
     const float2 r2 = GroundRandom(h2);
+    const float2 r3 = GroundRandom(GroundHash(h2 + 0x9B05688Cu));
 
     float3 position, normal;
     GrassGround(firstVertex, origin + r0 * size, position, normal);
@@ -237,7 +238,12 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const int3 cell = int3(floor(ground / 0.6));
     const float clump = GroundRandom(GroundHash(uint(cell.x) * 0x8DA6B343u ^ uint(cell.y) * 0xD8163841u
                                                 ^ uint(cell.z) * 0xCB1AB31Fu)).x;
-    const float height = GrassHeight() * lerp(0.55, 1.35, clump) * lerp(0.5, 1.2, r1.y) * grow;
+    // Plages de quelques mètres plus hautes ou plus rases, plus sèches (nombres d'ondes entiers sur GroundPeriod) :
+    // le pré n'est pas une moquette égale au-delà de quelques pas.
+    const float patch = saturate(0.5 + 0.5 * sin(k * (211.0 * ground.x + 137.0 * ground.z + 59.0 * ground.y))
+                                     * sin(k * (-113.0 * ground.x + 181.0 * ground.z + 97.0 * ground.y))
+                                 + 0.25 * sin(k * (83.0 * ground.x - 61.0 * ground.z + 151.0 * ground.y)));
+    const float height = GrassHeight() * lerp(0.55, 1.35, clump) * lerp(0.65, 1.25, patch) * lerp(0.5, 1.2, r1.y) * grow;
     // Toujours un peu ployé (vers `facing`, au hasard autour du brin) : le point de courbure haut et droit, la pointe
     // qui retombe en arc.
     const float lean = lerp(0.2, 0.8, r2.y);
@@ -255,9 +261,11 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
 
     // Couleur : celle de l'herbe du sol (lue par fragmentGrass), jaunie dans le froid et par taches sèches comme
     // fragmentPlanet, plus claire ou plus foncée selon les taches, et un peu différente d'un brin à l'autre.
-    const float cold = smoothstep(6.0, -4.0, cover.temperature) * 0.7;
-    blade.tint = lerp(float3(1.0), float3(1.5, 1.2, 0.6), max(cold, saturate(cover.macro * 1.6) * 0.4))
-               * (0.9 + cover.macro * 0.4) * lerp(float3(0.85, 0.85, 0.85), float3(1.15, 1.1, 0.95), r1.y);
+    // Par brin : quelques-uns secs (r3.x), une teinte qui hésite entre vert bleuté et vert jaune (r3.y), et les
+    // plages rases un peu plus sèches.
+    const float dry = max(pow(r3.x, 6.0) * 0.8, (1.0 - patch) * 0.3);
+    blade.tint = GrassDryTint(cover.temperature, cover.macro, dry) * (0.9 + cover.macro * 0.4)
+               * lerp(float3(0.9, 1.0, 0.95), float3(1.1, 1.05, 0.85), r3.y) * lerp(0.8, 1.15, r1.y);
     blade.airScattered = AirTo(blade.root, blade.airTransmittance);
     blade.clouds = CloudShadow(blade.root);
     blade.alive = true;
@@ -347,9 +355,7 @@ SceneOutput fragmentGrass(GrassVertexOutput input)
 {
     shadowPixel = input.position.xy;
     const PlanetData planet = frame[0].planets[input.planet];
-    const float3 grass = planet.climate.w > 0.0
-                       ? GroundAverage(GroundGrass, float3(0.0, 1.0, 0.0)).color * GroundTint(planet, GroundGrass)
-                       : planet.grass.rgb;
+    const float3 grass = GrassBaseColor(planet);
     Surface surface;
     surface.toEye = normalize(-input.worldPosition);
     float3 normal = normalize(input.normal);
@@ -359,9 +365,10 @@ SceneOutput fragmentGrass(GrassVertexOutput input)
     surface.roughness = 0.6;
     // Pied plus sombre : les brins voisins lui cachent le ciel et une part du soleil.
     const float height = input.tintHeight.a;
-    const float occlusion = lerp(0.55, 1.0, height);
-    // Pied de la couleur du sol, pointe plus claire et un peu sèche (comme une vraie prairie vue de haut).
-    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.8, 1.0, height) * lerp(float3(1.0), float3(1.25, 1.2, 0.9), height * height);
+    // Pied sombre (les voisins lui cachent ciel et soleil), pointe claire et un peu sèche : en moyenne
+    // GrassMeadowShade, la couleur que le sol prend sous l'herbe (PlanetColor).
+    const float occlusion = lerp(0.3, 1.0, height);
+    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.35, 1.0, height) * lerp(float3(1.0), float3(1.2, 1.15, 0.85), height * height);
     float inside;
     const float3 lit = LightSurface(surface, normal, input.worldPosition, occlusion, input.airTransmittance.a, inside, true,
                                     float2(0.4, 0.35));

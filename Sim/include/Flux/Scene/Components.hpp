@@ -307,9 +307,9 @@ namespace Flux {
         // Herbe (shaders/Grass.slang) : brins générés par le GPU autour de la caméra, là où le sol montre de l'herbe.
         // Densité de près (brins par m², 0 : pas d'herbe), hauteur et largeur moyennes d'un brin, distance où les
         // derniers disparaissent (au-delà, l'image de l'herbe du sol), force du vent (0 : immobile, 1 : couché à moitié).
-        float grassDensity = 128.0f;
-        float grassHeight = 0.4f;  // m
-        float grassWidth = 0.05f;  // m
+        float grassDensity = 200.0f;
+        float grassHeight = 0.5f;  // m
+        float grassWidth = 0.03f;  // m
         float grassRange = 80.0f;  // m
         float grassWind = 0.35f;
     };
