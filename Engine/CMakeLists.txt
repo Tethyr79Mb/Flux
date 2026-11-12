@@ -61,6 +61,10 @@ flux_add_shaders(FluxShaders
         shaders/Environment.slang
         shaders/Exposure.slang
         shaders/Flame.slang
+        shaders/Grass.slang
+        shaders/GrassMesh.slang
+        shaders/GrassMeshRays.slang
+        shaders/GrassRays.slang
         shaders/Grid.slang
         shaders/Mesh.slang
         shaders/MeshRays.slang

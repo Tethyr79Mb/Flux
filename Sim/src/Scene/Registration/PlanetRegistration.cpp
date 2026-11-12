@@ -178,6 +178,16 @@ namespace Flux {
             .Field("leafWrap", "Lumière enveloppante", &VegetationComponent::leafWrap,
                    {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("leafTransmission", "Lumière traversante", &VegetationComponent::leafTransmission,
+                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("grassDensity", "Herbe : brins par m²", &VegetationComponent::grassDensity,
+                   {.speed = 1.0, .min = 0.0, .max = 200.0, .decimals = 0})
+            .Field("grassHeight", "Herbe : hauteur (m)", &VegetationComponent::grassHeight,
+                   {.speed = 0.01, .min = 0.02, .max = 3.0, .decimals = 2})
+            .Field("grassWidth", "Herbe : largeur (m)", &VegetationComponent::grassWidth,
+                   {.speed = 0.001, .min = 0.005, .max = 0.3, .decimals = 3})
+            .Field("grassRange", "Herbe : visible jusqu'à (m)", &VegetationComponent::grassRange,
+                   {.speed = 1.0, .min = 0.0, .max = 300.0, .decimals = 0})
+            .Field("grassWind", "Herbe : vent", &VegetationComponent::grassWind,
                    {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
     }
 }

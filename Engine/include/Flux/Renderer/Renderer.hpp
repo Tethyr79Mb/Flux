@@ -71,6 +71,9 @@ namespace Flux {
         std::uint32_t planetComputedTiles = 0; // calculées par le GPU à cette image
         // Threads par groupe des mesh shaders du sol, 0 : par les sommets (choisi au démarrage selon le GPU).
         std::uint32_t groundMeshThreads = 0;
+        // Tuiles du sol où pousse l'herbe à cette image, et son chemin (mesh shaders, sinon sommets).
+        std::uint32_t grassTiles = 0;
+        bool grassMeshShaders = false;
         // Arbres des planètes deux images plus tôt : dessinés (détaillés, simplifiés, lointains) et dans les ombres ;
         // plaines triées à la dernière image, et en vue pas encore semées.
         std::array<std::uint32_t, 3> trees{};

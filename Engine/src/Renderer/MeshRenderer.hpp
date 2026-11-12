@@ -171,6 +171,11 @@ namespace Flux {
         void BakeImpostor(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Arbres des planètes (VegetationRenderer), après les objets et avant le sol qu'ils cachent en partie.
         void DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Herbe des planètes (shaders/Grass.slang), avant le sol : il n'éclaire pas ce qu'elle cache.
+        void DrawGrass(RHI::CommandList& commands, std::uint32_t frameIndex) const;
+        // Tuiles où pousse l'herbe à cette image (panneau Moteur) ; chemin des mesh shaders ou des sommets.
+        std::uint32_t GetGrassTileCount() const;
+        bool IsGrassMeshPath() const { return m_grassMesh != nullptr; }
         void DrawGround(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         // Une planète de l'image a des nuages (dessinés par Planetology::CloudRenderer).
@@ -221,6 +226,7 @@ namespace Flux {
             std::uint32_t firstIndex; // toute la tuile ou un quart (PlanetRenderer::Tile)
             std::uint32_t indexCount;
             bool shadowOnly;          // hors du champ, seulement pour son ombre (PlanetRenderer::Tile::shadowOnly)
+            bool grass = false;       // de l'herbe y pousse (proche, entière, sans glissement vers sa parente)
         };
         // Appel indirect : `count` commandes de m_tileCommands à partir de `first`, toutes de la même page.
         struct TileBatch
@@ -516,6 +522,23 @@ namespace Flux {
         std::uint32_t m_planetMeshThreads = 0; // 128 (PlanetMesh.slang) ou 64 (PlanetMeshSmall.slang)
         std::unique_ptr<RHI::Pipeline> m_planetMeshGeometry; // pixel presque vide, comme Pipelines::geometryOnly
         std::vector<std::unique_ptr<RHI::BindGroup>> m_tileMeshGroups;
+        // Herbe (shaders/Grass.slang) : en mesh shaders (GrassMesh.slang) quand le GPU les a, sinon par les sommets
+        // (m_grassVertex, indices de GrassClusterBlades brins). Ses commandes sont à la suite de celles des tuiles,
+        // m_grassBatches dans m_tileBatches ; le groupe 3 est celui des pages de tuiles (m_tileMeshGroups).
+        std::unique_ptr<RHI::Pipeline> m_grassMesh;
+        std::unique_ptr<RHI::Pipeline> m_grassVertex;
+        std::unique_ptr<RHI::Buffer> m_grassIndices;
+        // Réglages de l'herbe de la planète à arbres de l'image (VegetationComponent), densité 0 : aucune.
+        struct GrassSettings
+        {
+            float density = 0.0f; // brins par m²
+            float height = 0.0f;
+            float width = 0.0f;
+            float range = 0.0f;
+            float wind = 0.0f;
+        };
+        GrassSettings m_grass;
+        std::span<const TileBatch> m_grassBatches;
         // Modèles fixes en mesh shaders : le groupe 3 lit les sommets et les paquets d'une page de géométrie (un groupe
         // par page, fait à sa première utilisation) ; les tâches de l'image sont au groupe 1.
         std::unique_ptr<RHI::BindGroupLayout> m_modelMeshLayout;

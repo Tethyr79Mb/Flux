@@ -1591,6 +1591,67 @@ void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
     weights[layer] += amount;
 }
 
+// Ce qui couvre le sol en un point (local : repère de la planète ; flatness : cosinus de la pente ; climate : celui
+// des grandes échelles, PlanetClimate) : la part de chaque matière avant leur mélange (CoverGround). Partagé par le sol
+// (PlanetColor) et l'herbe (shaders/Grass.slang), qui pousse là où le sol montre de l'herbe.
+struct GroundCover
+{
+    float macro;       // taches de 20 à 400 m (-0,5 à 0,5 environ)
+    float rock;
+    float beach;
+    float temperature; // °C, déplacée par les taches
+    float grassy;
+    float desert;
+    float patches;     // taches de terre dans l'herbe
+    float foot;        // terre nue au pied des pentes
+    float snow;
+};
+
+GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, float altitude, float2 climate, float distance)
+{
+    GroundCover cover;
+    // Taches de 20 à 400 m (déplacent les limites des zones), grain de 30 cm à 3 m.
+    // Chaque octave s'efface au loin, avant de scintiller (plus petite qu'un pixel).
+    cover.macro = (PlanetNoise(local * (1.0 / 397.0)) - 0.5) * 0.5 * saturate(2.0 - distance / 40000.0)
+                + (PlanetNoise(local * (1.0 / 97.0)) - 0.5) * 0.3 * saturate(2.0 - distance / 10000.0)
+                + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
+    const float macro = cover.macro;
+
+    cover.rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
+    // Plage : jusqu'à beach.y mètres au-dessus de la mer (qu'il y ait un océan ou non), limite fondue sur un
+    // cinquième de sa hauteur et déplacée par les taches de 30 % au plus : elle suit la côte sans faire de bande droite.
+    const float relief = max(planet.shape.y, 1.0);
+    const float beachHeight = max(planet.beach.y, 0.0);
+    const float beachTop = planet.beach.x + beachHeight;
+    const float beachBlur = min(max(0.2 * beachHeight, 0.3), 0.0015 * relief);
+    cover.beach = smoothstep(beachTop + beachBlur, beachTop - beachBlur, altitude + macro * 0.6 * beachHeight) * (1.0 - cover.rock);
+
+    // Climat des grandes échelles (par sommet), déplacé par les taches.
+    cover.temperature = climate.x + macro * 4.0;
+    const float humidity = climate.y + macro * 0.3;
+
+    // Biomes : terre nue entre désert et prairie ; sable là où il fait chaud et sec ; herbe là où c'est humide, avec
+    // des taches de terre ; l'herbe jaunit dans le froid (toundra) ; neige quand il gèle, comme au-dessus de snowLevel.
+    cover.grassy = smoothstep(0.38, 0.55, humidity);
+    cover.desert = smoothstep(0.3, 0.15, humidity) * smoothstep(8.0, 18.0, cover.temperature);
+    cover.patches = smoothstep(0.6, 0.72, PlanetNoise(local * (1.0 / 31.0) + 3.0) + macro * 0.3) * 0.85
+                  * saturate(2.0 - distance / 4000.0);
+    // Terre nue aux pieds des pentes, avant la roche.
+    cover.foot = smoothstep(0.93, 0.86, flatness + macro * 0.05) * (1.0 - cover.beach) * 0.8;
+    const float frozen = smoothstep(-2.0, -8.0, cover.temperature);
+    cover.snow = max(smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief), frozen)
+               * smoothstep(0.5, 0.65, flatness);
+    return cover;
+}
+
+// Part de l'herbe dans le sol, comme les couches de CoverGround dans PlanetColor : posée sur la terre, puis recouverte
+// par le sable, la terre des pieds de pente, la roche et la neige.
+float GrassShare(GroundCover cover)
+{
+    return cover.grassy * (1.0 - cover.patches) * (1.0 - max(cover.desert, cover.beach)) * (1.0 - cover.foot)
+         * (1.0 - cover.rock) * (1.0 - cover.snow);
+}
+
 // Sol des planètes : roche dans les pentes, plage en bas, neige en haut ou quand il gèle, ailleurs herbe, terre ou
 // désert selon le climat, avec des taches à grande échelle (les zones ne suivent pas des lignes droites). Chaque
 // matière est une image (GroundTextures) ; sans images, une couleur unie avec un grain de bruit de près (couleur et
@@ -1679,37 +1740,18 @@ float4 PlanetColor(PlanetVertexOutput input)
     const float3 localNormal = float3(dot(normal, draw.normal[0].xyz), dot(normal, draw.normal[1].xyz), dot(normal, draw.normal[2].xyz));
     const float flatness = dot(localNormal, up);
 
-    // Taches de 20 à 400 m (déplacent les limites des zones), grain de 30 cm à 3 m.
-    // Chaque octave s'efface au loin, avant de scintiller (plus petite qu'un pixel).
     const float distance = length(v.worldPosition);
-    const float macro = (PlanetNoise(local * (1.0 / 397.0)) - 0.5) * 0.5 * saturate(2.0 - distance / 40000.0)
-                      + (PlanetNoise(local * (1.0 / 97.0)) - 0.5) * 0.3 * saturate(2.0 - distance / 10000.0)
-                      + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
-
-    const float rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
-    // Plage : jusqu'à beach.y mètres au-dessus de la mer (qu'il y ait un océan ou non), limite fondue sur un
-    // cinquième de sa hauteur et déplacée par les taches de 30 % au plus : elle suit la côte sans faire de bande droite.
+    const GroundCover cover = GetGroundCover(planet, local, flatness, altitude, input.climate, distance);
+    const float macro = cover.macro;
+    const float rock = cover.rock;
+    const float beach = cover.beach;
+    const float temperature = cover.temperature;
+    const float grassy = cover.grassy;
+    const float desert = cover.desert;
+    const float patches = cover.patches;
+    const float foot = cover.foot;
+    const float snow = cover.snow;
     const float relief = max(planet.shape.y, 1.0);
-    const float beachHeight = max(planet.beach.y, 0.0);
-    const float beachTop = planet.beach.x + beachHeight;
-    const float beachBlur = min(max(0.2 * beachHeight, 0.3), 0.0015 * relief);
-    const float beach = smoothstep(beachTop + beachBlur, beachTop - beachBlur, altitude + macro * 0.6 * beachHeight) * (1.0 - rock);
-
-    // Climat des grandes échelles (par sommet), déplacé par les taches.
-    const float temperature = input.climate.x + macro * 4.0;
-    const float humidity = input.climate.y + macro * 0.3;
-
-    // Biomes : terre nue entre désert et prairie ; sable là où il fait chaud et sec ; herbe là où c'est humide, avec
-    // des taches de terre ; l'herbe jaunit dans le froid (toundra) ; neige quand il gèle, comme au-dessus de snowLevel.
-    const float grassy = smoothstep(0.38, 0.55, humidity);
-    const float desert = smoothstep(0.3, 0.15, humidity) * smoothstep(8.0, 18.0, temperature);
-    const float patches = smoothstep(0.6, 0.72, PlanetNoise(local * (1.0 / 31.0) + 3.0) + macro * 0.3) * 0.85
-                        * saturate(2.0 - distance / 4000.0);
-    // Terre nue aux pieds des pentes, avant la roche.
-    const float foot = smoothstep(0.93, 0.86, flatness + macro * 0.05) * (1.0 - beach) * 0.8;
-    const float frozen = smoothstep(-2.0, -8.0, temperature);
-    const float snow = max(smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief), frozen)
-                     * smoothstep(0.5, 0.65, flatness);
 
     Surface surface;
     surface.toEye = normalize(-v.worldPosition);

@@ -496,6 +496,8 @@ namespace Flux {
             timings.planetPendingTiles = tiles.pending;
             timings.planetComputedTiles = tiles.computed;
             timings.groundMeshThreads = tiles.meshThreads;
+            timings.grassTiles = meshes->GetGrassTileCount();
+            timings.grassMeshShaders = meshes->IsGrassMeshPath();
             timings.terrainShadowTiles = tiles.terrainShadowTiles;
             timings.terrainShadowTriangles = tiles.terrainShadowTriangles;
             timings.groundTexturesLoading = tiles.groundLoading;
@@ -710,6 +712,7 @@ namespace Flux {
                     })
                 .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); })
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
+                .Step("herbe", [this](RHI::CommandList& commands) { meshes->DrawGrass(commands, frame.index); })
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
                 .Step("fond du ciel", [this](RHI::CommandList& commands) { sky->Draw(commands, frame.index); })
                 .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); });

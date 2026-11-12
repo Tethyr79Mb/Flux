@@ -86,6 +86,8 @@ namespace Flux {
                 ui.LabelText("Ciel et exposition", std::format("{:.3f} ms", stats.Get(PrepareSkyCost)));
                 ui.LabelText("Entités", std::format("{:.3f} ms", stats.Get(PrepareEntitiesCost)));
                 ui.LabelText("Sol des planètes", std::format("{:.3f} ms", stats.Get(PrepareGroundCost)));
+                ui.LabelText("Herbe", std::format("{} tuiles, par {}", render.grassTiles,
+                                                  render.grassMeshShaders ? "mesh shaders" : "les sommets"));
                 ui.LabelText("Arbres", std::format("{:.3f} ms", stats.Get(PrepareTreesCost)));
                 ui.LabelText("Envois et lots", std::format("{:.3f} ms", stats.Get(PrepareUploadsCost)));
             }
@@ -230,6 +232,7 @@ namespace Flux {
                          {"planetTileCapacity", render.planetTileCapacity},
                          {"planetPendingTiles", render.planetPendingTiles},
                          {"groundMeshThreads", render.groundMeshThreads},
+                         {"grassTiles", render.grassTiles},
                          {"trees", {{"near", render.trees[0]}, {"simplified", render.trees[1]}, {"far", render.trees[2]}}},
                          {"shadowTrees", render.shadowTrees},
                          {"hiddenTrees", render.hiddenTrees},

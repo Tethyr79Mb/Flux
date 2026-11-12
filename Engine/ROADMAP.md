@@ -281,8 +281,20 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Canyons (demande de Bruno du 2026-10-21) : gorges creusées dans le relief, parois raides en strates, fond plat ou
   sinueux, sur les planètes sèches comme le long des rivières. À faire dans `Terrain::GetHeight` et `Height`
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
-- ⬜ Rochers, buissons et herbe posés sur le sol (même semis que les arbres).
+- 🔧 Herbe (`shaders/Grass.slang`, réglages dans `VegetationComponent`) : brins en courbe de Bézier générés par le GPU
+  à chaque image sur les tuiles proches, là où le sol montre de l'herbe (`GetGroundCover`, partagé avec le sol), rien
+  en mémoire. Mesh shaders : une tâche par tuile écarte les paquets hors champ, cachés ou sans herbe, 3 à 1 segments
+  selon la distance ; au loin il en reste une part, élargie (densité 48/m² jusqu'à 12 m, puis en 1 / distance, fin à
+  80 m). Vent par vagues, lumière translucide. Repli sans mesh shaders : par les sommets, 4 fois moins dense, 60 % de
+  la portée. À améliorer : coût à mesurer en Release ; pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
+  ni le souffle des réacteurs (étape 3) ; pas de réglage du joueur (étape 2) ; la couleur des brins est la moyenne de
+  l'image d'herbe du sol (pas sa teinte locale) ; le mouvement du vent n'entre pas dans les vecteurs de mouvement (TAA).
+- ⬜ Rochers et buissons posés sur le sol par règles (pente, climat, distance aux arbres), semés par le GPU comme les
+  arbres (ProtonScatter, Horizon Zero Dawn GDC 2017).
 - ⬜ Mélange des matières par la hauteur des textures (displacement) plutôt qu'un fondu.
+- ⬜ Texture virtuelle du sol (Proland, Far Cry) : le sol proche peint une fois dans un cache du GPU au lieu d'être
+  recalculé à chaque pixel (le sol coûte surtout en calculs par pixel).
+- ⬜ Vent des arbres hiérarchique (SpeedTree, Crysis) : tronc, branches et feuilles à leurs propres fréquences.
 - 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume (64 pas en demi-résolution au plus, allongés entre les nuages, reprojetés d'une image à l'autre), cumulus et stratus, avec leur ombre au sol. Coût mesuré chez Bruno (RX 7700 XT, 1080p, ciel plein écran) : 2,1 ms avant les pas allongés. Limites : pas de masque réactif pour FSR, qualité choisie à la main.
 - 🔨 Nuages volumétriques (3 étapes) : 1) ✅ bruit 3D (forme Perlin-Worley 128³, détail Worley 32³) calculé une fois
   par le GPU, avec ses mips ; 2) ✅ rendu en demi-résolution avec reprojection, 64 pas, ombre interne

@@ -304,6 +304,14 @@ namespace Flux {
         // feuilles tournées de l'autre côté (0 : pas du tout), et la part qui traverse une feuille vue à contre-jour.
         float leafWrap = 0.3f;
         float leafTransmission = 0.4f;
+        // Herbe (shaders/Grass.slang) : brins générés par le GPU autour de la caméra, là où le sol montre de l'herbe.
+        // Densité de près (brins par m², 0 : pas d'herbe), hauteur et largeur moyennes d'un brin, distance où les
+        // derniers disparaissent (au-delà, l'image de l'herbe du sol), force du vent (0 : immobile, 1 : couché à moitié).
+        float grassDensity = 48.0f;
+        float grassHeight = 0.5f;  // m
+        float grassWidth = 0.04f;  // m
+        float grassRange = 80.0f;  // m
+        float grassWind = 0.35f;
     };
 
     // Nuages d'une planète (sur l'entité de son PlanetComponent) : une couche de `thickness` mètres d'épaisseur à

@@ -1,0 +1,360 @@
+// Herbe des planètes (VegetationComponent : grassDensity et suivants) : des brins générés par le GPU à chaque image sur
+// les tuiles du sol proches de la caméra. Rien n'est gardé en mémoire ni préparé par le CPU, qui ne choisit que les
+// tuiles (MeshRenderer::BuildTileCommands).
+// Chaque brin est une courbe de Bézier (pied, point de courbure, pointe) en ruban qui s'affine vers la pointe, posé sur
+// les triangles du sol (mêmes sommets que fragmentPlanet) là où le sol montre de l'herbe (GrassShare), à une place tirée
+// au hasard de son rang dans sa tuile : la même à chaque image. Au loin, il en reste une part (GrassKeep), les premiers
+// rangs ; ceux qui vont disparaître rapetissent avant (pas d'apparition brusque) et ceux qui restent s'élargissent
+// pour couvrir autant de sol. Le vent passe par vagues dans le pré, plus un frémissement propre à chaque brin.
+// L'herbe reçoit les ombres et la lumière comme le feuillage (ShadeFoliage : lumière qui traverse les brins), plus
+// sombre à leur pied ; elle n'en porte pas (les cartes d'ombre n'en verraient presque rien, pour un coût élevé).
+// Deux chemins :
+// - mesh shaders (GrassMesh.slang) : une tâche par tuile teste ses 16 paquets (champ, pyramide de profondeur de
+//   l'image précédente, présence d'herbe), chaque paquet retenu envoie ses brins par groupes de 32, en 3, 2 ou 1
+//   segments selon la distance ;
+// - sommets (vertexGrass, GPU sans mesh shaders) : un appel indirect par page, chaque instance 32 brins de 2 segments,
+//   le nombre d'instances d'une tuile choisi par le CPU selon sa distance ; moins dense et moins loin.
+// Commandes (RHI::DrawIndexedCommand, celles des tuiles, MeshRenderer) : vertexOffset = case de la tuile dans sa page
+// x 512 (GrassVertexShift), firstInstance = DrawData de la tuile x 4096 (GrassInstanceShift).
+// Réglages (DrawParams) : color = densité (brins par m²), hauteur moyenne (m), portée (m), largeur (m) ; emissive.x =
+// force du vent.
+
+#include "MeshCulling.slang"
+
+static const uint GrassTileQuads = 32; // TileQuads
+static const uint GrassTileSide = GrassTileQuads + 1;
+static const uint GrassTileVertices = GrassTileSide * GrassTileSide + 4 * GrassTileSide; // TileVertexCount
+static const uint GrassMeshletQuads = 8; // TileMeshletQuads
+static const uint GrassMeshletSide = GrassTileQuads / GrassMeshletQuads;
+static const uint GrassMeshletCount = GrassMeshletSide * GrassMeshletSide;
+static const uint GrassVertexShift = 9;    // MeshRenderer::GrassVertexShift
+static const uint GrassInstanceShift = 12; // MeshRenderer::GrassInstanceShift
+// Jusqu'à cette part de la portée, tous les brins ; au-delà, leur part baisse comme 1 / distance.
+static const float GrassFullShare = 0.15;
+// Chemin des sommets : brins de 2 segments, 32 par instance (MeshRenderer::GrassClusterBlades).
+static const uint GrassClusterBlades = 32;
+static const uint GrassVertexSegments = 2;
+
+// Doit correspondre à Planetology::PlanetTileCompute::Meshlet (comme dans PlanetMesh.slang).
+struct GrassMeshlet
+{
+    float4 low;
+    float4 high;
+};
+
+// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv), boîtes des paquets.
+[[vk::binding(0, 3)]] StructuredBuffer<float> pageVertices;
+[[vk::binding(2, 3)]] StructuredBuffer<GrassMeshlet> pageMeshlets;
+
+float GrassDensity() { return params.color.x; }
+float GrassHeight() { return params.color.y; }
+float GrassRange() { return params.color.z; }
+float GrassWidth() { return params.color.w; }
+float GrassWind() { return params.emissive.x; }
+
+float3 ReadGrassPosition(uint firstVertex, uint index)
+{
+    const uint v = (firstVertex + index) * 8;
+    return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
+}
+
+float3 ReadGrassNormal(uint firstVertex, uint index)
+{
+    const uint v = (firstVertex + index) * 8 + 3;
+    return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
+}
+
+// Le sol de la tuile au point (s, t) de sa grille (en mailles, de 0 à GrassTileQuads), sur les deux triangles de sa
+// maille tels que BuildTileIndices les découpe ((a, b, c) puis (a, c, d)) : le pied du brin est sur le sol dessiné.
+void GrassGround(uint firstVertex, float2 st, out float3 position, out float3 normal)
+{
+    const uint2 q = min(uint2(st), uint2(GrassTileQuads - 1));
+    const float2 f = saturate(st - float2(q));
+    const uint a = q.y * GrassTileSide + q.x;
+    const uint b = a + 1;
+    const uint c = a + GrassTileSide + 1;
+    const uint d = a + GrassTileSide;
+    const float3 pa = ReadGrassPosition(firstVertex, a);
+    const float3 pc = ReadGrassPosition(firstVertex, c);
+    const float3 na = ReadGrassNormal(firstVertex, a);
+    const float3 nc = ReadGrassNormal(firstVertex, c);
+    if (f.x >= f.y) {
+        const float3 pb = ReadGrassPosition(firstVertex, b);
+        const float3 nb = ReadGrassNormal(firstVertex, b);
+        position = pa + f.x * (pb - pa) + f.y * (pc - pb);
+        normal = na + f.x * (nb - na) + f.y * (nc - nb);
+    } else {
+        const float3 pd = ReadGrassPosition(firstVertex, d);
+        const float3 nd = ReadGrassNormal(firstVertex, d);
+        position = pa + f.x * (pc - pd) + f.y * (pd - pa);
+        normal = na + f.x * (nc - nd) + f.y * (nd - na);
+    }
+    normal = normalize(normal);
+}
+
+// Aire (m²) du carré de la grille de `origin` à `origin` + size mailles (ses quatre coins).
+float GrassArea(uint firstVertex, uint2 origin, uint size)
+{
+    const float3 p0 = ReadGrassPosition(firstVertex, origin.y * GrassTileSide + origin.x);
+    const float3 p1 = ReadGrassPosition(firstVertex, origin.y * GrassTileSide + origin.x + size);
+    const float3 p2 = ReadGrassPosition(firstVertex, (origin.y + size) * GrassTileSide + origin.x + size);
+    const float3 p3 = ReadGrassPosition(firstVertex, (origin.y + size) * GrassTileSide + origin.x);
+    return 0.5 * length(cross(p2 - p0, p3 - p1));
+}
+
+// Part des brins gardés à cette distance de la caméra : tous de près, puis comme 1 / distance, et plus aucun à la portée.
+float GrassKeep(float distance)
+{
+    const float range = GrassRange();
+    return saturate(GrassFullShare * range / max(distance, 1.0e-3)) * smoothstep(range, 0.8 * range, distance);
+}
+
+// Part des rangs dessinés pour une part gardée `keep` : un peu plus, ceux qui rapetissent avant de partir.
+float GrassKept(float keep)
+{
+    return min(keep * 1.25, 1.0);
+}
+
+// Graine d'une tuile : son centre dans le repère de la planète (calculé en double puis arrondi, les mêmes bits à chaque
+// image) ; deux tuiles différentes n'ont pas le même.
+uint GrassSeed(uint draw)
+{
+    const float3 center = draws[draw].rim.xyz;
+    return GroundHash(asuint(center.x) ^ GroundHash(asuint(center.y) ^ GroundHash(asuint(center.z))));
+}
+
+// Le sol montre de l'herbe en ce point de la tuile (part de 0 à 1, comme fragmentPlanet).
+float GrassShareAt(uint draw, float3 position, float3 normal, float2 climate)
+{
+    const DrawData d = draws[draw];
+    const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
+    const float3 local = d.rim.xyz + position;
+    const float3 up = normalize(local);
+    const float distance = length(Transform(d.world, position).xyz);
+    const GroundCover cover = GetGroundCover(planet, local, dot(normal, up), length(local) - planet.shape.x, climate, distance);
+    return GrassShare(cover);
+}
+
+struct GrassBlade
+{
+    bool alive;
+    float3 root;   // relatif à la caméra
+    float3 bend;   // point de courbure (Bézier)
+    float3 tip;
+    float3 side;   // demi-largeur au pied, dans le monde
+    float3 facing; // normale du ruban, tournée vers la caméra
+    float3 tint;   // multiplie la couleur de l'herbe du sol (fragmentGrass)
+    uint planet;
+    float3 airTransmittance;
+    float3 airScattered;
+    float clouds;
+};
+
+// Brin écarté : rien à dessiner.
+GrassBlade NoGrassBlade()
+{
+    GrassBlade blade;
+    blade.alive = false;
+    blade.root = float3(0.0);
+    blade.bend = float3(0.0);
+    blade.tip = float3(0.0);
+    blade.side = float3(0.0);
+    blade.facing = float3(0.0, 1.0, 0.0);
+    blade.tint = float3(0.0);
+    blade.planet = 0;
+    blade.airTransmittance = float3(0.0);
+    blade.airScattered = float3(0.0);
+    blade.clouds = 0.0;
+    return blade;
+}
+
+// Brin de rang `index` (sur `total` à pleine densité) d'un carré de la tuile : de `origin` à `origin` + size mailles.
+// climate : celui des grandes échelles au centre du carré (PlanetClimate), le même pour tous ses brins.
+GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, float2 origin, float size, float total, float2 climate)
+{
+    GrassBlade blade = NoGrassBlade();
+    const uint h0 = GroundHash(seed ^ GroundHash(index * 0x9E3779B9u + 0x6A09E667u));
+    const uint h1 = GroundHash(h0 + 0x3C6EF372u);
+    const uint h2 = GroundHash(h1 + 0x510E527Fu);
+    const float2 r0 = GroundRandom(h0);
+    const float2 r1 = GroundRandom(h1);
+    const float2 r2 = GroundRandom(h2);
+
+    float3 position, normal;
+    GrassGround(firstVertex, origin + r0 * size, position, normal);
+    const DrawData d = draws[draw];
+    blade.root = Transform(d.world, position).xyz;
+    const float distance = length(blade.root);
+    // Gardé s'il est dans les premiers rangs (GrassKept) ; les derniers gardés rapetissent (ils seront les prochains à
+    // partir), sur un cinquième des gardés : tous à leur taille quand keep vaut 1.
+    const float keep = GrassKeep(distance);
+    const float rank = (float(index) + 0.5) / max(total, 1.0);
+    float grow = saturate((GrassKept(keep) - rank) / max(0.25 * keep, 1.0e-4));
+    if (grow <= 0.0) {
+        return blade;
+    }
+    blade.planet = asuint(d.rim.w);
+    const PlanetData planet = frame[0].planets[blade.planet];
+    const float3 local = d.rim.xyz + position;
+    if (planet.water.w > 0.0 && length(local) < planet.water.w) {
+        return blade; // sous l'eau
+    }
+    const float3 up = normalize(local);
+    const GroundCover cover = GetGroundCover(planet, local, dot(normal, up), length(local) - planet.shape.x, climate, distance);
+    // Autant de brins que d'herbe sur le sol ; plus courts au bord d'une zone d'herbe.
+    grow *= saturate((GrassShare(cover) - r1.x * 0.9) * 4.0);
+    if (grow < 0.05) {
+        return blade;
+    }
+
+    // Repère du brin dans le monde (colonnes de la rotation de la planète) : il pousse surtout vers le ciel, un peu
+    // selon la pente.
+    const float3 worldUp = normalize(d.normal[0].xyz * up.x + d.normal[1].xyz * up.y + d.normal[2].xyz * up.z);
+    const float3 worldNormal = normalize(d.normal[0].xyz * normal.x + d.normal[1].xyz * normal.y + d.normal[2].xyz * normal.z);
+    const float3 growUp = normalize(lerp(worldNormal, worldUp, 0.6));
+    const float3 helper = abs(growUp.y) < 0.9 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+    const float3 t1 = normalize(cross(growUp, helper));
+    const float3 t2 = cross(growUp, t1);
+    const float angle = r2.x * 6.2831853;
+    const float3 side = t1 * cos(angle) + t2 * sin(angle);
+    float3 facing = cross(side, growUp);
+
+    // Vent : deux vagues qui traversent le pré (coordonnées du sol modulo GroundPeriod : nombres d'ondes entiers sur la
+    // période, pas de saut d'une période à l'autre), et le frémissement de chaque brin. Il souffle selon l'axe x de la
+    // planète, ramené sur le sol.
+    const float3 ground = d.ground.xyz + position;
+    const float time = frame[0].cameraForward.w;
+    const float k = 6.2831853 / GroundPeriod;
+    const float wave = sin(k * (37.0 * ground.x + 23.0 * ground.z + 11.0 * ground.y) - time * 1.3) * 0.5 + 0.5;
+    const float gust = sin(k * (9.0 * ground.x - 6.0 * ground.z + 4.0 * ground.y) - time * 0.35) * 0.5 + 0.5;
+    const float flutter = sin(time * 4.0 + r2.x * 40.0) * 0.08;
+    const float3 planetX = d.normal[0].xyz;
+    const float3 windDirection = normalize(planetX - growUp * dot(planetX, growUp) + 1.0e-5);
+    const float push = GrassWind() * (0.2 + 0.8 * wave * gust + flutter);
+
+    const float height = GrassHeight() * lerp(0.6, 1.4, r1.y) * grow;
+    const float lean = (r2.y * 2.0 - 1.0) * 0.4;
+    const float3 tipDirection = normalize(growUp + facing * lean + windDirection * push * 1.5);
+    blade.root -= growUp * 0.03; // sous le sol : pas de jour entre le brin et un triangle du sol voisin
+    blade.tip = blade.root + tipDirection * height;
+    blade.bend = blade.root + growUp * (height * 0.6);
+    // Plus larges quand il en reste peu (au loin : le sol reste couvert), plus fins quand ils rapetissent.
+    const float width = GrassWidth() * lerp(0.7, 1.3, r0.x) * sqrt(grow) / sqrt(max(keep, 0.11));
+    blade.side = side * (0.5 * width);
+    facing = dot(facing, -blade.root) < 0.0 ? -facing : facing;
+    blade.facing = facing;
+
+    // Couleur : celle de l'herbe du sol (lue par fragmentGrass), jaunie dans le froid et par taches sèches comme
+    // fragmentPlanet, plus claire ou plus foncée selon les taches, et un peu différente d'un brin à l'autre.
+    const float cold = smoothstep(6.0, -4.0, cover.temperature) * 0.7;
+    blade.tint = lerp(float3(1.0), float3(1.5, 1.2, 0.6), max(cold, saturate(cover.macro * 1.6) * 0.4))
+               * (0.9 + cover.macro * 0.4) * lerp(float3(0.85, 0.85, 0.85), float3(1.15, 1.1, 0.95), r1.y);
+    blade.airScattered = AirTo(blade.root, blade.airTransmittance);
+    blade.clouds = CloudShadow(blade.root);
+    blade.alive = true;
+    return blade;
+}
+
+// Le brin vu au pixel : position, normale (arrondie sur la largeur, comme une feuille pliée), hauteur relative (0 au
+// pied) pour l'ombre de ses voisins.
+struct GrassVertexOutput
+{
+    float4 position : SV_Position;
+    float3 worldPosition : POSITION; // relatif à la caméra
+    float3 normal : NORMAL;
+    float4 tintHeight : TINT;                // rgb : teinte du brin (GrassBlade::tint) ; a : hauteur relative
+    float4 airTransmittance : AIR_TRANSMITTANCE; // rgb ; a : ombre des nuages (CloudShadow)
+    float3 airScattered : AIR_SCATTERED;
+    nointerpolation uint planet : PLANET;
+};
+
+// Sommet k du brin en `segments` segments : deux par étage (gauche, droite) du pied vers la pointe, puis la pointe.
+GrassVertexOutput GrassVertex(GrassBlade blade, uint k, uint segments)
+{
+    const bool tip = k >= 2 * segments;
+    const float t = tip ? 1.0 : float(k / 2) / float(segments);
+    const float across = tip ? 0.0 : ((k & 1u) == 0 ? -1.0 : 1.0);
+    const float u = 1.0 - t;
+    const float3 center = u * u * blade.root + 2.0 * t * u * blade.bend + t * t * blade.tip;
+    const float3 position = center + blade.side * (across * u);
+    GrassVertexOutput output;
+    output.position = Transform(frame[0].viewProjection, position);
+    output.worldPosition = position;
+    const float3 sideDirection = normalize(blade.side);
+    output.normal = normalize(blade.facing + sideDirection * (across * 0.5));
+    output.tintHeight = float4(blade.tint, t);
+    output.airTransmittance = float4(blade.airTransmittance, blade.clouds);
+    output.airScattered = blade.airScattered;
+    output.planet = blade.planet;
+    return output;
+}
+
+// Triangle j du brin en `segments` segments (indices de ses sommets, comme GrassVertex).
+uint3 GrassTriangle(uint j, uint segments)
+{
+    const uint level = j / 2;
+    const uint a = 2 * level;
+    if (level + 1 == segments) {
+        return uint3(a, a + 1, a + 2); // dernier étage : la pointe
+    }
+    return (j & 1u) == 0 ? uint3(a, a + 1, a + 3) : uint3(a, a + 3, a + 2);
+}
+
+// Chemin des sommets : instance = un groupe de GrassClusterBlades brins d'une tuile. Les brins écartés (au loin, sans
+// herbe) donnent des triangles vides.
+[shader("vertex")]
+GrassVertexOutput vertexGrass(uint vertex : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID)
+{
+    const uint verticesPerBlade = 2 * GrassVertexSegments + 1;
+    const uint tileInPage = vertex >> GrassVertexShift;
+    const uint inCluster = vertex & ((1u << GrassVertexShift) - 1u);
+    const uint draw = instance >> GrassInstanceShift;
+    const uint cluster = instance & ((1u << GrassInstanceShift) - 1u);
+    const uint firstVertex = tileInPage * GrassTileVertices;
+    const DrawData d = draws[draw];
+    const float2 climate = PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz);
+    const float total = ceil(GrassArea(firstVertex, uint2(0, 0), GrassTileQuads) * GrassDensity());
+    const uint index = cluster * GrassClusterBlades + inCluster / verticesPerBlade;
+    const GrassBlade blade = MakeGrassBlade(draw, firstVertex, GrassSeed(draw), index, float2(0.0), float(GrassTileQuads), total, climate);
+    if (!blade.alive) {
+        // Les trois sommets au même point : rien à dessiner.
+        GrassVertexOutput empty;
+        empty.position = float4(0.0, 0.0, 0.0, 1.0);
+        empty.worldPosition = float3(0.0);
+        empty.normal = float3(0.0, 1.0, 0.0);
+        empty.tintHeight = float4(0.0);
+        empty.airTransmittance = float4(0.0);
+        empty.airScattered = float3(0.0);
+        empty.planet = 0;
+        return empty;
+    }
+    return GrassVertex(blade, inCluster % verticesPerBlade, GrassVertexSegments);
+}
+
+// Brin éclairé comme le feuillage : la lumière du soleil déborde sur la face tournée de l'autre côté, et traverse le brin
+// vu à contre-jour. Couleur : la moyenne de l'image de l'herbe du sol (ou sa couleur unie), qu'il prolonge.
+[shader("fragment")]
+SceneOutput fragmentGrass(GrassVertexOutput input)
+{
+    shadowPixel = input.position.xy;
+    const PlanetData planet = frame[0].planets[input.planet];
+    const float3 grass = planet.climate.w > 0.0
+                       ? GroundAverage(GroundGrass, float3(0.0, 1.0, 0.0)).color * GroundTint(planet, GroundGrass)
+                       : planet.grass.rgb;
+    Surface surface;
+    surface.toEye = normalize(-input.worldPosition);
+    float3 normal = normalize(input.normal);
+    normal = dot(normal, surface.toEye) < 0.0 ? -normal : normal;
+    surface.normal = normal;
+    surface.f0 = float3(0.04);
+    surface.roughness = 0.6;
+    // Pied plus sombre : les brins voisins lui cachent le ciel et une part du soleil.
+    const float height = input.tintHeight.a;
+    const float occlusion = lerp(0.3, 1.0, height);
+    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.6, 1.0, height);
+    float inside;
+    const float3 lit = LightSurface(surface, normal, input.worldPosition, occlusion, input.airTransmittance.a, inside, true,
+                                    float2(0.4, 0.35));
+    sunRadiance = Radiance(sunDirect * input.airTransmittance.rgb);
+    return SceneResult(float4(Radiance(lit * input.airTransmittance.rgb + input.airScattered), 1.0), float2(0.0));
+}

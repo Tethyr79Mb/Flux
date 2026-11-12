@@ -14,7 +14,7 @@ entité. **Placer > Espace > Planète** la pose à trois rayons devant la camér
 | Composant | Rôle |
 |---|---|
 | Planète | forme (rayon, relief, montagnes, graine), sol, climat, mer, gravité, atmosphère |
-| Végétation | arbres semés par le GPU autour de la caméra ; leurs troncs ont une collision (semis refait par le CPU) |
+| Végétation | arbres semés par le GPU autour de la caméra ; leurs troncs ont une collision (semis refait par le CPU) ; herbe générée par le GPU à chaque image sur le sol proche (`Grass.slang`), là où le sol montre de l'herbe |
 | Nuages | une couche de nuages en volume (cumulus, stratus) qui dérive et fait de l'ombre |
 | Orbite | place la planète autour de son étoile |
 
