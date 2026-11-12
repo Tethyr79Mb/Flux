@@ -284,9 +284,12 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - 🔧 Herbe (`shaders/Grass.slang`, réglages dans `VegetationComponent`) : brins en courbe de Bézier générés par le GPU
   à chaque image sur les tuiles proches, là où le sol montre de l'herbe (`GetGroundCover`, partagé avec le sol), rien
   en mémoire. Mesh shaders : une tâche par tuile écarte les paquets hors champ, cachés ou sans herbe, 3 à 1 segments
-  selon la distance ; au loin il en reste une part, élargie (densité 48/m² jusqu'à 12 m, puis en 1 / distance, fin à
-  80 m). Vent par vagues, lumière translucide. Repli sans mesh shaders : par les sommets, 4 fois moins dense, 60 % de
-  la portée. À améliorer : coût à mesurer en Release ; pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
+  selon la distance ; au loin il en reste une part, élargie (200/m², triplée sur 10 m, toute jusqu'à 20 m, puis en
+  distance^-1,5, fondue de 60 à 100 % de la portée de 150 m). Touffes, plages, brins secs, pied sombre ; le sol prend
+  sous l'herbe la couleur du pré (pas de limite visible). Vent par vagues, lumière translucide. Repli sans mesh shaders :
+  par les sommets, 4 fois moins dense, 60 % de la portée. Coût : ~2 ms (RX 7700 XT, vue de l'éditeur). À améliorer :
+  couverture du sol calculée par brin (à faire par paquet) ; peu de variété (pas de fleurs) ; un peu bleue à l'ombre ;
+  pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
   ni le souffle des réacteurs (étape 3) ; pas de réglage du joueur (étape 2) ; la couleur des brins est la moyenne de
   l'image d'herbe du sol (pas sa teinte locale) ; le mouvement du vent n'entre pas dans les vecteurs de mouvement (TAA).
 - ⬜ Rochers et buissons posés sur le sol par règles (pente, climat, distance aux arbres), semés par le GPU comme les
