@@ -30,6 +30,7 @@ static const uint GrassMeshletCount = GrassMeshletSide * GrassMeshletSide;
 static const uint GrassVertexShift = 9;    // MeshRenderer::GrassVertexShift
 static const uint GrassInstanceShift = 12; // MeshRenderer::GrassInstanceShift
 // Jusqu'à cette part de la portée, tous les brins ; au-delà, leur part baisse comme 1 / distance.
+static const float GrassNearBoost = 3.0;
 static const float GrassFullDistance = 20.0; // m : tous les brins jusque-là (MeshRenderer.cpp)
 // Chemin des sommets : brins de 2 segments, 32 par instance (MeshRenderer::GrassClusterBlades).
 static const uint GrassClusterBlades = 32;
@@ -102,19 +103,21 @@ float GrassArea(uint firstVertex, uint2 origin, uint size)
     return 0.5 * length(cross(p2 - p0, p3 - p1));
 }
 
-// Part des brins gardés à cette distance de la caméra : tous jusqu'à GrassFullDistance, puis en distance^-1,5 (des brins
+// Part des brins gardés à cette distance de la caméra (au-delà de 1 de près) : tous jusqu'à GrassFullDistance, puis en distance^-1,5 (des brins
 // plus larges couvrent autant de sol : le coût croît comme la racine de la portée, pas comme sa surface), et plus aucun
 // à la portée, en rapetissant depuis 60 % de celle-ci : pas de limite nette.
 float GrassKeep(float distance)
 {
     const float range = GrassRange();
-    return min(pow(GrassFullDistance / max(distance, 1.0e-3), 1.5), 1.0) * smoothstep(range, 0.6 * range, distance);
+    // De près, sous les yeux quand on regarde le sol : trois fois plus de brins (peu de surface, peu de coût).
+    const float near = lerp(GrassNearBoost, 1.0, smoothstep(2.0, 10.0, distance));
+    return min(pow(GrassFullDistance / max(distance, 1.0e-3), 1.5), 1.0) * near * smoothstep(range, 0.6 * range, distance);
 }
 
 // Part des rangs dessinés pour une part gardée `keep` : un peu plus, ceux qui rapetissent avant de partir.
 float GrassKept(float keep)
 {
-    return min(keep * 1.25, 1.0);
+    return keep < 1.0 ? min(keep * 1.25, 1.0) : keep;
 }
 
 // Graine d'une tuile : son centre dans le repère de la planète (calculé en double puis arrondi, les mêmes bits à chaque
@@ -254,7 +257,7 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     blade.tip = blade.root + tipDirection * height;
     blade.bend = blade.root + growUp * (height * 0.8);
     // Plus larges quand il en reste peu (au loin : le sol reste couvert), plus fins quand ils rapetissent.
-    const float width = GrassWidth() * lerp(0.7, 1.3, r0.x) * sqrt(grow) / sqrt(max(keep, 0.02));
+    const float width = GrassWidth() * lerp(0.7, 1.3, r0.x) * sqrt(grow) / sqrt(clamp(keep, 0.02, 1.0));
     blade.side = side * (0.5 * width);
     facing = dot(facing, -blade.root) < 0.0 ? -facing : facing;
     // Normale penchée vers le ciel : les brins s'éclairent presque comme le sol sous eux. Sans cela, debout face à un
