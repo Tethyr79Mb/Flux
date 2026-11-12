@@ -11,6 +11,11 @@ static const uint GrassGroupBlades = 32;
 static const uint GrassMaxSegments = 3;
 static const uint GrassMaxVertices = GrassGroupBlades * (2 * GrassMaxSegments + 1);
 static const uint GrassMaxTriangles = GrassGroupBlades * (2 * GrassMaxSegments - 1);
+// Bornes d'un paquet : sur une tuile fine (1,5 m entre sommets) il couvre ~150 m², soit ~7 000 brins à la densité par
+// défaut. Une aire plus grande ou non finie (sommets pas encore calculés) l'écarte : sans elles, des milliards de brins
+// partaient au pilote (délai dépassé, GPU perdu).
+static const float GrassMaxMeshletArea = 1000.0;
+static const uint GrassMaxMeshletBlades = 16384;
 
 // Commandes des tuiles de l'image (5 uint chacune : indexCount, instanceCount, firstIndex, vertexOffset,
 // firstInstance) ; params.draw : première du lot.
@@ -75,8 +80,9 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         kept = share > 0.02;
     }
     if (kept) {
-        const float total = ceil(GrassArea(firstVertex, origin, GrassMeshletQuads) * GrassDensity());
-        const uint blades = uint(ceil(total * GrassKept(keep)));
+        const float area = GrassArea(firstVertex, origin, GrassMeshletQuads);
+        const float total = area <= GrassMaxMeshletArea ? ceil(area * GrassDensity()) : 0.0; // faux si NaN
+        const uint blades = uint(min(ceil(total * GrassKept(keep)), float(GrassMaxMeshletBlades)));
         const float range = GrassRange();
         const uint segments = nearest < 0.12 * range ? 3u : nearest < 0.35 * range ? 2u : 1u;
         const uint groups = (blades + GrassGroupBlades - 1) / GrassGroupBlades;

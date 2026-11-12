@@ -170,6 +170,7 @@ namespace Flux {
         constexpr float GrassVertexDensity = 0.25f;
         constexpr float GrassVertexRange = 0.6f;
         constexpr float GrassFullShare = 0.15f; // Grass.slang
+        constexpr float GrassMaxTileEdge = 80.0f; // 2,5 m entre sommets au plus
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -1302,10 +1303,12 @@ namespace Flux {
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
             // Herbe : sur les tuiles entières à sa portée, qui ne glissent pas encore vers leur parente (le pied des brins
-            // est lu sur les sommets tels quels) ; ce sont les plus fines, environ 1,5 m entre deux sommets.
+            // est lu sur les sommets tels quels) ; ce sont les plus fines, environ 1,5 m entre deux sommets. Une tuile
+            // grossière encore à portée (ses filles pas encore calculées) n'en a pas : des kilomètres carrés de brins.
             const float distance = Math::Length(sphere) - tile.radius;
             const bool grassTile = grass && !tile.shadowOnly && tile.indexCount == 4 * Planetology::TileQuarterIndices
-                                && distance < m_grass.range && (tile.morphScale == 0.0f || tile.morphStart >= m_grass.range);
+                                && tile.edge <= GrassMaxTileEdge && distance < m_grass.range
+                                && (tile.morphScale == 0.0f || tile.morphStart >= m_grass.range);
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius, tile.edge,
                                    distance, water, tile.firstIndex, tile.indexCount, tile.shadowOnly, grassTile});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
