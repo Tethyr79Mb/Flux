@@ -1220,7 +1220,7 @@ namespace Flux {
             m_grass = {.density = std::clamp(vegetation->grassDensity, 0.0f, 400.0f) * (vertexPath ? GrassVertexDensity : 1.0f),
                        .height = std::clamp(vegetation->grassHeight, 0.02f, 3.0f),
                        .width = std::clamp(vegetation->grassWidth, 0.005f, 0.3f),
-                       .range = std::clamp(vegetation->grassRange, 0.0f, 300.0f) * (vertexPath ? GrassVertexRange : 1.0f),
+                       .range = std::clamp(vegetation->grassRange, 0.0f, 150.0f) * (vertexPath ? GrassVertexRange : 1.0f),
                        .wind = std::clamp(vegetation->grassWind, 0.0f, 1.0f)};
             grass = m_grass.density > 0.0f && m_grass.range > 1.0f;
         }
@@ -1303,12 +1303,14 @@ namespace Flux {
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
             // Herbe : sur les tuiles entières à sa portée, qui ne glissent pas encore vers leur parente (le pied des brins
-            // est lu sur les sommets tels quels) ; ce sont les plus fines, environ 1,5 m entre deux sommets. Une tuile
+            // est lu sur les sommets tels quels) là où l'herbe pousse, pas jusqu'à toute sa portée : sinon, à 250 m, plus
+            // aucune tuile ne passe ; ce sont les plus fines, environ 1,5 m entre deux sommets. Une tuile
             // grossière encore à portée (ses filles pas encore calculées) n'en a pas : des kilomètres carrés de brins.
             const float distance = Math::Length(sphere) - tile.radius;
             const bool grassTile = grass && !tile.shadowOnly && tile.indexCount == 4 * Planetology::TileQuarterIndices
                                 && tile.edge <= GrassMaxTileEdge && distance < m_grass.range
-                                && (tile.morphScale == 0.0f || tile.morphStart >= m_grass.range);
+                                && (tile.morphScale == 0.0f
+                                    || tile.morphStart >= std::min(m_grass.range, distance + 2.0f * tile.radius));
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius, tile.edge,
                                    distance, water, tile.firstIndex, tile.indexCount, tile.shadowOnly, grassTile});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
