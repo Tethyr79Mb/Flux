@@ -513,6 +513,7 @@ namespace Flux {
             timings.pendingTreePlains = vegetation.pending;
             timings.aheadTreePlains = vegetation.ahead;
             timings.sownTreePlains = vegetation.sown;
+            timings.hiddenTrees = vegetation.hidden;
         }
 
         // Attentes de BeginFrame et heures du GPU relues pour l'image qu'il vient de finir.
