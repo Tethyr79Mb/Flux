@@ -122,6 +122,46 @@ namespace Flux::Planetology {
                                              ^ TreeHash(y / side) * 0x85ebca6bu) ^ 0x165667b1u);
             return x % side == state % side && y % side == (state >> 16) % side;
         }
+
+        // Valeur d'un bosquet, de 0 à 1 et uniforme : la même dans toute une cellule de size m, aux bords ondulés.
+        // Comme GroveValue (shaders/PlanetTile.slang).
+        double GroveValue(const Math::Vector3d& flatPoint, double size, std::int32_t salt) {
+            const Math::Vector3d p = flatPoint * (1.0 / size);
+            const auto warp = [&](double offset) {
+                return ClimateNoise(p * 1.5 + Math::Vector3d{offset, offset, offset}) - 0.5;
+            };
+            return ClimateHash(static_cast<std::int32_t>(std::floor(p.x + warp(3.0))) + salt,
+                               static_cast<std::int32_t>(std::floor(p.y + warp(41.0))),
+                               static_cast<std::int32_t>(std::floor(p.z + warp(79.0))));
+        }
+
+        // Comme GroveBiome, GroveSpecies et GroveSide (shaders/PlanetTile.slang).
+        std::uint32_t GroveBiome(const Math::Vector3d& flatPoint, double size, const std::array<double, VegetationSet::MaxBiomes>& weights,
+                                 std::uint32_t biomeCount) {
+            const double pick = GroveValue(flatPoint, size, 0);
+            double total = 0.0;
+            for (std::uint32_t b = 0; b < biomeCount; ++b) {
+                total += weights[b];
+                if (pick < total) {
+                    return b;
+                }
+            }
+            return VegetationSet::MaxBiomes;
+        }
+
+        std::uint32_t GroveSpecies(const VegetationSet& set, const Math::Vector3d& flatPoint, std::uint32_t biome) {
+            const double pick = GroveValue(flatPoint, set.biomes[biome].color[3], SpeciesSalt);
+            const std::array<float, 4>& shares = set.biomeShares[biome];
+            return pick < shares[0] ? 0 : pick < shares[1] ? 1 : pick < shares[2] ? 2 : 3;
+        }
+
+        std::uint32_t GroveSide(const VegetationSet& set, const TreeBlocks& blocks, std::uint32_t biome, std::uint32_t choice,
+                                std::uint32_t& first, std::uint32_t& variants) {
+            const std::uint32_t entry = set.biomeSpecies[biome][choice];
+            first = entry & 255u;
+            variants = std::max(entry >> 8, 1u);
+            return blocks.sides[biome] >> (4 * std::min(first, VegetationSet::MaxSpecies - 1)) & 15u;
+        }
     }
 
     std::uint32_t GetPlainLevel(const Terrain& terrain) {
@@ -148,7 +188,13 @@ namespace Flux::Planetology {
         const double cell = 0.5 * std::numbers::pi * terrain.GetRadius() / std::ldexp(1.0, static_cast<int>(GetPlainLevel(terrain)))
                           / TreeGrid;
         TreeBlocks blocks;
+        double groves = 0.0;
+        std::uint32_t wooded = 0;
         for (std::size_t b = 0; b < std::min<std::size_t>(set.biomes.size(), VegetationSet::MaxBiomes); ++b) {
+            if (set.biomes[b].humidity[2] > 0.0f) {
+                groves += set.biomes[b].color[3];
+                ++wooded;
+            }
             const double factor = b < set.biomeSpacing.size() ? set.biomeSpacing[b] : 1.0;
             for (std::size_t s = 0; s < VegetationSet::MaxSpecies; ++s) {
                 const double spacing = s < set.species.size() ? set.species[s].spacing * factor : 0.0;
@@ -162,6 +208,9 @@ namespace Flux::Planetology {
                     }
                 }
             }
+        }
+        if (wooded > 0) {
+            blocks.biomeGrove = static_cast<float>(groves / wooded);
         }
         return blocks;
     }
@@ -189,99 +238,96 @@ namespace Flux::Planetology {
             const std::uint32_t gj = c / TreeGrid;
             const std::uint32_t x = plain.x * TreeGrid + gi;
             const std::uint32_t y = plain.y * TreeGrid + gj;
-            bool candidate = false;
-            for (std::uint32_t side = 1; side <= MaxTreeBlock && !candidate; ++side) {
-                std::uint32_t unused;
-                candidate = (blocks.used >> side & 1u) != 0 && (side == 1 || TreeBlockKeeps(settings.seed, plain.face, x, y, side, unused));
-            }
-            if (!candidate) {
-                continue;
-            }
-            std::uint32_t state = TreeHash(settings.seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
-            // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
-            double u = (gi + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-            double v = (gj + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-            const double keep = TreeRandom(state);
-            const double pick = TreeRandom(state);
-            const double jitter = TreeRandom(state);
-            Math::Vector3d direction = DirectionInTile(plain, u, v);
-            const double noise = ForestNoise(direction * radius);
-            double densest = 0.0;
-            for (std::uint32_t b = 0; b < biomeCount; ++b) {
-                densest = std::max(densest, set.biomes[b].humidity[2] * std::max(ForestMask(noise, set.biomes[b].zones[3]), 0.03));
-            }
-            if (keep >= densest) {
-                continue;
-            }
-            Terrain::Zones zones;
-            double height = terrain.GetHeight(direction, octaves, &zones);
-            if (height < settings.shape[3] + 2.0 || height > settings.shape[2] - 0.1 * relief) {
-                continue;
-            }
-            Math::Vector3d local = direction * (planetRadius + height);
-            double altitude = height / relief;
-            Climate climate = ClimateAt(radius, relief, settings.climate, local);
-            const double shift = (jitter - 0.5) * 2.0;
-            altitude += shift * 0.02;
-            climate.temperature += shift * 2.0;
-            climate.humidity += shift * 0.05;
-            const Math::Vector3d zoneShares{(1.0 - zones.hills) * (1.0 - zones.mountains), zones.hills * (1.0 - zones.mountains),
-                                            zones.mountains};
-            std::uint32_t biome = VegetationSet::MaxBiomes;
-            double remaining = 1.0;
-            double total = 0.0;
-            for (std::uint32_t b = 0; b < biomeCount; ++b) {
-                const BiomeGpu& candidate = set.biomes[b];
-                const double weight = BiomeFit(candidate, zoneShares, altitude, climate) * remaining;
-                remaining -= weight;
-                total += weight * candidate.humidity[2] * std::max(ForestMask(noise, candidate.zones[3]), 0.03);
-                if (biome == VegetationSet::MaxBiomes && keep < total) {
-                    biome = b;
-                }
-            }
-            if (biome == VegetationSet::MaxBiomes) {
-                continue;
-            }
-            const std::array<float, 4>& shares = set.biomeShares[biome];
-            const std::uint32_t choice = pick < shares[0] ? 0 : pick < shares[1] ? 1 : pick < shares[2] ? 2 : 3;
-            const double low = choice == 0 ? 0.0 : shares[choice - 1];
-            const std::uint32_t entry = set.biomeSpecies[biome][choice];
-            const std::uint32_t variants = std::max(entry >> 8, 1u);
-            const auto variant = std::min(static_cast<std::uint32_t>((pick - low) / std::max(shares[choice] - low, 1.0e-6) * variants), variants - 1);
-            const std::uint32_t species = std::min((entry & 255u) + variant, VegetationSet::MaxSpecies - 1);
-            if (species >= set.species.size()) {
-                continue; // le GPU lui donne une taille nulle
-            }
-            // Espacement : seule la place gardée par le bloc de l'espèce a l'arbre, posé au hasard dans le bloc
-            // (biome et espèce restent ceux de la place).
-            const std::uint32_t side = blocks.sides[biome] >> (4 * species) & 15u;
-            if (side > 1) {
-                std::uint32_t blockState;
-                if (!TreeBlockKeeps(settings.seed, plain.face, x, y, side, blockState)) {
+            for (std::uint32_t side = 1; side <= MaxTreeBlock; ++side) {
+                if ((blocks.used >> side & 1u) == 0) {
                     continue;
                 }
-                const double i = static_cast<double>(static_cast<std::int32_t>(x / side * side - plain.x * TreeGrid));
-                const double j = static_cast<double>(static_cast<std::int32_t>(y / side * side - plain.y * TreeGrid));
-                u = std::clamp((i + side * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
-                v = std::clamp((j + side * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
-                direction = DirectionInTile(plain, u, v);
-                height = terrain.GetHeight(direction, octaves);
+                std::uint32_t state;
+                double u, v;
+                if (side == 1) {
+                    state = TreeHash(settings.seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
+                    u = (gi + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+                    v = (gj + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+                } else {
+                    if (!TreeBlockKeeps(settings.seed, plain.face, x, y, side, state)) {
+                        continue;
+                    }
+                    const double i = static_cast<double>(static_cast<std::int32_t>(x / side * side - plain.x * TreeGrid));
+                    const double j = static_cast<double>(static_cast<std::int32_t>(y / side * side - plain.y * TreeGrid));
+                    u = std::clamp((i + side * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+                    v = std::clamp((j + side * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+                }
+                const double keep = TreeRandom(state);
+                const Math::Vector3d direction = DirectionInTile(plain, u, v);
+                const Math::Vector3d flat = direction * radius;
+                const double noise = ForestNoise(flat);
+                double densest = 0.0;
+                for (std::uint32_t b = 0; b < biomeCount; ++b) {
+                    densest = std::max(densest, set.biomes[b].humidity[2] * std::max(ForestMask(noise, set.biomes[b].zones[3]), 0.03));
+                }
+                if (keep >= densest) {
+                    continue;
+                }
+                Terrain::Zones zones;
+                const double height = terrain.GetHeight(direction, octaves, &zones);
                 if (height < settings.shape[3] + 2.0 || height > settings.shape[2] - 0.1 * relief) {
                     continue;
                 }
-                local = direction * (planetRadius + height);
+                const Math::Vector3d local = direction * (planetRadius + height);
+                const double altitude = height / relief;
+                const Climate climate = ClimateAt(radius, relief, settings.climate, local);
+                const Math::Vector3d zoneShares{(1.0 - zones.hills) * (1.0 - zones.mountains), zones.hills * (1.0 - zones.mountains),
+                                                zones.mountains};
+                std::array<double, VegetationSet::MaxBiomes> weights{};
+                double remaining = 1.0;
+                for (std::uint32_t b = 0; b < biomeCount; ++b) {
+                    weights[b] = BiomeFit(set.biomes[b], zoneShares, altitude, climate) * remaining;
+                    remaining -= weights[b];
+                }
+                const std::uint32_t biome = GroveBiome(flat, blocks.biomeGrove, weights, biomeCount);
+                if (biome == VegetationSet::MaxBiomes
+                    || keep >= set.biomes[biome].humidity[2] * std::max(ForestMask(noise, set.biomes[biome].zones[3]), 0.03)) {
+                    continue;
+                }
+                std::uint32_t firstVariant, variants;
+                if (GroveSide(set, blocks, biome, GroveSpecies(set, flat, biome), firstVariant, variants) != side) {
+                    continue;
+                }
+                // Bord d'un bosquet d'une autre espèce : écarté à moins d'un demi-espacement.
+                bool alone = true;
+                const double reach = 0.5 * side * step;
+                for (std::uint32_t k = 0; k < 4 && alone; ++k) {
+                    const double du = k == 0 ? reach : k == 1 ? -reach : 0.0;
+                    const double dv = k == 2 ? reach : k == 3 ? -reach : 0.0;
+                    const Math::Vector3d beside = DirectionInTile(plain, u + du, v + dv) * radius;
+                    const std::uint32_t other = GroveBiome(beside, blocks.biomeGrove, weights, biomeCount);
+                    if (other != VegetationSet::MaxBiomes && set.biomes[other].humidity[2] > 0.0f) {
+                        std::uint32_t otherFirst, otherVariants;
+                        const std::uint32_t otherSide = GroveSide(set, blocks, other, GroveSpecies(set, beside, other), otherFirst, otherVariants);
+                        alone = otherSide == side && otherFirst == firstVariant;
+                    }
+                }
+                if (!alone) {
+                    continue;
+                }
+                const auto variant = std::min(static_cast<std::uint32_t>(TreeRandom(state) * variants), variants - 1);
+                const std::uint32_t species = std::min(firstVariant + variant, VegetationSet::MaxSpecies - 1);
+                if (species >= set.species.size()) {
+                    break; // le GPU lui donne une taille nulle
+                }
+                const VegetationSet::Species& traits = set.species[species];
+                // Comme VegetationRenderer::SetPlanet : le cosinus en float.
+                const double maxSlope = std::cos(traits.maxSlope * (std::numbers::pi_v<float> / 180.0f));
+                constexpr double e = 0.25;
+                const Math::Vector3d du = ground(u + e, v) - local;
+                const Math::Vector3d dv = ground(u, v + e) - local;
+                if (std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), direction)) < maxSlope) {
+                    continue;
+                }
+                const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * set.biomes[biome].humidity[3];
+                trees.push_back({local, static_cast<float>(scale), species});
+                break;
             }
-            const VegetationSet::Species& traits = set.species[species];
-            // Comme VegetationRenderer::SetPlanet : le cosinus en float.
-            const double maxSlope = std::cos(traits.maxSlope * (std::numbers::pi_v<float> / 180.0f));
-            constexpr double e = 0.25;
-            const Math::Vector3d du = ground(u + e, v) - local;
-            const Math::Vector3d dv = ground(u, v + e) - local;
-            if (std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), direction)) < maxSlope) {
-                continue;
-            }
-            const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * set.biomes[biome].humidity[3];
-            trees.push_back({local, static_cast<float>(scale), species});
         }
     }
 }

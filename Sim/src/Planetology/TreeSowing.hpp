@@ -32,10 +32,16 @@ namespace Flux::Planetology {
     // employés (bit k), qui écartent les autres places avant le relief. Calculé une fois par le CPU, pour le GPU
     // (SowVegetation) et SowPlain : le même arrondi des deux côtés.
     constexpr std::uint32_t MaxTreeBlock = 8;
+    // Bosquets (GroveValue dans shaders/PlanetTile.slang) : ce qui sépare le tirage des espèces de celui des biomes.
+    constexpr std::int32_t SpeciesSalt = 7919;
     struct TreeBlocks
     {
         std::array<std::uint32_t, VegetationSet::MaxBiomes> sides{};
         std::uint32_t used = 0;
+        // Taille des bosquets qui se partagent les biomes à leurs frontières (m) : moyenne de celles des biomes qui ont
+        // des arbres. Une par planète : une taille qui changerait d'un point à l'autre déplacerait les cellules, et les
+        // biomes se mêleraient de nouveau arbre par arbre.
+        float biomeGrove = 200.0f;
     };
     FLUX_SIM_API TreeBlocks GetTreeBlocks(const Terrain& terrain, const VegetationSet& set);
 

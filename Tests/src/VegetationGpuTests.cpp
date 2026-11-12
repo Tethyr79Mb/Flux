@@ -17,6 +17,7 @@
 #include <initializer_list>
 #include <utility>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <span>
@@ -35,7 +36,7 @@ namespace {
     }
 
     // Un biome partout (zones, climat et altitude sans limite), de couverture et densité données ; ses espèces (une
-    // variante chacune) et leurs parts.
+    // variante chacune) et leurs parts. Bosquets de 20 m : beaucoup sur une plaine, les parts s'y retrouvent.
     // ranges : altitude (fraction du relief) et température ; humidity : humidité.
     void AddBiome(VegetationSet& set, std::array<float, 3> zones, float cover, float density,
                   std::initializer_list<std::pair<std::uint32_t, float>> species,
@@ -58,7 +59,7 @@ namespace {
             entries[s] = entries[used - 1];
             shares[s] = 1.0f;
         }
-        set.biomes.push_back({{zones[0], zones[1], zones[2], cover}, ranges, {humidity[0], humidity[1], density, 1.0f}, {}});
+        set.biomes.push_back({{zones[0], zones[1], zones[2], cover}, ranges, {humidity[0], humidity[1], density, 1.0f}, {0.0f, 0.0f, 0.0f, 20.0f}});
         set.biomeSpecies.push_back(entries);
         set.biomeShares.push_back(shares);
         ++set.revision;
@@ -95,8 +96,9 @@ namespace {
     }
 
     // Le semis du CPU (SowPlain) retrouve les arbres du GPU : mêmes places (à 5 cm), espèces et tailles. Seuls
-    // quelques-uns au ras d'un seuil (plage, neige, pente, bord d'une forêt ou d'un biome) peuvent manquer d'un côté,
-    // le relief du GPU étant en float : 0,5 % au plus.
+    // quelques-uns au ras d'un seuil (plage, neige, pente, bord d'une forêt, d'un biome ou d'un bosquet) peuvent
+    // manquer d'un côté, ou changer d'espèce ou de biome (taille) à la même place, le relief et la position du GPU
+    // étant en float : 0,5 % au plus, comptés ensemble.
     bool SameAsCpu(const Planetology::Terrain& terrain, const PlanetComponent& planet, const VegetationSet& biomes,
                    std::span<const Planetology::TileKey> keys, const std::vector<std::vector<VegetationRenderer::Tree>>& gpu,
                    const char* name) {
@@ -118,11 +120,11 @@ namespace {
                     const auto index = static_cast<std::size_t>(it - sorted.begin());
                     if (!used[index] && Math::Length(Math::Vector3d(it->position) - local) < 0.05) {
                         used[index] = true;
-                        ++matched;
-                        if (SpeciesOf(*it) != tree.species || std::abs(it->scale - tree.scale) > 1.0e-3f) {
-                            std::printf("ÉCHEC %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
+                        if (SpeciesOf(*it) == tree.species && std::abs(it->scale - tree.scale) <= 1.0e-3f) {
+                            ++matched;
+                        } else {
+                            std::printf("  %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
                                         SpeciesOf(*it), it->scale, tree.species, tree.scale);
-                            return false;
                         }
                         break;
                     }
@@ -131,7 +133,7 @@ namespace {
             total += std::max(cpu.size(), sorted.size());
             missing += cpu.size() + sorted.size() - 2 * matched;
         }
-        std::printf("  %s : %zu arbres, %zu d'un seul côté (CPU ou GPU)\n", name, total, missing);
+        std::printf("  %s : %zu arbres, %zu d'un seul côté (CPU ou GPU) ou différents\n", name, total, missing);
         if (static_cast<double>(missing) > 0.005 * static_cast<double>(total) + 2.0) {
             std::printf("ÉCHEC %s : trop d'arbres différents entre le CPU et le GPU\n", name);
             return false;
@@ -305,7 +307,9 @@ bool RunVegetationGpuTests() {
     CHECK(Sow(**device, terrain, planet, half, keys, second));
     CHECK(second[0].size() + second[1].size() < first[0].size() + first[1].size());
 
-    // Parts des espèces d'un biome : un quart de l'une, trois quarts de l'autre (de tailles différentes).
+    // Parts des espèces d'un biome : un quart de l'une, trois quarts de l'autre (de tailles différentes), par bosquets.
+    // Les arbres au bord d'un bosquet de l'autre espèce sont écartés : l'espèce minoritaire, aux bosquets plus isolés,
+    // en perd un peu plus. Presque chaque arbre a pour plus proche voisin un arbre de son espèce.
     VegetationSet mixed;
     mixed.species = {Species(0.7f, 1.3f, 90.0f), Species(2.0f, 3.0f, 90.0f)};
     AddBiome(mixed, {1.0f, 1.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}, {1, 3.0f}});
@@ -313,20 +317,32 @@ bool RunVegetationGpuTests() {
     CHECK(SameAsCpu(terrain, planet, mixed, keys, second, "deux espèces"));
     std::size_t total = 0;
     std::size_t large = 0;
+    std::size_t together = 0;
     for (const auto& plain : second) {
         for (const VegetationRenderer::Tree& tree : plain) {
             ++total;
             const bool big = SpeciesOf(tree) == 1;
             large += big ? 1 : 0;
             CHECK(big ? tree.scale >= 2.0f && tree.scale <= 3.0f : tree.scale >= 0.7f && tree.scale <= 1.3f);
+            double nearest = std::numeric_limits<double>::max();
+            std::uint32_t neighbour = 0;
+            for (const VegetationRenderer::Tree& other : plain) {
+                const double distance = Math::Length(Math::Vector3d(other.position - tree.position));
+                if (&other != &tree && distance < nearest) {
+                    nearest = distance;
+                    neighbour = SpeciesOf(other);
+                }
+            }
+            together += neighbour == SpeciesOf(tree) ? 1 : 0;
         }
     }
     const double part = static_cast<double>(large) / static_cast<double>(std::max<std::size_t>(total, 1));
-    CHECK(total > 1000 && part > 0.72 && part < 0.78);
+    CHECK(total > 1000 && part > 0.7 && part < 0.88);
+    CHECK(static_cast<double>(together) > 0.95 * static_cast<double>(total));
 
     // Espacement par espèce (12 et 20 m), x 1,5 pour le biome : un arbre par bloc au plus, deux arbres d'une même
     // espèce jamais plus près que 40 % du côté de leur bloc (un peu moins : les cases rétrécissent vers les coins
-    // de la face).
+    // de la face). Deux espèces : leurs blocs ne se voient pas, mais un arbre au bord du bosquet de l'autre est écarté.
     VegetationSet spaced;
     spaced.species = {Species(0.7f, 1.3f, 90.0f, 12.0f), Species(0.7f, 1.3f, 90.0f, 20.0f)};
     AddBiome(spaced, {1.0f, 1.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}, {1, 1.0f}});
@@ -342,21 +358,22 @@ bool RunVegetationGpuTests() {
         for (std::size_t a = 0; a < second[k].size(); ++a) {
             for (std::size_t b = a + 1; b < second[k].size(); ++b) {
                 const std::uint32_t species = SpeciesOf(second[k][a]);
-                if (species == SpeciesOf(second[k][b])) {
-                    const double distance = Math::Length(Math::Vector3d(second[k][a].position - second[k][b].position));
-                    CHECK(distance > 0.3 * sides[species] * cell);
-                }
+                const std::uint32_t other = SpeciesOf(second[k][b]);
+                const double distance = Math::Length(Math::Vector3d(second[k][a].position - second[k][b].position));
+                CHECK(distance > (species == other ? 0.3 * sides[species] : 0.15 * (sides[species] + sides[other])) * cell);
             }
         }
     }
 
-    // Zones du relief : une espèce des montagnes, une des plaines, sur des plaines plus ou moins au pied d'une chaîne
+    // Zones du relief : un biome des montagnes, un des plaines, sur des plaines plus ou moins au pied d'une chaîne
     // (cherchées avec Terrain::Zones, sans collines). Chaque arbre est dans une zone de son biome, et chaque biome
-    // prend sa part du sol : les montagnes m, les plaines (1 - m) de ce qui reste, 1 - m.
+    // prend sa part du sol : les montagnes m, les plaines (1 - m) de ce qui reste, 1 - m. Une même espèce, pour
+    // qu'aucun arbre ne soit écarté au bord d'un bosquet ; celle des plaines 4 fois plus grande, pour les reconnaître.
     VegetationSet zoned;
-    zoned.species = {Species(0.7f, 1.3f, 90.0f), Species(0.7f, 1.3f, 90.0f)};
+    zoned.species = {Species(0.7f, 1.3f, 90.0f)};
     AddBiome(zoned, {0.0f, 0.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}});
-    AddBiome(zoned, {1.0f, 0.0f, 0.0f}, 1.0f, 1.0f, {{1, 1.0f}});
+    AddBiome(zoned, {1.0f, 0.0f, 0.0f}, 1.0f, 1.0f, {{0, 1.0f}});
+    zoned.biomes[1].humidity[3] = 4.0f;
     constexpr std::array<std::array<double, 2>, 3> buckets{{{0.1, 0.3}, {0.4, 0.6}, {0.7, 0.9}}};
     std::vector<Planetology::TileKey> edges;
     std::vector<double> expected;
@@ -385,11 +402,11 @@ bool RunVegetationGpuTests() {
         for (const VegetationRenderer::Tree& tree : second[k]) {
             Planetology::Terrain::Zones zones;
             terrain.GetHeight(Math::Normalize(origin + Math::Vector3d(tree.position)), octaves, &zones);
-            const std::uint32_t species = SpeciesOf(tree);
-            CHECK(species < 2);
+            const bool high = tree.scale < 2.0f;
+            CHECK(SpeciesOf(tree) == 0);
             // Une zone de son biome : là où il ne prend rien, son poids est nul.
-            CHECK(species == 0 ? zones.mountains > 0.0 : zones.mountains < 1.0);
-            mountain += species == 0 ? 1 : 0;
+            CHECK(high ? zones.mountains > 0.0 : zones.mountains < 1.0);
+            mountain += high ? 1 : 0;
         }
         CHECK(second[k].size() > 1000);
         // La zone change peu sur une plaine (quelques centaines de mètres) : sa valeur au point cherché suffit.

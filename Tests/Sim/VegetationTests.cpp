@@ -56,6 +56,7 @@ bool RunVegetationTests() {
     CHECK(set.biomes[1].humidity[2] == 0.0f);
     CHECK(set.biomes[2].zones[0] == 0.0f && set.biomes[2].zones[2] == 1.0f);
     CHECK(set.biomeSpecies[2][0] >> 8 == 2 && set.biomeSpecies[2][1] >> 8 == 2);
+    CHECK(set.biomes[2].color[3] == 200.0f); // taille des bosquets absente du fichier : par défaut
     // Relu tel quel tant que rien ne change.
     const std::uint64_t revision = set.revision;
     CHECK(library.Get(assets, vegetation).revision == revision);
@@ -69,9 +70,10 @@ bool RunVegetationTests() {
     written.plains = 0.25f;
     written.minTemperature = -3.5f;
     written.maxHumidity = 0.7f;
+    written.grove = 350.0f;
     written.species = {{"Végétation/a \"b\".espece.json", 60.0f}, {"c.espece.json", 40.0f}};
     auto reread = Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome(written));
-    CHECK(reread && reread->plains == 0.25f && reread->minTemperature == -3.5f && reread->maxHumidity == 0.7f);
+    CHECK(reread && reread->plains == 0.25f && reread->minTemperature == -3.5f && reread->maxHumidity == 0.7f && reread->grove == 350.0f);
     CHECK(reread->species.size() == 2 && reread->species[0].species == written.species[0].species && reread->species[1].share == 40.0f);
     CHECK(Planetology::WriteVegetationBiome(*reread) == Planetology::WriteVegetationBiome(written));
     CHECK(Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome({}))); // sans espèce : un désert

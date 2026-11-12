@@ -216,7 +216,7 @@ namespace Flux::Planetology {
                                               std::cos(species.maxSlope * (std::numbers::pi_v<float> / 180.0f)), 0.0f};
             }
             const TreeBlocks blocks = GetTreeBlocks(terrain, biomes);
-            m_sowVegetation.counts = {static_cast<std::uint32_t>(count), blocks.used, 0, 0};
+            m_sowVegetation.counts = {static_cast<std::uint32_t>(count), blocks.used, std::bit_cast<std::uint32_t>(blocks.biomeGrove), 0};
             for (std::size_t b = 0; b < VegetationSet::MaxBiomes; ++b) {
                 m_sowVegetation.blocks[b / 4][b % 4] = blocks.sides[b];
             }

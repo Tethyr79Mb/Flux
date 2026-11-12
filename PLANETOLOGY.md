@@ -103,7 +103,8 @@ Le relief est une formule : la hauteur dans une direction donnée. Rien n'est st
 
 Le semis des arbres a lui aussi deux exemplaires : `SowPlace` (`PlanetTile.slang`, avec `ClimateAt`, `ForestNoise` et
 `BiomeFit` de `PlanetClimate.slang`) pour l'image, et `Planetology::SowPlain` (`TreeSowing.cpp`) pour la collision des
-troncs. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
+troncs. Biome et espèce y sont tirés par bosquets (`GroveValue` : une valeur par cellule, aux bords ondulés), pas
+arbre par arbre. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
 (`PlanetHash`, gardé pour l'aspect du sol et des nuages) change d'un pilote à l'autre. `VegetationGpuTests` vérifie
 qu'ils donnent les mêmes arbres (0,5 % d'écart au plus, au ras d'un seuil, le relief du GPU étant en float).
 
