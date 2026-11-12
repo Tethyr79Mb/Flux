@@ -5,6 +5,11 @@
 // modèle), puis computeScatter y range les arbres, espèce par espèce, pour vertexTree.
 // Les arbres eux-mêmes (place, haut, taille, espèce, angle) ont été semés une fois par computeTrees
 // (shaders/PlanetTile.slang).
+// Un arbre caché derrière ce que voyait l'image précédente (relief, autres arbres, objets : pyramide de profondeur
+// d'OcclusionCulling) n'entre dans aucune liste de la caméra ; ses ombres restent (cascades, et carte des forêts par la
+// liste des arbres hors du champ), il peut en jeter une dans le champ.
+
+#include "DepthPyramid.slang"
 
 static const uint ListCount = 8;     // VegetationRenderer::ListCount
 static const uint MaxSpecies = 8;    // VegetationRenderer::MaxSpecies
@@ -32,6 +37,13 @@ struct CullFrame
     uint4 commandLists[MaxCommands / 4]; // liste x MaxSpecies + espèce de chaque commande
     uint4 counts;            // x : commandes ; y : plaines
     float4 forest;           // x, y : tranche des ombres des forêts au loin (m)
+    // Pyramide de profondeur de l'image précédente (OcclusionCulling) : sa vue sans décalage, le déplacement de la
+    // caméra depuis (relatif à la caméra -> relatif à l'ancienne), sa taille (x, y : pixels ; z : niveaux ; w : 0 sans
+    // pyramide, rien n'est caché) et le premier texel de chaque niveau.
+    float4 previousViewProjection[4];
+    float4 cameraDelta;
+    uint4 pyramidSize;
+    uint4 pyramidOffsets[4];
 };
 
 // Doit correspondre à VegetationRenderer::CullCell : une plaine semée en vue.
@@ -54,10 +66,12 @@ struct CullCell
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> stats; // arbres de chaque liste, relus par le CPU
 // Les mêmes que instances, dans l'ordre du tri ; w de la rotation : espèce x 4 + teinte + 1.
 [[vk::binding(7, 0)]] RWStructuredBuffer<float4> staged;
+[[vk::binding(8, 0)]] StructuredBuffer<float> depthPyramid; // OcclusionCulling, celle de l'image précédente
 
 static const uint ListCounters = MaxCommands * 5;
 static const uint SpeciesCounters = ListCounters + ListCount;
 static const uint Cursors = SpeciesCounters + SpeciesLists;
+static const uint HiddenCounter = Cursors + SpeciesLists; // arbres en vue cachés
 
 #define frame cullFrame[0]
 
@@ -155,6 +169,18 @@ float Random(float3 p)
     return float(x >> 8) * (1.0 / 16777216.0);
 }
 
+// La sphère (relative à la caméra) est cachée derrière ce que voyait l'image précédente. Le rayon grandit du déplacement
+// de la caméra, comme pour le sol (PlanetMesh.slang).
+bool Hidden(float3 center, float radius)
+{
+    if (frame.pyramidSize.w == 0) {
+        return false;
+    }
+    const float3 delta = frame.cameraDelta.xyz;
+    return OccludedInPyramid(depthPyramid, frame.previousViewProjection, frame.pyramidSize, frame.pyramidOffsets,
+                             center + delta, radius + length(delta));
+}
+
 uint FirstInstance(uint list) { return frame.firstInstances[list / 4][list % 4]; }
 uint Capacity(uint list) { return frame.capacities[list / 4][list % 4]; }
 
@@ -170,10 +196,16 @@ void Append(uint list, uint species, float tint, float3 position, float scale, f
     }
 }
 
+groupshared uint hiddenInGroup;
+
 [shader("compute")]
 [numthreads(GroupSize, 1, 1)]
 void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
 {
+    if (thread == 0) {
+        hiddenInGroup = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
     const CullCell cell = cells[group.x];
     const uint slot = asuint(cell.origin.w);
     const uint count = treeCounts[slot];
@@ -206,7 +238,12 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         if (distance - radius > distances.z) {
             continue;
         }
-        if (InView(center, radius)) {
+        const bool inView = InView(center, radius);
+        const bool hidden = inView && Hidden(center, radius);
+        if (hidden) {
+            InterlockedAdd(hiddenInGroup, 1u);
+        }
+        if (inView && !hidden) {
             if (distance < distances.y) {
                 Append(distance < distances.x ? 0 : 1, species, tint, position, scale, rotation);
             } else {
@@ -217,8 +254,9 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
                 Append(2, species, tint, position, scale * shrink, rotation);
             }
         } else if (distance + radius > frame.forest.x && distance - radius < frame.forest.y) {
-            // Hors du champ, au loin : son ombre peut tomber dans le champ (soleil de côté) ; sans elle, les ombres
-            // apparaissaient et disparaissaient en tournant. Imposteur vu du soleil seulement (carte des forêts).
+            // Hors du champ ou caché, au loin : son ombre peut tomber dans le champ (soleil de côté, arbre derrière une
+            // crête) ; sans elle, les ombres apparaissaient et disparaissaient en tournant. Imposteur vu du soleil
+            // seulement (carte des forêts, qui ne prend sinon que les listes de la caméra).
             const float sunHeight = dot(frame.toSun.xyz, normal);
             const float top = dot(center - position, normal) + radius;
             const float length = sunHeight > 0.0 ? min(frame.toSun.w, 2.0 * top / sunHeight) : frame.toSun.w;
@@ -241,6 +279,11 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
                 }
             }
         }
+    }
+    // Un seul ajout par groupe au compteur commun.
+    GroupMemoryBarrierWithGroupSync();
+    if (thread == 0 && hiddenInGroup > 0) {
+        InterlockedAdd(commands[HiddenCounter], hiddenInGroup);
     }
 }
 
@@ -268,6 +311,9 @@ void computeFinalize(uint thread : SV_GroupIndex)
     }
     if (thread < ListCount) {
         stats[thread] = commands[ListCounters + thread];
+    }
+    if (thread == ListCount) {
+        stats[ListCount] = commands[HiddenCounter];
     }
 }
 

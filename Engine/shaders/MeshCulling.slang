@@ -2,6 +2,7 @@
 // avant de le dessiner : hors du champ, ou caché derrière ce que voyait l'image précédente (pyramide de profondeur
 // d'OcclusionCulling, liée au groupe de l'image quand elle sert).
 
+#include "DepthPyramid.slang"
 #include "Mesh.slang"
 
 [[vk::binding(10, 1)]] StructuredBuffer<float> depthPyramid; // OcclusionCulling, celle de l'image précédente
@@ -23,65 +24,13 @@ bool InView(float3 center, float radius)
     return true;
 }
 
-uint PyramidOffset(uint level)
-{
-    return frame[0].pyramidOffsets[level / 4][level % 4];
-}
-
-// Taille du niveau `level` : la source divisée par 2^(level + 1), arrondie au-dessus.
-uint2 PyramidLevelSize(uint level)
-{
-    const uint2 source = frame[0].pyramidSize.xy;
-    return (source + ((2u << level) - 1u)) >> (level + 1u);
-}
-
 // La sphère (relative à la caméra de l'image précédente) est derrière tout ce que l'image précédente voyait à sa
-// place : comme Occluded dans shaders/Culling.slang. Sans pyramide (pyramidSize.w à 0), jamais.
+// place (DepthPyramid.slang). Sans pyramide (pyramidSize.w à 0), jamais.
 bool Occluded(float3 center, float radius)
 {
     if (frame[0].pyramidSize.w == 0) {
         return false;
     }
-    float2 low = float2(1.0e30, 1.0e30);
-    float2 high = float2(-1.0e30, -1.0e30);
-    float nearest = 0.0;
-    for (uint corner = 0; corner < 8; ++corner) {
-        const float3 offset = float3((corner & 1u) != 0 ? radius : -radius, (corner & 2u) != 0 ? radius : -radius,
-                                     (corner & 4u) != 0 ? radius : -radius);
-        const float4 clip = Transform(frame[0].previousViewProjection, center + offset);
-        if (clip.w <= 0.0 || clip.z >= clip.w) {
-            return false; // la caméra est dans la boîte
-        }
-        const float2 ndc = clip.xy / clip.w;
-        low = min(low, ndc);
-        high = max(high, ndc);
-        nearest = max(nearest, clip.z / clip.w);
-    }
-    const float2 uvLow = low * 0.5 + 0.5;
-    const float2 uvHigh = high * 0.5 + 0.5;
-    if (any(uvLow < 0.0) || any(uvHigh > 1.0)) {
-        return false; // hors de l'image précédente : rien ne dit ce qui la cachait
-    }
-    const uint2 source = frame[0].pyramidSize.xy;
-    const uint2 pixelLow = uint2(max(int2(uvLow * float2(source)) - 1, int2(0, 0)));
-    const uint2 pixelHigh = min(uint2(uvHigh * float2(source)) + 1u, source - 1u);
-    uint level = 0;
-    while (level < frame[0].pyramidSize.z) {
-        const uint2 a = pixelLow >> (level + 1u);
-        const uint2 b = pixelHigh >> (level + 1u);
-        if (b.x - a.x <= 1u && b.y - a.y <= 1u) {
-            break;
-        }
-        ++level;
-    }
-    if (level >= frame[0].pyramidSize.z) {
-        return false;
-    }
-    const uint2 size = PyramidLevelSize(level);
-    const uint2 a = min(pixelLow >> (level + 1u), size - 1u);
-    const uint2 b = min(pixelHigh >> (level + 1u), size - 1u);
-    const uint offset = PyramidOffset(level);
-    const float farthest = min(min(depthPyramid[offset + a.y * size.x + a.x], depthPyramid[offset + a.y * size.x + b.x]),
-                               min(depthPyramid[offset + b.y * size.x + a.x], depthPyramid[offset + b.y * size.x + b.x]));
-    return nearest < farthest;
+    return OccludedInPyramid(depthPyramid, frame[0].previousViewProjection, frame[0].pyramidSize, frame[0].pyramidOffsets,
+                             center, radius);
 }

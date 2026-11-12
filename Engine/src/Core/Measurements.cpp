@@ -59,7 +59,7 @@ namespace Flux {
             "Tuiles de planète", "  dont eau", "  gardées", "  calculées", "  en attente", "Arbres près",
             "Arbres simplifiés", "Arbres loin", "Ombres d'arbres", "Plaines d'arbres", "  à semer", "  d'avance", "  semées",
             "Objets testés", "  dont cachés", "Paquets des modèles", "  dont dessinés", "Ombres du relief près : tuiles",
-            "  triangles", "Ombres du relief loin : tuiles", "  triangles"};
+            "  triangles", "Ombres du relief loin : tuiles", "  triangles", "Arbres cachés"};
         for (std::size_t i = 0; i < CounterCount; ++i) {
             m_counters[i] = {counters[i]};
         }
@@ -103,7 +103,7 @@ namespace Flux {
             render.planetPendingTiles, render.trees[0], render.trees[1], render.trees[2], render.shadowTrees,
             render.treePlains, render.pendingTreePlains, render.aheadTreePlains, render.sownTreePlains, render.occlusionTested,
             render.occlusionHidden, render.modelMeshlets, render.modelMeshletsDrawn, render.terrainShadowTiles[0],
-            render.terrainShadowTriangles[0], render.terrainShadowTiles[1], render.terrainShadowTriangles[1]};
+            render.terrainShadowTriangles[0], render.terrainShadowTiles[1], render.terrainShadowTriangles[1], render.hiddenTrees};
         for (std::size_t i = 0; i < CounterCount; ++i) {
             m_counters[i].Add(static_cast<double>(counters[i]));
         }

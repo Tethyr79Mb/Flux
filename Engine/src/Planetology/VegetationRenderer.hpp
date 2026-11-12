@@ -9,6 +9,7 @@
 #include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationLibrary.hpp"
 #include "Renderer/ModelCache.hpp"
+#include "Renderer/OcclusionCulling.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <array>
@@ -35,6 +36,8 @@ namespace Flux::Planetology {
     // Les plaines ne sont visitées par PlanetRenderer qu'à moins de 6 bords de tuile environ : au-delà, pas d'arbre.
     // Celles proches de la caméra ou de son trajet sont semées d'avance, hors du champ (Plain::ahead), quand les plaines
     // en vue le sont toutes ; une plaine semée en vue fait apparaître ses arbres un à un (FadeTime).
+    // Un arbre en vue caché derrière ce que voyait l'image précédente (SetOcclusion) n'est pas dessiné ; ses ombres le
+    // sont toujours.
     // Exporté pour les tests (Tests/src/PlanetGpuTests.cpp).
     class FLUX_API VegetationRenderer {
         public:
@@ -61,7 +64,8 @@ namespace Flux::Planetology {
         enum List : std::uint32_t { Near, Middle, Far, Shadow, ForestShadow = Shadow + ShadowCascadeCount, ListCount };
         // Arbres au plus par liste, toutes espèces ensemble (au-delà, les suivants ne sont pas dessinés).
         // Far : tous les arbres jusqu'à la portée, plus aucun écarté au loin (32 octets chacun, deux fois par image).
-        static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 393216, 16384, 16384, 16384, 16384, 65536};
+        // ForestShadow : aussi les arbres en vue cachés (SetOcclusion), d'où sa taille.
+        static constexpr std::array<std::uint32_t, ListCount> Capacities{8192, 32768, 393216, 16384, 16384, 16384, 16384, 131072};
 
         // Planetology::GetPlainLevel.
         static std::uint32_t GetPlainLevel(const Terrain& terrain);
@@ -99,6 +103,12 @@ namespace Flux::Planetology {
             const GpuModel* far = nullptr;
             std::uint32_t impostor = 0;
         };
+        // Pyramide de profondeur de l'image précédente (OcclusionCulling::GetSourcePyramid, buffer non nul) où tester
+        // les arbres en vue de cette image, entre BeginFrame et EndFrame ; sans appel, aucun n'est caché.
+        // previousViewProjection : vue de l'image précédente, sans décalage ; cameraDelta : caméra moins celle de
+        // l'image précédente (TemporalView).
+        void SetOcclusion(const OcclusionCulling::SourcePyramid& pyramid, const Math::Matrix4f& previousViewProjection,
+                          const Math::Vector3f& cameraDelta);
         // Fin de la préparation : plaines à semer, plaines à trier, commandes de dessin. models : de chaque espèce de
         // VegetationSet::species.
         void EndFrame(std::uint32_t frameIndex, const View& view, const std::array<ShadowCascade, ShadowCascadeCount>& cascades,
@@ -130,6 +140,7 @@ namespace Flux::Planetology {
             std::uint32_t pending = 0;  // en vue, pas encore semées
             std::uint32_t ahead = 0;    // à semer d'avance, pas encore semées
             std::uint32_t sown = 0;     // semées à cette image (au plus MaxSownPerFrame)
+            std::uint32_t hidden = 0;   // en vue mais cachés (pas dessinés), deux images plus tôt
         };
         Stats GetStats() const { return m_stats; }
 
@@ -190,6 +201,10 @@ namespace Flux::Planetology {
             std::array<std::uint32_t, MaxCommands> commandLists; // liste x MaxSpecies + espèce
             std::array<std::uint32_t, 4> counts;
             std::array<float, 4> forest; // x, y : tranche des ombres des forêts au loin (m)
+            Math::Matrix4f previousViewProjection;
+            std::array<float, 4> cameraDelta;
+            std::array<std::uint32_t, 4> pyramidSize; // w : 1 si testés
+            std::array<std::uint32_t, 16> pyramidOffsets;
         };
         struct Frame
         {
@@ -201,12 +216,13 @@ namespace Flux::Planetology {
             std::unique_ptr<RHI::Buffer> commands;  // commandes, puis les compteurs (CounterOffset dans le .cpp)
             std::unique_ptr<RHI::Buffer> staged;    // arbres retenus, dans l'ordre du tri
             std::unique_ptr<RHI::Buffer> instances; // les mêmes rangés par espèce (vertexTree)
-            std::unique_ptr<RHI::Buffer> stats;     // Readback : arbres de chaque liste
+            std::unique_ptr<RHI::Buffer> stats;     // Readback : arbres de chaque liste, puis cachés
             std::unique_ptr<RHI::BindGroup> sowGroup;
             std::unique_ptr<RHI::BindGroup> cullGroup;
             std::uint32_t sown = 0;    // plaines à semer
             std::uint32_t culled = 0;  // plaines à trier
             bool counted = false;      // stats écrit par cette image
+            const RHI::Buffer* boundPyramid = nullptr; // relié à cullGroup
         };
         // Une plaine semée : sa case, la dernière image où elle a servi, l'heure de son semis.
         struct StoredPlain
@@ -251,6 +267,10 @@ namespace Flux::Planetology {
         std::vector<PlanetRenderer::Plain> m_visible;
         std::vector<PlanetRenderer::Plain> m_ahead;
         std::chrono::steady_clock::time_point m_now;
+        // SetOcclusion de l'image (pyramid.buffer nul : aucune).
+        OcclusionCulling::SourcePyramid m_pyramid;
+        Math::Matrix4f m_previousViewProjection;
+        Math::Vector3f m_cameraDelta;
 
         std::unordered_map<std::uint64_t, StoredPlain> m_stored; // par TileKey::Pack
         std::vector<FreeSlot> m_freeSlots;

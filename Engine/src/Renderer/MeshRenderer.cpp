@@ -835,6 +835,12 @@ namespace Flux {
         ChooseTerrainCascades(camera, aspect, sky.toSun);
         m_planets->BeginFrame(frameIndex);
         m_vegetation->BeginFrame(frameIndex);
+        if (m_occlusionActive) {
+            // Arbres cachés : testés dans la même pyramide que les entités et le sol.
+            if (const OcclusionCulling::SourcePyramid pyramid = m_occlusion->GetSourcePyramid(); pyramid.buffer) {
+                m_vegetation->SetOcclusion(pyramid, temporal.previousViewProjection, temporal.cameraDelta);
+            }
+        }
         m_vegetationComponent = nullptr;
         // Trois temps : sur ce fil, ce qui touche un état partagé (planètes, lumières, modèles cherchés dans le cache) ;
         // puis, en parallèle, le calcul de chaque entité dessinée (sphère, champ, matrices), dans sa case ; enfin, sur

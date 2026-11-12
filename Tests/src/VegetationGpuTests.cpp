@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <initializer_list>
 #include <utility>
@@ -191,6 +192,69 @@ bool RunVegetationGpuTests() {
         CHECK(lastList[1].impostor == 0 && lastList[1].model == &distant && lastList[2].model == &distant && lastList[2].primitive == 1);
         CHECK((*renderer)->GetDraws(VegetationRenderer::Near).size() == 4);
         CHECK((*renderer)->GetDraws(VegetationRenderer::Middle).size() == 2);
+    }
+    // Arbres cachés : derrière une pyramide de profondeur pleine du plan proche, aucun arbre en vue n'est dessiné ; chacun
+    // de ceux que la caméra dessinait sans elle est compté caché. Caméra 300 m au-dessus d'une plaine, regard vers le
+    // centre de la planète (-z du repère de la caméra, qui est celui de la planète).
+    {
+        const Planetology::TileKey key = Planetology::FindTile({0.0, 0.0, 1.0}, level);
+        const Math::Vector3d origin = Planetology::GetTileBounds(terrain, key).origin;
+        const Math::Vector3d camera = origin + Math::Normalize(origin) * 300.0;
+        const std::vector<Planetology::PlanetRenderer::Plain> plains{{key, origin - camera, 0.0}};
+        GpuModel detailed;
+        detailed.primitives = {{0, 300, 0}};
+        detailed.bounds = {{-3.0f, 0.0f, -3.0f}, {3.0f, 20.0f, 3.0f}};
+        const std::array models{VegetationRenderer::Models{&detailed, &detailed, &detailed, 0}};
+        // 64 x 64 pixels, niveaux de 32 x 32 à 1 x 1, tous à 1 (reverse-Z : le plan proche).
+        OcclusionCulling::SourcePyramid pyramid;
+        pyramid.size = {64, 64};
+        std::uint32_t texels = 0;
+        for (std::uint32_t side = 32; side >= 1; side /= 2) {
+            pyramid.offsets[pyramid.levels++] = texels;
+            texels += side * side;
+        }
+        auto buffer = (*device)->CreateBuffer({texels * sizeof(float), RHI::BufferUsage::Storage, RHI::MemoryType::Upload});
+        CHECK(buffer.has_value());
+        const std::vector<float> near(texels, 1.0f);
+        (*buffer)->Write(near.data(), near.size() * sizeof(float));
+        pyramid.buffer = buffer->get();
+        const Math::Matrix4f projection = Math::Matrix4f::PerspectiveReverseZ(std::numbers::pi_v<float> / 2.0f, 1.0f, 0.1f);
+
+        // Sans puis avec la pyramide : arbres des listes de la caméra, et cachés.
+        const auto cull = [&](bool occlusion, VegetationRenderer::Stats& stats) {
+            auto renderer = VegetationRenderer::Create(**device);
+            CHECK(renderer.has_value());
+            // Première image : la plaine est semée, ses arbres pas encore apparus (FadeTime) ; la seconde, une seconde
+            // plus tard, les trie tous.
+            const auto start = std::chrono::steady_clock::now();
+            for (int image = 0; image < 2; ++image) {
+                (*renderer)->BeginFrame(0, start + std::chrono::seconds(image));
+                (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, VegetationComponent{}, everywhere, Math::Quaternionf{}, plains);
+                if (occlusion) {
+                    (*renderer)->SetOcclusion(pyramid, projection, {});
+                }
+                (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, models);
+                CHECK((*device)->Submit([&](RHI::CommandList& commands) {
+                    (*renderer)->Sow(commands, 0);
+                    (*renderer)->Cull(commands, 0);
+                }));
+            }
+            (*renderer)->BeginFrame(0, start + std::chrono::seconds(2)); // relit les compteurs de la seconde
+            stats = (*renderer)->GetStats();
+            return true;
+        };
+        const auto seen = [](const VegetationRenderer::Stats& stats) {
+            return stats.trees[VegetationRenderer::Near] + stats.trees[VegetationRenderer::Middle] + stats.trees[VegetationRenderer::Far];
+        };
+        VegetationRenderer::Stats open;
+        VegetationRenderer::Stats hidden;
+        CHECK(cull(false, open));
+        CHECK(cull(true, hidden));
+        CHECK(open.hidden == 0);
+        CHECK(seen(open) > 100);
+        CHECK(hidden.hidden > 0 && hidden.hidden + seen(hidden) == seen(open));
+        // Le bord de l'image peut garder quelques arbres (boîte en partie hors de l'image précédente), pas plus.
+        CHECK(seen(hidden) * 10 < seen(open));
     }
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
     for (std::size_t k = 0; k < keys.size(); ++k) {
