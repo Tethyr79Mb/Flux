@@ -122,7 +122,8 @@ bool InCascade(float3 p, float radius, uint c)
     return abs(x.x) <= 1.0 + side && abs(x.y) <= 1.0 + side && x.z >= -depth && x.z <= 1.0 + depth;
 }
 
-// L'ombre de la sphère, prolongée de `length` mètres à l'opposé du soleil, peut tomber dans la tranche c du champ
+// L'ombre de la sphère, prolongée de `length` mètres à l'opposé du soleil, peut tomber dans le champ avant la fin de la
+// tranche c
 // (comme ShadowReceivers::Reaches).
 bool ReachesView(float3 center, float radius, float length, uint c)
 {
@@ -134,7 +135,8 @@ bool ReachesView(float3 center, float radius, float length, uint c)
             return false;
         }
     }
-    const float start = (c == 0 ? 0.0 : frame.cascadeLimits[c - 1].w) - radius - 1.0;
+    // Depuis la caméra (ShadowReceivers::Reaches) : les tranches plus proches filtrent leurs pénombres larges ici.
+    const float start = -radius - 1.0;
     const float stop = frame.cascadeLimits[c].w + radius + 1.0;
     const float depthA = dot(center, frame.forward.xyz);
     const float depthB = dot(end, frame.forward.xyz);

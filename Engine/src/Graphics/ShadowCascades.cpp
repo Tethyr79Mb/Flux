@@ -143,7 +143,10 @@ namespace Flux {
     }
 
     bool ShadowReceivers::Reaches(const Math::Vector3f& center, float radius, float length, std::size_t cascade) const {
-        return ReachesRange(center, radius, length, ShadowCascadeStart(cascade), ShadowCascadeEnds[cascade]);
+        // Depuis la caméra, pas depuis le début de la tranche : une pénombre large (gros soleil, obstacle haut) se filtre
+        // dans une cascade plus grossière que celle du point (NearVisibility, shaders/Mesh.slang). Sans l'obstacle dans
+        // cette cascade, la partie large de l'ombre d'un arbre proche y était éclairée.
+        return ReachesRange(center, radius, length, 0.0f, ShadowCascadeEnds[cascade]);
     }
 
     bool ShadowReceivers::ReachesRange(const Math::Vector3f& center, float radius, float length, float sliceStart,
