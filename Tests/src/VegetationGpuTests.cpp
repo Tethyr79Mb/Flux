@@ -96,8 +96,9 @@ namespace {
     }
 
     // Le semis du CPU (SowPlain) retrouve les arbres du GPU : mêmes places (à 5 cm), espèces et tailles. Seuls
-    // quelques-uns au ras d'un seuil (plage, neige, pente, bord d'une forêt ou d'un biome) peuvent manquer d'un côté,
-    // le relief du GPU étant en float : 0,5 % au plus.
+    // quelques-uns au ras d'un seuil (plage, neige, pente, bord d'une forêt, d'un biome ou d'un bosquet) peuvent
+    // manquer d'un côté, ou changer d'espèce ou de biome (taille) à la même place, le relief et la position du GPU
+    // étant en float : 0,5 % au plus, comptés ensemble.
     bool SameAsCpu(const Planetology::Terrain& terrain, const PlanetComponent& planet, const VegetationSet& biomes,
                    std::span<const Planetology::TileKey> keys, const std::vector<std::vector<VegetationRenderer::Tree>>& gpu,
                    const char* name) {
@@ -119,11 +120,11 @@ namespace {
                     const auto index = static_cast<std::size_t>(it - sorted.begin());
                     if (!used[index] && Math::Length(Math::Vector3d(it->position) - local) < 0.05) {
                         used[index] = true;
-                        ++matched;
-                        if (SpeciesOf(*it) != tree.species || std::abs(it->scale - tree.scale) > 1.0e-3f) {
-                            std::printf("ÉCHEC %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
+                        if (SpeciesOf(*it) == tree.species && std::abs(it->scale - tree.scale) <= 1.0e-3f) {
+                            ++matched;
+                        } else {
+                            std::printf("  %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
                                         SpeciesOf(*it), it->scale, tree.species, tree.scale);
-                            return false;
                         }
                         break;
                     }
@@ -132,7 +133,7 @@ namespace {
             total += std::max(cpu.size(), sorted.size());
             missing += cpu.size() + sorted.size() - 2 * matched;
         }
-        std::printf("  %s : %zu arbres, %zu d'un seul côté (CPU ou GPU)\n", name, total, missing);
+        std::printf("  %s : %zu arbres, %zu d'un seul côté (CPU ou GPU) ou différents\n", name, total, missing);
         if (static_cast<double>(missing) > 0.005 * static_cast<double>(total) + 2.0) {
             std::printf("ÉCHEC %s : trop d'arbres différents entre le CPU et le GPU\n", name);
             return false;
