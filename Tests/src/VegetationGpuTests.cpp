@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <initializer_list>
 #include <utility>
@@ -223,17 +224,22 @@ bool RunVegetationGpuTests() {
         const auto cull = [&](bool occlusion, VegetationRenderer::Stats& stats) {
             auto renderer = VegetationRenderer::Create(**device);
             CHECK(renderer.has_value());
-            (*renderer)->BeginFrame(0);
-            (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, VegetationComponent{}, everywhere, Math::Quaternionf{}, plains);
-            if (occlusion) {
-                (*renderer)->SetOcclusion(pyramid, projection, {});
+            // Première image : la plaine est semée, ses arbres pas encore apparus (FadeTime) ; la seconde, une seconde
+            // plus tard, les trie tous.
+            const auto start = std::chrono::steady_clock::now();
+            for (int image = 0; image < 2; ++image) {
+                (*renderer)->BeginFrame(0, start + std::chrono::seconds(image));
+                (*renderer)->SetPlanet(static_cast<Entity>(1), terrain, planet, VegetationComponent{}, everywhere, Math::Quaternionf{}, plains);
+                if (occlusion) {
+                    (*renderer)->SetOcclusion(pyramid, projection, {});
+                }
+                (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, models);
+                CHECK((*device)->Submit([&](RHI::CommandList& commands) {
+                    (*renderer)->Sow(commands, 0);
+                    (*renderer)->Cull(commands, 0);
+                }));
             }
-            (*renderer)->EndFrame(0, {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 1.0f, 1.0f}, {}, {}, models);
-            CHECK((*device)->Submit([&](RHI::CommandList& commands) {
-                (*renderer)->Sow(commands, 0);
-                (*renderer)->Cull(commands, 0);
-            }));
-            (*renderer)->BeginFrame(0); // relit les compteurs
+            (*renderer)->BeginFrame(0, start + std::chrono::seconds(2)); // relit les compteurs de la seconde
             stats = (*renderer)->GetStats();
             return true;
         };
