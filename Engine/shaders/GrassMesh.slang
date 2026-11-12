@@ -11,11 +11,11 @@ static const uint GrassGroupBlades = 32;
 static const uint GrassMaxSegments = 3;
 static const uint GrassMaxVertices = GrassGroupBlades * (2 * GrassMaxSegments + 1);
 static const uint GrassMaxTriangles = GrassGroupBlades * (2 * GrassMaxSegments - 1);
-// Bornes d'un paquet : sur une tuile fine (1,5 m entre sommets) il couvre ~150 m², soit ~7 000 brins à la densité par
+// Bornes d'un paquet : sur une tuile fine (1,5 m entre sommets) il couvre ~150 m², soit ~19 000 brins à la densité par
 // défaut. Une aire plus grande ou non finie (sommets pas encore calculés) l'écarte : sans elles, des milliards de brins
 // partaient au pilote (délai dépassé, GPU perdu).
 static const float GrassMaxMeshletArea = 1000.0;
-static const uint GrassMaxMeshletBlades = 16384;
+static const uint GrassMaxMeshletBlades = 32768;
 
 // Commandes des tuiles de l'image (5 uint chacune : indexCount, instanceCount, firstIndex, vertexOffset,
 // firstInstance) ; params.draw : première du lot.

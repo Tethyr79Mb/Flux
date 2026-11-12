@@ -169,7 +169,7 @@ namespace Flux {
         static_assert(GrassClusterBlades * GrassBladeVertices <= (1u << GrassVertexShift));
         constexpr float GrassVertexDensity = 0.25f;
         constexpr float GrassVertexRange = 0.6f;
-        constexpr float GrassFullShare = 0.15f; // Grass.slang
+        constexpr float GrassFullShare = 0.25f; // Grass.slang
         constexpr float GrassMaxTileEdge = 80.0f; // 2,5 m entre sommets au plus
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des

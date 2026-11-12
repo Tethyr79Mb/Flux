@@ -30,7 +30,7 @@ static const uint GrassMeshletCount = GrassMeshletSide * GrassMeshletSide;
 static const uint GrassVertexShift = 9;    // MeshRenderer::GrassVertexShift
 static const uint GrassInstanceShift = 12; // MeshRenderer::GrassInstanceShift
 // Jusqu'à cette part de la portée, tous les brins ; au-delà, leur part baisse comme 1 / distance.
-static const float GrassFullShare = 0.15;
+static const float GrassFullShare = 0.25;
 // Chemin des sommets : brins de 2 segments, 32 par instance (MeshRenderer::GrassClusterBlades).
 static const uint GrassClusterBlades = 32;
 static const uint GrassVertexSegments = 2;
