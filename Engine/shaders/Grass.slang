@@ -232,17 +232,26 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const float3 windDirection = normalize(planetX - growUp * dot(planetX, growUp) + 1.0e-5);
     const float push = GrassWind() * (0.2 + 0.8 * wave * gust + flutter);
 
-    const float height = GrassHeight() * lerp(0.6, 1.4, r1.y) * grow;
-    const float lean = (r2.y * 2.0 - 1.0) * 0.4;
-    const float3 tipDirection = normalize(growUp + facing * lean + windDirection * push * 1.5);
+    // Touffes : la hauteur suit une cellule d'environ 0,6 m (hachage de la cellule du sol), puis chaque brin : un pré
+    // irrégulier, pas une brosse de poils tous pareils.
+    const int3 cell = int3(floor(ground / 0.6));
+    const float clump = GroundRandom(GroundHash(uint(cell.x) * 0x8DA6B343u ^ uint(cell.y) * 0xD8163841u
+                                                ^ uint(cell.z) * 0xCB1AB31Fu)).x;
+    const float height = GrassHeight() * lerp(0.55, 1.35, clump) * lerp(0.5, 1.2, r1.y) * grow;
+    // Toujours un peu ployé (vers `facing`, au hasard autour du brin) : le point de courbure haut et droit, la pointe
+    // qui retombe en arc.
+    const float lean = lerp(0.2, 0.8, r2.y);
+    const float3 tipDirection = normalize(growUp * (1.0 - 0.5 * lean) + facing * lean + windDirection * push * 1.5);
     blade.root -= growUp * 0.03; // sous le sol : pas de jour entre le brin et un triangle du sol voisin
     blade.tip = blade.root + tipDirection * height;
-    blade.bend = blade.root + growUp * (height * 0.6);
+    blade.bend = blade.root + growUp * (height * 0.8);
     // Plus larges quand il en reste peu (au loin : le sol reste couvert), plus fins quand ils rapetissent.
     const float width = GrassWidth() * lerp(0.7, 1.3, r0.x) * sqrt(grow) / sqrt(max(keep, 0.11));
     blade.side = side * (0.5 * width);
     facing = dot(facing, -blade.root) < 0.0 ? -facing : facing;
-    blade.facing = facing;
+    // Normale penchée vers le ciel : les brins s'éclairent presque comme le sol sous eux. Sans cela, debout face à un
+    // soleil bas, ils sortent bien plus sombres que le sol et chaque brin se détache comme un poil.
+    blade.facing = normalize(facing + growUp * 1.2);
 
     // Couleur : celle de l'herbe du sol (lue par fragmentGrass), jaunie dans le froid et par taches sèches comme
     // fragmentPlanet, plus claire ou plus foncée selon les taches, et un peu différente d'un brin à l'autre.
@@ -276,7 +285,7 @@ GrassVertexOutput GrassVertex(GrassBlade blade, uint k, uint segments)
     const float across = tip ? 0.0 : ((k & 1u) == 0 ? -1.0 : 1.0);
     const float u = 1.0 - t;
     const float3 center = u * u * blade.root + 2.0 * t * u * blade.bend + t * t * blade.tip;
-    const float3 position = center + blade.side * (across * u);
+    const float3 position = center + blade.side * (across * (1.0 - t * t)); // feuille : large, puis effilée au bout
     GrassVertexOutput output;
     output.position = Transform(frame[0].viewProjection, position);
     output.worldPosition = position;
@@ -350,8 +359,9 @@ SceneOutput fragmentGrass(GrassVertexOutput input)
     surface.roughness = 0.6;
     // Pied plus sombre : les brins voisins lui cachent le ciel et une part du soleil.
     const float height = input.tintHeight.a;
-    const float occlusion = lerp(0.3, 1.0, height);
-    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.6, 1.0, height);
+    const float occlusion = lerp(0.55, 1.0, height);
+    // Pied de la couleur du sol, pointe plus claire et un peu sèche (comme une vraie prairie vue de haut).
+    surface.diffuse = grass * input.tintHeight.rgb * lerp(0.8, 1.0, height) * lerp(float3(1.0), float3(1.25, 1.2, 0.9), height * height);
     float inside;
     const float3 lit = LightSurface(surface, normal, input.worldPosition, occlusion, input.airTransmittance.a, inside, true,
                                     float2(0.4, 0.35));
