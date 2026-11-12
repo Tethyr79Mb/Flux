@@ -257,9 +257,13 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   25-30°, taïga vers 55-65°, toundra au-delà). Espacement par espèce (m) et facteur par biome (demande de Bruno du
   2026-10-28) : une place sur k×k de la grille garde l'arbre, posé au hasard dans son bloc ; deux arbres d'une même
   espèce restent à 40 % de l'espacement au moins, et les places qu'aucun bloc ne garde sont écartées avant le relief.
+  Biomes et espèces par bosquets (demande de Bruno du 2026-11-12) : taille réglable par biome (200 m par défaut),
+  frontières des biomes en bosquets de la taille moyenne de ceux de la planète ; un arbre à moins d'un
+  demi-espacement d'un bosquet d'une autre espèce est écarté (arbres d'espèces différentes à moins de 8 m : 85 fois
+  moins qu'avant).
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
-  pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m) et pas garanti entre deux
-  espèces d'espacements différents ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
+  pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
+  différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
   pixel : ils ne se croisent pas exactement entre eux ni avec le sol), feuillage clairsemé qui s'amincit dans les
   petits mips (seuil d'alpha fixe) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas
   d'occlusion (un arbre derrière une montagne ou derrière d'autres arbres est quand même dessiné : prochaine étape,

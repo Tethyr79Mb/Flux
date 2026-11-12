@@ -192,7 +192,7 @@ namespace Flux::Planetology {
             set.biomes.push_back({{biome->plains, biome->hills, biome->mountains, biome->cover},
                                     {biome->minAltitude * 0.01f, biome->maxAltitude * 0.01f, biome->minTemperature, biome->maxTemperature},
                                     {biome->minHumidity, biome->maxHumidity, density, biome->scale},
-                                    {canopy.r, canopy.g, canopy.b, 0.0f}});
+                                    {canopy.r, canopy.g, canopy.b, biome->grove}});
             set.biomeSpecies.push_back(entries);
             set.biomeShares.push_back(cumulative);
             set.biomeSpacing.push_back(biome->spacing);

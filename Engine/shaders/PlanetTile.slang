@@ -775,7 +775,7 @@ struct SowVegetation
     uint4 biomeSpecies[MaxBiomes]; // espèces de chaque biome, 4 au plus : première variante (dans species) | nombre << 8
     float4 biomeShares[MaxBiomes]; // leurs parts cumulées (la dernière à 1)
     float4 species[MaxSpecies];    // x, y : tailles extrêmes (x le modèle) ; z : cosinus de la pente maximale
-    uint4 counts;                  // x : biomes ; y : côtés de blocs employés (bit k)
+    uint4 counts;                  // x : biomes ; y : côtés de blocs employés (bit k) ; z : taille des bosquets des biomes (float, m)
     uint4 blocks[MaxBiomes / 4];   // côté des blocs de chaque espèce de chaque biome, 4 bits chacune (TreeBlocks)
 };
 
@@ -842,7 +842,54 @@ void clearTreeCounts(uint thread : SV_GroupIndex)
     }
 }
 
+// Valeur d'un bosquet, de 0 à 1 et uniforme : la même dans toute une cellule de size m, aux bords ondulés par un bruit.
+// Biome et espèce en sont tirés pour pousser par taches et non arbre par arbre (des espèces mêlées une à une ne font
+// pas une forêt). salt sépare les tirages. Comme GroveValue (Planetology/TreeSowing.cpp).
+float GroveValue(float3 flatPoint, float size, int salt)
+{
+    const float3 p = flatPoint / size;
+    const float3 warp = float3(ClimateNoise(p * 1.5 + 3.0), ClimateNoise(p * 1.5 + 41.0), ClimateNoise(p * 1.5 + 79.0)) - 0.5;
+    return ClimateHash(int3(floor(p + warp)) + int3(salt, 0, 0));
+}
+
+static const int SpeciesSalt = 7919; // Planetology::SpeciesSalt
+
+// Ce qui pousse au point : le biome (MaxBiomes : aucun) tiré par le bosquet parmi ceux qui conviennent (weights :
+// leurs convenances au point, BiomeFit, chacune sur ce que les précédents ont laissé), puis l'espèce (0 à 3) du
+// bosquet de ce biome. La variante est tirée à part, arbre par arbre.
+uint GroveBiome(float3 flatPoint, float weights[MaxBiomes], uint biomeCount)
+{
+    const float pick = GroveValue(flatPoint, asfloat(sowVegetation[0].counts.z), 0);
+    float total = 0.0;
+    for (uint b = 0; b < biomeCount; ++b) {
+        total += weights[b];
+        if (pick < total) {
+            return b;
+        }
+    }
+    return MaxBiomes;
+}
+
+uint GroveSpecies(float3 flatPoint, uint biome)
+{
+    const float pick = GroveValue(flatPoint, sowVegetation[0].biomes[biome].color.w, SpeciesSalt);
+    const float4 shares = sowVegetation[0].biomeShares[biome];
+    return pick < shares.x ? 0 : pick < shares.y ? 1 : pick < shares.z ? 2 : 3;
+}
+
+// Côté du bloc d'espacement de l'espèce choice (0 à 3) du biome, et la première variante et leur nombre.
+uint GroveSide(uint biome, uint choice, out uint first, out uint variants)
+{
+    const uint entry = sowVegetation[0].biomeSpecies[biome][choice];
+    first = entry & 255u;
+    variants = max(entry >> 8, 1u);
+    return (sowVegetation[0].blocks[biome / 4][biome % 4] >> (4 * min(first, MaxSpecies - 1))) & 15u;
+}
+
 // Une place de la plaine : false sans arbre, sinon ses deux float4 (voir trees).
+// Espacement : pour chaque côté de bloc employé, la place qui garde son bloc y pose un arbre au hasard ; l'arbre
+// pousse si l'espèce choisie à cet endroit a ce côté. Un arbre trop près d'un bosquet d'une autre espèce (moins d'un
+// demi-espacement) est écarté : deux blocs de côtés différents ne se voient pas, leurs arbres se chevaucheraient.
 bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
 {
     first = float4(0.0);
@@ -855,107 +902,104 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
     const uint gj = c / TreeGrid;
     const uint x = job.cell.z * TreeGrid + gi;
     const uint y = job.cell.w * TreeGrid + gj;
-    // Espacement : une place qu'aucun bloc employé ne garde n'aura pas d'arbre, écartée avant le relief.
     const uint used = sowVegetation[0].counts.y;
-    bool candidate = false;
-    for (uint side = 1; side <= MaxTreeBlock && !candidate; ++side) {
-        uint unused;
-        candidate = ((used >> side) & 1u) != 0 && (side == 1 || TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, unused));
-    }
-    if (!candidate) {
-        return false;
-    }
-    // Hasard tiré de la place sur la face (et de la graine), pas de la case : mêmes arbres à chaque visite.
-    uint state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
-    // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
-    float u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-    float v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-    const float keep = TreeRandom(state);
-    const float pick = TreeRandom(state);
-    const float jitter = TreeRandom(state);
-    float3 delta = TreeDelta(u, v);
-    // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas), plus ou moins couvrantes
-    // selon le biome. Quelques arbres isolés ailleurs. Le tri se fait avant le relief, cher, sur la forêt la plus
-    // dense des biomes.
-    const float noise = ForestNoise((tile.center.xyz + delta) * radius);
     const uint biomeCount = min(sowVegetation[0].counts.x, MaxBiomes);
-    float densest = 0.0;
-    for (uint b = 0; b < biomeCount; ++b) {
-        densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w), 0.03));
-    }
-    if (keep >= densest) {
-        return false;
-    }
-    float2 zones;
-    float height = Height(delta, octaves, zones);
-    // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
-    if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
-        return false;
-    }
-    float3 position = Local(delta, height);
-    float3 local = tile.center.xyz * tile.axisN.w + position;
-    // Biome : tiré au hasard selon son poids au point (BiomeFit, dans l'ordre de la planète), sa densité et sa forêt
-    // (le même nombre décide s'il y a un arbre), puis l'espèce selon les parts du biome.
-    float altitude = height / relief;
-    float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
-    JitterBiomeConditions(jitter, altitude, climate);
-    const float3 zoneShares = ZoneShares(zones);
-    uint biome = MaxBiomes;
-    float remaining = 1.0;
-    float total = 0.0;
-    for (uint b = 0; b < biomeCount; ++b) {
-        const Biome candidate = sowVegetation[0].biomes[b];
-        const float weight = BiomeFit(candidate, zoneShares, altitude, climate) * remaining;
-        remaining -= weight;
-        total += weight * candidate.humidity.z * max(ForestMask(noise, candidate.zones.w), 0.03);
-        if (biome == MaxBiomes && keep < total) {
-            biome = b;
+    for (uint side = 1; side <= MaxTreeBlock; ++side) {
+        if (((used >> side) & 1u) == 0) {
+            continue;
         }
-    }
-    if (biome == MaxBiomes) {
-        return false;
-    }
-    const float4 shares = sowVegetation[0].biomeShares[biome];
-    const uint choice = pick < shares.x ? 0 : pick < shares.y ? 1 : pick < shares.z ? 2 : 3;
-    // Puis la variante, avec ce qui reste du même nombre dans la part de l'espèce.
-    const float low = choice == 0 ? 0.0 : shares[choice - 1];
-    const uint entry = sowVegetation[0].biomeSpecies[biome][choice];
-    const uint variants = max(entry >> 8, 1u);
-    const uint variant = min(uint((pick - low) / max(shares[choice] - low, 1.0e-6) * float(variants)), variants - 1);
-    const uint species = min((entry & 255u) + variant, MaxSpecies - 1);
-    // Espacement : seule la place gardée par le bloc de l'espèce a l'arbre, posé au hasard dans le bloc (biome et
-    // espèce restent ceux de la place).
-    const uint side = (sowVegetation[0].blocks[biome / 4][biome % 4] >> (4 * species)) & 15u;
-    if (side > 1) {
-        uint blockState;
-        if (!TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, blockState)) {
-            return false;
+        // Hasard tiré de la place (ou du bloc) sur la face et de la graine, pas de la case : mêmes arbres à chaque visite.
+        uint state;
+        float u, v;
+        if (side == 1) {
+            state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
+            // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
+            u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+            v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+        } else {
+            if (!TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, state)) {
+                continue;
+            }
+            const float i = float(int(x / side * side - job.cell.z * TreeGrid));
+            const float j = float(int(y / side * side - job.cell.w * TreeGrid));
+            // Dans la plaine de la place : un bloc à cheval sur deux plaines n'en sort pas son arbre.
+            u = clamp((i + float(side) * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
+            v = clamp((j + float(side) * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
         }
-        const float i = float(int(x / side * side - job.cell.z * TreeGrid));
-        const float j = float(int(y / side * side - job.cell.w * TreeGrid));
-        u = clamp((i + float(side) * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
-        v = clamp((j + float(side) * (0.5 + (TreeRandom(blockState) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
-        delta = TreeDelta(u, v);
-        height = Height(delta, octaves, zones);
+        const float keep = TreeRandom(state);
+        const float3 delta = TreeDelta(u, v);
+        // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas), plus ou moins couvrantes
+        // selon le biome. Quelques arbres isolés ailleurs. Le tri se fait avant le relief, cher, sur la forêt la plus
+        // dense des biomes.
+        const float3 flat = (tile.center.xyz + delta) * radius;
+        const float noise = ForestNoise(flat);
+        float densest = 0.0;
+        for (uint b = 0; b < biomeCount; ++b) {
+            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w), 0.03));
+        }
+        if (keep >= densest) {
+            continue;
+        }
+        float2 zones;
+        const float height = Height(delta, octaves, zones);
+        // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
         if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
-            return false;
+            continue;
         }
-        position = Local(delta, height);
-        local = tile.center.xyz * tile.axisN.w + position;
+        const float3 position = Local(delta, height);
+        const float3 local = tile.center.xyz * tile.axisN.w + position;
+        const float altitude = height / relief;
+        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
+        const float3 zoneShares = ZoneShares(zones);
+        float weights[MaxBiomes];
+        float remaining = 1.0;
+        for (uint b = 0; b < MaxBiomes; ++b) {
+            weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate) * remaining : 0.0;
+            remaining -= weights[b];
+        }
+        const uint biome = GroveBiome(flat, weights, biomeCount);
+        if (biome == MaxBiomes
+            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[biome].zones.w), 0.03)) {
+            continue;
+        }
+        const uint choice = GroveSpecies(flat, biome);
+        uint firstVariant, variants;
+        if (GroveSide(biome, choice, firstVariant, variants) != side) {
+            continue;
+        }
+        // Bord d'un bosquet : à un demi-espacement dans les quatre directions, le biome (aux convenances d'ici, le
+        // climat change peu sur ces distances) et l'espèce doivent garder ce côté et cette espèce.
+        bool alone = true;
+        const float reach = 0.5 * float(side) * step;
+        for (uint k = 0; k < 4 && alone; ++k) {
+            const float2 offset = k == 0 ? float2(reach, 0.0) : k == 1 ? float2(-reach, 0.0) : k == 2 ? float2(0.0, reach) : float2(0.0, -reach);
+            const float3 beside = (tile.center.xyz + TreeDelta(u + offset.x, v + offset.y)) * radius;
+            const uint other = GroveBiome(beside, weights, biomeCount);
+            if (other != MaxBiomes && sowVegetation[0].biomes[other].humidity.z > 0.0) {
+                uint otherFirst, otherVariants;
+                const uint otherSide = GroveSide(other, GroveSpecies(beside, other), otherFirst, otherVariants);
+                alone = otherSide == side && otherFirst == firstVariant;
+            }
+        }
+        if (!alone) {
+            continue;
+        }
+        const uint species = min(firstVariant + min(uint(TreeRandom(state) * float(variants)), variants - 1), MaxSpecies - 1);
+        const float4 traits = sowVegetation[0].species[species];
+        // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
+        const float e = 0.25;
+        const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
+        const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
+        const float3 up = normalize(local);
+        if (abs(dot(normalize(cross(du, dv)), up)) < traits.z) {
+            continue;
+        }
+        const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * sowVegetation[0].biomes[biome].humidity.w;
+        first = float4(position, scale);
+        second = float4(up, float(species) * 8.0 + TreeRandom(state) * 6.2831853);
+        return true;
     }
-    const float4 traits = sowVegetation[0].species[species];
-    // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
-    const float e = 0.25;
-    const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
-    const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
-    const float3 up = normalize(local);
-    if (abs(dot(normalize(cross(du, dv)), up)) < traits.z) {
-        return false;
-    }
-    const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * sowVegetation[0].biomes[biome].humidity.w;
-    first = float4(position, scale);
-    second = float4(up, float(species) * 8.0 + TreeRandom(state) * 6.2831853);
-    return true;
+    return false;
 }
 
 groupshared uint treeBase;

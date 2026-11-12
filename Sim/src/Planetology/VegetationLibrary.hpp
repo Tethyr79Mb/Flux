@@ -16,7 +16,8 @@
 #include <vector>
 
 namespace Flux::Planetology {
-    // Doit correspondre à Biome dans shaders/PlanetClimate.slang.
+    // Doit correspondre à Biome dans shaders/PlanetClimate.slang (color : couleur des cimes, et taille des bosquets
+    // d'une espèce en w).
     struct BiomeGpu
     {
         std::array<float, 4> zones;

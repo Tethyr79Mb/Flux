@@ -369,6 +369,8 @@ namespace FluxEditor {
             ui.SetItemTooltip("x la taille de l'espèce");
             changed |= ui.DragFloat("Espacement des arbres", biome.spacing, 0.01f, 0.25, 8.0, 2);
             ui.SetItemTooltip("x l'espacement de l'espèce");
+            changed |= ui.DragFloat("Taille des bosquets (m)", biome.grove, 1.0f, 20.0, 5000.0, 0);
+            ui.SetItemTooltip("Les espèces du biome poussent par taches de cette taille, une espèce chacune");
         }
         if (ui.CollapsingHeader("Espèces")) {
             float total = 0.0f;

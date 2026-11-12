@@ -104,7 +104,7 @@ struct Biome
     float4 zones;    // x, y, z : part prise dans les plaines, les collines, les montagnes ; w : part couverte de forêts
     float4 ranges;   // x, y : altitude (fraction du relief, au-dessus du niveau zéro) ; z, w : température (°C)
     float4 humidity; // x, y : humidité ; z : densité des forêts ; w : taille des arbres (x celle de l'espèce)
-    float4 color;    // rgb : couleur linéaire des cimes (moyenne de ses espèces)
+    float4 color;    // rgb : couleur linéaire des cimes (moyenne de ses espèces) ; w : taille des bosquets d'une espèce (m)
 };
 
 // 1 entre low et high, 0 au-delà de soft de part et d'autre.
@@ -127,13 +127,4 @@ float BiomeFit(Biome biome, float3 zoneShares, float altitude, float2 climate)
 {
     return saturate(dot(biome.zones.xyz, zoneShares)) * BiomeBand(altitude, biome.ranges.x, biome.ranges.y, 0.02)
          * BiomeBand(climate.x, biome.ranges.z, biome.ranges.w, 2.0) * BiomeBand(climate.y, biome.humidity.x, biome.humidity.y, 0.05);
-}
-
-// Pour les arbres : les conditions décalées au hasard d'un arbre à l'autre (jitter de 0 à 1), les frontières se mêlent
-// au lieu de suivre une ligne.
-void JitterBiomeConditions(float jitter, inout float altitude, inout float2 climate)
-{
-    const float shift = (jitter - 0.5) * 2.0;
-    altitude += shift * 0.02;
-    climate += shift * float2(2.0, 0.05);
 }

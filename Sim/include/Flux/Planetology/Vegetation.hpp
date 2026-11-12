@@ -42,6 +42,7 @@ namespace Flux::Planetology {
         float density = 0.4f; // part des places occupée dans une forêt
         float scale = 1.0f;   // taille des arbres, x celle de l'espèce
         float spacing = 1.0f; // espacement des arbres, x celui de l'espèce
+        float grove = 200.0f; // taille des bosquets d'une même espèce (m)
         struct Share
         {
             std::string species; // chemin du .espece.json

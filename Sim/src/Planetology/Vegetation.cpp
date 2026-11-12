@@ -130,7 +130,8 @@ namespace Flux::Planetology {
             || !ReadRange(*document, "temperature", biome.minTemperature, biome.maxTemperature, error)
             || !ReadRange(*document, "humidity", biome.minHumidity, biome.maxHumidity, error)
             || !ReadNumber(*document, "cover", biome.cover, error) || !ReadNumber(*document, "density", biome.density, error)
-            || !ReadNumber(*document, "scale", biome.scale, error) || !ReadNumber(*document, "spacing", biome.spacing, error)) {
+            || !ReadNumber(*document, "scale", biome.scale, error) || !ReadNumber(*document, "spacing", biome.spacing, error)
+            || !ReadNumber(*document, "grove", biome.grove, error)) {
             return std::unexpected(error);
         }
         if (const auto species = document->find("species"); species != document->end()) {
@@ -155,6 +156,7 @@ namespace Flux::Planetology {
         }
         biome.scale = std::clamp(biome.scale, 0.05f, 20.0f);
         biome.spacing = std::clamp(biome.spacing, 0.25f, 8.0f);
+        biome.grove = std::clamp(biome.grove, 20.0f, 5000.0f);
         return biome;
     }
 
@@ -192,12 +194,12 @@ namespace Flux::Planetology {
     std::string WriteVegetationBiome(const VegetationBiome& biome) {
         std::string text = std::format("{{\n  \"zones\": {{\"plains\": {}, \"hills\": {}, \"mountains\": {}}},\n"
                                        "  \"altitude\": [{}, {}],\n  \"temperature\": [{}, {}],\n  \"humidity\": [{}, {}],\n"
-                                       "  \"cover\": {},\n  \"density\": {},\n  \"scale\": {},\n  \"spacing\": {},\n  \"species\": [",
+                                       "  \"cover\": {},\n  \"density\": {},\n  \"scale\": {},\n  \"spacing\": {},\n  \"grove\": {},\n  \"species\": [",
                                        Number(biome.plains), Number(biome.hills), Number(biome.mountains),
                                        Number(biome.minAltitude), Number(biome.maxAltitude), Number(biome.minTemperature),
                                        Number(biome.maxTemperature), Number(biome.minHumidity), Number(biome.maxHumidity),
                                        Number(biome.cover), Number(biome.density), Number(biome.scale),
-                                       Number(biome.spacing));
+                                       Number(biome.spacing), Number(biome.grove));
         for (std::size_t s = 0; s < biome.species.size(); ++s) {
             text += std::format("{}\n    {{\"species\": {}, \"share\": {}}}", s == 0 ? "" : ",", String(biome.species[s].species),
                                 Number(biome.species[s].share));
