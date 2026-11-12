@@ -22,10 +22,12 @@ namespace Flux::Planetology {
         static_assert(sizeof(TileGpuInputs) % 16 == 0);
 
         // Compteurs, après les commandes (en entiers) : arbres de chaque liste, puis de chaque espèce de chaque liste,
-        // puis la place suivante de chaque espèce dans sa liste (computeScatter).
+        // puis la place suivante de chaque espèce dans sa liste (computeScatter), puis les arbres en vue cachés.
         constexpr std::uint32_t CounterOffset = VegetationRenderer::MaxCommands * 5;
         constexpr std::uint32_t SpeciesLists = VegetationRenderer::ListCount * VegetationRenderer::MaxSpecies;
-        constexpr std::uint32_t CounterCount = VegetationRenderer::ListCount + 2 * SpeciesLists;
+        constexpr std::uint32_t CounterCount = VegetationRenderer::ListCount + 2 * SpeciesLists + 1;
+        // Relus par le CPU : arbres de chaque liste, puis cachés.
+        constexpr std::uint32_t StatCount = VegetationRenderer::ListCount + 1;
 
         // Emplacements du groupe du semis (shaders/PlanetTile.slang) et du tri (shaders/Vegetation.slang).
         constexpr std::uint32_t SowInputsSlot = 0;
@@ -41,6 +43,7 @@ namespace Flux::Planetology {
         constexpr std::uint32_t CullCommandsSlot = 5;
         constexpr std::uint32_t CullStatsSlot = 6;
         constexpr std::uint32_t CullStagedSlot = 7;
+        constexpr std::uint32_t CullPyramidSlot = 8;
 
         constexpr std::uint32_t InstanceCount() {
             std::uint32_t total = 0;
@@ -71,7 +74,8 @@ namespace Flux::Planetology {
                                           RHI::Binding{CullInstancesSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullCommandsSlot, RHI::BindingType::StorageBuffer, compute},
                                           RHI::Binding{CullStatsSlot, RHI::BindingType::StorageBuffer, compute},
-                                          RHI::Binding{CullStagedSlot, RHI::BindingType::StorageBuffer, compute}};
+                                          RHI::Binding{CullStagedSlot, RHI::BindingType::StorageBuffer, compute},
+                                          RHI::Binding{CullPyramidSlot, RHI::BindingType::StorageBuffer, compute}};
         auto sowLayout = device.CreateBindGroupLayout({sowBindings, RHI::FramesInFlight});
         auto cullLayout = device.CreateBindGroupLayout({cullBindings, RHI::FramesInFlight});
         if (!sowLayout || !cullLayout) {
@@ -117,7 +121,7 @@ namespace Flux::Planetology {
                                                       RHI::BufferUsage::Storage | RHI::BufferUsage::Indirect, RHI::MemoryType::Upload});
             auto staged = device.CreateBuffer({std::uint64_t{InstanceCount()} * 32, RHI::BufferUsage::Storage});
             auto instances = device.CreateBuffer({std::uint64_t{InstanceCount()} * 32, RHI::BufferUsage::Storage});
-            auto stats = device.CreateBuffer({ListCount * sizeof(std::uint32_t), RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
+            auto stats = device.CreateBuffer({StatCount * sizeof(std::uint32_t), RHI::BufferUsage::Storage, RHI::MemoryType::Readback});
             for (const auto* created : {&inputs, &jobs, &vegetation, &cullFrame, &cells, &commandBuffer, &staged, &instances, &stats}) {
                 if (!*created) {
                     return std::unexpected(created->error());
@@ -150,6 +154,9 @@ namespace Flux::Planetology {
             frame.cullGroup->SetBuffer(CullCommandsSlot, *frame.commands);
             frame.cullGroup->SetBuffer(CullStatsSlot, *frame.stats);
             frame.cullGroup->SetBuffer(CullStagedSlot, *frame.staged);
+            // Sans pyramide, un buffer quelconque (jamais lu : pyramidSize.w à 0).
+            frame.cullGroup->SetBuffer(CullPyramidSlot, *frame.cells);
+            frame.boundPyramid = frame.cells.get();
         }
         return renderer;
     }
@@ -166,8 +173,12 @@ namespace Flux::Planetology {
         m_now = now;
         Frame& frame = m_frames[frameIndex];
         if (std::exchange(frame.counted, false)) {
-            frame.stats->Read(m_stats.trees.data(), sizeof(m_stats.trees));
+            std::array<std::uint32_t, StatCount> stats{};
+            frame.stats->Read(stats.data(), sizeof(stats));
+            std::copy_n(stats.begin(), ListCount, m_stats.trees.begin());
+            m_stats.hidden = stats[ListCount];
         }
+        m_pyramid = {};
         m_entity = NullEntity;
         m_terrain = nullptr;
         m_visible.clear();
@@ -228,6 +239,13 @@ namespace Flux::Planetology {
                 (plain.ahead ? m_ahead : m_visible).push_back(plain);
             }
         }
+    }
+
+    void VegetationRenderer::SetOcclusion(const OcclusionCulling::SourcePyramid& pyramid, const Math::Matrix4f& previousViewProjection,
+                                          const Math::Vector3f& cameraDelta) {
+        m_pyramid = pyramid;
+        m_previousViewProjection = previousViewProjection;
+        m_cameraDelta = cameraDelta;
     }
 
     void VegetationRenderer::Forget() {
@@ -429,6 +447,18 @@ namespace Flux::Planetology {
         data.counts = {static_cast<std::uint32_t>(m_commands.size()), frame.culled, 0, 0};
         // Comme MeshRenderer : du dernier dixième de la dernière cascade proche à la portée.
         data.forest = {0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1], m_range, 0.0f, 0.0f};
+        const RHI::Buffer* pyramid = m_pyramid.buffer ? m_pyramid.buffer : frame.cells.get();
+        if (m_pyramid.buffer) {
+            data.previousViewProjection = m_previousViewProjection;
+            data.cameraDelta = vector(m_cameraDelta, 0.0f);
+            data.pyramidSize = {m_pyramid.size.width, m_pyramid.size.height, m_pyramid.levels, 1u};
+            data.pyramidOffsets = m_pyramid.offsets;
+        }
+        // Le GPU a fini l'image précédente de même indice (BeginFrame) : le groupe peut changer.
+        if (frame.boundPyramid != pyramid) {
+            frame.boundPyramid = pyramid;
+            frame.cullGroup->SetBuffer(CullPyramidSlot, *pyramid);
+        }
         frame.cullFrame->Write(&data, sizeof(data));
     }
 

@@ -244,7 +244,8 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   plus sombre avec l'ombre du relief. Limites : texel de 0,5 m jusqu'à 1 km, environ 2,5 m au-delà (ombres floues). Semis réparti sur 16 groupes de threads par plaine (un seul groupe montait à 7,6 ms en vol
   au-dessus des forêts de montagne). Plaines semées d'avance autour de la caméra et sur son trajet (800 m, 64 au
   plus), arbres d'une plaine semée en vue qui apparaissent un à un en 0,5 s ; budget de 4 plaines semées par image
-  encore à régler sur mesure. Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
+  encore à régler sur mesure. Arbres en vue cachés (relief, autres arbres, objets) écartés par le GPU dans la pyramide de
+  profondeur de l'image précédente, comme les objets ; leurs ombres restent (compteur « cachés » au panneau Moteur). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
   du feuillu ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
   Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud,
   réglés dans le panneau Végétation de l'éditeur avec aperçu en direct, `Planetology::SetVegetationPreview`) :
@@ -265,9 +266,8 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
   différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
   pixel : ils ne se croisent pas exactement entre eux ni avec le sol), feuillage clairsemé qui s'amincit dans les
-  petits mips (seuil d'alpha fixe) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; pas
-  d'occlusion (un arbre derrière une montagne ou derrière d'autres arbres est quand même dessiné : prochaine étape,
-  avec la pyramide de profondeur des objets) ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
+  petits mips (seuil d'alpha fixe) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; arbre
+  découvert en passant une crête dessiné une image plus tard ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
   s'enfoncer un peu sur le sol plus grossier.
 - 🔧 Collision des arbres : les plaines autour de ce qui peut les toucher (vaisseaux, personnages, objets simulés) sont
   resemées par le CPU en double (`Planetology/TreeSowing`, copie du semis du GPU, mêmes arbres à 0,5 % près, vérifié

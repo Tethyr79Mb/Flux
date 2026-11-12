@@ -82,6 +82,7 @@ namespace Flux {
         std::uint32_t pendingTreePlains = 0;
         std::uint32_t aheadTreePlains = 0; // hors du champ, à semer d'avance, pas encore semées
         std::uint32_t sownTreePlains = 0; // semées à cette image
+        std::uint32_t hiddenTrees = 0;    // en vue mais cachés derrière le relief ou d'autres objets, pas dessinés
         // Chargement encore en cours (écran de chargement) : tuiles demandées pas encore prêtes, textures du sol pas
         // encore décodées, modèles pas encore lus ou envoyés au GPU, polices dont l'atlas se construit.
         std::uint32_t planetPendingTiles = 0;
