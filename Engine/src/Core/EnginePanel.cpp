@@ -86,8 +86,6 @@ namespace Flux {
                 ui.LabelText("Ciel et exposition", std::format("{:.3f} ms", stats.Get(PrepareSkyCost)));
                 ui.LabelText("Entités", std::format("{:.3f} ms", stats.Get(PrepareEntitiesCost)));
                 ui.LabelText("Sol des planètes", std::format("{:.3f} ms", stats.Get(PrepareGroundCost)));
-                ui.LabelText("Herbe", std::format("{} tuiles, par {}", render.grassTiles,
-                                                  render.grassMeshShaders ? "mesh shaders" : "les sommets"));
                 ui.LabelText("Arbres", std::format("{:.3f} ms", stats.Get(PrepareTreesCost)));
                 ui.LabelText("Envois et lots", std::format("{:.3f} ms", stats.Get(PrepareUploadsCost)));
             }
@@ -158,6 +156,8 @@ namespace Flux {
                 ui.LabelText("Sol dessiné par", render.groundMeshThreads > 0
                                                      ? std::format("mesh shaders ({} threads)", render.groundMeshThreads)
                                                      : std::string("sommets"));
+                ui.LabelText("Herbe", std::format("{} tuiles, par {}", render.grassTiles,
+                                                  render.grassMeshShaders ? "mesh shaders" : "les sommets"));
                 ui.LabelText("Arbres", std::format("{} près, {} simplifiés, {} loin", render.trees[0], render.trees[1], render.trees[2]));
                 ui.LabelText("  cachés", std::format("{}", render.hiddenTrees));
                 ui.LabelText("  ombres, plaines", std::format("{}, {} (+{} à semer, {} d'avance)", render.shadowTrees,
