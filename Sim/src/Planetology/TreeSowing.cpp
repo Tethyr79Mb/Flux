@@ -1,4 +1,5 @@
 #include "Planetology/TreeSowing.hpp"
+#include "Planetology/ReliefWetness.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -228,6 +229,8 @@ namespace Flux::Planetology {
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         constexpr double step = static_cast<double>(TileQuads) / static_cast<double>(TreeGrid);
         const TreeBlocks blocks = GetTreeBlocks(terrain, set);
+        WetnessGrid wetness;
+        BuildWetnessGrid(terrain, plain, wetness);
         // Le sol à la place (u, v) de la grille de la plaine (repère de la planète).
         const auto ground = [&](double u, double v) {
             const Math::Vector3d direction = DirectionInTile(plain, u, v);
@@ -261,9 +264,12 @@ namespace Flux::Planetology {
                 const Math::Vector3d direction = DirectionInTile(plain, u, v);
                 const Math::Vector3d flat = direction * radius;
                 const double noise = ForestNoise(flat);
+                // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
+                const double wet = SampleWetness(wetness, u, v);
+                const double moreForest = ReliefForest * wet;
                 double densest = 0.0;
                 for (std::uint32_t b = 0; b < biomeCount; ++b) {
-                    densest = std::max(densest, set.biomes[b].humidity[2] * std::max(ForestMask(noise, set.biomes[b].zones[3]), 0.03));
+                    densest = std::max(densest, set.biomes[b].humidity[2] * std::max(ForestMask(noise, set.biomes[b].zones[3] + moreForest), 0.03));
                 }
                 if (keep >= densest) {
                     continue;
@@ -275,7 +281,8 @@ namespace Flux::Planetology {
                 }
                 const Math::Vector3d local = direction * (planetRadius + height);
                 const double altitude = height / relief;
-                const Climate climate = ClimateAt(radius, relief, settings.climate, local);
+                Climate climate = ClimateAt(radius, relief, settings.climate, local);
+                climate.humidity += ReliefHumidity * wet;
                 const Math::Vector3d zoneShares{(1.0 - zones.hills) * (1.0 - zones.mountains), zones.hills * (1.0 - zones.mountains),
                                                 zones.mountains};
                 std::array<double, VegetationSet::MaxBiomes> weights{};
@@ -286,7 +293,7 @@ namespace Flux::Planetology {
                 }
                 const std::uint32_t biome = GroveBiome(flat, blocks.biomeGrove, weights, biomeCount);
                 if (biome == VegetationSet::MaxBiomes
-                    || keep >= set.biomes[biome].humidity[2] * std::max(ForestMask(noise, set.biomes[biome].zones[3]), 0.03)) {
+                    || keep >= set.biomes[biome].humidity[2] * std::max(ForestMask(noise, set.biomes[biome].zones[3] + moreForest), 0.03)) {
                     continue;
                 }
                 std::uint32_t firstVariant, variants;

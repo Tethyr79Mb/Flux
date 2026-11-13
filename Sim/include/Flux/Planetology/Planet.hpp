@@ -58,6 +58,8 @@ namespace Flux::Planetology {
     // du cube est (tan(s.π/4), tan(t.π/4)), ce qui égalise les mailles (au plus 20 % d'écart d'aire, contre 70 % en
     // normalisant le cube tel quel) et garde un inverse exact (FaceFromDirection).
     FLUX_SIM_API Math::Vector3d DirectionFromFace(std::uint32_t face, double s, double t);
+    // Axe s d'une face (le sens des colonnes de ses tuiles).
+    FLUX_SIM_API Math::Vector3d GetFaceAxisS(std::uint32_t face);
     // Inverse : la face où tombe la direction et ses coordonnées (s, t) de -1 à 1.
     FLUX_SIM_API void FaceFromDirection(const Math::Vector3d& direction, std::uint32_t& face, double& s, double& t);
 
@@ -192,13 +194,16 @@ namespace Flux::Planetology {
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
         std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : GetScaleShift
+        // Humidité du relief (GetWetnessLayout) : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu
+        // (bits d'un float).
+        std::array<std::uint32_t, 4> wetness{};
         // Colonne i (x : a - a_c, y : a + a_c, a = tan(s.π/4)) et ligne i (z : b - b_c, w : b + b_c), décalage i - 2.
         std::array<std::array<float, 4>, Columns> columns{};
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)
         std::array<std::array<float, 4>, Octaves> fractions{};    // xyz : position dans la maille ; w : fréquence
         std::array<std::uint32_t, 128> permutation{};             // 512 octets, 4 par entier
     };
-    static_assert(sizeof(TileGpuInputs) == 80 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
+    static_assert(sizeof(TileGpuInputs) == 96 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
     FLUX_SIM_API void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs);
 
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni

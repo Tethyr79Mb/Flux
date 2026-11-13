@@ -1,7 +1,9 @@
 #include "Flux/Planetology/Planet.hpp"
+#include "Planetology/ReliefWetness.hpp"
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <limits>
 #include <cmath>
 #include <numbers>
@@ -198,6 +200,10 @@ namespace Flux::Planetology {
         double SkirtDepth(const Terrain& terrain, std::uint32_t octaves, double edge) {
             return 0.05 * edge + 2.0 * terrain.GetOmittedRelief(octaves) + 1.0;
         }
+    }
+
+    Math::Vector3d GetFaceAxisS(std::uint32_t face) {
+        return Faces[face % 6].s;
     }
 
     Math::Vector3d DirectionFromFace(std::uint32_t face, double s, double t) {
@@ -755,6 +761,8 @@ namespace Flux::Planetology {
         inputs.axisS = float4(f.s, terrain.GetRelief());
         inputs.axisT = float4(f.t, depth);
         inputs.options = {octaves, key.level > 0 ? terrain.GetOctaves(key.level - 1u) : octaves, key.level, terrain.GetScaleShift()};
+        const WetnessLayout wetness = GetWetnessLayout(terrain, key.level);
+        inputs.wetness = {wetness.octaves, wetness.side, std::bit_cast<std::uint32_t>(wetness.fade), 0};
         for (std::uint32_t i = 0; i < TileGpuInputs::Columns; ++i) {
             const double a = tangent(x0 + static_cast<std::int64_t>(i) - 2);
             const double b = tangent(y0 + static_cast<std::int64_t>(i) - 2);
