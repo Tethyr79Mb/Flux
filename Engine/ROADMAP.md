@@ -299,13 +299,14 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
 - 🔧 Herbe (`shaders/Grass.slang`, réglages dans `VegetationComponent`) : brins en courbe de Bézier générés par le GPU
   à chaque image sur les tuiles proches, là où le sol montre de l'herbe (`GetGroundCover`, partagé avec le sol), rien
-  en mémoire. Mesh shaders : une tâche par tuile écarte les paquets hors champ, cachés ou sans herbe, 3 à 1 segments
+  en mémoire. Mesh shaders : une tâche par tuile écarte ses 64 carrés de 4 x 4 mailles hors champ, cachés ou sans
+  herbe, puis chaque brin hors champ avant la couverture du sol (herbe au bord de l'image : 0,32 → 0,07 ms), 3 à 1 segments
   selon la distance ; au loin il en reste une part, élargie (200/m², triplée sur 10 m, toute jusqu'à 20 m, puis en
   distance^-1,5, fondue de 60 à 100 % de la portée de 150 m). Touffes, plages, brins secs, pied sombre ; le sol prend
   sous l'herbe la couleur du pré (pas de limite visible). Vent par vagues, lumière translucide. Repli sans mesh shaders :
   par les sommets, 4 fois moins dense, 60 % de la portée. Air et ombre des nuages calculés une fois par paquet, ombre
   du soleil simple sur les brins (sans recherche d'obstacles, 4 lectures), 3 segments sous 8 m. Coût : 1,90 → 0,99 ms
-  (RX 7700 XT, vue de l'éditeur 1070×636), dont 0,82 ms de brins (« Sol et herbe sans pixels »). Piste suivante si
+  (RX 7700 XT, vue de l'éditeur 1070×636), puis 1,30 → 1,03 ms au pré par les carrés (vue 1159×649), dont 0,82 ms de brins (« Sol et herbe sans pixels »). Piste suivante si
   besoin : brins fabriqués une fois par tuile en compute et gardés en mémoire (seul le vent change). À améliorer :
   couverture du sol calculée par brin (à faire par paquet) ; peu de variété (pas de fleurs) ; un peu bleue à l'ombre ;
   pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
