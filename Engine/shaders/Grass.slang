@@ -59,6 +59,15 @@ float3 ReadGrassPosition(uint firstVertex, uint index)
     return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
 }
 
+// Climat des grandes échelles au sommet `index` (PlanetClimate), avec l'humidité du relief de ce sommet (uv.y), comme
+// le sol (PlanetVertex) : l'herbe pousse là où il la montre.
+float2 GrassClimate(uint draw, uint firstVertex, uint index, float3 local)
+{
+    const DrawData d = draws[draw];
+    return PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz + local)
+         + float2(0.0, ReliefHumidity * pageVertices[(firstVertex + index) * 8 + 7]);
+}
+
 float3 ReadGrassNormal(uint firstVertex, uint index)
 {
     const uint v = (firstVertex + index) * 8 + 3;
@@ -336,7 +345,7 @@ GrassVertexOutput vertexGrass(uint vertex : SV_VulkanVertexID, uint instance : S
     const uint cluster = instance & ((1u << GrassInstanceShift) - 1u);
     const uint firstVertex = tileInPage * GrassTileVertices;
     const DrawData d = draws[draw];
-    const float2 climate = PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz);
+    const float2 climate = GrassClimate(draw, firstVertex, (GrassTileSide * GrassTileSide) / 2, float3(0.0));
     const float total = ceil(GrassArea(firstVertex, uint2(0, 0), GrassTileQuads) * GrassDensity());
     const uint index = cluster * GrassClusterBlades + inCluster / verticesPerBlade;
     const GrassBlade blade = MakeGrassBlade(draw, firstVertex, GrassSeed(draw), index, float2(0.0), float(GrassTileQuads), total, climate);

@@ -544,7 +544,9 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
     output.groundPosition = draws[draw].ground.xyz + position;
     const uint planetIndex = asuint(draws[draw].rim.w);
     const PlanetData planet = frame[0].planets[planetIndex];
-    output.climate = PlanetClimate(planet, output.planetPosition);
+    // Humidité du relief dans uv.y (PlanetTile.slang, Write) : les vallons plus humides, les crêtes plus sèches.
+    const float wet = input.uv.y;
+    output.climate = PlanetClimate(planet, output.planetPosition) + float2(0.0, ReliefHumidity * wet);
     output.forest = 0.0;
     output.forestColor = float3(0.0);
     if (planet.forest.y > 0.0) {
@@ -554,8 +556,8 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
         const float2 blur = saturate(float2(distance / 3000.0, distance / 12000.0) - 1.0);
         const float noise = ForestNoise(normalize(output.planetPosition) * planet.shape.x, blur);
         // Comme computeTrees, sans le hasard de chaque arbre : chaque biome selon son poids, sa forêt et sa densité.
-        // Les zones du relief sont dans uv (PlanetTile.slang, Write).
-        const float3 zoneShares = ZoneShares(input.uv);
+        // Les zones du relief sont dans uv.x (PlanetTile.slang, Write).
+        const float3 zoneShares = ZoneShares(UnpackZones(input.uv.x));
         const float altitude = (length(output.planetPosition) - planet.shape.x) / max(planet.shape.y, 1.0);
         const uint count = min(uint(planet.forest.x), MaxBiomes);
         float remaining = 1.0;
@@ -565,7 +567,7 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
             const Biome biome = frame[0].planets[planetIndex].biomes[b];
             const float weight = BiomeFit(biome, zoneShares, altitude, output.climate) * remaining;
             remaining -= weight;
-            const float amount = weight * ForestMask(noise, biome.zones.w, blur) * saturate(biome.humidity.z * 1.5);
+            const float amount = weight * ForestMask(noise, biome.zones.w + ReliefForest * wet, blur) * saturate(biome.humidity.z * 1.5);
             forest += amount;
             color += biome.color.rgb * amount;
         }

@@ -6,6 +6,7 @@
 #include "Flux/Planetology/Planet.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
+#include "Planetology/ReliefWetness.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
@@ -297,6 +298,8 @@ bool RunPlanetGpuTests() {
         const Case& c = cases[n];
         Planetology::TileMesh mesh;
         Planetology::BuildTile(*c.terrain, c.key, mesh);
+        Planetology::WetnessGrid wetness;
+        Planetology::BuildWetnessGrid(*c.terrain, c.key, wetness);
         (*compute)->ReadTile(tiles[n], vertices.data(), morph.data());
         // Erreur permise : le float du relief, le millimètre, et celui de la position et de la déformation, relatifs au
         // centre de la tuile : quelques 1e-5 de sa taille aux pointes des sommets (30 cm sur une tuile de 20 km d'une
@@ -314,9 +317,19 @@ bool RunPlanetGpuTests() {
             }
             CHECK(Math::Dot(vertices[v].normal, mesh.vertices[v].normal) > 0.999f);
             CHECK(Math::Dot(morph[v].normal, mesh.morph[v].normal) > 0.999f);
-            // Zones du relief (biomes) dans uv : demi-floats sur le GPU.
-            CHECK(std::abs(vertices[v].uv.x - mesh.vertices[v].uv.x) < 2.0e-3f);
-            CHECK(std::abs(vertices[v].uv.y - mesh.vertices[v].uv.y) < 2.0e-3f);
+            // Zones du relief (biomes) dans uv.x : demi-floats, puis 10 bits chacune sur le GPU (PackZones).
+            const float hills = std::floor(vertices[v].uv.x / 1024.0f);
+            CHECK(std::abs(hills / 1023.0f - mesh.vertices[v].uv.x) < 3.0e-3f);
+            CHECK(std::abs((vertices[v].uv.x - hills * 1024.0f) / 1023.0f - mesh.vertices[v].uv.y) < 3.0e-3f);
+            // Humidité du relief dans uv.y : la grille du CPU, en double (les jupes prennent celle de leur bord).
+            if (v < Planetology::TileSide * Planetology::TileSide) {
+                const double wet = Planetology::SampleWetness(wetness, v % Planetology::TileSide, v / Planetology::TileSide);
+                if (std::abs(vertices[v].uv.y - wet) > 0.05) {
+                    std::printf("ÉCHEC tuile %zu (niveau %u), sommet %u : humidité du relief %.3f, CPU %.3f\n", n,
+                                static_cast<unsigned>(c.key.level), v, vertices[v].uv.y, wet);
+                    return false;
+                }
+            }
         }
         CHECK(std::abs(stats[n].lowest - mesh.lowest) < 2.0 * tolerance + 1.0e-6 * mesh.lowest);
         CHECK(std::abs(stats[n].radius - mesh.radius) < 2.0 * tolerance);

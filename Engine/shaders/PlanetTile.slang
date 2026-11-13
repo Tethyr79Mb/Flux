@@ -34,6 +34,7 @@ struct TileInputs
     float4 axisS;  // xyz : axe s ; w : relief
     float4 axisT;  // xyz : axe t ; w : profondeur des jupes
     uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalage des couches à la largeur des montagnes
+    uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float)
     float4 columns[Columns];
     int4 cells[OctaveCount];
     float4 fractions[OctaveCount]; // couches déformées : au point déformé du centre
@@ -63,6 +64,11 @@ groupshared uint permutation[512];
 groupshared float wideHeights[Wide * Wide];
 groupshared uint wideZones[Wide * Wide]; // Terrain::Zones, deux demi-floats (f32tof16)
 groupshared float coarseHeights[Coarse * Coarse];
+// Humidité du relief : hauteurs du point et de ses quatre voisins pour chaque point de la grille, puis la grille.
+static const uint MaxWetnessSide = 8; // Planetology::MaxWetnessSide
+static const uint MaxWetnessPoints = (MaxWetnessSide + 1) * (MaxWetnessSide + 1);
+groupshared float wetHeights[MaxWetnessPoints * 5];
+groupshared float wetGrid[MaxWetnessPoints];
 groupshared float lowestShared[GroupSize];
 groupshared float radiusShared[GroupSize];
 groupshared float highestShared[GroupSize];
@@ -556,6 +562,65 @@ float3 CoarseLocal(uint ci, uint cj)
     return Local(Delta(2 * ci, 2 * cj), coarseHeights[cj * Coarse + ci]);
 }
 
+// --- Humidité du relief (Planetology/ReliefWetness.hpp, à garder pareil) ---
+
+static const float WetnessReach = 300.0; // m
+
+uint WetnessSide() { return tile.wetness.y; }
+uint WetnessSamples() { return (WetnessSide() + 1) * (WetnessSide() + 1) * 5; }
+
+// Hauteur w de la grille : point w / 5, puis lui-même (0) ou un voisin à WetnessReach (1 à 4) le long de l'axe s de
+// la face et de sa perpendiculaire, dans le plan tangent. Le voisin d' = (d + t.ε) / √(1 + ε²) s'écrit en écart au
+// centre de la tuile sans perdre ses chiffres : (δ + t.ε) / s - c.ε² / (s.(1 + s)).
+float WetnessHeight(uint w)
+{
+    const uint side = WetnessSide();
+    const uint point = w / 5;
+    const uint k = w % 5;
+    const uint step = TileQuads / side;
+    const float3 delta = Delta((point % (side + 1)) * step + 2, (point / (side + 1)) * step + 2);
+    if (k == 0) {
+        return Height(delta, tile.wetness.x);
+    }
+    const float3 d = tile.center.xyz + delta;
+    const float3 t1 = normalize(tile.axisS.xyz - d * dot(d, tile.axisS.xyz));
+    const float3 t = (k <= 2 ? t1 : cross(d, t1)) * ((k % 2 == 1 ? 1.0 : -1.0) * (WetnessReach / tile.axisN.w));
+    const float epsilon2 = dot(t, t);
+    const float s = sqrt(1.0 + epsilon2);
+    return Height((delta + t) / s - tile.center.xyz * (epsilon2 / (s * (1.0 + s))), tile.wetness.x);
+}
+
+// La grille, une fois wetHeights rempli : creux (moyenne des voisins plus haute) vers 1, crête vers -1.
+void BuildWetnessGrid(uint thread)
+{
+    const uint points = (WetnessSide() + 1) * (WetnessSide() + 1);
+    if (WetnessSide() > 0 && thread < points) {
+        const uint at = thread * 5;
+        const float hollow = 0.25 * (wetHeights[at + 1] + wetHeights[at + 2] + wetHeights[at + 3] + wetHeights[at + 4]) - wetHeights[at];
+        const float depth = max(0.01 * tile.axisS.w, 2.0);
+        wetGrid[thread] = hollow / (abs(hollow) + depth);
+    }
+}
+
+// Humidité du relief au point (u, v) de la grille de la tuile (0 à TileQuads), fondu compris.
+float SampleWetness(float u, float v)
+{
+    const uint side = WetnessSide();
+    if (side == 0) {
+        return 0.0;
+    }
+    const float x = clamp(u, 0.0, float(TileQuads)) * float(side) / float(TileQuads);
+    const float y = clamp(v, 0.0, float(TileQuads)) * float(side) / float(TileQuads);
+    const uint a = min(uint(x), side - 1);
+    const uint b = min(uint(y), side - 1);
+    const float fx = x - float(a);
+    const float fy = y - float(b);
+    const uint row = side + 1;
+    const float low = lerp(wetGrid[b * row + a], wetGrid[b * row + a + 1], fx);
+    const float high = lerp(wetGrid[(b + 1) * row + a], wetGrid[(b + 1) * row + a + 1], fx);
+    return lerp(low, high, fy) * asfloat(tile.wetness.z);
+}
+
 struct TileVertex
 {
     float3 position;
@@ -602,8 +667,9 @@ TileVertex BuildVertex(uint i, uint j)
     return vertex;
 }
 
-// zones : Terrain::Zones, dans les coordonnées de texture (lues par vertexPlanet pour les biomes).
-void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones)
+// zones : Terrain::Zones, et wet : l'humidité du relief, dans les coordonnées de texture (PackZones, lues par
+// vertexPlanet pour les biomes et le climat).
+void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones, float wet)
 {
     index += constants.firstVertex;
     const uint v = index * 8;
@@ -613,8 +679,8 @@ void Write(uint index, float3 position, float3 normal, float3 morphOffset, float
     vertices[v + 3] = normal.x;
     vertices[v + 4] = normal.y;
     vertices[v + 5] = normal.z;
-    vertices[v + 6] = zones.x;
-    vertices[v + 7] = zones.y;
+    vertices[v + 6] = PackZones(zones);
+    vertices[v + 7] = wet;
     const uint m = index * 6;
     morph[m + 0] = morphOffset.x;
     morph[m + 1] = morphOffset.y;
@@ -677,8 +743,14 @@ void computeMain(uint thread : SV_GroupIndex)
     }
     GroupMemoryBarrierWithGroupSync();
 
-    // Hauteurs : la grille large avec les octaves de la tuile, celle de la parente avec les siennes.
-    for (uint p = thread; p < Wide * Wide + Coarse * Coarse; p += GroupSize) {
+    // Hauteurs : la grille large avec les octaves de la tuile, celle de la parente avec les siennes, puis celles de
+    // l'humidité du relief (relief grossier), dans la même boucle pour occuper tous les threads.
+    const uint wetSamples = WetnessSide() > 0 ? WetnessSamples() : 0;
+    for (uint p = thread; p < Wide * Wide + Coarse * Coarse + wetSamples; p += GroupSize) {
+        if (p >= Wide * Wide + Coarse * Coarse) {
+            wetHeights[p - Wide * Wide - Coarse * Coarse] = WetnessHeight(p - Wide * Wide - Coarse * Coarse);
+            continue;
+        }
         if (p < Wide * Wide) {
             const uint i = p % Wide;
             const uint j = p / Wide;
@@ -693,13 +765,16 @@ void computeMain(uint thread : SV_GroupIndex)
         }
     }
     GroupMemoryBarrierWithGroupSync();
+    BuildWetnessGrid(thread);
+    GroupMemoryBarrierWithGroupSync();
 
     float lowest = 1.0e30;
     float highest = 0.0;
     float radius = 0.0;
     for (uint v = thread; v < TileSide * TileSide; v += GroupSize) {
         const TileVertex vertex = BuildVertex(v % TileSide, v / TileSide);
-        Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(v % TileSide, v / TileSide));
+        Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(v % TileSide, v / TileSide),
+              SampleWetness(float(v % TileSide), float(v / TileSide)));
         const float3 target = vertex.position + vertex.morphOffset;
         AddToMeshlets(v % TileSide, v / TileSide, vertex.position);
         AddToMeshlets(v % TileSide, v / TileSide, target);
@@ -719,7 +794,8 @@ void computeMain(uint thread : SV_GroupIndex)
         const TileVertex vertex = BuildVertex(at.x, at.y);
         const float3 direction = tile.center.xyz + Delta(at.x + 2, at.y + 2);
         const float3 position = vertex.position - direction * tile.axisT.w;
-        Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(at.x, at.y));
+        Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(at.x, at.y),
+              SampleWetness(float(at.x), float(at.y)));
         radius = max(radius, length(position + vertex.morphOffset));
         AddToMeshlets(at.x, at.y, position);
         AddToMeshlets(at.x, at.y, position + vertex.morphOffset);
@@ -933,9 +1009,12 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         // dense des biomes.
         const float3 flat = (tile.center.xyz + delta) * radius;
         const float noise = ForestNoise(flat);
+        // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
+        const float wet = SampleWetness(u, v);
+        const float moreForest = ReliefForest * wet;
         float densest = 0.0;
         for (uint b = 0; b < biomeCount; ++b) {
-            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w), 0.03));
+            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w + moreForest), 0.03));
         }
         if (keep >= densest) {
             continue;
@@ -949,7 +1028,7 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         const float3 position = Local(delta, height);
         const float3 local = tile.center.xyz * tile.axisN.w + position;
         const float altitude = height / relief;
-        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
+        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local) + float2(0.0, ReliefHumidity * wet);
         const float3 zoneShares = ZoneShares(zones);
         float weights[MaxBiomes];
         float remaining = 1.0;
@@ -959,7 +1038,7 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         }
         const uint biome = GroveBiome(flat, weights, biomeCount);
         if (biome == MaxBiomes
-            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[biome].zones.w), 0.03)) {
+            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[biome].zones.w + moreForest), 0.03)) {
             continue;
         }
         const uint choice = GroveSpecies(flat, biome);
@@ -1023,6 +1102,14 @@ void computeTrees(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     if (thread == 0) {
         treeCount = 0;
     }
+    GroupMemoryBarrierWithGroupSync();
+    // Humidité du relief de la plaine : une petite grille (9 à 25 points sur une plaine), refaite par chacun de ses groupes.
+    const uint wetSamples = WetnessSide() > 0 ? WetnessSamples() : 0;
+    for (uint w = thread; w < wetSamples; w += GroupSize) {
+        wetHeights[w] = WetnessHeight(w);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    BuildWetnessGrid(thread);
     GroupMemoryBarrierWithGroupSync();
 
     float4 first;

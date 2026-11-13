@@ -108,6 +108,12 @@ arbre par arbre. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`
 (`PlanetHash`, gardé pour l'aspect du sol et des nuages) change d'un pilote à l'autre. `VegetationGpuTests` vérifie
 qu'ils donnent les mêmes arbres (0,5 % d'écart au plus, au ras d'un seuil, le relief du GPU étant en float).
 
+Humidité du relief (`ReliefWetness`, `WetnessHeight` dans `PlanetTile.slang`) : la hauteur moyenne de quatre points à
+300 m moins celle du point, sur le relief grossier, donne de -1 (crête) à 1 (fond de vallon). Elle est calculée sur une
+petite grille par tuile (2x2 à 8x8 mailles, effacée sur les tuiles de plus de 5 à 10 km), puis interpolée : dans
+chaque sommet (`uv.y`) pour le sol et l'herbe, et par plaine pour le semis. Elle ajoute de l'humidité au climat et des
+forêts aux biomes. Le vrai écoulement de l'eau n'est pas calculable par formule (il dépend de tout l'amont).
+
 ### Les couches de bruit
 
 Chaque couche est une somme d'octaves de bruit de Perlin avec sa pente exacte. Chaque octave a une fréquence double

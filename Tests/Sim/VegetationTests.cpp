@@ -4,6 +4,8 @@
 
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Planetology/ReliefWetness.hpp"
+#include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationLibrary.hpp"
 
 #include <cmath>
@@ -112,5 +114,32 @@ bool RunVegetationTests() {
         plains += zones.mountains < 0.01 && zones.hills < 0.01 ? 1 : 0;
     }
     CHECK(mountains > 4 && plains > 40);
+
+    // Humidité du relief : de -1 (crête) à 1 (creux), creux et crêtes présents ; continue d'une plaine à sa voisine
+    // (mêmes points sur le bord commun) ; aucune grille sur les tuiles trop grandes pour voir les vallons.
+    CHECK(Planetology::GetWetnessLayout(terrain, 0).side == 0);
+    const std::uint32_t plainLevel = Planetology::GetPlainLevel(terrain);
+    const Planetology::WetnessLayout layout = Planetology::GetWetnessLayout(terrain, plainLevel);
+    CHECK(layout.side >= 2 && layout.fade == 1.0f && layout.octaves < octaves);
+    int hollows = 0;
+    int ridges = 0;
+    for (int i = 0; i < 40; ++i) {
+        const double a = i * 2.399963;
+        const double y = 0.9 - (i + 0.5) / 22.0;
+        const double r = std::sqrt(1.0 - y * y);
+        Planetology::TileKey key = Planetology::FindTile({r * std::cos(a), y, r * std::sin(a)}, plainLevel);
+        key.x = std::min(key.x, (1u << plainLevel) - 2u);
+        Planetology::WetnessGrid grid, next;
+        Planetology::BuildWetnessGrid(terrain, key, grid);
+        Planetology::BuildWetnessGrid(terrain, {key.face, key.level, key.x + 1, key.y}, next);
+        for (std::uint32_t k = 0; k <= Planetology::TileQuads; k += 4) {
+            const double wet = Planetology::SampleWetness(grid, Planetology::TileQuads, k);
+            CHECK(wet > -1.0 && wet < 1.0);
+            CHECK(std::abs(wet - Planetology::SampleWetness(next, 0.0, k)) < 1.0e-9);
+            hollows += wet > 0.2 ? 1 : 0;
+            ridges += wet < -0.2 ? 1 : 0;
+        }
+    }
+    CHECK(hollows > 10 && ridges > 10);
     return true;
 }

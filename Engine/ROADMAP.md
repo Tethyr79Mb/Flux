@@ -263,9 +263,15 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   frontières des biomes en bosquets de la taille moyenne de ceux de la planète ; un arbre à moins d'un
   demi-espacement d'un bosquet d'une autre espèce est écarté (arbres d'espèces différentes à moins de 8 m : 85 fois
   moins qu'avant).
+  Humidité du relief (géologie, étape 1, demande de Bruno du 2026-11-13) : creux humides au sol épais, crêtes sèches
+  (hauteur moyenne à 300 m autour moins celle du point, relief grossier), sur une grille de 2x2 à 8x8 mailles par
+  tuile, rangée dans chaque sommet ; elle ajoute humidité et forêts au fond des vallons pour les arbres, le sol et
+  l'herbe. À venir : roche-mère par régions (teintes, profondeur du sol, condition « sol » des biomes), puis rivières.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
-  différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
+  différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; humidité du relief
+  effacée sur les tuiles de plus de 5 à 10 km (vallons de 300 m invisibles de haut, pas encore de plus grande échelle),
+  pas de vrai écoulement de l'eau (il faudrait une carte stockée) ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
   pixel : ils ne se croisent pas exactement entre eux ni avec le sol), feuillage clairsemé qui s'amincit dans les
   petits mips (seuil d'alpha fixe) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; arbre
   découvert en passant une crête dessiné une image plus tard ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou

@@ -67,7 +67,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     const uint2 origin = uint2(thread % GrassMeshletSide, thread / GrassMeshletSide) * GrassMeshletQuads;
     float2 climate = float2(0.0);
     if (kept) {
-        climate = PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz + local);
+        climate = GrassClimate(drawIndex, firstVertex, (origin.y + GrassMeshletQuads / 2) * GrassTileSide + origin.x + GrassMeshletQuads / 2, local);
         // De l'herbe aux coins ou au centre (ses taches font des dizaines de mètres : un paquet en a peu ou prou).
         float share = 0.0;
         for (uint corner = 0; corner < 5; ++corner) {

@@ -94,6 +94,26 @@ float ForestMask(float noise, float cover, float2 blur = float2(0.0))
     return smoothstep(threshold - width, threshold + width, noise);
 }
 
+// Humidité du relief (Planetology/ReliefWetness.hpp) : de -1 (crête) à 1 (fond de vallon), calculée par tuile
+// (shaders/PlanetTile.slang) et rangée dans chaque sommet. Ce qu'elle ajoute à l'humidité du climat et à la part
+// couverte de forêts d'un biome.
+static const float ReliefHumidity = 0.25;
+static const float ReliefForest = 0.3;
+
+// Les sommets des tuiles portent dans uv.x les zones du relief (Terrain::Zones : collines, montagnes, 0 à 1) sur
+// 10 bits chacune, en un entier exact dans un float, et dans uv.y l'humidité du relief.
+float PackZones(float2 zones)
+{
+    const float2 q = round(saturate(zones) * 1023.0);
+    return q.x * 1024.0 + q.y;
+}
+
+float2 UnpackZones(float packed)
+{
+    const float hills = floor(packed * (1.0 / 1024.0));
+    return float2(hills, packed - hills * 1024.0) * (1.0 / 1023.0);
+}
+
 // --- Biomes (Planetology::VegetationLibrary) ---
 
 static const uint MaxBiomes = 8; // VegetationLibrary::MaxBiomes
