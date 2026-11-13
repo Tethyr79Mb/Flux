@@ -442,6 +442,7 @@ namespace Flux {
             frame.upscale.preExposure = frame.preExposure;
             timings.exposure = frame.exposure;
             timings.sceneLuminance = exposure->GetLuminance();
+            sky->SetJobSystem(jobs);
             SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frame.preExposure, frameIndex);
             frame.cameraInAir = lighting.atmosphere.scale[1] > 0.0f;
             environment->Prepare(lighting.environmentSource, frameIndex);

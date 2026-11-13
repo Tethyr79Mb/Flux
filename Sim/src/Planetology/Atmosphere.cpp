@@ -1,5 +1,6 @@
 #include "Flux/Planetology/Atmosphere.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
 #include "Flux/Scene/Components.hpp"
 
 #include <algorithm>
@@ -18,10 +19,9 @@ namespace Flux::Planetology {
         constexpr float MieHeightRatio = 0.15f;
         // Les poussières absorbent un peu en plus de diffuser.
         constexpr float MieExtinction = 1.1f;
-        // Une seule diffusion sous-estime le ciel (la lumière diffusée plusieurs fois l'éclaire aussi) : relevée pour
-        // retrouver un ciel de jour à peu près aussi clair que sur Terre, à côté d'un sol au soleil. Pi : unités du
-        // moteur (voir Atmosphere.hpp).
-        constexpr float Brightness = 3.0f * std::numbers::pi_v<float>;
+        // Pi : unités du moteur (voir Atmosphere.hpp). Relevée de 2 pour garder le ciel de jour à côté d'un sol au
+        // soleil tel qu'il était réglé (3 avant la diffusion multiple, qui éclaircit le ciel de 1,2 à 2,4 fois).
+        constexpr float Brightness = 2.0f * std::numbers::pi_v<float>;
 
         constexpr float Pi = std::numbers::pi_v<float>;
 
@@ -101,6 +101,120 @@ namespace Flux::Planetology {
             mie = Column(a.radius, height, a.mieFalloff, cosine);
             return visible;
         }
+
+        Math::Vector3f Multiply(const Math::Vector3f& a, const Math::Vector3f& b) {
+            return {a.x * b.x, a.y * b.y, a.z * b.z};
+        }
+
+        // Diffusion multiple (ComputeAtmosphereMultiple) : le sol renvoie cette part de la lumière, diffusément (0,3 :
+        // moyenne des terres, comme Hillaire) ; regards en 8 x 8 directions sur la sphère, 20 pas chacun.
+        constexpr float GroundAlbedo = 0.3f;
+        constexpr int MultipleRings = 8;
+        constexpr int MultipleSegments = 8;
+        constexpr int MultipleSteps = 20;
+        // L'air très épais renvoie presque tout (1 / (1 - f) sans fin) : borne de la part rediffusée.
+        constexpr float MultipleTransferMax = 0.95f;
+
+        // Lecture bilinéaire de la table, comme AtmosphereMultipleLight dans shaders/Atmosphere.slang.
+        Math::Vector3f MultipleLight(const AtmosphereParameters& a, const AtmosphereMultipleTable& table, float height, float cosine) {
+            constexpr int Size = AtmosphereMultipleSize;
+            constexpr float Last = static_cast<float>(Size - 1);
+            const float x = std::clamp(cosine * 0.5f + 0.5f, 0.0f, 1.0f) * Last;
+            const float y = std::clamp(height / (a.top - a.radius), 0.0f, 1.0f) * Last;
+            const int x0 = std::min(static_cast<int>(x), Size - 2);
+            const int y0 = std::min(static_cast<int>(y), Size - 2);
+            const float fx = x - static_cast<float>(x0);
+            const float fy = y - static_cast<float>(y0);
+            const auto at = [&](int row, int column) { return table[static_cast<std::size_t>(row * Size + column)]; };
+            const Math::Vector3f low = at(y0, x0) * (1.0f - fx) + at(y0, x0 + 1) * fx;
+            const Math::Vector3f high = at(y0 + 1, x0) * (1.0f - fx) + at(y0 + 1, x0 + 1) * fx;
+            return low * (1.0f - fy) + high * fy;
+        }
+    }
+
+    AtmosphereMultipleTable ComputeAtmosphereMultiple(const AtmosphereParameters& a, JobSystem* jobs) {
+        AtmosphereMultipleTable table{};
+        if (a.top <= 0.0f) {
+            return table;
+        }
+        constexpr int Size = AtmosphereMultipleSize;
+        const float thickness = a.top - a.radius;
+        // Le plan vertical qui contient le soleil est un plan de symétrie : la moitié des directions, comptée deux fois.
+        constexpr int HalfSegments = MultipleSegments / 2;
+        constexpr float Weight = 1.0f / static_cast<float>(MultipleRings * HalfSegments);
+        const auto rows = [&a, &table, thickness](std::uint32_t first, std::uint32_t last) {
+            for (int row = static_cast<int>(first); row < static_cast<int>(last); ++row) {
+                // Un mètre au-dessus du sol au moins, un sous le haut au plus : un regard horizontal y traverse encore de l'air.
+                const float height = std::clamp(static_cast<float>(row) / static_cast<float>(Size - 1) * thickness, 1.0f, thickness - 1.0f);
+                const Math::Vector3f origin{0.0f, a.radius + height, 0.0f};
+                for (int column = 0; column < Size; ++column) {
+                    const float cosine = -1.0f + 2.0f * static_cast<float>(column) / static_cast<float>(Size - 1);
+                    const Math::Vector3f toSun{std::sqrt(std::max(0.0f, 1.0f - cosine * cosine)), cosine, 0.0f};
+                    // light : la lumière diffusée une fois qui arrive de chaque regard (phase isotrope), sol compris ;
+                    // transfer : la part d'une lumière isotrope rediffusée vers le point. Hillaire, équations 5 à 9.
+                    Math::Vector3f light;
+                    Math::Vector3f transfer;
+                    for (int ring = 0; ring < MultipleRings; ++ring) {
+                        const float up = 1.0f - 2.0f * (static_cast<float>(ring) + 0.5f) / static_cast<float>(MultipleRings);
+                        const float sine = std::sqrt(std::max(0.0f, 1.0f - up * up));
+                        for (int segment = 0; segment < HalfSegments; ++segment) {
+                            const float angle = Pi * (static_cast<float>(segment) + 0.5f) / static_cast<float>(HalfSegments);
+                            const Math::Vector3f direction{sine * std::cos(angle), up, sine * std::sin(angle)};
+                            float t0 = 0.0f;
+                            float end = 0.0f;
+                            RaySphere(origin, direction, a.top, t0, end);
+                            float g0 = 0.0f;
+                            float g1 = 0.0f;
+                            const bool ground = RaySphere(origin, direction, a.radius, g0, g1) && g0 > 0.0f;
+                            if (ground) {
+                                end = g0;
+                            }
+                            const float step = end / static_cast<float>(MultipleSteps);
+                            float viewRayleigh = 0.0f;
+                            float viewMie = 0.0f;
+                            for (int i = 0; i < MultipleSteps; ++i) {
+                                const Math::Vector3f point = origin + direction * ((static_cast<float>(i) + 0.5f) * step);
+                                const float h = Math::Length(point) - a.radius;
+                                const float rayleigh = std::exp(-h * a.rayleighFalloff) * step;
+                                const float mie = std::exp(-h * a.mieFalloff) * step;
+                                viewRayleigh += 0.5f * rayleigh;
+                                viewMie += 0.5f * mie;
+                                const Math::Vector3f view = Extinction(a, viewRayleigh, viewMie);
+                                const Math::Vector3f scattered = Multiply(view, a.rayleigh * rayleigh + Math::Vector3f{1.0f, 1.0f, 1.0f} * (a.mie * mie));
+                                transfer += scattered;
+                                float sunRayleigh = 0.0f;
+                                float sunMie = 0.0f;
+                                const float visible = SunDepth(a, point, toSun, 1.0f / a.rayleighFalloff, 0.0f, sunRayleigh, sunMie);
+                                if (visible > 0.0f) {
+                                    light += Multiply(scattered, Extinction(a, sunRayleigh, sunMie)) * (visible / (4.0f * Pi));
+                                }
+                                viewRayleigh += 0.5f * rayleigh;
+                                viewMie += 0.5f * mie;
+                            }
+                            if (ground) {
+                                const Math::Vector3f point = origin + direction * end;
+                                const float facing = Math::Dot(point, toSun) / Math::Length(point);
+                                if (facing > 0.0f) {
+                                    light += Multiply(Extinction(a, viewRayleigh, viewMie), SunTransmittance(a, point, toSun))
+                                             * (facing * GroundAlbedo / Pi);
+                                }
+                            }
+                        }
+                    }
+                    // Moyennes sur la sphère (phase isotrope) ; 1 / (1 - f) : la somme de toutes les diffusions suivantes.
+                    const Math::Vector3f mean = light * Weight;
+                    const Math::Vector3f f = transfer * Weight;
+                    const auto sum = [](float v) { return 1.0f / (1.0f - std::min(v, MultipleTransferMax)); };
+                    table[static_cast<std::size_t>(row * Size + column)] = {mean.x * sum(f.x), mean.y * sum(f.y), mean.z * sum(f.z)};
+                }
+            }
+        };
+        if (jobs) {
+            jobs->ParallelFor(Size, 2, rows);
+        } else {
+            rows(0, Size);
+        }
+        return table;
     }
 
     AtmosphereParameters MakeAtmosphereParameters(const PlanetComponent& planet) {
@@ -134,7 +248,8 @@ namespace Flux::Planetology {
     }
 
     Math::Vector3f Scatter(const AtmosphereParameters& a, const Math::Vector3f& origin, const Math::Vector3f& direction, float distance,
-                           const Math::Vector3f& toSun, const Math::Vector3f& sunColor, int steps, Math::Vector3f& transmittance) {
+                           const Math::Vector3f& toSun, const Math::Vector3f& sunColor, int steps, Math::Vector3f& transmittance,
+                           const AtmosphereMultipleTable* multiple) {
         transmittance = {1.0f, 1.0f, 1.0f};
         float t0 = 0.0f;
         float t1 = 0.0f;
@@ -151,6 +266,7 @@ namespace Flux::Planetology {
         float viewMie = 0.0f;
         Math::Vector3f sumRayleigh;
         Math::Vector3f sumMie;
+        Math::Vector3f sumMultiple; // diffusion multiple, isotrope : sans phase
         for (int i = 0; i < steps; ++i) {
             const Math::Vector3f point = origin + direction * (start + (static_cast<float>(i) + 0.5f) * step);
             const float h = Math::Length(point) - a.radius;
@@ -167,6 +283,11 @@ namespace Flux::Planetology {
                 sumRayleigh += light * rayleigh;
                 sumMie += light * mie;
             }
+            if (multiple) {
+                const Math::Vector3f scattering = a.rayleigh * rayleigh + Math::Vector3f{1.0f, 1.0f, 1.0f} * (a.mie * mie);
+                const Math::Vector3f received = MultipleLight(a, *multiple, h, Math::Dot(point, toSun) / Math::Length(point));
+                sumMultiple += Multiply(Multiply(Extinction(a, viewRayleigh, viewMie), scattering), received);
+            }
             viewRayleigh += 0.5f * rayleigh;
             viewMie += 0.5f * mie;
         }
@@ -178,12 +299,13 @@ namespace Flux::Planetology {
         const float miePhase = (1.0f - g * g) / (4.0f * Pi * mieDenominator * std::sqrt(mieDenominator));
         const Math::Vector3f scattered{sumRayleigh.x * a.rayleigh.x * rayleighPhase, sumRayleigh.y * a.rayleigh.y * rayleighPhase,
                                        sumRayleigh.z * a.rayleigh.z * rayleighPhase};
-        const Math::Vector3f light = scattered + sumMie * (a.mie * miePhase);
+        const Math::Vector3f light = scattered + sumMie * (a.mie * miePhase) + sumMultiple;
         return Math::Vector3f{light.x * sunColor.x, light.y * sunColor.y, light.z * sunColor.z} * a.intensity;
     }
 
     std::array<Math::Vector3f, AtmosphereAmbientSize> ComputeAtmosphereAmbient(const AtmosphereParameters& a,
-                                                                               const Math::Vector3f& sunColor) {
+                                                                               const Math::Vector3f& sunColor,
+                                                                               const AtmosphereMultipleTable* multiple) {
         std::array<Math::Vector3f, AtmosphereAmbientSize> table{};
         if (a.top <= 0.0f) {
             return table;
@@ -204,7 +326,7 @@ namespace Flux::Planetology {
                     const float angle = 2.0f * Pi * (static_cast<float>(segment) + 0.5f * static_cast<float>(ring & 1)) / static_cast<float>(Segments);
                     const Math::Vector3f direction{sine * std::cos(angle), up, sine * std::sin(angle)};
                     Math::Vector3f transmittance;
-                    sum += Scatter(a, origin, direction, 1.0e30f, toSun, sunColor, AtmosphereSurfaceSteps, transmittance);
+                    sum += Scatter(a, origin, direction, 1.0e30f, toSun, sunColor, AtmosphereSurfaceSteps, transmittance, multiple);
                 }
             }
             table[static_cast<std::size_t>(entry)] = sum * (1.0f / static_cast<float>(Rings * Segments));

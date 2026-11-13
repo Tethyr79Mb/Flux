@@ -577,6 +577,7 @@ namespace Flux {
         // Texture cube du ciel liée au groupe de chaque image (celle de SkyLighting, refaite quand le ciel change).
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundEnvironment{};
         std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundAir{}; // table de l'air du ciel (SkyLighting::airRayleigh)
+        std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundMultiple{}; // SkyLighting::atmosphereMultiple
         // Une seule carte pour les deux images en vol : la passe d'ombres d'une image attend (même file) que la
         // précédente ait fini de la lire.
         std::unique_ptr<RHI::Texture> m_shadowMap;

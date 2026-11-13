@@ -1,5 +1,6 @@
 // Atmosphère d'une planète : diffusion de Rayleigh (le bleu du ciel, le rouge du couchant) et de Mie (la brume
-// autour du soleil), une seule diffusion, en marchant le long du regard. Inclus par shaders/Sky.slang (le ciel) et
+// autour du soleil), en marchant le long du regard ; les diffusions suivantes lues dans la table de la diffusion
+// multiple (AtmosphereMultipleLight), calculée par Atmosphere.cpp. Inclus par shaders/Sky.slang (le ciel) et
 // shaders/Mesh.slang (ce qu'on voit à travers). Exactement les calculs de Engine/src/Planetology/Atmosphere.cpp (toute
 // modification des deux côtés), sauf le décalage des pas, tiré au hasard par pixel (du bruit fin au lieu de bandes).
 // Caméra dans l'air : le ciel et l'air jusqu'aux surfaces sont lus dans deux tables calculées à chaque image (plus bas),
@@ -106,12 +107,23 @@ float3 AtmosphereSunTransmittance(AtmosphereData a, float3 position, float3 toSu
     return depth.z <= 0.0 ? float3(0.0) : AtmosphereExtinction(a, depth.x, depth.y) * depth.z;
 }
 
+// Diffusion multiple (Hillaire 2020) : table AtmosphereMultipleSize x AtmosphereMultipleSize de ComputeAtmosphereMultiple
+// (Atmosphere.cpp), lignes de hauteur (du sol au haut de l'air), colonnes de cosinus du soleil sur la verticale (-1 à
+// 1). Lumière reçue de toutes parts par unité de soleil, à multiplier par la diffusion du lieu. Comme MultipleLight.
+static const uint AtmosphereMultipleSize = 32;
+
+float3 AtmosphereMultipleLight(AtmosphereData a, Sampler2D multiple, float height, float cosine)
+{
+    const float2 uv = float2(saturate(cosine * 0.5 + 0.5), saturate(height / (a.mie.w - a.center.w)));
+    return multiple.SampleLevel((0.5 + uv * float(AtmosphereMultipleSize - 1)) / float(AtmosphereMultipleSize), 0.0).rgb;
+}
+
 // Lumière diffusée vers la caméra (à l'origine) dans `direction`, sur `distance` mètres au plus. transmittance : ce
 // qui passe de la lumière venue de plus loin. jitter : décalage des pas, de 0 à 1 (0,5 : comme Atmosphere.cpp).
-float3 AtmosphereScatter(AtmosphereData a, float3 direction, float distance, float3 toSun, float3 sunColor, int steps,
-                         float jitter, out float3 transmittance)
+float3 AtmosphereScatter(AtmosphereData a, Sampler2D multiple, float3 direction, float distance, float3 toSun, float3 sunColor,
+                         int steps, float jitter, out float3 transmittance)
 {
-    return AtmosphereScatterFrom(a, -a.center.xyz, direction, distance, toSun, sunColor, steps, jitter, transmittance);
+    return AtmosphereScatterFrom(a, multiple, -a.center.xyz, direction, distance, toSun, sunColor, steps, jitter, transmittance);
 }
 
 // Sommes de la marche le long d'un regard, avant les fonctions de phase (qui ne dépendent que de l'angle avec le
@@ -120,6 +132,7 @@ struct AtmosphereSums
 {
     float3 rayleigh;     // lumière diffusée par Rayleigh, par unité de lumière du soleil (avant phase et intensité)
     float3 mie;          // la même pour Mie
+    float3 multiple;     // diffusion multiple, isotrope (sans phase)
     float rayleighDepth; // épaisseur d'air traversée (m de densité du sol), pour la transmittance
     float mieDepth;
 };
@@ -127,12 +140,13 @@ struct AtmosphereSums
 // Marche de `origin` (relatif au centre de la planète) dans `direction`, sur `distance` mètres au plus. lowest :
 // hauteur sous laquelle la densité ne monte plus (les tables y passent 0 : au-delà du sol, sous la sphère du sol,
 // l'air ne monte pas sans fin) ; -1e30 : aucune limite, comme Atmosphere.cpp.
-AtmosphereSums AtmosphereMarch(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, int steps,
-                               float jitter, float lowest)
+AtmosphereSums AtmosphereMarch(AtmosphereData a, Sampler2D multiple, float3 origin, float3 direction, float distance,
+                               float3 toSun, int steps, float jitter, float lowest)
 {
     AtmosphereSums sums;
     sums.rayleigh = float3(0.0);
     sums.mie = float3(0.0);
+    sums.multiple = float3(0.0);
     sums.rayleighDepth = 0.0;
     sums.mieDepth = 0.0;
     const float2 hit = AtmosphereRaySphere(origin, direction, a.mie.w);
@@ -149,9 +163,11 @@ AtmosphereSums AtmosphereMarch(AtmosphereData a, float3 origin, float3 direction
     float viewMie = 0.0;
     float3 sumRayleigh = float3(0.0);
     float3 sumMie = float3(0.0);
+    float3 sumMultiple = float3(0.0);
     for (int i = 0; i < steps; ++i) {
         const float3 p = origin + direction * (start + (float(i) + jitter) * step);
-        const float h = max(length(p) - a.center.w, lowest);
+        const float radius = length(p);
+        const float h = max(radius - a.center.w, lowest);
         const float rayleigh = exp(-h * a.rayleigh.w) * step;
         const float mie = exp(-h * a.mie.y) * step;
         viewRayleigh += 0.5 * rayleigh;
@@ -162,14 +178,23 @@ AtmosphereSums AtmosphereMarch(AtmosphereData a, float3 origin, float3 direction
             sumRayleigh += light * rayleigh;
             sumMie += light * mie;
         }
+        const float3 scattering = a.rayleigh.rgb * rayleigh + a.mie.x * mie;
+        sumMultiple += AtmosphereExtinction(a, viewRayleigh, viewMie) * scattering
+                       * AtmosphereMultipleLight(a, multiple, radius - a.center.w, dot(p, toSun) / radius);
         viewRayleigh += 0.5 * rayleigh;
         viewMie += 0.5 * mie;
     }
     sums.rayleigh = sumRayleigh * a.rayleigh.rgb;
     sums.mie = sumMie * a.mie.x;
+    sums.multiple = sumMultiple;
     sums.rayleighDepth = viewRayleigh;
     sums.mieDepth = viewMie;
     return sums;
+}
+
+float AtmosphereRayleighPhase(float mu)
+{
+    return 3.0 / (16.0 * AtmospherePi) * (1.0 + mu * mu);
 }
 
 // Lumière diffusée vers l'œil (regard `direction`) et transmittance, d'après les sommes : les fonctions de phase.
@@ -178,18 +203,17 @@ float3 AtmosphereLight(AtmosphereData a, AtmosphereSums sums, float3 direction, 
 {
     transmittance = AtmosphereExtinction(a, sums.rayleighDepth, sums.mieDepth);
     const float mu = dot(direction, toSun);
-    const float rayleighPhase = 3.0 / (16.0 * AtmospherePi) * (1.0 + mu * mu);
     const float g = a.mie.z;
     const float denominator = 1.0 + g * g - 2.0 * g * mu;
     const float miePhase = (1.0 - g * g) / (4.0 * AtmospherePi * denominator * sqrt(denominator));
-    return (sums.rayleigh * rayleighPhase + sums.mie * miePhase) * sunColor * a.scale.x;
+    return (sums.rayleigh * AtmosphereRayleighPhase(mu) + sums.mie * miePhase + sums.multiple) * sunColor * a.scale.x;
 }
 
 // La même depuis `origin` (relatif au centre de la planète) au lieu de la caméra : le ciel que reflète l'eau.
-float3 AtmosphereScatterFrom(AtmosphereData a, float3 origin, float3 direction, float distance, float3 toSun, float3 sunColor,
-                             int steps, float jitter, out float3 transmittance)
+float3 AtmosphereScatterFrom(AtmosphereData a, Sampler2D multiple, float3 origin, float3 direction, float distance,
+                             float3 toSun, float3 sunColor, int steps, float jitter, out float3 transmittance)
 {
-    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, toSun, steps, jitter, -1.0e30);
+    const AtmosphereSums sums = AtmosphereMarch(a, multiple, origin, direction, distance, toSun, steps, jitter, -1.0e30);
     return AtmosphereLight(a, sums, direction, toSun, sunColor, transmittance);
 }
 
@@ -228,10 +252,13 @@ float AtmosphereDistanceSlice(AtmosphereData a, float distance)
     return saturate(log(1.0 + distance / AtmosphereAirNear) / a.scale.w);
 }
 
-// Ce qu'écrit une table pour une marche, et ce qu'en tire la lecture.
-void AtmosphereTableWrite(AtmosphereData a, AtmosphereSums sums, out float4 rayleigh, out float4 mie)
+// Ce qu'écrit une table pour une marche (mu : cosinus entre le regard du texel et le soleil), et ce qu'en tire la
+// lecture. La diffusion multiple rejoint Rayleigh, divisée par sa phase (lisse : à la lecture, le regard d'un pixel
+// diffère à peine de celui du texel) : pas de troisième texture.
+void AtmosphereTableWrite(AtmosphereData a, AtmosphereSums sums, float mu, out float4 rayleigh, out float4 mie)
 {
-    rayleigh = float4(sums.rayleigh, min(sums.rayleighDepth * a.rayleigh.w, AtmosphereTableDepthMax));
+    rayleigh = float4(sums.rayleigh + sums.multiple / AtmosphereRayleighPhase(mu),
+                      min(sums.rayleighDepth * a.rayleigh.w, AtmosphereTableDepthMax));
     mie = float4(sums.mie, min(sums.mieDepth * a.mie.y, AtmosphereTableDepthMax));
 }
 
@@ -240,6 +267,7 @@ AtmosphereSums AtmosphereTableRead(AtmosphereData a, float4 rayleigh, float4 mie
     AtmosphereSums sums;
     sums.rayleigh = rayleigh.rgb;
     sums.mie = mie.rgb;
+    sums.multiple = float3(0.0);
     sums.rayleighDepth = rayleigh.a / a.rayleigh.w;
     sums.mieDepth = mie.a / a.mie.y;
     return sums;
