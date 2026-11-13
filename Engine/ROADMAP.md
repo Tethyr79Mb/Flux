@@ -19,7 +19,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   Limites : l'ombre lointaine d'un objet qui bouge a une image de retard ; en tournant, les deux sont refaites.
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
-- ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
+- ⬜ Lumières en grappes : étape A4 du plan d'éclairage (section Rendu).
 - 🔧 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
   - ✅ 1. `JobSystem` : fils de travail (cœurs moins un), vol de tâches, attente qui aide, aucune allocation par tâche.
   - ✅ 2. Plusieurs listes primaires par image (choix de Bruno) : `CommandList::Fork` insère des listes à remplir sur d'autres fils, jouées dans l'ordre en une seule soumission ; un pool par command buffer, créé une fois. Aussi dans `Device::Submit`.
@@ -110,7 +110,17 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Unités physiques (2026-11-03) : soleil en lux, lampes et réacteurs en lumens (affaiblies en 1/d²), fond du ciel, émissifs et ambiance des intérieurs en cd/m², bornes de l'exposition en EV100 ; anciennes scènes converties (soleil, fond, émissifs, réacteurs, lampes x 2500 vers des lumens réalistes) ou remises aux valeurs réelles par défaut (intérieurs, bornes : choix de Bruno) ; lumière ambiante du ciel à l'échelle d'avant (débouche les ombres) ; étoiles et nébuleuses du fond avec un éclat minimum à l'écran (choix de Bruno : visibles près d'une station éclairée), effacées par la clarté de l'air à l'écran (ciel de jour, halo) quelle que soit la densité de l'atmosphère ; verres (transparents lisses) sans diffus, reflets seuls (diélectriques à 4 %, sans le ciel vus de l'intérieur), ombres des objets reçues. À améliorer : le verre assombrit le fond sans le teinter (teinte colorée : deux passes ou mélange à deux sources) ; reflet de l'habitacle sur la verrière absent (sonde de reflets du vaisseau) ; valeurs de la station et des modèles à ajuster à l'œil ; le soleil ne dépend pas encore de la distance de l'Orbite ; côté ombre d'un vaisseau presque noir dans l'espace (pas encore de lumière renvoyée par la planète).
 - 🔧 Exposition propre aux intérieurs (2026-11-03, d'après une image de Star Citizen) : compensation (-1 stop par défaut) et bornes de l'œil (EV100 3 à 7, choix de Bruno : l'image bouge peu en regardant les lampes ou une porte au soleil) réglées dans l'Intérieur, pour garder une station sombre et contrastée au lieu de la remonter au gris moyen. La boîte d'un Intérieur compte en entier (sol et murs posés sur ses faces), le fondu se fait dehors. Dans l'espace, le ciel n'entre plus dans la mesure de la lumière (ses étoiles, à éclat minimum à l'écran, fermaient l'œil jusqu'à la borne). À améliorer : valeur à régler à l'œil pièce par pièce.
 - ⬜ Étalonnage couleur par table (LUT 3D après la courbe de tons), réglable par scène.
-- ⬜ Éclairage réaliste, étapes suivantes (plan du 2026-11-02, choix de Bruno : fondations d'abord) : rendu différé, occlusion ambiante GTAO, sondes de reflets dans les vaisseaux, reflets de l'écran, ombres des lampes, brouillard volumique, lumière indirecte.
+- ⬜ Éclairage réaliste (plan du 2026-11-13 : https://claude.ai/artifact/JprtbD2cuivx7WQ3CnF6Tu ; repli GTX 1060 dans le plan) :
+  - ⬜ A1. RHI : jusqu'à 8 cibles de couleur par passe.
+  - ⬜ A2. G-buffer (12 octets par pixel) et passe d'éclairage en compute, modèles opaques d'abord.
+  - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
+  - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
+  - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
+  - ⬜ A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations.
+  - ⬜ A7. Ombres des lampes (atlas) et brouillard volumique (froxels).
+  - ⬜ B1. Lumière renvoyée par la planète proche (ligne suivante).
+  - ⬜ B2. Matières lues au point touché par un rayon.
+  - ⬜ B3. Lumière indirecte par sondes DDGI en ray tracing, une grille par vaisseau ; repli GTX 1060 à choisir (plan).
 - ⬜ Lumière renvoyée par la planète proche (remarque de Bruno du 2026-10-26) : dans l'espace, la face d'un objet à l'ombre du soleil ne reçoit que l'ambiante d'un ciel noir et paraît grise ; une lueur bleutée venue de la planète (selon sa taille apparente et sa face éclairée) éclairerait les dessous comme dans les rendus de la station.
 - ⬜ Matériaux multicouches (remarque de Bruno du 2026-10-26) : une matière de base (peinture, métal nu) et des couches mélangées par masque (usure, saleté, bandes), comme les « layer blends » de Star Citizen. Aujourd'hui : un seul jeu de textures par matériau.
 - ⬜ Décalcomanies (idée de Bruno du 2026-10-26) : images projetées sur les modèles (numéros, logos, bandes), posées dans l'éditeur. En attendant, plaques texturées dans le modèle.
