@@ -30,7 +30,7 @@ static const uint GrassMeshletCount = GrassMeshletSide * GrassMeshletSide;
 static const uint GrassVertexShift = 9;    // MeshRenderer::GrassVertexShift
 static const uint GrassInstanceShift = 12; // MeshRenderer::GrassInstanceShift
 // Jusqu'à cette part de la portée, tous les brins ; au-delà, leur part baisse comme 1 / distance.
-static const float GrassNearBoost = 2.0;
+static const float GrassNearBoost = 3.0;
 static const float GrassFullDistance = 20.0; // m : tous les brins jusque-là (MeshRenderer.cpp)
 // Chemin des sommets : brins de 2 segments, 32 par instance (MeshRenderer::GrassClusterBlades).
 static const uint GrassClusterBlades = 32;
@@ -109,7 +109,7 @@ float GrassArea(uint firstVertex, uint2 origin, uint size)
 float GrassKeep(float distance)
 {
     const float range = GrassRange();
-    // De près, sous les yeux quand on regarde le sol : deux fois plus de brins (peu de surface, peu de coût).
+    // De près, sous les yeux quand on regarde le sol : trois fois plus de brins (peu de surface, peu de coût).
     const float near = lerp(GrassNearBoost, 1.0, smoothstep(2.0, 10.0, distance));
     return min(pow(GrassFullDistance / max(distance, 1.0e-3), 1.5), 1.0) * near * smoothstep(range, 0.6 * range, distance);
 }

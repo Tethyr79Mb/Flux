@@ -290,7 +290,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - 🔧 Herbe (`shaders/Grass.slang`, réglages dans `VegetationComponent`) : brins en courbe de Bézier générés par le GPU
   à chaque image sur les tuiles proches, là où le sol montre de l'herbe (`GetGroundCover`, partagé avec le sol), rien
   en mémoire. Mesh shaders : une tâche par tuile écarte les paquets hors champ, cachés ou sans herbe, 3 à 1 segments
-  selon la distance ; au loin il en reste une part, élargie (200/m², doublée sur 10 m, toute jusqu'à 20 m, puis en
+  selon la distance ; au loin il en reste une part, élargie (200/m², triplée sur 10 m, toute jusqu'à 20 m, puis en
   distance^-1,5, fondue de 60 à 100 % de la portée de 150 m). Touffes, plages, brins secs, pied sombre ; le sol prend
   sous l'herbe la couleur du pré (pas de limite visible). Vent par vagues, lumière translucide. Repli sans mesh shaders :
   par les sommets, 4 fois moins dense, 60 % de la portée. Air et ombre des nuages calculés une fois par paquet, pas
