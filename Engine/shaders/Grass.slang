@@ -397,6 +397,7 @@ SceneOutput fragmentGrassGeometry(GrassVertexOutput input)
 SceneOutput fragmentGrass(GrassVertexOutput input)
 {
     shadowPixel = input.position.xy;
+    simpleShadow = true;
     const PlanetData planet = frame[0].planets[input.planet];
     const float3 grass = GrassBaseColor(planet);
     Surface surface;
