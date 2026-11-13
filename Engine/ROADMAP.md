@@ -271,7 +271,10 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   Humidité du relief (géologie, étape 1, demande de Bruno du 2026-11-13) : creux humides au sol épais, crêtes sèches
   (hauteur moyenne à 300 m autour moins celle du point, relief grossier), sur une grille de 2x2 à 8x8 mailles par
   tuile, rangée dans chaque sommet ; elle ajoute humidité et forêts au fond des vallons pour les arbres, le sol et
-  l'herbe. À venir : roche-mère par régions (teintes, profondeur du sol, condition « sol » des biomes), puis rivières.
+  l'herbe. Roche-mère (étape 2) : régions de 20 à 80 km par formule (granit dans les chaînes, calcaire et grès dans
+  les plaines, basalte par taches) qui teintent la roche, le sable et la terre ; profondeur de la terre selon
+  l'humidité du relief et la roche : roche dès les pentes douces et affleurements là où elle est mince, sans herbe.
+  Couleurs fixes dans le code (réglables avec les types de planète). À venir : condition « sol » des biomes, rivières.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
   différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; humidité du relief
