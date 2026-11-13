@@ -210,6 +210,8 @@ struct MaterialData
 // l'air d'une planète.
 [[vk::binding(8, 1)]] Sampler2D airRayleigh;
 [[vk::binding(9, 1)]] Sampler2D airMie;
+// Diffusion multiple de l'air de la planète (AtmosphereMultipleLight), pour les marches hors des tables.
+[[vk::binding(20, 1)]] Sampler2D atmosphereMultiple;
 
 // Groupe 2 : tables de tous les modèles chargés (ModelCache). Images des matériaux, choisies par indice : couleurs en
 // sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
@@ -1252,7 +1254,8 @@ float3 AirTo(float3 worldPosition, out float3 transmittance)
         return AtmosphereLight(f.atmosphere, AtmosphereTableRead(f.atmosphere, rayleigh, mie), direction, f.toSun.xyz,
                                f.sunColor.rgb, transmittance);
     }
-    return AtmosphereScatter(f.atmosphere, direction, distance, f.toSun.xyz, f.sunColor.rgb, 16, 0.5, transmittance);
+    return AtmosphereScatter(f.atmosphere, atmosphereMultiple, direction, distance, f.toSun.xyz, f.sunColor.rgb, 16, 0.5,
+                             transmittance);
 }
 
 float3 ThroughAir(float3 lit, float3 worldPosition)
@@ -1962,7 +1965,7 @@ OceanVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_Vulka
         const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
         float3 reflected = reflect(normalize(output.base.worldPosition), worldUp);
         reflected = normalize(reflected + worldUp * max(0.02 - dot(reflected, worldUp), 0.0)); // pas sous l'horizon
-        output.seaSky = AtmosphereScatterFrom(f.atmosphere, output.base.worldPosition - f.atmosphere.center.xyz, reflected,
+        output.seaSky = AtmosphereScatterFrom(f.atmosphere, atmosphereMultiple, output.base.worldPosition - f.atmosphere.center.xyz, reflected,
                                               1.0e9, f.toSun.xyz, f.sunColor.rgb, 6, 0.5, output.seaSkyThrough);
     }
     return output;

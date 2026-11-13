@@ -150,6 +150,7 @@ namespace Flux {
         // Cascades des forêts au loin dans FrameData::cascades.
         constexpr std::uint32_t ForestCascade = ShadowCascadeCount + TerrainShadowCascadeCount;
         constexpr std::uint32_t SceneStructureSlot = 19; // ray tracing seulement (shaders/MeshRays.slang)
+        constexpr std::uint32_t AtmosphereMultipleSlot = 20; // diffusion multiple de l'air (SkyLighting::atmosphereMultiple)
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -326,6 +327,7 @@ namespace Flux {
             RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{AtmosphereMultipleSlot, RHI::BindingType::Texture, both}, // marche de l'air hors des tables, ciel dans l'eau
             RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, RHI::ShaderStage::Fragment},
         };
         // La structure de la scène n'existe qu'avec le ray tracing (sinon, type de liaison inconnu du pilote).
@@ -888,6 +890,10 @@ namespace Flux {
             m_frameGroups[frameIndex]->SetTexture(AirRayleighSlot, *sky.airRayleigh, *sky.airSampler);
             m_frameGroups[frameIndex]->SetTexture(AirMieSlot, *sky.airMie, *sky.airSampler);
             m_boundAir[frameIndex] = sky.airRayleigh;
+        }
+        if (sky.atmosphereMultiple != m_boundMultiple[frameIndex]) {
+            m_frameGroups[frameIndex]->SetTexture(AtmosphereMultipleSlot, *sky.atmosphereMultiple, *sky.airSampler);
+            m_boundMultiple[frameIndex] = sky.atmosphereMultiple;
         }
         // La soustraction des positions se fait en double (secteurs compris) : le GPU ne voit que de petits nombres.
         scene.ComputeRelativeTransforms(camera.position, m_relativeTransforms);

@@ -212,7 +212,11 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
 - 🔧 Ciel et air lus dans deux tables refaites à chaque image quand la caméra est dans l'air (Hillaire 2020), au lieu
   de 16 à 24 pas par sommet et par pixel ; écart mesuré sous 1,5 % de la marche d'avant. Limites : vu de l'espace,
-  marche d'avant (l'air n'y couvre qu'un anneau) ; une seule diffusion (pas de diffusion multiple).
+  marche d'avant (l'air n'y couvre qu'un anneau).
+- 🔧 Diffusion multiple de l'air (Hillaire 2020) : table 32 x 32 (hauteur, soleil) calculée sur le CPU quand l'air
+  change (~35 ms sur un cœur, réparties sur les fils), lue par le ciel, l'air, le reflet dans l'eau et la lumière
+  ambiante : horizon plus clair, crépuscule moins noir. Limites : sol supposé d'albédo 0,3 partout ; éclat recalé à
+  l'œil (×2 au lieu de ×3) ; suite possible : volume d'air 32³ (perspective aérienne) au lieu des deux tables.
 - ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.

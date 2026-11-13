@@ -2,6 +2,7 @@
 // coin du cube), relief reproductible, sens des triangles et sphères englobantes.
 #include "Check.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
 #include "Flux/Planetology/Atmosphere.hpp"
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Scene/Components.hpp"
@@ -302,6 +303,24 @@ bool RunPlanetTests() {
         const auto ambient = Planetology::ComputeAtmosphereAmbient(air, sun);
         CHECK(Math::Length(ambient.front()) < 1.0e-4f);
         CHECK(ambient.back().z > ambient[Planetology::AtmosphereAmbientSize / 2].z && ambient.back().z > 0.05f);
+        // Diffusion multiple : nulle en pleine nuit, plus forte le jour ; le même calcul sur plusieurs fils. Elle
+        // éclaircit l'horizon (plus « laiteux ») plus que le zénith, et la lumière ambiante.
+        const Planetology::AtmosphereMultipleTable multiple = Planetology::ComputeAtmosphereMultiple(air);
+        JobSystem jobs(3);
+        CHECK(Planetology::ComputeAtmosphereMultiple(air, &jobs) == multiple);
+        constexpr int Size = Planetology::AtmosphereMultipleSize;
+        CHECK(Math::Length(multiple.front()) < 1.0e-6f);
+        CHECK(multiple[Size - 1].z > multiple[Size / 2].z && multiple[Size - 1].z > 0.0f);
+        CHECK(std::ranges::all_of(multiple, [](const Math::Vector3f& v) { return v.x >= 0.0f && v.y >= 0.0f && v.z >= 0.0f; }));
+        const Math::Vector3f zenithMultiple = Scatter(air, ground, up, 1.0e30f, up, sun, Planetology::AtmosphereSkySteps,
+                                                      transmittance, &multiple);
+        const Math::Vector3f side = Math::Normalize(Math::Vector3f{0.0f, 0.02f, 1.0f});
+        const Math::Vector3f horizon = Scatter(air, ground, side, 1.0e30f, up, sun, Planetology::AtmosphereSkySteps, transmittance);
+        const Math::Vector3f horizonMultiple = Scatter(air, ground, side, 1.0e30f, up, sun, Planetology::AtmosphereSkySteps,
+                                                       transmittance, &multiple);
+        CHECK(zenithMultiple.z > zenith.z && horizonMultiple.y / horizon.y > zenithMultiple.y / zenith.y);
+        const auto ambientMultiple = Planetology::ComputeAtmosphereAmbient(air, sun, &multiple);
+        CHECK(ambientMultiple.back().z > ambient.back().z && Math::Length(ambientMultiple.front()) < 1.0e-4f);
         planet.atmosphere = 0.0f;
         CHECK(Planetology::MakeAtmosphereParameters(planet).top == 0.0f);
     }

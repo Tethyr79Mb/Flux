@@ -11,6 +11,7 @@
 #include <cmath>
 #include <numbers>
 #include <optional>
+#include <span>
 
 namespace Flux {
     namespace {
@@ -38,6 +39,7 @@ namespace Flux {
         constexpr std::uint32_t BackgroundSlot = 2;
         constexpr std::uint32_t SkyRayleighSlot = 3;
         constexpr std::uint32_t SkyMieSlot = 4;
+        constexpr std::uint32_t MultipleSlot = 5;
 
         // Tailles des tables de l'air : AtmosphereSkySize, puis AtmosphereAirSize x AtmosphereAirTiles dans
         // shaders/Atmosphere.slang. AirNear : AtmosphereAirNear.
@@ -66,6 +68,11 @@ namespace Flux {
 
         std::array<float, 4> ToArray(const Math::Vector3f& v, float w = 0.0f) { return {v.x, v.y, v.z, w}; }
         std::array<float, 4> ToArray(const Math::LinearColor& c, float w = 0.0f) { return {c.r, c.g, c.b, w}; }
+
+        template <typename T>
+        std::span<const std::uint8_t> Bytes(const T& object) {
+            return {reinterpret_cast<const std::uint8_t*>(&object), sizeof(object)};
+        }
     }
 
     std::expected<std::unique_ptr<SkyRenderer>, std::string> SkyRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
@@ -107,6 +114,12 @@ namespace Flux {
             }
             *table = std::move(*texture);
         }
+        constexpr std::array<float, 4> nothing{};
+        auto multiple = device.CreateTexture(RHI::Format::RGBA32Float, {1, 1}, Bytes(nothing));
+        if (!multiple) {
+            return std::unexpected(multiple.error());
+        }
+        sky->m_multiple = std::move(*multiple);
 
         constexpr std::array bindings{
             RHI::Binding{DataSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
@@ -114,6 +127,7 @@ namespace Flux {
             RHI::Binding{BackgroundSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{SkyRayleighSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{SkyMieSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{MultipleSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -134,6 +148,8 @@ namespace Flux {
             sky->m_boundBackground[f] = sky->m_blackCube.get();
             sky->m_groups[f]->SetTexture(SkyRayleighSlot, *sky->m_skyRayleigh, *sky->m_cubeSampler);
             sky->m_groups[f]->SetTexture(SkyMieSlot, *sky->m_skyMie, *sky->m_cubeSampler);
+            sky->m_groups[f]->SetTexture(MultipleSlot, *sky->m_multiple, *sky->m_cubeSampler);
+            sky->m_boundMultiple[f] = sky->m_multiple.get();
         }
 
         // Derrière tout : seulement là où la profondeur est restée celle de l'effacement (0, l'infini en reverse-Z).
@@ -358,6 +374,11 @@ namespace Flux {
         lighting.airRayleigh = m_airRayleigh.get();
         lighting.airMie = m_airMie.get();
         lighting.airSampler = m_cubeSampler.get();
+        lighting.atmosphereMultiple = m_multiple.get();
+        if (m_boundMultiple[frameIndex] != m_multiple.get()) {
+            m_groups[frameIndex]->SetTexture(MultipleSlot, *m_multiple, *m_cubeSampler);
+            m_boundMultiple[frameIndex] = m_multiple.get();
+        }
         if (m_visible || m_tablesWanted || !m_tablesFilled) {
             m_buffers[frameIndex]->Write(&data, sizeof(data));
         }
@@ -424,9 +445,27 @@ namespace Flux {
             return gpu;
         }
         const Planetology::AtmosphereParameters& a = *chosen;
+        // Diffusion multiple : quelques millisecondes réparties sur les fils, refaite seulement quand l'air change (pas
+        // avec le soleil). Gardée en table CPU pour la lumière ambiante, et envoyée au GPU (16 Ko).
+        if (m_multipleParameters != a) {
+            m_multipleTable = Planetology::ComputeAtmosphereMultiple(a, m_jobs);
+            m_multipleParameters = a;
+            std::array<std::array<float, 4>, Planetology::AtmosphereMultipleSize * Planetology::AtmosphereMultipleSize> texels{};
+            for (std::size_t i = 0; i < texels.size(); ++i) {
+                texels[i] = ToArray(m_multipleTable[i]);
+            }
+            constexpr std::uint32_t size = Planetology::AtmosphereMultipleSize;
+            if (auto texture = m_device.CreateTexture(RHI::Format::RGBA32Float, {size, size}, Bytes(texels))) {
+                m_device.Retire([old = std::move(m_multiple)]() mutable { old.reset(); });
+                m_multiple = std::move(*texture);
+            } else {
+                Log::Error("ciel : diffusion multiple : {}", texture.error());
+            }
+            m_ambientParameters.reset(); // la lumière ambiante en dépend
+        }
         // Lumière ambiante du ciel : quelques millisecondes, refaite seulement quand l'air ou le soleil changent.
         if (m_ambientParameters != a || m_ambientSunColor != sunColor) {
-            m_ambientTable = Planetology::ComputeAtmosphereAmbient(a, sunColor);
+            m_ambientTable = Planetology::ComputeAtmosphereAmbient(a, sunColor, &m_multipleTable);
             m_ambientParameters = a;
             m_ambientSunColor = sunColor;
         }

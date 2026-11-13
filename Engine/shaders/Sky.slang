@@ -15,6 +15,8 @@
 // Table du ciel vu de la caméra (skyTableFragment), dans l'air d'une planète : voir AtmosphereSkySize.
 [[vk::binding(3, 0)]] Sampler2D skyRayleigh;
 [[vk::binding(4, 0)]] Sampler2D skyMie;
+// Diffusion multiple de l'air de la planète (AtmosphereMultipleLight).
+[[vk::binding(5, 0)]] Sampler2D atmosphereMultiple;
 
 // bakeFragment : la face de la texture cube en cours (0 à 5 : +X, -X, +Y, -Y, +Z, -Z).
 struct BakeParams
@@ -219,9 +221,9 @@ TableOutput skyTableFragment(float4 position : SV_Position)
     // 32 pas : la table est petite, le ciel y gagne en finesse à travers le bord de l'air. Un regard qui frôle une
     // plaine plus basse que le rayon de la planète passe sous lui : la densité n'y monte plus, comme dans la table de
     // l'air (sans quoi le ciel et le sol lointain n'auraient pas la même brume).
-    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, 0.0);
+    const AtmosphereSums sums = AtmosphereMarch(a, atmosphereMultiple, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, 0.0);
     TableOutput output;
-    AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
+    AtmosphereTableWrite(a, sums, dot(direction, sky[0].toSun.xyz), output.rayleigh, output.mie);
     return output;
 }
 
@@ -240,9 +242,9 @@ TableOutput airTableFragment(float4 position : SV_Position)
     const float3 direction = normalize(s.forward.xyz + s.right.xyz * tangent.x + s.up.xyz * tangent.y);
     const float distance = AtmosphereSliceDistance(a, float(slice) / float(AtmosphereAirSlices - 1));
     // 16 pas, comme la marche par sommet qu'elle remplace (AirTo dans Mesh.slang).
-    const AtmosphereSums sums = AtmosphereMarch(a, -a.center.xyz, direction, distance, s.toSun.xyz, 16, 0.5, 0.0);
+    const AtmosphereSums sums = AtmosphereMarch(a, atmosphereMultiple, -a.center.xyz, direction, distance, s.toSun.xyz, 16, 0.5, 0.0);
     TableOutput output;
-    AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
+    AtmosphereTableWrite(a, sums, dot(direction, s.toSun.xyz), output.rayleigh, output.mie);
     return output;
 }
 
@@ -291,7 +293,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
             // Vu de l'espace : l'air ne couvre qu'un anneau, trop fin pour la table. Pas fixes (milieu de chaque pas) :
             // décalés par pixel, ils donnaient un damier fin bien visible sans anticrénelage temporel pour le
             // lisser ; 24 pas pour ne pas voir de bandes à travers le bord de l'air.
-            scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
+            scattered = AtmosphereScatter(s.atmosphere, atmosphereMultiple, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
                                           transmittance);
         }
         // Le jour, l'air éclairé (des milliers de cd/m²) noie la nébuleuse (moins d'une) d'elle-même. Les étoiles,
