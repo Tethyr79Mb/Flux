@@ -411,6 +411,7 @@ namespace Flux::Vk {
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
         vkDesc.depthClamp = desc.depthClamp;
+        vkDesc.inlineShaders = m_device->HasInlineShaders();
         auto pipeline = Pipeline::CreateGraphics(m_device->GetHandle(), vkDesc);
         if (!pipeline) {
             return std::unexpected(pipeline.error());
@@ -428,6 +429,7 @@ namespace Flux::Vk {
         vkDesc.entryPoint = desc.entryPoint;
         vkDesc.setLayouts = setLayouts;
         vkDesc.pushConstantsSize = desc.pushConstantsSize;
+        vkDesc.inlineShaders = m_device->HasInlineShaders();
         auto pipeline = Pipeline::CreateCompute(m_device->GetHandle(), vkDesc);
         if (!pipeline) {
             return std::unexpected(pipeline.error());

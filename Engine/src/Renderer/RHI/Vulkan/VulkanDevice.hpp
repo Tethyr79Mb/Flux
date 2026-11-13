@@ -56,6 +56,7 @@ namespace Flux::Vk {
         bool HasTextureCompressionBC() const { return m_adapter.HasTextureCompressionBC(); }
         bool HasRayTracing() const { return m_adapter.HasRayTracing(); }
         bool HasBufferMarkers() const { return m_adapter.HasBufferMarkers(); }
+        bool HasInlineShaders() const { return m_adapter.HasInlineShaders(); }
         bool HasDebugLabels() const { return m_instance->HasDebugLabels(); }
         // Après la perte du device : la description de la panne par le pilote (VK_EXT_device_fault), vide sans elle.
         std::string DescribeFault() const;
