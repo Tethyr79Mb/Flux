@@ -1607,30 +1607,14 @@ struct GroundCover
     float snow;
 };
 
-// Les deux grandes octaves des taches du sol (397 et 97 m) : lisses à l'échelle d'un paquet d'herbe, qui les
-// interpole entre ses coins au lieu de les lire pour chaque brin (GetGroundCoverWithLarge).
-float GroundLargeMacro(float3 local, float distance)
-{
-    return (PlanetNoise(local * (1.0 / 397.0)) - 0.5) * 0.5 * saturate(2.0 - distance / 40000.0)
-         + (PlanetNoise(local * (1.0 / 97.0)) - 0.5) * 0.3 * saturate(2.0 - distance / 10000.0);
-}
-
-GroundCover GetGroundCoverWithLarge(PlanetData planet, float3 local, float flatness, float altitude, float2 climate, float distance,
-                                    float largeMacro);
-
 GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, float altitude, float2 climate, float distance)
-{
-    return GetGroundCoverWithLarge(planet, local, flatness, altitude, climate, distance, GroundLargeMacro(local, distance));
-}
-
-// GetGroundCover, les grandes octaves des taches déjà lues (GroundLargeMacro).
-GroundCover GetGroundCoverWithLarge(PlanetData planet, float3 local, float flatness, float altitude, float2 climate, float distance,
-                                    float largeMacro)
 {
     GroundCover cover;
     // Taches de 20 à 400 m (déplacent les limites des zones), grain de 30 cm à 3 m.
     // Chaque octave s'efface au loin, avant de scintiller (plus petite qu'un pixel).
-    cover.macro = largeMacro + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
+    cover.macro = (PlanetNoise(local * (1.0 / 397.0)) - 0.5) * 0.5 * saturate(2.0 - distance / 40000.0)
+                + (PlanetNoise(local * (1.0 / 97.0)) - 0.5) * 0.3 * saturate(2.0 - distance / 10000.0)
+                + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
     const float macro = cover.macro;
 
     cover.rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
