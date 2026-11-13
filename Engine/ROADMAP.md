@@ -274,7 +274,9 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   l'herbe. Roche-mère (étape 2) : régions de 20 à 80 km par formule (granit dans les chaînes, calcaire et grès dans
   les plaines, basalte par taches) qui teintent la roche, le sable et la terre ; profondeur de la terre selon
   l'humidité du relief et la roche : roche dès les pentes douces et affleurements là où elle est mince, sans herbe.
-  Couleurs fixes dans le code (réglables avec les types de planète). À venir : condition « sol » des biomes, rivières.
+  Couleurs fixes dans le code (réglables avec les types de planète). Condition « sol » des biomes (étape 3) :
+  préférence pour chaque roche-mère et profondeur de la terre, dans le panneau Végétation (pinède sur grès et granit,
+  plaine et marais sur sol épais). À venir : rivières.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
   différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; humidité du relief

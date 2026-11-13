@@ -38,6 +38,10 @@ namespace Flux::Planetology {
         float minAltitude = -100.0f, maxAltitude = 100.0f;   // % du relief, au-dessus du niveau zéro
         float minTemperature = -100.0f, maxTemperature = 100.0f; // °C
         float minHumidity = -1.0f, maxHumidity = 2.0f;
+        // Sol (géologie) : préférence de 0 à 1 pour chaque roche-mère (Lithology dans shaders/PlanetClimate.slang) et
+        // profondeur de la terre (SoilDepth : 0 roche à nu, 1 sol épais). Par défaut, tout convient.
+        float granite = 1.0f, limestone = 1.0f, sandstone = 1.0f, basalt = 1.0f;
+        float minSoil = 0.0f, maxSoil = 1.0f;
         float cover = 0.5f;   // part couverte de forêts
         float density = 0.4f; // part des places occupée dans une forêt
         float scale = 1.0f;   // taille des arbres, x celle de l'espèce
