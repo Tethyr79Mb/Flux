@@ -24,8 +24,9 @@ namespace Flux::Planetology {
         std::array<float, 4> ranges;
         std::array<float, 4> humidity;
         std::array<float, 4> color;
-        std::array<float, 4> rocks; // préférence pour le granit, le calcaire, le grès, le basalte (Lithology)
-        std::array<float, 4> soil;  // x, y : profondeur de la terre (SoilDepth) ; z, w : libres
+        // Par défaut, tout convient (comme un biome sans « rocks » ni « soil ») : un biome construit sans les donner pousse.
+        std::array<float, 4> rocks{1.0f, 1.0f, 1.0f, 1.0f}; // préférence pour le granit, le calcaire, le grès, le basalte (Lithology)
+        std::array<float, 4> soil{-1.0f, 2.0f, 0.0f, 0.0f};  // x, y : profondeur de la terre (SoilDepth) ; z, w : libres
     };
 
     // Biomes d'une planète prêts pour le GPU : les variantes de leurs espèces mises en une table (MaxSpecies au plus).
