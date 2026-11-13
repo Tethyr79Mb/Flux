@@ -592,6 +592,10 @@ static float2 shadowPixel = float2(0.0);
 static float3 sunDirect = float3(0.0);   // lumière directe du soleil de LightSurface
 static float3 sunRadiance = float3(0.0); // la même, telle qu'elle arrive dans l'image (air, exposition)
 static bool traceSunHere = false;
+// Ombre simple (fixée par le programme de pixel, herbe) : cascades proches sans recherche d'obstacles ni pénombre
+// variable, pénombre la plus étroite et 4 lectures. L'herbe est trop fine et bouge trop pour qu'on voie la différence,
+// et c'était une bonne part de son coût au pixel.
+static bool simpleShadow = false;
 
 // La lumière directe du soleil n'entre pas dans la couleur : écrite à part (SV_Target2), RayShadowRenderer l'ajoute
 // ensuite, multipliée par la part qui arrive. L'ajouter plutôt que retirer ce qui n'arrive pas : une soustraction de
@@ -721,7 +725,7 @@ float FindBlockers(Sampler2D depthMap, ShadowPoint p, float radius, float2x2 rot
 // Part de lumière filtrée sur une pénombre de rayon `penumbra` mètres (bornée en texels de la carte).
 float FilterShadow(Sampler2DShadow map, ShadowPoint p, float penumbra, float2x2 rotation)
 {
-    const uint taps = max(frame[0].shadowOptions.y, 1u);
+    const uint taps = simpleShadow ? min(max(frame[0].shadowOptions.y, 1u), 4u) : max(frame[0].shadowOptions.y, 1u);
     const float texels = clamp(penumbra / p.texel, MinPenumbraTexels, MaxPenumbraTexels);
     float lit = 0.0;
     for (uint i = 0; i < taps; ++i) {
@@ -882,9 +886,13 @@ float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float
     if (fine >= 4) {
         return -1.0;
     }
+    const float2x2 rotation = ShadowRotationMatrix();
+    if (simpleShadow) {
+        used = fine;
+        return FilterShadow(shadowMap, finePoint, 0.0, rotation);
+    }
     const float tanSun = f.toSun.w;
     const float reach = NearMaxBlocker * tanSun; // pénombre la plus large cherchée (rayon, mètres)
-    const float2x2 rotation = ShadowRotationMatrix();
 
     float distance;
     float found = FindBlockers(shadowDepth, finePoint, reach, rotation, distance);

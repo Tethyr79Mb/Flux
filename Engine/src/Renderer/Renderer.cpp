@@ -136,6 +136,11 @@ namespace Flux {
         bool detailedTimings = false; // heures du GPU demandées pour cette image seulement
         JobSystem* jobs = nullptr;     // Renderer::SetJobSystem
         bool parallelRecording = true;
+        // Fils de travail pris à cette image (ChooseWorkers) : seulement quand le CPU limite l'image.
+        bool workersActive = true;
+        double cpuWait = 0.0;          // ms, moyenne glissante du temps où le CPU attend (GPU, écran)
+        double executeMs = 0.0;        // ms, durée de graph.Execute à la dernière image
+        std::uint32_t framesSinceSwitch = 0;
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
         bool hasPrevious = false;
@@ -313,6 +318,7 @@ namespace Flux {
                 return true;
             }
             const std::uint32_t frameIndex = device->GetFrameIndex();
+            ChooseWorkers();
             timings.fontsLoading = overlay->GetFontsLoading();
             if (!overlay->Upload(frameIndex)) {
                 return false;
@@ -338,7 +344,8 @@ namespace Flux {
             frame.index = frameIndex;
             frame.upscale.nearPlane = camera.nearPlane;
             frame.upscale.verticalFov = camera.verticalFov;
-            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false), parallelRecording ? jobs : nullptr);
+            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false), workersActive ? jobs : nullptr);
+            executeMs = Milliseconds(Clock::now() - recordStart);
             timings.recordLists = graph.GetListCount();
             return true;
         }
@@ -443,7 +450,7 @@ namespace Flux {
             lighting.environmentSampler = &environment->GetSampler();
             lighting.environmentMips = environment->GetReflectionMips();
             timings.prepareSky = Milliseconds(Clock::now() - skyStart);
-            JobSystem* workers = parallelRecording ? jobs : nullptr;
+            JobSystem* workers = workersActive ? jobs : nullptr;
             // Les traçantes ne lisent que leurs projectiles : préparées sur un autre fil pendant les objets.
             JobCounter tracersDone;
             const auto prepareTracers = [this, &camera, aspect, renderHeight, frameIndex] {
@@ -516,6 +523,40 @@ namespace Flux {
             timings.aheadTreePlains = vegetation.ahead;
             timings.sownTreePlains = vegetation.sown;
             timings.hiddenTrees = vegetation.hidden;
+        }
+
+        // Les fils ne servent qu'à raccourcir le temps CPU de l'image. Quand le CPU attend déjà le GPU (ou l'écran,
+        // V-Sync), ce temps est caché : couper l'enregistrement en plusieurs listes n'apporte rien et coûte un peu
+        // (listes de plus pour le GPU, chaque secondaire recharge son état ; fils réveillés qui prennent du turbo au
+        // fil principal et aux fils du pilote). Vu chez Bruno, GPU limitant : 163 images/s sur un fil, 153 avec les
+        // fils. D'où : fils pris seulement si l'image est limitée par le CPU. L'écart entre les deux seuils et
+        // l'attente entre deux bascules évitent de changer à chaque image.
+        void ChooseWorkers() {
+            constexpr double SerialSlackMs = 0.3;   // attente qui resterait sur un fil : au-dessus, un fil suffit
+            constexpr double ParallelSlackMs = 0.1; // attente sur un fil : en dessous, le CPU limite, fils repris
+            constexpr std::uint32_t MinFrames = 60;
+            const double wait = timings.waitGpu + timings.waitImage + timings.present;
+            cpuWait = framesSinceSwitch == 0 ? wait : cpuWait * 0.9 + wait * 0.1;
+            ++framesSinceSwitch;
+            if (!parallelRecording || !jobs) {
+                workersActive = false;
+                return;
+            }
+            if (framesSinceSwitch < MinFrames) {
+                return;
+            }
+            bool wanted = workersActive;
+            if (workersActive) {
+                // Sur un fil, l'enregistrement prendrait le temps que les fils font gagner : l'attente baisserait d'autant.
+                const double saved = std::max(graph.GetSerialMicroseconds() * 0.001 - executeMs, 0.0);
+                wanted = cpuWait - saved < SerialSlackMs;
+            } else {
+                wanted = cpuWait < ParallelSlackMs;
+            }
+            if (wanted != workersActive) {
+                workersActive = wanted;
+                framesSinceSwitch = 0;
+            }
         }
 
         // Attentes de BeginFrame et heures du GPU relues pour l'image qu'il vient de finir.
@@ -1160,7 +1201,15 @@ namespace Flux {
     }
 
     void Renderer::SetParallelRecording(bool enabled) {
-        m_impl->parallelRecording = enabled;
+        if (m_impl->parallelRecording != enabled) {
+            m_impl->parallelRecording = enabled;
+            m_impl->workersActive = enabled; // repart de l'état demandé ; ChooseWorkers juge ensuite
+            m_impl->framesSinceSwitch = 0;
+        }
+    }
+
+    bool Renderer::IsUsingWorkers() const {
+        return m_impl->workersActive && m_impl->jobs != nullptr;
     }
 
     bool Renderer::IsParallelRecording() const {

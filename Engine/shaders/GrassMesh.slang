@@ -1,7 +1,8 @@
 // Herbe des planètes en mesh shaders (voir Grass.slang), quand le GPU les a : une tâche (taskGrass) par tuile proche
 // teste ses 16 paquets de 8 x 8 mailles : hors du champ, caché derrière ce que voyait l'image précédente, sans herbe
 // (aux coins et au centre), ou trop loin pour garder un brin, il est écarté. Chaque paquet retenu envoie ses brins à
-// meshGrass par groupes de 32 (un thread par brin), en 3 segments de près, 2 puis 1 au loin.
+// meshGrass par groupes de 32 (un thread par brin), en 3 segments de près, 2 puis 1 au loin, avec son climat, son air et
+// l'ombre des nuages calculés une fois (LightGrassPatch).
 // Compilé à part de Grass.slang (qu'il inclut) : un module qui déclare les mesh shaders ne se charge pas sur un GPU qui
 // ne les a pas.
 
@@ -31,6 +32,7 @@ struct GrassPayload
     // densité (bits d'un float).
     uint4 meshlets[GrassMeshletCount];
     float2 climates[GrassMeshletCount]; // PlanetClimate au centre du paquet
+    GrassPatchLight lights[GrassMeshletCount]; // LightGrassPatch au centre du paquet
 };
 
 groupshared GrassPayload grass;
@@ -84,13 +86,15 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float total = area <= GrassMaxMeshletArea ? ceil(area * GrassDensity()) : 0.0; // faux si NaN
         const uint blades = uint(min(ceil(total * GrassKept(keep)), float(GrassMaxMeshletBlades)));
         const float range = GrassRange();
-        const uint segments = nearest < 0.12 * range ? 3u : nearest < 0.35 * range ? 2u : 1u;
+        // 3 segments seulement tout près (l'arc s'y voit), 2 ensuite : chaque segment coûte deux triangles par brin.
+        const uint segments = nearest < 8.0 ? 3u : nearest < 0.35 * range ? 2u : 1u;
         const uint groups = (blades + GrassGroupBlades - 1) / GrassGroupBlades;
         if (groups > 0) {
             uint slot;
             InterlockedAdd(grassCount, 1, slot);
             grass.meshlets[slot] = uint4(thread + segments * 256, groups, blades, asuint(total));
             grass.climates[slot] = climate;
+            grass.lights[slot] = LightGrassPatch(center);
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -130,7 +134,7 @@ void meshGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID, in payload
     GrassBlade blade = NoGrassBlade();
     if (index < meshlet.z) {
         blade = MakeGrassBlade(tile.draw, tile.firstVertex, tile.seed, index, origin, float(GrassMeshletQuads),
-                               asfloat(meshlet.w), tile.climates[entry]);
+                               asfloat(meshlet.w), tile.climates[entry], tile.lights[entry]);
     }
     // Les brins vivants à la suite, sans trou.
     if (thread == 0) {

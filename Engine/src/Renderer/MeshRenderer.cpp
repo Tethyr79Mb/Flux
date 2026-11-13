@@ -761,9 +761,16 @@ namespace Flux {
                 grass.shaderPath = ShaderPath("GrassMesh");
                 grass.taskEntryPoint = "taskGrass";
                 grass.meshEntryPoint = "meshGrass";
-                if (auto created = create(m_grassMesh, grass); !created) {
+                auto created = create(m_grassMesh, grass);
+                if (created) {
+                    grass.fragmentEntryPoint = "fragmentGrassGeometry";
+                    created = create(m_grassMeshGeometry, grass);
+                    grass.fragmentEntryPoint = "fragmentGrass";
+                }
+                if (!created) {
                     Log::Warning("Herbe : mesh shaders indisponibles ({}), chemin des sommets", created.error());
                     m_grassMesh.reset();
+                    m_grassMeshGeometry.reset();
                 }
                 grass.taskEntryPoint = nullptr;
                 grass.meshEntryPoint = nullptr;
@@ -772,6 +779,10 @@ namespace Flux {
                 grass.shaderPath = ShaderPath("Grass");
                 grass.vertexEntryPoint = "vertexGrass";
                 if (auto result = create(m_grassVertex, grass); !result) {
+                    return result;
+                }
+                grass.fragmentEntryPoint = "fragmentGrassGeometry";
+                if (auto result = create(m_grassVertexGeometry, grass); !result) {
                     return result;
                 }
             }
@@ -2561,7 +2572,9 @@ namespace Flux {
             return;
         }
         BindState state;
-        const RHI::Pipeline& pipeline = m_grassMesh ? *m_grassMesh : *m_grassVertex;
+        // « Sol et herbe sans pixels » : pixel presque vide, pour séparer le coût des brins de celui de leur éclairage.
+        const RHI::Pipeline& pipeline = m_grassMesh ? (m_groundGeometryOnly ? *m_grassMeshGeometry : *m_grassMesh)
+                                                    : (m_groundGeometryOnly ? *m_grassVertexGeometry : *m_grassVertex);
         BindPipeline(commands, state, frameIndex, pipeline);
         commands.SetBindGroup(0, m_groundGroup ? *m_groundGroup : m_models->GetWhiteGroup());
         DrawParams params{{m_grass.density, m_grass.height, m_grass.range, m_grass.width}, {m_grass.wind, 0.0f, 0.0f, 0.0f},

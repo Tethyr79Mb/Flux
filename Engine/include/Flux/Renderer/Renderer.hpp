@@ -182,10 +182,12 @@ namespace Flux {
         // Fils qui enregistrent les passes de l'image en parallèle (ceux du moteur, qui vivent plus longtemps que le
         // Renderer) ; nul (par défaut) : tout sur le fil de Render.
         void SetJobSystem(JobSystem* jobs);
-        // Préparation (entités, traçantes) et enregistrement en parallèle, avec des fils (activé par défaut) :
-        // désactivable pour comparer.
+        // Préparation (entités, traçantes) et enregistrement en parallèle, avec des fils (permis par défaut) :
+        // désactivable pour comparer. Permis, les fils ne sont pris que si le CPU limite l'image ; quand il attend le
+        // GPU ou l'écran, un seul fil (IsUsingWorkers dit lequel des deux à la dernière image).
         void SetParallelRecording(bool enabled);
         bool IsParallelRecording() const;
+        bool IsUsingWorkers() const;
         // Grille au sol de l'éditeur (plan y = 0, lignes du mètre, des 10 m et des 100 m, axes X et Z en couleur),
         // cachée derrière les objets ; désactivée par défaut, le jeu ne la montre pas.
         void SetGridVisible(bool visible);

@@ -527,6 +527,8 @@ namespace Flux {
         // m_grassBatches dans m_tileBatches ; le groupe 3 est celui des pages de tuiles (m_tileMeshGroups).
         std::unique_ptr<RHI::Pipeline> m_grassMesh;
         std::unique_ptr<RHI::Pipeline> m_grassVertex;
+        std::unique_ptr<RHI::Pipeline> m_grassMeshGeometry;   // pixel presque vide (m_groundGeometryOnly), pour la mesure
+        std::unique_ptr<RHI::Pipeline> m_grassVertexGeometry;
         std::unique_ptr<RHI::Buffer> m_grassIndices;
         // Réglages de l'herbe de la planète à arbres de l'image (VegetationComponent), densité 0 : aucune.
         struct GrassSettings

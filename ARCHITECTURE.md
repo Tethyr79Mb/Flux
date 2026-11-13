@@ -553,7 +553,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine ses tuiles par bandes de distance (chacune deux fois plus loin que la précédente), puis par page :
   un `DrawIndexedIndirect` par page et par bande, de près à loin, pour que le relief proche cache le lointain avant
-  son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol sans pixels ») pour séparer leur coût
+  son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol et herbe sans pixels », brins compris) pour séparer leur coût
   de celui des sommets. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
 - Ray tracing quand le GPU a les ray queries (`VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, choisi seul au

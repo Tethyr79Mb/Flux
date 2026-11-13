@@ -26,6 +26,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   - 🔧 3. Graphe de rendu enregistré en parallèle : préparation et barrières des textures prévues d'abord sur un fil, puis passes réparties en groupes de temps CPU égal (moyenne mesurée par passe), un groupe par liste de Fork, 8 listes au plus. Case « Enregistrement parallèle » et temps CPU par passe au panneau Moteur. Une passe ne se coupe qu'en étapes (3b) : la plus lourde (objets ou sol) fixe le temps.
   - ✅ 3b. Passes lourdes en command buffers secondaires : `CommandList::BeginParallelRenderPass` et `RenderGraph::PassBuilder::BeginParallel`, une liste secondaire par étape remplie par un fil. Scène (objets, arbres, sol, ciel, océan) et ombres (une étape par cascade).
   - 🔧 4. Préparation du rendu en parallèle : chaque entité dessinée (sphère, champ, matrices, contour) calculée par les fils en tranches de 64, poses et listes gardées sur un fil dans l'ordre ; traçantes préparées à côté. Temps par partie au panneau Moteur (« Préparation (CPU) ») et dans les mesures. Reste sur un fil : le parcours des tuiles du sol, les plaines d'arbres, les envois.
+  - ✅ 5. Fils pris seulement quand le CPU limite l'image : quand il attend le GPU ou l'écran, tout sur un fil (les listes en plus coûtaient ~0,4 ms, 153 contre 163 images/s chez Bruno). Bascule avec deux seuils et 60 images d'attente ; état au panneau Moteur (« Fils »).
   - Plus tard : Jolt sur le `JobSystem` (il a aujourd'hui ses propres fils, cœurs moins un aussi).
 
 ### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)
@@ -292,7 +293,10 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   selon la distance ; au loin il en reste une part, élargie (200/m², triplée sur 10 m, toute jusqu'à 20 m, puis en
   distance^-1,5, fondue de 60 à 100 % de la portée de 150 m). Touffes, plages, brins secs, pied sombre ; le sol prend
   sous l'herbe la couleur du pré (pas de limite visible). Vent par vagues, lumière translucide. Repli sans mesh shaders :
-  par les sommets, 4 fois moins dense, 60 % de la portée. Coût : ~2 ms (RX 7700 XT, vue de l'éditeur). À améliorer :
+  par les sommets, 4 fois moins dense, 60 % de la portée. Air et ombre des nuages calculés une fois par paquet, ombre
+  du soleil simple sur les brins (sans recherche d'obstacles, 4 lectures), 3 segments sous 8 m. Coût : 1,90 → 0,99 ms
+  (RX 7700 XT, vue de l'éditeur 1070×636), dont 0,82 ms de brins (« Sol et herbe sans pixels »). Piste suivante si
+  besoin : brins fabriqués une fois par tuile en compute et gardés en mémoire (seul le vent change). À améliorer :
   couverture du sol calculée par brin (à faire par paquet) ; peu de variété (pas de fleurs) ; un peu bleue à l'ombre ;
   pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
   ni le souffle des réacteurs (étape 3) ; pas de réglage du joueur (étape 2) ; la couleur des brins est la moyenne de
