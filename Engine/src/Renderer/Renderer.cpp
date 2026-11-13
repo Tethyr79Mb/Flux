@@ -744,8 +744,8 @@ namespace Flux {
                         return RHI::RenderPassDesc{.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
                                                    .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
                                                    .colorTarget = graph.GetTexture(targets.sceneColor),
-                                                   .secondColorTarget = graph.GetTexture(targets.motion),
-                                                   .thirdColorTarget = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr,
+                                                   .extraColorTargets = {graph.GetTexture(targets.motion),
+                                                                         rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr},
                                                    .keepDepth = true};
                     },
                     [this](RHI::CommandList& commands) {
@@ -821,7 +821,7 @@ namespace Flux {
                 .Writes(cloudDistances)
                 .Begin([this, halfViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.cloudLight),
-                                              .secondColorTarget = graph.GetTexture(targets.cloudDistances)});
+                                              .extraColorTargets = {graph.GetTexture(targets.cloudDistances)}});
                     halfViewport(commands);
                 })
                 .Step("nuages", [this](RHI::CommandList& commands) { clouds->DrawMarch(commands, frame.index); });
@@ -881,7 +881,7 @@ namespace Flux {
                 .Begin([this, sceneViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.depth = graph.GetTexture(targets.sceneDepth),
                                               .colorTarget = graph.GetTexture(targets.sceneColor),
-                                              .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true,
+                                              .extraColorTargets = {graph.GetTexture(targets.motion)}, .keepDepth = true,
                                               .loadDepth = true, .loadColor = true});
                     sceneViewport(commands);
                 })

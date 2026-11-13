@@ -68,11 +68,10 @@ namespace Flux::Planetology {
             return created.has_value() ? std::expected<void, std::string>{} : std::unexpected(created.error());
         };
         desc.colorFormat = LightFormat;
-        desc.secondColorFormat = DistanceFormat;
-        desc.writeSecondColor = true;
+        desc.extraColors[0].format = DistanceFormat;
+        desc.extraColors[0].write = true;
         auto created = create(renderer->m_march, "fragmentCloudMarch");
-        desc.secondColorFormat = RHI::Format::Undefined;
-        desc.writeSecondColor = false;
+        desc.extraColors = {};
         if (created) {
             created = create(renderer->m_resolve, "fragmentCloudResolve");
         }

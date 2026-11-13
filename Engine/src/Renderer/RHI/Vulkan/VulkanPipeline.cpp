@@ -190,27 +190,23 @@ namespace Flux::Vk {
             blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
         }
 
-        // Seconde cible jamais mélangée (des données, pas la lumière de l'image) ; la troisième seulement sur demande
-        // (lumière du soleil à part, voilée par l'eau).
-        std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachments{blendAttachment, {}, {}};
-        if (desc.blendThirdColor) {
-            blendAttachments[2] = blendAttachment;
-            blendAttachments[2].colorWriteMask = 0;
-        }
+        // Cibles suivantes : des données jamais mélangées (mouvement, normales), sauf sur demande (lumière du soleil à
+        // part, voilée par l'eau). Elles s'arrêtent à la première sans format.
         constexpr VkColorComponentFlags all = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT
                                             | VK_COLOR_COMPONENT_A_BIT;
-        if (desc.writeSecondColor) {
-            blendAttachments[1].colorWriteMask = all;
-        }
-        if (desc.writeThirdColor) {
-            blendAttachments[2].colorWriteMask = all;
-        }
-        const std::array colorFormats{desc.colorFormat, desc.secondColorFormat, desc.thirdColorFormat};
+        std::array<VkPipelineColorBlendAttachmentState, RHI::MaxColorTargets> blendAttachments{blendAttachment};
+        std::array<VkFormat, RHI::MaxColorTargets> colorFormats{desc.colorFormat};
         const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED; // sinon : profondeur seule
-        const uint32_t colorCount = !hasColor                                        ? 0
-                                  : desc.secondColorFormat == VK_FORMAT_UNDEFINED ? 1
-                                  : desc.thirdColorFormat == VK_FORMAT_UNDEFINED  ? 2
-                                                                                  : 3;
+        uint32_t colorCount = hasColor ? 1 : 0;
+        for (const GraphicsPipelineDesc::ExtraColor& extra : desc.extraColors) {
+            if (!hasColor || extra.format == VK_FORMAT_UNDEFINED) {
+                break;
+            }
+            VkPipelineColorBlendAttachmentState& state = blendAttachments[colorCount];
+            state = extra.blend ? blendAttachment : VkPipelineColorBlendAttachmentState{};
+            state.colorWriteMask = extra.write ? all : 0;
+            colorFormats[colorCount++] = extra.format;
+        }
         VkPipelineColorBlendStateCreateInfo colorBlend{};
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlend.attachmentCount = colorCount;

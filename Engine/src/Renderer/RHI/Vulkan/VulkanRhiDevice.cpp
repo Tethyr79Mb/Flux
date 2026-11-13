@@ -394,11 +394,10 @@ namespace Flux::Vk {
             vkDesc.pushConstants = {&pushConstants, 1};
         }
         vkDesc.colorFormat = Vk::ToVulkan(desc.colorFormat);
-        vkDesc.secondColorFormat = Vk::ToVulkan(desc.secondColorFormat);
-        vkDesc.writeSecondColor = desc.writeSecondColor;
-        vkDesc.thirdColorFormat = Vk::ToVulkan(desc.thirdColorFormat);
-        vkDesc.writeThirdColor = desc.writeThirdColor;
-        vkDesc.blendThirdColor = desc.blendThirdColor;
+        for (std::size_t i = 0; i < desc.extraColors.size(); ++i) {
+            const RHI::ExtraColorTarget& extra = desc.extraColors[i];
+            vkDesc.extraColors[i] = {Vk::ToVulkan(extra.format), extra.write, extra.blend};
+        }
         vkDesc.writeColor = desc.writeColor;
         vkDesc.depthFormat = Vk::ToVulkan(desc.depthFormat);
         vkDesc.depthTest = desc.depthTest;
