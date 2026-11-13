@@ -678,6 +678,73 @@ namespace {
         CHECK(loaded && Interface::GetDropdownChoice(*loaded) == 1);
         return true;
     }
+    // Champ de texte : un clic lui donne le clavier (le jeu ne reçoit plus les touches), les caractères s'ajoutent
+    // jusqu'à la limite, l'effacement retire le dernier (un caractère accentué entier), Entrée ou un clic ailleurs le
+    // rendent, Échap aussi sans fermer la fenêtre ; texte et indication passent par le fichier.
+    bool RunTextFieldTests(const UI::Font& font) {
+        Interface::Document document;
+        Interface::Element window = Interface::MakeElement(document, Interface::ElementType::Window);
+        window.anchor = Interface::Anchor::TopLeft;
+        window.size = {600.0f, 400.0f};
+        window.closeOnEscape = true;
+        Interface::Element field = Interface::MakeElement(document, Interface::ElementType::TextField);
+        field.anchor = Interface::Anchor::TopLeft;
+        field.position = {20.0f, 60.0f};
+        field.size = {300.0f, 40.0f};
+        field.maximum = 5.0f;
+        field.placeholder = "Ton nom";
+        window.children = {field};
+        document.roots.push_back(window);
+        const Vector2f min{0.0f, 0.0f};
+        const Vector2f max{1920.0f, 1080.0f};
+        const Vector2f inside{100.0f, 80.0f};
+
+        Interface::Interaction interaction;
+        const auto frame = [&](Vector2f mouse, bool pressed, std::string_view typed = {}, bool backspace = false,
+                               bool enter = false, bool escape = false) {
+            Interface::Update(document, interaction, min, max,
+                              {.position = mouse, .down = pressed, .pressed = pressed, .released = false, .enabled = true,
+                               .escape = escape, .wheel = 0.0f, .typed = typed, .backspace = backspace, .enter = enter});
+        };
+        const auto text = [&] { return Interface::Find(document, field.id)->text; };
+
+        frame(inside, false, "x");
+        CHECK(text().empty() && !interaction.wantsKeyboard); // pas encore pris : rien n'y entre
+        frame(inside, true);
+        CHECK(interaction.focused == field.id && interaction.wantsKeyboard);
+        frame(inside, false, "Zoé");
+        CHECK(text() == "Zoé" && interaction.changed == field.id);
+        frame(inside, false, "\tabcd"); // la tabulation n'entre pas ; au plus 5 caractères
+        CHECK(text() == "Zoéab");
+        frame(inside, false, {}, true);
+        frame(inside, false, {}, true);
+        frame(inside, false, {}, true);
+        CHECK(text() == "Zo"); // « é » retiré en entier (deux octets)
+        UI::DrawList list(font);
+        Interface::Draw(document, list, min, max, {.interaction = &interaction});
+        frame(inside, false, {}, false, true);
+        CHECK(interaction.focused == 0 && !interaction.wantsKeyboard);
+
+        // Échap rend le clavier sans fermer la fenêtre ; un clic ailleurs aussi.
+        frame(inside, true);
+        frame(inside, false, {}, false, false, true);
+        CHECK(interaction.focused == 0 && interaction.escapeUsed && Interface::Find(document, window.id)->visible);
+        frame(inside, true);
+        frame({1000.0f, 800.0f}, true);
+        CHECK(interaction.focused == 0);
+        // Fenêtre fermée : le champ perd le clavier.
+        frame(inside, true);
+        Interface::SetWindowOpen(document, window.name, false);
+        frame(inside, false, "z");
+        CHECK(interaction.focused == 0 && text() == "Zo");
+
+        const auto reread = Interface::LoadFromString(Interface::SaveToString(document));
+        CHECK(reread.has_value());
+        const Interface::Element* loaded = Interface::Find(*reread, field.id);
+        CHECK(loaded && loaded->type == Interface::ElementType::TextField && loaded->text == "Zo"
+              && loaded->placeholder == "Ton nom" && loaded->maximum == 5.0f);
+        return true;
+    }
 }
 
 bool RunInterfaceTests() {
@@ -687,5 +754,5 @@ bool RunInterfaceTests() {
         return false;
     }
     return RunLayoutTests() && RunDocumentTests() && RunInteractionTests(**font) && RunWindowTests() && RunTabsTests() && RunBindingTests()
-        && RunScrollTests() && RunDropdownTests(**font);
+        && RunScrollTests() && RunDropdownTests(**font) && RunTextFieldTests(**font);
 }

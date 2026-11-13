@@ -45,6 +45,7 @@ add_library(GameClient STATIC)
 flux_add_sources(GameClient Module/src)
 target_include_directories(GameClient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Module/src)
 target_link_libraries(GameClient PUBLIC GameSim Flux::Engine Flux::Net)
+target_link_libraries(GameClient PRIVATE nlohmann_json::nlohmann_json) # JSON : Joueur.json (nom, serveur)
 flux_set_warnings(GameClient)
 
 add_library(GameModule SHARED)

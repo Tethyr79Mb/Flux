@@ -1,0 +1,19 @@
+{
+  "format": "flux.scene",
+  "version": 2,
+  "engine": 87,
+  "entities": [
+    {
+      "id": "802252cfed0c7610",
+      "name": "Sélection",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "interface": {
+        "file": "Interfaces/Selection.fluxui"
+      }
+    }
+  ]
+}

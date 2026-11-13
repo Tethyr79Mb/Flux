@@ -16,7 +16,7 @@ namespace Flux::Interface {
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeNames{
             "Fenêtre", "Cadre", "Texte", "Image", "Bouton", "Case à cocher", "Curseur", "Onglets", "Barre de progression",
-            "Zone de défilement", "Liste déroulante"};
+            "Zone de défilement", "Liste déroulante", "Champ de texte"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorNames{
             "En haut à gauche", "En haut",  "En haut à droite", "À gauche", "Au centre",
             "À droite",         "En bas à gauche", "En bas", "En bas à droite", "Étiré (marges)"};
@@ -39,6 +39,7 @@ namespace Flux::Interface {
         constexpr std::uint32_t P = Bit(ElementType::ProgressBar);
         constexpr std::uint32_t D = Bit(ElementType::ScrollArea);
         constexpr std::uint32_t L = Bit(ElementType::Dropdown);
+        constexpr std::uint32_t E = Bit(ElementType::TextField);
 
         constexpr float WheelStep = 60.0f;  // pixels de référence par cran de molette
         constexpr float MinThumb = 24.0f;   // hauteur minimale de la poignée de l'ascenseur (pixels de référence)
@@ -47,10 +48,12 @@ namespace Flux::Interface {
             Field{"text", "Titre", &Element::text, W},
             Field{"text", "Texte", &Element::text, T},
             Field{"text", "Libellé", &Element::text, B | C},
+            Field{"text", "Texte saisi", &Element::text, E},
+            Field{"placeholder", "Indication (champ vide)", &Element::placeholder, E},
             Field{"options", "Choix", &Element::options, L},
             Field{"value", "Choix fait", &Element::value, L, Field::Text::Plain, 0.05f, 0.0f, 255.0f, 0},
-            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C | O | L, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
-            Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C | O | L},
+            Field{"fontSize", "Taille du texte", &Element::fontSize, W | T | B | C | O | L | E, Field::Text::Plain, 0.5f, 4.0f, 400.0f, 0},
+            Field{"textColor", "Couleur du texte", &Element::textColor, W | T | B | C | O | L | E},
             Field{"textColor", "Poignée", &Element::textColor, S},
             Field{"align", "Alignement", &Element::align, T | B},
             Field{"image", "Image", &Element::image, I, Field::Text::Image},
@@ -62,19 +65,20 @@ namespace Flux::Interface {
             Field{"titleColor", "Onglet", &Element::titleColor, O},
             Field{"pressedColor", "Onglet affiché", &Element::pressedColor, O},
             Field{"accent", "Soulignement", &Element::accent, O},
-            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P | D | L},
+            Field{"background", "Fond", &Element::background, W | F | T | B | C | O | P | D | L | E},
             Field{"background", "Piste", &Element::background, S},
             Field{"scrollbarWidth", "Largeur de l'ascenseur", &Element::scrollbarWidth, D, Field::Text::Plain, 0.25f, 2.0f, 200.0f, 0},
             Field{"titleColor", "Piste de l'ascenseur", &Element::titleColor, D},
             Field{"accent", "Ascenseur", &Element::accent, D},
-            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O | D | L},
+            Field{"hoverColor", "Survol", &Element::hoverColor, B | C | S | O | D | L | E},
+            Field{"accent", "Bordure quand on écrit", &Element::accent, E},
             Field{"accent", "Flèche et choix fait", &Element::accent, L},
             Field{"pressedColor", "Appuyé", &Element::pressedColor, B},
             Field{"accent", "Coche", &Element::accent, C},
             Field{"accent", "Remplissage", &Element::accent, S | P},
-            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P | D | L},
-            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P | D | L, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
-            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P | D | L, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
+            Field{"border", "Bordure", &Element::border, W | F | B | C | O | P | D | L | E},
+            Field{"borderWidth", "Épaisseur de bordure", &Element::borderWidth, W | F | B | C | O | P | D | L | E, Field::Text::Plain, 0.1f, 0.0f, 50.0f, 1},
+            Field{"radius", "Arrondi des coins", &Element::radius, W | F | T | B | C | O | P | D | L | E, Field::Text::Plain, 0.5f, 0.0f, 500.0f, 0},
             Field{"shadow", "Ombre", &Element::shadow, W},
             Field{"movable", "Déplaçable en jeu", &Element::movable, W},
             Field{"closeButton", "Croix de fermeture", &Element::closeButton, W},
@@ -85,10 +89,11 @@ namespace Flux::Interface {
             Field{"action", "Action", &Element::action, B},
             Field{"target", "Cible", &Element::target, B, Field::Text::ActionTarget},
             Field{"checked", "Cochée", &Element::checked, C},
-            Field{"binding", "Liaison", &Element::binding, C | S | T | B | P | L, Field::Text::Binding},
+            Field{"binding", "Liaison", &Element::binding, C | S | T | B | P | L | E, Field::Text::Binding},
             Field{"value", "Valeur", &Element::value, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
             Field{"minimum", "Minimum", &Element::minimum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
             Field{"maximum", "Maximum", &Element::maximum, S | P, Field::Text::Plain, 0.01f, -1.0e6f, 1.0e6f, 2},
+            Field{"maximum", "Caractères au plus", &Element::maximum, E, Field::Text::Plain, 0.1f, 1.0f, 1000.0f, 0},
         };
 
         LinearColor Srgb(int r, int g, int b, float a = 1.0f) { return LinearColor::FromSrgb8(r, g, b, a); }
@@ -183,6 +188,17 @@ namespace Flux::Interface {
                     element.hoverColor = Srgb(45, 60, 78);
                     element.accent = Srgb(60, 200, 230);
                     element.border = Srgb(90, 170, 210, 0.8f);
+                    element.borderWidth = 1.0f;
+                    element.radius = 4.0f;
+                    break;
+                case ElementType::TextField:
+                    element.size = {360.0f, 44.0f};
+                    element.placeholder = "Écrire ici";
+                    element.maximum = 32.0f;
+                    element.background = Srgb(30, 40, 52);
+                    element.hoverColor = Srgb(38, 50, 64);
+                    element.accent = Srgb(60, 200, 230);
+                    element.border = Srgb(90, 170, 210, 0.6f);
                     element.borderWidth = 1.0f;
                     element.radius = 4.0f;
                     break;
@@ -312,7 +328,7 @@ namespace Flux::Interface {
         // Interface en jeu : les éléments qui réagissent à la souris (et la retiennent).
         bool IsInteractive(ElementType type) {
             return type == ElementType::Button || type == ElementType::Checkbox || type == ElementType::Slider
-                || type == ElementType::Dropdown;
+                || type == ElementType::Dropdown || type == ElementType::TextField;
         }
 
         // Fenêtres et cadres arrêtent aussi la souris : un clic sur leur fond ne traverse pas vers le jeu.
@@ -619,6 +635,79 @@ namespace Flux::Interface {
             }
         }
 
+        // Le texte saisi (ou l'indication, en pâle), à gauche ; quand le clavier y écrit, la bordure d'accent et le
+        // curseur après le dernier caractère. Un texte trop long montre sa fin, là où l'on écrit.
+        void DrawTextField(const DrawContext& context, const Placed& placed, bool hovered) {
+            const Element& element = *placed.element;
+            const Rect& rect = placed.rect;
+            const Interaction* interaction = context.options.interaction;
+            const bool focused = interaction && interaction->focused == element.id;
+            DrawBox(context, rect, hovered && !focused ? element.hoverColor : element.background, element);
+            if (focused && element.accent.a > 0.0f) {
+                context.list.AddRoundedRectOutline(rect.min, rect.max, element.accent, element.radius * context.scale,
+                                                   std::max(1.5f, 2.0f * context.scale));
+            }
+            const float margin = 12.0f * context.scale;
+            const Rect inside{{rect.min.x + margin, rect.min.y}, {rect.max.x - margin, rect.max.y}};
+            const Rect clip = Intersect(placed.clip, inside);
+            if (IsEmpty(clip)) {
+                return;
+            }
+            const bool empty = element.text.empty();
+            const std::string_view shown = empty ? std::string_view(element.placeholder) : std::string_view(element.text);
+            const float pixelSize = element.fontSize * context.scale;
+            const Vector2f size = context.list.MeasureText(empty ? std::string_view("|") : shown, pixelSize);
+            const float width = empty ? 0.0f : size.x;
+            const float x = std::min(inside.min.x, inside.max.x - width - 2.0f * context.scale);
+            const float y = 0.5f * (rect.min.y + rect.max.y - size.y);
+            context.list.SetClipRect(clip.min, clip.max);
+            if (!shown.empty()) {
+                LinearColor color = element.textColor;
+                color.a *= empty ? 0.45f : 1.0f;
+                context.list.AddText({empty ? inside.min.x : x, y}, shown, pixelSize, color);
+            }
+            if (focused) {
+                const float caretX = empty ? inside.min.x : x + width + context.scale;
+                context.list.AddRect({caretX, y}, {caretX + std::max(1.0f, 2.0f * context.scale), y + size.y}, element.textColor);
+            }
+            context.list.SetClipRect(placed.clip.min, placed.clip.max);
+        }
+
+        // Champ de texte qui a le clavier : les caractères tapés s'ajoutent (pas les caractères de contrôle, au plus
+        // « Caractères au plus »), l'effacement retire le dernier. true si le texte a changé.
+        bool TypeInto(Element& field, const Pointer& pointer) {
+            const std::size_t limit = static_cast<std::size_t>(std::max(0.0f, field.maximum));
+            const auto count = [](std::string_view text) {
+                return static_cast<std::size_t>(std::ranges::count_if(text, [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
+            };
+            bool changed = false;
+            std::size_t length = count(field.text);
+            for (std::size_t i = 0; i < pointer.typed.size();) {
+                std::size_t next = i + 1;
+                while (next < pointer.typed.size() && (static_cast<unsigned char>(pointer.typed[next]) & 0xC0) == 0x80) {
+                    ++next;
+                }
+                const std::string_view character = pointer.typed.substr(i, next - i);
+                i = next;
+                if ((character.size() == 1 && static_cast<unsigned char>(character[0]) < 0x20) || character == "\x7f"
+                    || length >= limit) {
+                    continue;
+                }
+                field.text += character;
+                ++length;
+                changed = true;
+            }
+            if (pointer.backspace && !field.text.empty()) {
+                std::size_t last = field.text.size() - 1;
+                while (last > 0 && (static_cast<unsigned char>(field.text[last]) & 0xC0) == 0x80) {
+                    --last;
+                }
+                field.text.erase(last);
+                changed = true;
+            }
+            return changed;
+        }
+
         // La liste dépliée, par-dessus tout le reste : le choix survolé, le choix fait marqué d'un trait à gauche.
         void DrawDropdownList(const DrawContext& context, const Element& element, const Rect& list) {
             const float radius = element.radius * context.scale;
@@ -745,6 +834,9 @@ namespace Flux::Interface {
                     break;
                 case ElementType::Dropdown:
                     DrawDropdown(context, placed, hovered);
+                    break;
+                case ElementType::TextField:
+                    DrawTextField(context, placed, hovered);
                     break;
                 case ElementType::Count:
                     break;
@@ -1100,7 +1192,8 @@ namespace Flux::Interface {
         return 0;
     }
 
-    void Update(Document& document, Interaction& interaction, Vector2f viewMin, Vector2f viewMax, const Pointer& pointer) {
+    void Update(Document& document, Interaction& interaction, Vector2f viewMin, Vector2f viewMax, const Pointer& input) {
+        Pointer pointer = input; // Échap pris par un champ de texte ne ferme pas sa fenêtre
         interaction.clicked = 0;
         interaction.changed = 0;
         interaction.action = ButtonAction::None;
@@ -1108,6 +1201,21 @@ namespace Flux::Interface {
         interaction.escapeUsed = false;
         const std::vector<Placed> placed = Arrange(document, viewMin, viewMax);
         const float scale = GetScale(viewMin, viewMax);
+        // Champ de texte qui a le clavier : il prend les caractères tapés ; Entrée ou Échap le rendent, un clic
+        // ailleurs aussi (plus bas), et il le perd s'il disparaît (fenêtre fermée).
+        if (interaction.focused != 0) {
+            Element* field = FindPlaced(placed, interaction.focused) ? Find(document, interaction.focused) : nullptr;
+            if (!field || field->type != ElementType::TextField) {
+                interaction.focused = 0;
+            } else if (pointer.enter || pointer.escape) {
+                interaction.focused = 0;
+                interaction.escapeUsed = pointer.escape;
+                pointer.escape = false;
+            } else if (TypeInto(*field, pointer)) {
+                interaction.changed = field->id;
+            }
+        }
+        interaction.wantsKeyboard = interaction.focused != 0;
         // Liste déroulante dépliée : elle retient la souris et Échap tant qu'elle l'est. Un clic sur un choix le
         // prend, un clic ailleurs la replie (sans toucher ce qui est dessous), Échap aussi.
         interaction.hoveredOption = -1;
@@ -1173,6 +1281,10 @@ namespace Flux::Interface {
         const bool onTrack = track && track->Contains(pointer.position);
         interaction.thumbHovered = thumb && thumb->Contains(pointer.position) ? hitId : 0;
 
+        if (pointer.pressed) {
+            interaction.focused = hit && hit->element->type == ElementType::TextField ? hitId : 0;
+            interaction.wantsKeyboard = interaction.focused != 0;
+        }
         if (pointer.pressed && hit) {
             const Element& element = *hit->element;
             const bool onClose = interaction.closeHovered == hitId;

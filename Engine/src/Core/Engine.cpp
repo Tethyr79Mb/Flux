@@ -226,7 +226,7 @@ namespace Flux {
     }
 
     bool Engine::IsKeyboardFree() const {
-        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard();
+        return !m_keyCaptured && m_rebindingAction.empty() && !m_ui->WantsKeyboard() && !m_interfaceWantsKeyboard;
     }
 
     const PlayerCommand& Engine::GetPlayerCommand(Entity player) const {
@@ -387,6 +387,7 @@ namespace Flux {
             // Interfaces du jeu : la souris qu'elles ont retenue à l'image précédente n'ira pas au jeu dans celle-ci.
             ++m_frame;
             m_interfaceWantsMouse = std::exchange(m_interfaceMouseNow, false);
+            m_interfaceWantsKeyboard = std::exchange(m_interfaceKeyboardNow, false);
             m_interfacePaused = std::exchange(m_interfacePausedNow, false);
             m_interfaceCovered = std::exchange(m_interfaceCoversNow, false);
             m_escapeUsed = false;
@@ -749,8 +750,8 @@ namespace Flux {
         m_interfaceBindings->BindValue(std::move(name), {.get = std::move(get), .set = std::move(set), .getText = {}});
     }
 
-    void Engine::BindInterfaceText(std::string name, std::function<std::string()> get) {
-        m_interfaceBindings->BindValue(std::move(name), {.get = {}, .set = {}, .getText = std::move(get)});
+    void Engine::BindInterfaceText(std::string name, std::function<std::string()> get, std::function<void(std::string)> set) {
+        m_interfaceBindings->BindValue(std::move(name), {.get = {}, .set = {}, .getText = std::move(get), .setText = std::move(set)});
     }
 
     void Engine::BindInterfaceChoice(std::string name, std::vector<std::string> options, std::function<double()> get,
@@ -911,11 +912,16 @@ namespace Flux {
                                                  // Une seule interface par Échap : la première dessinée qui s'en sert.
                                                  .escape = input.WasKeyPressed(Key::Escape) && !m_ui->WantsKeyboard()
                                                         && !m_escapeUsed,
-                                                 .wheel = input.GetWheelDelta()};
+                                                 .wheel = input.GetWheelDelta(),
+                                                 .typed = m_ui->WantsKeyboard() ? std::string_view{} : input.GetTextInput(),
+                                                 .backspace = input.WasKeyTyped(Key::Backspace) && !m_ui->WantsKeyboard(),
+                                                 .enter = (input.WasKeyPressed(Key::Enter) || input.WasKeyPressed(Key::NumpadEnter))
+                                                       && !m_ui->WantsKeyboard()};
                 Interface::Interaction& interaction = instance->interaction;
                 Interface::Update(instance->document, interaction, viewMin, viewMax, pointer);
                 m_interfaceBindings->Sync(instance->document.roots, interaction.changed, *m_inputActions, m_rebindingAction);
                 m_interfaceMouseNow = m_interfaceMouseNow || interaction.wantsMouse;
+                m_interfaceKeyboardNow = m_interfaceKeyboardNow || interaction.wantsKeyboard;
                 m_interfacePausedNow = m_interfacePausedNow || interaction.pausesGame;
                 m_interfaceCoversNow = m_interfaceCoversNow || interaction.coversView;
                 m_escapeUsed = m_escapeUsed || interaction.escapeUsed;

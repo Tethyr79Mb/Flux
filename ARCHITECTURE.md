@@ -84,13 +84,14 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
   `ComponentBuilder::Replicated` forment un `Replication::Schema` dont l'empreinte est comparée à l'accueil ; le serveur
   prend un instantané tous les 2 pas (30 par seconde), l'écrit en binaire en ne gardant que ce qui a changé depuis le
   dernier instantané que le client a accusé (modèle de Quake 3), et envoie une fois en entier, en fiable, les entités
-  créées pendant le jeu (`SceneSerializer::SaveEntity`). Avec `--serveur`, la `Simulation` du client est répliquée
-  (`SetReplicated`) : `Step` ne simule plus et ne fait tourner que l'étape `Replication`, où le client charge la scène
-  du serveur et y écrit l'état reçu, interpolé 100 ms en retard (`SnapshotReceiver`). Avec `--joueur Nom`, le client
-  demande un personnage (`Join`) : le serveur l'instancie au point d'apparition (`SpawnPointComponent`, GameSim),
+  créées pendant le jeu (`SceneSerializer::SaveEntity`). Le bouton « Rejoindre » d'une interface (fonction du jeu,
+  `ServerConnection.cpp`) se connecte ; la `Simulation` du client est alors répliquée (`SetReplicated`) : `Step` ne
+  simule plus et ne fait tourner que l'étape `Replication`, où le client charge la scène du serveur et y écrit l'état
+  reçu, interpolé 100 ms en retard (`SnapshotReceiver`). Le client demande un personnage sous le nom tapé (`Join`) : le serveur l'instancie au point d'apparition (`SpawnPointComponent`, GameSim),
   répond par son identifiant (`PlayerEntity`) et le retire au départ ; le client envoie sa `PlayerCommand` à chaque
   pas (`Command`, non fiable, les 3 dernières répétées), que le serveur borne (`ReadCommand`) puis donne à
-  `Simulation::SetPlayerCommand`. Pas de prédiction avant l'étape 7.
+  `Simulation::SetPlayerCommand`. Pas de prédiction avant l'étape 7. Coupé, le monde reste figé derrière la fenêtre
+  « Connexion perdue » ; « Quitter le serveur » rend la simulation au client et recharge la scène d'où il a rejoint.
 - **Game.fluxproject** décrit le projet : nom, dossier `assets/`, scène de démarrage (les menus sont des interfaces des scènes). Les assets sont copiés à côté
   des exécutables (`bin/assets/`), serveur compris.
 - Avec les préréglages de Visual Studio, exe, DLL, shaders et assets vont dans `Flux/bin/<préréglage>/` (le jeu prêt à
