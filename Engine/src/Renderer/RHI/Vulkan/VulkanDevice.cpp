@@ -212,7 +212,7 @@ namespace Flux::Vk {
         }
         m_transfer->GraphicsSubmitted(uploads, success);
         // Seulement cette soumission (et ce qui la précède), pas toute la file comme vkQueueWaitIdle.
-        success = success && m_transfer->WaitGraphics();
+        success = success && Check(m_transfer->WaitGraphics(m_transfer->GetGraphicsValue()), "vkWaitSemaphores");
         if (!success) {
             WaitIdle(); // rien ne doit plus lire les command buffers, que l'appelant va réutiliser
         }

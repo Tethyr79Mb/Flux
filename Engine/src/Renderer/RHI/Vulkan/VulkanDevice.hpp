@@ -75,6 +75,7 @@ namespace Flux::Vk {
         bool UploadImage(const Transfer::ImageWrite& write, VkBuffer source, VkDeviceSize sourceOffset);
         void SetDeferredUploads(bool deferred) { m_deferUploads = deferred; }
         Transfer& GetTransfer() { return *m_transfer; }
+        const Transfer& GetTransfer() const { return *m_transfer; }
         // Familles de files qui se partagent les buffers remplis par envoi (Buffer::Create) ; vide avec une seule file.
         std::span<const std::uint32_t> GetSharedFamilies() const { return m_transfer->GetSharedFamilies(); }
 

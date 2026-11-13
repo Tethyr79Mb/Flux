@@ -95,8 +95,10 @@ namespace Flux::Vk {
         VkSemaphoreSubmitInfo GetSignal() const;
         // Après vkQueueSubmit2 : submitted faux, la soumission n'a pas eu lieu (le signal n'arrivera jamais).
         void GraphicsSubmitted(GraphicsPart& part, bool submitted);
-        // Attend que la file graphique ait fini la dernière soumission (Device::ImmediateSubmit).
-        bool WaitGraphics() const;
+        // Valeur portée par la dernière soumission graphique réussie (0 avant la première).
+        std::uint64_t GetGraphicsValue() const { return m_graphicsValue; }
+        // Attend que la file graphique atteigne value : fin d'une image en vol, ou de SubmitAndWait.
+        VkResult WaitGraphics(std::uint64_t value) const;
 
         // Libération différée (RHI::Device::Retire) : une ressource lâchée maintenant peut servir à ce qui a été
         // soumis ou enregistré. Elle est libre quand la file graphique a atteint `graphics` et la file de transfert

@@ -471,13 +471,13 @@ namespace Flux::Vk {
         part = {};
     }
 
-    bool Transfer::WaitGraphics() const {
+    VkResult Transfer::WaitGraphics(std::uint64_t value) const {
         VkSemaphoreWaitInfo waitInfo{};
         waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         waitInfo.semaphoreCount = 1;
         waitInfo.pSemaphores = &m_graphicsTimeline;
-        waitInfo.pValues = &m_graphicsValue;
-        return Check(vkWaitSemaphores(m_device, &waitInfo, UINT64_MAX), "vkWaitSemaphores");
+        waitInfo.pValues = &value;
+        return vkWaitSemaphores(m_device, &waitInfo, UINT64_MAX);
     }
 
     Transfer::Marks Transfer::GetMarks() const {

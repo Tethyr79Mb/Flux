@@ -119,7 +119,7 @@ namespace Flux::Vk {
         using Clock = std::chrono::steady_clock;
         const auto milliseconds = [](Clock::duration duration) { return std::chrono::duration<double, std::milli>(duration).count(); };
         const Clock::time_point waitStart = Clock::now();
-        if (!m_crash->Check(m_frames->Wait(m_frameIndex), "vkWaitForFences")) {
+        if (!m_crash->Check(m_frames->Wait(m_frameIndex), "vkWaitSemaphores")) {
             return RHI::FrameStatus::Error;
         }
         const Clock::time_point acquireStart = Clock::now();
@@ -146,7 +146,6 @@ namespace Flux::Vk {
         if (first == VK_NULL_HANDLE) {
             return RHI::FrameStatus::Error;
         }
-        m_frames->Begin(m_frameIndex);
         m_commandList.Begin(first, m_swapchain->GetImage(m_imageIndex), m_swapchain->GetImageView(m_imageIndex),
                             m_swapchain->GetExtent(), m_timestamps->GetPool(m_frameIndex), batch);
         m_crash->BeginFrame(m_frameIndex, m_commandList);
@@ -208,12 +207,13 @@ namespace Flux::Vk {
         submitInfo.pCommandBufferInfos = m_commandInfos.data();
         submitInfo.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signalInfos.size());
         submitInfo.pSignalSemaphoreInfos = signalInfos.data();
-        const bool submitted = m_crash->Check(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, frame.inFlight),
+        const bool submitted = m_crash->Check(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE),
                                               "vkQueueSubmit2");
         transfer.GraphicsSubmitted(uploads, submitted);
         if (!submitted) {
             return false;
         }
+        m_frames->Submitted(m_frameIndex, transfer.GetGraphicsValue());
         m_crash->Submitted(m_frameIndex);
 
         const auto presentStart = std::chrono::steady_clock::now();
