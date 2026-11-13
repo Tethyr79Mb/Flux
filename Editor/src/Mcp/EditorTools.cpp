@@ -783,9 +783,12 @@ namespace FluxEditor {
                            "ray_shadows : ombres des modèles fixes en rayons (true, par défaut avec le ray tracing) ou dans "
                            "les cartes d'ombre (false), pour comparer. ray_mask : à la place de l'image, rouge où le rayon vers le "
                            "soleil est arrêté (avant le lissage), vert selon le soleil reçu (jaune : ombre ; vert seul : "
-                           "soleil que rien n'arrête). Sans argument : l'état actuel.",
+                           "soleil que rien n'arrête). geometry_only : sol et herbe sans leurs pixels (pixel presque vide), pour "
+                           "séparer leur coût de géométrie de celui de leur éclairage dans engine_stats. parallel_recording : "
+                           "case « Rendu sur plusieurs fils » du jeu. Sans argument : l'état actuel.",
             .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}, {"ray_shadows", {{"type", "boolean"}}},
-                                   {"ray_mask", {{"type", "boolean"}}}}),
+                                   {"ray_mask", {{"type", "boolean"}}}, {"geometry_only", {{"type", "boolean"}}},
+                                   {"parallel_recording", {{"type", "boolean"}}}}),
             .run = [&engine](const Json& arguments) -> McpOutcome {
                 Renderer& renderer = engine.GetRenderer();
                 if (arguments.contains("shadow_cascades")) {
@@ -797,9 +800,17 @@ namespace FluxEditor {
                 if (arguments.contains("ray_mask")) {
                     renderer.SetShowRayShadowMask(arguments.value("ray_mask", false));
                 }
-                return McpToolResult::Text(std::format("shadow_cascades : {}, ray_shadows : {}, ray_mask : {}",
+                if (arguments.contains("geometry_only")) {
+                    renderer.SetGroundGeometryOnly(arguments.value("geometry_only", false));
+                }
+                if (arguments.contains("parallel_recording")) {
+                    renderer.SetParallelRecording(arguments.value("parallel_recording", true));
+                }
+                return McpToolResult::Text(std::format("shadow_cascades : {}, ray_shadows : {}, ray_mask : {}, geometry_only : {}, "
+                                                       "parallel_recording : {}",
                                                        renderer.IsShowingShadowCascades(), renderer.IsRayTracingShadows(),
-                                                       renderer.IsShowingRayShadowMask()));
+                                                       renderer.IsShowingRayShadowMask(), renderer.IsGroundGeometryOnly(),
+                                                       renderer.IsParallelRecording()));
             },
         });
 

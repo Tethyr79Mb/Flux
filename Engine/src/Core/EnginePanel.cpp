@@ -117,7 +117,7 @@ namespace Flux {
                     renderer.SetOcclusionCulling(occlusion);
                 }
                 bool geometryOnly = renderer.IsGroundGeometryOnly();
-                if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
+                if (ui.Checkbox("Sol et herbe sans pixels (mesure)", geometryOnly)) {
                     renderer.SetGroundGeometryOnly(geometryOnly);
                 }
                 bool cascades = renderer.IsShowingShadowCascades();

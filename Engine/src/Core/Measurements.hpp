@@ -40,7 +40,7 @@ namespace Flux {
             CloudQuality cloudQuality = DefaultCloudQuality;
             VegetationDistance vegetationDistance = DefaultVegetationDistance;
             bool occlusionCulling = false;  // « Objets cachés écartés »
-            bool groundGeometryOnly = false; // « Sol sans pixels »
+            bool groundGeometryOnly = false; // « Sol et herbe sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets
             bool modelMeshShaders = false;       // modèles fixes en mesh shaders
             bool rayTracing = false;             // GPU qui a le ray tracing (structures construites)
