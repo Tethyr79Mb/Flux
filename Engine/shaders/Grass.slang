@@ -129,14 +129,17 @@ uint GrassSeed(uint draw)
 }
 
 // Le sol montre de l'herbe en ce point de la tuile (part de 0 à 1, comme fragmentPlanet).
-float GrassShareAt(uint draw, float3 position, float3 normal, float2 climate)
+// large : GroundLargeMacro en ce point (rendu, pour que la tâche le garde aux coins de ses paquets).
+float GrassShareAt(uint draw, float3 position, float3 normal, float2 climate, out float large)
 {
     const DrawData d = draws[draw];
     const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
     const float3 local = d.rim.xyz + position;
     const float3 up = normalize(local);
     const float distance = length(Transform(d.world, position).xyz);
-    const GroundCover cover = GetGroundCover(planet, local, dot(normal, up), length(local) - planet.shape.x, climate, distance);
+    large = GroundLargeMacro(local, distance);
+    const GroundCover cover = GetGroundCoverWithLarge(planet, local, dot(normal, up), length(local) - planet.shape.x, climate,
+                                                      distance, large);
     return GrassShare(cover);
 }
 
@@ -181,6 +184,7 @@ struct GrassPatchLight
 {
     float4 air;       // rgb : transmittance de l'air ; a : ombre des nuages (CloudShadow)
     float4 scattered; // rgb : lumière ajoutée par l'air (AirTo)
+    float4 large;     // GroundLargeMacro aux coins du carré (x, y, z, w : (0,0), (1,0), (0,1), (1,1)), interpolé par brin
 };
 
 GrassPatchLight LightGrassPatch(float3 center)
@@ -189,14 +193,16 @@ GrassPatchLight LightGrassPatch(float3 center)
     float3 transmittance;
     light.scattered = float4(AirTo(center, transmittance), 0.0);
     light.air = float4(transmittance, CloudShadow(center));
+    light.large = float4(0.0);
     return light;
 }
 
 // Brin de rang `index` (sur `total` à pleine densité) d'un carré de la tuile : de `origin` à `origin` + size mailles.
 // climate : celui des grandes échelles au centre du carré (PlanetClimate), le même pour tous ses brins ; light : son
 // air et ses nuages (LightGrassPatch).
+// interpolateLarge : grandes octaves des taches interpolées entre les coins du carré (light.large), sinon lues au pied.
 GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, float2 origin, float size, float total, float2 climate,
-                          GrassPatchLight light)
+                          GrassPatchLight light, bool interpolateLarge)
 {
     GrassBlade blade = NoGrassBlade();
     const uint h0 = GroundHash(seed ^ GroundHash(index * 0x9E3779B9u + 0x6A09E667u));
@@ -227,7 +233,11 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
         return blade; // sous l'eau
     }
     const float3 up = normalize(local);
-    const GroundCover cover = GetGroundCover(planet, local, dot(normal, up), length(local) - planet.shape.x, climate, distance);
+    const float large = interpolateLarge
+                      ? lerp(lerp(light.large.x, light.large.y, r0.x), lerp(light.large.z, light.large.w, r0.x), r0.y)
+                      : GroundLargeMacro(local, distance);
+    const GroundCover cover = GetGroundCoverWithLarge(planet, local, dot(normal, up), length(local) - planet.shape.x, climate,
+                                                      distance, large);
     // Autant de brins que d'herbe sur le sol ; plus courts au bord d'une zone d'herbe.
     grow *= saturate((GrassShare(cover) - r1.x * 0.9) * 4.0);
     if (grow < 0.05) {
@@ -364,7 +374,7 @@ GrassVertexOutput vertexGrass(uint vertex : SV_VulkanVertexID, uint instance : S
     // Air et nuages au milieu de la tuile (chemin de repli : recalculés par sommet, mais une fois et non par brin).
     const float3 middle = Transform(d.world, ReadGrassPosition(firstVertex, (GrassTileQuads / 2) * GrassTileSide + GrassTileQuads / 2)).xyz;
     const GrassBlade blade = MakeGrassBlade(draw, firstVertex, GrassSeed(draw), index, float2(0.0), float(GrassTileQuads), total, climate,
-                                            LightGrassPatch(middle));
+                                            LightGrassPatch(middle), false);
     if (!blade.alive) {
         // Les trois sommets au même point : rien à dessiner.
         GrassVertexOutput empty;

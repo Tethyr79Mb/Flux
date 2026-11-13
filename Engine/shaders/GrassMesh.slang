@@ -68,6 +68,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
              && !Occluded(center + frame[0].cameraDelta.xyz, radius + length(frame[0].cameraDelta.xyz));
     const uint2 origin = uint2(thread % GrassMeshletSide, thread / GrassMeshletSide) * GrassMeshletQuads;
     float2 climate = float2(0.0);
+    float corners[4] = {0.0, 0.0, 0.0, 0.0}; // GroundLargeMacro aux coins, interpolé par brin
     if (kept) {
         climate = PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz + local);
         // De l'herbe aux coins ou au centre (ses taches font des dizaines de mètres : un paquet en a peu ou prou).
@@ -76,8 +77,12 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             const uint2 at = corner == 4 ? origin + GrassMeshletQuads / 2
                            : origin + uint2(corner & 1u, corner >> 1) * GrassMeshletQuads;
             const uint index = at.y * GrassTileSide + at.x;
+            float large;
             share = max(share, GrassShareAt(drawIndex, ReadGrassPosition(firstVertex, index),
-                                            normalize(ReadGrassNormal(firstVertex, index)), climate));
+                                            normalize(ReadGrassNormal(firstVertex, index)), climate, large));
+            if (corner < 4) {
+                corners[corner] = large;
+            }
         }
         kept = share > 0.02;
     }
@@ -94,6 +99,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             grass.meshlets[slot] = uint4(thread + segments * 256, groups, blades, asuint(total));
             grass.climates[slot] = climate;
             grass.lights[slot] = LightGrassPatch(center);
+            grass.lights[slot].large = float4(corners[0], corners[1], corners[2], corners[3]);
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -133,7 +139,7 @@ void meshGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID, in payload
     GrassBlade blade = NoGrassBlade();
     if (index < meshlet.z) {
         blade = MakeGrassBlade(tile.draw, tile.firstVertex, tile.seed, index, origin, float(GrassMeshletQuads),
-                               asfloat(meshlet.w), tile.climates[entry], tile.lights[entry]);
+                               asfloat(meshlet.w), tile.climates[entry], tile.lights[entry], true);
     }
     // Les brins vivants à la suite, sans trou.
     if (thread == 0) {
