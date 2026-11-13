@@ -1,0 +1,1244 @@
+{
+  "format": "flux.scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": "04abcdab2dbc1c77",
+      "name": "Ciel (soleil à 40°)",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "sky": {
+        "sunElevation": 40.0,
+        "sunAzimuth": 135.0,
+        "autoExposure": false,
+        "exposure": 0.0
+      }
+    },
+    {
+      "id": "21709310d5842321",
+      "name": "Sol",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "eb4995a65d3437a2",
+      "name": "Sol 60 m, gris 18 %",
+      "parent": "21709310d5842321",
+      "transform": {
+        "position": [
+          0,
+          -0.05,
+          -10
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          60,
+          0.1,
+          60
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.18,
+          0.18,
+          0.18,
+          1.0
+        ],
+        "roughness": 0.8
+      }
+    },
+    {
+      "id": "e9686befa32f445e",
+      "name": "Plastique blanc, rugosité 0 à 1",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "753b4fac0276969a",
+      "name": "Blanc, rugosité 0.0",
+      "parent": "e9686befa32f445e",
+      "transform": {
+        "position": [
+          -3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0
+      }
+    },
+    {
+      "id": "83eeeb6e10d13958",
+      "name": "Blanc, rugosité 0.2",
+      "parent": "e9686befa32f445e",
+      "transform": {
+        "position": [
+          -2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.2
+      }
+    },
+    {
+      "id": "1854234621ebea3b",
+      "name": "Blanc, rugosité 0.4",
+      "parent": "e9686befa32f445e",
+      "transform": {
+        "position": [
+          -0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.4
+      }
+    },
+    {
+      "id": "64374f030c657bb6",
+      "name": "Blanc, rugosité 0.6",
+      "parent": "e9686befa32f445e",
+      "transform": {
+        "position": [
+          0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.6
+      }
+    },
+    {
+      "id": "8d6e3ff40d57462f",
+      "name": "Blanc, rugosité 0.8",
+      "parent": "e9686befa32f445e",
+      "transform": {
+        "position": [
+          2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.8
+      }
+    },
+    {
+      "id": "99a4fa061c160b2a",
+      "name": "Blanc, rugosité 1.0",
+      "parent": "e9686befa32f445e",
+      "transform": {
+        "position": [
+          3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0.0,
+        "roughness": 1.0
+      }
+    },
+    {
+      "id": "07f4651d4e08b4ef",
+      "name": "Fer, rugosité 0 à 1",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "e2d49e4a4cae7be7",
+      "name": "Fer, rugosité 0.0",
+      "parent": "07f4651d4e08b4ef",
+      "transform": {
+        "position": [
+          -3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1.0,
+        "roughness": 0
+      }
+    },
+    {
+      "id": "039725427fec08fa",
+      "name": "Fer, rugosité 0.2",
+      "parent": "07f4651d4e08b4ef",
+      "transform": {
+        "position": [
+          -2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1.0,
+        "roughness": 0.2
+      }
+    },
+    {
+      "id": "adf5d6c6a7176c0a",
+      "name": "Fer, rugosité 0.4",
+      "parent": "07f4651d4e08b4ef",
+      "transform": {
+        "position": [
+          -0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1.0,
+        "roughness": 0.4
+      }
+    },
+    {
+      "id": "dc8f68e4be51a7f1",
+      "name": "Fer, rugosité 0.6",
+      "parent": "07f4651d4e08b4ef",
+      "transform": {
+        "position": [
+          0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1.0,
+        "roughness": 0.6
+      }
+    },
+    {
+      "id": "4db6da29afc47d8d",
+      "name": "Fer, rugosité 0.8",
+      "parent": "07f4651d4e08b4ef",
+      "transform": {
+        "position": [
+          2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1.0,
+        "roughness": 0.8
+      }
+    },
+    {
+      "id": "b35045d58118d3f8",
+      "name": "Fer, rugosité 1.0",
+      "parent": "07f4651d4e08b4ef",
+      "transform": {
+        "position": [
+          3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1.0,
+        "roughness": 1.0
+      }
+    },
+    {
+      "id": "6f2136edf1722c8d",
+      "name": "Couleurs (albédo), rugosité 0,5",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "42fa3971f91141f9",
+      "name": "Charbon (4 %)",
+      "parent": "6f2136edf1722c8d",
+      "transform": {
+        "position": [
+          -3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.04,
+          0.04,
+          0.04,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5
+      }
+    },
+    {
+      "id": "0c0032b1cd28f07b",
+      "name": "Gris 18 %",
+      "parent": "6f2136edf1722c8d",
+      "transform": {
+        "position": [
+          -2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.18,
+          0.18,
+          0.18,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5
+      }
+    },
+    {
+      "id": "d8f67d0e7ce086c8",
+      "name": "Blanc (80 %)",
+      "parent": "6f2136edf1722c8d",
+      "transform": {
+        "position": [
+          -0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5
+      }
+    },
+    {
+      "id": "64f99d5ac314dfb2",
+      "name": "Rouge",
+      "parent": "6f2136edf1722c8d",
+      "transform": {
+        "position": [
+          0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.6,
+          0.05,
+          0.04,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5
+      }
+    },
+    {
+      "id": "af28cba9551be8ba",
+      "name": "Vert",
+      "parent": "6f2136edf1722c8d",
+      "transform": {
+        "position": [
+          2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.08,
+          0.4,
+          0.06,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5
+      }
+    },
+    {
+      "id": "4863bcb0ba44a587",
+      "name": "Bleu",
+      "parent": "6f2136edf1722c8d",
+      "transform": {
+        "position": [
+          3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.04,
+          0.1,
+          0.55,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5
+      }
+    },
+    {
+      "id": "cde770fe225cdcd0",
+      "name": "Métaux, rugosité 0,25",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -10
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "e636ce322a763403",
+      "name": "Or",
+      "parent": "cde770fe225cdcd0",
+      "transform": {
+        "position": [
+          -3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          1.0,
+          0.766,
+          0.336,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.25
+      }
+    },
+    {
+      "id": "e076f8cedbd99d30",
+      "name": "Cuivre",
+      "parent": "cde770fe225cdcd0",
+      "transform": {
+        "position": [
+          -2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.955,
+          0.638,
+          0.538,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.25
+      }
+    },
+    {
+      "id": "5b7c520812550913",
+      "name": "Fer",
+      "parent": "cde770fe225cdcd0",
+      "transform": {
+        "position": [
+          -0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.25
+      }
+    },
+    {
+      "id": "c055b8627b594766",
+      "name": "Aluminium",
+      "parent": "cde770fe225cdcd0",
+      "transform": {
+        "position": [
+          0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.913,
+          0.922,
+          0.924,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.25
+      }
+    },
+    {
+      "id": "ec3b284bcc540450",
+      "name": "Argent",
+      "parent": "cde770fe225cdcd0",
+      "transform": {
+        "position": [
+          2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.972,
+          0.96,
+          0.915,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.25
+      }
+    },
+    {
+      "id": "450e8bbd64e100e4",
+      "name": "Chrome",
+      "parent": "cde770fe225cdcd0",
+      "transform": {
+        "position": [
+          3.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.55,
+          0.556,
+          0.554,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.25
+      }
+    },
+    {
+      "id": "652c22f3c97667ad",
+      "name": "Lumière propre : 100, 1 000, 10 000 cd/m²",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -12
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "8660c10e50526201",
+      "name": "Lumière propre 100 cd/m²",
+      "parent": "652c22f3c97667ad",
+      "transform": {
+        "position": [
+          -1.5,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          1.0,
+          0.9,
+          0.75,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5,
+        "luminance": 100
+      }
+    },
+    {
+      "id": "848aa85d0cc845c9",
+      "name": "Lumière propre 1000 cd/m²",
+      "parent": "652c22f3c97667ad",
+      "transform": {
+        "position": [
+          0.0,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          1.0,
+          0.9,
+          0.75,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5,
+        "luminance": 1000
+      }
+    },
+    {
+      "id": "a966d6757088b6cf",
+      "name": "Lumière propre 10000 cd/m²",
+      "parent": "652c22f3c97667ad",
+      "transform": {
+        "position": [
+          1.5,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          1.0,
+          0.9,
+          0.75,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.5,
+        "luminance": 10000
+      }
+    },
+    {
+      "id": "6af68a7fbcb2b3f5",
+      "name": "Cubes (arêtes vives)",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -14
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "8afd3acb5a0e9bbc",
+      "name": "Cube plastique blanc",
+      "parent": "6af68a7fbcb2b3f5",
+      "transform": {
+        "position": [
+          -1.5,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallic": 0,
+        "roughness": 0.3
+      }
+    },
+    {
+      "id": "194628c877661632",
+      "name": "Cube fer poli",
+      "parent": "6af68a7fbcb2b3f5",
+      "transform": {
+        "position": [
+          0.0,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.56,
+          0.57,
+          0.58,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.1
+      }
+    },
+    {
+      "id": "d66d729b49461da4",
+      "name": "Cube or mat",
+      "parent": "6af68a7fbcb2b3f5",
+      "transform": {
+        "position": [
+          1.5,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          1.0,
+          0.766,
+          0.336,
+          1.0
+        ],
+        "metallic": 1,
+        "roughness": 0.6
+      }
+    }
+  ]
+}

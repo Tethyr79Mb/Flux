@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace Flux {
     namespace {
@@ -118,6 +119,44 @@ namespace Flux {
                 mesh.vertices.push_back({center - u + v, face.normal, {0.0f, 0.0f}});
                 for (const uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u}) {
                     mesh.indices.push_back(base + corner);
+                }
+            }
+            mesh.primitives.push_back({0, static_cast<uint32_t>(mesh.indices.size()), 0});
+            mesh.materials.emplace_back();
+            PrepareModel(mesh);
+            return mesh;
+        }
+
+        // Sphère de diamètre 1 en méridiens et parallèles : 64 x 32 cases, assez pour un reflet net sans facettes
+        // visibles à quelques mètres (4 000 triangles). Image enroulée une fois autour, comme dans Blender.
+        ModelData BuildSphere() {
+            constexpr std::uint32_t Segments = 64;
+            constexpr std::uint32_t Rings = 32;
+            constexpr float Pi = 3.14159265358979f;
+            ModelData mesh;
+            mesh.vertices.reserve((Segments + 1) * (Rings + 1));
+            for (std::uint32_t ring = 0; ring <= Rings; ++ring) {
+                const float v = static_cast<float>(ring) / Rings;
+                const float polar = v * Pi; // 0 en haut
+                for (std::uint32_t segment = 0; segment <= Segments; ++segment) {
+                    const float u = static_cast<float>(segment) / Segments;
+                    const float azimuth = u * 2.0f * Pi;
+                    const Math::Vector3f normal{std::sin(polar) * std::cos(azimuth), std::cos(polar),
+                                                -std::sin(polar) * std::sin(azimuth)};
+                    mesh.vertices.push_back({normal * 0.5f, normal, {u, v}});
+                }
+            }
+            for (std::uint32_t ring = 0; ring < Rings; ++ring) {
+                for (std::uint32_t segment = 0; segment < Segments; ++segment) {
+                    const std::uint32_t a = ring * (Segments + 1) + segment; // en haut à gauche
+                    const std::uint32_t b = a + Segments + 1;                // en dessous
+                    // Antihoraire vu de l'extérieur ; pas de triangle aplati aux pôles.
+                    if (ring != 0) {
+                        mesh.indices.insert(mesh.indices.end(), {a, b, a + 1});
+                    }
+                    if (ring != Rings - 1) {
+                        mesh.indices.insert(mesh.indices.end(), {a + 1, b, b + 1});
+                    }
                 }
             }
             mesh.primitives.push_back({0, static_cast<uint32_t>(mesh.indices.size()), 0});
@@ -260,6 +299,11 @@ namespace Flux {
             return std::unexpected(cube.error());
         }
         cache->m_cube = std::move(*cube);
+        auto sphere = cache->Upload(BuildSphere(), "sphere");
+        if (!sphere) {
+            return std::unexpected(sphere.error());
+        }
+        cache->m_sphere = std::move(*sphere);
         return cache;
     }
 

@@ -8,7 +8,7 @@
 namespace Flux {
     void RegisterRenderComponents(ComponentRegistry& registry) {
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")
-            .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}})
+            .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}, {"sphere", "Sphère", MeshType::Sphere}})
             .Field("color", "Couleur", &MeshRendererComponent::color)
             .Field("luminance", "Lumière propre (cd/m²)", &MeshRendererComponent::luminance,
                    {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})

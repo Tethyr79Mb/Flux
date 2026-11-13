@@ -956,7 +956,7 @@ namespace Flux {
             }
             EntityDraw draw{.transform = &transform};
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
-                draw.model = &m_models->GetCube();
+                draw.model = renderer->mesh == MeshType::Sphere ? &m_models->GetSphere() : &m_models->GetCube();
                 draw.tint = renderer->color;
                 const float luminance = Photometry::FromNits(std::max(renderer->luminance, 0.0f));
                 draw.emissive = {draw.tint.r * luminance, draw.tint.g * luminance, draw.tint.b * luminance};
