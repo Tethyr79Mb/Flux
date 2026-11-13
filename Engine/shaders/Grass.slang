@@ -59,13 +59,16 @@ float3 ReadGrassPosition(uint firstVertex, uint index)
     return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
 }
 
-// Climat des grandes échelles au sommet `index` (PlanetClimate), avec l'humidité du relief de ce sommet (uv.y), comme
-// le sol (PlanetVertex) : l'herbe pousse là où il la montre.
-float2 GrassClimate(uint draw, uint firstVertex, uint index, float3 local)
+// Climat des grandes échelles au sommet `index` (PlanetClimate), avec l'humidité du relief de ce sommet (uv.y), et en z
+// la profondeur de la terre (SoilDepth), comme le sol (PlanetVertex) : l'herbe pousse là où il la montre.
+float3 GrassClimate(uint draw, uint firstVertex, uint index, float3 local)
 {
     const DrawData d = draws[draw];
-    return PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz + local)
-         + float2(0.0, ReliefHumidity * pageVertices[(firstVertex + index) * 8 + 7]);
+    const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
+    const uint v = (firstVertex + index) * 8;
+    const float wet = pageVertices[v + 7];
+    const float3 lithology = Lithology(normalize(d.rim.xyz + local) * planet.shape.x, UnpackZones(pageVertices[v + 6]).y);
+    return float3(PlanetClimate(planet, d.rim.xyz + local) + float2(0.0, ReliefHumidity * wet), SoilDepth(wet, lithology));
 }
 
 float3 ReadGrassNormal(uint firstVertex, uint index)
@@ -138,7 +141,7 @@ uint GrassSeed(uint draw)
 }
 
 // Le sol montre de l'herbe en ce point de la tuile (part de 0 à 1, comme fragmentPlanet).
-float GrassShareAt(uint draw, float3 position, float3 normal, float2 climate)
+float GrassShareAt(uint draw, float3 position, float3 normal, float3 climate)
 {
     const DrawData d = draws[draw];
     const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
@@ -202,9 +205,9 @@ GrassPatchLight LightGrassPatch(float3 center)
 }
 
 // Brin de rang `index` (sur `total` à pleine densité) d'un carré de la tuile : de `origin` à `origin` + size mailles.
-// climate : celui des grandes échelles au centre du carré (PlanetClimate), le même pour tous ses brins ; light : son
+// climate : celui des grandes échelles au centre du carré (GrassClimate : avec la profondeur de la terre), le même pour tous ses brins ; light : son
 // air et ses nuages (LightGrassPatch).
-GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, float2 origin, float size, float total, float2 climate,
+GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, float2 origin, float size, float total, float3 climate,
                           GrassPatchLight light)
 {
     GrassBlade blade = NoGrassBlade();
@@ -367,7 +370,7 @@ GrassVertexOutput vertexGrass(uint vertex : SV_VulkanVertexID, uint instance : S
     const uint cluster = instance & ((1u << GrassInstanceShift) - 1u);
     const uint firstVertex = tileInPage * GrassTileVertices;
     const DrawData d = draws[draw];
-    const float2 climate = GrassClimate(draw, firstVertex, (GrassTileSide * GrassTileSide) / 2, float3(0.0));
+    const float3 climate = GrassClimate(draw, firstVertex, (GrassTileSide * GrassTileSide) / 2, float3(0.0));
     const float total = ceil(GrassArea(firstVertex, uint2(0, 0), GrassTileQuads) * GrassDensity());
     const uint index = cluster * GrassClusterBlades + inCluster / verticesPerBlade;
     // Air et nuages au milieu de la tuile (chemin de repli : recalculés par sommet, mais une fois et non par brin).

@@ -481,6 +481,9 @@ struct PlanetVertexOutput
     float3 groundPosition : GROUND;
     // Sol : température (°C) et humidité (0 à 1) sans les taches de moins de 400 m (voir PlanetClimate).
     float2 climate : CLIMATE;
+    // Roche-mère (Lithology : granit, calcaire, grès ; le reste basalte) et profondeur de la terre (SoilDepth), par
+    // sommet : les régions font des dizaines de km.
+    float4 geology : GEOLOGY;
     // Forêt (0 à 1) selon ses taches et les biomes, sans la pente ni la neige (vues au pixel), et la couleur de ses
     // cimes. Par sommet : ses taches font des centaines de mètres.
     float forest : FOREST;
@@ -547,6 +550,9 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
     // Humidité du relief dans uv.y (PlanetTile.slang, Write) : les vallons plus humides, les crêtes plus sèches.
     const float wet = input.uv.y;
     output.climate = PlanetClimate(planet, output.planetPosition) + float2(0.0, ReliefHumidity * wet);
+    const float2 zones = UnpackZones(input.uv.x);
+    const float3 lithology = Lithology(normalize(output.planetPosition) * planet.shape.x, zones.y);
+    output.geology = float4(lithology, SoilDepth(wet, lithology));
     output.forest = 0.0;
     output.forestColor = float3(0.0);
     if (planet.forest.y > 0.0) {
@@ -557,7 +563,7 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
         const float noise = ForestNoise(normalize(output.planetPosition) * planet.shape.x, blur);
         // Comme computeTrees, sans le hasard de chaque arbre : chaque biome selon son poids, sa forêt et sa densité.
         // Les zones du relief sont dans uv.x (PlanetTile.slang, Write).
-        const float3 zoneShares = ZoneShares(UnpackZones(input.uv.x));
+        const float3 zoneShares = ZoneShares(zones);
         const float altitude = (length(output.planetPosition) - planet.shape.x) / max(planet.shape.y, 1.0);
         const uint count = min(uint(planet.forest.x), MaxBiomes);
         float remaining = 1.0;
@@ -1591,6 +1597,20 @@ float3 GroundTint(PlanetData planet, uint layer)
     return tint / max(dot(tint, float3(0.2126, 0.7152, 0.0722)), 0.01);
 }
 
+// Couleur que la roche-mère (Lithology, le reste basalte) donne à une matière, à multiplier par sa teinte : granit
+// gris-rosé, calcaire clair, grès ocre, basalte sombre ; le sable en garde la couleur (blanc sur calcaire, roux sur
+// grès, noir sur basalte), la terre un peu ; l'herbe et la neige rien.
+float3 LithologyTint(float3 lithology, uint layer)
+{
+    if (layer != GroundRock && layer != GroundSand && layer != GroundSoil) {
+        return float3(1.0);
+    }
+    const float basalt = saturate(1.0 - lithology.x - lithology.y - lithology.z);
+    const float3 tint = lithology.x * float3(1.06, 0.97, 0.93) + lithology.y * float3(1.3, 1.25, 1.12)
+                      + lithology.z * float3(1.35, 0.92, 0.62) + basalt * float3(0.42, 0.42, 0.45);
+    return layer == GroundSoil ? lerp(float3(1.0), tint, 0.3) : tint;
+}
+
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
 void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 {
@@ -1602,7 +1622,7 @@ void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 }
 
 // Ce qui couvre le sol en un point (local : repère de la planète ; flatness : cosinus de la pente ; climate : celui
-// des grandes échelles, PlanetClimate) : la part de chaque matière avant leur mélange (CoverGround). Partagé par le sol
+// des grandes échelles, PlanetClimate, et z : la profondeur de la terre, SoilDepth) : la part de chaque matière avant leur mélange (CoverGround). Partagé par le sol
 // (PlanetColor) et l'herbe (shaders/Grass.slang), qui pousse là où le sol montre de l'herbe.
 struct GroundCover
 {
@@ -1617,7 +1637,7 @@ struct GroundCover
     float snow;
 };
 
-GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, float altitude, float2 climate, float distance)
+GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, float altitude, float3 climate, float distance)
 {
     GroundCover cover;
     // Taches de 20 à 400 m (déplacent les limites des zones), grain de 30 cm à 3 m.
@@ -1627,7 +1647,12 @@ GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, floa
                 + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
     const float macro = cover.macro;
 
-    cover.rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
+    // Roche dans les pentes, dès les plus douces là où la terre est mince (crêtes, calcaire), et par affleurements de
+    // 10 à 40 m quand elle l'est presque plus.
+    const float thin = 0.5 - climate.z;
+    const float outcrops = smoothstep(0.25, 0.08, climate.z) * smoothstep(0.55, 0.7, PlanetNoise(local * (1.0 / 37.0) + 11.0) + macro * 0.3)
+                         * saturate(2.0 - distance / 3000.0);
+    cover.rock = max(smoothstep(0.84, 0.72, flatness + macro * 0.1 + thin * 0.12), outcrops);
     // Plage : jusqu'à beach.y mètres au-dessus de la mer (qu'il y ait un océan ou non), limite fondue sur un
     // cinquième de sa hauteur et déplacée par les taches de 30 % au plus : elle suit la côte sans faire de bande droite.
     const float relief = max(planet.shape.y, 1.0);
@@ -1768,7 +1793,7 @@ float4 PlanetColor(PlanetVertexOutput input)
     const float flatness = dot(localNormal, up);
 
     const float distance = length(v.worldPosition);
-    const GroundCover cover = GetGroundCover(planet, local, flatness, altitude, input.climate, distance);
+    const GroundCover cover = GetGroundCover(planet, local, flatness, altitude, float3(input.climate, input.geology.w), distance);
     const float macro = cover.macro;
     const float rock = cover.rock;
     const float beach = cover.beach;
@@ -1850,7 +1875,7 @@ float4 PlanetColor(PlanetVertexOutput input)
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
             if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
-                sample.color *= GroundTint(planet, layer);
+                sample.color *= GroundTint(planet, layer) * LithologyTint(input.geology.xyz, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     sample.color *= GrassDryTint(temperature, macro, 0.0);
@@ -1873,7 +1898,7 @@ float4 PlanetColor(PlanetVertexOutput input)
         occlusion = occlusionRoughness.x;
     } else {
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
-                                           temperature, foot, snow, surface.roughness);
+                                           temperature, foot, snow, input.geology.xyz, surface.roughness);
     }
     // Sous l'herbe en brins (Grass.slang, avec la végétation) : de près, la terre (textures du sol) assombrie comme un
     // humus à l'ombre des brins ; au loin, et sans textures, la couleur moyenne du pré (pas de limite là où les brins
@@ -1917,7 +1942,7 @@ float4 PlanetColor(PlanetVertexOutput input)
 // couleur diffuse ; `normal` reçoit le petit relief.
 float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout float3 normal, float distance, float macro,
                         float rock, float beach, float grassy, float desert, float patches, float temperature, float foot,
-                        float snow, out float roughness)
+                        float snow, float3 lithology, out float roughness)
 {
     const float near = saturate(1.0 - distance / 120.0);
     const float fine = PlanetNoise(local * (1.0 / 3.1)) * 0.55 + PlanetNoise(local * (1.0 / 0.93)) * 0.3 * near
@@ -1925,11 +1950,12 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
     const float dry = saturate(macro * 1.6 + 0.5);
     float3 grassColor = planet.grass.rgb * lerp(float3(0.8, 0.85, 0.9), float3(1.35, 1.2, 0.85), dry);
     grassColor = lerp(grassColor, planet.soil.rgb * float3(1.6, 1.45, 1.1), smoothstep(6.0, -4.0, temperature) * 0.7);
-    float4 ground = planet.soil * float4(float3(0.9 + macro * 0.4), 1.0);
+    const float4 soil = planet.soil * float4(LithologyTint(lithology, GroundSoil), 1.0);
+    float4 ground = soil * float4(float3(0.9 + macro * 0.4), 1.0);
     ground = lerp(ground, float4(grassColor, planet.grass.w), grassy * (1.0 - patches));
-    ground = lerp(ground, planet.sand, max(desert, beach));
-    ground = lerp(ground, planet.soil, foot);
-    ground = lerp(ground, planet.rock * float4(float3(0.85 + macro * 0.5), 1.0), rock);
+    ground = lerp(ground, planet.sand * float4(LithologyTint(lithology, GroundSand), 1.0), max(desert, beach));
+    ground = lerp(ground, soil, foot);
+    ground = lerp(ground, planet.rock * float4(LithologyTint(lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
     ground = lerp(ground, planet.snow, snow);
     const float3 color = ground.rgb * (1.0 + fine * lerp(0.3, 0.5, rock) * saturate(1.0 - distance / 400.0));
 

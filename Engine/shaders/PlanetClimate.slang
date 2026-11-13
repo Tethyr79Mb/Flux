@@ -114,6 +114,34 @@ float2 UnpackZones(float packed)
     return float2(hills, packed - hills * 1024.0) * (1.0 / 1023.0);
 }
 
+// --- Roche-mère (géologie, étape 2) ---
+
+// Roche sous le sol, par régions de 20 à 80 km aux bords fondus sur quelques km (flatPoint : point sur la sphère du
+// rayon de la planète, m ; mountains : zone des montagnes, Terrain::Zones). x : granit, surtout dans les chaînes ;
+// y : calcaire et z : grès, dans les plaines et les bassins ; basalte (1 - x - y - z) par taches. Une formule, rien de
+// stocké, sans effet sur la collision : seulement la couleur du sol et la profondeur de sa terre.
+float3 Lithology(float3 flatPoint, float mountains)
+{
+    const float3 p = flatPoint * (1.0 / 45000.0);
+    // Bords ondulés : le point lu est déplacé par un bruit plus fin (les régions ne sont pas des taches rondes).
+    const float3 warp = float3(ClimateNoise(p * 3.0 + 13.0), ClimateNoise(p * 3.0 + 57.0), ClimateNoise(p * 3.0 + 91.0)) - 0.5;
+    const float a = ClimateNoise(p + warp * 0.6 + 101.0);
+    const float b = ClimateNoise(p * 1.7 + warp * 0.8 + 211.0);
+    const float basalt = smoothstep(0.66, 0.72, b);
+    const float granite = smoothstep(0.55, 0.62, a + 0.3 * mountains) * (1.0 - basalt);
+    const float sediment = 1.0 - basalt - granite;
+    const float sandstone = smoothstep(0.42, 0.5, b + (a - 0.5) * 0.3);
+    return float3(granite, sediment * (1.0 - sandstone), sediment * sandstone);
+}
+
+// Profondeur de la terre (0 : roche à nu, 1 : sol épais) : selon l'humidité du relief (wet, de -1 sur les crêtes à 1
+// au fond des vallons) et la roche (le calcaire et le grès font des sols minces, le basalte des sols riches).
+float SoilDepth(float wet, float3 lithology)
+{
+    const float basalt = saturate(1.0 - lithology.x - lithology.y - lithology.z);
+    return saturate(0.55 + 0.45 * wet - 0.2 * lithology.y - 0.1 * lithology.z + 0.1 * basalt);
+}
+
 // --- Biomes (Planetology::VegetationLibrary) ---
 
 static const uint MaxBiomes = 8; // VegetationLibrary::MaxBiomes
