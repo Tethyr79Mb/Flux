@@ -312,7 +312,7 @@ namespace Flux {
             RHI::Binding{FrameSlot, RHI::BindingType::StorageBuffer, both},
             RHI::Binding{ShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
-            RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, both}, // ciel lu aussi par brin d'herbe (GrassBladeLight)
+            RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{InstanceSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TreeSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{AirRayleighSlot, RHI::BindingType::Texture, both}, // lue par sommet (sol, eau, arbres) et par pixel
@@ -322,7 +322,7 @@ namespace Flux {
             RHI::Binding{MeshTaskSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-            RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, both},
+            RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
