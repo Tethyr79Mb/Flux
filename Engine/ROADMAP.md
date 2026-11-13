@@ -120,7 +120,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   - ⬜ A7. Ombres des lampes (atlas) et brouillard volumique (froxels).
   - ⬜ B1. Lumière renvoyée par la planète proche (ligne suivante).
   - ⬜ B2. Matières lues au point touché par un rayon.
-  - ⬜ B3. Lumière indirecte par sondes DDGI en ray tracing, une grille par vaisseau ; repli GTX 1060 à choisir (plan).
+  - ⬜ B3. Lumière indirecte par sondes DDGI en ray tracing, une grille par vaisseau ; repli GTX 1060 : sondes cuites dans l'éditeur (choix de Bruno du 2026-11-13).
 - ⬜ Lumière renvoyée par la planète proche (remarque de Bruno du 2026-10-26) : dans l'espace, la face d'un objet à l'ombre du soleil ne reçoit que l'ambiante d'un ciel noir et paraît grise ; une lueur bleutée venue de la planète (selon sa taille apparente et sa face éclairée) éclairerait les dessous comme dans les rendus de la station.
 - ⬜ Matériaux multicouches (remarque de Bruno du 2026-10-26) : une matière de base (peinture, métal nu) et des couches mélangées par masque (usure, saleté, bandes), comme les « layer blends » de Star Citizen. Aujourd'hui : un seul jeu de textures par matériau.
 - ⬜ Décalcomanies (idée de Bruno du 2026-10-26) : images projetées sur les modèles (numéros, logos, bandes), posées dans l'éditeur. En attendant, plaques texturées dans le modèle.
