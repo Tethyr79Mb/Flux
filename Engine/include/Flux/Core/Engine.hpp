@@ -178,8 +178,10 @@ namespace Flux {
         //     engine.BindInterfaceValue("Vie", [] { return g_vie; });
         //     engine.BindInterfaceValue("Sensibilité", [] { return g_sensibilite; }, [](double v) { g_sensibilite = v; });
         //     engine.BindInterfaceText("Nom du vaisseau", [] { return g_nom; });
+        //     engine.BindInterfaceText("Nom du joueur", [] { return g_nom; }, [](std::string nom) { g_nom = std::move(nom); });
         void BindInterfaceValue(std::string name, std::function<double()> get, std::function<void(double)> set = {});
-        void BindInterfaceText(std::string name, std::function<std::string()> get);
+        // set : un champ de texte lié y envoie ce que le joueur écrit (sans set : en lecture seule).
+        void BindInterfaceText(std::string name, std::function<std::string()> get, std::function<void(std::string)> set = {});
         // Valeur à choix (numéro, 0 le premier) : une liste déroulante liée montre ces choix-là.
         //     engine.BindInterfaceChoice("Difficulté", {"Facile", "Normale", "Difficile"}, [] { return g_niveau; },
         //                                [](double v) { g_niveau = static_cast<int>(v); });
@@ -358,6 +360,8 @@ namespace Flux {
         std::uint64_t m_frame = 0;
         bool m_interfaceWantsMouse = false; // à l'image précédente
         bool m_interfaceMouseNow = false;   // à l'image en cours, d'après les interfaces déjà dessinées
+        bool m_interfaceWantsKeyboard = false; // un champ de texte avait le clavier à l'image précédente
+        bool m_interfaceKeyboardNow = false;
         bool m_cameraInputEnabled = true;
         bool m_interfacePaused = false;    // à l'image précédente
         bool m_interfacePausedNow = false; // à l'image en cours

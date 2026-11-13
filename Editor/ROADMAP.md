@@ -60,7 +60,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   d'aperçu « où pousse ce biome » sur une carte ; pas de bouton « Modifier » à côté des biomes dans l'inspecteur.
 
 ### Interfaces du jeu
-- ✅ Éditeur de `.fluxui` : écran à la résolution choisie, poignées, ancres, propriétés, fenêtres, boutons, liaisons (catégorie puis valeur), onglets, zones de défilement, listes déroulantes.
+- ✅ Éditeur de `.fluxui` : écran à la résolution choisie, poignées, ancres, propriétés, fenêtres, boutons, liaisons (catégorie puis valeur), onglets, zones de défilement, listes déroulantes, champs de texte.
 
 ### Claude branché sur l'éditeur (MCP)
 - 🔧 Serveur MCP local (`http://127.0.0.1:7777/mcp`, déclaré pour Claude Code dans `.mcp.json` à la racine du dépôt) :

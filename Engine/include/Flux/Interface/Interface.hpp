@@ -35,6 +35,7 @@ namespace Flux::Interface {
         ProgressBar, // remplie selon sa valeur (vie, chargement) ; le joueur ne la change pas
         ScrollArea,  // zone de défilement : ses enfants défilent à la molette ou par l'ascenseur s'ils dépassent en bas
         Dropdown,    // liste déroulante : montre le choix fait (value), un clic déroule les autres par-dessus le reste
+        TextField,   // champ de texte : un clic le prend, le clavier écrit dedans (nom du joueur, adresse)
         Count,
     };
 
@@ -89,7 +90,8 @@ namespace Flux::Interface {
         float borderWidth = 0.0f;
         float radius = 0.0f; // coins arrondis
 
-        std::string text; // libellé (bouton, case), titre (fenêtre), texte
+        std::string text; // libellé (bouton, case), titre (fenêtre), texte, texte saisi (champ de texte)
+        std::string placeholder; // champ de texte vide : indication affichée en pâle (« Ton nom »)
         Math::LinearColor textColor{1.0f, 1.0f, 1.0f};
         float fontSize = 24.0f;
         TextAlign align = TextAlign::Left;
@@ -122,7 +124,7 @@ namespace Flux::Interface {
         bool checked = false; // case
         float value = 0.5f;   // curseur, entre minimum et maximum ; liste déroulante : numéro du choix (0 le premier)
         float minimum = 0.0f;
-        float maximum = 1.0f;
+        float maximum = 1.0f; // champ de texte : nombre de caractères au plus
 
         // Liste déroulante : ses choix. Liée à une valeur qui a les siens (« Détail du sol »), ce sont ceux-là en jeu.
         std::vector<std::string> options;
@@ -297,6 +299,10 @@ namespace Flux::Interface {
         bool enabled = true; // false : la souris est ailleurs (panneau de l'éditeur), rien n'est survolé
         bool escape = false; // touche Échap appuyée à cette frame
         float wheel = 0.0f;  // crans de molette à cette frame (positifs vers le haut)
+        // Clavier, pour le champ de texte qui l'a : caractères tapés (UTF-8), effacement, Entrée (le champ le rend).
+        std::string_view typed;
+        bool backspace = false;
+        bool enter = false;
     };
 
     // État de l'interface en jeu, d'une frame à l'autre.
@@ -307,8 +313,10 @@ namespace Flux::Interface {
         std::uint32_t clicked = 0; // bouton cliqué à cette frame
         std::uint32_t changed = 0; // case, curseur ou liste changé par le joueur à cette frame
         std::uint32_t openList = 0;  // liste déroulante dépliée
+        std::uint32_t focused = 0;   // champ de texte où le clavier écrit
         int hoveredOption = -1;      // son choix survolé
         bool wantsMouse = false;   // souris au-dessus de l'interface : le jeu doit ignorer ses clics
+        bool wantsKeyboard = false; // un champ de texte a le clavier : le jeu doit ignorer les touches
         std::uint32_t closeHovered = 0; // fenêtre dont la croix est survolée
         bool closePressed = false;      // pressed est une fenêtre tenue par sa croix (pas par sa barre de titre)
         int hoveredTab = -1;            // onglet survolé des onglets hovered
