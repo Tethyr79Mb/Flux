@@ -74,7 +74,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   possible. Manquent : une liste de commandes par fil (une seule aujourd'hui, sur le fil principal), plusieurs files
   exposées au renderer (la file de transfert reste cachée dans le backend, pas de file de calcul), un cache de
   pipelines (`VkPipelineCache` enregistré sur disque), d'autres copies que `CopyBuffer` (buffer vers texture, texture
-  vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé). Ray tracing : structures
+  vers texture). Jusqu'à 8 cibles de couleur par passe (`MaxColorTargets`, 2026-11-13). Ray tracing : structures
   d'accélération faites (2026-11-10), liaison aux shaders à faire.
   Fichiers rangés : un en-tête par interface, types communs dans `RHITypes.hpp`, un fichier par bloc Vulkan
   (instance, surface, choix du GPU, device, swapchain, images en vol, heures du GPU, diagnostic, envois).
@@ -111,7 +111,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Exposition propre aux intérieurs (2026-11-03, d'après une image de Star Citizen) : compensation (-1 stop par défaut) et bornes de l'œil (EV100 3 à 7, choix de Bruno : l'image bouge peu en regardant les lampes ou une porte au soleil) réglées dans l'Intérieur, pour garder une station sombre et contrastée au lieu de la remonter au gris moyen. La boîte d'un Intérieur compte en entier (sol et murs posés sur ses faces), le fondu se fait dehors. Dans l'espace, le ciel n'entre plus dans la mesure de la lumière (ses étoiles, à éclat minimum à l'écran, fermaient l'œil jusqu'à la borne). À améliorer : valeur à régler à l'œil pièce par pièce.
 - ⬜ Étalonnage couleur par table (LUT 3D après la courbe de tons), réglable par scène.
 - ⬜ Éclairage réaliste (plan du 2026-11-13 : https://claude.ai/artifact/JprtbD2cuivx7WQ3CnF6Tu ; repli GTX 1060 dans le plan) :
-  - ⬜ A1. RHI : jusqu'à 8 cibles de couleur par passe.
+  - ✅ A1. RHI : jusqu'à 8 cibles de couleur par passe (`extraColorTargets`, `extraColors`), vérifié au choix du GPU.
   - ⬜ A2. G-buffer (12 octets par pixel) et passe d'éclairage en compute, modèles opaques d'abord.
   - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
   - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.

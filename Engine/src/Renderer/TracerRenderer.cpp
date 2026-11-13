@@ -53,7 +53,7 @@ namespace Flux {
         desc.bindGroupLayouts = layouts;
         desc.pushConstantsSize = sizeof(TracerParams);
         desc.colorFormat = colorFormat;
-        desc.secondColorFormat = motionFormat; // mouvement laissé à celui de ce qui est derrière
+        desc.extraColors[0].format = motionFormat; // mouvement laissé à celui de ce qui est derrière
         desc.depthFormat = depthFormat;
         desc.depthTest = true;
         desc.depthWrite = false;
@@ -66,7 +66,7 @@ namespace Flux {
         renderer->m_pipeline = std::move(*pipeline);
         desc.fragmentEntryPoint = "fragmentReactive";
         desc.colorFormat = reactiveFormat;
-        desc.secondColorFormat = RHI::Format::Undefined;
+        desc.extraColors[0].format = RHI::Format::Undefined;
         auto reactive = device.CreatePipeline(desc);
         if (!reactive) {
             return std::unexpected(reactive.error());

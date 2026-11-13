@@ -520,8 +520,8 @@ namespace Flux {
             desc.vertexAttributes = kind.attributes;
             desc.fragmentEntryPoint = kind.fragment;
             desc.colorFormat = colorFormat;
-            desc.secondColorFormat = motionFormat;
-            desc.thirdColorFormat = sunFormat;
+            desc.extraColors[0].format = motionFormat;
+            desc.extraColors[1].format = sunFormat;
             desc.depthFormat = depthFormat;
             desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
             desc.depthBiasConstant = 0.0f;
@@ -537,12 +537,12 @@ namespace Flux {
                 // Prémultiplié : les reflets d'un verre s'ajoutent entiers, quel que soit son alpha (Mesh.slang).
                 desc.blend = transparent ? RHI::BlendMode::Premultiplied : RHI::BlendMode::Opaque;
                 // Transparents : le mouvement reste celui de ce qu'on voit à travers.
-                desc.writeSecondColor = kind.motion && !transparent;
+                desc.extraColors[0].write = kind.motion && !transparent;
                 // Lumière du soleil à part (ray tracing) : écrite par les mêmes programmes que le mouvement ; l'eau,
                 // mélangée, voile celle du fond (fragmentOcean). La passe des transparents n'a pas cette cible.
-                desc.thirdColorFormat = scenePass ? sunFormat : RHI::Format::Undefined;
-                desc.writeThirdColor = transparent ? scenePass && sunFormat != RHI::Format::Undefined : kind.motion;
-                desc.blendThirdColor = transparent;
+                desc.extraColors[1].format = scenePass ? sunFormat : RHI::Format::Undefined;
+                desc.extraColors[1].write = transparent ? scenePass && sunFormat != RHI::Format::Undefined : kind.motion;
+                desc.extraColors[1].blend = transparent;
                 return create(pipeline, desc);
             };
             if (auto result = createMain(pipelines.opaque, RHI::CullMode::Back, false); !result) {
@@ -568,9 +568,9 @@ namespace Flux {
                 desc.vertexAttributes = kind.shadowAttributes;
                 desc.fragmentEntryPoint = "fragmentShadow";
                 desc.writeColor = false;
-                desc.writeSecondColor = false; // fragmentShadow n'écrit pas le mouvement
-                desc.writeThirdColor = false;
-                desc.blendThirdColor = false;
+                desc.extraColors[0].write = false; // fragmentShadow n'écrit pas le mouvement
+                desc.extraColors[1].write = false;
+                desc.extraColors[1].blend = false;
                 desc.depthWrite = true;
                 desc.blend = RHI::BlendMode::Opaque;
                 // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
@@ -606,10 +606,10 @@ namespace Flux {
                 // Plus proche ou égal à la profondeur de la pré-passe, écrite un peu plus loin exprès (voir plus haut).
                 desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
                 desc.blend = RHI::BlendMode::Opaque;
-                desc.writeSecondColor = kind.motion;
-                desc.thirdColorFormat = sunFormat;
-                desc.writeThirdColor = kind.motion;
-                desc.blendThirdColor = false;
+                desc.extraColors[0].write = kind.motion;
+                desc.extraColors[1].format = sunFormat;
+                desc.extraColors[1].write = kind.motion;
+                desc.extraColors[1].blend = false;
                 auto result = create(pipeline, desc);
                 desc.depthCompare = RHI::CompareOp::Greater;
                 return result;
@@ -660,8 +660,8 @@ namespace Flux {
             desc.vertexBuffers = staticBuffers;
             desc.vertexAttributes = staticAttributes;
             desc.colorFormat = TreeImpostors::ColorFormat;
-            desc.secondColorFormat = TreeImpostors::NormalFormat;
-            desc.writeSecondColor = true;
+            desc.extraColors[0].format = TreeImpostors::NormalFormat;
+            desc.extraColors[0].write = true;
             desc.depthFormat = TreeImpostors::DepthFormat;
             if (auto result = create(m_impostorBake, desc); !result) {
                 return result;
@@ -671,9 +671,9 @@ namespace Flux {
             desc.vertexBuffers = {};
             desc.vertexAttributes = {};
             desc.colorFormat = colorFormat;
-            desc.secondColorFormat = motionFormat;
-            desc.thirdColorFormat = sunFormat; // dans la passe de la scène : lumière du soleil à part, comme les arbres
-            desc.writeThirdColor = sunFormat != RHI::Format::Undefined;
+            desc.extraColors[0].format = motionFormat;
+            desc.extraColors[1].format = sunFormat; // dans la passe de la scène : lumière du soleil à part, comme les arbres
+            desc.extraColors[1].write = sunFormat != RHI::Format::Undefined;
             desc.depthFormat = depthFormat;
             if (auto result = create(m_impostor, desc); !result) {
                 return result;
@@ -682,10 +682,7 @@ namespace Flux {
             desc.vertexEntryPoint = "vertexImpostorShadow";
             desc.fragmentEntryPoint = "fragmentImpostorShadow";
             desc.colorFormat = RHI::Format::Undefined;
-            desc.secondColorFormat = RHI::Format::Undefined;
-            desc.writeSecondColor = false;
-            desc.thirdColorFormat = RHI::Format::Undefined;
-            desc.writeThirdColor = false;
+            desc.extraColors = {};
             desc.depthFormat = RHI::Format::D32Float;
             desc.depthCompare = RHI::CompareOp::Less;
             desc.depthBiasConstant = 1.0f;
@@ -718,10 +715,10 @@ namespace Flux {
             mesh.bindGroupLayouts = meshLayouts;
             mesh.pushConstantsSize = sizeof(DrawParams);
             mesh.colorFormat = colorFormat;
-            mesh.secondColorFormat = motionFormat;
-            mesh.writeSecondColor = true;
-            mesh.thirdColorFormat = sunFormat;
-            mesh.writeThirdColor = sunFormat != RHI::Format::Undefined;
+            mesh.extraColors[0].format = motionFormat;
+            mesh.extraColors[0].write = true;
+            mesh.extraColors[1].format = sunFormat;
+            mesh.extraColors[1].write = sunFormat != RHI::Format::Undefined;
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -750,10 +747,10 @@ namespace Flux {
             grass.bindGroupLayouts = grassLayouts;
             grass.pushConstantsSize = sizeof(DrawParams);
             grass.colorFormat = colorFormat;
-            grass.secondColorFormat = motionFormat;
-            grass.writeSecondColor = true;
-            grass.thirdColorFormat = sunFormat;
-            grass.writeThirdColor = sunFormat != RHI::Format::Undefined;
+            grass.extraColors[0].format = motionFormat;
+            grass.extraColors[0].write = true;
+            grass.extraColors[1].format = sunFormat;
+            grass.extraColors[1].write = sunFormat != RHI::Format::Undefined;
             grass.depthFormat = depthFormat;
             grass.depthTest = true;
             grass.depthWrite = true;
@@ -800,10 +797,10 @@ namespace Flux {
             mesh.bindGroupLayouts = meshLayouts;
             mesh.pushConstantsSize = sizeof(DrawParams);
             mesh.colorFormat = colorFormat;
-            mesh.secondColorFormat = motionFormat;
-            mesh.writeSecondColor = true;
-            mesh.thirdColorFormat = sunFormat;
-            mesh.writeThirdColor = sunFormat != RHI::Format::Undefined;
+            mesh.extraColors[0].format = motionFormat;
+            mesh.extraColors[0].write = true;
+            mesh.extraColors[1].format = sunFormat;
+            mesh.extraColors[1].write = sunFormat != RHI::Format::Undefined;
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -2394,7 +2391,7 @@ namespace Flux {
                                                      RHI::TextureUse{capture->depth, RHI::TextureAccess::DepthTarget, true}};
         commands.UseTextures(targets);
         commands.BeginRenderPass({.clearColor = {0.0f, 0.0f, 0.0f, 0.0f}, .depth = capture->depth, .clearDepth = 0.0f,
-                                  .colorTarget = capture->color, .secondColorTarget = capture->normal});
+                                  .colorTarget = capture->color, .extraColorTargets = {capture->normal}});
         constexpr auto size = static_cast<float>(TreeImpostors::Size);
         commands.SetViewport({0.0f, 0.0f, size, size});
         commands.SetScissor({0, 0, TreeImpostors::Size, TreeImpostors::Size});
