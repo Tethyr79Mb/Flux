@@ -14,32 +14,6 @@
 #include <utility>
 
 namespace Flux::Vk {
-    namespace {
-        // Image de la swapchain seulement : les textures passent par UseTextures.
-        void TransitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
-                             VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                             VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
-            VkImageMemoryBarrier2 barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.srcStageMask = srcStage;
-            barrier.srcAccessMask = srcAccess;
-            barrier.dstStageMask = dstStage;
-            barrier.dstAccessMask = dstAccess;
-            barrier.oldLayout = from;
-            barrier.newLayout = to;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-            VkDependencyInfo dependency{};
-            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(commandBuffer, &dependency);
-        }
-    }
-
     void RhiCommandList::Begin(VkCommandBuffer commandBuffer, VkImage image, VkImageView view, VkExtent2D extent,
                                VkQueryPool queryPool, CommandBatch& batch) {
         m_commandBuffer = commandBuffer;
@@ -57,6 +31,8 @@ namespace Flux::Vk {
         m_markers = {};
         m_openStep = RHI::MaxSteps;
         m_labelOpen = false;
+        m_pendingImageCount = 0;
+        m_memoryPending = false;
         if (m_queryPool != VK_NULL_HANDLE) {
             vkCmdResetQueryPool(m_commandBuffer, m_queryPool, 0, RHI::MaxTimestamps);
         }
@@ -77,6 +53,8 @@ namespace Flux::Vk {
         m_writtenTimestamps = 0;
         m_openStep = RHI::MaxSteps;
         m_labelOpen = false;
+        m_pendingImageCount = 0;
+        m_memoryPending = false;
         ContinueIn(commandBuffer);
     }
 
@@ -90,6 +68,72 @@ namespace Flux::Vk {
         m_layout = VK_NULL_HANDLE;
         m_bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         m_pushStages = 0;
+    }
+
+    void RhiCommandList::QueueMemoryBarrier(const VkMemoryBarrier2& barrier) {
+        if (!m_memoryPending) {
+            m_pendingMemory = barrier;
+            m_memoryPending = true;
+            return;
+        }
+        m_pendingMemory.srcStageMask |= barrier.srcStageMask;
+        m_pendingMemory.srcAccessMask |= barrier.srcAccessMask;
+        m_pendingMemory.dstStageMask |= barrier.dstStageMask;
+        m_pendingMemory.dstAccessMask |= barrier.dstAccessMask;
+    }
+
+    void RhiCommandList::QueueImageBarrier(const VkImageMemoryBarrier2& barrier) {
+        // Deux changements de layout des mêmes niveaux d'une image dans un appel n'ont pas d'ordre garanti : le premier
+        // part avant. Plein : de même. Parcours de 16 au plus.
+        const auto overlap = [](std::uint32_t firstA, std::uint32_t countA, std::uint32_t firstB, std::uint32_t countB) {
+            // VK_REMAINING_MIP_LEVELS et VK_REMAINING_ARRAY_LAYERS : ~0u, jusqu'au bout.
+            const std::uint64_t endA = countA == ~0u ? UINT64_MAX : std::uint64_t{firstA} + countA;
+            const std::uint64_t endB = countB == ~0u ? UINT64_MAX : std::uint64_t{firstB} + countB;
+            return firstA < endB && firstB < endA;
+        };
+        const VkImageSubresourceRange& range = barrier.subresourceRange;
+        const auto first = m_pendingImages.begin();
+        const bool again = std::any_of(first, first + m_pendingImageCount, [&](const VkImageMemoryBarrier2& pending) {
+            const VkImageSubresourceRange& other = pending.subresourceRange;
+            return pending.image == barrier.image && overlap(range.baseMipLevel, range.levelCount, other.baseMipLevel, other.levelCount)
+                && overlap(range.baseArrayLayer, range.layerCount, other.baseArrayLayer, other.layerCount);
+        });
+        if (again || m_pendingImageCount == MaxPendingImages) {
+            FlushBarriers();
+        }
+        m_pendingImages[m_pendingImageCount++] = barrier;
+    }
+
+    void RhiCommandList::QueueSwapchainTransition(VkImageLayout from, VkImageLayout to, VkPipelineStageFlags2 srcStage,
+                                                  VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = srcStage;
+        barrier.srcAccessMask = srcAccess;
+        barrier.dstStageMask = dstStage;
+        barrier.dstAccessMask = dstAccess;
+        barrier.oldLayout = from;
+        barrier.newLayout = to;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        QueueImageBarrier(barrier);
+    }
+
+    void RhiCommandList::FlushBarriers() {
+        if (!m_memoryPending && m_pendingImageCount == 0) {
+            return;
+        }
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.memoryBarrierCount = m_memoryPending ? 1 : 0;
+        dependency.pMemoryBarriers = &m_pendingMemory;
+        dependency.imageMemoryBarrierCount = m_pendingImageCount;
+        dependency.pImageMemoryBarriers = m_pendingImages.data();
+        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        m_memoryPending = false;
+        m_pendingImageCount = 0;
     }
 
     std::span<RHI::CommandList* const> RhiCommandList::Fork(std::uint32_t count) {
@@ -189,21 +233,8 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::UseTextures(std::span<const RHI::TextureUse> uses) {
-        // Une barrière par lot : le pilote peut tout attendre d'un coup au lieu de vider le GPU à chaque texture.
-        constexpr std::size_t MaxBatch = 16;
-        std::array<VkImageMemoryBarrier2, MaxBatch> barriers{};
-        std::uint32_t count = 0;
-        const auto flush = [&] {
-            if (count == 0) {
-                return;
-            }
-            VkDependencyInfo dependency{};
-            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.imageMemoryBarrierCount = count;
-            dependency.pImageMemoryBarriers = barriers.data();
-            vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
-            count = 0;
-        };
+        // Mises en attente avec les autres barrières : le pilote attend tout d'un coup au lieu de vider le GPU à chaque
+        // texture ou à chaque appel.
         for (const RHI::TextureUse& use : uses) {
             const auto& texture = static_cast<const RhiTexture&>(*use.texture);
             // Usage prévu : l'usage noté n'est pas lu, un autre fil peut l'écrire (passes internes d'une autre liste).
@@ -218,11 +249,7 @@ namespace Flux::Vk {
             if (from == use.access && !after.write) {
                 continue;
             }
-            if (count == MaxBatch) {
-                flush();
-            }
-            VkImageMemoryBarrier2& barrier = barriers[count++];
-            barrier = {};
+            VkImageMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             barrier.srcStageMask = before.stages;
             barrier.srcAccessMask = before.write ? before.access : VK_ACCESS_2_NONE; // après une lecture : l'ordre suffit
@@ -234,8 +261,8 @@ namespace Flux::Vk {
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = texture.GetImage().GetHandle();
             barrier.subresourceRange = {texture.GetAspect(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+            QueueImageBarrier(barrier);
         }
-        flush();
     }
 
     void RhiCommandList::PlanTextures(std::span<RHI::TextureUse> uses) {
@@ -271,9 +298,9 @@ namespace Flux::Vk {
         }
         // Image de la swapchain : seule cible que la passe prépare elle-même (le graphe ne la voit pas). Le contenu
         // précédent est jeté : on efface tout de suite après.
-        TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        QueueSwapchainTransition(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -292,6 +319,7 @@ namespace Flux::Vk {
         renderingInfo.colorAttachmentCount = 1;
         renderingInfo.pColorAttachments = &colorAttachment;
         renderingInfo.pDepthAttachment = desc.depth ? &depthAttachment : nullptr;
+        FlushBarriers();
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
@@ -334,6 +362,7 @@ namespace Flux::Vk {
         renderingInfo.colorAttachmentCount = colorCount;
         renderingInfo.pColorAttachments = colorAttachments.data();
         renderingInfo.pDepthAttachment = desc.depth ? &depthAttachment : nullptr;
+        FlushBarriers();
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
@@ -354,6 +383,7 @@ namespace Flux::Vk {
         renderingInfo.flags = flags;
         renderingInfo.layerCount = 1;
         renderingInfo.pDepthAttachment = &depthAttachment;
+        FlushBarriers();
         vkCmdBeginRendering(m_commandBuffer, &renderingInfo);
     }
 
@@ -422,35 +452,33 @@ namespace Flux::Vk {
     void RhiCommandList::TransitionToPresent() {
         // Jusqu'au sémaphore que la présentation attend (signalé après ALL_COMMANDS) : avec NONE, rien n'obligeait le
         // changement de layout à finir avant lui (la validation de synchronisation le signalait).
-        TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE);
+        QueueSwapchainTransition(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE);
+        FlushBarriers();
     }
 
     void RhiCommandList::CopyImageToReadback(VkBuffer target) {
-        TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+        QueueSwapchainTransition(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                 VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+        FlushBarriers();
         VkBufferImageCopy region{};
         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.imageExtent = {m_extent.width, m_extent.height, 1};
         vkCmdCopyImageToBuffer(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, 1, &region);
-        // La copie, lisible par le CPU une fois l'image finie (fence).
+        // La copie, lisible par le CPU une fois l'image finie (fence), et retour au layout que TransitionToPresent
+        // attend : envoyés avec sa propre barrière.
         VkMemoryBarrier2 toHost{};
         toHost.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         toHost.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         toHost.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         toHost.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
         toHost.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.memoryBarrierCount = 1;
-        dependency.pMemoryBarriers = &toHost;
-        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
-        // Retour au layout que TransitionToPresent attend.
-        TransitionImage(m_commandBuffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_NONE,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        QueueMemoryBarrier(toHost);
+        QueueSwapchainTransition(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_NONE,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     }
 
     void RhiCommandList::SetViewport(const RHI::Viewport& viewport) {
@@ -523,11 +551,13 @@ namespace Flux::Vk {
     }
 
     void RhiCommandList::Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) {
+        FlushBarriers();
         vkCmdDispatch(m_commandBuffer, groupsX, groupsY, groupsZ);
     }
 
     // Une barrière mémoire globale : plus simple qu'une par buffer, et les pilotes ne font guère mieux avec le détail.
-    // Elle attend aussi les lectures des Dispatch précédents avant les écritures suivantes (buffer réutilisé).
+    // Elle attend aussi les lectures des Dispatch précédents avant les écritures suivantes (buffer réutilisé). Celle
+    // d'après reste en attente : elle part avec la barrière de la commande suivante.
     void RhiCommandList::CopyBuffer(const RHI::Buffer& source, std::uint64_t sourceOffset, RHI::Buffer& target,
                                     std::uint64_t targetOffset, std::uint64_t size) {
         VkMemoryBarrier2 barrier{};
@@ -536,11 +566,8 @@ namespace Flux::Vk {
         barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
         barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.memoryBarrierCount = 1;
-        dependency.pMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        QueueMemoryBarrier(barrier);
+        FlushBarriers();
         const VkBufferCopy region{sourceOffset, targetOffset, size};
         vkCmdCopyBuffer(m_commandBuffer, static_cast<const RhiBuffer&>(source).GetHandle(),
                         static_cast<RhiBuffer&>(target).GetHandle(), 1, &region);
@@ -548,7 +575,7 @@ namespace Flux::Vk {
         barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
         barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_HOST_READ_BIT;
-        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        QueueMemoryBarrier(barrier);
     }
 
     void RhiCommandList::BuildBottomLevels(std::span<RHI::AccelerationStructure* const> structures, const RHI::Buffer& scratch) {
@@ -556,6 +583,7 @@ namespace Flux::Vk {
             return;
         }
         // Sans barrière entre elles : chacune a sa place de travail, le GPU les construit en même temps.
+        FlushBarriers();
         const VkBuffer scratchBuffer = static_cast<const RhiBuffer&>(scratch).GetHandle();
         VkDeviceSize offset = 0;
         for (RHI::AccelerationStructure* structure : structures) {
@@ -568,6 +596,7 @@ namespace Flux::Vk {
 
     void RhiCommandList::BuildTopLevel(RHI::AccelerationStructure& structure, std::span<const RHI::AccelerationInstance> instances,
                                        const RHI::Buffer& scratch) {
+        FlushBarriers();
         static_cast<RhiAccelerationStructure&>(structure).RecordBuild(m_commandBuffer, static_cast<const RhiBuffer&>(scratch).GetHandle(),
                                                                       0, instances);
         AccelerationBarrier();
@@ -583,31 +612,32 @@ namespace Flux::Vk {
                              | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
                              | MeshStages(m_meshShaders);
         barrier.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.memoryBarrierCount = 1;
-        dependency.pMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        QueueMemoryBarrier(barrier);
     }
 
-    void RhiCommandList::ComputeBarrier() {
+    void RhiCommandList::ComputeBarrier(RHI::ComputeReaders readers) {
         VkMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         // Les étapes de tâche et de maillage aussi : un calcul qui réécrit ce qu'elles lisaient (pyramide de
         // profondeur) attend leurs lectures.
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | MeshStages(m_meshShaders);
         barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT
-                             | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                             | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_HOST_BIT | MeshStages(m_meshShaders);
-        barrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
-                              | VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT
-                              | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_HOST_READ_BIT;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.memoryBarrierCount = 1;
-        dependency.pMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        // Seulement les lecteurs demandés : chaque accès de destination coûte un vidage de cache (HOST_READ réécrit
+        // tout le L2 en mémoire sur les GPU AMD, les accès indirects et sommets vident leurs caches dédiés).
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        if (RHI::HasFlag(readers, RHI::ComputeReaders::Draw)) {
+            barrier.dstStageMask |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT
+                                  | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                  | MeshStages(m_meshShaders);
+            barrier.dstAccessMask |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
+                                   | VK_ACCESS_2_INDEX_READ_BIT;
+        }
+        if (RHI::HasFlag(readers, RHI::ComputeReaders::Host)) {
+            barrier.dstStageMask |= VK_PIPELINE_STAGE_2_HOST_BIT;
+            barrier.dstAccessMask |= VK_ACCESS_2_HOST_READ_BIT;
+        }
+        QueueMemoryBarrier(barrier);
     }
 
     void RhiCommandList::GenerateMipmaps(const RHI::Texture& texture) {
@@ -639,19 +669,18 @@ namespace Flux::Vk {
             b.image = image.GetHandle();
             b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, count, 0, layers};
         };
-        const auto flush = [&](std::uint32_t count) {
-            VkDependencyInfo dependency{};
-            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.imageMemoryBarrierCount = count;
-            dependency.pImageMemoryBarriers = barriers.data();
-            vkCmdPipelineBarrier2(m_commandBuffer, &dependency);
+        // Mises en attente : envoyées avant chaque copie, la dernière avec la commande qui suit.
+        const auto queue = [&](std::uint32_t count) {
+            for (std::uint32_t i = 0; i < count; ++i) {
+                QueueImageBarrier(barriers[i]);
+            }
         };
         // Le niveau 0 est lu tel quel ; les autres, réécrits en entier, perdent leur contenu d'avant.
         barrier(0, 0, 1, before.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, before.stages,
                 before.write ? before.access : VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
         barrier(1, 1, levels - 1, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, before.stages, VK_ACCESS_2_NONE,
                 VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-        flush(2);
+        queue(2);
         const VkExtent2D extent = image.GetExtent();
         std::int32_t width = static_cast<std::int32_t>(extent.width);
         std::int32_t height = static_cast<std::int32_t>(extent.height);
@@ -665,20 +694,21 @@ namespace Flux::Vk {
             blit.srcOffsets[1] = {width, height, depth};
             blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
             blit.dstOffsets[1] = {nextWidth, nextHeight, nextDepth};
+            FlushBarriers();
             vkCmdBlitImage(m_commandBuffer, image.GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.GetHandle(),
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
             // Ce niveau sera lu pour produire le suivant.
             barrier(0, level, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                     VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
                     VK_ACCESS_2_TRANSFER_READ_BIT);
-            flush(1);
+            queue(1);
             width = nextWidth;
             height = nextHeight;
             depth = nextDepth;
         }
         barrier(0, 0, levels, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sampled.layout, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
                 VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT, sampled.stages, sampled.access);
-        flush(1);
+        queue(1);
         rhiTexture.SetAccess(RHI::TextureAccess::Sampled);
     }
 }

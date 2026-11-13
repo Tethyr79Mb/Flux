@@ -211,7 +211,10 @@ l'appelle avant chaque passe pour les textures déclarées (`AddTexture`) : lues
 le format), contenu jeté pour une texture de l'image. `BeginRenderPass`/`EndRenderPass` ne changent plus aucun layout,
 sauf celui de l'image de la swapchain. Les textures internes d'une passe (niveaux du bloom, historique effacé à la
 première image) sont préparées par la passe elle-même avec `UseTextures`. Les buffers gardent la barrière globale de
-calcul (`ComputeBarrier`).
+calcul (`ComputeBarrier`), qui ne vise que les lecteurs demandés (`ComputeReaders` : calculs, dessins, CPU ; le CPU
+coûte une réécriture du L2 en mémoire). Barrières différées : la liste de commandes Vulkan garde textures et barrières
+mémoire en attente et les envoie en un seul `vkCmdPipelineBarrier2` avant la commande suivante (passe, `Dispatch`,
+copie) ou la fin du command buffer : la fin d'une passe et le début de la suivante ne vident les caches qu'une fois.
 
 Textures de travail : l'image HDR de la scène, son mouvement, sa profondeur, l'historique de l'anticrénelage et la
 profondeur de l'image finale sont créés par le graphe (`RenderGraph::CreateTexture`) à la taille de rendu (la scène :

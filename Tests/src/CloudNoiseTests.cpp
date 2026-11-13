@@ -52,7 +52,7 @@ namespace {
                 commands.SetBindGroup(0, *group);
                 commands.PushConstants(&constants, sizeof(constants));
                 commands.Dispatch((count + 63) / 64);
-                commands.ComputeBarrier();
+                commands.ComputeBarrier(RHI::ComputeReaders::Host);
             });
             if (!submitted) {
                 return {};

@@ -75,6 +75,15 @@ namespace Flux::RHI {
         Compute = 1 << 2,
     };
 
+    // Qui lit, après CommandList::ComputeBarrier, ce que les Dispatch précédents ont écrit. Les calculs suivants
+    // toujours (Compute seul) ; ne demander que ce qui sert : Host oblige le GPU à réécrire son cache L2 en mémoire,
+    // Draw à vider les caches des commandes indirectes et des sommets.
+    enum class ComputeReaders : std::uint8_t {
+        Compute = 0,
+        Draw = 1 << 0, // commandes indirectes, sommets, index, shaders des dessins (tâche et maillage compris)
+        Host = 1 << 1, // le CPU (MemoryType::Readback), après Device::Submit ou deux images plus tard
+    };
+
     // Opérateurs de bits pour les énumérations de drapeaux.
     template <typename E>
     inline constexpr bool IsFlagEnum = false;
@@ -82,6 +91,8 @@ namespace Flux::RHI {
     inline constexpr bool IsFlagEnum<BufferUsage> = true;
     template <>
     inline constexpr bool IsFlagEnum<ShaderStage> = true;
+    template <>
+    inline constexpr bool IsFlagEnum<ComputeReaders> = true;
 
     template <typename E>
         requires IsFlagEnum<E>
