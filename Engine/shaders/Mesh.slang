@@ -573,7 +573,7 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
         float3 color = float3(0.0);
         for (uint b = 0; b < count; ++b) {
             const Biome biome = frame[0].planets[planetIndex].biomes[b];
-            const float weight = BiomeFit(biome, zoneShares, altitude, output.climate) * remaining;
+            const float weight = BiomeFit(biome, zoneShares, altitude, output.climate, output.geology) * remaining;
             remaining -= weight;
             const float amount = weight * ForestMask(noise, biome.zones.w + ReliefForest * wet, blur) * saturate(biome.humidity.z * 1.5);
             forest += amount;

@@ -131,8 +131,15 @@ namespace Flux::Planetology {
             || !ReadRange(*document, "humidity", biome.minHumidity, biome.maxHumidity, error)
             || !ReadNumber(*document, "cover", biome.cover, error) || !ReadNumber(*document, "density", biome.density, error)
             || !ReadNumber(*document, "scale", biome.scale, error) || !ReadNumber(*document, "spacing", biome.spacing, error)
-            || !ReadNumber(*document, "grove", biome.grove, error)) {
+            || !ReadNumber(*document, "grove", biome.grove, error)
+            || !ReadRange(*document, "soil", biome.minSoil, biome.maxSoil, error)) {
             return std::unexpected(error);
+        }
+        if (const auto rocks = document->find("rocks"); rocks != document->end()) {
+            if (!rocks->is_object() || !ReadNumber(*rocks, "granite", biome.granite, error) || !ReadNumber(*rocks, "limestone", biome.limestone, error)
+                || !ReadNumber(*rocks, "sandstone", biome.sandstone, error) || !ReadNumber(*rocks, "basalt", biome.basalt, error)) {
+                return std::unexpected(error.empty() ? "« rocks » doit être { \"granite\": 1, \"limestone\": 1, \"sandstone\": 1, \"basalt\": 1 }" : error);
+            }
         }
         if (const auto species = document->find("species"); species != document->end()) {
             if (!species->is_array()) {
@@ -151,12 +158,15 @@ namespace Flux::Planetology {
                 biome.species.push_back(std::move(share));
             }
         }
-        for (float* zone : {&biome.plains, &biome.hills, &biome.mountains, &biome.cover, &biome.density}) {
+        for (float* zone : {&biome.plains, &biome.hills, &biome.mountains, &biome.cover, &biome.density, &biome.granite, &biome.limestone,
+                            &biome.sandstone, &biome.basalt}) {
             *zone = std::clamp(*zone, 0.0f, 1.0f);
         }
         biome.scale = std::clamp(biome.scale, 0.05f, 20.0f);
         biome.spacing = std::clamp(biome.spacing, 0.25f, 8.0f);
         biome.grove = std::clamp(biome.grove, 20.0f, 5000.0f);
+        biome.minSoil = std::clamp(biome.minSoil, 0.0f, 1.0f);
+        biome.maxSoil = std::clamp(biome.maxSoil, biome.minSoil, 1.0f);
         return biome;
     }
 
@@ -194,10 +204,13 @@ namespace Flux::Planetology {
     std::string WriteVegetationBiome(const VegetationBiome& biome) {
         std::string text = std::format("{{\n  \"zones\": {{\"plains\": {}, \"hills\": {}, \"mountains\": {}}},\n"
                                        "  \"altitude\": [{}, {}],\n  \"temperature\": [{}, {}],\n  \"humidity\": [{}, {}],\n"
+                                       "  \"rocks\": {{\"granite\": {}, \"limestone\": {}, \"sandstone\": {}, \"basalt\": {}}},\n  \"soil\": [{}, {}],\n"
                                        "  \"cover\": {},\n  \"density\": {},\n  \"scale\": {},\n  \"spacing\": {},\n  \"grove\": {},\n  \"species\": [",
                                        Number(biome.plains), Number(biome.hills), Number(biome.mountains),
                                        Number(biome.minAltitude), Number(biome.maxAltitude), Number(biome.minTemperature),
                                        Number(biome.maxTemperature), Number(biome.minHumidity), Number(biome.maxHumidity),
+                                       Number(biome.granite), Number(biome.limestone), Number(biome.sandstone), Number(biome.basalt),
+                                       Number(biome.minSoil), Number(biome.maxSoil),
                                        Number(biome.cover), Number(biome.density), Number(biome.scale),
                                        Number(biome.spacing), Number(biome.grove));
         for (std::size_t s = 0; s < biome.species.size(); ++s) {

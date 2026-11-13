@@ -153,6 +153,8 @@ struct Biome
     float4 ranges;   // x, y : altitude (fraction du relief, au-dessus du niveau zéro) ; z, w : température (°C)
     float4 humidity; // x, y : humidité ; z : densité des forêts ; w : taille des arbres (x celle de l'espèce)
     float4 color;    // rgb : couleur linéaire des cimes (moyenne de ses espèces) ; w : taille des bosquets d'une espèce (m)
+    float4 rocks;    // préférence pour le granit, le calcaire, le grès, le basalte (Lithology)
+    float4 soil;     // x, y : profondeur de la terre (SoilDepth ; au-delà de 0 et 1 : sans borne)
 };
 
 // 1 entre low et high, 0 au-delà de soft de part et d'autre.
@@ -171,8 +173,11 @@ float3 ZoneShares(float2 zones)
 // humidité, voir ClimateAt). Les biomes passent dans l'ordre de la planète : chacun prend sa convenance de ce que les
 // précédents ont laissé (le premier qui convient prend tout), les plus particuliers d'abord. Là où aucun ne convient,
 // rien ne pousse.
-float BiomeFit(Biome biome, float3 zoneShares, float altitude, float2 climate)
+// geology : roche-mère (Lithology : granit, calcaire, grès ; le reste basalte) et w, profondeur de la terre (SoilDepth).
+float BiomeFit(Biome biome, float3 zoneShares, float altitude, float2 climate, float4 geology)
 {
+    const float4 rocks = float4(geology.xyz, saturate(1.0 - geology.x - geology.y - geology.z));
     return saturate(dot(biome.zones.xyz, zoneShares)) * BiomeBand(altitude, biome.ranges.x, biome.ranges.y, 0.02)
-         * BiomeBand(climate.x, biome.ranges.z, biome.ranges.w, 2.0) * BiomeBand(climate.y, biome.humidity.x, biome.humidity.y, 0.05);
+         * BiomeBand(climate.x, biome.ranges.z, biome.ranges.w, 2.0) * BiomeBand(climate.y, biome.humidity.x, biome.humidity.y, 0.05)
+         * saturate(dot(biome.rocks, rocks)) * BiomeBand(geology.w, biome.soil.x, biome.soil.y, 0.05);
 }
