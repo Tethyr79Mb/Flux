@@ -42,7 +42,7 @@ namespace {
             commands.SetBindGroup(0, *group);
             commands.PushConstants(&level, sizeof(level));
             commands.Dispatch(1);
-            commands.ComputeBarrier();
+            commands.ComputeBarrier(RHI::ComputeReaders::Host);
         });
         if (!submitted) {
             return false;

@@ -417,7 +417,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   rechargé à chaud). Références : Unreal (liaison modulaire ou monolithique, publié), Star Citizen (un seul StarCitizen.exe livré).
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
   - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
-  - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
+  - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Barrières différées (Bruno, 2026-11-13) : textures, barrière de calcul et copies regroupées en un seul `vkCmdPipelineBarrier2` avant la commande suivante ; `ComputeBarrier` ne vise que ses lecteurs (calculs, dessins, CPU). Restent séparées les vraies dépendances en chaîne (niveaux du bloom et de la pyramide de profondeur, étapes du semis et du tri des arbres).
   - 🔧 3. Textures de travail créées et redimensionnées par le graphe (HDR, mouvement, profondeurs, historique à deux exemplaires échangés par le graphe). Limites : niveaux du bloom encore créés par `PostRenderer` ; pas de partage de mémoire (aliasing), une dizaine de Mo à gagner seulement aujourd'hui (seul le mouvement ne vit pas jusqu'à l'image finale).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Calcul asynchrone (seconde file) : ligne à part, plus haut (« Chargement et rendu communs »).

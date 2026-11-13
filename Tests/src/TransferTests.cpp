@@ -182,7 +182,7 @@ namespace {
                 commands.SetBindGroup(0, *group);
                 commands.PushConstants(&constants, sizeof(constants));
                 commands.Dispatch(1, 1);
-                commands.ComputeBarrier();
+                commands.ComputeBarrier(RHI::ComputeReaders::Host);
             }));
             (*texels)->Read(values.data(), values.size() * sizeof(float));
             if (level == 0) {

@@ -130,7 +130,7 @@ namespace Flux {
         commands.SetBindGroup(0, *m_group);
         commands.PushConstants(&params, sizeof(params));
         commands.Dispatch(1);
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Compute);
         commands.BindPipeline(*m_histogram);
         commands.SetBindGroup(0, *m_group);
         commands.PushConstants(&params, sizeof(params));
