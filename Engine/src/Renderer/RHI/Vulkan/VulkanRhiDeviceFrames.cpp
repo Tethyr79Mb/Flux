@@ -185,11 +185,11 @@ namespace Flux::Vk {
         Vk::Transfer::GraphicsPart uploads = transfer.TakeGraphics();
         std::array<VkSemaphoreSubmitInfo, 2> waitInfos{waitInfo, transfer.GetWait(uploads)};
 
-        std::array<VkSemaphoreSubmitInfo, 2> signalInfos{};
-        signalInfos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signalInfos[0].semaphore = m_swapchain->GetRenderFinishedSemaphore(m_imageIndex);
-        signalInfos[0].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        signalInfos[1] = transfer.GetSignal();
+        // Le timeline de la file graphique est signalé en plus par Queue::Submit (attente de cette image en vol).
+        VkSemaphoreSubmitInfo renderFinished{};
+        renderFinished.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        renderFinished.semaphore = m_swapchain->GetRenderFinishedSemaphore(m_imageIndex);
+        renderFinished.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
         m_commandInfos.clear();
         for (VkCommandBuffer commands : uploads.commands) {
@@ -199,21 +199,14 @@ namespace Flux::Vk {
             m_commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
         }
 
-        VkSubmitInfo2 submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submitInfo.waitSemaphoreInfoCount = uploads.transferValue > 0 ? 2 : 1;
-        submitInfo.pWaitSemaphoreInfos = waitInfos.data();
-        submitInfo.commandBufferInfoCount = static_cast<std::uint32_t>(m_commandInfos.size());
-        submitInfo.pCommandBufferInfos = m_commandInfos.data();
-        submitInfo.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signalInfos.size());
-        submitInfo.pSignalSemaphoreInfos = signalInfos.data();
-        const bool submitted = m_crash->Check(vkQueueSubmit2(m_device->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE),
-                                              "vkQueueSubmit2");
+        Vk::Queue& graphics = m_device->GetGraphicsQueue();
+        const std::span<const VkSemaphoreSubmitInfo> waits(waitInfos.data(), uploads.transferValue > 0 ? 2 : 1);
+        const bool submitted = m_crash->Check(graphics.Submit(waits, m_commandInfos, {&renderFinished, 1}), "vkQueueSubmit2");
         transfer.GraphicsSubmitted(uploads, submitted);
         if (!submitted) {
             return false;
         }
-        m_frames->Submitted(m_frameIndex, transfer.GetGraphicsValue());
+        m_frames->Submitted(m_frameIndex, graphics.GetSubmitted());
         m_crash->Submitted(m_frameIndex);
 
         const auto presentStart = std::chrono::steady_clock::now();

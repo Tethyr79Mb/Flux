@@ -62,10 +62,12 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   image change.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
-- ⬜ Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
+- 🔨 Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
   semis des arbres, bruit et historique des nuages) qui tournent pendant le dessin, dans les trous qu'il laisse (gain
   habituel de 5 à 15 %, surtout sur AMD). Le render graph décide quelles passes y partent et place les sémaphores et
   les transferts de propriété. À mesurer avant (temps du GPU par passe) ; facultatif, le chemin à une file reste.
+  Fait : chaque file est un `Vk::Queue` avec son timeline (la file de calcul aura la même forme). Reste : la file, le
+  choix des passes par le render graph.
 
 ### Rendu
 - ⬜ Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
@@ -77,7 +79,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé). Ray tracing : structures
   d'accélération faites (2026-11-10), liaison aux shaders à faire.
   Fichiers rangés : un en-tête par interface, types communs dans `RHITypes.hpp`, un fichier par bloc Vulkan
-  (instance, surface, choix du GPU, device, swapchain, images en vol, heures du GPU, diagnostic, envois).
+  (instance, surface, choix du GPU, device, files, swapchain, images en vol, heures du GPU, diagnostic, envois).
 - ✅ Shaders Slang compilés par CMake.
 - ✅ Caméra en reverse-Z, plan lointain infini, rendu relatif à la caméra (mondes géants).
 - 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 34 à 5,1 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.

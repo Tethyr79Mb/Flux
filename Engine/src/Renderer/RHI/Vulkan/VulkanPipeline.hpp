@@ -50,6 +50,7 @@ namespace Flux::Vk {
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;
         bool depthClamp = false; // VkPipelineRasterizationStateCreateInfo::depthClampEnable
+        bool inlineShaders = false; // Device::HasInlineShaders : SPIR-V passé sans VkShaderModule
     };
 
     struct ComputePipelineDesc {
@@ -57,6 +58,7 @@ namespace Flux::Vk {
         const char* entryPoint = "computeMain";
         std::span<const VkDescriptorSetLayout> setLayouts;
         std::uint32_t pushConstantsSize = 0;
+        bool inlineShaders = false; // Device::HasInlineShaders : SPIR-V passé sans VkShaderModule
     };
 
     // Pipeline graphique (dynamic rendering ; viewport et scissor dynamiques) ou de calcul.
