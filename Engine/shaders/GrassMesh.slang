@@ -86,7 +86,8 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float total = area <= GrassMaxMeshletArea ? ceil(area * GrassDensity()) : 0.0; // faux si NaN
         const uint blades = uint(min(ceil(total * GrassKept(keep)), float(GrassMaxMeshletBlades)));
         const float range = GrassRange();
-        const uint segments = nearest < 0.12 * range ? 3u : nearest < 0.35 * range ? 2u : 1u;
+        // 3 segments seulement tout près (l'arc s'y voit), 2 ensuite : chaque segment coûte deux triangles par brin.
+        const uint segments = nearest < 8.0 ? 3u : nearest < 0.35 * range ? 2u : 1u;
         const uint groups = (blades + GrassGroupBlades - 1) / GrassGroupBlades;
         if (groups > 0) {
             uint slot;
