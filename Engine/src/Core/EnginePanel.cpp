@@ -97,6 +97,10 @@ namespace Flux {
                 if (ui.Checkbox("Rendu sur plusieurs fils", parallel)) {
                     renderer.SetParallelRecording(parallel);
                 }
+                if (parallel) {
+                    ui.LabelText("Fils", renderer.IsUsingWorkers() ? "pris (le CPU limite l'image)"
+                                                                  : "laissés (le CPU attend le GPU)");
+                }
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Listes de commandes", std::format("{}", render.recordLists));
                 for (const RenderPassTiming& pass : render.gpu) {
@@ -214,7 +218,8 @@ namespace Flux {
             }
         }
         json["gpu"] = {{"totalMs", passes.empty() ? -1.0 : gpuTotal}, {"passes", std::move(passes)}};
-        json["recording"] = {{"parallel", renderer.IsParallelRecording()}, {"lists", render.recordLists},
+        json["recording"] = {{"parallel", renderer.IsParallelRecording()}, {"workers", renderer.IsUsingWorkers()},
+                             {"lists", render.recordLists},
                              {"passes", std::move(recording)}};
         Json exposure = {{"ev100", ExposureToEv100(render.exposure)}, {"exposure", render.exposure}};
         // 0 : exposition fixe, ou rien de mesurable (image noire).
