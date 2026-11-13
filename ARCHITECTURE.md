@@ -232,7 +232,8 @@ en a une (moteur de copie des Radeon et des GeForce), sinon sur la file graphiqu
 envoi de plus de 32 Mo a son propre buffer, rendu dès sa copie finie. Un lot de copies part dès 32 Mo, ou avec
 l'image suivante. Deux sémaphores timeline ordonnent les files : l'image attend les copies qui la précèdent, et une
 copie dans un buffer déjà en service (`WriteBuffer`) attend les images déjà soumises (elles lisent peut-être ce
-qu'elle réécrit). Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
+qu'elle réécrit). Le sémaphore timeline graphique sert aussi d'attente des images en vol (`Vk::Frames` garde la
+valeur de chaque image) : pas de fence. Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
 de file par un transfert de propriété (partagées, elles perdraient leur compression DCC sur Radeon) et leurs mipmaps
 sont calculés par la file graphique (le blit est interdit sur une file de transfert). Sans fenêtre (tests, calculs),
 les envois sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
