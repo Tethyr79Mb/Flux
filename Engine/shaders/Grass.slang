@@ -9,9 +9,9 @@
 // L'herbe reçoit les ombres et la lumière comme le feuillage (ShadeFoliage : lumière qui traverse les brins), plus
 // sombre à leur pied ; elle n'en porte pas (les cartes d'ombre n'en verraient presque rien, pour un coût élevé).
 // Deux chemins :
-// - mesh shaders (GrassMesh.slang) : une tâche par tuile teste ses 16 paquets (champ, pyramide de profondeur de
-//   l'image précédente, présence d'herbe), chaque paquet retenu envoie ses brins par groupes de 32, en 3, 2 ou 1
-//   segments selon la distance ;
+// - mesh shaders (GrassMesh.slang) : une tâche par tuile teste ses 64 carrés de 4 x 4 mailles (champ, pyramide de
+//   profondeur de l'image précédente, présence d'herbe), chaque carré retenu envoie ses brins par groupes de 32, en 3,
+//   2 ou 1 segments selon la distance ;
 // - sommets (vertexGrass, GPU sans mesh shaders) : un appel indirect par page, chaque instance 32 brins de 2 segments,
 //   le nombre d'instances d'une tuile choisi par le CPU selon sa distance ; moins dense et moins loin.
 // Commandes (RHI::DrawIndexedCommand, celles des tuiles, MeshRenderer) : vertexOffset = case de la tuile dans sa page
@@ -24,9 +24,6 @@
 static const uint GrassTileQuads = 32; // TileQuads
 static const uint GrassTileSide = GrassTileQuads + 1;
 static const uint GrassTileVertices = GrassTileSide * GrassTileSide + 4 * GrassTileSide; // TileVertexCount
-static const uint GrassMeshletQuads = 8; // TileMeshletQuads
-static const uint GrassMeshletSide = GrassTileQuads / GrassMeshletQuads;
-static const uint GrassMeshletCount = GrassMeshletSide * GrassMeshletSide;
 static const uint GrassVertexShift = 9;    // MeshRenderer::GrassVertexShift
 static const uint GrassInstanceShift = 12; // MeshRenderer::GrassInstanceShift
 // Jusqu'à cette part de la portée, tous les brins ; au-delà, leur part baisse comme 1 / distance.
@@ -36,16 +33,8 @@ static const float GrassFullDistance = 20.0; // m : tous les brins jusque-là (M
 static const uint GrassClusterBlades = 32;
 static const uint GrassVertexSegments = 2;
 
-// Doit correspondre à Planetology::PlanetTileCompute::Meshlet (comme dans PlanetMesh.slang).
-struct GrassMeshlet
-{
-    float4 low;
-    float4 high;
-};
-
-// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv), boîtes des paquets.
+// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv).
 [[vk::binding(0, 3)]] StructuredBuffer<float> pageVertices;
-[[vk::binding(2, 3)]] StructuredBuffer<GrassMeshlet> pageMeshlets;
 
 float GrassDensity() { return params.color.x; }
 float GrassHeight() { return params.color.y; }
@@ -220,6 +209,13 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     GrassGround(firstVertex, origin + r0 * size, position, normal);
     const DrawData d = draws[draw];
     blade.root = Transform(d.world, position).xyz;
+    // Hors du champ : écarté avant le plus cher (couverture du sol, repère, vent). Le paquet entier l'était déjà quand
+    // il sortait du champ ; à cheval sur un bord (sous les pieds en regardant le ciel), ses brins hors de l'image ne
+    // coûtent plus que ce test. Sphère : le plus haut brin (1,35 x 1,25 x 1,2 = 2,03 fois GrassHeight), penché ou
+    // couché par le vent, et sa largeur au loin.
+    if (!InView(blade.root, 2.1 * GrassHeight() + 8.0 * GrassWidth())) {
+        return blade;
+    }
     const float distance = length(blade.root);
     // Gardé s'il est dans les premiers rangs (GrassKept) ; les derniers gardés rapetissent (ils seront les prochains à
     // partir), sur un cinquième des gardés : tous à leur taille quand keep vaut 1.
