@@ -33,7 +33,7 @@ namespace Flux {
         desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Flame.spv";
         desc.pushConstantsSize = sizeof(FlameParams);
         desc.colorFormat = colorFormat;
-        desc.secondColorFormat = motionFormat; // transparentes : le mouvement reste celui de ce qui est derrière
+        desc.extraColors[0].format = motionFormat; // transparentes : le mouvement reste celui de ce qui est derrière
         desc.depthFormat = depthFormat;
         desc.depthTest = true;
         desc.depthWrite = false;
@@ -46,7 +46,7 @@ namespace Flux {
         renderer->m_pipeline = std::move(*pipeline);
         desc.fragmentEntryPoint = "fragmentReactive";
         desc.colorFormat = reactiveFormat;
-        desc.secondColorFormat = RHI::Format::Undefined;
+        desc.extraColors[0].format = RHI::Format::Undefined;
         auto reactive = device.CreatePipeline(desc);
         if (!reactive) {
             return std::unexpected(reactive.error());

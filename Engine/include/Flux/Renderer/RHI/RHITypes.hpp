@@ -8,6 +8,9 @@
 namespace Flux::RHI {
     // Deux images en vol : le CPU prépare la suivante pendant que le GPU dessine la courante.
     inline constexpr std::uint32_t FramesInFlight = 2;
+    // Cibles de couleur au plus par passe, la principale comprise (G-buffer du rendu différé). Tous les GPU de bureau
+    // en ont 8 (maxColorAttachments), vérifié au choix de la carte.
+    inline constexpr std::uint32_t MaxColorTargets = 8;
 
     struct Extent
     {

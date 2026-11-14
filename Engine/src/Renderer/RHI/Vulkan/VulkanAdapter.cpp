@@ -1,6 +1,7 @@
 #include "Renderer/RHI/Vulkan/VulkanAdapter.hpp"
 
 #include "Flux/Platform/Environment.hpp"
+#include "Flux/Renderer/RHI/RHITypes.hpp"
 #include "Renderer/RHI/Vulkan/VulkanInstance.hpp"
 
 #include <algorithm>
@@ -58,6 +59,12 @@ namespace Flux::Vk {
             return std::unexpected(std::format("aucun GPU compatible Vulkan 1.3 : {}", physicalDevice.error().message()));
         }
         adapter.m_physicalDevice = physicalDevice.value();
+        // G-buffer du rendu différé : 8 cibles de couleur par passe (RHI::MaxColorTargets), 8 sur tous les GPU de bureau.
+        const std::uint32_t colorTargets = adapter.m_physicalDevice.properties.limits.maxColorAttachments;
+        if (colorTargets < RHI::MaxColorTargets) {
+            return std::unexpected(std::format("le GPU n'accepte que {} cibles de couleur par passe ({} demandées)",
+                                               colorTargets, RHI::MaxColorTargets));
+        }
         // Filtrage anisotrope (sol vu de biais net au loin) : présent sur tous les GPU de bureau, facultatif quand même.
         VkPhysicalDeviceFeatures anisotropy{};
         anisotropy.samplerAnisotropy = VK_TRUE;

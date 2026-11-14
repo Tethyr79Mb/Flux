@@ -1,9 +1,11 @@
 #pragma once
 
+#include "Flux/Renderer/RHI/RHITypes.hpp"
 #include "Renderer/RHI/Vulkan/Vulkan.hpp"
 
-#include <expected>
+#include <array>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -25,12 +27,15 @@ namespace Flux::Vk {
         std::span<const VkPushConstantRange> pushConstants;
 
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
-        // Seconde cible de la passe (UNDEFINED : aucune) ; sans writeSecondColor, masque d'écriture vide.
-        VkFormat secondColorFormat = VK_FORMAT_UNDEFINED;
-        bool writeSecondColor = false;
-        VkFormat thirdColorFormat = VK_FORMAT_UNDEFINED; // troisième cible, avec la seconde seulement
-        bool writeThirdColor = false;
-        bool blendThirdColor = false; // mélangée comme la première cible
+        // Cibles suivantes de la passe, jusqu'à la première UNDEFINED (RHI::ExtraColorTarget) ; sans write, masque
+        // d'écriture vide ; avec blend, mélangée comme la première cible.
+        struct ExtraColor
+        {
+            VkFormat format = VK_FORMAT_UNDEFINED;
+            bool write = false;
+            bool blend = false;
+        };
+        std::array<ExtraColor, RHI::MaxColorTargets - 1> extraColors{};
         // false : masque d'écriture vide sur la première cible aussi (profondeur seule dans une passe avec couleur).
         bool writeColor = true;
         // Doit correspondre à la passe, même si ce pipeline ne teste pas la profondeur.

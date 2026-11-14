@@ -158,8 +158,8 @@ namespace Flux {
         desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Sky.spv";
         desc.bindGroupLayouts = layouts;
         desc.colorFormat = colorFormat;
-        desc.secondColorFormat = motionFormat; // le ciel ne bouge pas de lui-même : mouvement laissé à 0
-        desc.thirdColorFormat = sunFormat;     // pas de surface éclairée : lumière du soleil laissée à 0
+        desc.extraColors[0].format = motionFormat; // le ciel ne bouge pas de lui-même : mouvement laissé à 0
+        desc.extraColors[1].format = sunFormat;     // pas de surface éclairée : lumière du soleil laissée à 0
         desc.depthFormat = depthFormat;
         desc.depthTest = true;
         desc.depthWrite = false;
@@ -198,8 +198,8 @@ namespace Flux {
         tableDesc.shaderPath = desc.shaderPath;
         tableDesc.bindGroupLayouts = layouts;
         tableDesc.colorFormat = RHI::Format::RGBA16Float;
-        tableDesc.secondColorFormat = RHI::Format::RGBA16Float;
-        tableDesc.writeSecondColor = true;
+        tableDesc.extraColors[0].format = RHI::Format::RGBA16Float;
+        tableDesc.extraColors[0].write = true;
         tableDesc.fragmentEntryPoint = "skyTableFragment";
         auto skyTablePipeline = device.CreatePipeline(tableDesc);
         tableDesc.fragmentEntryPoint = "airTableFragment";
@@ -487,7 +487,7 @@ namespace Flux {
     void SkyRenderer::BakeTables(RHI::CommandList& commands, std::uint32_t frameIndex) {
         const auto table = [&](const RHI::Pipeline& pipeline, RHI::Texture& rayleigh, RHI::Texture& mie) {
             const RHI::Extent size = rayleigh.GetExtent();
-            commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .secondColorTarget = &mie});
+            commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .extraColorTargets = {&mie}});
             commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
             commands.SetScissor({0, 0, size.width, size.height});
             commands.BindPipeline(pipeline);

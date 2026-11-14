@@ -9,6 +9,7 @@
 #include "Flux/Renderer/RHI/Pipeline.hpp"
 #include "Flux/Renderer/RHI/Texture.hpp"
 
+#include <array>
 #include <cstdint>
 #include <span>
 
@@ -39,17 +40,16 @@ namespace Flux::RHI {
         const Texture* colorTarget = nullptr;
         std::uint32_t colorLayer = 0;
         std::uint32_t colorMip = 0; // texture cube ou à niveaux de mip : la passe couvre ce niveau (sa taille)
-        // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0.
-        const Texture* secondColorTarget = nullptr;
-        // Avec secondColorTarget seulement : troisième texture de la même taille, effacée à 0.
-        const Texture* thirdColorTarget = nullptr;
+        // Avec colorTarget seulement : cibles suivantes (SV_Target1, 2…) de la même taille, effacées à 0 (ou gardées
+        // avec loadColor), jusqu'au premier nullptr ; même couche et même niveau que colorTarget quand elles en ont.
+        std::array<const Texture*, MaxColorTargets - 1> extraColorTargets{};
         // Tampon de profondeur gardé après la passe, pour être lu ensuite (CreateRenderTarget sampled).
         bool keepDepth = false;
         // La profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a déjà remplie) ; sans
         // couleur, CommandList::ClearDepth efface les parties à redessiner.
         bool loadDepth = false;
-        // Avec colorTarget seulement : la couleur d'avant (et la seconde) est gardée au lieu d'être effacée, la passe
-        // continue ce qu'une précédente a dessiné.
+        // Avec colorTarget seulement : la couleur d'avant (et celle des cibles suivantes) est gardée au lieu d'être
+        // effacée, la passe continue ce qu'une précédente a dessiné.
         bool loadColor = false;
     };
 

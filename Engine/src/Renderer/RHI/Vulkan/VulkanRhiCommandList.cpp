@@ -334,20 +334,20 @@ namespace Flux::Vk {
         colorAttachment.loadOp = desc.loadColor ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = {{desc.clearColor.r, desc.clearColor.g, desc.clearColor.b, desc.clearColor.a}};
-        std::array<VkRenderingAttachmentInfo, 3> colorAttachments{colorAttachment, {}, {}};
-        // Seconde et troisième cibles (la troisième seulement avec la seconde), effacées à 0 ; même couche et même
-        // niveau que la première quand elles en ont (atlas des imposteurs).
-        const std::array<const RHI::Texture*, 2> extras{desc.secondColorTarget, desc.secondColorTarget ? desc.thirdColorTarget : nullptr};
+        std::array<VkRenderingAttachmentInfo, RHI::MaxColorTargets> colorAttachments{colorAttachment};
+        // Cibles suivantes jusqu'au premier nullptr, effacées à 0 ; même couche et même niveau que la première quand
+        // elles en ont (atlas des imposteurs).
         std::uint32_t colorCount = 1;
-        for (const RHI::Texture* extra : extras) {
-            if (extra) {
-                const auto& image = static_cast<const RhiTexture&>(*extra).GetImage();
-                const VkImageView extraView = image.GetFaceView(desc.colorLayer, desc.colorMip);
-                colorAttachments[colorCount] = colorAttachment;
-                colorAttachments[colorCount].imageView = extraView != VK_NULL_HANDLE ? extraView : image.GetView();
-                colorAttachments[colorCount].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
-                ++colorCount;
+        for (const RHI::Texture* extra : desc.extraColorTargets) {
+            if (extra == nullptr) {
+                break;
             }
+            const auto& image = static_cast<const RhiTexture&>(*extra).GetImage();
+            const VkImageView extraView = image.GetFaceView(desc.colorLayer, desc.colorMip);
+            colorAttachments[colorCount] = colorAttachment;
+            colorAttachments[colorCount].imageView = extraView != VK_NULL_HANDLE ? extraView : image.GetView();
+            colorAttachments[colorCount].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+            ++colorCount;
         }
         VkRenderingInfo renderingInfo{};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -395,19 +395,17 @@ namespace Flux::Vk {
             return {};
         }
         // Formats de la passe, que les listes secondaires doivent connaître d'avance.
-        std::array<VkFormat, 3> colorFormats{};
+        std::array<VkFormat, RHI::MaxColorTargets> colorFormats{};
         VkCommandBufferInheritanceRenderingInfo rendering{};
         rendering.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO;
         if (desc.color) {
             colorFormats[0] = ToVulkan(desc.colorTarget->GetFormat());
             rendering.colorAttachmentCount = 1;
-            if (desc.secondColorTarget) {
-                colorFormats[1] = ToVulkan(desc.secondColorTarget->GetFormat());
-                rendering.colorAttachmentCount = 2;
-                if (desc.thirdColorTarget) {
-                    colorFormats[2] = ToVulkan(desc.thirdColorTarget->GetFormat());
-                    rendering.colorAttachmentCount = 3;
+            for (const RHI::Texture* extra : desc.extraColorTargets) {
+                if (extra == nullptr) {
+                    break;
                 }
+                colorFormats[rendering.colorAttachmentCount++] = ToVulkan(extra->GetFormat());
             }
             rendering.pColorAttachmentFormats = colorFormats.data();
         }

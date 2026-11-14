@@ -4,11 +4,23 @@
 
 #include "Flux/Renderer/RHI/RHITypes.hpp"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <span>
 
 namespace Flux::RHI {
+    // Cible de couleur après la principale (PipelineDesc::extraColors).
+    struct ExtraColorTarget
+    {
+        Format format = Format::Undefined; // celui de la texture de la passe
+        // false : laissée telle quelle (le shader n'a pas à l'écrire).
+        bool write = false;
+        // Mélangée comme la cible principale (PipelineDesc::blend) ; sinon remplacée. Des données (mouvement,
+        // normales) ne se mélangent pas : seulement une lumière mise à part (soleil des ombres en rayons).
+        bool blend = false;
+    };
+
     struct VertexBufferLayout
     {
         std::uint32_t binding = 0;
@@ -43,15 +55,9 @@ namespace Flux::RHI {
         // étapes ; 128 octets au plus sont garantis partout.
         std::uint32_t pushConstantsSize = 0;
         Format colorFormat = Format::Undefined; // Undefined : pas de couleur (passe de profondeur seule)
-        // Seconde cible de couleur de la passe (RenderPassDesc::secondColorTarget), écrite par SV_Target1 si
-        // writeSecondColor ; sinon laissée telle quelle (le shader n'a pas à l'écrire).
-        Format secondColorFormat = Format::Undefined;
-        bool writeSecondColor = false;
-        // Troisième cible (RenderPassDesc::thirdColorTarget), écrite par SV_Target2 si writeThirdColor ; mélangée
-        // comme la première si blendThirdColor (sinon remplacée).
-        Format thirdColorFormat = Format::Undefined;
-        bool writeThirdColor = false;
-        bool blendThirdColor = false;
+        // Cibles suivantes de la passe (RenderPassDesc::extraColorTargets, dans le même ordre : SV_Target1, 2…),
+        // jusqu'à la première de format Undefined.
+        std::array<ExtraColorTarget, MaxColorTargets - 1> extraColors{};
         // false : la couleur n'est pas écrite, seulement la profondeur (pré-passe de profondeur dans une passe avec
         // couleur).
         bool writeColor = true;
