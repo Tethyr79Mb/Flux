@@ -75,22 +75,25 @@ namespace Flux::Vk {
         return submitted;
     }
 
-    bool RhiDevice::ResizeSwapchain(RHI::Extent extent, bool vsync) {
+    bool RhiDevice::ResizeSwapchain(const RHI::SwapchainDesc& swapchain) {
         if (!m_swapchain) {
             return false;
         }
         const VkExtent2D current = m_swapchain->GetExtent();
-        if (extent.width == current.width && extent.height == current.height && vsync == m_vsync) {
+        // La taille se compare à celle obtenue (le pilote peut l'ajuster), le reste à ce qui a été demandé.
+        RHI::SwapchainDesc obtained = m_swapchainDesc;
+        obtained.extent = {current.width, current.height};
+        if (swapchain == obtained) {
             return true;
         }
-        m_extent = extent;
-        m_vsync = vsync;
+        m_swapchainDesc = swapchain;
         return RecreateSwapchain();
     }
 
     bool RhiDevice::RecreateSwapchain() {
         m_device->WaitIdle();
-        return m_swapchain->Recreate({m_extent.width, m_extent.height}, m_vsync);
+        const RHI::SwapchainDesc& desc = m_swapchainDesc;
+        return m_swapchain->Recreate({desc.extent.width, desc.extent.height}, desc.vsync, desc.images);
     }
 
     RHI::Extent RhiDevice::GetSwapchainExtent() const {

@@ -70,8 +70,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   choix des passes par le render graph.
 
 ### Rendu
-- ⬜ Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
-  avant l'affichage, VK_KHR_present_wait), après les ombres.
+- 🔨 Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
+  avant l'affichage, VK_KHR_present_wait), après les ombres. Fait : nombre d'images de la swapchain au choix (2 ou 3,
+  réglages et panneau Moteur).
 - 🔨 Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`include/Flux/Renderer/RHI`) : un autre backend (DX12) reste
   possible. Manquent : une liste de commandes par fil (une seule aujourd'hui, sur le fil principal), plusieurs files
   exposées au renderer (la file de transfert reste cachée dans le backend, pas de file de calcul), un cache de
@@ -347,7 +348,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
 - ⬜ Construction sur les planètes (Bruno, 2026-11-09), en deux temps : d'abord des bâtiments posés (entités répliquées, fondations qui suivent la pente, pose validée par le serveur, persistance PostgreSQL) ; plus tard le relief modifié (aplanir, creuser) par une couche de différences appliquée au CPU et au GPU, enregistrée et répliquée.
-- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, mise à l'échelle et netteté FSR, volume, panneau Moteur).
+- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, images de la swapchain (2 ou 3), anticrénelage, mise à l'échelle et netteté FSR, volume, panneau Moteur).
 - ✅ Exe du jeu nommé « Ars Solaris.exe » (cible CMake `Game`) : les pilotes comme AMD Adrenalin le reconnaissent comme un jeu.
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
 - 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.

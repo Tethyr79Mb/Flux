@@ -38,11 +38,23 @@ namespace Flux::RHI {
         std::uint64_t host = 0;
     };
 
+    // Présentation dans la fenêtre. images : nombre d'images de la swapchain demandé. 2 : une image de retard en moins
+    // avec la V-Sync, mais une image qui dépasse la période de l'écran en fait sauter une ; 3 : plus fluide. Le pilote
+    // peut en imposer plus (GetSwapchainImageCount donne le nombre obtenu).
+    struct SwapchainDesc
+    {
+        Extent extent;
+        bool vsync = true;
+        std::uint32_t images = 3;
+
+        bool operator==(const SwapchainDesc&) const = default;
+    };
+
     // GPU, fenêtre et images en vol. Crée les ressources ; BeginFrame / EndFrame encadrent chaque image.
     class Device {
         public:
         // Backend Vulkan, sur la fenêtre native donnée (HWND).
-        FLUX_API static std::expected<std::unique_ptr<Device>, std::string> Create(void* nativeWindowHandle, Extent extent, bool vsync);
+        FLUX_API static std::expected<std::unique_ptr<Device>, std::string> Create(void* nativeWindowHandle, const SwapchainDesc& swapchain);
         // Sans fenêtre ni swapchain (tests, calculs) : seul Submit envoie des commandes ; BeginFrame échoue.
         FLUX_API static std::expected<std::unique_ptr<Device>, std::string> CreateHeadless();
 
@@ -159,9 +171,11 @@ namespace Flux::RHI {
         // GPU les ait finies : bloque le CPU, réservé au chargement et aux tests.
         virtual bool Submit(const std::function<void(CommandList&)>& record) = 0;
 
-        // Taille de la fenêtre et V-Sync : la swapchain est recréée si l'une change (le GPU attendu avant).
-        virtual bool ResizeSwapchain(Extent extent, bool vsync) = 0;
+        // Taille, V-Sync, nombre d'images : la swapchain est recréée si l'un change (le GPU attendu avant).
+        virtual bool ResizeSwapchain(const SwapchainDesc& swapchain) = 0;
         virtual Extent GetSwapchainExtent() const = 0;
+        // Images réellement obtenues (0 sans fenêtre).
+        virtual std::uint32_t GetSwapchainImageCount() const = 0;
         virtual Format GetSwapchainFormat() const = 0;
         // Mode réellement obtenu, qui peut différer du mode demandé.
         virtual PresentMode GetPresentMode() const = 0;

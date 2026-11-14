@@ -33,6 +33,7 @@ namespace Flux {
             std::uint32_t width = 0;
             std::uint32_t height = 0;
             bool vsync = false;
+            std::uint32_t swapchainImages = 0; // obtenues du pilote
             bool temporalAA = false;
             Upscaling upscaling = Upscaling::Native;
             Math::Vector2i renderSize; // scène dessinée à cette taille, puis agrandie par FSR

@@ -10,8 +10,8 @@
 #include <vector>
 
 namespace Flux::RHI {
-    std::expected<std::unique_ptr<Device>, std::string> Device::Create(void* nativeWindowHandle, Extent extent, bool vsync) {
-        auto device = Vk::RhiDevice::Create(nativeWindowHandle, extent, vsync);
+    std::expected<std::unique_ptr<Device>, std::string> Device::Create(void* nativeWindowHandle, const SwapchainDesc& swapchain) {
+        auto device = Vk::RhiDevice::Create(nativeWindowHandle, swapchain);
         if (!device) {
             return std::unexpected(device.error());
         }
@@ -19,12 +19,12 @@ namespace Flux::RHI {
     }
 
     std::expected<std::unique_ptr<Device>, std::string> Device::CreateHeadless() {
-        return Create(nullptr, {}, false);
+        return Create(nullptr, {.vsync = false});
     }
 }
 
 namespace Flux::Vk {
-    std::expected<std::unique_ptr<RhiDevice>, std::string> RhiDevice::Create(void* nativeWindowHandle, RHI::Extent extent, bool vsync) {
+    std::expected<std::unique_ptr<RhiDevice>, std::string> RhiDevice::Create(void* nativeWindowHandle, const RHI::SwapchainDesc& swapchain) {
         // Le constructeur est privé : pas de std::make_unique.
         std::unique_ptr<RhiDevice> rhi(new RhiDevice());
         auto device = Vk::Device::Create(nativeWindowHandle);
@@ -32,11 +32,10 @@ namespace Flux::Vk {
             return std::unexpected(device.error());
         }
         rhi->m_device = std::move(*device);
-        rhi->m_extent = extent;
-        rhi->m_vsync = vsync;
+        rhi->m_swapchainDesc = swapchain;
         if (nativeWindowHandle) {
             rhi->m_swapchain = std::make_unique<Swapchain>(*rhi->m_device);
-            if (!rhi->m_swapchain->Recreate({extent.width, extent.height}, vsync)) {
+            if (!rhi->m_swapchain->Recreate({swapchain.extent.width, swapchain.extent.height}, swapchain.vsync, swapchain.images)) {
                 return std::unexpected("création de la swapchain");
             }
             // Avec des images : les envois partent avec la suivante, sans attendre le GPU.
