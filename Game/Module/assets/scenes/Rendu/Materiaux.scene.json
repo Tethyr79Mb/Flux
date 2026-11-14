@@ -4,7 +4,7 @@
   "entities": [
     {
       "id": "04abcdab2dbc1c77",
-      "name": "Ciel (soleil à 40°)",
+      "name": "Ciel de test (panorama clair, soleil à 40°)",
       "transform": {
         "position": [
           0,
@@ -24,6 +24,9 @@
         ]
       },
       "sky": {
+        "image": "Textures/Ciel/CielDeTest.png",
+        "luminance": 8000.0,
+        "ambient": 1.0,
         "sunElevation": 40.0,
         "sunAzimuth": 135.0,
         "autoExposure": false,
