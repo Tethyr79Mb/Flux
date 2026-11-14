@@ -1239,6 +1239,318 @@
         "metallic": 1,
         "roughness": 0.6
       }
+    },
+    {
+      "id": "06cb6ace46687f20",
+      "name": "Verre (couleur : alpha < 1)",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -17
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "bddd6b9e003193a9",
+      "name": "Verre clair",
+      "parent": "06cb6ace46687f20",
+      "transform": {
+        "position": [
+          -2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          0.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.0
+      }
+    },
+    {
+      "id": "b3442565284db68e",
+      "name": "Verre teinté vert",
+      "parent": "06cb6ace46687f20",
+      "transform": {
+        "position": [
+          -0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.55,
+          0.8,
+          0.6,
+          0.3
+        ],
+        "metallic": 0.0,
+        "roughness": 0.0
+      }
+    },
+    {
+      "id": "acf3266729a47852",
+      "name": "Verre fumé",
+      "parent": "06cb6ace46687f20",
+      "transform": {
+        "position": [
+          0.75,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          0.2,
+          0.2,
+          0.22,
+          0.5
+        ],
+        "metallic": 0.0,
+        "roughness": 0.0
+      }
+    },
+    {
+      "id": "f4294e65ac575a16",
+      "name": "Verre dépoli",
+      "parent": "06cb6ace46687f20",
+      "transform": {
+        "position": [
+          2.25,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "sphere",
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          0.15
+        ],
+        "metallic": 0.0,
+        "roughness": 0.35
+      }
+    },
+    {
+      "id": "20137f30d92b1f21",
+      "name": "Fond coloré derrière le verre",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -18.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "79610b8f1376bef1",
+      "name": "Panneau 1",
+      "parent": "20137f30d92b1f21",
+      "transform": {
+        "position": [
+          -2.25,
+          0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.5,
+          0.1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.7,
+          0.08,
+          0.05,
+          1.0
+        ],
+        "roughness": 0.6
+      }
+    },
+    {
+      "id": "5f1d02a7f9313281",
+      "name": "Panneau 2",
+      "parent": "20137f30d92b1f21",
+      "transform": {
+        "position": [
+          -0.75,
+          0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.5,
+          0.1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.9,
+          0.75,
+          0.1,
+          1.0
+        ],
+        "roughness": 0.6
+      }
+    },
+    {
+      "id": "24fef31bf9a12f8a",
+      "name": "Panneau 3",
+      "parent": "20137f30d92b1f21",
+      "transform": {
+        "position": [
+          0.75,
+          0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.5,
+          0.1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.08,
+          0.35,
+          0.7,
+          1.0
+        ],
+        "roughness": 0.6
+      }
+    },
+    {
+      "id": "37fb1105835dd0a3",
+      "name": "Panneau 4",
+      "parent": "20137f30d92b1f21",
+      "transform": {
+        "position": [
+          2.25,
+          0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.5,
+          0.1
+        ]
+      },
+      "meshRenderer": {
+        "mesh": "cube",
+        "color": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.6
+      }
     }
   ]
 }
