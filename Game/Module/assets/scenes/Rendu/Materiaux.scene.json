@@ -26,7 +26,7 @@
       "sky": {
         "image": "Textures/Ciel/CielDeTest.png",
         "luminance": 8000.0,
-        "ambient": 1.0,
+        "ambient": 0.00079,
         "sunElevation": 40.0,
         "sunAzimuth": 135.0,
         "autoExposure": false,
