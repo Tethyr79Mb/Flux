@@ -156,6 +156,16 @@ namespace Flux {
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
         void SetVSync(bool enabled);
         bool IsVSyncEnabled() const;
+        // Images de la swapchain demandées, 2 ou 3 (prend effet à l'image suivante). Avec la V-Sync, 2 retire une image
+        // de retard (environ 16,7 ms à 60 Hz) tant que le GPU tient la cadence ; 3 évite qu'une image trop longue en
+        // fasse sauter une. Sans V-Sync (MAILBOX), 3 est conseillé.
+        static constexpr std::uint32_t MinSwapchainImages = 2;
+        static constexpr std::uint32_t MaxSwapchainImages = 3;
+        static constexpr std::uint32_t DefaultSwapchainImages = 3;
+        void SetSwapchainImages(std::uint32_t images);
+        std::uint32_t GetSwapchainImages() const;
+        // Images réellement obtenues : le pilote peut en imposer plus que demandé.
+        std::uint32_t GetSwapchainImageCount() const;
         // Force du bloom, de 0 (aucun) à 1 : la part de la lumière de chaque pixel étalée autour de lui. Les zones très
         // lumineuses (soleil, flammes, émissifs) débordent d'autant plus qu'elles sont fortes.
         static constexpr float DefaultBloom = 0.04f;

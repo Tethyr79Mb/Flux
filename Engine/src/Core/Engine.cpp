@@ -100,6 +100,7 @@ namespace Flux {
         m_renderer = std::move(renderer.value());
         m_renderer->SetJobSystem(m_jobs.get());
         m_renderer->SetVSync(config.vsync);
+        m_renderer->SetSwapchainImages(config.swapchainImages);
         m_renderer->SetTemporalAA(config.temporalAA);
         m_renderer->SetUpscaling(config.upscaling);
         m_renderer->SetSharpness(config.sharpness);
@@ -128,6 +129,17 @@ namespace Flux {
                                             m_renderer->SetVSync(value >= 0.5); // recrée la chaîne d'images : pas à chaque image
                                         }
                                     }});
+        // Numéro du choix, comme une liste déroulante : 0 pour 2 images, 1 pour 3 (Renderer::MinSwapchainImages + numéro).
+        m_interfaceBindings->SetEngineValue("Images d'avance", "Graphismes",
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetSwapchainImages()
+                                                                                        - Renderer::MinSwapchainImages); },
+                                             .set = [this](double value) {
+                                                 const auto images = Renderer::MinSwapchainImages
+                                                                   + static_cast<std::uint32_t>(std::max(std::lround(value), 0L));
+                                                 if (images != m_renderer->GetSwapchainImages()) {
+                                                     m_renderer->SetSwapchainImages(images); // recrée la chaîne d'images
+                                                 }
+                                             }});
         m_interfaceBindings->SetEngineValue("Anticrénelage", "Graphismes", {.get = [this] { return m_renderer->IsTemporalAAEnabled() ? 1.0 : 0.0; },
                                            .set = [this](double value) { m_renderer->SetTemporalAA(value >= 0.5); }});
         // Numéro dans UpscalingLabels (0 Natif à 5 FSR Ultra Performance).
@@ -364,6 +376,7 @@ namespace Flux {
                     .width = static_cast<std::uint32_t>(view.x),
                     .height = static_cast<std::uint32_t>(view.y),
                     .vsync = m_renderer->IsVSyncEnabled(),
+                    .swapchainImages = m_renderer->GetSwapchainImageCount(),
                     .temporalAA = m_renderer->IsTemporalAAEnabled(),
                     .upscaling = m_renderer->IsUpscalingAvailable() ? m_renderer->GetUpscaling() : Upscaling::Native,
                     .renderSize = m_renderer->GetRenderSize(),

@@ -54,6 +54,8 @@ namespace Flux {
             ui.LabelText("CPU màj + rendu", std::format("{:.2f} + {:.2f} ms (jeu {:.2f})", stats.Get(UpdateCost),
                                                         stats.Get(PrepareCost) + stats.Get(RecordCost), stats.Get(GameCost)));
             ui.LabelText("Attente", std::format("GPU {:.2f}, écran {:.2f} ms", stats.Get(WaitGpuCost), stats.Get(WaitImageCost)));
+            // Images obtenues du pilote : avec la V-Sync, chacune au-delà de 2 ajoute une période d'écran de retard.
+            ui.LabelText("Présentation", std::format("{}, {} images", renderer.GetPresentModeName(), renderer.GetSwapchainImageCount()));
 
             // Une ligne par passe du graphe de rendu ; ses étapes à part, repliées (une vingtaine de lignes).
             double gpuTotal = 0.0;
@@ -263,6 +265,7 @@ namespace Flux {
                             {"vulkan", renderer.GetApiVersion()},
                             {"presentMode", renderer.GetPresentModeName()},
                             {"vsync", renderer.IsVSyncEnabled()},
+                            {"swapchainImages", renderer.GetSwapchainImageCount()},
                             {"renderSize", {renderSize.x, renderSize.y}},
                             // Mode demandé ; un mode FSR sans FSR disponible tourne en Natif.
                             {"upscaling", UpscalingKeys[static_cast<std::size_t>(renderer.GetUpscaling())]},

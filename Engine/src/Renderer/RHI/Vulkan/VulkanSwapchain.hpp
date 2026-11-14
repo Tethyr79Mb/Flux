@@ -19,7 +19,8 @@ namespace Flux::Vk {
 
         // (Re)crée la swapchain ; le GPU ne doit plus utiliser l'ancienne (WaitIdle avant).
         // vsync false : MAILBOX (sans déchirure) si le pilote l'offre, sinon IMMEDIATE, sinon FIFO.
-        bool Recreate(VkExtent2D extent, bool vsync);
+        // imageCount : nombre demandé, ramené entre le minimum et le maximum de la surface.
+        bool Recreate(VkExtent2D extent, bool vsync, uint32_t imageCount);
 
         bool IsValid() const { return m_swapchain.swapchain != VK_NULL_HANDLE; }
         VkSwapchainKHR GetHandle() const { return m_swapchain.swapchain; }

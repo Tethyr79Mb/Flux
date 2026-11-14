@@ -11,6 +11,7 @@ bool RunGameSettingsTests() {
     changed.maximized = true;
     changed.fullscreen = true;
     changed.vsync = false;
+    changed.swapchainImages = 2;
     changed.temporalAA = false;
     changed.groundDetail = GroundDetail::Ultra;
     changed.cloudQuality = CloudQuality::Low;
@@ -28,24 +29,25 @@ bool RunGameSettingsTests() {
     CHECK(reread->cloudQuality == CloudQuality::Low);
     CHECK(reread->vegetationDistance == VegetationDistance::Ultra);
     CHECK(reread->upscaling == Upscaling::FsrPerformance && reread->sharpness == 0.8f);
+    CHECK(reread->swapchainImages == 2);
 
     // Valeur absente : la valeur par défaut, sans avertissement.
     std::vector<std::string> warnings;
     const auto partial = GameSettingsFile::Parse(R"({"format": "flux.game-settings", "version": 1, "vsync": false})", &warnings);
     CHECK(partial && !partial->vsync && partial->windowSize.x == 1280 && partial->volume == 1.0f && warnings.empty());
     CHECK(partial->upscaling == DefaultUpscaling && partial->sharpness == DefaultSharpness);
-    CHECK(partial->vegetationDistance == DefaultVegetationDistance);
+    CHECK(partial->vegetationDistance == DefaultVegetationDistance && partial->swapchainImages == 3);
 
     // Valeurs fausses : ignorées (avertissement) ou ramenées dans leurs bornes ; le fichier reste lu.
     warnings.clear();
     const auto wrong = GameSettingsFile::Parse(R"({"format": "flux.game-settings", "version": 1,
         "window": {"width": "grand", "height": 20}, "vsync": 1, "volume": 3, "groundDetail": "extreme",
-        "upscaling": "dlss", "sharpness": 4, "cloudQuality": 2, "vegetationDistance": "loin"})", &warnings);
+        "upscaling": "dlss", "sharpness": 4, "cloudQuality": 2, "vegetationDistance": "loin", "swapchainImages": 7})", &warnings);
     CHECK(wrong.has_value());
     CHECK(wrong->windowSize.x == 1280 && wrong->windowSize.y == 320);
     CHECK(wrong->vsync && wrong->volume == 1.0f && wrong->groundDetail == DefaultGroundDetail);
     CHECK(wrong->upscaling == DefaultUpscaling && wrong->sharpness == 1.0f && wrong->cloudQuality == DefaultCloudQuality);
-    CHECK(wrong->vegetationDistance == DefaultVegetationDistance);
+    CHECK(wrong->vegetationDistance == DefaultVegetationDistance && wrong->swapchainImages == 3);
     CHECK(warnings.size() == 6); // « width », « vsync », « groundDetail », « upscaling », « cloudQuality », « vegetationDistance »
 
     const char* invalid[] = {

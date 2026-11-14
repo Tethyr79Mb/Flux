@@ -7,6 +7,7 @@
 #include "Flux/Planetology/VegetationDistance.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -21,6 +22,7 @@ namespace Flux {
         bool maximized = false;
         bool fullscreen = false; // plein écran sans bordure (Alt+Entrée ou F11 en jeu)
         bool vsync = true;
+        std::uint32_t swapchainImages = 3; // 2 ou 3 (Renderer::SetSwapchainImages)
         bool temporalAA = true;    // anticrénelage temporel (TAA), en Natif
         Upscaling upscaling = DefaultUpscaling;
         float sharpness = DefaultSharpness; // netteté ajoutée par FSR, 0 à 1

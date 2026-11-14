@@ -1,7 +1,7 @@
 {
   "format": "flux.ui",
   "version": 1,
-  "nextId": 118,
+  "nextId": 124,
   "elements": [
     {
       "id": 1,
@@ -394,13 +394,128 @@
                   "binding": "V-Sync"
                 },
                 {
+                  "id": 118,
+                  "type": "text",
+                  "name": "Images d'avance",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    178.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Images d'avance",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 119,
+                  "type": "text",
+                  "name": "Aide Images d'avance",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    218.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "2 : réponse plus rapide avec la V-Sync si la carte graphique suit l'écran. 3 : plus fluide.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 120,
+                  "type": "dropdown",
+                  "name": "Choix Images d'avance",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    174.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "options": [
+                    "2 (moins de retard)",
+                    "3 (plus fluide)"
+                  ],
+                  "value": 1.0,
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "binding": "Images d'avance"
+                },
+                {
                   "id": 11,
                   "type": "text",
                   "name": "Mise à l'échelle",
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    178.0
+                    270.0
                   ],
                   "size": [
                     532.0,
@@ -431,7 +546,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    218.0
+                    310.0
                   ],
                   "size": [
                     1072.0,
@@ -462,7 +577,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    174.0
+                    266.0
                   ],
                   "size": [
                     520.0,
@@ -519,7 +634,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    270.0
+                    362.0
                   ],
                   "size": [
                     532.0,
@@ -550,7 +665,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    310.0
+                    402.0
                   ],
                   "size": [
                     1072.0,
@@ -581,7 +696,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    276.0
+                    368.0
                   ],
                   "size": [
                     410.0,
@@ -623,7 +738,7 @@
                   "anchor": "topLeft",
                   "position": [
                     1030.0,
-                    270.0
+                    362.0
                   ],
                   "size": [
                     90.0,
@@ -654,7 +769,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    362.0
+                    454.0
                   ],
                   "size": [
                     532.0,
@@ -685,7 +800,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    402.0
+                    494.0
                   ],
                   "size": [
                     1072.0,
@@ -716,7 +831,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    360.0
+                    452.0
                   ],
                   "size": [
                     40.0,
@@ -766,7 +881,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    468.0
+                    560.0
                   ],
                   "size": [
                     1072.0,
@@ -797,7 +912,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    506.0
+                    598.0
                   ],
                   "size": [
                     1072.0,
@@ -825,7 +940,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    526.0
+                    618.0
                   ],
                   "size": [
                     532.0,
@@ -856,7 +971,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    566.0
+                    658.0
                   ],
                   "size": [
                     1072.0,
@@ -887,7 +1002,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    522.0
+                    614.0
                   ],
                   "size": [
                     520.0,
@@ -942,7 +1057,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    618.0
+                    710.0
                   ],
                   "size": [
                     532.0,
@@ -973,7 +1088,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    658.0
+                    750.0
                   ],
                   "size": [
                     1072.0,
@@ -1004,7 +1119,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    614.0
+                    706.0
                   ],
                   "size": [
                     520.0,
@@ -1052,13 +1167,130 @@
                   "binding": "Qualité des nuages"
                 },
                 {
+                  "id": 121,
+                  "type": "text",
+                  "name": "Distance de la végétation",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    802.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Distance de la végétation",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 122,
+                  "type": "text",
+                  "name": "Aide Distance de la végétation",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    842.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Jusqu'où les arbres sont dessinés : plus loin demande plus à la carte graphique.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 123,
+                  "type": "dropdown",
+                  "name": "Choix Distance de la végétation",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    798.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "options": [
+                    "Bas",
+                    "Moyen",
+                    "Élevé",
+                    "Ultra"
+                  ],
+                  "value": 2.0,
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "binding": "Distance de la végétation"
+                },
+                {
                   "id": 29,
                   "type": "text",
                   "name": "Titre Effets",
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    724.0
+                    908.0
                   ],
                   "size": [
                     1072.0,
@@ -1089,7 +1321,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    762.0
+                    946.0
                   ],
                   "size": [
                     1072.0,
@@ -1117,7 +1349,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    782.0
+                    966.0
                   ],
                   "size": [
                     532.0,
@@ -1148,7 +1380,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    822.0
+                    1006.0
                   ],
                   "size": [
                     1072.0,
@@ -1179,7 +1411,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    780.0
+                    964.0
                   ],
                   "size": [
                     40.0,
