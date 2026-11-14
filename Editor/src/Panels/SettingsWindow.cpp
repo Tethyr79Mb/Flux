@@ -239,6 +239,14 @@ namespace FluxEditor {
             renderer.SetVSync(vsync);
         }
         ui.HelpText("Cale les images sur l'écran : pas de déchirure, mais pas plus d'images/s que sa fréquence.");
+        // Indice 0 : 2 images (Renderer::MinSwapchainImages).
+        static constexpr std::array<std::string_view, 2> SwapchainLabels{"2 (moins de retard)", "3 (plus fluide)"};
+        int swapchain = static_cast<int>(renderer.GetSwapchainImages() - Renderer::MinSwapchainImages);
+        if (ui.Choice("Images d'avance", swapchain, SwapchainLabels)) {
+            renderer.SetSwapchainImages(Renderer::MinSwapchainImages + static_cast<std::uint32_t>(swapchain));
+        }
+        ui.HelpText("Avec la V-Sync, 2 images répondent une image plus tôt (16,7 ms à 60 Hz) tant que la carte graphique "
+                    "suit l'écran ; 3 évitent un à-coup quand une image dépasse. Sans V-Sync, garder 3.");
         int upscaling = static_cast<int>(m_upscaling);
         if (ui.Choice("Mise à l'échelle", upscaling, UpscalingLabels)) {
             m_upscaling = static_cast<Upscaling>(upscaling);
@@ -431,7 +439,7 @@ namespace FluxEditor {
         ui.SectionTitle("Carte graphique");
         ui.LabelText("Modèle", renderer.GetDeviceName());
         ui.LabelText("Vulkan", renderer.GetApiVersion());
-        ui.LabelText("Présentation", renderer.GetPresentModeName());
+        ui.LabelText("Présentation", std::format("{}, {} images", renderer.GetPresentModeName(), renderer.GetSwapchainImageCount()));
         const Math::Vector2i size = renderer.GetRenderSize();
         ui.LabelText("Scène dessinée en", std::format("{} x {}", size.x, size.y));
 

@@ -230,10 +230,14 @@ Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) 
 en a une (moteur de copie des Radeon et des GeForce), sinon sur la file graphique par le même chemin
 (`FLUX_TRANSFER_QUEUE=0` force ce repli). Les données passent par un anneau d'envoi de 64 Mo mappé en permanence ; un
 envoi de plus de 32 Mo a son propre buffer, rendu dès sa copie finie. Un lot de copies part dès 32 Mo, ou avec
-l'image suivante. Deux sémaphores timeline ordonnent les files : l'image attend les copies qui la précèdent, et une
+l'image suivante. Chaque file est un `Vk::Queue` (`VulkanQueue`) qui possède un sémaphore timeline et le signale à
+chaque soumission ; la file graphique appartient à `Vk::Device`, celle de transfert à `Vk::Transfer`, et une file de
+calcul asynchrone prendra la même forme. Ces timelines ordonnent les files : l'image attend les copies qui la précèdent, et une
 copie dans un buffer déjà en service (`WriteBuffer`) attend les images déjà soumises (elles lisent peut-être ce
-qu'elle réécrit). Le sémaphore timeline graphique sert aussi d'attente des images en vol (`Vk::Frames` garde la
-valeur de chaque image) : pas de fence. Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
+qu'elle réécrit). Le timeline graphique sert aussi d'attente des images en vol (`Vk::Frames` garde la
+valeur de chaque image) : pas de fence. Les command buffers d'envoi et de `ImmediateSubmit` sont réutilisés par un
+`Vk::CommandRecycler` dès que leur file a atteint leur valeur. Les pipelines reçoivent le SPIR-V directement
+(`VK_KHR_maintenance5`, sans `VkShaderModule`) ; sans l'extension, un module temporaire (`FLUX_INLINE_SHADERS=0` force ce repli). Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
 de file par un transfert de propriété (partagées, elles perdraient leur compression DCC sur Radeon) et leurs mipmaps
 sont calculés par la file graphique (le blit est interdit sur une file de transfert). Sans fenêtre (tests, calculs),
 les envois sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.

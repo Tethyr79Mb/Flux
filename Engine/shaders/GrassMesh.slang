@@ -37,7 +37,7 @@ struct GrassPayload
     // Par carré retenu : x, carré + segments x 256 ; y, son premier groupe ; z, brins gardés ; w, brins à pleine
     // densité (bits d'un float).
     uint4 patches[GrassPatchCount];
-    float2 climates[GrassPatchCount]; // PlanetClimate au centre du carré
+    float3 climates[GrassPatchCount]; // GrassClimate au centre du carré
     GrassPatchLight lights[GrassPatchCount]; // LightGrassPatch au centre du carré
 };
 
@@ -81,7 +81,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     const float keep = GrassKeep(nearest);
     bool kept = keep > 0.0 && InView(center, radius)
              && !Occluded(center + frame[0].cameraDelta.xyz, radius + length(frame[0].cameraDelta.xyz));
-    float2 climate = float2(0.0);
+    float3 climate = float3(0.0);
     if (kept) {
         climate = GrassClimate(drawIndex, firstVertex, (origin.y + GrassPatchQuads / 2) * GrassTileSide + origin.x + GrassPatchQuads / 2, local);
         // De l'herbe aux coins ou au centre (ses taches font des dizaines de mètres : un carré en a peu ou prou).

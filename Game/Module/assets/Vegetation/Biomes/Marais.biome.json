@@ -3,6 +3,7 @@
   "altitude": [-100, 6],
   "temperature": [5, 35],
   "humidity": [0.7, 2],
+  "soil": [0.5, 1],
   "cover": 0.3,
   "density": 0.15,
   "scale": 0.75,

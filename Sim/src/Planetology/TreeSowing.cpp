@@ -88,15 +88,45 @@ namespace Flux::Planetology {
             return SmoothStep(threshold - width, threshold + width, noise);
         }
 
+        // Roche-mère : granit, calcaire, grès (le reste basalte), et profondeur de la terre en w.
+        struct Geology
+        {
+            double granite, limestone, sandstone, soil;
+        };
+
+        Math::Vector3d Lithology(const Math::Vector3d& flatPoint, double mountains) {
+            const Math::Vector3d p = flatPoint * (1.0 / 45000.0);
+            const auto offset = [](double v) { return Math::Vector3d{v, v, v}; };
+            const Math::Vector3d warp = Math::Vector3d{ClimateNoise(p * 3.0 + offset(13.0)), ClimateNoise(p * 3.0 + offset(57.0)),
+                                                       ClimateNoise(p * 3.0 + offset(91.0))} - offset(0.5);
+            const double a = ClimateNoise(p + warp * 0.6 + offset(101.0));
+            const double b = ClimateNoise(p * 1.7 + warp * 0.8 + offset(211.0));
+            const double basalt = SmoothStep(0.66, 0.72, b);
+            const double granite = SmoothStep(0.55, 0.62, a + 0.3 * mountains) * (1.0 - basalt);
+            const double sediment = 1.0 - basalt - granite;
+            const double sandstone = SmoothStep(0.42, 0.5, b + (a - 0.5) * 0.3);
+            return {granite, sediment * (1.0 - sandstone), sediment * sandstone};
+        }
+
+        double SoilDepth(double wet, const Math::Vector3d& lithology) {
+            const double basalt = Saturate(1.0 - lithology.x - lithology.y - lithology.z);
+            return Saturate(0.55 + 0.45 * wet - 0.2 * lithology.y - 0.1 * lithology.z + 0.1 * basalt);
+        }
+
         double BiomeBand(double x, double low, double high, double soft) {
             return SmoothStep(low - soft, low + soft, x) * (1.0 - SmoothStep(high - soft, high + soft, x));
         }
 
-        double BiomeFit(const BiomeGpu& biome, const Math::Vector3d& zoneShares, double altitude, const Climate& climate) {
+        double BiomeFit(const BiomeGpu& biome, const Math::Vector3d& zoneShares, double altitude, const Climate& climate,
+                        const Geology& geology) {
             const double zones = biome.zones[0] * zoneShares.x + biome.zones[1] * zoneShares.y + biome.zones[2] * zoneShares.z;
+            const double basalt = Saturate(1.0 - geology.granite - geology.limestone - geology.sandstone);
+            const double rocks = biome.rocks[0] * geology.granite + biome.rocks[1] * geology.limestone
+                               + biome.rocks[2] * geology.sandstone + biome.rocks[3] * basalt;
             return Saturate(zones) * BiomeBand(altitude, biome.ranges[0], biome.ranges[1], 0.02)
                  * BiomeBand(climate.temperature, biome.ranges[2], biome.ranges[3], 2.0)
-                 * BiomeBand(climate.humidity, biome.humidity[0], biome.humidity[1], 0.05);
+                 * BiomeBand(climate.humidity, biome.humidity[0], biome.humidity[1], 0.05)
+                 * Saturate(rocks) * BiomeBand(geology.soil, biome.soil[0], biome.soil[1], 0.05);
         }
 
         // --- Comme shaders/PlanetTile.slang ---
@@ -285,10 +315,12 @@ namespace Flux::Planetology {
                 climate.humidity += ReliefHumidity * wet;
                 const Math::Vector3d zoneShares{(1.0 - zones.hills) * (1.0 - zones.mountains), zones.hills * (1.0 - zones.mountains),
                                                 zones.mountains};
+                const Math::Vector3d lithology = Lithology(flat, zones.mountains);
+                const Geology geology{lithology.x, lithology.y, lithology.z, SoilDepth(wet, lithology)};
                 std::array<double, VegetationSet::MaxBiomes> weights{};
                 double remaining = 1.0;
                 for (std::uint32_t b = 0; b < biomeCount; ++b) {
-                    weights[b] = BiomeFit(set.biomes[b], zoneShares, altitude, climate) * remaining;
+                    weights[b] = BiomeFit(set.biomes[b], zoneShares, altitude, climate, geology) * remaining;
                     remaining -= weights[b];
                 }
                 const std::uint32_t biome = GroveBiome(flat, blocks.biomeGrove, weights, biomeCount);

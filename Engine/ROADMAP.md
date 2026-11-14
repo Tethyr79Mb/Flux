@@ -19,7 +19,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   Limites : l'ombre lointaine d'un objet qui bouge a une image de retard ; en tournant, les deux sont refaites.
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
-- ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
+- ⬜ Lumières en grappes : étape A4 du plan d'éclairage (section Rendu).
 - 🔧 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
   - ✅ 1. `JobSystem` : fils de travail (cœurs moins un), vol de tâches, attente qui aide, aucune allocation par tâche.
   - ✅ 2. Plusieurs listes primaires par image (choix de Bruno) : `CommandList::Fork` insère des listes à remplir sur d'autres fils, jouées dans l'ordre en une seule soumission ; un pool par command buffer, créé une fois. Aussi dans `Device::Submit`.
@@ -62,14 +62,17 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   image change.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
-- ⬜ Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
+- 🔨 Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
   semis des arbres, bruit et historique des nuages) qui tournent pendant le dessin, dans les trous qu'il laisse (gain
   habituel de 5 à 15 %, surtout sur AMD). Le render graph décide quelles passes y partent et place les sémaphores et
   les transferts de propriété. À mesurer avant (temps du GPU par passe) ; facultatif, le chemin à une file reste.
+  Fait : chaque file est un `Vk::Queue` avec son timeline (la file de calcul aura la même forme). Reste : la file, le
+  choix des passes par le render graph.
 
 ### Rendu
-- ⬜ Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
-  avant l'affichage, VK_KHR_present_wait), après les ombres.
+- 🔨 Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
+  avant l'affichage, VK_KHR_present_wait), après les ombres. Fait : nombre d'images de la swapchain au choix (2 ou 3,
+  réglages et panneau Moteur).
 - 🔨 Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`include/Flux/Renderer/RHI`) : un autre backend (DX12) reste
   possible. Manquent : une liste de commandes par fil (une seule aujourd'hui, sur le fil principal), plusieurs files
   exposées au renderer (la file de transfert reste cachée dans le backend, pas de file de calcul), un cache de
@@ -77,7 +80,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé). Ray tracing : structures
   d'accélération faites (2026-11-10), liaison aux shaders à faire.
   Fichiers rangés : un en-tête par interface, types communs dans `RHITypes.hpp`, un fichier par bloc Vulkan
-  (instance, surface, choix du GPU, device, swapchain, images en vol, heures du GPU, diagnostic, envois).
+  (instance, surface, choix du GPU, device, files, swapchain, images en vol, heures du GPU, diagnostic, envois).
 - ✅ Shaders Slang compilés par CMake.
 - ✅ Caméra en reverse-Z, plan lointain infini, rendu relatif à la caméra (mondes géants).
 - 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 34 à 5,1 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.
@@ -110,7 +113,17 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔧 Unités physiques (2026-11-03) : soleil en lux, lampes et réacteurs en lumens (affaiblies en 1/d²), fond du ciel, émissifs et ambiance des intérieurs en cd/m², bornes de l'exposition en EV100 ; anciennes scènes converties (soleil, fond, émissifs, réacteurs, lampes x 2500 vers des lumens réalistes) ou remises aux valeurs réelles par défaut (intérieurs, bornes : choix de Bruno) ; lumière ambiante du ciel à l'échelle d'avant (débouche les ombres) ; étoiles et nébuleuses du fond avec un éclat minimum à l'écran (choix de Bruno : visibles près d'une station éclairée), effacées par la clarté de l'air à l'écran (ciel de jour, halo) quelle que soit la densité de l'atmosphère ; verres (transparents lisses) sans diffus, reflets seuls (diélectriques à 4 %, sans le ciel vus de l'intérieur), ombres des objets reçues. À améliorer : le verre assombrit le fond sans le teinter (teinte colorée : deux passes ou mélange à deux sources) ; reflet de l'habitacle sur la verrière absent (sonde de reflets du vaisseau) ; valeurs de la station et des modèles à ajuster à l'œil ; le soleil ne dépend pas encore de la distance de l'Orbite ; côté ombre d'un vaisseau presque noir dans l'espace (pas encore de lumière renvoyée par la planète).
 - 🔧 Exposition propre aux intérieurs (2026-11-03, d'après une image de Star Citizen) : compensation (-1 stop par défaut) et bornes de l'œil (EV100 3 à 7, choix de Bruno : l'image bouge peu en regardant les lampes ou une porte au soleil) réglées dans l'Intérieur, pour garder une station sombre et contrastée au lieu de la remonter au gris moyen. La boîte d'un Intérieur compte en entier (sol et murs posés sur ses faces), le fondu se fait dehors. Dans l'espace, le ciel n'entre plus dans la mesure de la lumière (ses étoiles, à éclat minimum à l'écran, fermaient l'œil jusqu'à la borne). À améliorer : valeur à régler à l'œil pièce par pièce.
 - ⬜ Étalonnage couleur par table (LUT 3D après la courbe de tons), réglable par scène.
-- ⬜ Éclairage réaliste, étapes suivantes (plan du 2026-11-02, choix de Bruno : fondations d'abord) : rendu différé, occlusion ambiante GTAO, sondes de reflets dans les vaisseaux, reflets de l'écran, ombres des lampes, brouillard volumique, lumière indirecte.
+- ⬜ Éclairage réaliste (plan du 2026-11-13 : https://claude.ai/artifact/JprtbD2cuivx7WQ3CnF6Tu ; repli GTX 1060 dans le plan) :
+  - ⬜ A1. RHI : jusqu'à 8 cibles de couleur par passe.
+  - ⬜ A2. G-buffer (12 octets par pixel) et passe d'éclairage en compute, modèles opaques d'abord.
+  - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
+  - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
+  - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
+  - ⬜ A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations.
+  - ⬜ A7. Ombres des lampes (atlas) et brouillard volumique (froxels).
+  - ⬜ B1. Lumière renvoyée par la planète proche (ligne suivante).
+  - ⬜ B2. Matières lues au point touché par un rayon.
+  - ⬜ B3. Lumière indirecte par sondes DDGI en ray tracing, une grille par vaisseau ; repli GTX 1060 : sondes cuites dans l'éditeur (choix de Bruno du 2026-11-13).
 - ⬜ Lumière renvoyée par la planète proche (remarque de Bruno du 2026-10-26) : dans l'espace, la face d'un objet à l'ombre du soleil ne reçoit que l'ambiante d'un ciel noir et paraît grise ; une lueur bleutée venue de la planète (selon sa taille apparente et sa face éclairée) éclairerait les dessous comme dans les rendus de la station.
 - ⬜ Matériaux multicouches (remarque de Bruno du 2026-10-26) : une matière de base (peinture, métal nu) et des couches mélangées par masque (usure, saleté, bandes), comme les « layer blends » de Star Citizen. Aujourd'hui : un seul jeu de textures par matériau.
 - ⬜ Décalcomanies (idée de Bruno du 2026-10-26) : images projetées sur les modèles (numéros, logos, bandes), posées dans l'éditeur. En attendant, plaques texturées dans le modèle.
@@ -271,7 +284,12 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   Humidité du relief (géologie, étape 1, demande de Bruno du 2026-11-13) : creux humides au sol épais, crêtes sèches
   (hauteur moyenne à 300 m autour moins celle du point, relief grossier), sur une grille de 2x2 à 8x8 mailles par
   tuile, rangée dans chaque sommet ; elle ajoute humidité et forêts au fond des vallons pour les arbres, le sol et
-  l'herbe. À venir : roche-mère par régions (teintes, profondeur du sol, condition « sol » des biomes), puis rivières.
+  l'herbe. Roche-mère (étape 2) : régions de 20 à 80 km par formule (granit dans les chaînes, calcaire et grès dans
+  les plaines, basalte par taches) qui teintent la roche, le sable et la terre ; profondeur de la terre selon
+  l'humidité du relief et la roche : roche dès les pentes douces et affleurements là où elle est mince, sans herbe.
+  Couleurs fixes dans le code (réglables avec les types de planète). Condition « sol » des biomes (étape 3) :
+  préférence pour chaque roche-mère et profondeur de la terre, dans le panneau Végétation (pinède sur grès et granit,
+  plaine et marais sur sol épais). À venir : rivières.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
   différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; humidité du relief
@@ -331,7 +349,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
 - ⬜ Construction sur les planètes (Bruno, 2026-11-09), en deux temps : d'abord des bâtiments posés (entités répliquées, fondations qui suivent la pente, pose validée par le serveur, persistance PostgreSQL) ; plus tard le relief modifié (aplanir, creuser) par une couche de différences appliquée au CPU et au GPU, enregistrée et répliquée.
-- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, mise à l'échelle et netteté FSR, volume, panneau Moteur).
+- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, images de la swapchain (2 ou 3), anticrénelage, mise à l'échelle et netteté FSR, volume, panneau Moteur).
 - ✅ Exe du jeu nommé « Ars Solaris.exe » (cible CMake `Game`) : les pilotes comme AMD Adrenalin le reconnaissent comme un jeu.
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
 - 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.

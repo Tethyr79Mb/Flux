@@ -3,7 +3,9 @@
 #include "Renderer/RHI/Vulkan/Vulkan.hpp"
 #include "Renderer/RHI/Vulkan/VulkanAdapter.hpp"
 #include "Renderer/RHI/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/RHI/Vulkan/VulkanCommandRecycler.hpp"
 #include "Renderer/RHI/Vulkan/VulkanInstance.hpp"
+#include "Renderer/RHI/Vulkan/VulkanQueue.hpp"
 #include "Renderer/RHI/Vulkan/VulkanSurface.hpp"
 #include "Renderer/RHI/Vulkan/VulkanTransfer.hpp"
 
@@ -40,8 +42,10 @@ namespace Flux::Vk {
         const std::string& GetApiVersion() const { return m_adapter.GetApiVersion(); }
         VmaAllocator GetAllocator() const { return m_allocator; }
 
-        VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
-        uint32_t GetGraphicsQueueFamily() const { return m_graphicsQueueFamily; }
+        // File graphique et son timeline : chaque soumission graphique passe par elle.
+        Queue& GetGraphicsQueue() { return m_graphics; }
+        const Queue& GetGraphicsQueue() const { return m_graphics; }
+        uint32_t GetGraphicsQueueFamily() const { return m_graphics.GetFamily(); }
         VkQueue GetPresentQueue() const { return m_presentQueue; }
         // Nanosecondes par tic des heures du GPU ; 0 si la file graphique ne note pas l'heure.
         float GetTimestampPeriod() const;
@@ -52,6 +56,7 @@ namespace Flux::Vk {
         bool HasTextureCompressionBC() const { return m_adapter.HasTextureCompressionBC(); }
         bool HasRayTracing() const { return m_adapter.HasRayTracing(); }
         bool HasBufferMarkers() const { return m_adapter.HasBufferMarkers(); }
+        bool HasInlineShaders() const { return m_adapter.HasInlineShaders(); }
         bool HasDebugLabels() const { return m_instance->HasDebugLabels(); }
         // Après la perte du device : la description de la panne par le pilote (VK_EXT_device_fault), vide sans elle.
         std::string DescribeFault() const;
@@ -89,11 +94,10 @@ namespace Flux::Vk {
         vkb::Device m_device;
         VmaAllocator m_allocator = VK_NULL_HANDLE;
 
-        VkQueue m_graphicsQueue = VK_NULL_HANDLE;
-        uint32_t m_graphicsQueueFamily = 0;
+        // Détruits à la main avant le device (~Device), dans l'ordre inverse.
+        Queue m_graphics;
         VkQueue m_presentQueue = VK_NULL_HANDLE;
-
-        VkCommandPool m_immediatePool = VK_NULL_HANDLE;
+        CommandRecycler m_immediateCommands;
         std::unique_ptr<Transfer> m_transfer;
         bool m_deferUploads = false;
     };

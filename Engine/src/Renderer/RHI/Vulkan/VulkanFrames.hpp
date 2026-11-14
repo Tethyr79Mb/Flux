@@ -10,7 +10,7 @@ namespace Flux::Vk {
     class Device;
 
     // Ressources propres à chaque image en vol : sémaphore d'image acquise et valeur du timeline graphique portée par
-    // sa dernière soumission (Transfer::GetSignal). Le CPU prépare une image pendant que le GPU dessine l'autre ; pas
+    // sa dernière soumission (Device::GetGraphicsQueue). Le CPU prépare une image pendant que le GPU dessine l'autre ; pas
     // de fence : le timeline signalé par chaque soumission graphique suffit, et ne se remet jamais à zéro. Les command
     // buffers sont dans un CommandBatch par image.
     class Frames {

@@ -56,6 +56,7 @@ namespace Flux {
                        .showDebugOverlay = settings.showEngineStats,
                        .freeCamera = false,
                        .vsync = settings.vsync,
+                       .swapchainImages = settings.swapchainImages,
                        .temporalAA = settings.temporalAA,
                        .upscaling = settings.upscaling,
                        .sharpness = settings.sharpness,
@@ -108,6 +109,7 @@ namespace Flux {
             settings.fullscreen = window.IsFullscreen();
         }
         settings.vsync = engine.GetRenderer().IsVSyncEnabled();
+        settings.swapchainImages = engine.GetRenderer().GetSwapchainImages();
         settings.temporalAA = engine.GetRenderer().IsTemporalAAEnabled();
         settings.upscaling = engine.GetRenderer().GetUpscaling();
         settings.sharpness = engine.GetRenderer().GetSharpness();

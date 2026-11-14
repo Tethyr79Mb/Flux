@@ -360,6 +360,15 @@ namespace FluxEditor {
             ui.TextDisabled("Minimum, maximum. Une limite au bout de l'échelle ne limite rien. Le premier biome de la "
                             "planète qui convient prend le sol.");
         }
+        if (ui.CollapsingHeader("Sol")) {
+            ui.TextDisabled("Préférence pour chaque roche-mère (0 : jamais dessus, 1 : partout où le reste convient).");
+            changed |= ui.DragFloat("Granit", biome.granite, 0.01f, 0.0, 1.0, 2);
+            changed |= ui.DragFloat("Calcaire", biome.limestone, 0.01f, 0.0, 1.0, 2);
+            changed |= ui.DragFloat("Grès", biome.sandstone, 0.01f, 0.0, 1.0, 2);
+            changed |= ui.DragFloat("Basalte", biome.basalt, 0.01f, 0.0, 1.0, 2);
+            changed |= DrawRange(ui, "Profondeur de la terre", biome.minSoil, biome.maxSoil, 0.01f, 0.0, 1.0, 2);
+            ui.SetItemTooltip("0 : roche à nu (crêtes, calcaire), 1 : sol épais (fonds de vallon)");
+        }
         if (ui.CollapsingHeader("Forêt")) {
             changed |= ui.DragFloat("Couverture", biome.cover, 0.01f, 0.0, 1.0, 2);
             ui.SetItemTooltip("Part du sol couverte de forêts");

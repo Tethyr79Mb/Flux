@@ -33,6 +33,14 @@ bool RunVegetationTests() {
     CHECK(biome && biome->plains == 0.0f && biome->hills == 1.0f && biome->mountains == 1.0f);
     CHECK(biome->minTemperature == -5.0f && biome->maxTemperature == 10.0f && biome->species.size() == 1);
     CHECK(!Planetology::ParseVegetationBiome(R"({"temperature": [5]})"));
+    // Sol : tout convient par défaut ; roches et profondeur de la terre lues, ramenées dans [0, 1], relues à l'identique.
+    CHECK(biome->granite == 1.0f && biome->basalt == 1.0f && biome->minSoil == 0.0f && biome->maxSoil == 1.0f);
+    auto rocky = Planetology::ParseVegetationBiome(R"({"rocks": {"limestone": 0, "basalt": 3}, "soil": [0.4, 1.5]})");
+    CHECK(rocky && rocky->limestone == 0.0f && rocky->basalt == 1.0f && rocky->granite == 1.0f);
+    CHECK(rocky->minSoil == 0.4f && rocky->maxSoil == 1.0f);
+    auto rockyAgain = Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome(*rocky));
+    CHECK(rockyAgain && rockyAgain->limestone == 0.0f && rockyAgain->minSoil == 0.4f && rockyAgain->maxSoil == 1.0f);
+    CHECK(!Planetology::ParseVegetationBiome(R"({"rocks": [1, 0]})"));
     CHECK(!Planetology::ParseVegetationBiome(R"({"species": [{"species": "a"}, {"species": "b"}, {"species": "c"},
                                                              {"species": "d"}, {"species": "e"}]})"));
 
@@ -57,6 +65,8 @@ bool RunVegetationTests() {
     // Désert (biome 2) sans arbres ; montagne (biome 3) : épicéas et sapins seulement, pas de plaines.
     CHECK(set.biomes[1].humidity[2] == 0.0f);
     CHECK(set.biomes[2].zones[0] == 0.0f && set.biomes[2].zones[2] == 1.0f);
+    // Sol sans borne au GPU quand le biome ne limite rien (montagne), bornée sinon.
+    CHECK(set.biomes[2].soil[0] < 0.0f && set.biomes[2].soil[1] > 1.0f);
     CHECK(set.biomeSpecies[2][0] >> 8 == 2 && set.biomeSpecies[2][1] >> 8 == 2);
     CHECK(set.biomes[2].color[3] == 200.0f); // taille des bosquets absente du fichier : par défaut
     // Relu tel quel tant que rien ne change.

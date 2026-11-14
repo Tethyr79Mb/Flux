@@ -1030,10 +1030,12 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         const float altitude = height / relief;
         const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local) + float2(0.0, ReliefHumidity * wet);
         const float3 zoneShares = ZoneShares(zones);
+        const float3 lithology = Lithology(flat, zones.y);
+        const float4 geology = float4(lithology, SoilDepth(wet, lithology));
         float weights[MaxBiomes];
         float remaining = 1.0;
         for (uint b = 0; b < MaxBiomes; ++b) {
-            weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate) * remaining : 0.0;
+            weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate, geology) * remaining : 0.0;
             remaining -= weights[b];
         }
         const uint biome = GroveBiome(flat, weights, biomeCount);

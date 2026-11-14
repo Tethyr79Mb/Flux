@@ -123,6 +123,7 @@ namespace Flux {
         std::filesystem::path assetsDirectory;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
+        std::uint32_t swapchainImages = Renderer::DefaultSwapchainImages;
         float bloom = Renderer::DefaultBloom; // 0 : sans bloom
         bool temporalAA = true;
         Upscaling upscaling = DefaultUpscaling;
@@ -292,7 +293,7 @@ namespace Flux {
             if (extent.width == 0 || extent.height == 0) {
                 return true; // fenêtre réduite : rien à présenter
             }
-            if (!device->ResizeSwapchain(extent, vsync)) {
+            if (!device->ResizeSwapchain({extent, vsync, swapchainImages})) {
                 return false;
             }
             // Profondeur de l'image finale à la taille de la swapchain (recréée quand la fenêtre change de taille).
@@ -1016,7 +1017,7 @@ namespace Flux {
     std::expected<std::unique_ptr<Renderer>, std::string> Renderer::Create(Window& window) {
         auto impl = std::make_unique<Impl>(window);
 
-        auto device = RHI::Device::Create(window.GetNativeHandle(), impl->WindowExtent(), impl->vsync);
+        auto device = RHI::Device::Create(window.GetNativeHandle(), {impl->WindowExtent(), impl->vsync, impl->swapchainImages});
         if (!device) {
             return std::unexpected(device.error());
         }
@@ -1139,6 +1140,18 @@ namespace Flux {
 
     bool Renderer::IsVSyncEnabled() const {
         return m_impl->vsync;
+    }
+
+    void Renderer::SetSwapchainImages(std::uint32_t images) {
+        m_impl->swapchainImages = std::clamp(images, MinSwapchainImages, MaxSwapchainImages); // recréée à la prochaine image
+    }
+
+    std::uint32_t Renderer::GetSwapchainImages() const {
+        return m_impl->swapchainImages;
+    }
+
+    std::uint32_t Renderer::GetSwapchainImageCount() const {
+        return m_impl->device->GetSwapchainImageCount();
     }
 
     void Renderer::SetBloom(float strength) {

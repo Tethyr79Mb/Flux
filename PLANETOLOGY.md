@@ -114,6 +114,13 @@ petite grille par tuile (2x2 à 8x8 mailles, effacée sur les tuiles de plus de 
 chaque sommet (`uv.y`) pour le sol et l'herbe, et par plaine pour le semis. Elle ajoute de l'humidité au climat et des
 forêts aux biomes. Le vrai écoulement de l'eau n'est pas calculable par formule (il dépend de tout l'amont).
 
+Roche-mère (`Lithology`, `SoilDepth` dans `PlanetClimate.slang`) : des régions de 20 à 80 km aux bords ondulés,
+granit (surtout dans les chaînes), calcaire, grès, basalte. Elles teintent la roche, le sable et un peu la terre
+(`LithologyTint`). La profondeur de la terre vient de l'humidité du relief et de la roche ; mince, elle laisse voir la
+roche dès les pentes douces et en affleurements, où l'herbe ne pousse pas. Les biomes peuvent en dépendre (préférence
+pour chaque roche, profondeur de la terre) : `Lithology` et `SoilDepth` ont donc une copie en double dans
+`TreeSowing.cpp` pour la collision des arbres. Toute modification va dans les deux.
+
 ### Les couches de bruit
 
 Chaque couche est une somme d'octaves de bruit de Perlin avec sa pente exacte. Chaque octave a une fréquence double

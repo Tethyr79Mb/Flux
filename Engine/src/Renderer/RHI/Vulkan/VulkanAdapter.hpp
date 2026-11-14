@@ -39,6 +39,8 @@ namespace Flux::Vk {
         bool HasRayTracing() const { return m_rayTracing; }
         // minAccelerationStructureScratchOffsetAlignment : alignement de la mémoire de travail d'une construction.
         std::uint32_t GetScratchAlignment() const { return m_scratchAlignment; }
+        // VK_KHR_maintenance5 activée : pipelines créés depuis le SPIR-V, sans VkShaderModule.
+        bool HasInlineShaders() const { return m_inlineShaders; }
         // VK_AMD_buffer_marker activé : le GPU peut noter où il en est (RhiCommandList::BeginStep).
         bool HasBufferMarkers() const { return m_bufferMarkers; }
         // VK_EXT_device_fault activée : le pilote décrit la panne après la perte du device.
@@ -55,5 +57,6 @@ namespace Flux::Vk {
         std::uint32_t m_scratchAlignment = 256;
         bool m_bufferMarkers = false;
         bool m_deviceFault = false;
+        bool m_inlineShaders = false;
     };
 }

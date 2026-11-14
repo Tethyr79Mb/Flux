@@ -1,7 +1,6 @@
 #include "Renderer/RHI/Vulkan/VulkanFrames.hpp"
 
 #include "Renderer/RHI/Vulkan/VulkanDevice.hpp"
-#include "Renderer/RHI/Vulkan/VulkanTransfer.hpp"
 
 namespace Flux::Vk {
     Frames::~Frames() {
@@ -24,6 +23,6 @@ namespace Flux::Vk {
     }
 
     VkResult Frames::Wait(std::uint32_t index) const {
-        return m_device.GetTransfer().WaitGraphics(m_frames[index].graphicsValue);
+        return m_device.GetGraphicsQueue().Wait(m_frames[index].graphicsValue);
     }
 }

@@ -23,21 +23,37 @@ namespace Flux::Vk {
             return code;
         }
 
-        std::expected<VkShaderModule, std::string> CreateModule(VkDevice device, const std::filesystem::path& path) {
-            auto code = ReadSpirv(path);
-            if (!code) {
-                return std::unexpected(code.error());
+        // Code d'un shader prêt à donner aux étapes d'un pipeline : chaîné tel quel (VK_KHR_maintenance5), sinon dans un
+        // VkShaderModule détruit avec lui, une fois le pipeline créé ou raté. Ne pas déplacer après Attach (pointeurs).
+        class ShaderCode {
+            public:
+            ShaderCode(VkDevice device, std::vector<uint32_t> code) : m_device(device), m_code(std::move(code)) {
+                m_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+                m_info.codeSize = m_code.size() * sizeof(uint32_t);
+                m_info.pCode = m_code.data();
             }
-            VkShaderModuleCreateInfo moduleInfo{};
-            moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            moduleInfo.codeSize = code->size() * sizeof(uint32_t);
-            moduleInfo.pCode = code->data();
-            VkShaderModule shaderModule = VK_NULL_HANDLE;
-            if (!Check(vkCreateShaderModule(device, &moduleInfo, nullptr, &shaderModule), "vkCreateShaderModule")) {
-                return std::unexpected("création du module de " + path.string());
+            ~ShaderCode() {
+                if (m_module != VK_NULL_HANDLE) {
+                    vkDestroyShaderModule(m_device, m_module, nullptr);
+                }
             }
-            return shaderModule;
-        }
+            ShaderCode(const ShaderCode&) = delete;
+            ShaderCode& operator=(const ShaderCode&) = delete;
+
+            bool Prepare(bool inlineCode) {
+                return inlineCode || Check(vkCreateShaderModule(m_device, &m_info, nullptr, &m_module), "vkCreateShaderModule");
+            }
+            void Attach(VkPipelineShaderStageCreateInfo& stage) const {
+                stage.module = m_module;
+                stage.pNext = m_module == VK_NULL_HANDLE ? &m_info : nullptr;
+            }
+
+            private:
+            VkDevice m_device = VK_NULL_HANDLE;
+            std::vector<uint32_t> m_code;
+            VkShaderModuleCreateInfo m_info{};
+            VkShaderModule m_module = VK_NULL_HANDLE;
+        };
 
         VkResult CreateLayout(VkDevice device, std::span<const VkDescriptorSetLayout> setLayouts,
                               std::span<const VkPushConstantRange> pushConstants, VkPipelineLayout& layout) {
@@ -52,9 +68,13 @@ namespace Flux::Vk {
     }
 
     std::expected<Pipeline, std::string> Pipeline::CreateCompute(VkDevice device, const ComputePipelineDesc& desc) {
-        auto shaderModule = CreateModule(device, desc.shaderPath);
-        if (!shaderModule) {
-            return std::unexpected(shaderModule.error());
+        auto code = ReadSpirv(desc.shaderPath);
+        if (!code) {
+            return std::unexpected(code.error());
+        }
+        ShaderCode shader(device, std::move(*code));
+        if (!shader.Prepare(desc.inlineShaders)) {
+            return std::unexpected("création du module de " + desc.shaderPath.string());
         }
         Pipeline pipeline;
         pipeline.m_device = device;
@@ -63,7 +83,6 @@ namespace Flux::Vk {
         const VkPushConstantRange pushConstants{VK_SHADER_STAGE_COMPUTE_BIT, 0, desc.pushConstantsSize};
         const std::span<const VkPushConstantRange> ranges(&pushConstants, desc.pushConstantsSize > 0 ? 1 : 0);
         if (!Check(CreateLayout(device, desc.setLayouts, ranges, pipeline.m_layout), "vkCreatePipelineLayout")) {
-            vkDestroyShaderModule(device, *shaderModule, nullptr);
             return std::unexpected("création du pipeline layout");
         }
 
@@ -71,11 +90,10 @@ namespace Flux::Vk {
         pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        pipelineInfo.stage.module = *shaderModule;
+        shader.Attach(pipelineInfo.stage);
         pipelineInfo.stage.pName = desc.entryPoint;
         pipelineInfo.layout = pipeline.m_layout;
         const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline.m_pipeline);
-        vkDestroyShaderModule(device, *shaderModule, nullptr);
         if (!Check(result, "vkCreateComputePipelines")) {
             return std::unexpected("création du pipeline de calcul pour " + desc.shaderPath.string());
         }
@@ -83,17 +101,19 @@ namespace Flux::Vk {
     }
 
     std::expected<Pipeline, std::string> Pipeline::CreateGraphics(VkDevice device, const GraphicsPipelineDesc& desc) {
-        auto module = CreateModule(device, desc.shaderPath);
-        if (!module) {
-            return std::unexpected(module.error());
+        auto code = ReadSpirv(desc.shaderPath);
+        if (!code) {
+            return std::unexpected(code.error());
         }
-        const VkShaderModule shaderModule = *module;
+        ShaderCode shader(device, std::move(*code));
+        if (!shader.Prepare(desc.inlineShaders)) {
+            return std::unexpected("création du module de " + desc.shaderPath.string());
+        }
 
         Pipeline pipeline;
         pipeline.m_device = device;
         pipeline.m_pushStages = desc.pushConstants.empty() ? 0 : desc.pushConstants.front().stageFlags;
         if (!Check(CreateLayout(device, desc.setLayouts, desc.pushConstants, pipeline.m_layout), "vkCreatePipelineLayout")) {
-            vkDestroyShaderModule(device, shaderModule, nullptr);
             return std::unexpected("création du pipeline layout");
         }
 
@@ -103,7 +123,7 @@ namespace Flux::Vk {
             VkPipelineShaderStageCreateInfo& info = stages[stageCount++];
             info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
             info.stage = stage;
-            info.module = shaderModule;
+            shader.Attach(info);
             info.pName = entryPoint;
         };
         const bool mesh = desc.meshEntryPoint != nullptr;
@@ -246,8 +266,6 @@ namespace Flux::Vk {
         pipelineInfo.layout = pipeline.m_layout;
 
         const VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline.m_pipeline);
-        // Le module n'est plus nécessaire une fois le pipeline créé (ou raté).
-        vkDestroyShaderModule(device, shaderModule, nullptr);
         if (!Check(result, "vkCreateGraphicsPipelines")) {
             return std::unexpected("création du pipeline pour " + desc.shaderPath.string());
         }

@@ -77,6 +77,7 @@ namespace Flux {
         // Le jeu arrive directement sur le personnage ; sans personnage (écran titre), la caméra ne bouge pas.
         bool freeCamera = true;
         bool vsync = true;
+        std::uint32_t swapchainImages = 3; // Renderer::SetSwapchainImages
         bool temporalAA = true; // anticrénelage temporel (TAA), en Natif
         Upscaling upscaling = DefaultUpscaling;
         float sharpness = DefaultSharpness;

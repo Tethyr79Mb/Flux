@@ -23,47 +23,6 @@ namespace Flux::Vk {
             dependency.pImageMemoryBarriers = &image;
             vkCmdPipelineBarrier2(commands, &dependency);
         }
-
-        bool CreateTimeline(VkDevice device, VkSemaphore& semaphore) {
-            VkSemaphoreTypeCreateInfo type{};
-            type.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-            type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-            VkSemaphoreCreateInfo info{};
-            info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            info.pNext = &type;
-            return Check(vkCreateSemaphore(device, &info, nullptr, &semaphore), "vkCreateSemaphore");
-        }
-
-        bool CreatePool(VkDevice device, std::uint32_t family, VkCommandPool& pool) {
-            VkCommandPoolCreateInfo info{};
-            info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-            info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            info.queueFamilyIndex = family;
-            return Check(vkCreateCommandPool(device, &info, nullptr, &pool), "vkCreateCommandPool");
-        }
-
-        bool BeginCommands(VkDevice device, VkCommandPool pool, VkCommandBuffer& commands) {
-            VkCommandBufferAllocateInfo allocateInfo{};
-            allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            allocateInfo.commandPool = pool;
-            allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            allocateInfo.commandBufferCount = 1;
-            if (!Check(vkAllocateCommandBuffers(device, &allocateInfo, &commands), "vkAllocateCommandBuffers")) {
-                commands = VK_NULL_HANDLE;
-                return false;
-            }
-            VkCommandBufferBeginInfo beginInfo{};
-            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            vkBeginCommandBuffer(commands, &beginInfo);
-            return true;
-        }
-
-        std::uint64_t CounterValue(VkDevice device, VkSemaphore semaphore) {
-            std::uint64_t value = 0;
-            vkGetSemaphoreCounterValue(device, semaphore, &value);
-            return value;
-        }
     }
 
     std::expected<std::unique_ptr<Transfer>, std::string> Transfer::Create(const Setup& setup) {
@@ -71,18 +30,24 @@ namespace Flux::Vk {
         std::unique_ptr<Transfer> transfer(new Transfer());
         transfer->m_device = setup.device;
         transfer->m_allocator = setup.allocator;
-        transfer->m_graphicsQueue = setup.graphicsQueue;
-        transfer->m_separate = setup.transferQueue != VK_NULL_HANDLE && setup.transferFamily != setup.graphicsFamily;
-        transfer->m_transferQueue = transfer->m_separate ? setup.transferQueue : setup.graphicsQueue;
-        transfer->m_families = {setup.graphicsFamily, transfer->m_separate ? setup.transferFamily : setup.graphicsFamily};
+        transfer->m_graphics = setup.graphics;
+        const std::uint32_t graphicsFamily = setup.graphics->GetFamily();
+        transfer->m_separate = setup.transferQueue != VK_NULL_HANDLE && setup.transferFamily != graphicsFamily;
+        transfer->m_families = {graphicsFamily, transfer->m_separate ? setup.transferFamily : graphicsFamily};
 
-        if (!CreatePool(setup.device, transfer->m_families[1], transfer->m_transferPool)
-            || !CreatePool(setup.device, transfer->m_families[0], transfer->m_graphicsPool)) {
+        auto queue = Queue::Create(setup.device, transfer->m_separate ? setup.transferQueue : setup.graphics->GetHandle(),
+                                   transfer->m_families[1]);
+        if (!queue) {
+            return std::unexpected(queue.error());
+        }
+        transfer->m_transfer = std::move(*queue);
+        auto transferCommands = CommandRecycler::Create(setup.device, transfer->m_transfer);
+        auto graphicsCommands = CommandRecycler::Create(setup.device, *setup.graphics);
+        if (!transferCommands || !graphicsCommands) {
             return std::unexpected("création des command pools d'envoi");
         }
-        if (!CreateTimeline(setup.device, transfer->m_transferTimeline) || !CreateTimeline(setup.device, transfer->m_graphicsTimeline)) {
-            return std::unexpected("création des sémaphores d'envoi");
-        }
+        transfer->m_transferCommands = std::move(*transferCommands);
+        transfer->m_graphicsCommands = std::move(*graphicsCommands);
         auto ring = Buffer::Create(setup.allocator, RingSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Staging);
         if (!ring) {
             return std::unexpected(ring.error());
@@ -97,19 +62,9 @@ namespace Flux::Vk {
     }
 
     Transfer::~Transfer() {
-        // Le GPU a tout fini (Device attend avant) : les pools rendent leurs command buffers avec eux.
-        if (m_transferPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_device, m_transferPool, nullptr);
-        }
-        if (m_graphicsPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_device, m_graphicsPool, nullptr);
-        }
-        if (m_transferTimeline != VK_NULL_HANDLE) {
-            vkDestroySemaphore(m_device, m_transferTimeline, nullptr);
-        }
-        if (m_graphicsTimeline != VK_NULL_HANDLE) {
-            vkDestroySemaphore(m_device, m_graphicsTimeline, nullptr);
-        }
+        // Le GPU a tout fini (Device attend avant). Les recycleurs d'abord : ils lisent la file de transfert.
+        m_transferCommands = {};
+        m_graphicsCommands = {};
     }
 
     std::span<const std::uint32_t> Transfer::GetSharedFamilies() const {
@@ -150,12 +105,17 @@ namespace Flux::Vk {
     bool Transfer::BeginBatch() {
         Batch& batch = Current().batch;
         m_asyncWritten = m_asyncWritten || m_async;
-        return batch.commands != VK_NULL_HANDLE || BeginCommands(m_device, m_transferPool, batch.commands);
+        return batch.commands != VK_NULL_HANDLE || BeginCommands(m_transferCommands, batch.commands);
     }
 
     bool Transfer::BeginGraphics() {
         Stream& stream = Current();
-        return stream.graphics != VK_NULL_HANDLE || BeginCommands(m_device, m_graphicsPool, stream.graphics);
+        return stream.graphics != VK_NULL_HANDLE || BeginCommands(m_graphicsCommands, stream.graphics);
+    }
+
+    bool Transfer::BeginCommands(CommandRecycler& recycler, VkCommandBuffer& commands) {
+        commands = recycler.Begin();
+        return commands != VK_NULL_HANDLE;
     }
 
     void Transfer::BeginAsync() {
@@ -187,7 +147,7 @@ namespace Flux::Vk {
         }
         Batch& batch = Current().batch;
         if (inUse) {
-            batch.graphicsWait = m_graphicsValue;
+            batch.graphicsWait = m_graphics->GetSubmitted();
             // Deux envois dans le même buffer peuvent se recouvrir : le second après le premier.
             VkMemoryBarrier2 barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
@@ -231,7 +191,7 @@ namespace Flux::Vk {
         // Les copies qui le lisent sont dans un lot soumis ou ouvert : rendu quand tous ceux-là sont finis. Pas de lot
         // à lui, qui ferait attendre à la prochaine image les copies asynchrones soumises avant.
         const std::uint64_t mark = GetMarks().transfer;
-        if (mark > CounterValue(m_device, m_transferTimeline)) {
+        if (!m_transfer.IsDone(mark)) {
             m_kept.push_back({mark, std::move(buffer)});
         }
     }
@@ -349,33 +309,16 @@ namespace Flux::Vk {
         bool success = Check(vkEndCommandBuffer(batch.commands), "vkEndCommandBuffer");
         // Partie graphique d'un lot asynchrone terminée avant la soumission : sans elle, ses images ne serviraient pas.
         if (async && stream.graphics != VK_NULL_HANDLE && !(success && Check(vkEndCommandBuffer(stream.graphics), "vkEndCommandBuffer"))) {
-            vkFreeCommandBuffers(m_device, m_graphicsPool, 1, &stream.graphics);
+            m_graphicsCommands.Release(stream.graphics);
             stream.graphics = VK_NULL_HANDLE;
             success = false;
         }
         if (success) {
-            VkSemaphoreSubmitInfo wait{};
-            wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            wait.semaphore = m_graphicsTimeline;
-            wait.value = batch.graphicsWait;
-            wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            VkSemaphoreSubmitInfo signal{};
-            signal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            signal.semaphore = m_transferTimeline;
-            signal.value = m_transferValue + 1;
-            signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            const VkSemaphoreSubmitInfo wait = m_graphics->GetWait(batch.graphicsWait);
             VkCommandBufferSubmitInfo commandInfo{};
             commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
             commandInfo.commandBuffer = batch.commands;
-            VkSubmitInfo2 submitInfo{};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-            submitInfo.waitSemaphoreInfoCount = batch.graphicsWait > 0 ? 1 : 0;
-            submitInfo.pWaitSemaphoreInfos = &wait;
-            submitInfo.commandBufferInfoCount = 1;
-            submitInfo.pCommandBufferInfos = &commandInfo;
-            submitInfo.signalSemaphoreInfoCount = 1;
-            submitInfo.pSignalSemaphoreInfos = &signal;
-            success = Check(vkQueueSubmit2(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE), "vkQueueSubmit2 (envois)");
+            success = Check(m_transfer.Submit({&wait, batch.graphicsWait > 0 ? 1u : 0u}, {&commandInfo, 1}), "vkQueueSubmit2 (envois)");
         }
         if (!success) {
             // Jamais soumis : ses envois sont perdus (message dans la console).
@@ -385,11 +328,12 @@ namespace Flux::Vk {
             UpdateRingTail();
             return false;
         }
-        batch.value = ++m_transferValue;
+        batch.value = m_transfer.GetSubmitted();
+        m_transferCommands.Retire(std::exchange(batch.commands, VK_NULL_HANDLE), batch.value);
         if (async) {
-            m_asyncPending.push_back({std::exchange(stream.graphics, VK_NULL_HANDLE), m_transferValue, ++m_asyncSerial});
+            m_asyncPending.push_back({std::exchange(stream.graphics, VK_NULL_HANDLE), batch.value, ++m_asyncSerial});
         } else {
-            m_graphicsNeeds = m_transferValue;
+            m_graphicsNeeds = batch.value;
         }
         m_inFlight.push_back(std::move(batch));
         batch = {};
@@ -409,14 +353,14 @@ namespace Flux::Vk {
                 m_takenSync = stream.graphics;
                 m_takenCommands.push_back(stream.graphics);
             } else {
-                vkFreeCommandBuffers(m_device, m_graphicsPool, 1, &stream.graphics);
+                m_graphicsCommands.Release(stream.graphics);
             }
             stream.graphics = VK_NULL_HANDLE;
         }
         // Lots asynchrones dont les copies sont finies : l'attente du sémaphore est déjà satisfaite (elle ne sert plus
         // qu'à rendre les copies visibles), la soumission ne s'arrête pas.
         if (!m_asyncPending.empty()) {
-            const std::uint64_t done = CounterValue(m_device, m_transferTimeline);
+            const std::uint64_t done = m_transfer.GetCompleted();
             while (!m_asyncPending.empty() && m_asyncPending.front().transferValue <= done) {
                 const AsyncPart& ready = m_asyncPending.front();
                 part.transferValue = std::max(part.transferValue, ready.transferValue);
@@ -432,36 +376,15 @@ namespace Flux::Vk {
         return part;
     }
 
-    VkSemaphoreSubmitInfo Transfer::GetWait(const GraphicsPart& part) const {
-        VkSemaphoreSubmitInfo wait{};
-        wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait.semaphore = m_transferTimeline;
-        wait.value = part.transferValue;
-        wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        return wait;
-    }
-
-    VkSemaphoreSubmitInfo Transfer::GetSignal() const {
-        VkSemaphoreSubmitInfo signal{};
-        signal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal.semaphore = m_graphicsTimeline;
-        signal.value = m_graphicsValue + 1;
-        signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        return signal;
-    }
-
     void Transfer::GraphicsSubmitted(GraphicsPart& part, bool submitted) {
         if (submitted) {
-            ++m_graphicsValue;
             for (VkCommandBuffer commands : part.commands) {
-                m_graphicsInFlight.push_back({commands, m_graphicsValue});
+                m_graphicsCommands.Retire(commands, m_graphics->GetSubmitted());
             }
             m_asyncAcquired = std::max(m_asyncAcquired, part.asyncSerial);
         } else {
             // Les envois attendus sont perdus ; les asynchrones repartiront avec la soumission suivante.
-            if (m_takenSync != VK_NULL_HANDLE) {
-                vkFreeCommandBuffers(m_device, m_graphicsPool, 1, &m_takenSync);
-            }
+            m_graphicsCommands.Release(m_takenSync);
             for (auto async = m_takenAsync.rbegin(); async != m_takenAsync.rend(); ++async) {
                 m_asyncPending.push_front(*async);
             }
@@ -471,19 +394,10 @@ namespace Flux::Vk {
         part = {};
     }
 
-    VkResult Transfer::WaitGraphics(std::uint64_t value) const {
-        VkSemaphoreWaitInfo waitInfo{};
-        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        waitInfo.semaphoreCount = 1;
-        waitInfo.pSemaphores = &m_graphicsTimeline;
-        waitInfo.pValues = &value;
-        return vkWaitSemaphores(m_device, &waitInfo, UINT64_MAX);
-    }
-
     Transfer::Marks Transfer::GetMarks() const {
         // La prochaine soumission graphique emporte peut-être des commandes déjà enregistrées qui s'en servent ; les
         // lots ouverts prendront les valeurs transfert suivantes.
-        Marks marks{m_graphicsValue + 1, m_transferValue};
+        Marks marks{m_graphics->GetSubmitted() + 1, m_transfer.GetSubmitted()};
         for (const Stream& stream : m_streams) {
             if (stream.batch.commands != VK_NULL_HANDLE) {
                 ++marks.transfer;
@@ -493,13 +407,12 @@ namespace Flux::Vk {
     }
 
     bool Transfer::IsDone(const Marks& marks) const {
-        return (marks.graphics == 0 || CounterValue(m_device, m_graphicsTimeline) >= marks.graphics)
-            && (marks.transfer == 0 || CounterValue(m_device, m_transferTimeline) >= marks.transfer);
+        return m_graphics->IsDone(marks.graphics) && m_transfer.IsDone(marks.transfer);
     }
 
     void Transfer::Collect() {
         if (!m_inFlight.empty() || !m_kept.empty()) {
-            const std::uint64_t done = CounterValue(m_device, m_transferTimeline);
+            const std::uint64_t done = m_transfer.GetCompleted();
             while (!m_kept.empty() && m_kept.front().first <= done) {
                 m_kept.pop_front();
             }
@@ -511,13 +424,6 @@ namespace Flux::Vk {
             }
             if (released) {
                 UpdateRingTail();
-            }
-        }
-        if (!m_graphicsInFlight.empty()) {
-            const std::uint64_t done = CounterValue(m_device, m_graphicsTimeline);
-            while (!m_graphicsInFlight.empty() && m_graphicsInFlight.front().value <= done) {
-                vkFreeCommandBuffers(m_device, m_graphicsPool, 1, &m_graphicsInFlight.front().commands);
-                m_graphicsInFlight.pop_front();
             }
         }
     }
@@ -535,10 +441,8 @@ namespace Flux::Vk {
     }
 
     void Transfer::ReleaseBatch(Batch& batch) {
-        if (batch.commands != VK_NULL_HANDLE) {
-            vkFreeCommandBuffers(m_device, m_transferPool, 1, &batch.commands);
-            batch.commands = VK_NULL_HANDLE;
-        }
+        // Lot jamais soumis (les soumis ont rendu leur command buffer à Flush).
+        m_transferCommands.Release(std::exchange(batch.commands, VK_NULL_HANDLE));
         batch.staging.clear();
     }
 }

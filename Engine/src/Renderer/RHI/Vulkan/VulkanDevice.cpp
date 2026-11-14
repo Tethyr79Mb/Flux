@@ -50,8 +50,11 @@ namespace Flux::Vk {
         if (!graphicsQueue || !graphicsFamily) {
             return std::unexpected("le GPU n'expose pas de file graphique");
         }
-        device->m_graphicsQueue = graphicsQueue.value();
-        device->m_graphicsQueueFamily = graphicsFamily.value();
+        auto graphics = Queue::Create(device->m_device.device, graphicsQueue.value(), graphicsFamily.value());
+        if (!graphics) {
+            return std::unexpected(graphics.error());
+        }
+        device->m_graphics = std::move(*graphics);
         if (!headless) {
             auto presentQueue = device->m_device.get_queue(vkb::QueueType::present);
             if (!presentQueue) {
@@ -65,8 +68,7 @@ namespace Flux::Vk {
         // FLUX_TRANSFER_QUEUE=0 l'ignore : diagnostic d'un pilote fautif, et comparaison des deux chemins.
         Transfer::Setup transferSetup;
         transferSetup.device = device->m_device.device;
-        transferSetup.graphicsQueue = device->m_graphicsQueue;
-        transferSetup.graphicsFamily = device->m_graphicsQueueFamily;
+        transferSetup.graphics = &device->m_graphics;
         if (Platform::ReadEnvironment("FLUX_TRANSFER_QUEUE") != "0") {
             auto queue = device->m_device.get_dedicated_queue(vkb::QueueType::transfer);
             auto family = device->m_device.get_dedicated_queue_index(vkb::QueueType::transfer);
@@ -98,13 +100,11 @@ namespace Flux::Vk {
             return std::unexpected("création de l'allocateur VMA");
         }
 
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        poolInfo.queueFamilyIndex = device->m_graphicsQueueFamily;
-        if (!Check(vkCreateCommandPool(device->m_device.device, &poolInfo, nullptr, &device->m_immediatePool), "vkCreateCommandPool")) {
-            return std::unexpected("création du command pool de chargement");
+        auto immediateCommands = CommandRecycler::Create(device->m_device.device, device->m_graphics);
+        if (!immediateCommands) {
+            return std::unexpected(immediateCommands.error());
         }
+        device->m_immediateCommands = std::move(*immediateCommands);
         transferSetup.allocator = device->m_allocator;
         auto transfer = Transfer::Create(transferSetup);
         if (!transfer) {
@@ -122,9 +122,8 @@ namespace Flux::Vk {
             vkDeviceWaitIdle(m_device.device);
         }
         m_transfer.reset(); // avant l'allocateur : son anneau et ses buffers d'envoi y sont pris
-        if (m_immediatePool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_device.device, m_immediatePool, nullptr);
-        }
+        m_immediateCommands = {};
+        m_graphics = {}; // après Transfer et les recycleurs, qui le lisent
         if (m_allocator != VK_NULL_HANDLE) {
             vmaDestroyAllocator(m_allocator);
         }
@@ -135,7 +134,7 @@ namespace Flux::Vk {
     }
 
     float Device::GetTimestampPeriod() const {
-        return m_adapter.GetTimestampPeriod(m_graphicsQueueFamily);
+        return m_adapter.GetTimestampPeriod(m_graphics.GetFamily());
     }
 
     std::string Device::DescribeFault() const {
@@ -197,22 +196,12 @@ namespace Flux::Vk {
             for (VkCommandBuffer commands : commandBuffers) {
                 commandInfos.push_back({VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr, commands, 0});
             }
-            const auto count = static_cast<std::uint32_t>(commandInfos.size());
             const VkSemaphoreSubmitInfo wait = m_transfer->GetWait(uploads);
-            const VkSemaphoreSubmitInfo signal = m_transfer->GetSignal();
-            VkSubmitInfo2 submitInfo{};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-            submitInfo.waitSemaphoreInfoCount = uploads.transferValue > 0 ? 1 : 0;
-            submitInfo.pWaitSemaphoreInfos = &wait;
-            submitInfo.commandBufferInfoCount = count;
-            submitInfo.pCommandBufferInfos = commandInfos.data();
-            submitInfo.signalSemaphoreInfoCount = 1;
-            submitInfo.pSignalSemaphoreInfos = &signal;
-            success = Check(vkQueueSubmit2(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "vkQueueSubmit2");
+            success = Check(m_graphics.Submit({&wait, uploads.transferValue > 0 ? 1u : 0u}, commandInfos), "vkQueueSubmit2");
         }
         m_transfer->GraphicsSubmitted(uploads, success);
         // Seulement cette soumission (et ce qui la précède), pas toute la file comme vkQueueWaitIdle.
-        success = success && Check(m_transfer->WaitGraphics(m_transfer->GetGraphicsValue()), "vkWaitSemaphores");
+        success = success && Check(m_graphics.Wait(m_graphics.GetSubmitted()), "vkWaitSemaphores");
         if (!success) {
             WaitIdle(); // rien ne doit plus lire les command buffers, que l'appelant va réutiliser
         }
@@ -221,24 +210,14 @@ namespace Flux::Vk {
     }
 
     bool Device::ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
-        VkCommandBufferAllocateInfo allocateInfo{};
-        allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocateInfo.commandPool = m_immediatePool;
-        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocateInfo.commandBufferCount = 1;
-        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-        if (!Check(vkAllocateCommandBuffers(m_device.device, &allocateInfo, &commandBuffer), "vkAllocateCommandBuffers")) {
+        const VkCommandBuffer commandBuffer = m_immediateCommands.Begin();
+        if (commandBuffer == VK_NULL_HANDLE) {
             return false;
         }
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(commandBuffer, &beginInfo);
         record(commandBuffer);
         const bool recorded = Check(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
         const bool success = SubmitAndWait({&commandBuffer, 1}, recorded);
-        vkFreeCommandBuffers(m_device.device, m_immediatePool, 1, &commandBuffer);
+        m_immediateCommands.Release(commandBuffer); // fini (attendu) ou jamais soumis
         return success;
     }
 

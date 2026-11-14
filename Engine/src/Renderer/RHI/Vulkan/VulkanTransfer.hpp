@@ -2,6 +2,8 @@
 
 #include "Renderer/RHI/Vulkan/Vulkan.hpp"
 #include "Renderer/RHI/Vulkan/VulkanBuffer.hpp"
+#include "Renderer/RHI/Vulkan/VulkanCommandRecycler.hpp"
+#include "Renderer/RHI/Vulkan/VulkanQueue.hpp"
 
 #include <array>
 #include <cstdint>
@@ -17,8 +19,9 @@ namespace Flux::Vk {
     // Envois vers la mémoire vidéo. Les copies partent sur la file de transfert dédiée quand la carte en a une (moteur
     // de copie : elles tournent pendant le dessin au lieu de le retarder) ; sinon sur la file graphique, même chemin.
     // Les données passent par un anneau d'envoi mappé en permanence (pas d'allocation par envoi) ; un envoi plus gros
-    // que la moitié de l'anneau a son propre buffer. Deux sémaphores timeline ordonnent les files : « transfert »
-    // (copies finies) et « graphique » (images et calculs finis).
+    // que la moitié de l'anneau a son propre buffer. Les timelines des deux files (Vk::Queue) les ordonnent : celui de
+    // la file de transfert (copies finies), possédée ici, et celui de la file graphique (images et calculs finis),
+    // possédée par Device.
     // Fil principal seulement.
     class Transfer {
         public:
@@ -26,8 +29,7 @@ namespace Flux::Vk {
         {
             VkDevice device = VK_NULL_HANDLE;
             VmaAllocator allocator = VK_NULL_HANDLE;
-            VkQueue graphicsQueue = VK_NULL_HANDLE;
-            std::uint32_t graphicsFamily = 0;
+            const Queue* graphics = nullptr; // doit vivre plus longtemps que Transfer
             // VK_NULL_HANDLE : pas de file de transfert séparée, les copies passent par la file graphique.
             VkQueue transferQueue = VK_NULL_HANDLE;
             std::uint32_t transferFamily = 0;
@@ -89,16 +91,10 @@ namespace Flux::Vk {
             std::uint64_t asyncSerial = 0;   // dernier lot asynchrone emporté (0 : aucun)
         };
         GraphicsPart TakeGraphics();
-        // Attente à joindre à la soumission (sémaphore transfert, toutes étapes) ; part.transferValue non nul.
-        VkSemaphoreSubmitInfo GetWait(const GraphicsPart& part) const;
-        // Signal à joindre à chaque soumission à la file graphique : la valeur qu'elle porte (GetSignal().value).
-        VkSemaphoreSubmitInfo GetSignal() const;
-        // Après vkQueueSubmit2 : submitted faux, la soumission n'a pas eu lieu (le signal n'arrivera jamais).
+        // Attente à joindre à la soumission (timeline de transfert, toutes étapes) ; part.transferValue non nul.
+        VkSemaphoreSubmitInfo GetWait(const GraphicsPart& part) const { return m_transfer.GetWait(part.transferValue); }
+        // Après Queue::Submit sur la file graphique : submitted faux, la soumission n'a pas eu lieu.
         void GraphicsSubmitted(GraphicsPart& part, bool submitted);
-        // Valeur portée par la dernière soumission graphique réussie (0 avant la première).
-        std::uint64_t GetGraphicsValue() const { return m_graphicsValue; }
-        // Attend que la file graphique atteigne value : fin d'une image en vol, ou de SubmitAndWait.
-        VkResult WaitGraphics(std::uint64_t value) const;
 
         // Libération différée (RHI::Device::Retire) : une ressource lâchée maintenant peut servir à ce qui a été
         // soumis ou enregistré. Elle est libre quand la file graphique a atteint `graphics` et la file de transfert
@@ -111,7 +107,8 @@ namespace Flux::Vk {
         Marks GetMarks() const;
         bool IsDone(const Marks& marks) const;
 
-        // Rend ce que le GPU a fini : place dans l'anneau, buffers d'envoi, command buffers. Une fois par image.
+        // Rend ce que le GPU a fini : place dans l'anneau, buffers d'envoi. Une fois par image. Les command buffers,
+        // eux, sont repris par leur CommandRecycler au besoin.
         void Collect();
 
         private:
@@ -154,6 +151,8 @@ namespace Flux::Vk {
         // Commence le lot de copies (et la partie graphique) au premier envoi.
         bool BeginBatch();
         bool BeginGraphics();
+        // Commence un command buffer d'un recycleur ; faux sur échec.
+        static bool BeginCommands(CommandRecycler& recycler, VkCommandBuffer& commands);
         // Copie d'une image et sa partie graphique ; source déjà remplie, regions comptées depuis son début.
         bool RecordImage(const ImageWrite& write, VkBuffer source, VkDeviceSize sourceOffset, VkDeviceSize bytes);
         // Soumet le lot de copies d'un flot à la file de transfert.
@@ -163,17 +162,14 @@ namespace Flux::Vk {
 
         VkDevice m_device = VK_NULL_HANDLE;
         VmaAllocator m_allocator = VK_NULL_HANDLE;
-        VkQueue m_graphicsQueue = VK_NULL_HANDLE;
-        VkQueue m_transferQueue = VK_NULL_HANDLE; // la file graphique sans file séparée
+        const Queue* m_graphics = nullptr;
+        Queue m_transfer; // sur le VkQueue graphique sans file séparée, avec son propre timeline
         std::array<std::uint32_t, 2> m_families{}; // graphique, transfert
         bool m_separate = false;
 
-        VkCommandPool m_transferPool = VK_NULL_HANDLE;
-        VkCommandPool m_graphicsPool = VK_NULL_HANDLE;
-        VkSemaphore m_transferTimeline = VK_NULL_HANDLE;
-        VkSemaphore m_graphicsTimeline = VK_NULL_HANDLE;
-        std::uint64_t m_transferValue = 0; // dernière valeur soumise
-        std::uint64_t m_graphicsValue = 0;
+        // Après les files : détruits avant elles.
+        CommandRecycler m_transferCommands; // lots de copies
+        CommandRecycler m_graphicsCommands; // parties graphiques (prise des images, mipmaps)
 
         Buffer m_ring;
         std::uint64_t m_ringHead = 0; // octets réservés depuis le début (position : modulo la taille)
@@ -192,11 +188,5 @@ namespace Flux::Vk {
         std::vector<VkCommandBuffer> m_takenCommands;
         std::vector<AsyncPart> m_takenAsync;
         VkCommandBuffer m_takenSync = VK_NULL_HANDLE;
-        struct GraphicsCommands
-        {
-            VkCommandBuffer commands = VK_NULL_HANDLE;
-            std::uint64_t value = 0; // valeur graphique qui la finit
-        };
-        std::deque<GraphicsCommands> m_graphicsInFlight;
     };
 }
