@@ -1631,6 +1631,43 @@
         "metallic": 0.0,
         "roughness": 0.15
       }
+    },
+    {
+      "id": "17fc3f5c535d8198",
+      "name": "Sonde de reflets (sol 60 m)",
+      "transform": {
+        "position": [
+          0,
+          0.75,
+          -11
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "reflectionProbe": {
+        "size": [
+          60,
+          20,
+          60
+        ],
+        "boxOffset": [
+          0,
+          9.25,
+          1
+        ],
+        "fade": 1.0,
+        "intensity": 1.0,
+        "refresh": 0.0
+      }
     }
   ]
 }

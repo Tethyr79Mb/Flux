@@ -348,6 +348,22 @@ namespace Flux {
         float maxEv100 = 7.0f;
     };
 
+    // Sonde de reflets fixe : la scène photographiée depuis le centre de l'entité (six faces, objets et ciel), puis
+    // floutée par rugosité comme le ciel (EnvironmentRenderer). Les surfaces dans sa boîte y lisent leurs reflets et leur
+    // lumière diffuse, recalés sur les murs de la boîte (parallaxe) : le métal reflète la pièce et les objets voisins, plus
+    // seulement le ciel. Refaite quand elle bouge, quand le ciel ou le soleil change et quand des modèles finissent de
+    // charger ; sinon gardée (le sol des planètes, les arbres et l'eau n'y sont pas).
+    struct ReflectionProbeComponent
+    {
+        Math::Vector3f size{10.0f, 5.0f, 10.0f}; // boîte d'influence et de parallaxe (m), multipliée par l'échelle de l'entité
+        // Centre de la boîte depuis celui de l'entité (m, dans son repère) : la capture se fait à hauteur des objets
+        // pendant que le bas de la boîte reste au sol, ses côtés sur les murs.
+        Math::Vector3f boxOffset{};
+        float fade = 1.0f;      // fondu vers le ciel, en dedans des bords (m)
+        float intensity = 1.0f; // multiplie ce qu'elle renvoie
+        float refresh = 0.0f;   // secondes entre deux captures ; 0 : seulement quand quelque chose change (voir plus haut)
+    };
+
     // Réacteur : la flamme qui sort de la tuyère, vers le +z de l'entité (l'arrière d'un vaisseau qui regarde vers
     // son -z), plus la lueur qu'elle jette autour. Son origine est au centre de la sortie de la tuyère ; width et
     // height donnent la taille de la sortie (une tuyère rectangulaire fait une flamme plate). Sur un vaisseau

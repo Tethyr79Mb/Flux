@@ -714,6 +714,22 @@ namespace Flux {
                 .Reads(impostors)
                 .Writes(forestShadowMap)
                 .Step("ombres des forêts", [this](RHI::CommandList& commands) { meshes->DrawForestShadows(commands, frame.index); });
+            // Une sonde de reflets photographiée, quand elle doit l'être : après les ombres et l'environnement qui
+            // l'éclairent, avant la scène qui la lit (ses textures, hors du graphe, changent d'usage dans l'étape).
+            const auto probes = graph.AddResource("sondes de reflets");
+            graph.AddPass("sonde de reflets")
+                .When([this] { return sceneVisible && meshes->ProbeCapturePending(); })
+                .Reads(cpu)
+                .Reads(rayScene)
+                .Reads(shadowMap)
+                .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
+                .Reads(airRayleigh)
+                .Reads(airMie)
+                .Reads(reflections)
+                .Reads(irradiance)
+                .Writes(probes)
+                .Step("sonde de reflets", [this](RHI::CommandList& commands) { meshes->CaptureProbe(commands, frame.index); });
             auto scenePass = graph.AddPass("scène");
             if (rayShadows) {
                 scenePass.Writes(targets.sceneSun); // lumière du soleil à part, ombrée ensuite en rayons
@@ -734,6 +750,7 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -876,6 +893,7 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -1043,7 +1061,7 @@ namespace Flux {
             return std::unexpected(exposure.error());
         }
         impl->exposure = std::move(*exposure);
-        auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        auto meshes = MeshRenderer::Create(*impl->device, *impl->environment, sceneFormat, motionFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());
         }

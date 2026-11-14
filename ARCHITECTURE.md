@@ -170,6 +170,8 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), soleil, air de la planète proche
 ├─ EnvironmentRenderer reflets (cube HDR préfiltré GGX par niveau de rugosité) et lumière ambiante (cube
 │                  d'irradiance) tirés du ciel par le GPU, refaits seulement quand le ciel change
+├─ ReflectionProbes sondes de reflets fixes : la scène capturée en cube par MeshRenderer, préfiltrée comme le
+│                  ciel, lue avec parallaxe de boîte ; refaite seulement quand elle ou l'éclairage change
 ├─ ExposureRenderer exposition automatique : histogramme de la lumière par le GPU, adaptation de l'œil par le CPU
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
