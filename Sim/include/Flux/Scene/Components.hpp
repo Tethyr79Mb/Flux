@@ -55,7 +55,8 @@ namespace Flux {
     };
 
     enum class MeshType : std::uint8_t {
-        Cube, // cube unité centré
+        Cube,   // cube unité centré
+        Sphere, // sphère de diamètre 1, centrée (scène des matériaux : reflets sur toutes les orientations)
     };
 
     struct MeshRendererComponent
