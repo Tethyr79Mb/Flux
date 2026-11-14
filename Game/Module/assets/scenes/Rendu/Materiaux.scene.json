@@ -316,7 +316,7 @@
     },
     {
       "id": "07f4651d4e08b4ef",
-      "name": "Fer, rugosité 0 à 1",
+      "name": "Aluminium, rugosité 0 à 1",
       "transform": {
         "position": [
           0,
@@ -338,7 +338,7 @@
     },
     {
       "id": "e2d49e4a4cae7be7",
-      "name": "Fer, rugosité 0.0",
+      "name": "Aluminium, rugosité 0.0",
       "parent": "07f4651d4e08b4ef",
       "transform": {
         "position": [
@@ -361,9 +361,9 @@
       "meshRenderer": {
         "mesh": "sphere",
         "color": [
-          0.56,
-          0.57,
-          0.58,
+          0.913,
+          0.922,
+          0.924,
           1.0
         ],
         "metallic": 1.0,
@@ -372,7 +372,7 @@
     },
     {
       "id": "039725427fec08fa",
-      "name": "Fer, rugosité 0.2",
+      "name": "Aluminium, rugosité 0.2",
       "parent": "07f4651d4e08b4ef",
       "transform": {
         "position": [
@@ -395,9 +395,9 @@
       "meshRenderer": {
         "mesh": "sphere",
         "color": [
-          0.56,
-          0.57,
-          0.58,
+          0.913,
+          0.922,
+          0.924,
           1.0
         ],
         "metallic": 1.0,
@@ -406,7 +406,7 @@
     },
     {
       "id": "adf5d6c6a7176c0a",
-      "name": "Fer, rugosité 0.4",
+      "name": "Aluminium, rugosité 0.4",
       "parent": "07f4651d4e08b4ef",
       "transform": {
         "position": [
@@ -429,9 +429,9 @@
       "meshRenderer": {
         "mesh": "sphere",
         "color": [
-          0.56,
-          0.57,
-          0.58,
+          0.913,
+          0.922,
+          0.924,
           1.0
         ],
         "metallic": 1.0,
@@ -440,7 +440,7 @@
     },
     {
       "id": "dc8f68e4be51a7f1",
-      "name": "Fer, rugosité 0.6",
+      "name": "Aluminium, rugosité 0.6",
       "parent": "07f4651d4e08b4ef",
       "transform": {
         "position": [
@@ -463,9 +463,9 @@
       "meshRenderer": {
         "mesh": "sphere",
         "color": [
-          0.56,
-          0.57,
-          0.58,
+          0.913,
+          0.922,
+          0.924,
           1.0
         ],
         "metallic": 1.0,
@@ -474,7 +474,7 @@
     },
     {
       "id": "4db6da29afc47d8d",
-      "name": "Fer, rugosité 0.8",
+      "name": "Aluminium, rugosité 0.8",
       "parent": "07f4651d4e08b4ef",
       "transform": {
         "position": [
@@ -497,9 +497,9 @@
       "meshRenderer": {
         "mesh": "sphere",
         "color": [
-          0.56,
-          0.57,
-          0.58,
+          0.913,
+          0.922,
+          0.924,
           1.0
         ],
         "metallic": 1.0,
@@ -508,7 +508,7 @@
     },
     {
       "id": "b35045d58118d3f8",
-      "name": "Fer, rugosité 1.0",
+      "name": "Aluminium, rugosité 1.0",
       "parent": "07f4651d4e08b4ef",
       "transform": {
         "position": [
@@ -531,9 +531,9 @@
       "meshRenderer": {
         "mesh": "sphere",
         "color": [
-          0.56,
-          0.57,
-          0.58,
+          0.913,
+          0.922,
+          0.924,
           1.0
         ],
         "metallic": 1.0,
@@ -994,7 +994,7 @@
     },
     {
       "id": "652c22f3c97667ad",
-      "name": "Lumière propre : 100, 1 000, 10 000 cd/m²",
+      "name": "Lumière propre : 10 000, 30 000, 100 000 cd/m² (visible en plein jour)",
       "transform": {
         "position": [
           0,
@@ -1016,7 +1016,7 @@
     },
     {
       "id": "8660c10e50526201",
-      "name": "Lumière propre 100 cd/m²",
+      "name": "Lumière propre 10000 cd/m²",
       "parent": "652c22f3c97667ad",
       "transform": {
         "position": [
@@ -1046,12 +1046,12 @@
         ],
         "metallic": 0,
         "roughness": 0.5,
-        "luminance": 100
+        "luminance": 10000
       }
     },
     {
       "id": "848aa85d0cc845c9",
-      "name": "Lumière propre 1000 cd/m²",
+      "name": "Lumière propre 30000 cd/m²",
       "parent": "652c22f3c97667ad",
       "transform": {
         "position": [
@@ -1081,12 +1081,12 @@
         ],
         "metallic": 0,
         "roughness": 0.5,
-        "luminance": 1000
+        "luminance": 30000
       }
     },
     {
       "id": "a966d6757088b6cf",
-      "name": "Lumière propre 10000 cd/m²",
+      "name": "Lumière propre 100000 cd/m²",
       "parent": "652c22f3c97667ad",
       "transform": {
         "position": [
@@ -1116,7 +1116,7 @@
         ],
         "metallic": 0,
         "roughness": 0.5,
-        "luminance": 10000
+        "luminance": 100000
       }
     },
     {
