@@ -142,6 +142,7 @@ namespace Flux {
         const RHI::BindGroupLayout& GetSceneLayout() const { return *m_sceneLayout; }
         const RHI::BindGroup& GetSceneGroup() const { return *m_sceneGroup; }
         const GpuModel& GetCube() const { return m_cube; }
+        const GpuModel& GetSphere() const { return m_sphere; }
         const GeometryPage& GetPage(std::uint32_t page) const { return m_pages[page]; }
         std::uint32_t GetPageCount() const { return static_cast<std::uint32_t>(m_pages.size()); }
         // Paquets des modèles fixes envoyés au GPU (Device::HasMeshShaders) : primitives à meshletCount non nul.
@@ -213,6 +214,7 @@ namespace Flux {
         RangeAllocator m_materialSlots;
         std::vector<GeometryPage> m_pages;
         GpuModel m_cube;
+        GpuModel m_sphere;
         // Par chemin (UTF-8, normalisé) ; les échecs aussi, pour ne pas relire à chaque image.
         std::unordered_map<std::string, GpuModel> m_models;
         // Chemins relatifs déjà vus, pour le dossier m_knownDirectory.
