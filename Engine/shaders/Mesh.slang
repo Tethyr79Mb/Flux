@@ -3,6 +3,8 @@
 // (cascades), la lumière ambiante et les reflets du ciel (texture cube) et les lumières de la scène (ponctuelles et
 // spots, sans ombre) ; plus la lumière propre du matériau (émissif). Lumière HDR linéaire : l'exposition et la
 // courbe de tons (AgX) viennent après, dans Post.slang.
+// Modèles opaques : leur surface écrite dans le G-buffer (fragmentGBuffer, passe « G-buffer »), éclairée ensuite en
+// compute par Lighting.slang avec les mêmes fonctions (LightSurface, AirTo) ; les autres sont éclairés ici, au pixel.
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Tuiles de planète (vertexPlanet) : chaque sommet glisse vers la forme de la tuile parente en s'éloignant de la
 // caméra, pour qu'un changement de niveau de détail ne fasse pas de saut (« morphing » façon CDLOD). Leur sol
@@ -2147,7 +2149,63 @@ SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsF
     return SceneResult(color, Motion(input.base));
 }
 
-// alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
+// Matériau d'un modèle vu en un pixel, avant tout éclairage (MeshColor, MeshGBuffer).
+struct MeshMaterial
+{
+    float4 base;           // couleur de base, teintes comprises, et alpha
+    float3 geometryNormal; // de la face, retournée vers l'œil sur une face arrière double face
+    float3 normal;         // avec la carte de normales
+    float metallic;
+    float roughness;
+    float occlusion;
+};
+
+// alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard.
+[ForceInline]
+MeshMaterial ReadMeshMaterial(VertexOutput input, bool frontFacing, bool alphaTest, float3 tint = float3(1.0))
+{
+    const DrawData draw = draws[input.draw];
+    const MaterialData material = materials[input.material];
+    MeshMaterial m;
+    m.base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
+    if (alphaTest && m.base.a < material.alphaCutoff) {
+        discard;
+    }
+    // Face arrière d'un matériau double face : éclairée comme vue de son côté.
+    m.geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
+    m.normal = m.geometryNormal;
+    if (material.normalScale != 0.0) { // le même pour toute la primitive
+        m.normal = PerturbNormal(material, m.geometryNormal, input.worldPosition, input.uv);
+    }
+    const float4 metallicRoughness = SampleMaterial(material.metallicRoughnessImage, input.uv);
+    // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
+    const bool fixed = draw.emissive.w != 0.0;
+    m.metallic = saturate(fixed ? draw.surface.x : material.metallic * draw.surface.x * metallicRoughness.b);
+    m.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    m.occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
+    return m;
+}
+
+// Lumière propre d'un modèle, qu'aucune autre n'éclaire : son émissif, et sa lumière de contour, d'autant plus forte
+// que la surface est vue de profil (terme de Fresnel), avec le relief. Le contour est éteint dans les volumes
+// intérieurs (inside) : les murs du cockpit et de la soute ne s'allument pas.
+[ForceInline]
+float3 MeshUnlit(VertexOutput input, float3 normal, float3 toEye, float inside)
+{
+    const DrawData draw = draws[input.draw];
+    const MaterialData material = materials[input.material];
+    float3 unlit = float3(0.0);
+    const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
+    if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
+        unlit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
+    }
+    const float4 rim = draw.rim;
+    if (rim.w > 0.0 && inside < 1.0) {
+        unlit += rim.rgb * (pow(1.0 - saturate(dot(normal, toEye)), rim.w) * (1.0 - inside));
+    }
+    return unlit;
+}
+
 // airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
 // calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage). tint :
 // multiplie la couleur (TreeTint).
@@ -2158,27 +2216,17 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
 {
     shadowPixel = input.position.xy;
     const DrawData draw = draws[input.draw];
-    const MaterialData material = materials[input.material];
-    float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
-    if (alphaTest && base.a < material.alphaCutoff) {
-        discard;
-    }
-    // Face arrière d'un matériau double face : éclairée comme vue de son côté.
-    const float3 geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
-    float3 normal = geometryNormal;
-    if (material.normalScale != 0.0) { // le même pour toute la primitive
-        normal = PerturbNormal(material, geometryNormal, input.worldPosition, input.uv);
-    }
-    const float4 metallicRoughness = SampleMaterial(material.metallicRoughnessImage, input.uv);
-    // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
-    const bool fixed = draw.emissive.w != 0.0;
-    const float metallic = saturate(fixed ? draw.surface.x : material.metallic * draw.surface.x * metallicRoughness.b);
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest, tint);
+    const float4 base = m.base;
+    const float3 geometryNormal = m.geometryNormal;
+    const float3 normal = m.normal;
+    const float metallic = m.metallic;
     Surface surface;
     surface.normal = normal;
     surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
-    surface.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    surface.roughness = m.roughness;
     if (foliage) {
         surface.roughness = max(surface.roughness, 0.7); // reflet du ciel flou : vu rasant, il blanchissait aussi
     }
@@ -2193,7 +2241,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     // Vu de sa face arrière (de l'intérieur d'une verrière ou d'un hublot, normales tournées vers l'extérieur), son reflet
     // est l'habitacle, sombre et absent du cube du ciel : on n'y garde que le soleil et les lampes. Sinon le ciel derrière
     // le pilote s'étalait sur toute la verrière dès la sortie d'un intérieur.
-    float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
+    float occlusion = m.occlusion;
     const bool glass = transparent && surface.roughness <= GlassRoughness;
     if (glass) {
         surface.diffuse = float3(0.0);
@@ -2206,16 +2254,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
                              clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
-    const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
-    if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
-        lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
-    }
-    // Lumière de contour : d'autant plus forte que la surface est vue de profil (terme de Fresnel), avec le relief.
-    // Éteinte dans les volumes intérieurs : les murs du cockpit et de la soute ne s'allument pas.
-    const float4 rim = draw.rim;
-    if (rim.w > 0.0 && inside < 1.0) {
-        lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
-    }
+    lit += MeshUnlit(input, normal, surface.toEye, inside);
     // Mélange prémultiplié (transparents) : la lumière de la surface pèse son alpha, sauf les reflets d'un verre ;
     // l'air devant elle aussi (derrière, le fond a déjà le sien).
     const float alpha = transparent ? base.a : 1.0;
@@ -2224,6 +2263,75 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
     sunRadiance = transparent ? float3(0.0) : Radiance(sunDirect * transmittance);
     return float4(Radiance(lit), alpha);
+}
+
+// --- G-buffer des modèles opaques : passe « G-buffer », éclairée ensuite par Lighting.slang (LightingRenderer). ---
+
+// Sorte de matière (alpha de GBufferOutput::base) : modèle éclairé comme MeshColor. 0 : rien d'écrit, la passe
+// d'éclairage saute le pixel.
+static const float GBufferStandard = 1.0 / 255.0;
+
+// Direction unitaire en deux nombres de 0 à 1 (octaèdre déplié, Cigolle et al. 2014) : 16 bits chacun gardent
+// l'angle à mieux qu'un centième de degré.
+float2 EncodeOctahedron(float3 n)
+{
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    const float2 side = float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+    const float2 e = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * side;
+    return e * 0.5 + 0.5;
+}
+
+float3 DecodeOctahedron(float2 encoded)
+{
+    const float2 e = encoded * 2.0 - 1.0;
+    float3 n = float3(e, 1.0 - abs(e.x) - abs(e.y));
+    const float fold = saturate(-n.z);
+    n.x += n.x >= 0.0 ? -fold : fold;
+    n.y += n.y >= 0.0 ? -fold : fold;
+    return normalize(n);
+}
+
+// Cibles de la passe « G-buffer » (LightingRenderer::BaseFormat et suivants). Avec le ray tracing, la lumière du soleil
+// à part (SV_Target5) est effacée, pas écrite : la passe d'éclairage la remplit.
+struct GBufferOutput
+{
+    float4 color   : SV_Target0; // lumière propre (MeshUnlit), multipliée par l'exposition, avant l'air
+    float2 motion  : SV_Target1;
+    float4 base    : SV_Target2; // rgb : couleur de base ; a : GBufferStandard
+    float4 normals : SV_Target3; // xy : normale de la carte ; zw : de la face (EncodeOctahedron)
+    float4 surface : SV_Target4; // métal, rugosité, occlusion, réserve
+};
+
+[ForceInline]
+GBufferOutput MeshGBuffer(VertexOutput input, bool frontFacing, bool alphaTest)
+{
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest);
+    // Le volume intérieur n'éteint que le contour : cherché seulement s'il y en a un.
+    float inside = 0.0;
+    if (draws[input.draw].rim.w > 0.0) {
+        float3 interiorLight;
+        inside = InteriorAt(input.worldPosition, interiorLight);
+    }
+    GBufferOutput output;
+    output.color = float4(Radiance(MeshUnlit(input, m.normal, normalize(-input.worldPosition), inside)), 1.0);
+    output.motion = Motion(input);
+    output.base = float4(m.base.rgb, GBufferStandard);
+    output.normals = float4(EncodeOctahedron(m.normal), EncodeOctahedron(m.geometryNormal));
+    output.surface = float4(m.metallic, m.roughness, m.occlusion, 0.0);
+    return output;
+}
+
+// Modèle opaque sans seuil d'alpha (voir fragmentOpaque) et avec seuil (fragmentMain), dans le G-buffer.
+[shader("fragment")]
+GBufferOutput fragmentGBuffer(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    return MeshGBuffer(input, frontFacing, false);
+}
+
+[shader("fragment")]
+GBufferOutput fragmentGBufferMasked(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    return MeshGBuffer(input, frontFacing, true);
 }
 
 // Cartes d'ombres : la position vue du soleil (cascade params.cascade), et l'image seulement pour le seuil d'alpha.

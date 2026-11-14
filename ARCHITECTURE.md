@@ -198,7 +198,7 @@ parallèles, prises sous verrou), `VulkanTimestamps` (heures du GPU),
 entre types du RHI et de Vulkan sont toutes dans `VulkanTypes`.
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan), nuages en demi-résolution
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, G-buffer des modèles opaques puis leur éclairage en compute, scène HDR (arbres, sol, fond du ciel, océan), nuages en demi-résolution
 (marche, historique, composition), transparents, masque réactif (en FSR), pyramide de profondeur, anticrénelage ou FSR
 (mouvement complet puis agrandissement), bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
@@ -320,8 +320,15 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    proches (obstacles à 300 m au plus) et du relief (montagne plus loin vers le soleil), puis le relief seul. La
    tranche du relief se choisit par la distance à la caméra, pas par la profondeur : l'ombre d'un point ne change pas
    quand la caméra tourne ; chaque tranche fondue dans la suivante sur son dernier dixième.
-4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
-   (textures du graphe, lues par `PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
+4. G-buffer puis éclairage (2026-11-14) : les modèles opaques (`DrawOpaque`, `fragmentGBuffer` de `Mesh.slang`)
+   écrivent leur surface en 16 octets par pixel, à la taille de la vue 3D : couleur de base sRGB et sorte de matériau
+   (alpha, 0 = rien d'écrit), normales de la carte et de la face (octaèdre, RGBA16Unorm), métal, rugosité, occlusion
+   (RGBA8) ; leur émissif et leur lumière de contour vont déjà dans l'image de la scène, leur mouvement dans sa cible.
+   La passe « éclairage » (`LightingRenderer`, `Lighting.slang`, 8 x 8 pixels par groupe) refait la position depuis la
+   profondeur et appelle les mêmes fonctions que le dessin direct (`LightSurface`, `AirTo`) ; avec le ray tracing, elle
+   écrit à part la lumière directe du soleil. Vue de contrôle du G-buffer : panneau Moteur et outil MCP `debug_view`.
+   Puis la scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
+   (textures du graphe, lues par `PostRenderer`), reprise après l'éclairage (couleur et profondeur gardées) : arbres, herbe, sol, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans ; puis les nuages (voir plus bas), transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
    Les matériaux opaques sans seuil d'alpha passent par `fragmentOpaque`, qui ne jette aucun pixel : le GPU teste la
@@ -573,7 +580,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   Passe « ray tracing » du graphe, avant les ombres. Avec elle, les shaders de la scène sont les variantes
   `MeshRays.slang` (de même `ModelMesh`, `PlanetMesh`, `PlanetMeshSmall`), qui déclarent la structure haute (liaison 19
   du groupe de l'image) : un module qui la déclare ne se charge pas sans ray queries. Leurs pixels opaques écrivent à
-  part la lumière directe du soleil, hors de leur couleur (troisième cible de la passe de la scène, voilée par l'eau) ;
+  part la lumière directe du soleil, hors de leur couleur (troisième cible de la passe de la scène, voilée par l'eau ; pour les modèles, écrite par la passe « éclairage ») ;
   `RayShadowRenderer` (`RayShadows.slang`) lance ensuite un rayon par pixel éclairé vers un point du disque du soleil,
   lisse le masque selon la largeur de la pénombre (lignes puis colonnes, profondeurs voisines éclairées seulement) et
   ajoute à l'image la lumière qui arrive (la retirer laissait des restes négatifs en demi-flottants). Transparents et

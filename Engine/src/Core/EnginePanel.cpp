@@ -126,6 +126,10 @@ namespace Flux {
                 if (ui.Checkbox("Cartes d'ombre en couleur", cascades)) {
                     renderer.SetShowShadowCascades(cascades);
                 }
+                int gbufferView = static_cast<int>(renderer.GetGBufferView());
+                if (ui.Choice("G-buffer des objets", gbufferView, GBufferViewLabels)) {
+                    renderer.SetGBufferView(static_cast<GBufferView>(gbufferView));
+                }
                 const RenderTimings& render = renderer.GetTimings();
                 if (render.rayTracing) {
                     bool rays = renderer.IsRayTracingShadows();

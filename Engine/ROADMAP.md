@@ -115,7 +115,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Étalonnage couleur par table (LUT 3D après la courbe de tons), réglable par scène.
 - ⬜ Éclairage réaliste (plan du 2026-11-13 : https://claude.ai/artifact/JprtbD2cuivx7WQ3CnF6Tu ; repli GTX 1060 dans le plan) :
   - ✅ A1. RHI : jusqu'à 8 cibles de couleur par passe (`extraColorTargets`, `extraColors`), vérifié au choix du GPU.
-  - ⬜ A2. G-buffer (12 octets par pixel) et passe d'éclairage en compute, modèles opaques d'abord.
+  - 🔧 A2. G-buffer (2026-11-14, 16 octets par pixel : couleur de base et sorte de matériau, normales de la carte et de la face en octaèdre 16 bits, métal, rugosité, occlusion) et passe d'éclairage en compute pour les modèles opaques ; image identique avec et sans ray tracing, temps GPU égal (±0,03 ms). Limites : lampes encore parcourues une à une par pixel (grappes en A4) ; vue de contrôle passée par la courbe de tons.
   - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
   - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
   - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
