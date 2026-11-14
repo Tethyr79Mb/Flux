@@ -343,8 +343,11 @@ namespace Flux {
             // réglage de l'éclat du fond. Le fond seul : la lumière ambiante du ciel (lighting.ambient) reste réelle.
             // Pas de boucle avec l'exposition : dans l'espace le ciel n'est pas mesuré, et sur une planète il reste
             // sous le gris moyen.
+            // Le plancher ne grandit pas au-delà de la luminance par défaut : un panorama de jour (milliers de cd/m²)
+            // est assez lumineux par lui-même, et le plancher multiplié d'autant le brûlait en blanc.
             constexpr float BackgroundScreenFloor = 0.3f;
-            const float floor = BackgroundScreenFloor * std::max(sky.luminance, 0.0f) / SkyComponent{}.luminance;
+            const float floor = BackgroundScreenFloor * std::clamp(sky.luminance, 0.0f, SkyComponent{}.luminance)
+                              / SkyComponent{}.luminance;
             data.noiseOffset = ToArray(parameters.noiseOffset, std::max(brightness, floor / std::max(preExposure, 1.0e-6f)));
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
