@@ -129,11 +129,13 @@ namespace Flux {
                                             m_renderer->SetVSync(value >= 0.5); // recrée la chaîne d'images : pas à chaque image
                                         }
                                     }});
-        // 2 ou 3 : nombre d'images de la swapchain.
+        // Numéro du choix, comme une liste déroulante : 0 pour 2 images, 1 pour 3 (Renderer::MinSwapchainImages + numéro).
         m_interfaceBindings->SetEngineValue("Images d'avance", "Graphismes",
-                                            {.get = [this] { return static_cast<double>(m_renderer->GetSwapchainImages()); },
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetSwapchainImages()
+                                                                                        - Renderer::MinSwapchainImages); },
                                              .set = [this](double value) {
-                                                 const auto images = static_cast<std::uint32_t>(std::lround(value));
+                                                 const auto images = Renderer::MinSwapchainImages
+                                                                   + static_cast<std::uint32_t>(std::max(std::lround(value), 0L));
                                                  if (images != m_renderer->GetSwapchainImages()) {
                                                      m_renderer->SetSwapchainImages(images); // recrée la chaîne d'images
                                                  }
