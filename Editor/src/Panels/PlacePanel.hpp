@@ -45,7 +45,7 @@ namespace FluxEditor {
 
         private:
         // Extension : objet ajouté par le jeu (Engine::GetEditorExtensions), retrouvé par son libellé.
-        enum class Item { Empty, Cube, Model, ScreenImage, SceneChange, Character, Ship, Light, Spot, Sky, Interior, Interface, Sound, Planet, Sun, Prefab, Extension };
+        enum class Item { Empty, Cube, Model, ScreenImage, SceneChange, Character, Ship, Light, Spot, Sky, Interior, ReflectionProbe, Interface, Sound, Planet, Sun, Prefab, Extension };
         struct Choice
         {
             Item item;

@@ -131,6 +131,9 @@ namespace Flux {
         void SetParallelism(std::uint32_t maxLists, double listMicroseconds);
         // Listes remplies à la dernière image (1 : pas de parallèle).
         std::uint32_t GetListCount() const { return m_listCount; }
+        // Temps CPU d'enregistrement des passes jouées, additionné (moyennes glissantes) : ce que coûterait
+        // l'image enregistrée sur un seul fil.
+        double GetSerialMicroseconds() const;
         // Temps des passes et de leurs étapes d'après les heures relues (Device::GetTimestamps), dans l'ordre de
         // la description : une passe, puis ses étapes si elle en a plusieurs. Le temps CPU d'enregistrement de chaque
         // passe aussi (moyenne glissante), sur sa ligne.

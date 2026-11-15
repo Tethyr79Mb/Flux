@@ -3,6 +3,8 @@
 // (cascades), la lumière ambiante et les reflets du ciel (texture cube) et les lumières de la scène (ponctuelles et
 // spots, sans ombre) ; plus la lumière propre du matériau (émissif). Lumière HDR linéaire : l'exposition et la
 // courbe de tons (AgX) viennent après, dans Post.slang.
+// Modèles opaques : leur surface écrite dans le G-buffer (fragmentGBuffer, passe « G-buffer »), éclairée ensuite en
+// compute par Lighting.slang avec les mêmes fonctions (LightSurface, AirTo) ; les autres sont éclairés ici, au pixel.
 // Modèles animés (vertexSkinned) : chaque sommet est d'abord déplacé par ses os (skinning).
 // Tuiles de planète (vertexPlanet) : chaque sommet glisse vers la forme de la tuile parente en s'éloignant de la
 // caméra, pour qu'un changement de niveau de détail ne fasse pas de saut (« morphing » façon CDLOD). Leur sol
@@ -13,6 +15,7 @@
 // la surface (shaders/Atmosphere.slang).
 
 #include "Atmosphere.slang"
+#include "CubeMap.slang"
 #include "PlanetClimate.slang"
 
 // Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
@@ -24,6 +27,17 @@ struct InteriorData
 };
 
 static const uint MaxInteriors = 8;
+
+// Doit correspondre à ProbeData dans MeshRenderer.cpp : une sonde de reflets (ReflectionProbeComponent), sa boîte et
+// le point d'où elle a été capturée.
+struct ProbeData
+{
+    float4 axes[3];  // local[i] = dot(axes[i].xyz, position relative à la caméra) + axes[i].w (axes unitaires)
+    float4 halfSize; // xyz : demi-taille (m) ; w : fondu depuis les bords, en dedans (m)
+    float4 origin;   // xyz : point de la capture, relatif à la caméra ; w : intensité
+};
+
+static const uint MaxProbes = 4;
 
 // Doit correspondre à PlanetData dans MeshRenderer.cpp : le sol d'une planète (PlanetComponent).
 struct PlanetData
@@ -96,6 +110,12 @@ struct FrameData
     uint4 shadowOptions;
     float4 cascadeDepthRanges; // profondeur couverte par chaque cascade proche, en mètres (de 0 à 1 dans sa carte)
     float4 terrainDepthRanges; // xy : celle des deux cascades du relief
+    ProbeData probes[MaxProbes];
+    // Capture d'une sonde (vertexProbe) : face f de la texture cube aux colonnes [4f, 4f + 3], relatif caméra -> clip
+    // de la face ; probeEye.xyz, le point de la capture (relatif à la caméra).
+    float4 probeFaces[6 * 4];
+    float4 probeEye;
+    uint4 probeOptions; // x : sondes dans probes
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -200,6 +220,12 @@ struct MaterialData
 [[vk::binding(5, 1)]] SamplerCube environmentMap;
 // Lumière diffuse du ciel reçue par une surface de chaque orientation, divisée par pi (EnvironmentRenderer).
 [[vk::binding(15, 1)]] SamplerCube irradianceMap;
+// Reflets des sondes (FrameData::probes), préfiltrés comme environmentMap (un niveau de mip par rugosité). Quatre
+// liaisons plutôt qu'un tableau : le RHI n'a de tableaux que pour les images des matériaux.
+[[vk::binding(21, 1)]] SamplerCube probeMap0;
+[[vk::binding(22, 1)]] SamplerCube probeMap1;
+[[vk::binding(23, 1)]] SamplerCube probeMap2;
+[[vk::binding(24, 1)]] SamplerCube probeMap3;
 // Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i].x avec le
 // matériau instances[i].y (les appels des tuiles de planète donnent directement l'indice dans draws).
 [[vk::binding(6, 1)]] StructuredBuffer<uint2> instances;
@@ -210,6 +236,8 @@ struct MaterialData
 // l'air d'une planète.
 [[vk::binding(8, 1)]] Sampler2D airRayleigh;
 [[vk::binding(9, 1)]] Sampler2D airMie;
+// Diffusion multiple de l'air de la planète (AtmosphereMultipleLight), pour les marches hors des tables.
+[[vk::binding(20, 1)]] Sampler2D atmosphereMultiple;
 
 // Groupe 2 : tables de tous les modèles chargés (ModelCache). Images des matériaux, choisies par indice : couleurs en
 // sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
@@ -268,6 +296,14 @@ float4 Transform(float4 columns[4], float3 p)
     return columns[0] * p.x + columns[1] * p.y + columns[2] * p.z + columns[3];
 }
 
+// Le point p (relatif à la caméra) dans la face `face` de la sonde en cours de capture (FrameData::probeFaces).
+float4 ProbeTransform(uint face, float3 p)
+{
+    const uint c = face * 4;
+    return frame[0].probeFaces[c] * p.x + frame[0].probeFaces[c + 1] * p.y + frame[0].probeFaces[c + 2] * p.z
+         + frame[0].probeFaces[c + 3];
+}
+
 // Position et normale du sommet dans le modèle, déplacées par ses os (moyenne pondérée de leurs matrices).
 void Skin(SkinnedVertexInput input, uint firstJoint, out float3 position, out float3 normal)
 {
@@ -322,6 +358,30 @@ VertexOutput vertexMain(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
     const uint2 entry = instances[instance];
     VertexOutput output = MovingOutput(entry.x, input.position, input.normal, input.uv);
+    output.material = entry.y;
+    return output;
+}
+
+// Capture d'une sonde (MeshRenderer::CaptureProbe) : la face params.cascade de sa texture cube, vue de son centre.
+[shader("vertex")]
+VertexOutput vertexProbe(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const uint2 entry = instances[instance];
+    VertexOutput output = Output(entry.x, input.position, input.normal, input.uv);
+    output.position = ProbeTransform(params.cascade, output.worldPosition);
+    output.material = entry.y;
+    return output;
+}
+
+[shader("vertex")]
+VertexOutput vertexProbeSkinned(SkinnedVertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const uint2 entry = instances[instance];
+    float3 position;
+    float3 normal;
+    Skin(input, asuint(draws[entry.x].normal[1].w), position, normal);
+    VertexOutput output = Output(entry.x, position, normal, input.uv);
+    output.position = ProbeTransform(params.cascade, output.worldPosition);
     output.material = entry.y;
     return output;
 }
@@ -481,6 +541,9 @@ struct PlanetVertexOutput
     float3 groundPosition : GROUND;
     // Sol : température (°C) et humidité (0 à 1) sans les taches de moins de 400 m (voir PlanetClimate).
     float2 climate : CLIMATE;
+    // Roche-mère (Lithology : granit, calcaire, grès ; le reste basalte) et profondeur de la terre (SoilDepth), par
+    // sommet : les régions font des dizaines de km.
+    float4 geology : GEOLOGY;
     // Forêt (0 à 1) selon ses taches et les biomes, sans la pente ni la neige (vues au pixel), et la couleur de ses
     // cimes. Par sommet : ses taches font des centaines de mètres.
     float forest : FOREST;
@@ -517,7 +580,7 @@ float CloudShadow(float3 worldPosition);
 // l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
 // des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte dans
 // les 2 % du relief au-dessus de la mer. Ces échelles ne s'effacent pas au loin : vues de l'espace, les zones restent.
-// Lumière de contour d'une planète (RimLightComponent) : selon sa sphère, pas son relief, pour un liseré net au bord
+// Lumière de contour d'une planète sans air (RimLightComponent ; avec air, l'atmosphère fait le halo) : selon sa sphère, pas son relief, pour un liseré net au bord
 // du disque sans faire briller chaque montagne de profil. Ajoutée après l'air : elle reste visible à travers lui.
 float3 PlanetRim(PlanetData planet, float3 worldUp, float3 toEye)
 {
@@ -544,7 +607,12 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
     output.groundPosition = draws[draw].ground.xyz + position;
     const uint planetIndex = asuint(draws[draw].rim.w);
     const PlanetData planet = frame[0].planets[planetIndex];
-    output.climate = PlanetClimate(planet, output.planetPosition);
+    // Humidité du relief dans uv.y (PlanetTile.slang, Write) : les vallons plus humides, les crêtes plus sèches.
+    const float wet = input.uv.y;
+    output.climate = PlanetClimate(planet, output.planetPosition) + float2(0.0, ReliefHumidity * wet);
+    const float2 zones = UnpackZones(input.uv.x);
+    const float3 lithology = Lithology(normalize(output.planetPosition) * planet.shape.x, zones.y);
+    output.geology = float4(lithology, SoilDepth(wet, lithology));
     output.forest = 0.0;
     output.forestColor = float3(0.0);
     if (planet.forest.y > 0.0) {
@@ -554,8 +622,8 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
         const float2 blur = saturate(float2(distance / 3000.0, distance / 12000.0) - 1.0);
         const float noise = ForestNoise(normalize(output.planetPosition) * planet.shape.x, blur);
         // Comme computeTrees, sans le hasard de chaque arbre : chaque biome selon son poids, sa forêt et sa densité.
-        // Les zones du relief sont dans uv (PlanetTile.slang, Write).
-        const float3 zoneShares = ZoneShares(input.uv);
+        // Les zones du relief sont dans uv.x (PlanetTile.slang, Write).
+        const float3 zoneShares = ZoneShares(zones);
         const float altitude = (length(output.planetPosition) - planet.shape.x) / max(planet.shape.y, 1.0);
         const uint count = min(uint(planet.forest.x), MaxBiomes);
         float remaining = 1.0;
@@ -563,9 +631,9 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
         float3 color = float3(0.0);
         for (uint b = 0; b < count; ++b) {
             const Biome biome = frame[0].planets[planetIndex].biomes[b];
-            const float weight = BiomeFit(biome, zoneShares, altitude, output.climate) * remaining;
+            const float weight = BiomeFit(biome, zoneShares, altitude, output.climate, output.geology) * remaining;
             remaining -= weight;
-            const float amount = weight * ForestMask(noise, biome.zones.w, blur) * saturate(biome.humidity.z * 1.5);
+            const float amount = weight * ForestMask(noise, biome.zones.w + ReliefForest * wet, blur) * saturate(biome.humidity.z * 1.5);
             forest += amount;
             color += biome.color.rgb * amount;
         }
@@ -592,6 +660,13 @@ static float2 shadowPixel = float2(0.0);
 static float3 sunDirect = float3(0.0);   // lumière directe du soleil de LightSurface
 static float3 sunRadiance = float3(0.0); // la même, telle qu'elle arrive dans l'image (air, exposition)
 static bool traceSunHere = false;
+// Capture d'une sonde de reflets (fragmentProbe) : l'œil est au point de la capture, les reflets viennent du ciel seul
+// (pas des sondes, qu'elle est en train de refaire), et la lumière sort sans pré-exposition.
+static bool probeCapture = false;
+// Ombre simple (fixée par le programme de pixel, herbe) : cascades proches sans recherche d'obstacles ni pénombre
+// variable, pénombre la plus étroite et 4 lectures. L'herbe est trop fine et bouge trop pour qu'on voie la différence,
+// et c'était une bonne part de son coût au pixel.
+static bool simpleShadow = false;
 
 // La lumière directe du soleil n'entre pas dans la couleur : écrite à part (SV_Target2), RayShadowRenderer l'ajoute
 // ensuite, multipliée par la part qui arrive. L'ajouter plutôt que retirer ce qui n'arrive pas : une soustraction de
@@ -721,7 +796,7 @@ float FindBlockers(Sampler2D depthMap, ShadowPoint p, float radius, float2x2 rot
 // Part de lumière filtrée sur une pénombre de rayon `penumbra` mètres (bornée en texels de la carte).
 float FilterShadow(Sampler2DShadow map, ShadowPoint p, float penumbra, float2x2 rotation)
 {
-    const uint taps = max(frame[0].shadowOptions.y, 1u);
+    const uint taps = simpleShadow ? min(max(frame[0].shadowOptions.y, 1u), 4u) : max(frame[0].shadowOptions.y, 1u);
     const float texels = clamp(penumbra / p.texel, MinPenumbraTexels, MaxPenumbraTexels);
     float lit = 0.0;
     for (uint i = 0; i < taps; ++i) {
@@ -882,9 +957,13 @@ float NearVisibility(float3 worldPosition, float3 normal, float sunFacing, float
     if (fine >= 4) {
         return -1.0;
     }
+    const float2x2 rotation = ShadowRotationMatrix();
+    if (simpleShadow) {
+        used = fine;
+        return FilterShadow(shadowMap, finePoint, 0.0, rotation);
+    }
     const float tanSun = f.toSun.w;
     const float reach = NearMaxBlocker * tanSun; // pénombre la plus large cherchée (rayon, mètres)
-    const float2x2 rotation = ShadowRotationMatrix();
 
     float distance;
     float found = FindBlockers(shadowDepth, finePoint, reach, rotation, distance);
@@ -1078,17 +1157,78 @@ float InteriorAt(float3 worldPosition, out float3 interiorLight)
     return inside;
 }
 
-float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, float skyScale)
+float3 SampleProbe(uint index, float3 direction, float mip)
+{
+    switch (index) {
+        case 0: return probeMap0.SampleLevel(direction, mip).rgb;
+        case 1: return probeMap1.SampleLevel(direction, mip).rgb;
+        case 2: return probeMap2.SampleLevel(direction, mip).rgb;
+        default: return probeMap3.SampleLevel(direction, mip).rgb;
+    }
+}
+
+// Sonde de reflets où se trouve ce point (la plus en dedans de sa boîte) : son poids (0 dehors, 1 au-delà du fondu
+// depuis les bords), son reflet dans `direction` et sa lumière diffuse autour de `normal`. Le reflet est recalé sur la
+// boîte (correction de parallaxe) : le rayon réfléchi part du point, touche un mur de la boîte, et c'est ce point du
+// mur qu'on lit, vu du centre de la capture. Juste pour une pièce dont les murs sont ceux de la boîte, approché
+// ailleurs. Diffus : le niveau le plus flou (rugosité 1), proche de la moyenne pondérée par le cosinus.
+float ProbeAt(float3 worldPosition, float3 direction, float3 normal, float mip, out float3 specular, out float3 diffuse)
+{
+    specular = float3(0.0);
+    diffuse = float3(0.0);
+    const FrameData f = frame[0];
+    if (probeCapture) {
+        return 0.0;
+    }
+    float best = 0.0;
+    uint chosen = 0;
+    for (uint i = 0; i < f.probeOptions.x; ++i) {
+        const ProbeData probe = f.probes[i];
+        const float3 local = float3(dot(probe.axes[0].xyz, worldPosition) + probe.axes[0].w,
+                                    dot(probe.axes[1].xyz, worldPosition) + probe.axes[1].w,
+                                    dot(probe.axes[2].xyz, worldPosition) + probe.axes[2].w);
+        const float3 margin = probe.halfSize.xyz - abs(local);
+        const float weight = saturate(min(margin.x, min(margin.y, margin.z)) / probe.halfSize.w);
+        if (weight > best) {
+            best = weight;
+            chosen = i;
+        }
+    }
+    if (best <= 0.0) {
+        return 0.0;
+    }
+    const ProbeData probe = f.probes[chosen];
+    const float3 local = float3(dot(probe.axes[0].xyz, worldPosition) + probe.axes[0].w,
+                                dot(probe.axes[1].xyz, worldPosition) + probe.axes[1].w,
+                                dot(probe.axes[2].xyz, worldPosition) + probe.axes[2].w);
+    const float3 localDirection = float3(dot(probe.axes[0].xyz, direction), dot(probe.axes[1].xyz, direction),
+                                         dot(probe.axes[2].xyz, direction));
+    // Sortie de la boîte le long du rayon : le plus proche des trois plans vers lesquels il va.
+    const float3 safe = select(abs(localDirection) > 1.0e-6, localDirection, float3(1.0e-6));
+    const float3 exits = (sign(safe) * probe.halfSize.xyz - local) / safe;
+    const float distance = max(min(exits.x, min(exits.y, exits.z)), 0.0);
+    specular = SampleProbe(chosen, worldPosition + direction * distance - probe.origin.xyz, mip) * probe.origin.w;
+    diffuse = SampleProbe(chosen, normal, f.environment.z) * probe.origin.w;
+    return best;
+}
+
+float3 Ambient(Surface s, float3 worldPosition, float occlusion, float inside, float3 interiorLight, float skyScale)
 {
     const FrameData f = frame[0];
     const float sky = f.environment.x * skyScale;
     // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
-    const float3 diffuseLight = lerp(irradianceMap.SampleLevel(s.normal, 0.0).rgb * sky, interiorLight, inside);
+    float3 diffuseLight = lerp(irradianceMap.SampleLevel(s.normal, 0.0).rgb * sky, interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
     // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
-    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * sky,
-                                      interiorLight, inside);
+    const float mip = s.roughness * f.environment.z;
+    float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, mip).rgb * sky, interiorLight, inside);
+    // Dans une sonde, ce qu'elle a vu remplace le ciel et le volume intérieur : la pièce et ses objets, éclairés.
+    float3 probeSpecular;
+    float3 probeDiffuse;
+    const float probe = ProbeAt(worldPosition, reflectDirection, s.normal, mip, probeSpecular, probeDiffuse);
+    specularLight = lerp(specularLight, probeSpecular, probe);
+    diffuseLight = lerp(diffuseLight, probeDiffuse, probe);
     const float nv = saturate(dot(s.normal, s.toEye));
     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
     const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
@@ -1195,7 +1335,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     if (HasAtmosphere(f.atmosphere)) {
         skyScale = AtmosphereNightSky(f.atmosphere, worldPosition - f.atmosphere.center.xyz, toSun);
     }
-    float3 ambient = Ambient(surface, occlusion, inside, interiorLight, skyScale);
+    float3 ambient = Ambient(surface, worldPosition, occlusion, inside, interiorLight, skyScale);
     if (HasAtmosphere(f.atmosphere)) {
         // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
         const float3 local = worldPosition - f.atmosphere.center.xyz;
@@ -1252,7 +1392,8 @@ float3 AirTo(float3 worldPosition, out float3 transmittance)
         return AtmosphereLight(f.atmosphere, AtmosphereTableRead(f.atmosphere, rayleigh, mie), direction, f.toSun.xyz,
                                f.sunColor.rgb, transmittance);
     }
-    return AtmosphereScatter(f.atmosphere, direction, distance, f.toSun.xyz, f.sunColor.rgb, 16, 0.5, transmittance);
+    return AtmosphereScatter(f.atmosphere, atmosphereMultiple, direction, distance, f.toSun.xyz, f.sunColor.rgb, 16, 0.5,
+                             transmittance);
 }
 
 float3 ThroughAir(float3 lit, float3 worldPosition)
@@ -1581,6 +1722,20 @@ float3 GroundTint(PlanetData planet, uint layer)
     return tint / max(dot(tint, float3(0.2126, 0.7152, 0.0722)), 0.01);
 }
 
+// Couleur que la roche-mère (Lithology, le reste basalte) donne à une matière, à multiplier par sa teinte : granit
+// gris-rosé, calcaire clair, grès ocre, basalte sombre ; le sable en garde la couleur (blanc sur calcaire, roux sur
+// grès, noir sur basalte), la terre un peu ; l'herbe et la neige rien.
+float3 LithologyTint(float3 lithology, uint layer)
+{
+    if (layer != GroundRock && layer != GroundSand && layer != GroundSoil) {
+        return float3(1.0);
+    }
+    const float basalt = saturate(1.0 - lithology.x - lithology.y - lithology.z);
+    const float3 tint = lithology.x * float3(1.06, 0.97, 0.93) + lithology.y * float3(1.3, 1.25, 1.12)
+                      + lithology.z * float3(1.35, 0.92, 0.62) + basalt * float3(0.42, 0.42, 0.45);
+    return layer == GroundSoil ? lerp(float3(1.0), tint, 0.3) : tint;
+}
+
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
 void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 {
@@ -1592,7 +1747,7 @@ void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 }
 
 // Ce qui couvre le sol en un point (local : repère de la planète ; flatness : cosinus de la pente ; climate : celui
-// des grandes échelles, PlanetClimate) : la part de chaque matière avant leur mélange (CoverGround). Partagé par le sol
+// des grandes échelles, PlanetClimate, et z : la profondeur de la terre, SoilDepth) : la part de chaque matière avant leur mélange (CoverGround). Partagé par le sol
 // (PlanetColor) et l'herbe (shaders/Grass.slang), qui pousse là où le sol montre de l'herbe.
 struct GroundCover
 {
@@ -1607,7 +1762,7 @@ struct GroundCover
     float snow;
 };
 
-GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, float altitude, float2 climate, float distance)
+GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, float altitude, float3 climate, float distance)
 {
     GroundCover cover;
     // Taches de 20 à 400 m (déplacent les limites des zones), grain de 30 cm à 3 m.
@@ -1617,7 +1772,12 @@ GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, floa
                 + (PlanetNoise(local * (1.0 / 23.0)) - 0.5) * 0.2 * saturate(2.0 - distance / 2500.0);
     const float macro = cover.macro;
 
-    cover.rock = smoothstep(0.84, 0.72, flatness + macro * 0.1);
+    // Roche dans les pentes, dès les plus douces là où la terre est mince (crêtes, calcaire), et par affleurements de
+    // 10 à 40 m quand elle l'est presque plus.
+    const float thin = 0.5 - climate.z;
+    const float outcrops = smoothstep(0.25, 0.08, climate.z) * smoothstep(0.55, 0.7, PlanetNoise(local * (1.0 / 37.0) + 11.0) + macro * 0.3)
+                         * saturate(2.0 - distance / 3000.0);
+    cover.rock = max(smoothstep(0.84, 0.72, flatness + macro * 0.1 + thin * 0.12), outcrops);
     // Plage : jusqu'à beach.y mètres au-dessus de la mer (qu'il y ait un océan ou non), limite fondue sur un
     // cinquième de sa hauteur et déplacée par les taches de 30 % au plus : elle suit la côte sans faire de bande droite.
     const float relief = max(planet.shape.y, 1.0);
@@ -1758,7 +1918,7 @@ float4 PlanetColor(PlanetVertexOutput input)
     const float flatness = dot(localNormal, up);
 
     const float distance = length(v.worldPosition);
-    const GroundCover cover = GetGroundCover(planet, local, flatness, altitude, input.climate, distance);
+    const GroundCover cover = GetGroundCover(planet, local, flatness, altitude, float3(input.climate, input.geology.w), distance);
     const float macro = cover.macro;
     const float rock = cover.rock;
     const float beach = cover.beach;
@@ -1840,7 +2000,7 @@ float4 PlanetColor(PlanetVertexOutput input)
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
             if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
-                sample.color *= GroundTint(planet, layer);
+                sample.color *= GroundTint(planet, layer) * LithologyTint(input.geology.xyz, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     sample.color *= GrassDryTint(temperature, macro, 0.0);
@@ -1863,7 +2023,7 @@ float4 PlanetColor(PlanetVertexOutput input)
         occlusion = occlusionRoughness.x;
     } else {
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
-                                           temperature, foot, snow, surface.roughness);
+                                           temperature, foot, snow, input.geology.xyz, surface.roughness);
     }
     // Sous l'herbe en brins (Grass.slang, avec la végétation) : de près, la terre (textures du sol) assombrie comme un
     // humus à l'ombre des brins ; au loin, et sans textures, la couleur moyenne du pré (pas de limite là où les brins
@@ -1907,7 +2067,7 @@ float4 PlanetColor(PlanetVertexOutput input)
 // couleur diffuse ; `normal` reçoit le petit relief.
 float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout float3 normal, float distance, float macro,
                         float rock, float beach, float grassy, float desert, float patches, float temperature, float foot,
-                        float snow, out float roughness)
+                        float snow, float3 lithology, out float roughness)
 {
     const float near = saturate(1.0 - distance / 120.0);
     const float fine = PlanetNoise(local * (1.0 / 3.1)) * 0.55 + PlanetNoise(local * (1.0 / 0.93)) * 0.3 * near
@@ -1915,11 +2075,12 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
     const float dry = saturate(macro * 1.6 + 0.5);
     float3 grassColor = planet.grass.rgb * lerp(float3(0.8, 0.85, 0.9), float3(1.35, 1.2, 0.85), dry);
     grassColor = lerp(grassColor, planet.soil.rgb * float3(1.6, 1.45, 1.1), smoothstep(6.0, -4.0, temperature) * 0.7);
-    float4 ground = planet.soil * float4(float3(0.9 + macro * 0.4), 1.0);
+    const float4 soil = planet.soil * float4(LithologyTint(lithology, GroundSoil), 1.0);
+    float4 ground = soil * float4(float3(0.9 + macro * 0.4), 1.0);
     ground = lerp(ground, float4(grassColor, planet.grass.w), grassy * (1.0 - patches));
-    ground = lerp(ground, planet.sand, max(desert, beach));
-    ground = lerp(ground, planet.soil, foot);
-    ground = lerp(ground, planet.rock * float4(float3(0.85 + macro * 0.5), 1.0), rock);
+    ground = lerp(ground, planet.sand * float4(LithologyTint(lithology, GroundSand), 1.0), max(desert, beach));
+    ground = lerp(ground, soil, foot);
+    ground = lerp(ground, planet.rock * float4(LithologyTint(lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
     ground = lerp(ground, planet.snow, snow);
     const float3 color = ground.rgb * (1.0 + fine * lerp(0.3, 0.5, rock) * saturate(1.0 - distance / 400.0));
 
@@ -1962,7 +2123,7 @@ OceanVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_Vulka
         const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
         float3 reflected = reflect(normalize(output.base.worldPosition), worldUp);
         reflected = normalize(reflected + worldUp * max(0.02 - dot(reflected, worldUp), 0.0)); // pas sous l'horizon
-        output.seaSky = AtmosphereScatterFrom(f.atmosphere, output.base.worldPosition - f.atmosphere.center.xyz, reflected,
+        output.seaSky = AtmosphereScatterFrom(f.atmosphere, atmosphereMultiple, output.base.worldPosition - f.atmosphere.center.xyz, reflected,
                                               1.0e9, f.toSun.xyz, f.sunColor.rgb, 6, 0.5, output.seaSkyThrough);
     }
     return output;
@@ -2087,6 +2248,42 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
     return SceneResult(color, Motion(input));
 }
 
+// Capture d'une sonde : la couleur seule, sans mouvement ni lumière du soleil à part (le rayon vers le soleil est
+// lancé ici, comme pour les transparents). Les faces d'une texture cube sont vues en miroir (repère indirect) : ce que
+// le GPU croit être une face arrière est une face avant.
+[shader("fragment")]
+float4 fragmentProbe(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target
+{
+    probeCapture = true;
+    traceSunHere = true;
+    return float4(MeshColor(input, !frontFacing, true).rgb, 1.0);
+}
+
+// Fond de la capture d'une sonde : le ciel tel que les surfaces le reflètent (environmentMap x environment.x), sans
+// tampon de sommets (un triangle qui couvre la face).
+struct ProbeSkyOutput
+{
+    float4 position : SV_Position;
+    float2 clip     : TEXCOORD;
+};
+
+[shader("vertex")]
+ProbeSkyOutput vertexProbeSky(uint vertexId : SV_VulkanVertexID)
+{
+    const float2 clip = float2((vertexId << 1) & 2, vertexId & 2) * 2.0 - 1.0;
+    ProbeSkyOutput output;
+    output.position = float4(clip, 0.0, 1.0);
+    output.clip = clip;
+    return output;
+}
+
+[shader("fragment")]
+float4 fragmentProbeSky(ProbeSkyOutput input) : SV_Target
+{
+    const float3 direction = CubeFaceDirection(params.cascade, input.clip.x, input.clip.y);
+    return float4(environmentMap.SampleLevel(direction, 0.0).rgb * frame[0].environment.x, 1.0);
+}
+
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
 // (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre. Après la
 // pré-passe (vertexTreeDepth), les feuilles cachées sont écartées avant ce programme (profondeur testée sans être
@@ -2108,7 +2305,63 @@ SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsF
     return SceneResult(color, Motion(input.base));
 }
 
-// alphaTest et airGiven connus à chaque appel : les branches disparaissent, et avec elles le discard.
+// Matériau d'un modèle vu en un pixel, avant tout éclairage (MeshColor, MeshGBuffer).
+struct MeshMaterial
+{
+    float4 base;           // couleur de base, teintes comprises, et alpha
+    float3 geometryNormal; // de la face, retournée vers l'œil sur une face arrière double face
+    float3 normal;         // avec la carte de normales
+    float metallic;
+    float roughness;
+    float occlusion;
+};
+
+// alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard.
+[ForceInline]
+MeshMaterial ReadMeshMaterial(VertexOutput input, bool frontFacing, bool alphaTest, float3 tint = float3(1.0))
+{
+    const DrawData draw = draws[input.draw];
+    const MaterialData material = materials[input.material];
+    MeshMaterial m;
+    m.base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
+    if (alphaTest && m.base.a < material.alphaCutoff) {
+        discard;
+    }
+    // Face arrière d'un matériau double face : éclairée comme vue de son côté.
+    m.geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
+    m.normal = m.geometryNormal;
+    if (material.normalScale != 0.0) { // le même pour toute la primitive
+        m.normal = PerturbNormal(material, m.geometryNormal, input.worldPosition, input.uv);
+    }
+    const float4 metallicRoughness = SampleMaterial(material.metallicRoughnessImage, input.uv);
+    // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
+    const bool fixed = draw.emissive.w != 0.0;
+    m.metallic = saturate(fixed ? draw.surface.x : material.metallic * draw.surface.x * metallicRoughness.b);
+    m.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    m.occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
+    return m;
+}
+
+// Lumière propre d'un modèle, qu'aucune autre n'éclaire : son émissif, et sa lumière de contour, d'autant plus forte
+// que la surface est vue de profil (terme de Fresnel), avec le relief. Le contour est éteint dans les volumes
+// intérieurs (inside) : les murs du cockpit et de la soute ne s'allument pas.
+[ForceInline]
+float3 MeshUnlit(VertexOutput input, float3 normal, float3 toEye, float inside)
+{
+    const DrawData draw = draws[input.draw];
+    const MaterialData material = materials[input.material];
+    float3 unlit = float3(0.0);
+    const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
+    if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
+        unlit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
+    }
+    const float4 rim = draw.rim;
+    if (rim.w > 0.0 && inside < 1.0) {
+        unlit += rim.rgb * (pow(1.0 - saturate(dot(normal, toEye)), rim.w) * (1.0 - inside));
+    }
+    return unlit;
+}
+
 // airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
 // calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage). tint :
 // multiplie la couleur (TreeTint).
@@ -2119,27 +2372,18 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
 {
     shadowPixel = input.position.xy;
     const DrawData draw = draws[input.draw];
-    const MaterialData material = materials[input.material];
-    float4 base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
-    if (alphaTest && base.a < material.alphaCutoff) {
-        discard;
-    }
-    // Face arrière d'un matériau double face : éclairée comme vue de son côté.
-    const float3 geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
-    float3 normal = geometryNormal;
-    if (material.normalScale != 0.0) { // le même pour toute la primitive
-        normal = PerturbNormal(material, geometryNormal, input.worldPosition, input.uv);
-    }
-    const float4 metallicRoughness = SampleMaterial(material.metallicRoughnessImage, input.uv);
-    // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
-    const bool fixed = draw.emissive.w != 0.0;
-    const float metallic = saturate(fixed ? draw.surface.x : material.metallic * draw.surface.x * metallicRoughness.b);
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest, tint);
+    const float4 base = m.base;
+    const float3 geometryNormal = m.geometryNormal;
+    const float3 normal = m.normal;
+    const float metallic = m.metallic;
     Surface surface;
     surface.normal = normal;
-    surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
+    // La caméra est à l'origine ; pendant la capture d'une sonde, l'œil est à son centre.
+    surface.toEye = normalize((probeCapture ? frame[0].probeEye.xyz : float3(0.0)) - input.worldPosition);
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
-    surface.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    surface.roughness = m.roughness;
     if (foliage) {
         surface.roughness = max(surface.roughness, 0.7); // reflet du ciel flou : vu rasant, il blanchissait aussi
     }
@@ -2154,7 +2398,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     // Vu de sa face arrière (de l'intérieur d'une verrière ou d'un hublot, normales tournées vers l'extérieur), son reflet
     // est l'habitacle, sombre et absent du cube du ciel : on n'y garde que le soleil et les lampes. Sinon le ciel derrière
     // le pilote s'étalait sur toute la verrière dès la sortie d'un intérieur.
-    float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
+    float occlusion = m.occlusion;
     const bool glass = transparent && surface.roughness <= GlassRoughness;
     if (glass) {
         surface.diffuse = float3(0.0);
@@ -2167,16 +2411,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     float inside;
     float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
                              clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
-    const float3 emissive = material.emissive.rgb + draw.emissive.rgb;
-    if (any(emissive > 0.0)) { // le même pour toute l'entité : pas d'image lue sans émissif
-        lit += emissive * SampleMaterial(material.emissiveImage, input.uv).rgb;
-    }
-    // Lumière de contour : d'autant plus forte que la surface est vue de profil (terme de Fresnel), avec le relief.
-    // Éteinte dans les volumes intérieurs : les murs du cockpit et de la soute ne s'allument pas.
-    const float4 rim = draw.rim;
-    if (rim.w > 0.0 && inside < 1.0) {
-        lit += rim.rgb * (pow(1.0 - saturate(dot(normal, surface.toEye)), rim.w) * (1.0 - inside));
-    }
+    lit += MeshUnlit(input, normal, surface.toEye, inside);
     // Mélange prémultiplié (transparents) : la lumière de la surface pèse son alpha, sauf les reflets d'un verre ;
     // l'air devant elle aussi (derrière, le fond a déjà le sien).
     const float alpha = transparent ? base.a : 1.0;
@@ -2184,7 +2419,77 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     const float3 scattered = airGiven ? airScattered : AirTo(input.worldPosition, transmittance);
     lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
     sunRadiance = transparent ? float3(0.0) : Radiance(sunDirect * transmittance);
-    return float4(Radiance(lit), alpha);
+    // Sonde : la lumière telle quelle, à l'échelle du ciel qu'elle remplace (environmentMap x environment.x).
+    return float4(probeCapture ? min(lit, float3(60000.0)) : Radiance(lit), alpha);
+}
+
+// --- G-buffer des modèles opaques : passe « G-buffer », éclairée ensuite par Lighting.slang (LightingRenderer). ---
+
+// Sorte de matière (alpha de GBufferOutput::base) : modèle éclairé comme MeshColor. 0 : rien d'écrit, la passe
+// d'éclairage saute le pixel.
+static const float GBufferStandard = 1.0 / 255.0;
+
+// Direction unitaire en deux nombres de 0 à 1 (octaèdre déplié, Cigolle et al. 2014) : 16 bits chacun gardent
+// l'angle à mieux qu'un centième de degré.
+float2 EncodeOctahedron(float3 n)
+{
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    const float2 side = float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+    const float2 e = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * side;
+    return e * 0.5 + 0.5;
+}
+
+float3 DecodeOctahedron(float2 encoded)
+{
+    const float2 e = encoded * 2.0 - 1.0;
+    float3 n = float3(e, 1.0 - abs(e.x) - abs(e.y));
+    const float fold = saturate(-n.z);
+    n.x += n.x >= 0.0 ? -fold : fold;
+    n.y += n.y >= 0.0 ? -fold : fold;
+    return normalize(n);
+}
+
+// Cibles de la passe « G-buffer » (LightingRenderer::BaseFormat et suivants). Avec le ray tracing, la lumière du soleil
+// à part (SV_Target5) est effacée, pas écrite : la passe d'éclairage la remplit.
+struct GBufferOutput
+{
+    float4 color   : SV_Target0; // lumière propre (MeshUnlit), multipliée par l'exposition, avant l'air
+    float2 motion  : SV_Target1;
+    float4 base    : SV_Target2; // rgb : couleur de base ; a : GBufferStandard
+    float4 normals : SV_Target3; // xy : normale de la carte ; zw : de la face (EncodeOctahedron)
+    float4 surface : SV_Target4; // métal, rugosité, occlusion, réserve
+};
+
+[ForceInline]
+GBufferOutput MeshGBuffer(VertexOutput input, bool frontFacing, bool alphaTest)
+{
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest);
+    // Le volume intérieur n'éteint que le contour : cherché seulement s'il y en a un.
+    float inside = 0.0;
+    if (draws[input.draw].rim.w > 0.0) {
+        float3 interiorLight;
+        inside = InteriorAt(input.worldPosition, interiorLight);
+    }
+    GBufferOutput output;
+    output.color = float4(Radiance(MeshUnlit(input, m.normal, normalize(-input.worldPosition), inside)), 1.0);
+    output.motion = Motion(input);
+    output.base = float4(m.base.rgb, GBufferStandard);
+    output.normals = float4(EncodeOctahedron(m.normal), EncodeOctahedron(m.geometryNormal));
+    output.surface = float4(m.metallic, m.roughness, m.occlusion, 0.0);
+    return output;
+}
+
+// Modèle opaque sans seuil d'alpha (voir fragmentOpaque) et avec seuil (fragmentMain), dans le G-buffer.
+[shader("fragment")]
+GBufferOutput fragmentGBuffer(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    return MeshGBuffer(input, frontFacing, false);
+}
+
+[shader("fragment")]
+GBufferOutput fragmentGBufferMasked(VertexOutput input, bool frontFacing : SV_IsFrontFace)
+{
+    return MeshGBuffer(input, frontFacing, true);
 }
 
 // Cartes d'ombres : la position vue du soleil (cascade params.cascade), et l'image seulement pour le seuil d'alpha.

@@ -129,6 +129,27 @@ bool RunExposureTests() {
     const SkyRenderer::InteriorExposure edge = SkyRenderer::GetInteriorExposure(scene, camera);
     CHECK(std::abs(edge.weight - 0.5f) < 1e-3f && edge.minEv100 == InteriorComponent{}.minEv100
           && edge.maxEv100 == InteriorComponent{}.maxEv100);
+
+    // Dans l'espace, l'œil ne s'habitue pas au noir plus de spaceAdaptation stops sous le gris moyen au soleil (côté nuit
+    // d'une planète) ; au sol d'une planète avec de l'air, jusqu'à minEv100.
+    Scene space;
+    const Entity skyEntity = space.CreateEntity("Ciel");
+    space.Add<SkyComponent>(skyEntity, SkyComponent{});
+    const Entity planetEntity = space.CreateEntity("Planète");
+    space.Get<TransformComponent>(planetEntity).position = {1.0e7, 0.0, 0.0};
+    space.Add<PlanetComponent>(planetEntity, PlanetComponent{.radius = 600000.0f, .atmosphere = 1.0f});
+    const SkyComponent sky{};
+    const float sunEv = std::log2(sky.sunIlluminance * 0.18f / std::numbers::pi_v<float> * 8.0f);
+    const auto darkest = [&](double x) {
+        camera.position = Math::WorldPosition{{}, {x, 0.0, 0.0}};
+        return SkyRenderer::GetExposureSettings(space, camera).maximum;
+    };
+    CHECK(sunEv > 15.0f && sunEv < 16.0f);
+    CHECK(NearStops(std::exp2(darkest(0.0)), Photometry::ExposureFromEv100(sunEv - sky.spaceAdaptation), 0.001f));
+    CHECK(NearStops(std::exp2(darkest(1.0e7 - 600000.0)), Photometry::ExposureFromEv100(sky.minEv100), 0.001f));
+    // À mi-hauteur de l'air : entre les deux.
+    const float halfway = darkest(1.0e7 - 600000.0 - 0.5 * PlanetComponent{}.atmosphereHeight);
+    CHECK(halfway < darkest(1.0e7 - 600000.0) && halfway > darkest(0.0));
     return true;
 }
 

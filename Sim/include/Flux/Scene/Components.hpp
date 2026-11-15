@@ -55,7 +55,8 @@ namespace Flux {
     };
 
     enum class MeshType : std::uint8_t {
-        Cube, // cube unité centré
+        Cube,   // cube unité centré
+        Sphere, // sphère de diamètre 1, centrée (scène des matériaux : reflets sur toutes les orientations)
     };
 
     struct MeshRendererComponent
@@ -176,6 +177,9 @@ namespace Flux {
         float minEv100 = 3.0f;
         float maxEv100 = 17.0f; // scène la plus claire suivie (au-delà, l'image se brûle)
         float adaptationSpeed = 3.0f; // par seconde, vers plus clair (3 : presque fini en une seconde) ; 3 fois moins vite vers plus sombre
+        // Dans l'espace (hors de l'air d'une planète et d'un Intérieur), l'œil ne s'habitue pas au noir plus de ce nombre
+        // de stops sous le gris moyen au soleil : le côté nuit d'une planète reste sombre.
+        float spaceAdaptation = 3.0f;
     };
 
     // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des
@@ -231,9 +235,28 @@ namespace Flux {
     {
         float radius = 60000.0f; // m, au niveau zéro du relief
         float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
-        // m, écart entre les grandes crêtes : les montagnes, les collines et le détail gardent cette taille quel que soit
-        // le rayon (sinon ils grandiraient avec lui). Une planète trop petite pour elles les garde à sa mesure.
+        // m, écart entre les grandes crêtes : les montagnes et les collines gardent cette taille quel que soit le rayon
+        // (sinon elles grandiraient avec lui). Une planète trop petite pour elles les garde à sa mesure.
         float mountainWidth = 50000.0f;
+        // m, écart entre deux chaînes de montagnes : les zones de montagnes et de collines, ce qui les tord et le détail
+        // des plaines gardent cette taille quel que soit le rayon. Plus petit : chaînes plus serrées, moins de plaines.
+        // Par défaut, la taille qu'ils ont naturellement à 200 km de rayon (relief réglé sur la scène Gameplay).
+        float zoneWidth = 420000.0f;
+        // m, taille des continents (et des océans entre eux) : la même quel que soit le rayon. Par défaut, leur taille à
+        // 200 km de rayon ; plus grand, de plus grands continents.
+        float continentWidth = 840000.0f;
+        // Forme du relief (Planetology::ReliefShape), 1 : comme à l'origine. Part des terres en montagne (largeur des
+        // chaînes) et en collines, hauteur des collines, chance qu'un sommet pousse (0 à 1), détail fin des plaines et des
+        // reliefs, profondeur des ravines, érosion (versants lisses), déformation (côtes et chaînes tordues).
+        float mountainShare = 1.0f;
+        float hillShare = 1.0f;
+        float hillHeight = 1.0f;
+        float peakDensity = 0.85f;
+        float plainRoughness = 1.0f;
+        float reliefRoughness = 1.0f;
+        float gullyDepth = 1.0f;
+        float erosion = 1.0f;
+        float warp = 1.0f;
         std::int32_t seed = 1;
         // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), plage
         // de sable jusqu'à beachHeight mètres au-dessus du niveau de la mer (elle suit la mer), neige au-dessus de
@@ -345,6 +368,22 @@ namespace Flux {
         // en regardant ses lampes ou une porte ouverte au soleil (triche voulue, choix de Bruno).
         float minEv100 = 3.0f;
         float maxEv100 = 7.0f;
+    };
+
+    // Sonde de reflets fixe : la scène photographiée depuis le centre de l'entité (six faces, objets et ciel), puis
+    // floutée par rugosité comme le ciel (EnvironmentRenderer). Les surfaces dans sa boîte y lisent leurs reflets et leur
+    // lumière diffuse, recalés sur les murs de la boîte (parallaxe) : le métal reflète la pièce et les objets voisins, plus
+    // seulement le ciel. Refaite quand elle bouge, quand le ciel ou le soleil change et quand des modèles finissent de
+    // charger ; sinon gardée (le sol des planètes, les arbres et l'eau n'y sont pas).
+    struct ReflectionProbeComponent
+    {
+        Math::Vector3f size{10.0f, 5.0f, 10.0f}; // boîte d'influence et de parallaxe (m), multipliée par l'échelle de l'entité
+        // Centre de la boîte depuis celui de l'entité (m, dans son repère) : la capture se fait à hauteur des objets
+        // pendant que le bas de la boîte reste au sol, ses côtés sur les murs.
+        Math::Vector3f boxOffset{};
+        float fade = 1.0f;      // fondu vers le ciel, en dedans des bords (m)
+        float intensity = 1.0f; // multiplie ce qu'elle renvoie
+        float refresh = 0.0f;   // secondes entre deux captures ; 0 : seulement quand quelque chose change (voir plus haut)
     };
 
     // Réacteur : la flamme qui sort de la tuyère, vers le +z de l'entité (l'arrière d'un vaisseau qui regarde vers

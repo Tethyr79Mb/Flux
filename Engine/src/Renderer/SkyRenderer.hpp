@@ -22,6 +22,7 @@
 
 namespace Flux {
     struct Camera;
+    class JobSystem;
 
     // Ce que le ciel donne à l'éclairage des maillages (MeshRenderer) pour une image.
     struct SkyLighting
@@ -47,6 +48,8 @@ namespace Flux {
         const RHI::Texture* airRayleigh = nullptr;
         const RHI::Texture* airMie = nullptr;
         const RHI::Sampler* airSampler = nullptr;
+        // Diffusion multiple de cet air (Planetology::ComputeAtmosphereMultiple), lue avec airSampler ; jamais nulle.
+        const RHI::Texture* atmosphereMultiple = nullptr;
     };
 
     // Ciel de la scène (SkyComponent) : le fond, dessiné après les opaques là où rien ne l'a été, et de quoi en tirer
@@ -68,9 +71,13 @@ namespace Flux {
         // `preExposure` : multiplie la lumière écrite dans l'image de la scène (Radiance dans shaders/Mesh.slang).
         SkyLighting Prepare(const Scene& scene, const Camera& camera, float aspect, float viewportHeight,
                             const std::filesystem::path& assetsDirectory, float preExposure, std::uint32_t frameIndex);
+        // Fils pour la table de la diffusion multiple (quand l'air change) ; nul : tout sur le fil qui prépare.
+        void SetJobSystem(JobSystem* jobs) { m_jobs = jobs; }
         // Réglages de l'exposition du Ciel de la scène ; sans Ciel, exposition fixe de 1. Lus avant Prepare : la
         // pré-exposition de l'image en dépend.
-        static Exposure::Settings GetExposureSettings(const Scene& scene, const Camera& camera);
+        static FLUX_API Exposure::Settings GetExposureSettings(const Scene& scene, const Camera& camera); // exporté pour ExposureTests
+        // Part de l'espace là où est la caméra : 1 hors de l'air de toute planète, 0 au sol d'une planète qui en a.
+        static float GetSpaceWeight(const Scene& scene, const Camera& camera);
         // Réglages de l'œil de l'Intérieur où se trouve la caméra : `weight` 1 dans sa boîte, fondu dehors sur son
         // `fade`, 0 au-delà ; `compensation` déjà multipliée par `weight`.
         struct InteriorExposure
@@ -116,6 +123,13 @@ namespace Flux {
         std::optional<Planetology::AtmosphereParameters> m_ambientParameters;
         Math::Vector3f m_ambientSunColor;
         std::array<Math::Vector3f, Planetology::AtmosphereAmbientSize> m_ambientTable{};
+        // Diffusion multiple de l'air m_ambientParameters (une texture noire avant la première atmosphère), refaite avec
+        // la lumière ambiante quand l'air change ; l'ancienne rendue par Device::Retire.
+        Planetology::AtmosphereMultipleTable m_multipleTable{};
+        std::unique_ptr<RHI::Texture> m_multiple;
+        std::optional<Planetology::AtmosphereParameters> m_multipleParameters;
+        std::array<const RHI::Texture*, RHI::FramesInFlight> m_boundMultiple{};
+        JobSystem* m_jobs = nullptr;
         std::unique_ptr<RHI::Pipeline> m_pipeline;
         std::unique_ptr<RHI::Pipeline> m_sunPipeline; // shaders/Sun.slang, après le fond
         std::unique_ptr<RHI::BindGroupLayout> m_layout;

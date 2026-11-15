@@ -66,6 +66,8 @@ flux_add_shaders(FluxShaders
         shaders/GrassMeshRays.slang
         shaders/GrassRays.slang
         shaders/Grid.slang
+        shaders/Lighting.slang
+        shaders/LightingRays.slang
         shaders/Mesh.slang
         shaders/MeshRays.slang
         shaders/ModelMesh.slang

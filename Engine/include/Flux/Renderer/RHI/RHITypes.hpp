@@ -8,6 +8,9 @@
 namespace Flux::RHI {
     // Deux images en vol : le CPU prépare la suivante pendant que le GPU dessine la courante.
     inline constexpr std::uint32_t FramesInFlight = 2;
+    // Cibles de couleur au plus par passe, la principale comprise (G-buffer du rendu différé). Tous les GPU de bureau
+    // en ont 8 (maxColorAttachments), vérifié au choix de la carte.
+    inline constexpr std::uint32_t MaxColorTargets = 8;
 
     struct Extent
     {
@@ -49,6 +52,7 @@ namespace Flux::RHI {
         RGBA16Uint,
         RGBA16Float, // couleur au-delà de 1 (lumières, ciel) sans perte
         RG16Float,   // deux valeurs signées (déplacement des pixels d'une image à l'autre)
+        RGBA16Unorm, // quatre valeurs de 0 à 1 précises (normales du G-buffer, octaédriques)
         R8Unorm,     // une valeur de 0 à 1 (masque)
         // Compressés par blocs de 4 x 4 pixels, 16 octets chacun (1 octet par pixel au lieu de 4) : textures lues
         // souvent (sol des planètes). Device::HasTextureCompressionBC.
@@ -75,6 +79,15 @@ namespace Flux::RHI {
         Compute = 1 << 2,
     };
 
+    // Qui lit, après CommandList::ComputeBarrier, ce que les Dispatch précédents ont écrit. Les calculs suivants
+    // toujours (Compute seul) ; ne demander que ce qui sert : Host oblige le GPU à réécrire son cache L2 en mémoire,
+    // Draw à vider les caches des commandes indirectes et des sommets.
+    enum class ComputeReaders : std::uint8_t {
+        Compute = 0,
+        Draw = 1 << 0, // commandes indirectes, sommets, index, shaders des dessins (tâche et maillage compris)
+        Host = 1 << 1, // le CPU (MemoryType::Readback), après Device::Submit ou deux images plus tard
+    };
+
     // Opérateurs de bits pour les énumérations de drapeaux.
     template <typename E>
     inline constexpr bool IsFlagEnum = false;
@@ -82,6 +95,8 @@ namespace Flux::RHI {
     inline constexpr bool IsFlagEnum<BufferUsage> = true;
     template <>
     inline constexpr bool IsFlagEnum<ShaderStage> = true;
+    template <>
+    inline constexpr bool IsFlagEnum<ComputeReaders> = true;
 
     template <typename E>
         requires IsFlagEnum<E>

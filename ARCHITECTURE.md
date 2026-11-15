@@ -171,6 +171,8 @@ Renderer           l'image décrite en graphe de rendu, mesures (CPU, attentes)
 ├─ SkyRenderer     ciel (nébuleuse cuite une fois dans une texture cube), soleil, air de la planète proche
 ├─ EnvironmentRenderer reflets (cube HDR préfiltré GGX par niveau de rugosité) et lumière ambiante (cube
 │                  d'irradiance) tirés du ciel par le GPU, refaits seulement quand le ciel change
+├─ ReflectionProbes sondes de reflets fixes : la scène capturée en cube par MeshRenderer, préfiltrée comme le
+│                  ciel, lue avec parallaxe de boîte ; refaite seulement quand elle ou l'éclairage change
 ├─ ExposureRenderer exposition automatique : histogramme de la lumière par le GPU, adaptation de l'œil par le CPU
 ├─ ThrusterRenderer flammes des réacteurs : volume lumineux calculé au pixel dans une boîte, mélange additif
 ├─ TracerRenderer  traçantes des projectiles : bandes face à la caméra, un seul appel de dessin, mélange additif
@@ -199,7 +201,7 @@ parallèles, prises sous verrou), `VulkanTimestamps` (heures du GPU),
 entre types du RHI et de Vulkan sont toutes dans `VulkanTypes`.
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, scène HDR (objets, arbres, sol, fond du ciel, océan), nuages en demi-résolution
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, G-buffer des modèles opaques puis leur éclairage en compute, scène HDR (arbres, sol, fond du ciel, océan), nuages en demi-résolution
 (marche, historique, composition), transparents, masque réactif (en FSR), pyramide de profondeur, anticrénelage ou FSR
 (mouvement complet puis agrandissement), bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
@@ -212,7 +214,10 @@ l'appelle avant chaque passe pour les textures déclarées (`AddTexture`) : lues
 le format), contenu jeté pour une texture de l'image. `BeginRenderPass`/`EndRenderPass` ne changent plus aucun layout,
 sauf celui de l'image de la swapchain. Les textures internes d'une passe (niveaux du bloom, historique effacé à la
 première image) sont préparées par la passe elle-même avec `UseTextures`. Les buffers gardent la barrière globale de
-calcul (`ComputeBarrier`).
+calcul (`ComputeBarrier`), qui ne vise que les lecteurs demandés (`ComputeReaders` : calculs, dessins, CPU ; le CPU
+coûte une réécriture du L2 en mémoire). Barrières différées : la liste de commandes Vulkan garde textures et barrières
+mémoire en attente et les envoie en un seul `vkCmdPipelineBarrier2` avant la commande suivante (passe, `Dispatch`,
+copie) ou la fin du command buffer : la fin d'une passe et le début de la suivante ne vident les caches qu'une fois.
 
 Textures de travail : l'image HDR de la scène, son mouvement, sa profondeur, l'historique de l'anticrénelage et la
 profondeur de l'image finale sont créés par le graphe (`RenderGraph::CreateTexture`) à la taille de rendu (la scène :
@@ -228,9 +233,14 @@ Les envois vers la mémoire vidéo (buffers remplis, textures et leurs mipmaps) 
 en a une (moteur de copie des Radeon et des GeForce), sinon sur la file graphique par le même chemin
 (`FLUX_TRANSFER_QUEUE=0` force ce repli). Les données passent par un anneau d'envoi de 64 Mo mappé en permanence ; un
 envoi de plus de 32 Mo a son propre buffer, rendu dès sa copie finie. Un lot de copies part dès 32 Mo, ou avec
-l'image suivante. Deux sémaphores timeline ordonnent les files : l'image attend les copies qui la précèdent, et une
+l'image suivante. Chaque file est un `Vk::Queue` (`VulkanQueue`) qui possède un sémaphore timeline et le signale à
+chaque soumission ; la file graphique appartient à `Vk::Device`, celle de transfert à `Vk::Transfer`, et une file de
+calcul asynchrone prendra la même forme. Ces timelines ordonnent les files : l'image attend les copies qui la précèdent, et une
 copie dans un buffer déjà en service (`WriteBuffer`) attend les images déjà soumises (elles lisent peut-être ce
-qu'elle réécrit). Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
+qu'elle réécrit). Le timeline graphique sert aussi d'attente des images en vol (`Vk::Frames` garde la
+valeur de chaque image) : pas de fence. Les command buffers d'envoi et de `ImmediateSubmit` sont réutilisés par un
+`Vk::CommandRecycler` dès que leur file a atteint leur valeur. Les pipelines reçoivent le SPIR-V directement
+(`VK_KHR_maintenance5`, sans `VkShaderModule`) ; sans l'extension, un module temporaire (`FLUX_INLINE_SHADERS=0` force ce repli). Les buffers sont partagés entre les deux files (`VK_SHARING_MODE_CONCURRENT`) ; les images changent
 de file par un transfert de propriété (partagées, elles perdraient leur compression DCC sur Radeon) et leurs mipmaps
 sont calculés par la file graphique (le blit est interdit sur une file de transfert). Sans fenêtre (tests, calculs),
 les envois sont soumis et attendus tout de suite, comme `RHI::Device::Submit`.
@@ -313,8 +323,15 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    proches (obstacles à 300 m au plus) et du relief (montagne plus loin vers le soleil), puis le relief seul. La
    tranche du relief se choisit par la distance à la caméra, pas par la profondeur : l'ombre d'un point ne change pas
    quand la caméra tourne ; chaque tranche fondue dans la suivante sur son dernier dixième.
-4. Scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
-   (textures du graphe, lues par `PostRenderer`) : opaques, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
+4. G-buffer puis éclairage (2026-11-14) : les modèles opaques (`DrawOpaque`, `fragmentGBuffer` de `Mesh.slang`)
+   écrivent leur surface en 16 octets par pixel, à la taille de la vue 3D : couleur de base sRGB et sorte de matériau
+   (alpha, 0 = rien d'écrit), normales de la carte et de la face (octaèdre, RGBA16Unorm), métal, rugosité, occlusion
+   (RGBA8) ; leur émissif et leur lumière de contour vont déjà dans l'image de la scène, leur mouvement dans sa cible.
+   La passe « éclairage » (`LightingRenderer`, `Lighting.slang`, 8 x 8 pixels par groupe) refait la position depuis la
+   profondeur et appelle les mêmes fonctions que le dessin direct (`LightSurface`, `AirTo`) ; avec le ray tracing, elle
+   écrit à part la lumière directe du soleil. Vue de contrôle du G-buffer : panneau Moteur et outil MCP `debug_view`.
+   Puis la scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
+   (textures du graphe, lues par `PostRenderer`), reprise après l'éclairage (couleur et profondeur gardées) : arbres, herbe, sol, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans ; puis les nuages (voir plus bas), transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
    Les matériaux opaques sans seuil d'alpha passent par `fragmentOpaque`, qui ne jette aucun pixel : le GPU teste la
@@ -554,7 +571,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
   d'ombres) dessine ses tuiles par bandes de distance (chacune deux fois plus loin que la précédente), puis par page :
   un `DrawIndexedIndirect` par page et par bande, de près à loin, pour que le relief proche cache le lointain avant
-  son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol sans pixels ») pour séparer leur coût
+  son éclairage. Le panneau Moteur peut dessiner le sol sans ses pixels (« Sol et herbe sans pixels », brins compris) pour séparer leur coût
   de celui des sommets. L'indice de la tuile dans les `DrawData` est celui de
   l'instance (`SV_VulkanInstanceID`) ; les modèles passent, eux, par le buffer `instances`.
 - Ray tracing quand le GPU a les ray queries (`VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, choisi seul au
@@ -566,7 +583,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   Passe « ray tracing » du graphe, avant les ombres. Avec elle, les shaders de la scène sont les variantes
   `MeshRays.slang` (de même `ModelMesh`, `PlanetMesh`, `PlanetMeshSmall`), qui déclarent la structure haute (liaison 19
   du groupe de l'image) : un module qui la déclare ne se charge pas sans ray queries. Leurs pixels opaques écrivent à
-  part la lumière directe du soleil, hors de leur couleur (troisième cible de la passe de la scène, voilée par l'eau) ;
+  part la lumière directe du soleil, hors de leur couleur (troisième cible de la passe de la scène, voilée par l'eau ; pour les modèles, écrite par la passe « éclairage ») ;
   `RayShadowRenderer` (`RayShadows.slang`) lance ensuite un rayon par pixel éclairé vers un point du disque du soleil,
   lisse le masque selon la largeur de la pénombre (lignes puis colonnes, profondeurs voisines éclairées seulement) et
   ajoute à l'image la lumière qui arrive (la retirer laissait des restes négatifs en demi-flottants). Transparents et

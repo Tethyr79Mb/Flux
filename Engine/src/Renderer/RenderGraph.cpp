@@ -252,6 +252,14 @@ namespace Flux {
         }
     }
 
+    double RenderGraph::GetSerialMicroseconds() const {
+        double total = 0.0;
+        for (const Pass& pass : m_passes) {
+            total += pass.active ? pass.cpuMicroseconds : 0.0;
+        }
+        return total;
+    }
+
     std::uint32_t RenderGraph::ChooseGroups() {
         const auto count = static_cast<std::uint32_t>(m_passes.size());
         // Une passe jouée compte au moins une microseconde : son premier enregistrement n'est pas encore mesuré.

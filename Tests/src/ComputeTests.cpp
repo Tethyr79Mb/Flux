@@ -57,12 +57,12 @@ bool RunComputeTests() {
             commands.SetBindGroup(0, *group);
             commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch((Count + 63) / 64);
-            commands.ComputeBarrier();
+            commands.ComputeBarrier(RHI::ComputeReaders::Compute);
             commands.BindPipeline(**doubling);
             commands.SetBindGroup(0, *group);
             commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch((Count + 63) / 64);
-            commands.ComputeBarrier();
+            commands.ComputeBarrier(RHI::ComputeReaders::Host);
         });
         CHECK(submitted);
     }
@@ -102,7 +102,7 @@ bool RunComputeTests() {
                     list.SetBindGroup(0, *group);
                     list.PushConstants(&constants, sizeof(constants));
                     list.Dispatch((Count + 63) / 64);
-                    list.ComputeBarrier();
+                    list.ComputeBarrier(RHI::ComputeReaders::Host);
                 }
             });
             tooMany = commands.Fork(RHI::MaxParallelCommandLists).empty(); // 4 déjà pris
@@ -110,7 +110,7 @@ bool RunComputeTests() {
             commands.SetBindGroup(0, *group);
             commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch((Count + 63) / 64);
-            commands.ComputeBarrier();
+            commands.ComputeBarrier(RHI::ComputeReaders::Host);
         });
         CHECK(submitted && forked && refused && tooMany);
     }

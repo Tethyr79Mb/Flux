@@ -54,6 +54,8 @@ namespace Flux {
             ui.LabelText("CPU màj + rendu", std::format("{:.2f} + {:.2f} ms (jeu {:.2f})", stats.Get(UpdateCost),
                                                         stats.Get(PrepareCost) + stats.Get(RecordCost), stats.Get(GameCost)));
             ui.LabelText("Attente", std::format("GPU {:.2f}, écran {:.2f} ms", stats.Get(WaitGpuCost), stats.Get(WaitImageCost)));
+            // Images obtenues du pilote : avec la V-Sync, chacune au-delà de 2 ajoute une période d'écran de retard.
+            ui.LabelText("Présentation", std::format("{}, {} images", renderer.GetPresentModeName(), renderer.GetSwapchainImageCount()));
 
             // Une ligne par passe du graphe de rendu ; ses étapes à part, repliées (une vingtaine de lignes).
             double gpuTotal = 0.0;
@@ -97,6 +99,10 @@ namespace Flux {
                 if (ui.Checkbox("Rendu sur plusieurs fils", parallel)) {
                     renderer.SetParallelRecording(parallel);
                 }
+                if (parallel) {
+                    ui.LabelText("Fils", renderer.IsUsingWorkers() ? "pris (le CPU limite l'image)"
+                                                                  : "laissés (le CPU attend le GPU)");
+                }
                 const RenderTimings& render = renderer.GetTimings();
                 ui.LabelText("Listes de commandes", std::format("{}", render.recordLists));
                 for (const RenderPassTiming& pass : render.gpu) {
@@ -113,12 +119,16 @@ namespace Flux {
                     renderer.SetOcclusionCulling(occlusion);
                 }
                 bool geometryOnly = renderer.IsGroundGeometryOnly();
-                if (ui.Checkbox("Sol sans pixels (mesure)", geometryOnly)) {
+                if (ui.Checkbox("Sol et herbe sans pixels (mesure)", geometryOnly)) {
                     renderer.SetGroundGeometryOnly(geometryOnly);
                 }
                 bool cascades = renderer.IsShowingShadowCascades();
                 if (ui.Checkbox("Cartes d'ombre en couleur", cascades)) {
                     renderer.SetShowShadowCascades(cascades);
+                }
+                int gbufferView = static_cast<int>(renderer.GetGBufferView());
+                if (ui.Choice("G-buffer des objets", gbufferView, GBufferViewLabels)) {
+                    renderer.SetGBufferView(static_cast<GBufferView>(gbufferView));
                 }
                 const RenderTimings& render = renderer.GetTimings();
                 if (render.rayTracing) {
@@ -214,7 +224,8 @@ namespace Flux {
             }
         }
         json["gpu"] = {{"totalMs", passes.empty() ? -1.0 : gpuTotal}, {"passes", std::move(passes)}};
-        json["recording"] = {{"parallel", renderer.IsParallelRecording()}, {"lists", render.recordLists},
+        json["recording"] = {{"parallel", renderer.IsParallelRecording()}, {"workers", renderer.IsUsingWorkers()},
+                             {"lists", render.recordLists},
                              {"passes", std::move(recording)}};
         Json exposure = {{"ev100", ExposureToEv100(render.exposure)}, {"exposure", render.exposure}};
         // 0 : exposition fixe, ou rien de mesurable (image noire).
@@ -258,6 +269,7 @@ namespace Flux {
                             {"vulkan", renderer.GetApiVersion()},
                             {"presentMode", renderer.GetPresentModeName()},
                             {"vsync", renderer.IsVSyncEnabled()},
+                            {"swapchainImages", renderer.GetSwapchainImageCount()},
                             {"renderSize", {renderSize.x, renderSize.y}},
                             // Mode demandé ; un mode FSR sans FSR disponible tourne en Natif.
                             {"upscaling", UpscalingKeys[static_cast<std::size_t>(renderer.GetUpscaling())]},

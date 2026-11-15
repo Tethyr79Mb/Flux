@@ -1,6 +1,7 @@
 #include "Renderer/RHI/Vulkan/VulkanAdapter.hpp"
 
 #include "Flux/Platform/Environment.hpp"
+#include "Flux/Renderer/RHI/RHITypes.hpp"
 #include "Renderer/RHI/Vulkan/VulkanInstance.hpp"
 
 #include <algorithm>
@@ -58,6 +59,12 @@ namespace Flux::Vk {
             return std::unexpected(std::format("aucun GPU compatible Vulkan 1.3 : {}", physicalDevice.error().message()));
         }
         adapter.m_physicalDevice = physicalDevice.value();
+        // G-buffer du rendu différé : 8 cibles de couleur par passe (RHI::MaxColorTargets), 8 sur tous les GPU de bureau.
+        const std::uint32_t colorTargets = adapter.m_physicalDevice.properties.limits.maxColorAttachments;
+        if (colorTargets < RHI::MaxColorTargets) {
+            return std::unexpected(std::format("le GPU n'accepte que {} cibles de couleur par passe ({} demandées)",
+                                               colorTargets, RHI::MaxColorTargets));
+        }
         // Filtrage anisotrope (sol vu de biais net au loin) : présent sur tous les GPU de bureau, facultatif quand même.
         VkPhysicalDeviceFeatures anisotropy{};
         anisotropy.samplerAnisotropy = VK_TRUE;
@@ -132,6 +139,17 @@ namespace Flux::Vk {
             properties.pNext = &structureProperties;
             vkGetPhysicalDeviceProperties2(adapter.m_physicalDevice.physical_device, &properties);
             adapter.m_scratchAlignment = std::max(structureProperties.minAccelerationStructureScratchOffsetAlignment, 1u);
+        }
+        // VK_KHR_maintenance5 : le code SPIR-V passe directement à la création du pipeline, sans VkShaderModule à créer
+        // puis détruire. Pilotes récents de toutes les cartes de la configuration recommandée ; sans elle, les modules.
+        // FLUX_INLINE_SHADERS=0 l'ignore : diagnostic d'un pilote fautif, et vérification du repli.
+        if (adapter.m_physicalDevice.is_extension_present(VK_KHR_MAINTENANCE_5_EXTENSION_NAME)
+            && Platform::ReadEnvironment("FLUX_INLINE_SHADERS") != "0") {
+            VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5{};
+            maintenance5.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR;
+            maintenance5.maintenance5 = VK_TRUE;
+            adapter.m_inlineShaders = adapter.m_physicalDevice.enable_extension_features_if_present(maintenance5)
+                                      && adapter.m_physicalDevice.enable_extension_if_present(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
         }
         // Diagnostic d'un GPU bloqué, facultatif : repères écrits par le GPU (AMD) et description de la panne.
         adapter.m_bufferMarkers = adapter.m_physicalDevice.enable_extension_if_present(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);

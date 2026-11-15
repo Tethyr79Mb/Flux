@@ -1,0 +1,863 @@
+{
+  "format": "flux.scene",
+  "version": 2,
+  "engine": 87,
+  "entities": [
+    {
+      "id": "84cf33416a14e256",
+      "name": "Ciel",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "sky": {
+        "image": "",
+        "luminance": 40.0,
+        "ambient": 3.0,
+        "seed": 1,
+        "nebulaColor": [1.0, 1.0, 1.0, 1.0],
+        "nebulaColor2": [0.9822506, 0.9559735, 0.23074007, 1.0],
+        "nebula": 0.2,
+        "galaxy": 0.3,
+        "stars": 0.2,
+        "starBrightness": 2.0,
+        "sunElevation": 63.0,
+        "sunAzimuth": 53.0,
+        "sunColor": [1.0, 0.5271152, 0.14412849, 1.0],
+        "sunIlluminance": 116000.0,
+        "sunSize": 3.0,
+        "autoExposure": true,
+        "exposure": 0.0,
+        "minEv100": 3.0,
+        "maxEv100": 17.0,
+        "adaptationSpeed": 3.0
+      }
+    },
+    {
+      "id": "54abc4776140f39d",
+      "name": "Soleil",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "sun": {
+        "color": [1.0, 0.8549927, 0.67954254, 1.0],
+        "lightColor": [1.0, 1.0, 1.0, 1.0],
+        "illuminance": 116000.0,
+        "size": 0.53,
+        "rays": "star"
+      }
+    },
+    {
+      "id": "8af53c9b2c82b3bf",
+      "name": "Monde",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "world": {
+        "gravity": 9.81,
+        "air": 0.0,
+        "terminalSpeed": 55.0
+      }
+    },
+    {
+      "id": "7b5e2d8d5e8e96ff",
+      "name": "Sol",
+      "sector": [150, 0, 0],
+      "transform": {
+        "position": [-400000000.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "orbit": {
+        "distance": 149.6,
+        "angle": 0.0,
+        "inclination": 0.0
+      },
+      "planet": {
+        "radius": 200000.0,
+        "relief": 3500.0,
+        "mountainWidth": 60000.0,
+        "seed": 1,
+        "color": [0.42, 0.38, 0.33, 1.0],
+        "roughness": 0.9,
+        "zones": true,
+        "grassColor": [0.07, 0.11, 0.035, 1.0],
+        "sandColor": [0.5, 0.42, 0.3, 1.0],
+        "snowColor": [0.85, 0.88, 0.92, 1.0],
+        "soilColor": [0.14, 0.09, 0.055, 1.0],
+        "rockTint": [1.0, 1.0, 1.0, 1.0],
+        "grassTint": [0.5271152, 0.9822506, 0.49693304, 1.0],
+        "soilTint": [1.0, 1.0, 1.0, 1.0],
+        "sandTint": [1.0, 1.0, 1.0, 1.0],
+        "snowTint": [1.0, 1.0, 1.0, 1.0],
+        "temperature": 20.0,
+        "poleTemperature": -30.0,
+        "humidity": 0.5,
+        "beachHeight": 10.0,
+        "snowLevel": 60.0,
+        "ocean": true,
+        "seaLevel": -35.0,
+        "waterColor": [0.01, 0.045, 0.07, 1.0],
+        "gravity": 9.81,
+        "atmosphere": 0.6,
+        "atmosphereHeight": 30000.0,
+        "skyColor": [0.1499598, 0.38642952, 1.0, 1.0]
+      },
+      "clouds": {
+        "altitude": 6000.0,
+        "thickness": 1500.0,
+        "coverage": 0.4,
+        "opacity": 0.6,
+        "size": 20000.0,
+        "speed": 100.0,
+        "color": [0.7681513, 0.7681513, 0.79129803, 1.0]
+      },
+      "vegetation": {
+        "biome1": "Vegetation/Biomes/Marais.biome.json",
+        "biome2": "Vegetation/Biomes/Desert.biome.json",
+        "biome3": "Vegetation/Biomes/Montagne.biome.json",
+        "biome4": "Vegetation/Biomes/Taiga.biome.json",
+        "biome5": "Vegetation/Biomes/Pinede.biome.json",
+        "biome6": "Vegetation/Biomes/Plaine.biome.json",
+        "biome7": "",
+        "biome8": "",
+        "lodDistance": 400.0,
+        "farDistance": 700.0,
+        "range": 3000.0,
+        "leafWrap": 0.3,
+        "leafTransmission": 0.4,
+        "grassDensity": 200.0,
+        "grassHeight": 0.5,
+        "grassWidth": 0.03,
+        "grassRange": 150.0,
+        "grassWind": 0.35
+      }
+    },
+    {
+      "id": "b4204b8683ec0cb8",
+      "name": "MenuOptions",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "interface": {
+        "file": "Interfaces/MenuOptions.fluxui"
+      }
+    },
+    {
+      "id": "a6da4e6a283a5949",
+      "name": "Station orbitale",
+      "sector": [150, 0, 0],
+      "transform": {
+        "position": [-400541046.6987579, 3072.418446962826, 6321.718892468065],
+        "rotation": [0.0, 0.9983474, 0.0, 0.05746769],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Station/Station.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "Modeles/Station/Station-loin.glb",
+        "farDistance": 2000.0
+      },
+      "rimLight": {
+        "color": [0.45, 0.7, 1.0, 1.0],
+        "intensity": 0.5,
+        "sharpness": 4.0
+      },
+      "ship": {
+        "gravity": 9.81,
+        "velocity": [0.0, 0.0, 0.0],
+        "angularVelocity": [0.0, 0.0, 0.0],
+        "maxSpeed": 0.0,
+        "acceleration": 0.0,
+        "turnRates": [0.0, 0.0, 0.0],
+        "turnAccelerations": [0.0, 0.0, 0.0],
+        "strafeSpeed": 0.0,
+        "levelAssist": false,
+        "levelRate": 1.5,
+        "airGrip": 2.0,
+        "boost": 2.0,
+        "travelFactor": 10.0,
+        "travelSpoolTime": 3.0,
+        "fallsWithoutPilot": false
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Station/Station-collision.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "2032f89565466b26",
+      "name": "Hangar",
+      "parent": "a6da4e6a283a5949",
+      "transform": {
+        "position": [0.0, -0.5, 91.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Station/Hangar.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Station/Hangar-collision.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "408bf43e2c85004f",
+      "name": "Plateforme",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [0.0, 2.3, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "dock": {
+        "approach": 250.0,
+        "hover": 8.0,
+        "clearance": 2100.0
+      }
+    },
+    {
+      "id": "a294c38ce0f49b81",
+      "name": "Intérieur du hangar",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [0.0, 20.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "interior": {
+        "size": [110.0, 40.0, 150.0],
+        "ambient": [1.0, 1.0, 1.05, 1.0],
+        "luminance": 30.0,
+        "fade": 1.0,
+        "exposure": -1.0,
+        "minEv100": 3.0,
+        "maxEv100": 7.0
+      }
+    },
+    {
+      "id": "5a7bb7673caaeb9b",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [-30.0, 36.0, -55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "c0130fa6e34ee36b",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [-30.0, 36.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "a10f69319691510a",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [-30.0, 36.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "d107aaf476957978",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [-30.0, 36.0, 55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "1cc0da4f34b709cb",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [30.0, 36.0, -55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "a91cd4173d126f0b",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [30.0, 36.0, -20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "ef339d4b5fd15532",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [30.0, 36.0, 20.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "0a0b0ca649c7a702",
+      "name": "Plafonnier",
+      "parent": "2032f89565466b26",
+      "transform": {
+        "position": [30.0, 36.0, 55.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "light": {
+        "type": "point",
+        "color": [1.0, 0.95, 0.88, 1.0],
+        "lumens": 2000000.0,
+        "range": 70.0,
+        "angle": 60.0,
+        "softness": 0.25
+      }
+    },
+    {
+      "id": "9e97a0512f9fead4",
+      "name": "Joueur",
+      "parent": "a6da4e6a283a5949",
+      "transform": {
+        "position": [29.053468781876447, -0.51844696282557, 59.259179951696666],
+        "rotation": [0.0, -0.9983474, 0.0, 0.05746769],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "models/Personnage-Anime (2).glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      },
+      "character": {
+        "radius": 0.3,
+        "height": 1.8,
+        "walkSpeed": 2.0,
+        "runSpeed": 5.0,
+        "jumpSpeed": 4.5,
+        "acceleration": 10.0,
+        "player": true
+      },
+      "animator": {
+        "animation": "Marche",
+        "idleAnimation": "Repos",
+        "runAnimation": "Course",
+        "airAnimation": "Chute",
+        "sitDownAnimation": "S'asseoir",
+        "seatedAnimation": "Assis",
+        "standUpAnimation": "Se lever",
+        "speed": 1.0,
+        "loop": true
+      }
+    },
+    {
+      "id": "41942d6563017c6c",
+      "name": "Point d'apparition",
+      "parent": "a6da4e6a283a5949",
+      "transform": {
+        "position": [29.053468781876447, -0.51844696282557, 59.259179951696666],
+        "rotation": [0.0, -0.9983474, 0.0, 0.05746769],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "spawnPoint": {
+        "prefab": "Prefabs/Joueur.prefab.json"
+      }
+    },
+    {
+      "id": "b473ca33ba205098",
+      "name": "Manta",
+      "parent": "a6da4e6a283a5949",
+      "transform": {
+        "position": [10.382191170389486, 1.3, 78.6110451989006],
+        "rotation": [0.0, -0.9983474, 0.0, 0.05746769],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "ship": {
+        "gravity": 9.81,
+        "velocity": [0.0, 0.0, 0.0],
+        "angularVelocity": [0.0, 0.0, 0.0],
+        "maxSpeed": 200.0,
+        "acceleration": 30.0,
+        "turnRates": [70.2, 54.9, 129.6],
+        "turnAccelerations": [87.75, 68.625, 162.0],
+        "strafeSpeed": 10.0,
+        "levelAssist": true,
+        "levelRate": 1.5,
+        "airGrip": 2.0,
+        "boost": 3.0,
+        "travelFactor": 10.0,
+        "travelSpoolTime": 3.0,
+        "fallsWithoutPilot": true
+      },
+      "health": {
+        "health": 400.0
+      },
+      "warpDrive": {
+        "speed": 10000000.0
+      }
+    },
+    {
+      "id": "91be43f15cf4f627",
+      "name": "Coque",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Raie/Raie.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "Modeles/Raie/Raie-loin.glb",
+        "farDistance": 1500.0
+      },
+      "rimLight": {
+        "color": [0.45, 0.7, 1.0, 1.0],
+        "intensity": 0.8,
+        "sharpness": 4.0
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Raie/Raie-collision.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "905fd6c9e736d2b0",
+      "name": "Verrière",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, 1.5605, 2.48],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Raie/Raie-verriere-mobile.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      }
+    },
+    {
+      "id": "5947398e7160bf7f",
+      "name": "Verrière (collision)",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Raie/Raie-verriere.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "7600b028288cdc65",
+      "name": "Train d'atterrissage",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Raie/Raie-train.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      }
+    },
+    {
+      "id": "d7f109059307f8dc",
+      "name": "Roue avant",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, -1.4600000381469727, -1.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "collider": {
+        "shape": "box",
+        "size": [0.3, 0.4, 0.6],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "2a2cfc3e1a7fd731",
+      "name": "Roue gauche",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [-2.4000000953674316, -1.4600000381469727, 5.900000095367432],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "collider": {
+        "shape": "box",
+        "size": [0.5, 0.4, 0.7],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "68fcefa5b161809c",
+      "name": "Roue droite",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [2.4000000953674316, -1.4600000381469727, 5.900000095367432],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "collider": {
+        "shape": "box",
+        "size": [0.5, 0.4, 0.7],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "5ac73c2ba506c01e",
+      "name": "Levier du train",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [-0.8786, 0.5627, -0.305],
+        "rotation": [0.0, 0.55919296, 0.0, 0.82903755],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Raie/Raie-levier-train.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      }
+    },
+    {
+      "id": "1a2dd45f8814c892",
+      "name": "Poste de pilotage",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "seat": {
+        "pilot": true,
+        "eye": [0.0, 1.15, 0.2],
+        "exit": [-1.0, -1.66, -4.5],
+        "reach": 10.0
+      }
+    },
+    {
+      "id": "b27d9c1bf720fb17",
+      "name": "Moteurs",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.0, 0.1, 9.5],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "sound": {
+        "file": "Sons/Reacteur.wav",
+        "volume": 1.0,
+        "pitch": 1.0,
+        "loop": true,
+        "playOnStart": true,
+        "spatial": true,
+        "minDistance": 6.0,
+        "maxDistance": 150.0,
+        "followShipSpeed": true
+      }
+    },
+    {
+      "id": "5a7624703b6c3951",
+      "name": "Réacteur gauche",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [-0.82, 0.033, 10.81],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "thruster": {
+        "color": [0.25, 0.5, 1.0, 1.0],
+        "width": 0.82,
+        "height": 0.25,
+        "length": 3.0,
+        "intensity": 1.0,
+        "idle": 0.15,
+        "lightLumens": 4000000.0
+      }
+    },
+    {
+      "id": "08d50299d85ba0b0",
+      "name": "Réacteur droit",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [0.82, 0.033, 10.81],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "thruster": {
+        "color": [0.25, 0.5, 1.0, 1.0],
+        "width": 0.82,
+        "height": 0.25,
+        "length": 3.0,
+        "intensity": 1.0,
+        "idle": 0.15,
+        "lightLumens": 4000000.0
+      }
+    },
+    {
+      "id": "d7fd4470eda3a85a",
+      "name": "Canon gauche",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [-1.9, 0.021, -1.81],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "hardpoint": {
+        "kind": "gun",
+        "size": 1
+      }
+    },
+    {
+      "id": "c3e5dee88099ad6a",
+      "name": "Canon de 20 mm",
+      "parent": "d7fd4470eda3a85a",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "weapon": {
+        "kind": "gun",
+        "size": 1,
+        "group": 1,
+        "fireRate": 8.0,
+        "projectileSpeed": 1500.0,
+        "range": 2500.0,
+        "damage": 10.0,
+        "cone": 0.0,
+        "turnRate": 120.0,
+        "muzzle": 0.0,
+        "color": [1.0, 0.55, 0.2, 1.0],
+        "ammo": 0,
+        "guidance": 90.0,
+        "lockAngle": 10.0
+      }
+    },
+    {
+      "id": "6047e1fb5bca642c",
+      "name": "Canon droit",
+      "parent": "b473ca33ba205098",
+      "transform": {
+        "position": [1.9, 0.021, -1.81],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "hardpoint": {
+        "kind": "gun",
+        "size": 1
+      }
+    },
+    {
+      "id": "1dfaa47fa8ab9cdf",
+      "name": "Canon de 20 mm",
+      "parent": "6047e1fb5bca642c",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "weapon": {
+        "kind": "gun",
+        "size": 1,
+        "group": 1,
+        "fireRate": 8.0,
+        "projectileSpeed": 1500.0,
+        "range": 2500.0,
+        "damage": 10.0,
+        "cone": 0.0,
+        "turnRate": 120.0,
+        "muzzle": 0.0,
+        "color": [1.0, 0.55, 0.2, 1.0],
+        "ammo": 0,
+        "guidance": 90.0,
+        "lockAngle": 10.0
+      }
+    },
+    {
+      "id": "c1241dca7a5f217d",
+      "name": "ConnexionPerdue",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "interface": {
+        "file": "Interfaces/ConnexionPerdue.fluxui"
+      }
+    }
+  ]
+}

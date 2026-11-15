@@ -33,7 +33,11 @@ struct TileInputs
     float4 axisN;  // xyz : normale de la face ; w : rayon
     float4 axisS;  // xyz : axe s ; w : relief
     float4 axisT;  // xyz : axe t ; w : profondeur des jupes
-    uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalage des couches à la largeur des montagnes
+    uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (OctaveShift)
+    uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float)
+    // Réglages de la forme (Terrain::ShapeConstants) : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains,
+    // detailHills, detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, -, -, -).
+    float4 shape[4];
     float4 columns[Columns];
     int4 cells[OctaveCount];
     float4 fractions[OctaveCount]; // couches déformées : au point déformé du centre
@@ -63,22 +67,21 @@ groupshared uint permutation[512];
 groupshared float wideHeights[Wide * Wide];
 groupshared uint wideZones[Wide * Wide]; // Terrain::Zones, deux demi-floats (f32tof16)
 groupshared float coarseHeights[Coarse * Coarse];
+// Humidité du relief : hauteurs du point et de ses quatre voisins pour chaque point de la grille, puis la grille.
+static const uint MaxWetnessSide = 8; // Planetology::MaxWetnessSide
+static const uint MaxWetnessPoints = (MaxWetnessSide + 1) * (MaxWetnessSide + 1);
+groupshared float wetHeights[MaxWetnessPoints * 5];
+groupshared float wetGrid[MaxWetnessPoints];
 groupshared float lowestShared[GroupSize];
 groupshared float radiusShared[GroupSize];
 groupshared float highestShared[GroupSize];
 // Boîtes des paquets en construction : bas xyz puis haut xyz de chacun, en OrderedFloat (min et max atomiques).
 groupshared uint meshletBounds[MeshletCount * 6];
 
-// Réglages du relief, comme dans Planet.cpp.
-static const float DetailPlains = 0.012;
-static const float DetailHills = 0.03;
-static const float DetailMountains = 0.065;
-static const float ChainStart = 0.75;
-static const float ChainEnd = 0.95;
+// Réglages du relief, comme dans Planet.cpp ; ceux que la planète peut changer sont dans tile.shape.
 static const float Foothills = 0.05;
 static const float ChainBase = 0.2;
 static const float PeakHeight = 0.85;
-static const uint PeakChance = 218;
 static const float PeakSecondary = 0.45;
 static const float PeakSlabInner = 0.35;
 static const float PeakSlabOuter = 0.5;
@@ -94,7 +97,6 @@ static const float PeakSpurSharpness = 6.0;
 static const uint PeakSpurCount = 4;
 static const float PeakStretchSoftness = 0.2;
 static const float PeakBlend = 0.04;
-static const float GullyAmplitude = 0.09;
 static const float GullyStartSlope = 0.08;
 static const float GullyFullSlope = 0.35;
 static const float GullyGain = 0.5;
@@ -102,33 +104,42 @@ static const float GullyBranch = 1.5;
 static const float GullyJitter = 0.5;
 static const float GullySharpness = 4.0;
 static const float MountainWeight = 0.85;
-static const float HillWeight = 0.15;
-static const float WarpLarge = 0.06;
-static const float WarpSmall = 0.012;
 
-// Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, à la largeur des montagnes,
-// octaves perdues plus tôt, érosion et octaves dont la pente compte.
+// Échelle d'une couche (LayerScale dans Planet.cpp) : largeur des continents, des zones ou des montagnes.
+static const uint ScaleContinent = 0;
+static const uint ScaleZone = 1;
+static const uint ScaleMountain = 2;
+
+// Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, échelle, érosion et octaves
+// dont la pente compte.
 struct Layer
 {
     uint first;
     uint last;
     float gain;
-    bool scaled;
-    bool shifted;
+    uint scale;
     float erosion;
     uint erodedOctaves;
 };
 static const Layer Layers[9] = {
-    { 0, 5, 0.5, false, false, 0.0, 0 },   // continents
-    { 1, 3, 0.5, false, false, 0.0, 0 },   // zones des chaînes de montagnes
-    { 2, 5, 0.5, false, false, 0.0, 0 },   // zones de collines
-    { 2, 4, 0.5, true, true, 0.0, 0 },     // sommets
-    { 4, 9, 0.5, true, true, 4.0, 5 },     // collines
-    { 6, 22, 0.58, false, false, 3.0, 6 }, // détail
-    { 0, 3, 0.5, false, false, 0.0, 0 },   // grande déformation
-    { 3, 6, 0.5, false, false, 0.0, 0 },   // petite déformation
-    { 3, 7, 0.5, true, true, 0.0, 0 },     // ravines
+    { 0, 5, 0.5, ScaleContinent, 0.0, 0 },   // continents
+    { 1, 3, 0.5, ScaleZone, 0.0, 0 },     // zones des chaînes de montagnes
+    { 2, 5, 0.5, ScaleZone, 0.0, 0 },     // zones de collines
+    { 2, 4, 0.5, ScaleMountain, 0.0, 0 }, // sommets
+    { 4, 9, 0.5, ScaleMountain, 4.0, 5 }, // collines
+    { 6, 22, 0.58, ScaleZone, 3.0, 6 },   // détail
+    { 0, 3, 0.5, ScaleZone, 0.0, 0 },     // grande déformation
+    { 3, 6, 0.5, ScaleZone, 0.0, 0 },     // petite déformation
+    { 3, 7, 0.5, ScaleMountain, 0.0, 0 }, // ravines
 };
+
+// Octaves qu'une couche perd plus tôt (Terrain::GetScaleShift, GetZoneShift et GetContinentShift, 8 bits chacun dans
+// options.w).
+uint OctaveShift(uint scale)
+{
+    const uint at = scale == ScaleMountain ? 0u : scale == ScaleZone ? 8u : 16u;
+    return (tile.options.w >> at) & 0xFFu;
+}
 
 float Fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 float FadeSlope(float t) { return 30.0 * t * t * (t * (t - 2.0) + 1.0); }
@@ -307,8 +318,8 @@ float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeS
 {
     const Layer L = Layers[layer];
     const float total = (1.0 - pow(L.gain, float(L.last - L.first))) / (1.0 - L.gain);
-    // Fréquences déjà multipliées dans fractions.w ; la couche perd ses octaves options.w niveaux plus tôt.
-    const uint shift = L.shifted ? tile.options.w : 0;
+    // Fréquences déjà multipliées dans fractions.w ; la couche perd ses octaves OctaveShift niveaux plus tôt.
+    const uint shift = OctaveShift(L.scale);
     const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(layer);
     float sum = 0.0;
@@ -324,7 +335,7 @@ float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeS
             slope += Tangent(n.yzw, direction) * (tile.fractions[o].w * amplitude);
         }
         const float steep = slopeScale * length(slope);
-        sum += amplitude * n.x / (1.0 + L.erosion * steep * steep);
+        sum += amplitude * n.x / (1.0 + L.erosion * tile.shape[2].y * steep * steep);
         amplitude *= L.gain;
     }
     return sum;
@@ -340,7 +351,8 @@ float3 PeakVector(uint h, uint index)
 float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
 {
     const Layer L = Layers[3];
-    const uint last = min(L.last, octaves > tile.options.w ? octaves - tile.options.w : 0);
+    const uint shift = OctaveShift(ScaleMountain);
+    const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(3);
     float sum = 0.0;
     float3 gradient = float3(0.0, 0.0, 0.0);
@@ -356,7 +368,7 @@ float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
                 for (int l = -1; l <= 1; ++l) {
                     const int3 c = (cell + int3(i, j, l)) & 255;
                     const uint h = permutation[permutation[permutation[c.x] + uint(c.y)] + uint(c.z)];
-                    if (permutation[h + 3] >= PeakChance) { continue; }
+                    if (float(permutation[h + 3]) >= tile.shape[3].x) { continue; }
                     const float3 e = f - float3(i, j, l) - PeakVector(h, 0) * 0.7 - 0.5;
                     const float radial = dot(e, direction);
                     const float slab = 1.0 - smoothstep(PeakSlabInner, PeakSlabOuter, abs(radial));
@@ -419,12 +431,13 @@ float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
 float Gullies(float3 point, float3 direction, uint octaves, float3 slope, float amount)
 {
     const Layer L = Layers[8];
-    const uint last = min(L.last, octaves > tile.options.w ? octaves - tile.options.w : 0);
+    const uint shift = OctaveShift(ScaleMountain);
+    const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(8);
     const float relief = tile.axisS.w;
     const float radius = tile.axisN.w;
     float sum = 0.0;
-    float amplitude = GullyAmplitude * amount;
+    float amplitude = tile.shape[2].x * amount;
     for (uint k = L.first; k < last; ++k) {
         const float steep = length(slope);
         const float fade = saturate((steep - GullyStartSlope) / (GullyFullSlope - GullyStartSlope));
@@ -472,10 +485,13 @@ float3 WarpChange(float3 delta, uint layer, float amount)
         total += amplitude;
         amplitude *= L.gain;
     }
+    // Plus fine de m_zoneScale sur une grande planète, elle pousse d'autant moins loin (Terrain::Warp) : l'échelle se lit
+    // dans la fréquence de la première octave, BaseFrequency (1,5) x 2^first x m_zoneScale.
+    const float scale = tile.fractions[base].w / (1.5 * float(1u << L.first));
     // Direction du point : celle du centre, plus δ.
     const Shifted3 direction = MakeShifted3(tile.center.xyz, delta);
     float3 change = float3(0.0);
-    amplitude = amount / total;
+    amplitude = amount / (total * scale);
     for (uint k = L.first; k < L.last; ++k) {
         const uint o = base + k - L.first;
         const float4 fraction = tile.fractions[o];
@@ -495,14 +511,15 @@ float Height(float3 delta, uint octaves, out float2 zones)
     const float toSlope = relief / tile.axisN.w;
     const float3 direction = tile.center.xyz + delta;
     // Points déformés, relatifs à ceux du centre de la tuile (Terrain::GetWarpedPoints).
-    const float3 large = delta + WarpChange(delta, 6, WarpLarge);
-    const float3 small = large + WarpChange(delta, 7, WarpSmall);
+    const float3 large = delta + WarpChange(delta, 6, tile.shape[2].z);
+    const float3 small = large + WarpChange(delta, 7, tile.shape[2].w);
     const float continents = Fbm(large, direction, 0, octaves, 0.0);
     const float land = smoothstep(-0.26, 0.06, continents);
-    const float hillZone = smoothstep(0.05, 0.4, Fbm(large, direction, 2, octaves, 0.0));
+    const float4 zone = tile.shape[0];
+    const float hillZone = smoothstep(zone.z, zone.w, Fbm(large, direction, 2, octaves, 0.0));
     const float chains = 1.0 - abs(Fbm(large, direction, 1, octaves, 0.0));
-    const float mountainZone = smoothstep(ChainStart, ChainEnd, chains) * smoothstep(0.0, 0.2, continents);
-    zones = float2(hillZone, smoothstep(ChainStart - Foothills, ChainEnd, chains) * smoothstep(0.0, 0.2, continents));
+    const float mountainZone = smoothstep(zone.x, zone.y, chains) * smoothstep(0.0, 0.2, continents);
+    zones = float2(hillZone, smoothstep(zone.x - Foothills, zone.y, chains) * smoothstep(0.0, 0.2, continents));
     float peaks = 0.0;
     float gullies = 0.0;
     if (mountainZone > 0.0) {
@@ -510,11 +527,12 @@ float Height(float3 delta, uint octaves, out float2 zones)
         peaks = Peaks(small, direction, octaves, slope);
         gullies = Gullies(large, direction, octaves, slope * (toSlope * MountainWeight * mountainZone * PeakHeight), mountainZone);
     }
-    const float hills = hillZone > 0.0 ? Fbm(small, direction, 4, octaves, toSlope * HillWeight * hillZone) : 0.0;
-    const float roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
+    const float4 detailShape = tile.shape[1];
+    const float hills = hillZone > 0.0 ? Fbm(small, direction, 4, octaves, toSlope * detailShape.w * hillZone) : 0.0;
+    const float roughness = detailShape.x + detailShape.y * hillZone + detailShape.z * mountainZone;
     const float detail = Fbm(delta, direction, 5, octaves, toSlope * roughness);
     const float height = -0.4 + 0.45 * land + 0.15 * continents + MountainWeight * mountainZone * (ChainBase + PeakHeight * peaks)
-                       + gullies + HillWeight * hillZone * hills + roughness * detail;
+                       + gullies + detailShape.w * hillZone * hills + roughness * detail;
     return relief * clamp(height, -1.0, 1.0);
 }
 
@@ -554,6 +572,65 @@ float3 WideLocal(uint i, uint j)
 float3 CoarseLocal(uint ci, uint cj)
 {
     return Local(Delta(2 * ci, 2 * cj), coarseHeights[cj * Coarse + ci]);
+}
+
+// --- Humidité du relief (Planetology/ReliefWetness.hpp, à garder pareil) ---
+
+static const float WetnessReach = 300.0; // m
+
+uint WetnessSide() { return tile.wetness.y; }
+uint WetnessSamples() { return (WetnessSide() + 1) * (WetnessSide() + 1) * 5; }
+
+// Hauteur w de la grille : point w / 5, puis lui-même (0) ou un voisin à WetnessReach (1 à 4) le long de l'axe s de
+// la face et de sa perpendiculaire, dans le plan tangent. Le voisin d' = (d + t.ε) / √(1 + ε²) s'écrit en écart au
+// centre de la tuile sans perdre ses chiffres : (δ + t.ε) / s - c.ε² / (s.(1 + s)).
+float WetnessHeight(uint w)
+{
+    const uint side = WetnessSide();
+    const uint point = w / 5;
+    const uint k = w % 5;
+    const uint step = TileQuads / side;
+    const float3 delta = Delta((point % (side + 1)) * step + 2, (point / (side + 1)) * step + 2);
+    if (k == 0) {
+        return Height(delta, tile.wetness.x);
+    }
+    const float3 d = tile.center.xyz + delta;
+    const float3 t1 = normalize(tile.axisS.xyz - d * dot(d, tile.axisS.xyz));
+    const float3 t = (k <= 2 ? t1 : cross(d, t1)) * ((k % 2 == 1 ? 1.0 : -1.0) * (WetnessReach / tile.axisN.w));
+    const float epsilon2 = dot(t, t);
+    const float s = sqrt(1.0 + epsilon2);
+    return Height((delta + t) / s - tile.center.xyz * (epsilon2 / (s * (1.0 + s))), tile.wetness.x);
+}
+
+// La grille, une fois wetHeights rempli : creux (moyenne des voisins plus haute) vers 1, crête vers -1.
+void BuildWetnessGrid(uint thread)
+{
+    const uint points = (WetnessSide() + 1) * (WetnessSide() + 1);
+    if (WetnessSide() > 0 && thread < points) {
+        const uint at = thread * 5;
+        const float hollow = 0.25 * (wetHeights[at + 1] + wetHeights[at + 2] + wetHeights[at + 3] + wetHeights[at + 4]) - wetHeights[at];
+        const float depth = max(0.01 * tile.axisS.w, 2.0);
+        wetGrid[thread] = hollow / (abs(hollow) + depth);
+    }
+}
+
+// Humidité du relief au point (u, v) de la grille de la tuile (0 à TileQuads), fondu compris.
+float SampleWetness(float u, float v)
+{
+    const uint side = WetnessSide();
+    if (side == 0) {
+        return 0.0;
+    }
+    const float x = clamp(u, 0.0, float(TileQuads)) * float(side) / float(TileQuads);
+    const float y = clamp(v, 0.0, float(TileQuads)) * float(side) / float(TileQuads);
+    const uint a = min(uint(x), side - 1);
+    const uint b = min(uint(y), side - 1);
+    const float fx = x - float(a);
+    const float fy = y - float(b);
+    const uint row = side + 1;
+    const float low = lerp(wetGrid[b * row + a], wetGrid[b * row + a + 1], fx);
+    const float high = lerp(wetGrid[(b + 1) * row + a], wetGrid[(b + 1) * row + a + 1], fx);
+    return lerp(low, high, fy) * asfloat(tile.wetness.z);
 }
 
 struct TileVertex
@@ -602,8 +679,9 @@ TileVertex BuildVertex(uint i, uint j)
     return vertex;
 }
 
-// zones : Terrain::Zones, dans les coordonnées de texture (lues par vertexPlanet pour les biomes).
-void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones)
+// zones : Terrain::Zones, et wet : l'humidité du relief, dans les coordonnées de texture (PackZones, lues par
+// vertexPlanet pour les biomes et le climat).
+void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones, float wet)
 {
     index += constants.firstVertex;
     const uint v = index * 8;
@@ -613,8 +691,8 @@ void Write(uint index, float3 position, float3 normal, float3 morphOffset, float
     vertices[v + 3] = normal.x;
     vertices[v + 4] = normal.y;
     vertices[v + 5] = normal.z;
-    vertices[v + 6] = zones.x;
-    vertices[v + 7] = zones.y;
+    vertices[v + 6] = PackZones(zones);
+    vertices[v + 7] = wet;
     const uint m = index * 6;
     morph[m + 0] = morphOffset.x;
     morph[m + 1] = morphOffset.y;
@@ -677,8 +755,14 @@ void computeMain(uint thread : SV_GroupIndex)
     }
     GroupMemoryBarrierWithGroupSync();
 
-    // Hauteurs : la grille large avec les octaves de la tuile, celle de la parente avec les siennes.
-    for (uint p = thread; p < Wide * Wide + Coarse * Coarse; p += GroupSize) {
+    // Hauteurs : la grille large avec les octaves de la tuile, celle de la parente avec les siennes, puis celles de
+    // l'humidité du relief (relief grossier), dans la même boucle pour occuper tous les threads.
+    const uint wetSamples = WetnessSide() > 0 ? WetnessSamples() : 0;
+    for (uint p = thread; p < Wide * Wide + Coarse * Coarse + wetSamples; p += GroupSize) {
+        if (p >= Wide * Wide + Coarse * Coarse) {
+            wetHeights[p - Wide * Wide - Coarse * Coarse] = WetnessHeight(p - Wide * Wide - Coarse * Coarse);
+            continue;
+        }
         if (p < Wide * Wide) {
             const uint i = p % Wide;
             const uint j = p / Wide;
@@ -693,13 +777,16 @@ void computeMain(uint thread : SV_GroupIndex)
         }
     }
     GroupMemoryBarrierWithGroupSync();
+    BuildWetnessGrid(thread);
+    GroupMemoryBarrierWithGroupSync();
 
     float lowest = 1.0e30;
     float highest = 0.0;
     float radius = 0.0;
     for (uint v = thread; v < TileSide * TileSide; v += GroupSize) {
         const TileVertex vertex = BuildVertex(v % TileSide, v / TileSide);
-        Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(v % TileSide, v / TileSide));
+        Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(v % TileSide, v / TileSide),
+              SampleWetness(float(v % TileSide), float(v / TileSide)));
         const float3 target = vertex.position + vertex.morphOffset;
         AddToMeshlets(v % TileSide, v / TileSide, vertex.position);
         AddToMeshlets(v % TileSide, v / TileSide, target);
@@ -719,7 +806,8 @@ void computeMain(uint thread : SV_GroupIndex)
         const TileVertex vertex = BuildVertex(at.x, at.y);
         const float3 direction = tile.center.xyz + Delta(at.x + 2, at.y + 2);
         const float3 position = vertex.position - direction * tile.axisT.w;
-        Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(at.x, at.y));
+        Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(at.x, at.y),
+              SampleWetness(float(at.x), float(at.y)));
         radius = max(radius, length(position + vertex.morphOffset));
         AddToMeshlets(at.x, at.y, position);
         AddToMeshlets(at.x, at.y, position + vertex.morphOffset);
@@ -933,9 +1021,12 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         // dense des biomes.
         const float3 flat = (tile.center.xyz + delta) * radius;
         const float noise = ForestNoise(flat);
+        // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
+        const float wet = SampleWetness(u, v);
+        const float moreForest = ReliefForest * wet;
         float densest = 0.0;
         for (uint b = 0; b < biomeCount; ++b) {
-            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w), 0.03));
+            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w + moreForest), 0.03));
         }
         if (keep >= densest) {
             continue;
@@ -949,17 +1040,19 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         const float3 position = Local(delta, height);
         const float3 local = tile.center.xyz * tile.axisN.w + position;
         const float altitude = height / relief;
-        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local);
+        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local) + float2(0.0, ReliefHumidity * wet);
         const float3 zoneShares = ZoneShares(zones);
+        const float3 lithology = Lithology(flat, zones.y);
+        const float4 geology = float4(lithology, SoilDepth(wet, lithology));
         float weights[MaxBiomes];
         float remaining = 1.0;
         for (uint b = 0; b < MaxBiomes; ++b) {
-            weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate) * remaining : 0.0;
+            weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate, geology) * remaining : 0.0;
             remaining -= weights[b];
         }
         const uint biome = GroveBiome(flat, weights, biomeCount);
         if (biome == MaxBiomes
-            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[biome].zones.w), 0.03)) {
+            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[biome].zones.w + moreForest), 0.03)) {
             continue;
         }
         const uint choice = GroveSpecies(flat, biome);
@@ -991,7 +1084,8 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
         const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
         const float3 up = normalize(local);
-        if (abs(dot(normalize(cross(du, dv)), up)) < traits.z) {
+        // <= et borné à 1 : une pente maximale nulle n'en laisse aucun, même là où le float arrondit le sol à plat.
+        if (min(abs(dot(normalize(cross(du, dv)), up)), 1.0) <= traits.z) {
             continue;
         }
         const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * sowVegetation[0].biomes[biome].humidity.w;
@@ -1023,6 +1117,14 @@ void computeTrees(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     if (thread == 0) {
         treeCount = 0;
     }
+    GroupMemoryBarrierWithGroupSync();
+    // Humidité du relief de la plaine : une petite grille (9 à 25 points sur une plaine), refaite par chacun de ses groupes.
+    const uint wetSamples = WetnessSide() > 0 ? WetnessSamples() : 0;
+    for (uint w = thread; w < wetSamples; w += GroupSize) {
+        wetHeights[w] = WetnessHeight(w);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    BuildWetnessGrid(thread);
     GroupMemoryBarrierWithGroupSync();
 
     float4 first;

@@ -99,7 +99,7 @@ namespace {
         void DrawIndexedIndirect(const RHI::Buffer&, std::uint64_t, std::uint32_t) override {}
         void DrawMeshTasks(std::uint32_t) override {}
         void Dispatch(std::uint32_t, std::uint32_t, std::uint32_t) override {}
-        void ComputeBarrier() override {}
+        void ComputeBarrier(RHI::ComputeReaders) override {}
         void GenerateMipmaps(const RHI::Texture&) override {}
         void CopyBuffer(const RHI::Buffer&, std::uint64_t, RHI::Buffer&, std::uint64_t, std::uint64_t) override {}
         void BuildBottomLevels(std::span<RHI::AccelerationStructure* const>, const RHI::Buffer&) override {}

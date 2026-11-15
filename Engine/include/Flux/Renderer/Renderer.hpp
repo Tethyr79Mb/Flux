@@ -8,6 +8,7 @@
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
+#include "Flux/Renderer/GBufferView.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -156,6 +157,16 @@ namespace Flux {
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
         void SetVSync(bool enabled);
         bool IsVSyncEnabled() const;
+        // Images de la swapchain demandées, 2 ou 3 (prend effet à l'image suivante). Avec la V-Sync, 2 retire une image
+        // de retard (environ 16,7 ms à 60 Hz) tant que le GPU tient la cadence ; 3 évite qu'une image trop longue en
+        // fasse sauter une. Sans V-Sync (MAILBOX), 3 est conseillé.
+        static constexpr std::uint32_t MinSwapchainImages = 2;
+        static constexpr std::uint32_t MaxSwapchainImages = 3;
+        static constexpr std::uint32_t DefaultSwapchainImages = 3;
+        void SetSwapchainImages(std::uint32_t images);
+        std::uint32_t GetSwapchainImages() const;
+        // Images réellement obtenues : le pilote peut en imposer plus que demandé.
+        std::uint32_t GetSwapchainImageCount() const;
         // Force du bloom, de 0 (aucun) à 1 : la part de la lumière de chaque pixel étalée autour de lui. Les zones très
         // lumineuses (soleil, flammes, émissifs) débordent d'autant plus qu'elles sont fortes.
         static constexpr float DefaultBloom = 0.04f;
@@ -182,10 +193,12 @@ namespace Flux {
         // Fils qui enregistrent les passes de l'image en parallèle (ceux du moteur, qui vivent plus longtemps que le
         // Renderer) ; nul (par défaut) : tout sur le fil de Render.
         void SetJobSystem(JobSystem* jobs);
-        // Préparation (entités, traçantes) et enregistrement en parallèle, avec des fils (activé par défaut) :
-        // désactivable pour comparer.
+        // Préparation (entités, traçantes) et enregistrement en parallèle, avec des fils (permis par défaut) :
+        // désactivable pour comparer. Permis, les fils ne sont pris que si le CPU limite l'image ; quand il attend le
+        // GPU ou l'écran, un seul fil (IsUsingWorkers dit lequel des deux à la dernière image).
         void SetParallelRecording(bool enabled);
         bool IsParallelRecording() const;
+        bool IsUsingWorkers() const;
         // Grille au sol de l'éditeur (plan y = 0, lignes du mètre, des 10 m et des 100 m, axes X et Z en couleur),
         // cachée derrière les objets ; désactivée par défaut, le jeu ne la montre pas.
         void SetGridVisible(bool visible);
@@ -206,6 +219,9 @@ namespace Flux {
         // Vue de débogage des ombres en rayons (RayShadowRenderer::SetShowMask) ; sans effet sans ray tracing.
         void SetShowRayShadowMask(bool enabled);
         bool IsShowingRayShadowMask() const;
+        // Vue de débogage du G-buffer des modèles opaques (LightingRenderer), à la place de leur éclairage.
+        void SetGBufferView(GBufferView view);
+        GBufferView GetGBufferView() const;
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;

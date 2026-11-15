@@ -15,6 +15,8 @@
 // Table du ciel vu de la caméra (skyTableFragment), dans l'air d'une planète : voir AtmosphereSkySize.
 [[vk::binding(3, 0)]] Sampler2D skyRayleigh;
 [[vk::binding(4, 0)]] Sampler2D skyMie;
+// Diffusion multiple de l'air de la planète (AtmosphereMultipleLight).
+[[vk::binding(5, 0)]] Sampler2D atmosphereMultiple;
 
 // bakeFragment : la face de la texture cube en cours (0 à 5 : +X, -X, +Y, -Y, +Z, -Z).
 struct BakeParams
@@ -219,9 +221,9 @@ TableOutput skyTableFragment(float4 position : SV_Position)
     // 32 pas : la table est petite, le ciel y gagne en finesse à travers le bord de l'air. Un regard qui frôle une
     // plaine plus basse que le rayon de la planète passe sous lui : la densité n'y monte plus, comme dans la table de
     // l'air (sans quoi le ciel et le sol lointain n'auraient pas la même brume).
-    const AtmosphereSums sums = AtmosphereMarch(a, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, 0.0);
+    const AtmosphereSums sums = AtmosphereMarch(a, atmosphereMultiple, origin, direction, distance, sky[0].toSun.xyz, 32, 0.5, 0.0);
     TableOutput output;
-    AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
+    AtmosphereTableWrite(a, sums, dot(direction, sky[0].toSun.xyz), output.rayleigh, output.mie);
     return output;
 }
 
@@ -240,9 +242,9 @@ TableOutput airTableFragment(float4 position : SV_Position)
     const float3 direction = normalize(s.forward.xyz + s.right.xyz * tangent.x + s.up.xyz * tangent.y);
     const float distance = AtmosphereSliceDistance(a, float(slice) / float(AtmosphereAirSlices - 1));
     // 16 pas, comme la marche par sommet qu'elle remplace (AirTo dans Mesh.slang).
-    const AtmosphereSums sums = AtmosphereMarch(a, -a.center.xyz, direction, distance, s.toSun.xyz, 16, 0.5, 0.0);
+    const AtmosphereSums sums = AtmosphereMarch(a, atmosphereMultiple, -a.center.xyz, direction, distance, s.toSun.xyz, 16, 0.5, 0.0);
     TableOutput output;
-    AtmosphereTableWrite(a, sums, output.rayleigh, output.mie);
+    AtmosphereTableWrite(a, sums, dot(direction, s.toSun.xyz), output.rayleigh, output.mie);
     return output;
 }
 
@@ -257,30 +259,17 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     const float3 direction = normalize(s.forward.xyz + s.right.xyz * input.clip.x - s.up.xyz * input.clip.y);
     const float pixelAngle = s.forward.w;
 
-    float3 color;
-    float3 stars = float3(0.0);
-    if (s.options.y != 0) {
-        // Mip choisi d'après l'écart entre pixels voisins ; u fait le tour : sans correction, l'écart d'un bord à
-        // l'autre de l'image prendrait le plus petit mip (une ligne floue verticale).
-        const float2 uv = PanoramaUv(direction);
-        float2 dx = ddx(uv);
-        float2 dy = ddy(uv);
-        dx.x -= round(dx.x);
-        dy.x -= round(dy.x);
-        color = panorama.SampleGrad(uv, dx, dy).rgb * s.noiseOffset.w;
-    } else {
-        // Les étoiles ont leur propre éclat (galaxyCenter.w, déjà dans l'unité de lumière, avec un plancher à
-        // l'écran : SkyRenderer::Prepare).
-        color = background.SampleLevel(direction, 0.0).rgb * s.noiseOffset.w;
-        stars = Stars(direction, pixelAngle, s.options.x, s.galaxyAxis.w, s.galaxyCenter.w);
-    }
-
-    if (HasAtmosphere(s.atmosphere)) {
+    // Air d'abord : de jour, il cache les étoiles et la nébuleuse, qui ne sont alors ni lues ni calculées (la boucle
+    // des étoiles coûtait autant que le ciel au sol, pour être multipliée par presque rien).
+    float3 transmittance = float3(1.0);
+    float3 scattered = float3(0.0);
+    float distance = 1.0e30;
+    float starFade = 1.0;
+    const bool air = HasAtmosphere(s.atmosphere);
+    if (air) {
         // Jusqu'au sol de la planète (sous l'horizon, là où aucune tuile n'est dessinée) ou à travers tout l'air.
         const float2 ground = AtmosphereRaySphere(-s.atmosphere.center.xyz, direction, AtmosphereGround(s.atmosphere));
-        const float distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
-        float3 transmittance;
-        float3 scattered;
+        distance = ground.x <= ground.y && ground.x > 0.0 ? ground.x : 1.0e30;
         if (HasAtmosphereTables(s.atmosphere)) {
             // Dans l'air : lu dans la table du ciel, la phase (le halo autour du soleil) calculée ici, au pixel.
             const float2 uv = AtmosphereSkyUv(s.atmosphere, -s.atmosphere.center.xyz, direction, s.toSun.xyz);
@@ -291,7 +280,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
             // Vu de l'espace : l'air ne couvre qu'un anneau, trop fin pour la table. Pas fixes (milieu de chaque pas) :
             // décalés par pixel, ils donnaient un damier fin bien visible sans anticrénelage temporel pour le
             // lisser ; 24 pas pour ne pas voir de bandes à travers le bord de l'air.
-            scattered = AtmosphereScatter(s.atmosphere, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
+            scattered = AtmosphereScatter(s.atmosphere, atmosphereMultiple, direction, distance, s.toSun.xyz, s.sunColor.rgb, 24, 0.5,
                                           transmittance);
         }
         // Le jour, l'air éclairé (des milliers de cd/m²) noie la nébuleuse (moins d'une) d'elle-même. Les étoiles,
@@ -299,8 +288,33 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         // ciel de jour et halo d'une planète éclairée les cachent, la nuit et le noir de l'espace les montrent,
         // quelle que soit la densité de l'atmosphère.
         const float airOnScreen = dot(scattered, float3(0.2126, 0.7152, 0.0722)) * s.sunColor.w;
-        stars *= exp(-airOnScreen * StarDaylightFade);
-        color = (distance < 1.0e30 ? float3(0.0) : (color + stars) * transmittance) + scattered;
+        starFade = exp(-airOnScreen * StarDaylightFade);
+    }
+    // Sous l'horizon, ou étoiles éteintes à moins d'un millième (la nébuleuse, bien plus faible qu'elles, l'est
+    // davantage) : rien du fond ne se verrait.
+    const bool showBackground = !air || (distance >= 1.0e30 && starFade > 1.0e-3);
+
+    float3 color = float3(0.0);
+    float3 stars = float3(0.0);
+    if (s.options.y != 0) {
+        // Mip choisi d'après l'écart entre pixels voisins ; u fait le tour : sans correction, l'écart d'un bord à
+        // l'autre de l'image prendrait le plus petit mip (une ligne floue verticale). Hors de tout test : les écarts
+        // entre pixels ne valent que si tous les pixels voisins les calculent.
+        const float2 uv = PanoramaUv(direction);
+        float2 dx = ddx(uv);
+        float2 dy = ddy(uv);
+        dx.x -= round(dx.x);
+        dy.x -= round(dy.x);
+        color = panorama.SampleGrad(uv, dx, dy).rgb * s.noiseOffset.w;
+    } else if (showBackground) {
+        // Les étoiles ont leur propre éclat (galaxyCenter.w, déjà dans l'unité de lumière, avec un plancher à
+        // l'écran : SkyRenderer::Prepare).
+        color = background.SampleLevel(direction, 0.0).rgb * s.noiseOffset.w;
+        stars = Stars(direction, pixelAngle, s.options.x, s.galaxyAxis.w, s.galaxyCenter.w);
+    }
+
+    if (air) {
+        color = (distance < 1.0e30 ? float3(0.0) : (color + stars * starFade) * transmittance) + scattered;
     } else {
         color += stars;
     }

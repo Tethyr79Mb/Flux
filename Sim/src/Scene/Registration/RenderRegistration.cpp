@@ -8,7 +8,7 @@
 namespace Flux {
     void RegisterRenderComponents(ComponentRegistry& registry) {
         registry.Register<MeshRendererComponent>("meshRenderer", "Rendu")
-            .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}})
+            .Enum("mesh", "Maillage", &MeshRendererComponent::mesh, {{"cube", "Cube", MeshType::Cube}, {"sphere", "Sphère", MeshType::Sphere}})
             .Field("color", "Couleur", &MeshRendererComponent::color)
             .Field("luminance", "Lumière propre (cd/m²)", &MeshRendererComponent::luminance,
                    {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})
@@ -57,5 +57,14 @@ namespace Flux {
                    {.speed = 0.5, .min = 1.0, .max = 179.0, .decimals = 1})
             .Field("softness", "Bord du spot adouci", &LightComponent::softness,
                    {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
+        registry.Register<ReflectionProbeComponent>("reflectionProbe", "Sonde de reflets")
+            .Field("size", "Taille (m)", &ReflectionProbeComponent::size, {.speed = 0.05, .min = 0.1, .max = 1.0e4})
+            .Field("boxOffset", "Décalage de la boîte (m)", &ReflectionProbeComponent::boxOffset, {.speed = 0.05})
+            .Field("fade", "Fondu depuis les bords (m)", &ReflectionProbeComponent::fade,
+                   {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("intensity", "Intensité", &ReflectionProbeComponent::intensity,
+                   {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
+            .Field("refresh", "Recapture toutes les (s, 0 : aux changements)", &ReflectionProbeComponent::refresh,
+                   {.speed = 0.05, .min = 0.0, .max = 3600.0, .decimals = 1});
     }
 }

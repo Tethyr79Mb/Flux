@@ -63,6 +63,8 @@ namespace Flux::GameSettingsFile {
             Read(*window, "fullscreen", settings.fullscreen, IsBool, warnings);
         }
         Read(document, "vsync", settings.vsync, IsBool, warnings);
+        Read(document, "swapchainImages", settings.swapchainImages, IsInteger, warnings);
+        settings.swapchainImages = std::clamp(settings.swapchainImages, 2u, 3u); // Renderer::MinSwapchainImages, MaxSwapchainImages
         Read(document, "temporalAA", settings.temporalAA, IsBool, warnings);
         if (const auto detail = document.find("groundDetail"); detail != document.end()) {
             const auto found = detail->is_string() ? std::ranges::find(GroundDetailKeys, detail->get<std::string>()) : GroundDetailKeys.end();
@@ -113,6 +115,7 @@ namespace Flux::GameSettingsFile {
         document["window"] = {{"width", settings.windowSize.x}, {"height", settings.windowSize.y}, {"maximized", settings.maximized},
                               {"fullscreen", settings.fullscreen}};
         document["vsync"] = settings.vsync;
+        document["swapchainImages"] = settings.swapchainImages;
         document["temporalAA"] = settings.temporalAA;
         document["groundDetail"] = GroundDetailKeys[static_cast<std::size_t>(settings.groundDetail)];
         document["cloudQuality"] = CloudQualityKeys[static_cast<std::size_t>(settings.cloudQuality)];

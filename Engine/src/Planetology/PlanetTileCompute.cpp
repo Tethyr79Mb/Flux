@@ -140,7 +140,7 @@ namespace Flux::Planetology {
             commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch(1);
         }
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Draw | RHI::ComputeReaders::Host);
         frame.tiles.clear();
     }
 }

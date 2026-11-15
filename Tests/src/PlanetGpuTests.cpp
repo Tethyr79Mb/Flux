@@ -6,6 +6,7 @@
 #include "Flux/Planetology/Planet.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/PlanetTileCompute.hpp"
+#include "Planetology/ReliefWetness.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
 #include <algorithm>
@@ -34,7 +35,7 @@ namespace {
         }
         Planetology::PlanetRenderer& renderer = **created;
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
-        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+        const Planetology::Terrain terrain(planet);
         // Pas au centre de la face : c'est le coin commun de quatre tuiles à tous les niveaux.
         const Math::Vector3d up = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
         const double ground = planet.radius + terrain.GetHeight(up, terrain.GetOctaves(terrain.GetMaxLevel()));
@@ -98,7 +99,7 @@ namespace {
     // l'arrêt. Sans vitesse (images à plus d'une demi-seconde d'écart), rien d'avance.
     bool CheckMovingCamera(RHI::Device& device) {
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
-        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+        const Planetology::Terrain terrain(planet);
         const Math::Vector3d start = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
         const Math::Vector3d east = Math::Normalize(Math::Cross(start, Math::Vector3d{0.0, 0.0, 1.0}));
         const double altitude = planet.radius + terrain.GetHeight(start, terrain.GetOctaves(terrain.GetMaxLevel())) + 300.0;
@@ -251,9 +252,19 @@ bool RunPlanetGpuTests() {
     // et une de la taille de la Terre (décalées de 9) ; à chacune une racine, une tuile moyenne et une tuile du niveau
     // le plus fin, ailleurs sur une autre face.
     const Planetology::Terrain small(60000.0, 800.0, 5);
-    const Planetology::Terrain large(200000.0, 4500.0, 7, 20000.0);
-    const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0);
+    // La grande planète a tous les réglages de la forme loin de leur valeur par défaut (le GPU les lit dans
+    // TileInputs::shape), continents de 300 km compris (décalés de 2 octaves). Ravines et déformation sous 1 : l'écart
+    // des floats du GPU grandit avec elles (la rugosité n'y change presque rien). À x 1,15 toutes deux, une tuile de
+    // niveau 6 s'écartait de 0,165 m (permis 0,152 m) ; à x 1,8 et x 1,7, de 0,37 m.
+    const Planetology::Terrain large(200000.0, 4500.0, 7,
+                                     Planetology::ReliefShape{.mountainWidth = 20000.0, .zoneWidth = 420000.0,
+                                                              .continentWidth = 300000.0, .mountainShare = 1.3, .hillShare = 1.3,
+                                                              .hillHeight = 1.15, .peakDensity = 0.7, .plainRoughness = 1.1,
+                                                              .reliefRoughness = 1.1, .gullies = 0.85, .erosion = 0.8, .warp = 0.85});
+    const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0, 420000.0);
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
+    CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
+    CHECK(large.GetContinentShift() == 2);
     std::vector<Case> cases;
     for (const Planetology::Terrain* terrain : {&small, &large, &earth}) {
         const std::uint32_t max = terrain->GetMaxLevel();
@@ -297,6 +308,8 @@ bool RunPlanetGpuTests() {
         const Case& c = cases[n];
         Planetology::TileMesh mesh;
         Planetology::BuildTile(*c.terrain, c.key, mesh);
+        Planetology::WetnessGrid wetness;
+        Planetology::BuildWetnessGrid(*c.terrain, c.key, wetness);
         (*compute)->ReadTile(tiles[n], vertices.data(), morph.data());
         // Erreur permise : le float du relief, le millimètre, et celui de la position et de la déformation, relatifs au
         // centre de la tuile : quelques 1e-5 de sa taille aux pointes des sommets (30 cm sur une tuile de 20 km d'une
@@ -314,9 +327,19 @@ bool RunPlanetGpuTests() {
             }
             CHECK(Math::Dot(vertices[v].normal, mesh.vertices[v].normal) > 0.999f);
             CHECK(Math::Dot(morph[v].normal, mesh.morph[v].normal) > 0.999f);
-            // Zones du relief (biomes) dans uv : demi-floats sur le GPU.
-            CHECK(std::abs(vertices[v].uv.x - mesh.vertices[v].uv.x) < 2.0e-3f);
-            CHECK(std::abs(vertices[v].uv.y - mesh.vertices[v].uv.y) < 2.0e-3f);
+            // Zones du relief (biomes) dans uv.x : demi-floats, puis 10 bits chacune sur le GPU (PackZones).
+            const float hills = std::floor(vertices[v].uv.x / 1024.0f);
+            CHECK(std::abs(hills / 1023.0f - mesh.vertices[v].uv.x) < 3.0e-3f);
+            CHECK(std::abs((vertices[v].uv.x - hills * 1024.0f) / 1023.0f - mesh.vertices[v].uv.y) < 3.0e-3f);
+            // Humidité du relief dans uv.y : la grille du CPU, en double (les jupes prennent celle de leur bord).
+            if (v < Planetology::TileSide * Planetology::TileSide) {
+                const double wet = Planetology::SampleWetness(wetness, v % Planetology::TileSide, v / Planetology::TileSide);
+                if (std::abs(vertices[v].uv.y - wet) > 0.05) {
+                    std::printf("ÉCHEC tuile %zu (niveau %u), sommet %u : humidité du relief %.3f, CPU %.3f\n", n,
+                                static_cast<unsigned>(c.key.level), v, vertices[v].uv.y, wet);
+                    return false;
+                }
+            }
         }
         CHECK(std::abs(stats[n].lowest - mesh.lowest) < 2.0 * tolerance + 1.0e-6 * mesh.lowest);
         CHECK(std::abs(stats[n].radius - mesh.radius) < 2.0 * tolerance);

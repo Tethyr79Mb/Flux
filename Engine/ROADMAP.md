@@ -19,13 +19,14 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   Limites : l'ombre lointaine d'un objet qui bouge a une image de retard ; en tournant, les deux sont refaites.
 - 🔧 Objets opaques et ombres rangés en lots (pipeline, modèle, primitive) : les objets identiques en un seul appel
   indirect (instancing), teinte et réglages de chaque objet gardés. Les transparents restent un appel par objet.
-- ⬜ Lumières par tuiles d'écran (aujourd'hui chaque pixel parcourt toutes les lumières visibles).
+- ⬜ Lumières en grappes : étape A4 du plan d'éclairage (section Rendu).
 - 🔧 Enregistrement des commandes sur plusieurs fils (demande de Bruno, 2026-11-04), en 3 étapes :
   - ✅ 1. `JobSystem` : fils de travail (cœurs moins un), vol de tâches, attente qui aide, aucune allocation par tâche.
   - ✅ 2. Plusieurs listes primaires par image (choix de Bruno) : `CommandList::Fork` insère des listes à remplir sur d'autres fils, jouées dans l'ordre en une seule soumission ; un pool par command buffer, créé une fois. Aussi dans `Device::Submit`.
   - 🔧 3. Graphe de rendu enregistré en parallèle : préparation et barrières des textures prévues d'abord sur un fil, puis passes réparties en groupes de temps CPU égal (moyenne mesurée par passe), un groupe par liste de Fork, 8 listes au plus. Case « Enregistrement parallèle » et temps CPU par passe au panneau Moteur. Une passe ne se coupe qu'en étapes (3b) : la plus lourde (objets ou sol) fixe le temps.
   - ✅ 3b. Passes lourdes en command buffers secondaires : `CommandList::BeginParallelRenderPass` et `RenderGraph::PassBuilder::BeginParallel`, une liste secondaire par étape remplie par un fil. Scène (objets, arbres, sol, ciel, océan) et ombres (une étape par cascade).
   - 🔧 4. Préparation du rendu en parallèle : chaque entité dessinée (sphère, champ, matrices, contour) calculée par les fils en tranches de 64, poses et listes gardées sur un fil dans l'ordre ; traçantes préparées à côté. Temps par partie au panneau Moteur (« Préparation (CPU) ») et dans les mesures. Reste sur un fil : le parcours des tuiles du sol, les plaines d'arbres, les envois.
+  - ✅ 5. Fils pris seulement quand le CPU limite l'image : quand il attend le GPU ou l'écran, tout sur un fil (les listes en plus coûtaient ~0,4 ms, 153 contre 163 images/s chez Bruno). Bascule avec deux seuils et 60 images d'attente ; état au panneau Moteur (« Fils »).
   - Plus tard : Jolt sur le `JobSystem` (il a aujourd'hui ses propres fils, cœurs moins un aussi).
 
 ### Chargement et rendu communs à tous les modèles (demandé par Bruno le 2026-10-17)
@@ -61,22 +62,25 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   image change.
 - ⬜ Niveaux de détail par bloc générés au chargement, chargement selon la distance.
 - ⬜ Physique : mondes des vaisseaux en parallèle (0,18 ms mesurées avec 30 ennemis : pas utile pour l'instant).
-- ⬜ Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
+- 🔨 Calcul asynchrone (accord de Bruno du 2026-10-26) : une seconde file du GPU pour les calculs (tuiles du sol,
   semis des arbres, bruit et historique des nuages) qui tournent pendant le dessin, dans les trous qu'il laisse (gain
   habituel de 5 à 15 %, surtout sur AMD). Le render graph décide quelles passes y partent et place les sémaphores et
   les transferts de propriété. À mesurer avant (temps du GPU par passe) ; facultatif, le chemin à une file reste.
+  Fait : chaque file est un `Vk::Queue` avec son timeline (la file de calcul aura la même forme). Reste : la file, le
+  choix des passes par le render graph.
 
 ### Rendu
-- ⬜ Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
-  avant l'affichage, VK_KHR_present_wait), après les ombres.
+- 🔨 Limiteur d'images par seconde réglable par le joueur et réduction de la latence (image préparée au dernier moment
+  avant l'affichage, VK_KHR_present_wait), après les ombres. Fait : nombre d'images de la swapchain au choix (2 ou 3,
+  réglages et panneau Moteur).
 - 🔨 Vulkan (volk, vk-bootstrap, VMA) derrière une couche RHI (`include/Flux/Renderer/RHI`) : un autre backend (DX12) reste
   possible. Manquent : une liste de commandes par fil (une seule aujourd'hui, sur le fil principal), plusieurs files
   exposées au renderer (la file de transfert reste cachée dans le backend, pas de file de calcul), un cache de
   pipelines (`VkPipelineCache` enregistré sur disque), d'autres copies que `CopyBuffer` (buffer vers texture, texture
-  vers texture), plus de deux cibles de couleur par passe (G-buffer du rendu différé). Ray tracing : structures
+  vers texture). Jusqu'à 8 cibles de couleur par passe (`MaxColorTargets`, 2026-11-13). Ray tracing : structures
   d'accélération faites (2026-11-10), liaison aux shaders à faire.
   Fichiers rangés : un en-tête par interface, types communs dans `RHITypes.hpp`, un fichier par bloc Vulkan
-  (instance, surface, choix du GPU, device, swapchain, images en vol, heures du GPU, diagnostic, envois).
+  (instance, surface, choix du GPU, device, files, swapchain, images en vol, heures du GPU, diagnostic, envois).
 - ✅ Shaders Slang compilés par CMake.
 - ✅ Caméra en reverse-Z, plan lointain infini, rendu relatif à la caméra (mondes géants).
 - 🔧 Modèles glTF : matériaux PBR métal/rugosité, normales, occlusion, émissif, transparence triée ; fichiers compressés par gltfpack (EXT_meshopt_compression : la station passe de 34 à 5,1 Mo). À améliorer : transparents triés par objet (deux objets qui s'entrecroisent peuvent mal se superposer), `.gltf` non accepté, pas de morph targets, coordonnées de texture quantifiées (KHR_texture_transform) ignorées : compresser avec `-vtf`.
@@ -100,16 +104,26 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   structures non compactées (143 Mo pour la station).
 - 🔨 Scènes de test du rendu (`assets/scenes/Rendu/`, 2026-11-10) et vue de débogage « Cartes d'ombre en couleur »
   (panneau Moteur). Fait : scène des ombres (poteaux fins, contact au sol, plans inclinés, abri, barreaux, repères de
-  cascades, tour à 350 m). À faire : sphères de matériaux, intérieur sombre, lumières locales. Défauts relevés à
-  corriger : pas de fondu entre cascades proches, 23 cm par texel de 60 à 200 m, décalage normal jusqu'à 80 cm (ombres
-  décollées). Corrigé : pénombre selon la distance (PCSS) ; un objet à plus de 300 m vers le soleil
-  (tour, station) est aplati dans les cartes jusqu'à 3 km au lieu d'être coupé (son ombre dépendait du regard).
+  cascades, tour à 350 m) ; scène des matériaux (2026-11-13, primitive « Sphère » : rugosité 0 à 1 en plastique et en
+  fer, albédos de 4 à 80 %, six métaux, lumière propre, cubes). À faire : intérieur sombre, lumières locales. Corrigé
+  sur la scène des ombres : pénombre selon la distance (PCSS), fondu entre cascades, décalage normal d'un demi-texel
+  (pente du plan à la lecture) ; obstacles jusqu'à 3 km aplatis dans les cartes. Reste : 23 cm par texel de 60 à 200 m.
 - 🔧 Ciel spatial généré ou panorama ; volumes « Intérieur » ; lumière de contour. Reflets et ambiante tirés du ciel par le GPU, en HDR, refaits seulement quand le ciel change (`EnvironmentRenderer`, 2026-11-02) : cube de 128 pixels préfiltré GGX (un niveau de mip par rugosité), lumière diffuse dans un cube d'irradiance ; plus de cube 8 bits calculé par le CPU ni de copie C++ du bruit du ciel. À améliorer : ciel seulement (ni la scène, ni l'air de la planète), pas de reflet net (128 pixels), intérieurs en couleur unie.
 - 🔧 Exposition automatique et courbe de tons AgX (2026-11-02, à la place d'ACES ; contraste et saturation à mi-chemin entre AgX de base, qui délavait la planète, et « Punchy », trop proche d'ACES) : histogramme de luminance pondéré au centre calculé par le GPU, adaptation de l'œil réglable dans le Ciel (décalage, bornes, vitesse), exposition affichée dans le panneau Moteur ; pré-exposition (2026-11-03 : la scène écrite déjà exposée, prête pour des lumières physiques en 16 bits). À améliorer : réglages par défaut à ajuster à l'œil ; pas de mesure locale (zones claires et sombres à la fois, comme un cockpit face au soleil).
-- 🔧 Unités physiques (2026-11-03) : soleil en lux, lampes et réacteurs en lumens (affaiblies en 1/d²), fond du ciel, émissifs et ambiance des intérieurs en cd/m², bornes de l'exposition en EV100 ; anciennes scènes converties (soleil, fond, émissifs, réacteurs, lampes x 2500 vers des lumens réalistes) ou remises aux valeurs réelles par défaut (intérieurs, bornes : choix de Bruno) ; lumière ambiante du ciel à l'échelle d'avant (débouche les ombres) ; étoiles et nébuleuses du fond avec un éclat minimum à l'écran (choix de Bruno : visibles près d'une station éclairée), effacées par la clarté de l'air à l'écran (ciel de jour, halo) quelle que soit la densité de l'atmosphère ; verres (transparents lisses) sans diffus, reflets seuls (diélectriques à 4 %, sans le ciel vus de l'intérieur), ombres des objets reçues. À améliorer : le verre assombrit le fond sans le teinter (teinte colorée : deux passes ou mélange à deux sources) ; reflet de l'habitacle sur la verrière absent (sonde de reflets du vaisseau) ; valeurs de la station et des modèles à ajuster à l'œil ; le soleil ne dépend pas encore de la distance de l'Orbite ; côté ombre d'un vaisseau presque noir dans l'espace (pas encore de lumière renvoyée par la planète).
-- 🔧 Exposition propre aux intérieurs (2026-11-03, d'après une image de Star Citizen) : compensation (-1 stop par défaut) et bornes de l'œil (EV100 3 à 7, choix de Bruno : l'image bouge peu en regardant les lampes ou une porte au soleil) réglées dans l'Intérieur, pour garder une station sombre et contrastée au lieu de la remonter au gris moyen. La boîte d'un Intérieur compte en entier (sol et murs posés sur ses faces), le fondu se fait dehors. Dans l'espace, le ciel n'entre plus dans la mesure de la lumière (ses étoiles, à éclat minimum à l'écran, fermaient l'œil jusqu'à la borne). À améliorer : valeur à régler à l'œil pièce par pièce.
+- 🔧 Unités physiques (2026-11-03) : soleil en lux, lampes et réacteurs en lumens (affaiblies en 1/d²), fond du ciel, émissifs et ambiance des intérieurs en cd/m², bornes de l'exposition en EV100 ; anciennes scènes converties (soleil, fond, émissifs, réacteurs, lampes x 2500 vers des lumens réalistes) ou remises aux valeurs réelles par défaut (intérieurs, bornes : choix de Bruno) ; lumière ambiante du ciel à l'échelle d'avant (débouche les ombres) ; étoiles et nébuleuses du fond avec un éclat minimum à l'écran (choix de Bruno : visibles près d'une station éclairée), effacées par la clarté de l'air à l'écran (ciel de jour, halo) quelle que soit la densité de l'atmosphère ; verres (transparents lisses) sans diffus, reflets seuls (diélectriques à 4 %, sans le ciel vus de l'intérieur), ombres des objets reçues. À améliorer (vus sur la scène des matériaux, 2026-11-14) : le verre assombrit le fond sans le teinter (teinte colorée : deux passes ou mélange à deux sources), ne fait aucune ombre (ombre colorée ou partielle à faire), verre dépoli sans flou du fond, pas de réfraction (copie de l'image de la scène à relire) ; reflet de l'habitacle sur la verrière absent (sonde de reflets du vaisseau) ; valeurs de la station et des modèles à ajuster à l'œil ; le soleil ne dépend pas encore de la distance de l'Orbite ; côté ombre d'un vaisseau presque noir dans l'espace (pas encore de lumière renvoyée par la planète).
+- 🔧 Exposition propre aux intérieurs (2026-11-03, d'après une image de Star Citizen) : compensation (-1 stop par défaut) et bornes de l'œil (EV100 3 à 7, choix de Bruno : l'image bouge peu en regardant les lampes ou une porte au soleil) réglées dans l'Intérieur, pour garder une station sombre et contrastée au lieu de la remonter au gris moyen. La boîte d'un Intérieur compte en entier (sol et murs posés sur ses faces), le fondu se fait dehors. Dans l'espace, le ciel n'entre plus dans la mesure de la lumière (ses étoiles, à éclat minimum à l'écran, fermaient l'œil jusqu'à la borne). Dans l'espace (hors de l'air et des Intérieurs), l'œil reste réglé sur le soleil (2026-11-15, choix de Bruno) : pas plus de 3 stops sous le gris moyen au soleil (réglage du Ciel), le côté nuit d'une planète (sol et nuages : lumière du ciel la nuit abaissée de 12 à 2 %) reste sombre au lieu d'être remonté au plein jour par la lumière ambiante ; au sol, la nuit, l'œil s'habitue encore jusqu'à minEv100 (fondu sur la hauteur de l'air). À améliorer : valeur à régler à l'œil pièce par pièce ; un vaisseau à l'ombre de la planète est aussi sombre que son côté nuit.
 - ⬜ Étalonnage couleur par table (LUT 3D après la courbe de tons), réglable par scène.
-- ⬜ Éclairage réaliste, étapes suivantes (plan du 2026-11-02, choix de Bruno : fondations d'abord) : rendu différé, occlusion ambiante GTAO, sondes de reflets dans les vaisseaux, reflets de l'écran, ombres des lampes, brouillard volumique, lumière indirecte.
+- ⬜ Éclairage réaliste (plan du 2026-11-13 : https://claude.ai/artifact/JprtbD2cuivx7WQ3CnF6Tu ; repli GTX 1060 dans le plan) :
+  - ✅ A1. RHI : jusqu'à 8 cibles de couleur par passe (`extraColorTargets`, `extraColors`), vérifié au choix du GPU.
+  - 🔧 A2. G-buffer (2026-11-14, 16 octets par pixel : couleur de base et sorte de matériau, normales de la carte et de la face en octaèdre 16 bits, métal, rugosité, occlusion) et passe d'éclairage en compute pour les modèles opaques ; image identique avec et sans ray tracing, temps GPU égal (±0,03 ms). Limites : lampes encore parcourues une à une par pixel (grappes en A4) ; vue de contrôle passée par la courbe de tons.
+  - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
+  - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
+  - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
+  - 🔨 A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations. Fait (2026-11-14) : sondes fixes (composant « Sonde de reflets », 4 au plus par image), capturées par le GPU en 256 pixels (objets opaques sur le ciel), préfiltrées comme le ciel, lues avec parallaxe de boîte et fondu vers le ciel ; refaites quand elles bougent, quand le ciel ou le soleil change, à la fin d'un chargement ou à intervalle choisi. À faire : sol des planètes, arbres, eau et transparents absents des captures ; diffus tiré du niveau le plus flou (pas d'irradiance à part) ; capture d'un coup (pas étalée sur plusieurs images) ; pas de boîte dessinée dans l'éditeur ; reflets de l'écran.
+  - ⬜ A7. Ombres des lampes (atlas) et brouillard volumique (froxels).
+  - ⬜ B1. Lumière renvoyée par la planète proche (ligne suivante).
+  - ⬜ B2. Matières lues au point touché par un rayon.
+  - ⬜ B3. Lumière indirecte par sondes DDGI en ray tracing, une grille par vaisseau ; repli GTX 1060 : sondes cuites dans l'éditeur (choix de Bruno du 2026-11-13).
 - ⬜ Lumière renvoyée par la planète proche (remarque de Bruno du 2026-10-26) : dans l'espace, la face d'un objet à l'ombre du soleil ne reçoit que l'ambiante d'un ciel noir et paraît grise ; une lueur bleutée venue de la planète (selon sa taille apparente et sa face éclairée) éclairerait les dessous comme dans les rendus de la station.
 - ⬜ Matériaux multicouches (remarque de Bruno du 2026-10-26) : une matière de base (peinture, métal nu) et des couches mélangées par masque (usure, saleté, bandes), comme les « layer blends » de Star Citizen. Aujourd'hui : un seul jeu de textures par matériau.
 - ⬜ Décalcomanies (idée de Bruno du 2026-10-26) : images projetées sur les modèles (numéros, logos, bandes), posées dans l'éditeur. En attendant, plaques texturées dans le modèle.
@@ -129,7 +143,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ✅ Cube-sphère en quadtree, LOD sans popping (CDLOD), tuiles calculées par le GPU, tout en float (déformation au centre de la tuile calculée en double par le CPU, le GPU n'en calcule que le changement : sol affiché et collision au millimètre près du sol sur une planète comme la Terre, plus de doubles lents sur le GPU) ; une tuile pas encore calculée ne remplace que son quart de la parente (le sol ne clignote plus quand la caméra tourne). Horizon calculé pour chaque tuile (son point le plus haut) ; sol calculé en avance là où va la caméra (2 s de sa vitesse : rien ne change à pied, tuiles prêtes en vaisseau), sans être dessiné avant d'être assez près : le détail ne retombe plus à l'arrêt de la caméra.
 - ✅ Atterrissage depuis l'espace sans chargement ; collision du sol sur le CPU en double, autour des objets. Tuiles de collision construites sur 1 à 4 fils (un quart des cœurs), les plus proches d'abord, sans refaire une tuile en cours (environ 2,5 ms par tuile mesurées sur un Xeon à 2,1 GHz).
 - ✅ Atmosphère (ciel vu du sol, brume, halo), océans avec vagues.
-- 🔧 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; dans l'air d'une planète, le ciel de l'espace n'éclaire plus de jour (l'atmosphère éclaire à sa place) et peu la nuit. Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour (« Lumière de contour ») aussi sur les planètes, liseré selon la sphère, vue de l'espace seulement (effacée sous deux hauteurs d'atmosphère : au sol elle voilait tout le terrain). À améliorer : pas de cycle jour / nuit.
+- 🔧 Soleil posé dans l'espace (composant « Soleil ») : lumière, ombres et disque viennent de sa position ; jour d'un côté de la planète, nuit de l'autre. Pas de cycle jour / nuit (ni la planète ni le soleil ne bougent). Disque et lumière de couleurs séparées ; dans l'air d'une planète, le ciel de l'espace n'éclaire plus de jour (l'atmosphère éclaire à sa place) et peu la nuit. Soleil fixe au centre de la scène, composant « Orbite » (distance, angle, inclinaison) pour ranger les planètes autour, comme dans EVE Online. Lumière de contour sur les planètes sans air seulement (liseré selon la sphère, effacé sous 5 % du rayon) : avec air, l'atmosphère fait le halo. À améliorer : pas de cycle jour / nuit.
 - ⬜ Taille du soleil selon la distance (Bruno, 2026-11-12) : aujourd'hui « Taille » est un angle fixe (disque et flou des ombres), le soleil ne grossit pas quand on s'en approche ; donner à l'étoile son rayon réel et en tirer l'angle selon la distance de la caméra.
 - ✅ Ciel bleu de jour : étoiles et nébuleuse effacées par la lumière de l'air.
 - ✅ Biomes par climat et sol texturé (5 matières, plaquage triplanaire).
@@ -212,7 +226,11 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
 - 🔧 Ciel et air lus dans deux tables refaites à chaque image quand la caméra est dans l'air (Hillaire 2020), au lieu
   de 16 à 24 pas par sommet et par pixel ; écart mesuré sous 1,5 % de la marche d'avant. Limites : vu de l'espace,
-  marche d'avant (l'air n'y couvre qu'un anneau) ; une seule diffusion (pas de diffusion multiple).
+  marche d'avant (l'air n'y couvre qu'un anneau).
+- 🔧 Diffusion multiple de l'air (Hillaire 2020) : table 32 x 32 (hauteur, soleil) calculée sur le CPU quand l'air
+  change (~35 ms sur un cœur, réparties sur les fils), lue par le ciel, l'air, le reflet dans l'eau et la lumière
+  ambiante : horizon plus clair, crépuscule moins noir. Limites : sol supposé d'albédo 0,3 partout ; éclat recalé à
+  l'œil (×2 au lieu de ×3) ; suite possible : volume d'air 32³ (perspective aérienne) au lieu des deux tables.
 - ✅ Tuiles des planètes dessinées par appels indirects : un appel par page de 256 tuiles et par passe (sol, eau,
   chaque cascade d'ombres) au lieu d'un appel par tuile.
 - ⬜ Perspective aérienne précalculée (texture 3D) pour l'air devant les modèles, si l'air par sommet ne suffit pas.
@@ -232,7 +250,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - 🔧 Fonctions selon le GPU (décisions de Bruno du 2026-10-19 et du 2026-10-29) : chaque fonctionnalité est conçue pour la configuration recommandée (classe RTX 3060 / RX 6700 XT), puis reçoit un repli pour la configuration minimum (GTX 1060 / RX 5700). Le moteur détecte au démarrage ce que la carte sait faire et choisit le chemin, sans réglage à toucher (le panneau Moteur dit le chemin pris). Fait : sol des planètes en mesh shaders (VK_EXT_mesh_shader : RTX 20, RX 6000, Arc et plus récentes) : chaque tuile en 16 paquets de 8x8 carrés (groupes de 128 threads, ou moitiés de 8x4 à 64 threads quand le pilote préfère des groupes plus petits), le GPU écarte les paquets hors champ ou cachés derrière le relief (pyramide de profondeur de l'image précédente). Le chemin de base reste CDLOD + dessin indirect, qui tourne sur une GTX 1060 ou une RX 5700. À améliorer : gain à mesurer en Release chez Bruno ; sommets des bords de paquets calculés deux fois (environ 27 % de sommets en plus) ; un paquet qui réapparaît derrière une crête peut arriver une image en retard ; pas d'élimination des faces de dos par paquet (le sol fait face à la caméra, gain faible) ; modèles et arbres restent en vertex shaders.
 - ⬜ Arbres en mesh shaders (Bruno, 2026-10-22, à voir après la mesure du sol) : modèles découpés en paquets à l'import (meshoptimizer), paquets cachés écartés par le GPU et détail choisi paquet par paquet (façon Nanite) au lieu des 3 niveaux fixes : plus de détail de près pour le même temps GPU, transitions moins visibles.
 - 🔨 Ray tracing (Bruno, 2026-10-22 ; avancé au 2026-11-10 pour les ombres du soleil, voir plus haut) : facultatif et détecté au démarrage comme les mesh shaders (la configuration minimum n'en a pas). Éclairage et reflets en rayons plus tard.
-- 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents, vraies montagnes : sommets placés un par un, aux versants de pentes différentes, creusés de ravines en arbre (bruit d'érosion), largeur des montagnes en mètres quel que soit le rayon (réglage « Largeur des montagnes »). À améliorer : la raideur dépend du rapport relief / largeur (trop de relief = aiguilles) ; pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire, voir plus bas) ; contreforts encore réguliers, pas de rochers posés sur les versants.
+- 🔧 Relief plus riche (plan en 10 étapes : `/mnt/project-files/Recherche/relief-planetes-plan.md`) : bruit avec sa pente exacte, érosion analytique (versants lisses, détail sur les crêtes), déformation du domaine (côtes découpées), chaînes de montagnes allongées au cœur des continents, vraies montagnes : sommets placés un par un, aux versants de pentes différentes, creusés de ravines en arbre (bruit d'érosion), largeur des montagnes en mètres quel que soit le rayon (réglage « Largeur des montagnes »), zones de montagnes et de collines, déformations, détail et continents en mètres aussi (« Largeur des zones », « Largeur des continents » : les plaines ne s'étirent plus avec la planète) ; forme réglable par planète (part des montagnes et des collines, hauteur des collines, densité des sommets, rugosité, ravines, érosion, déformation) ; une forte déformation ou un relief bien plus raide grossissent l'écart entre le sol dessiné (floats du GPU) et la collision : 0,37 m sur une tuile de 5 km avec déformation x 1,7 et ravines x 1,8, plusieurs mètres sur une Terre (l'écart suit la taille des tuiles, plus petit de près). À améliorer : la raideur dépend du rapport relief / largeur (trop de relief = aiguilles) ; pas de vraies vallées ni de rivières, ni de plateaux, de falaises ou de cratères ; une seule forme de terrain pour toutes les planètes (types de planète à faire, voir plus bas) ; contreforts encore réguliers, pas de rochers posés sur les versants.
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
   aussi les ombres, imposteur octaédrique au loin), vent, jusqu'à 5 km par défaut, puis la couleur des forêts sur le
   sol (visible de haut et de l'espace). Imposteurs (`TreeImpostors`) : le modèle détaillé de chaque espèce pris par le
@@ -263,9 +281,20 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   frontières des biomes en bosquets de la taille moyenne de ceux de la planète ; un arbre à moins d'un
   demi-espacement d'un bosquet d'une autre espèce est écarté (arbres d'espèces différentes à moins de 8 m : 85 fois
   moins qu'avant).
+  Humidité du relief (géologie, étape 1, demande de Bruno du 2026-11-13) : creux humides au sol épais, crêtes sèches
+  (hauteur moyenne à 300 m autour moins celle du point, relief grossier), sur une grille de 2x2 à 8x8 mailles par
+  tuile, rangée dans chaque sommet ; elle ajoute humidité et forêts au fond des vallons pour les arbres, le sol et
+  l'herbe. Roche-mère (étape 2) : régions de 20 à 80 km par formule (granit dans les chaînes, calcaire et grès dans
+  les plaines, basalte par taches) qui teintent la roche, le sable et la terre ; profondeur de la terre selon
+  l'humidité du relief et la roche : roche dès les pentes douces et affleurements là où elle est mince, sans herbe.
+  Couleurs fixes dans le code (réglables avec les types de planète). Condition « sol » des biomes (étape 3) :
+  préférence pour chaque roche-mère et profondeur de la terre, dans le panneau Végétation (pinède sur grès et granit,
+  plaine et marais sur sol épais). À venir : rivières.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
-  différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
+  différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; humidité du relief
+  effacée sur les tuiles de plus de 5 à 10 km (vallons de 300 m invisibles de haut, pas encore de plus grande échelle),
+  pas de vrai écoulement de l'eau (il faudrait une carte stockée) ; 8 variantes d'arbres au plus par planète ; imposteurs sans relief (pas de profondeur par
   pixel : ils ne se croisent pas exactement entre eux ni avec le sol), feuillage clairsemé qui s'amincit dans les
   petits mips (seuil d'alpha fixe) ; passage d'un niveau de détail à l'autre sans fondu ; arbres hors du champ sans ombre ; arbre
   découvert en passant une crête dessiné une image plus tard ; une seule planète à arbres à la fois ; au loin, l'arbre posé sur le relief fin peut flotter ou
@@ -288,11 +317,15 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   (`PlanetTile.slang`) ensemble ; les parois presque verticales demanderont plus de sommets ou une matière de falaise.
 - 🔧 Herbe (`shaders/Grass.slang`, réglages dans `VegetationComponent`) : brins en courbe de Bézier générés par le GPU
   à chaque image sur les tuiles proches, là où le sol montre de l'herbe (`GetGroundCover`, partagé avec le sol), rien
-  en mémoire. Mesh shaders : une tâche par tuile écarte les paquets hors champ, cachés ou sans herbe, 3 à 1 segments
+  en mémoire. Mesh shaders : une tâche par tuile écarte ses 64 carrés de 4 x 4 mailles hors champ, cachés ou sans
+  herbe, puis chaque brin hors champ avant la couverture du sol (herbe au bord de l'image : 0,32 → 0,07 ms), 3 à 1 segments
   selon la distance ; au loin il en reste une part, élargie (200/m², triplée sur 10 m, toute jusqu'à 20 m, puis en
   distance^-1,5, fondue de 60 à 100 % de la portée de 150 m). Touffes, plages, brins secs, pied sombre ; le sol prend
   sous l'herbe la couleur du pré (pas de limite visible). Vent par vagues, lumière translucide. Repli sans mesh shaders :
-  par les sommets, 4 fois moins dense, 60 % de la portée. Coût : ~2 ms (RX 7700 XT, vue de l'éditeur). À améliorer :
+  par les sommets, 4 fois moins dense, 60 % de la portée. Air et ombre des nuages calculés une fois par paquet, ombre
+  du soleil simple sur les brins (sans recherche d'obstacles, 4 lectures), 3 segments sous 8 m. Coût : 1,90 → 0,99 ms
+  (RX 7700 XT, vue de l'éditeur 1070×636), puis 1,30 → 1,03 ms au pré par les carrés (vue 1159×649), dont 0,82 ms de brins (« Sol et herbe sans pixels »). Piste suivante si
+  besoin : brins fabriqués une fois par tuile en compute et gardés en mémoire (seul le vent change). À améliorer :
   couverture du sol calculée par brin (à faire par paquet) ; peu de variété (pas de fleurs) ; un peu bleue à l'ombre ;
   pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
   ni le souffle des réacteurs (étape 3) ; pas de réglage du joueur (étape 2) ; la couleur des brins est la moyenne de
@@ -316,7 +349,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ✅ Prefabs : exemplaires qui suivent leur prefab, différences gardées champ par champ.
 - ⬜ Prefab dans un prefab (station avec ses vaisseaux).
 - ⬜ Construction sur les planètes (Bruno, 2026-11-09), en deux temps : d'abord des bâtiments posés (entités répliquées, fondations qui suivent la pente, pose validée par le serveur, persistance PostgreSQL) ; plus tard le relief modifié (aplanir, creuser) par une couche de différences appliquée au CPU et au GPU, enregistrée et répliquée.
-- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, anticrénelage, mise à l'échelle et netteté FSR, volume, panneau Moteur).
+- ✅ Réglages enregistrés pour Ars Solaris.exe (`GameStartup`, `Reglages.json` : fenêtre, plein écran sans bordure (Alt+Entrée, F11), V-Sync, images de la swapchain (2 ou 3), anticrénelage, mise à l'échelle et netteté FSR, volume, panneau Moteur).
 - ✅ Exe du jeu nommé « Ars Solaris.exe » (cible CMake `Game`) : les pilotes comme AMD Adrenalin le reconnaissent comme un jeu.
 - ✅ Écran de chargement : la scène reste cachée et le jeu arrêté tant que le sol des planètes et ses textures ne sont pas prêts (30 s au plus).
 - 🔨 Écran de chargement : attend aussi les modèles de la scène. Reste : image ou interface `.fluxui` au choix.
@@ -403,7 +436,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   rechargé à chaud). Références : Unreal (liaison modulaire ou monolithique, publié), Star Citizen (un seul StarCitizen.exe livré).
 - 🔨 Render graph (demande de Bruno, 2026-10-22), en 4 étapes :
   - ✅ 1. Squelette : passes et étapes déclarées avec leurs lectures et écritures, ordre vérifié, mesures GPU du panneau Moteur par passe et par étape.
-  - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Les buffers gardent la barrière globale de calcul.
+  - ✅ 2. Barrières des textures calculées par le graphe : usage retenu par texture, une barrière par lot avant chaque passe, plus de transitions devinées dans `BeginRenderPass`/`EndRenderPass`. Barrières différées (Bruno, 2026-11-13) : textures, barrière de calcul et copies regroupées en un seul `vkCmdPipelineBarrier2` avant la commande suivante ; `ComputeBarrier` ne vise que ses lecteurs (calculs, dessins, CPU). Restent séparées les vraies dépendances en chaîne (niveaux du bloom et de la pyramide de profondeur, étapes du semis et du tri des arbres).
   - 🔧 3. Textures de travail créées et redimensionnées par le graphe (HDR, mouvement, profondeurs, historique à deux exemplaires échangés par le graphe). Limites : niveaux du bloom encore créés par `PostRenderer` ; pas de partage de mémoire (aliasing), une dizaine de Mo à gagner seulement aujourd'hui (seul le mouvement ne vit pas jusqu'à l'image finale).
   - ⬜ 4. Passes sans lecteur sautées ; rendu vers texture (écrans du cockpit).
   - Calcul asynchrone (seconde file) : ligne à part, plus haut (« Chargement et rendu communs »).
@@ -415,7 +448,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 ## Dettes et limites connues
 - Un processeur sans AVX2 s'arrête net au lancement, sans message (à ajouter avec la configuration de distribution).
 - Les lumières sont parcourues pixel par pixel, sans tuiles (lent au-delà de quelques dizaines).
-- Les reflets viennent seulement du ciel, pas de la scène.
+- Hors des sondes de reflets, les reflets viennent seulement du ciel ; dedans, d'une capture fixe (objets qui bougent absents ou figés).
 - L'atlas de police est régénéré au démarrage et limité au Latin-1.
 - Le mode Jouer copie la scène en JSON (lent sur une grosse scène).
 - Pas de DPI : l'interface suppose une mise à l'échelle Windows de 100 %.

@@ -69,7 +69,9 @@ namespace Flux::Vk {
         if (count == 0 || m_listCount + count > RHI::MaxParallelCommandLists || !Reserve(m_slots, m_used + count + 1, VK_COMMAND_BUFFER_LEVEL_PRIMARY)) {
             return {};
         }
-        // Une étape ouverte finirait après les listes parallèles : fermée ici, la suivante la remplace.
+        // Une étape ouverte finirait après les listes parallèles : fermée ici, la suivante la remplace. Les barrières
+        // en attente partent avant elles, comme elles ont été posées.
+        main.FlushBarriers();
         main.EndStep();
         if (!Check(vkEndCommandBuffer(main.GetHandle()), "vkEndCommandBuffer")) {
             return {};
@@ -115,9 +117,11 @@ namespace Flux::Vk {
     bool CommandBatch::End(RhiCommandList& main) {
         bool ended = true;
         for (std::uint32_t i = 0; i < m_listCount; ++i) {
+            m_lists[i].FlushBarriers();
             m_lists[i].EndStep();
             ended = Check(vkEndCommandBuffer(m_lists[i].GetHandle()), "vkEndCommandBuffer") && ended;
         }
+        main.FlushBarriers();
         return Check(vkEndCommandBuffer(main.GetHandle()), "vkEndCommandBuffer") && ended;
     }
 

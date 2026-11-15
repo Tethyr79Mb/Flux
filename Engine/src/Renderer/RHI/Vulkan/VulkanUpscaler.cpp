@@ -127,7 +127,9 @@ namespace Flux::Vk {
             void Dispatch(RHI::CommandList& commands, const RHI::UpscaleInputs& inputs) override {
                 ffxDispatchDescUpscale dispatch{};
                 dispatch.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
-                dispatch.commandList = static_cast<RhiCommandList&>(commands).GetHandle();
+                auto& list = static_cast<RhiCommandList&>(commands);
+                list.FlushBarriers(); // FSR enregistre lui-même : nos barrières d'abord
+                dispatch.commandList = list.GetHandle();
                 dispatch.color = Describe(*inputs.color, FFX_API_RESOURCE_STATE_COMPUTE_READ);
                 dispatch.depth = Describe(*inputs.depth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
                 dispatch.motionVectors = Describe(*inputs.motion, FFX_API_RESOURCE_STATE_COMPUTE_READ);

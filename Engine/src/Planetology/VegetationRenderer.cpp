@@ -489,7 +489,7 @@ namespace Flux::Planetology {
         const SowConstants count{frame.sown};
         commands.PushConstants(&count, sizeof(count));
         commands.Dispatch(1);
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Compute);
         commands.BindPipeline(*m_sow);
         commands.SetBindGroup(0, *frame.sowGroup);
         for (std::uint32_t job = 0; job < frame.sown; ++job) {
@@ -497,7 +497,7 @@ namespace Flux::Planetology {
             commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch(SowGroupsPerPlain);
         }
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Host);
     }
 
     void VegetationRenderer::Cull(RHI::CommandList& commands, std::uint32_t frameIndex) {
@@ -508,16 +508,16 @@ namespace Flux::Planetology {
         commands.BindPipeline(*m_cull);
         commands.SetBindGroup(0, *frame.cullGroup);
         commands.Dispatch(frame.culled);
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Compute);
         commands.BindPipeline(*m_finalize);
         commands.SetBindGroup(0, *frame.cullGroup);
         commands.Dispatch(1);
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Compute);
         // Rangement par espèce : un fil par place de liste, ceux au-delà des arbres retenus s'arrêtent tout de suite.
         commands.BindPipeline(*m_scatter);
         commands.SetBindGroup(0, *frame.cullGroup);
         commands.Dispatch((InstanceCount() + 255) / 256);
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Draw | RHI::ComputeReaders::Host);
         frame.counted = true;
     }
 }

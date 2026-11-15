@@ -9,9 +9,9 @@
 // L'herbe reçoit les ombres et la lumière comme le feuillage (ShadeFoliage : lumière qui traverse les brins), plus
 // sombre à leur pied ; elle n'en porte pas (les cartes d'ombre n'en verraient presque rien, pour un coût élevé).
 // Deux chemins :
-// - mesh shaders (GrassMesh.slang) : une tâche par tuile teste ses 16 paquets (champ, pyramide de profondeur de
-//   l'image précédente, présence d'herbe), chaque paquet retenu envoie ses brins par groupes de 32, en 3, 2 ou 1
-//   segments selon la distance ;
+// - mesh shaders (GrassMesh.slang) : une tâche par tuile teste ses 64 carrés de 4 x 4 mailles (champ, pyramide de
+//   profondeur de l'image précédente, présence d'herbe), chaque carré retenu envoie ses brins par groupes de 32, en 3,
+//   2 ou 1 segments selon la distance ;
 // - sommets (vertexGrass, GPU sans mesh shaders) : un appel indirect par page, chaque instance 32 brins de 2 segments,
 //   le nombre d'instances d'une tuile choisi par le CPU selon sa distance ; moins dense et moins loin.
 // Commandes (RHI::DrawIndexedCommand, celles des tuiles, MeshRenderer) : vertexOffset = case de la tuile dans sa page
@@ -24,9 +24,6 @@
 static const uint GrassTileQuads = 32; // TileQuads
 static const uint GrassTileSide = GrassTileQuads + 1;
 static const uint GrassTileVertices = GrassTileSide * GrassTileSide + 4 * GrassTileSide; // TileVertexCount
-static const uint GrassMeshletQuads = 8; // TileMeshletQuads
-static const uint GrassMeshletSide = GrassTileQuads / GrassMeshletQuads;
-static const uint GrassMeshletCount = GrassMeshletSide * GrassMeshletSide;
 static const uint GrassVertexShift = 9;    // MeshRenderer::GrassVertexShift
 static const uint GrassInstanceShift = 12; // MeshRenderer::GrassInstanceShift
 // Jusqu'à cette part de la portée, tous les brins ; au-delà, leur part baisse comme 1 / distance.
@@ -36,16 +33,8 @@ static const float GrassFullDistance = 20.0; // m : tous les brins jusque-là (M
 static const uint GrassClusterBlades = 32;
 static const uint GrassVertexSegments = 2;
 
-// Doit correspondre à Planetology::PlanetTileCompute::Meshlet (comme dans PlanetMesh.slang).
-struct GrassMeshlet
-{
-    float4 low;
-    float4 high;
-};
-
-// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv), boîtes des paquets.
+// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv).
 [[vk::binding(0, 3)]] StructuredBuffer<float> pageVertices;
-[[vk::binding(2, 3)]] StructuredBuffer<GrassMeshlet> pageMeshlets;
 
 float GrassDensity() { return params.color.x; }
 float GrassHeight() { return params.color.y; }
@@ -57,6 +46,18 @@ float3 ReadGrassPosition(uint firstVertex, uint index)
 {
     const uint v = (firstVertex + index) * 8;
     return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
+}
+
+// Climat des grandes échelles au sommet `index` (PlanetClimate), avec l'humidité du relief de ce sommet (uv.y), et en z
+// la profondeur de la terre (SoilDepth), comme le sol (PlanetVertex) : l'herbe pousse là où il la montre.
+float3 GrassClimate(uint draw, uint firstVertex, uint index, float3 local)
+{
+    const DrawData d = draws[draw];
+    const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
+    const uint v = (firstVertex + index) * 8;
+    const float wet = pageVertices[v + 7];
+    const float3 lithology = Lithology(normalize(d.rim.xyz + local) * planet.shape.x, UnpackZones(pageVertices[v + 6]).y);
+    return float3(PlanetClimate(planet, d.rim.xyz + local) + float2(0.0, ReliefHumidity * wet), SoilDepth(wet, lithology));
 }
 
 float3 ReadGrassNormal(uint firstVertex, uint index)
@@ -129,7 +130,7 @@ uint GrassSeed(uint draw)
 }
 
 // Le sol montre de l'herbe en ce point de la tuile (part de 0 à 1, comme fragmentPlanet).
-float GrassShareAt(uint draw, float3 position, float3 normal, float2 climate)
+float GrassShareAt(uint draw, float3 position, float3 normal, float3 climate)
 {
     const DrawData d = draws[draw];
     const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
@@ -173,9 +174,30 @@ GrassBlade NoGrassBlade()
     return blade;
 }
 
+// Air entre la caméra et un carré de brins, et ombre des nuages : calculés une fois au centre du carré (la tâche, ou la
+// tuile sur le chemin des sommets), pas par brin. L'un et l'autre changent sur des centaines de mètres, le carré en
+// fait une dizaine ; par brin, c'était une bonne part du coût de leur fabrication (lecture de la table de l'air, bruit
+// de la météo des nuages).
+struct GrassPatchLight
+{
+    float4 air;       // rgb : transmittance de l'air ; a : ombre des nuages (CloudShadow)
+    float4 scattered; // rgb : lumière ajoutée par l'air (AirTo)
+};
+
+GrassPatchLight LightGrassPatch(float3 center)
+{
+    GrassPatchLight light;
+    float3 transmittance;
+    light.scattered = float4(AirTo(center, transmittance), 0.0);
+    light.air = float4(transmittance, CloudShadow(center));
+    return light;
+}
+
 // Brin de rang `index` (sur `total` à pleine densité) d'un carré de la tuile : de `origin` à `origin` + size mailles.
-// climate : celui des grandes échelles au centre du carré (PlanetClimate), le même pour tous ses brins.
-GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, float2 origin, float size, float total, float2 climate)
+// climate : celui des grandes échelles au centre du carré (GrassClimate : avec la profondeur de la terre), le même pour tous ses brins ; light : son
+// air et ses nuages (LightGrassPatch).
+GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, float2 origin, float size, float total, float3 climate,
+                          GrassPatchLight light)
 {
     GrassBlade blade = NoGrassBlade();
     const uint h0 = GroundHash(seed ^ GroundHash(index * 0x9E3779B9u + 0x6A09E667u));
@@ -190,6 +212,13 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     GrassGround(firstVertex, origin + r0 * size, position, normal);
     const DrawData d = draws[draw];
     blade.root = Transform(d.world, position).xyz;
+    // Hors du champ : écarté avant le plus cher (couverture du sol, repère, vent). Le paquet entier l'était déjà quand
+    // il sortait du champ ; à cheval sur un bord (sous les pieds en regardant le ciel), ses brins hors de l'image ne
+    // coûtent plus que ce test. Sphère : le plus haut brin (1,35 x 1,25 x 1,2 = 2,03 fois GrassHeight), penché ou
+    // couché par le vent, et sa largeur au loin.
+    if (!InView(blade.root, 2.1 * GrassHeight() + 8.0 * GrassWidth())) {
+        return blade;
+    }
     const float distance = length(blade.root);
     // Gardé s'il est dans les premiers rangs (GrassKept) ; les derniers gardés rapetissent (ils seront les prochains à
     // partir), sur un cinquième des gardés : tous à leur taille quand keep vaut 1.
@@ -273,8 +302,9 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
                * lerp(float3(0.85, 1.0, 0.95), float3(1.15, 1.05, 0.8), r3.y) * lerp(0.75, 1.2, r1.y);
     // Lumière de contour comme le sol (PlanetColor), avec l'air : sinon le pré s'arrête sur une bande plus claire à sa
     // portée.
-    blade.airScattered = AirTo(blade.root, blade.airTransmittance) + PlanetRim(planet, worldUp, normalize(-blade.root));
-    blade.clouds = CloudShadow(blade.root);
+    blade.airTransmittance = light.air.rgb;
+    blade.airScattered = light.scattered.rgb + PlanetRim(planet, worldUp, normalize(-blade.root));
+    blade.clouds = light.air.a;
     blade.alive = true;
     return blade;
 }
@@ -336,10 +366,13 @@ GrassVertexOutput vertexGrass(uint vertex : SV_VulkanVertexID, uint instance : S
     const uint cluster = instance & ((1u << GrassInstanceShift) - 1u);
     const uint firstVertex = tileInPage * GrassTileVertices;
     const DrawData d = draws[draw];
-    const float2 climate = PlanetClimate(frame[0].planets[asuint(d.rim.w)], d.rim.xyz);
+    const float3 climate = GrassClimate(draw, firstVertex, (GrassTileSide * GrassTileSide) / 2, float3(0.0));
     const float total = ceil(GrassArea(firstVertex, uint2(0, 0), GrassTileQuads) * GrassDensity());
     const uint index = cluster * GrassClusterBlades + inCluster / verticesPerBlade;
-    const GrassBlade blade = MakeGrassBlade(draw, firstVertex, GrassSeed(draw), index, float2(0.0), float(GrassTileQuads), total, climate);
+    // Air et nuages au milieu de la tuile (chemin de repli : recalculés par sommet, mais une fois et non par brin).
+    const float3 middle = Transform(d.world, ReadGrassPosition(firstVertex, (GrassTileQuads / 2) * GrassTileSide + GrassTileQuads / 2)).xyz;
+    const GrassBlade blade = MakeGrassBlade(draw, firstVertex, GrassSeed(draw), index, float2(0.0), float(GrassTileQuads), total, climate,
+                                            LightGrassPatch(middle));
     if (!blade.alive) {
         // Les trois sommets au même point : rien à dessiner.
         GrassVertexOutput empty;
@@ -355,12 +388,24 @@ GrassVertexOutput vertexGrass(uint vertex : SV_VulkanVertexID, uint instance : S
     return GrassVertex(blade, inCluster % verticesPerBlade, GrassVertexSegments);
 }
 
+// Mesure (« Sol et herbe sans pixels ») : brins fabriqués comme d'habitude, pixel presque vide ; la différence avec
+// fragmentGrass est le coût de l'éclairage des brins.
+[shader("fragment")]
+SceneOutput fragmentGrassGeometry(GrassVertexOutput input)
+{
+    const float unused = dot(input.worldPosition + input.normal + input.tintHeight.rgb + input.airTransmittance.rgb
+                             + input.airScattered, float3(1.0))
+                       + input.tintHeight.a + input.airTransmittance.a + float(input.planet);
+    return SceneResult(float4(float3(0.2, 0.35, 0.1) * (0.3 + 0.7 * input.tintHeight.a) + unused * 1.0e-30, 1.0), float2(0.0));
+}
+
 // Brin éclairé comme le feuillage : la lumière du soleil déborde sur la face tournée de l'autre côté, et traverse le brin
 // vu à contre-jour. Couleur : la moyenne de l'image de l'herbe du sol (ou sa couleur unie), qu'il prolonge.
 [shader("fragment")]
 SceneOutput fragmentGrass(GrassVertexOutput input)
 {
     shadowPixel = input.position.xy;
+    simpleShadow = true;
     const PlanetData planet = frame[0].planets[input.planet];
     const float3 grass = GrassBaseColor(planet);
     Surface surface;

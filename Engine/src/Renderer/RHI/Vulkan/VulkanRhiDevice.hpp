@@ -28,7 +28,7 @@ namespace Flux::Vk {
     class RhiDevice final : public RHI::Device {
         public:
         // nativeWindowHandle nul : sans fenêtre ni swapchain (Submit seulement).
-        static std::expected<std::unique_ptr<RhiDevice>, std::string> Create(void* nativeWindowHandle, RHI::Extent extent, bool vsync);
+        static std::expected<std::unique_ptr<RhiDevice>, std::string> Create(void* nativeWindowHandle, const RHI::SwapchainDesc& swapchain);
         ~RhiDevice() override;
 
         std::string_view GetName() const override { return m_device->GetName(); }
@@ -83,8 +83,9 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Upscaler>, std::string> CreateUpscaler(RHI::Extent outputSize) override;
         bool Submit(const std::function<void(RHI::CommandList&)>& record) override;
 
-        bool ResizeSwapchain(RHI::Extent extent, bool vsync) override;
+        bool ResizeSwapchain(const RHI::SwapchainDesc& swapchain) override;
         RHI::Extent GetSwapchainExtent() const override;
+        std::uint32_t GetSwapchainImageCount() const override { return m_swapchain ? m_swapchain->GetImageCount() : 0; }
         RHI::Format GetSwapchainFormat() const override;
         RHI::PresentMode GetPresentMode() const override;
 
@@ -117,8 +118,7 @@ namespace Flux::Vk {
         std::array<std::uint32_t, RHI::FramesInFlight> m_writtenTimestamps{}; // cases écrites par chaque image
         std::uint32_t m_frameIndex = 0;
         std::uint32_t m_imageIndex = 0;
-        RHI::Extent m_extent;
-        bool m_vsync = true;
+        RHI::SwapchainDesc m_swapchainDesc;
         RhiCommandList m_commandList;
         RhiCommandList m_submitList;
         RHI::WaitTimes m_waitTimes;

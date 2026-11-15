@@ -43,7 +43,7 @@ namespace Flux::Planetology {
         std::array<float, 4> forest{};
         std::array<BiomeGpu, VegetationSet::MaxBiomes> biomes{};
     };
-    static_assert(sizeof(PlanetGpu) == 240 + 64 * VegetationSet::MaxBiomes);
+    static_assert(sizeof(PlanetGpu) == 240 + 96 * VegetationSet::MaxBiomes);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Planetology/Planet.hpp). Les tuiles manquantes sont calculées
@@ -193,7 +193,7 @@ namespace Flux::Planetology {
             float radius = 0.0f;
             float relief = -1.0f;
             std::int32_t seed = 0;
-            float mountainWidth = 0.0f;
+            Planetology::ReliefShape shape;
             std::unordered_map<std::uint64_t, Node> nodes;
             std::vector<Request> requests;
             std::uint64_t lastUsed = 0;

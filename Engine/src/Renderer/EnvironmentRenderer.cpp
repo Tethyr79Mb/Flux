@@ -68,7 +68,8 @@ namespace Flux {
         };
         constexpr std::array skyBindings{RHI::Binding{SkySlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment}};
         auto inputLayout = device.CreateBindGroupLayout({.bindings = inputBindings, .maxGroups = RHI::FramesInFlight});
-        auto skyLayout = device.CreateBindGroupLayout({.bindings = skyBindings, .maxGroups = 1});
+        // Le ciel et la capture des sondes de reflets (ReflectionProbes).
+        auto skyLayout = device.CreateBindGroupLayout({.bindings = skyBindings, .maxGroups = 2});
         if (!inputLayout || !skyLayout) {
             return std::unexpected(!inputLayout ? inputLayout.error() : skyLayout.error());
         }
@@ -111,6 +112,44 @@ namespace Flux {
         environment->m_prefilterPipeline = std::move(*prefilterPipeline);
         environment->m_irradiancePipeline = std::move(*irradiancePipeline);
         return environment;
+    }
+
+    std::unique_ptr<RHI::BindGroup> EnvironmentRenderer::CreateSourceGroup(const RHI::Texture& cube) {
+        std::unique_ptr<RHI::BindGroup> group = m_device.CreateBindGroup(*m_skyLayout);
+        if (group) {
+            group->SetTexture(SkySlot, cube, *m_sampler);
+        }
+        return group;
+    }
+
+    void EnvironmentRenderer::Prefilter(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::BindGroup& source,
+                                        std::uint32_t size, const RHI::Texture& reflections) {
+        EnvironmentParams params;
+        params.sourceSize = static_cast<float>(size);
+        for (std::uint32_t mip = 0; mip < ReflectionMips; ++mip) {
+            params.roughness = static_cast<float>(mip) / static_cast<float>(ReflectionMips - 1);
+            const std::uint32_t side = std::max(reflections.GetExtent().width >> mip, 1u);
+            for (std::uint32_t f = 0; f < 6; ++f) {
+                commands.BeginRenderPass({.clearColor = {0.0f, 0.0f, 0.0f, 1.0f}, .colorTarget = &reflections, .colorLayer = f,
+                                          .colorMip = mip});
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(side), static_cast<float>(side)});
+                commands.SetScissor({0, 0, side, side});
+                commands.BindPipeline(*m_prefilterPipeline);
+                commands.SetBindGroup(0, *m_inputGroups[frameIndex]); // non lu par le préfiltrage, mais du layout
+                commands.SetBindGroup(1, source);
+                params.face = f;
+                commands.PushConstants(&params, sizeof(params));
+                commands.Draw(3, 0);
+                commands.EndRenderPass();
+            }
+        }
+    }
+
+    void EnvironmentRenderer::FilterProbe(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::BindGroup& source,
+                                          std::uint32_t size, const RHI::Texture& reflections) {
+        commands.Use(reflections, RHI::TextureAccess::ColorTarget, true);
+        Prefilter(commands, frameIndex, source, size, reflections);
+        commands.Use(reflections, RHI::TextureAccess::Sampled);
     }
 
     std::uint32_t EnvironmentRenderer::GetReflectionMips() const {
@@ -175,12 +214,7 @@ namespace Flux {
         }
         commands.GenerateMipmaps(*m_sky); // le laisse lisible
         // 2) Reflets, du miroir au plus rugueux.
-        for (std::uint32_t mip = 0; mip < ReflectionMips; ++mip) {
-            params.roughness = static_cast<float>(mip) / static_cast<float>(ReflectionMips - 1);
-            for (std::uint32_t f = 0; f < 6; ++f) {
-                face(*m_reflections, f, mip, *m_prefilterPipeline);
-            }
-        }
+        Prefilter(commands, frameIndex, *m_skyGroup, SkySize, *m_reflections);
         // 3) Lumière diffuse.
         for (std::uint32_t f = 0; f < 6; ++f) {
             face(*m_irradiance, f, 0, *m_irradiancePipeline);

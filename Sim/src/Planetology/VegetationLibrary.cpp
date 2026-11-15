@@ -192,7 +192,10 @@ namespace Flux::Planetology {
             set.biomes.push_back({{biome->plains, biome->hills, biome->mountains, biome->cover},
                                     {biome->minAltitude * 0.01f, biome->maxAltitude * 0.01f, biome->minTemperature, biome->maxTemperature},
                                     {biome->minHumidity, biome->maxHumidity, density, biome->scale},
-                                    {canopy.r, canopy.g, canopy.b, biome->grove}});
+                                    {canopy.r, canopy.g, canopy.b, biome->grove},
+                                    {biome->granite, biome->limestone, biome->sandstone, biome->basalt},
+                                    // Bornes ouvertes au-delà de 0 et 1 : la bande fondue (BiomeFit) ne rogne pas un sol à nu ou épais.
+                                    {biome->minSoil > 0.0f ? biome->minSoil : -1.0f, biome->maxSoil < 1.0f ? biome->maxSoil : 2.0f, 0.0f, 0.0f}});
             set.biomeSpecies.push_back(entries);
             set.biomeShares.push_back(cumulative);
             set.biomeSpacing.push_back(biome->spacing);

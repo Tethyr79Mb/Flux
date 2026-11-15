@@ -2,6 +2,7 @@
 // coin du cube), relief reproductible, sens des triangles et sphères englobantes.
 #include "Check.hpp"
 
+#include "Flux/Core/JobSystem.hpp"
 #include "Flux/Planetology/Atmosphere.hpp"
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Scene/Components.hpp"
@@ -52,6 +53,80 @@ bool RunPlanetTests() {
     const Planetology::Terrain earth(6.0e6, 8000.0, 1);
     CHECK(earth.GetMaxLevel() == 18);
     CHECK(earth.GetOctaves(0) < earth.GetOctaves(10) && earth.GetOctaves(10) <= earth.GetOctaves(18));
+
+    // Les plaines (entre les zones de collines et de montagnes) gardent leur largeur en kilomètres sur une grande
+    // planète (largeur des zones) : elles grandissaient avec le rayon (30 km en moyenne à 200 km de rayon, 92 km à
+    // 600 km).
+    const auto plainWidth = [](double radius) {
+        const Planetology::Terrain planet(radius, 2500.0, 1, 50000.0, PlanetComponent{}.zoneWidth);
+        double total = 0.0;
+        int count = 0;
+        for (int circle = 0; circle < 5; ++circle) {
+            const double y = -0.6 + 0.3 * circle;
+            const double step = 1000.0 / radius;
+            double run = 0.0;
+            for (double a = 0.0; a < 2.0 * std::numbers::pi; a += step) {
+                const Math::Vector3d direction{std::cos(a) * std::sqrt(1.0 - y * y), y, std::sin(a) * std::sqrt(1.0 - y * y)};
+                Planetology::Terrain::Zones zones;
+                planet.GetHeight(direction, 10, &zones);
+                if (zones.hills < 0.05 && zones.mountains < 0.05) {
+                    run += 1.0;
+                } else if (run > 0.0) {
+                    total += run;
+                    ++count;
+                    run = 0.0;
+                }
+            }
+        }
+        return count > 0 ? total / count : 0.0;
+    };
+    const double plainsSmall = plainWidth(200000.0);
+    const double plainsLarge = plainWidth(600000.0);
+    CHECK(plainsSmall > 10.0 && plainsLarge < 1.4 * plainsSmall && plainsLarge > 0.7 * plainsSmall);
+    // Largeur des zones par défaut : rien ne change jusqu'à 200 km de rayon ; sur une Terre, zones décalées de 5 octaves.
+    const double zoneWidth = PlanetComponent{}.zoneWidth;
+    CHECK(Planetology::Terrain(200000.0, 2500.0, 1, 50000.0, zoneWidth).GetZoneScale() == 1.0);
+    CHECK(Planetology::Terrain(6.0e6, 8000.0, 1, 50000.0, zoneWidth).GetZoneShift() == 5);
+    CHECK(Planetology::Terrain(6.0e6, 8000.0, 1).GetZoneShift() == 0); // 0 : à l'échelle du rayon
+
+    // Réglages de la forme : par défaut, le relief d'origine (jusqu'à 200 km de rayon) ; plus de part des montagnes,
+    // plus de terres en montagne ; des continents plus petits, plus de côtes.
+    {
+        PlanetComponent planet;
+        planet.radius = 200000.0f;
+        planet.relief = 2500.0f;
+        const Planetology::Terrain byDefault(planet);
+        const Planetology::Terrain original(200000.0, 2500.0, planet.seed, planet.mountainWidth, planet.zoneWidth);
+        planet.mountainShare = 2.0f;
+        const Planetology::Terrain moreMountains(planet);
+        planet.mountainShare = 1.0f;
+        planet.continentWidth = 300000.0f;
+        const Planetology::Terrain smallContinents(planet);
+        int mountains = 0;
+        int moreMountainsCount = 0;
+        int coastChanges = 0;
+        int smallCoastChanges = 0;
+        bool previousLand = false;
+        bool previousSmallLand = false;
+        for (int i = 0; i < 4000; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / 4000.0;
+            const Math::Vector3d direction{0.8 * std::cos(a), 0.6, 0.8 * std::sin(a)};
+            Planetology::Terrain::Zones zones;
+            const double height = byDefault.GetHeight(direction, 12, &zones);
+            CHECK(height == original.GetHeight(direction, 12));
+            mountains += zones.mountains > 0.5 ? 1 : 0;
+            moreMountains.GetHeight(direction, 12, &zones);
+            moreMountainsCount += zones.mountains > 0.5 ? 1 : 0;
+            const bool land = height > 0.0;
+            const bool smallLand = smallContinents.GetHeight(direction, 12) > 0.0;
+            coastChanges += i > 0 && land != previousLand ? 1 : 0;
+            smallCoastChanges += i > 0 && smallLand != previousSmallLand ? 1 : 0;
+            previousLand = land;
+            previousSmallLand = smallLand;
+        }
+        CHECK(moreMountainsCount > mountains + mountains / 4);
+        CHECK(smallCoastChanges > coastChanges);
+    }
 
     // Deux tuiles voisines d'une même face : bords confondus, normales égales (calculées avec une rangée de plus).
     Planetology::TileMesh left;
@@ -302,6 +377,24 @@ bool RunPlanetTests() {
         const auto ambient = Planetology::ComputeAtmosphereAmbient(air, sun);
         CHECK(Math::Length(ambient.front()) < 1.0e-4f);
         CHECK(ambient.back().z > ambient[Planetology::AtmosphereAmbientSize / 2].z && ambient.back().z > 0.05f);
+        // Diffusion multiple : nulle en pleine nuit, plus forte le jour ; le même calcul sur plusieurs fils. Elle
+        // éclaircit l'horizon (plus « laiteux ») plus que le zénith, et la lumière ambiante.
+        const Planetology::AtmosphereMultipleTable multiple = Planetology::ComputeAtmosphereMultiple(air);
+        JobSystem jobs(3);
+        CHECK(Planetology::ComputeAtmosphereMultiple(air, &jobs) == multiple);
+        constexpr int Size = Planetology::AtmosphereMultipleSize;
+        CHECK(Math::Length(multiple.front()) < 1.0e-6f);
+        CHECK(multiple[Size - 1].z > multiple[Size / 2].z && multiple[Size - 1].z > 0.0f);
+        CHECK(std::ranges::all_of(multiple, [](const Math::Vector3f& v) { return v.x >= 0.0f && v.y >= 0.0f && v.z >= 0.0f; }));
+        const Math::Vector3f zenithMultiple = Scatter(air, ground, up, 1.0e30f, up, sun, Planetology::AtmosphereSkySteps,
+                                                      transmittance, &multiple);
+        const Math::Vector3f side = Math::Normalize(Math::Vector3f{0.0f, 0.02f, 1.0f});
+        const Math::Vector3f horizon = Scatter(air, ground, side, 1.0e30f, up, sun, Planetology::AtmosphereSkySteps, transmittance);
+        const Math::Vector3f horizonMultiple = Scatter(air, ground, side, 1.0e30f, up, sun, Planetology::AtmosphereSkySteps,
+                                                       transmittance, &multiple);
+        CHECK(zenithMultiple.z > zenith.z && horizonMultiple.y / horizon.y > zenithMultiple.y / zenith.y);
+        const auto ambientMultiple = Planetology::ComputeAtmosphereAmbient(air, sun, &multiple);
+        CHECK(ambientMultiple.back().z > ambient.back().z && Math::Length(ambientMultiple.front()) < 1.0e-4f);
         planet.atmosphere = 0.0f;
         CHECK(Planetology::MakeAtmosphereParameters(planet).top == 0.0f);
     }

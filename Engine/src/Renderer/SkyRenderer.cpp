@@ -4,6 +4,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Flux/Planetology/Atmosphere.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Scene/Photometry.hpp"
 
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <numbers>
 #include <optional>
+#include <span>
 
 namespace Flux {
     namespace {
@@ -38,6 +40,7 @@ namespace Flux {
         constexpr std::uint32_t BackgroundSlot = 2;
         constexpr std::uint32_t SkyRayleighSlot = 3;
         constexpr std::uint32_t SkyMieSlot = 4;
+        constexpr std::uint32_t MultipleSlot = 5;
 
         // Tailles des tables de l'air : AtmosphereSkySize, puis AtmosphereAirSize x AtmosphereAirTiles dans
         // shaders/Atmosphere.slang. AirNear : AtmosphereAirNear.
@@ -66,6 +69,11 @@ namespace Flux {
 
         std::array<float, 4> ToArray(const Math::Vector3f& v, float w = 0.0f) { return {v.x, v.y, v.z, w}; }
         std::array<float, 4> ToArray(const Math::LinearColor& c, float w = 0.0f) { return {c.r, c.g, c.b, w}; }
+
+        template <typename T>
+        std::span<const std::uint8_t> Bytes(const T& object) {
+            return {reinterpret_cast<const std::uint8_t*>(&object), sizeof(object)};
+        }
     }
 
     std::expected<std::unique_ptr<SkyRenderer>, std::string> SkyRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
@@ -107,6 +115,12 @@ namespace Flux {
             }
             *table = std::move(*texture);
         }
+        constexpr std::array<float, 4> nothing{};
+        auto multiple = device.CreateTexture(RHI::Format::RGBA32Float, {1, 1}, Bytes(nothing));
+        if (!multiple) {
+            return std::unexpected(multiple.error());
+        }
+        sky->m_multiple = std::move(*multiple);
 
         constexpr std::array bindings{
             RHI::Binding{DataSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
@@ -114,6 +128,7 @@ namespace Flux {
             RHI::Binding{BackgroundSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{SkyRayleighSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
             RHI::Binding{SkyMieSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{MultipleSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
         };
         auto layout = device.CreateBindGroupLayout({.bindings = bindings, .maxGroups = RHI::FramesInFlight});
         if (!layout) {
@@ -134,6 +149,8 @@ namespace Flux {
             sky->m_boundBackground[f] = sky->m_blackCube.get();
             sky->m_groups[f]->SetTexture(SkyRayleighSlot, *sky->m_skyRayleigh, *sky->m_cubeSampler);
             sky->m_groups[f]->SetTexture(SkyMieSlot, *sky->m_skyMie, *sky->m_cubeSampler);
+            sky->m_groups[f]->SetTexture(MultipleSlot, *sky->m_multiple, *sky->m_cubeSampler);
+            sky->m_boundMultiple[f] = sky->m_multiple.get();
         }
 
         // Derrière tout : seulement là où la profondeur est restée celle de l'effacement (0, l'infini en reverse-Z).
@@ -142,8 +159,8 @@ namespace Flux {
         desc.shaderPath = Platform::GetExecutableDirectory() / "shaders" / "Sky.spv";
         desc.bindGroupLayouts = layouts;
         desc.colorFormat = colorFormat;
-        desc.secondColorFormat = motionFormat; // le ciel ne bouge pas de lui-même : mouvement laissé à 0
-        desc.thirdColorFormat = sunFormat;     // pas de surface éclairée : lumière du soleil laissée à 0
+        desc.extraColors[0].format = motionFormat; // le ciel ne bouge pas de lui-même : mouvement laissé à 0
+        desc.extraColors[1].format = sunFormat;     // pas de surface éclairée : lumière du soleil laissée à 0
         desc.depthFormat = depthFormat;
         desc.depthTest = true;
         desc.depthWrite = false;
@@ -182,8 +199,8 @@ namespace Flux {
         tableDesc.shaderPath = desc.shaderPath;
         tableDesc.bindGroupLayouts = layouts;
         tableDesc.colorFormat = RHI::Format::RGBA16Float;
-        tableDesc.secondColorFormat = RHI::Format::RGBA16Float;
-        tableDesc.writeSecondColor = true;
+        tableDesc.extraColors[0].format = RHI::Format::RGBA16Float;
+        tableDesc.extraColors[0].write = true;
         tableDesc.fragmentEntryPoint = "skyTableFragment";
         auto skyTablePipeline = device.CreatePipeline(tableDesc);
         tableDesc.fragmentEntryPoint = "airTableFragment";
@@ -239,11 +256,44 @@ namespace Flux {
         return result;
     }
 
+    float SkyRenderer::GetSpaceWeight(const Scene& scene, const Camera& camera) {
+        // Comme AtmosphereNightSky (shaders/Atmosphere.slang) : 0 au sol, 1 au haut de l'air, fondu entre les deux.
+        float inAir = 0.0f;
+        for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
+            if (scene.GetShip(entity) != NullEntity) {
+                continue; // une planète dans un vaisseau : un décor
+            }
+            const Planetology::AtmosphereParameters air = Planetology::MakeAtmosphereParameters(planet);
+            if (air.top <= air.radius) {
+                continue;
+            }
+            const double distance = Math::Length(Math::Delta(camera.position, scene.GetWorldPosition(entity)));
+            inAir = std::max(inAir, static_cast<float>(std::clamp((air.top - distance) / (air.top - air.radius), 0.0, 1.0)));
+        }
+        return 1.0f - inAir;
+    }
+
     Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene, const Camera& camera) {
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
             // Dans un Intérieur, ses bornes remplacent celles du Ciel (fondues près de ses bords).
             const InteriorExposure interior = GetInteriorExposure(scene, camera);
-            const float minEv = std::lerp(sky.minEv100, interior.minEv100, interior.weight);
+            float skyMinEv = sky.minEv100;
+            // Dans l'espace, l'œil reste réglé sur le soleil. Sans ce plancher, une vue où rien n'est au soleil (côté nuit
+            // d'une planète) n'était éclairée que par la lumière ambiante du ciel, triche voulue pour déboucher les
+            // ombres (Prepare), et l'exposition la remontait jusqu'à l'aspect du plein jour (EV100 8 au lieu de 15).
+            // Au sol, la nuit, l'œil s'habitue encore jusqu'à minEv100.
+            float sunLux = sky.sunIlluminance;
+            for (const auto [sunEntity, sun] : scene.GetRegistry().view<const SunComponent>().each()) {
+                sunLux = sun.illuminance; // comme Prepare : le premier Soleil posé
+                break;
+            }
+            if (sunLux > 0.0f) {
+                // EV100 où le gris moyen (18 %) au soleil est au gris moyen de l'image (L x 100 / 12,5, Lagarde 2014).
+                const float sunEv = std::log2(sunLux * 0.18f / std::numbers::pi_v<float> * 8.0f);
+                const float spaceMinEv = std::max(sky.minEv100, sunEv - std::max(sky.spaceAdaptation, 0.0f));
+                skyMinEv = std::lerp(sky.minEv100, spaceMinEv, GetSpaceWeight(scene, camera));
+            }
+            const float minEv = std::lerp(skyMinEv, interior.minEv100, interior.weight);
             const float maxEv = std::max(std::lerp(sky.maxEv100, interior.maxEv100, interior.weight), minEv);
             // La scène la plus claire donne l'exposition la plus basse.
             return {.automatic = sky.autoExposure, .compensation = sky.exposure + interior.compensation,
@@ -343,8 +393,11 @@ namespace Flux {
             // réglage de l'éclat du fond. Le fond seul : la lumière ambiante du ciel (lighting.ambient) reste réelle.
             // Pas de boucle avec l'exposition : dans l'espace le ciel n'est pas mesuré, et sur une planète il reste
             // sous le gris moyen.
+            // Le plancher ne grandit pas au-delà de la luminance par défaut : un panorama de jour (milliers de cd/m²)
+            // est assez lumineux par lui-même, et le plancher multiplié d'autant le brûlait en blanc.
             constexpr float BackgroundScreenFloor = 0.3f;
-            const float floor = BackgroundScreenFloor * std::max(sky.luminance, 0.0f) / SkyComponent{}.luminance;
+            const float floor = BackgroundScreenFloor * std::clamp(sky.luminance, 0.0f, SkyComponent{}.luminance)
+                              / SkyComponent{}.luminance;
             data.noiseOffset = ToArray(parameters.noiseOffset, std::max(brightness, floor / std::max(preExposure, 1.0e-6f)));
             data.options = {parameters.seed, panoramaTexture != m_black.get() ? 1u : 0u, 0, 0};
         }
@@ -358,6 +411,11 @@ namespace Flux {
         lighting.airRayleigh = m_airRayleigh.get();
         lighting.airMie = m_airMie.get();
         lighting.airSampler = m_cubeSampler.get();
+        lighting.atmosphereMultiple = m_multiple.get();
+        if (m_boundMultiple[frameIndex] != m_multiple.get()) {
+            m_groups[frameIndex]->SetTexture(MultipleSlot, *m_multiple, *m_cubeSampler);
+            m_boundMultiple[frameIndex] = m_multiple.get();
+        }
         if (m_visible || m_tablesWanted || !m_tablesFilled) {
             m_buffers[frameIndex]->Write(&data, sizeof(data));
         }
@@ -424,9 +482,27 @@ namespace Flux {
             return gpu;
         }
         const Planetology::AtmosphereParameters& a = *chosen;
+        // Diffusion multiple : quelques millisecondes réparties sur les fils, refaite seulement quand l'air change (pas
+        // avec le soleil). Gardée en table CPU pour la lumière ambiante, et envoyée au GPU (16 Ko).
+        if (m_multipleParameters != a) {
+            m_multipleTable = Planetology::ComputeAtmosphereMultiple(a, m_jobs);
+            m_multipleParameters = a;
+            std::array<std::array<float, 4>, Planetology::AtmosphereMultipleSize * Planetology::AtmosphereMultipleSize> texels{};
+            for (std::size_t i = 0; i < texels.size(); ++i) {
+                texels[i] = ToArray(m_multipleTable[i]);
+            }
+            constexpr std::uint32_t size = Planetology::AtmosphereMultipleSize;
+            if (auto texture = m_device.CreateTexture(RHI::Format::RGBA32Float, {size, size}, Bytes(texels))) {
+                m_device.Retire([old = std::move(m_multiple)]() mutable { old.reset(); });
+                m_multiple = std::move(*texture);
+            } else {
+                Log::Error("ciel : diffusion multiple : {}", texture.error());
+            }
+            m_ambientParameters.reset(); // la lumière ambiante en dépend
+        }
         // Lumière ambiante du ciel : quelques millisecondes, refaite seulement quand l'air ou le soleil changent.
         if (m_ambientParameters != a || m_ambientSunColor != sunColor) {
-            m_ambientTable = Planetology::ComputeAtmosphereAmbient(a, sunColor);
+            m_ambientTable = Planetology::ComputeAtmosphereAmbient(a, sunColor, &m_multipleTable);
             m_ambientParameters = a;
             m_ambientSunColor = sunColor;
         }
@@ -448,7 +524,7 @@ namespace Flux {
     void SkyRenderer::BakeTables(RHI::CommandList& commands, std::uint32_t frameIndex) {
         const auto table = [&](const RHI::Pipeline& pipeline, RHI::Texture& rayleigh, RHI::Texture& mie) {
             const RHI::Extent size = rayleigh.GetExtent();
-            commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .secondColorTarget = &mie});
+            commands.BeginRenderPass({.clearColor = {}, .colorTarget = &rayleigh, .extraColorTargets = {&mie}});
             commands.SetViewport({0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)});
             commands.SetScissor({0, 0, size.width, size.height});
             commands.BindPipeline(pipeline);

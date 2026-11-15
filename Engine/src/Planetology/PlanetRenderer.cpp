@@ -131,18 +131,19 @@ namespace Flux::Planetology {
             return;
         }
         PlanetState& state = m_planets[entity];
-        if (planet.radius != state.radius || planet.relief != state.relief || planet.seed != state.seed || planet.mountainWidth != state.mountainWidth) {
+        if (planet.radius != state.radius || planet.relief != state.relief || planet.seed != state.seed
+            || GetReliefShape(planet) != state.shape) {
             // Autre forme : toutes les tuiles sont à refaire.
             for (auto& [key, node] : state.nodes) {
                 Retire(node);
             }
             state.nodes.clear();
-            state.terrain = std::make_shared<const Terrain>(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+            state.terrain = std::make_shared<const Terrain>(planet);
             state.owner = m_nextOwner++; // les tuiles de l'ancienne forme encore en cours seront ignorées
             state.radius = planet.radius;
             state.relief = planet.relief;
             state.seed = planet.seed;
-            state.mountainWidth = planet.mountainWidth;
+            state.shape = GetReliefShape(planet);
         }
         state.lastUsed = m_frame;
         state.requests.clear();

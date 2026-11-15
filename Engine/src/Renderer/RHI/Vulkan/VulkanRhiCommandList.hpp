@@ -46,8 +46,12 @@ namespace Flux::Vk {
         // Copie l'image de la swapchain, telle que dessinée jusqu'ici, dans target (Readback, largeur x hauteur x 4
         // octets) : capture d'écran. Avant TransitionToPresent.
         void CopyImageToReadback(VkBuffer target);
-        // Pour une bibliothèque qui enregistre elle-même ses commandes (FSR).
+        // Pour une bibliothèque qui enregistre elle-même ses commandes (FSR) : FlushBarriers avant.
         VkCommandBuffer GetHandle() const { return m_commandBuffer; }
+        // Enregistre les barrières en attente, en un seul vkCmdPipelineBarrier2. Fait par chaque commande qui travaille
+        // sur le GPU (passe, Dispatch, copie…) ; à appeler aussi avant vkEndCommandBuffer et avant d'enregistrer
+        // dans GetHandle() sans passer par cette classe.
+        void FlushBarriers();
 
         std::span<RHI::CommandList* const> Fork(std::uint32_t count) override;
         void UseTextures(std::span<const RHI::TextureUse> uses) override;
@@ -68,7 +72,7 @@ namespace Flux::Vk {
         void DrawIndexedIndirect(const RHI::Buffer& buffer, std::uint64_t offset, std::uint32_t count) override;
         void DrawMeshTasks(std::uint32_t groups) override;
         void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY, std::uint32_t groupsZ) override;
-        void ComputeBarrier() override;
+        void ComputeBarrier(RHI::ComputeReaders readers) override;
         void GenerateMipmaps(const RHI::Texture& texture) override;
         void CopyBuffer(const RHI::Buffer& source, std::uint64_t sourceOffset, RHI::Buffer& target, std::uint64_t targetOffset,
                         std::uint64_t size) override;
@@ -94,6 +98,13 @@ namespace Flux::Vk {
         VkRenderingAttachmentInfo BeginDepthAttachment(const RHI::RenderPassDesc& desc);
         // Après des constructions de structures d'accélération : lisibles par les suivantes et par les shaders.
         void AccelerationBarrier();
+        // Barrières mises en attente jusqu'à FlushBarriers. Les barrières mémoire se cumulent en une seule (étapes et
+        // accès réunis : plus large que chacune, donc sûre).
+        void QueueMemoryBarrier(const VkMemoryBarrier2& barrier);
+        void QueueImageBarrier(const VkImageMemoryBarrier2& barrier);
+        // Changement de layout de l'image de la swapchain (les textures passent par UseTextures).
+        void QueueSwapchainTransition(VkImageLayout from, VkImageLayout to, VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
+                                      VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess);
 
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
         CommandBatch* m_batch = nullptr; // nul pour une liste secondaire
@@ -112,5 +123,12 @@ namespace Flux::Vk {
         bool m_debugLabels = false;
         bool m_meshShaders = false;
         bool m_labelOpen = false;                 // repère VK_EXT_debug_utils ouvert par BeginStep
+        // Barrières en attente (QueueMemoryBarrier, QueueImageBarrier). 16 images suffisent à une passe (au-delà,
+        // envoyées en plusieurs fois) ; tableau fixe : rien d'alloué par image.
+        static constexpr std::uint32_t MaxPendingImages = 16;
+        std::array<VkImageMemoryBarrier2, MaxPendingImages> m_pendingImages{};
+        std::uint32_t m_pendingImageCount = 0;
+        VkMemoryBarrier2 m_pendingMemory{};
+        bool m_memoryPending = false;
     };
 }

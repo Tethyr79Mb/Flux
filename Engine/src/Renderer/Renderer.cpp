@@ -7,6 +7,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/EnvironmentRenderer.hpp"
 #include "Renderer/ExposureRenderer.hpp"
+#include "Renderer/LightingRenderer.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
 #include "Planetology/CloudRenderer.hpp"
@@ -115,6 +116,7 @@ namespace Flux {
         std::unique_ptr<OverlayRenderer> overlay;
         std::unique_ptr<PostRenderer> post;
         std::unique_ptr<Planetology::CloudRenderer> clouds;
+        std::unique_ptr<LightingRenderer> lighting;    // modèles opaques, après la passe « G-buffer »
         std::unique_ptr<RayShadowRenderer> rayShadows; // nul sans ray tracing
         // FSR : créé pour la taille de la vue quand un mode FSR est choisi, libéré en Natif (sa mémoire vidéo).
         std::unique_ptr<RHI::Upscaler> upscaler;
@@ -123,6 +125,7 @@ namespace Flux {
         std::filesystem::path assetsDirectory;
         Math::LinearColor clearColor{0.02f, 0.02f, 0.05f, 1.0f};
         bool vsync = true;
+        std::uint32_t swapchainImages = Renderer::DefaultSwapchainImages;
         float bloom = Renderer::DefaultBloom; // 0 : sans bloom
         bool temporalAA = true;
         Upscaling upscaling = DefaultUpscaling;
@@ -136,6 +139,11 @@ namespace Flux {
         bool detailedTimings = false; // heures du GPU demandées pour cette image seulement
         JobSystem* jobs = nullptr;     // Renderer::SetJobSystem
         bool parallelRecording = true;
+        // Fils de travail pris à cette image (ChooseWorkers) : seulement quand le CPU limite l'image.
+        bool workersActive = true;
+        double cpuWait = 0.0;          // ms, moyenne glissante du temps où le CPU attend (GPU, écran)
+        double executeMs = 0.0;        // ms, durée de graph.Execute à la dernière image
+        std::uint32_t framesSinceSwitch = 0;
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
         bool hasPrevious = false;
@@ -184,6 +192,10 @@ namespace Flux {
             RenderGraph::ResourceId cloudLight = 0;
             RenderGraph::ResourceId cloudDistances = 0;
             RenderGraph::ResourceId cloudHistory = 0;
+            // G-buffer des modèles opaques (LightingRenderer::BaseFormat et suivants).
+            RenderGraph::ResourceId gbufferBase = 0;
+            RenderGraph::ResourceId gbufferNormals = 0;
+            RenderGraph::ResourceId gbufferSurface = 0;
             // Ray tracing seulement (sinon 0) : lumière du soleil à part, puis rayons et lissages (RayShadowRenderer).
             RenderGraph::ResourceId sceneSun = 0;
             RenderGraph::ResourceId rays = 0;
@@ -225,6 +237,11 @@ namespace Flux {
                 return {};
             }
             exposure->Bind(*graph.GetTexture(targets.sceneColor), graph.GetTexture(targets.sceneDepth));
+            lighting->Bind({.depth = graph.GetTexture(targets.sceneDepth), .base = graph.GetTexture(targets.gbufferBase),
+                            .normals = graph.GetTexture(targets.gbufferNormals),
+                            .surface = graph.GetTexture(targets.gbufferSurface),
+                            .color = graph.GetTexture(targets.sceneColor),
+                            .sun = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr});
             if (rayShadows) {
                 rayShadows->Bind({.depth = graph.GetTexture(targets.sceneDepth), .sun = graph.GetTexture(targets.sceneSun),
                                   .rays = graph.GetTexture(targets.rays), .rows = graph.GetTexture(targets.rayRows),
@@ -287,7 +304,7 @@ namespace Flux {
             if (extent.width == 0 || extent.height == 0) {
                 return true; // fenêtre réduite : rien à présenter
             }
-            if (!device->ResizeSwapchain(extent, vsync)) {
+            if (!device->ResizeSwapchain({extent, vsync, swapchainImages})) {
                 return false;
             }
             // Profondeur de l'image finale à la taille de la swapchain (recréée quand la fenêtre change de taille).
@@ -313,6 +330,7 @@ namespace Flux {
                 return true;
             }
             const std::uint32_t frameIndex = device->GetFrameIndex();
+            ChooseWorkers();
             timings.fontsLoading = overlay->GetFontsLoading();
             if (!overlay->Upload(frameIndex)) {
                 return false;
@@ -338,7 +356,8 @@ namespace Flux {
             frame.index = frameIndex;
             frame.upscale.nearPlane = camera.nearPlane;
             frame.upscale.verticalFov = camera.verticalFov;
-            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false), parallelRecording ? jobs : nullptr);
+            graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false), workersActive ? jobs : nullptr);
+            executeMs = Milliseconds(Clock::now() - recordStart);
             timings.recordLists = graph.GetListCount();
             return true;
         }
@@ -435,15 +454,16 @@ namespace Flux {
             frame.upscale.preExposure = frame.preExposure;
             timings.exposure = frame.exposure;
             timings.sceneLuminance = exposure->GetLuminance();
-            SkyLighting lighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frame.preExposure, frameIndex);
-            frame.cameraInAir = lighting.atmosphere.scale[1] > 0.0f;
-            environment->Prepare(lighting.environmentSource, frameIndex);
-            lighting.environment = &environment->GetReflections();
-            lighting.irradiance = &environment->GetIrradiance();
-            lighting.environmentSampler = &environment->GetSampler();
-            lighting.environmentMips = environment->GetReflectionMips();
+            sky->SetJobSystem(jobs);
+            SkyLighting skyLighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frame.preExposure, frameIndex);
+            frame.cameraInAir = skyLighting.atmosphere.scale[1] > 0.0f;
+            environment->Prepare(skyLighting.environmentSource, frameIndex);
+            skyLighting.environment = &environment->GetReflections();
+            skyLighting.irradiance = &environment->GetIrradiance();
+            skyLighting.environmentSampler = &environment->GetSampler();
+            skyLighting.environmentMips = environment->GetReflectionMips();
             timings.prepareSky = Milliseconds(Clock::now() - skyStart);
-            JobSystem* workers = parallelRecording ? jobs : nullptr;
+            JobSystem* workers = workersActive ? jobs : nullptr;
             // Les traçantes ne lisent que leurs projectiles : préparées sur un autre fil pendant les objets.
             JobCounter tracersDone;
             const auto prepareTracers = [this, &camera, aspect, renderHeight, frameIndex] {
@@ -454,7 +474,7 @@ namespace Flux {
                 workers->Run(tracersDone, prepareTracers);
             }
             meshes->SetJobSystem(workers);
-            meshes->Prepare(scene, camera, aspect, hidden, lighting, temporal, assetsDirectory, frameIndex);
+            meshes->Prepare(scene, camera, aspect, hidden, skyLighting, temporal, assetsDirectory, frameIndex);
             const MeshRenderer::PrepareTimes& parts = meshes->GetPrepareTimes();
             timings.prepareEntities = parts.entities;
             timings.prepareGround = parts.ground;
@@ -518,6 +538,40 @@ namespace Flux {
             timings.hiddenTrees = vegetation.hidden;
         }
 
+        // Les fils ne servent qu'à raccourcir le temps CPU de l'image. Quand le CPU attend déjà le GPU (ou l'écran,
+        // V-Sync), ce temps est caché : couper l'enregistrement en plusieurs listes n'apporte rien et coûte un peu
+        // (listes de plus pour le GPU, chaque secondaire recharge son état ; fils réveillés qui prennent du turbo au
+        // fil principal et aux fils du pilote). Vu chez Bruno, GPU limitant : 163 images/s sur un fil, 153 avec les
+        // fils. D'où : fils pris seulement si l'image est limitée par le CPU. L'écart entre les deux seuils et
+        // l'attente entre deux bascules évitent de changer à chaque image.
+        void ChooseWorkers() {
+            constexpr double SerialSlackMs = 0.3;   // attente qui resterait sur un fil : au-dessus, un fil suffit
+            constexpr double ParallelSlackMs = 0.1; // attente sur un fil : en dessous, le CPU limite, fils repris
+            constexpr std::uint32_t MinFrames = 60;
+            const double wait = timings.waitGpu + timings.waitImage + timings.present;
+            cpuWait = framesSinceSwitch == 0 ? wait : cpuWait * 0.9 + wait * 0.1;
+            ++framesSinceSwitch;
+            if (!parallelRecording || !jobs) {
+                workersActive = false;
+                return;
+            }
+            if (framesSinceSwitch < MinFrames) {
+                return;
+            }
+            bool wanted = workersActive;
+            if (workersActive) {
+                // Sur un fil, l'enregistrement prendrait le temps que les fils font gagner : l'attente baisserait d'autant.
+                const double saved = std::max(graph.GetSerialMicroseconds() * 0.001 - executeMs, 0.0);
+                wanted = cpuWait - saved < SerialSlackMs;
+            } else {
+                wanted = cpuWait < ParallelSlackMs;
+            }
+            if (wanted != workersActive) {
+                workersActive = wanted;
+                framesSinceSwitch = 0;
+            }
+        }
+
         // Attentes de BeginFrame et heures du GPU relues pour l'image qu'il vient de finir.
         void ReadTimings() {
             const RHI::WaitTimes& waits = device->GetWaitTimes();
@@ -559,7 +613,9 @@ namespace Flux {
             // y retrouve où était chaque point. L'historique a deux exemplaires : l'anticrénelage lit l'un, écrit l'autre.
             using TextureSize = RenderGraph::TextureSize;
             // La scène à la taille de rendu ; l'historique, résultat de l'anticrénelage ou de FSR, à celle de la vue.
-            targets.sceneColor = graph.CreateTexture("image de la scène", Lifetime::Frame, {PostRenderer::SceneFormat, TextureSize::Render});
+            // Image de la scène et lumière du soleil à part aussi écrites en compute (passe « éclairage »).
+            targets.sceneColor = graph.CreateTexture("image de la scène", Lifetime::Frame,
+                                                     {PostRenderer::SceneFormat, TextureSize::Render, true, true});
             targets.motion = graph.CreateTexture("mouvement", Lifetime::Frame, {PostRenderer::MotionFormat, TextureSize::Render});
             targets.fullMotion = graph.CreateTexture("mouvement complet", Lifetime::Frame, {PostRenderer::MotionFormat, TextureSize::Render});
             targets.reactive = graph.CreateTexture("masque réactif", Lifetime::Frame, {PostRenderer::ReactiveFormat, TextureSize::Render});
@@ -575,8 +631,16 @@ namespace Flux {
                                                          {Planetology::CloudRenderer::DistanceFormat, TextureSize::HalfView});
             targets.cloudHistory = graph.CreateTexture("historique des nuages", Lifetime::Previous,
                                                        {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
+            // G-buffer des modèles opaques, lu par la passe « éclairage ».
+            targets.gbufferBase = graph.CreateTexture("G-buffer : couleur", Lifetime::Frame,
+                                                      {LightingRenderer::BaseFormat, TextureSize::Render});
+            targets.gbufferNormals = graph.CreateTexture("G-buffer : normales", Lifetime::Frame,
+                                                         {LightingRenderer::NormalFormat, TextureSize::Render});
+            targets.gbufferSurface = graph.CreateTexture("G-buffer : matière", Lifetime::Frame,
+                                                         {LightingRenderer::SurfaceFormat, TextureSize::Render});
             if (rayShadows) {
-                targets.sceneSun = graph.CreateTexture("lumière du soleil", Lifetime::Frame, {MeshRenderer::SunFormat, TextureSize::Render});
+                targets.sceneSun = graph.CreateTexture("lumière du soleil", Lifetime::Frame,
+                                                       {MeshRenderer::SunFormat, TextureSize::Render, true, true});
                 constexpr RenderGraph::TextureDesc work{RayShadowRenderer::WorkFormat, TextureSize::Render, true, true};
                 targets.rays = graph.CreateTexture("rayons du soleil", Lifetime::Frame, work);
                 targets.rayRows = graph.CreateTexture("ombres en rayons : lignes", Lifetime::Frame, work);
@@ -671,6 +735,85 @@ namespace Flux {
                 .Reads(impostors)
                 .Writes(forestShadowMap)
                 .Step("ombres des forêts", [this](RHI::CommandList& commands) { meshes->DrawForestShadows(commands, frame.index); });
+            // Une sonde de reflets photographiée, quand elle doit l'être : après les ombres et l'environnement qui
+            // l'éclairent, avant la scène qui la lit (ses textures, hors du graphe, changent d'usage dans l'étape).
+            const auto probes = graph.AddResource("sondes de reflets");
+            graph.AddPass("sonde de reflets")
+                .When([this] { return sceneVisible && meshes->ProbeCapturePending(); })
+                .Reads(cpu)
+                .Reads(rayScene)
+                .Reads(shadowMap)
+                .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
+                .Reads(airRayleigh)
+                .Reads(airMie)
+                .Reads(reflections)
+                .Reads(irradiance)
+                .Writes(probes)
+                .Step("sonde de reflets", [this](RHI::CommandList& commands) { meshes->CaptureProbe(commands, frame.index); });
+            const auto renderViewport = [this](RHI::CommandList& commands) {
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
+                commands.SetScissor({0, 0, frame.render.width, frame.render.height});
+            };
+            // Modèles opaques : leur surface dans le G-buffer, leur lumière propre (émissif, contour) dans l'image de la
+            // scène, effacée ici à la couleur du fond. La lumière du soleil à part (ray tracing) est effacée, la passe
+            // « éclairage » l'écrit.
+            const auto gbufferBase = targets.gbufferBase;
+            const auto gbufferNormals = targets.gbufferNormals;
+            const auto gbufferSurface = targets.gbufferSurface;
+            auto gbufferPass = graph.AddPass("G-buffer");
+            if (rayShadows) {
+                gbufferPass.Writes(targets.sceneSun);
+            }
+            gbufferPass
+                .When(scene)
+                .Reads(cpu)
+                .Reads(culled)
+                .Writes(sceneColor)
+                .Writes(motion)
+                .Writes(sceneDepth)
+                .Writes(gbufferBase)
+                .Writes(gbufferNormals)
+                .Writes(gbufferSurface)
+                .BeginParallel(
+                    [this] {
+                        // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
+                        // Profondeur et mouvement gardés pour l'anticrénelage.
+                        return RHI::RenderPassDesc{.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
+                                                   .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
+                                                   .colorTarget = graph.GetTexture(targets.sceneColor),
+                                                   .extraColorTargets = {graph.GetTexture(targets.motion), graph.GetTexture(targets.gbufferBase),
+                                                                         graph.GetTexture(targets.gbufferNormals),
+                                                                         graph.GetTexture(targets.gbufferSurface),
+                                                                         rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr},
+                                                   .keepDepth = true};
+                    },
+                    renderViewport)
+                .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); });
+            // Les pixels des modèles éclairés en compute, avec le code du rendu direct (LightingRenderer).
+            auto lightingPass = graph.AddPass("éclairage");
+            if (rayShadows) {
+                lightingPass.Writes(targets.sceneSun, RHI::TextureAccess::Storage);
+            }
+            lightingPass
+                .When(scene)
+                .Reads(cpu)
+                .Reads(shadowMap)
+                .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
+                .Reads(airRayleigh)
+                .Reads(airMie)
+                .Reads(reflections)
+                .Reads(irradiance)
+                .Reads(probes)
+                .Reads(sceneDepth)
+                .Reads(gbufferBase)
+                .Reads(gbufferNormals)
+                .Reads(gbufferSurface)
+                .Writes(sceneColor, RHI::TextureAccess::Storage)
+                .Step("éclairage", [this](RHI::CommandList& commands) {
+                    lighting->Draw(commands, frame.index, meshes->GetRayShadowView().forward[3]);
+                });
             auto scenePass = graph.AddPass("scène");
             if (rayShadows) {
                 scenePass.Writes(targets.sceneSun); // lumière du soleil à part, ombrée ensuite en rayons
@@ -691,26 +834,21 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
-                // Étapes enregistrées en même temps, chacune dans sa liste (objets, arbres, sol sont les plus longs).
+                // Étapes enregistrées en même temps, chacune dans sa liste (arbres, sol sont les plus longs). La suite
+                // de la passe « G-buffer » : image, mouvement et profondeur gardés.
                 .BeginParallel(
                     [this] {
-                        // Fond sans ciel : la couleur choisie doit ressortir telle quelle de la courbe de tons.
-                        // Profondeur et mouvement gardés pour l'anticrénelage.
-                        return RHI::RenderPassDesc{.clearColor = ToneCurve::InverseToneMap(clearColor, frame.exposure / frame.preExposure),
-                                                   .depth = graph.GetTexture(targets.sceneDepth), .clearDepth = 0.0f,
+                        return RHI::RenderPassDesc{.depth = graph.GetTexture(targets.sceneDepth),
                                                    .colorTarget = graph.GetTexture(targets.sceneColor),
-                                                   .secondColorTarget = graph.GetTexture(targets.motion),
-                                                   .thirdColorTarget = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr,
-                                                   .keepDepth = true};
+                                                   .extraColorTargets = {graph.GetTexture(targets.motion),
+                                                                         rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr},
+                                                   .keepDepth = true, .loadDepth = true, .loadColor = true};
                     },
-                    [this](RHI::CommandList& commands) {
-                        commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
-                        commands.SetScissor({0, 0, frame.render.width, frame.render.height});
-                    })
-                .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); })
+                    renderViewport)
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
                 .Step("herbe", [this](RHI::CommandList& commands) { meshes->DrawGrass(commands, frame.index); })
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
@@ -779,7 +917,7 @@ namespace Flux {
                 .Writes(cloudDistances)
                 .Begin([this, halfViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.cloudLight),
-                                              .secondColorTarget = graph.GetTexture(targets.cloudDistances)});
+                                              .extraColorTargets = {graph.GetTexture(targets.cloudDistances)}});
                     halfViewport(commands);
                 })
                 .Step("nuages", [this](RHI::CommandList& commands) { clouds->DrawMarch(commands, frame.index); });
@@ -798,10 +936,6 @@ namespace Flux {
                 .Step("historique des nuages", [this](RHI::CommandList& commands) {
                     clouds->DrawResolve(commands, frame.index, frame.cloudCopy);
                 });
-            const auto sceneViewport = [this](RHI::CommandList& commands) {
-                commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
-                commands.SetScissor({0, 0, frame.render.width, frame.render.height});
-            };
             graph.AddPass("composition des nuages")
                 .When(hasClouds)
                 .Reads(cpu)
@@ -809,9 +943,9 @@ namespace Flux {
                 .Reads(cloudDistances)
                 .Reads(cloudHistory)
                 .Writes(sceneColor)
-                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                .Begin([this, renderViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.sceneColor), .loadColor = true});
-                    sceneViewport(commands);
+                    renderViewport(commands);
                 })
                 .Step("composition des nuages", [this](RHI::CommandList& commands) {
                     clouds->DrawComposite(commands, frame.index, frame.cloudCopy);
@@ -833,15 +967,16 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
-                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                .Begin([this, renderViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.depth = graph.GetTexture(targets.sceneDepth),
                                               .colorTarget = graph.GetTexture(targets.sceneColor),
-                                              .secondColorTarget = graph.GetTexture(targets.motion), .keepDepth = true,
+                                              .extraColorTargets = {graph.GetTexture(targets.motion)}, .keepDepth = true,
                                               .loadDepth = true, .loadColor = true});
-                    sceneViewport(commands);
+                    renderViewport(commands);
                 })
                 .Step("transparents", [this](RHI::CommandList& commands) {
                     meshes->DrawTransparent(commands, frame.index);
@@ -869,11 +1004,11 @@ namespace Flux {
                 .Reads(cpu)
                 .Writes(reactive)
                 .Writes(sceneDepth)
-                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                .Begin([this, renderViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.depth = graph.GetTexture(targets.sceneDepth),
                                               .colorTarget = graph.GetTexture(targets.reactive), .keepDepth = true,
                                               .loadDepth = true});
-                    sceneViewport(commands);
+                    renderViewport(commands);
                 })
                 .Step("masque réactif", [this](RHI::CommandList& commands) {
                     thrusters->DrawReactive(commands);
@@ -886,9 +1021,9 @@ namespace Flux {
                 .Reads(cloudDistances)
                 .Reads(cloudHistory)
                 .Writes(reactive)
-                .Begin([this, sceneViewport](RHI::CommandList& commands) {
+                .Begin([this, renderViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.reactive), .loadColor = true});
-                    sceneViewport(commands);
+                    renderViewport(commands);
                 })
                 .Step("masque des nuages", [this](RHI::CommandList& commands) {
                     clouds->DrawReactive(commands, frame.index, frame.cloudCopy);
@@ -974,7 +1109,7 @@ namespace Flux {
     std::expected<std::unique_ptr<Renderer>, std::string> Renderer::Create(Window& window) {
         auto impl = std::make_unique<Impl>(window);
 
-        auto device = RHI::Device::Create(window.GetNativeHandle(), impl->WindowExtent(), impl->vsync);
+        auto device = RHI::Device::Create(window.GetNativeHandle(), {impl->WindowExtent(), impl->vsync, impl->swapchainImages});
         if (!device) {
             return std::unexpected(device.error());
         }
@@ -1000,11 +1135,16 @@ namespace Flux {
             return std::unexpected(exposure.error());
         }
         impl->exposure = std::move(*exposure);
-        auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        auto meshes = MeshRenderer::Create(*impl->device, *impl->environment, sceneFormat, motionFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());
         }
         impl->meshes = std::move(*meshes);
+        auto lighting = LightingRenderer::Create(*impl->device, *impl->meshes);
+        if (!lighting) {
+            return std::unexpected(lighting.error());
+        }
+        impl->lighting = std::move(*lighting);
         if (impl->meshes->HasRayTracing()) {
             auto rayShadows = RayShadowRenderer::Create(*impl->device, sceneFormat);
             if (!rayShadows) {
@@ -1099,6 +1239,18 @@ namespace Flux {
         return m_impl->vsync;
     }
 
+    void Renderer::SetSwapchainImages(std::uint32_t images) {
+        m_impl->swapchainImages = std::clamp(images, MinSwapchainImages, MaxSwapchainImages); // recréée à la prochaine image
+    }
+
+    std::uint32_t Renderer::GetSwapchainImages() const {
+        return m_impl->swapchainImages;
+    }
+
+    std::uint32_t Renderer::GetSwapchainImageCount() const {
+        return m_impl->device->GetSwapchainImageCount();
+    }
+
     void Renderer::SetBloom(float strength) {
         m_impl->bloom = std::clamp(strength, 0.0f, 1.0f);
     }
@@ -1160,7 +1312,15 @@ namespace Flux {
     }
 
     void Renderer::SetParallelRecording(bool enabled) {
-        m_impl->parallelRecording = enabled;
+        if (m_impl->parallelRecording != enabled) {
+            m_impl->parallelRecording = enabled;
+            m_impl->workersActive = enabled; // repart de l'état demandé ; ChooseWorkers juge ensuite
+            m_impl->framesSinceSwitch = 0;
+        }
+    }
+
+    bool Renderer::IsUsingWorkers() const {
+        return m_impl->workersActive && m_impl->jobs != nullptr;
     }
 
     bool Renderer::IsParallelRecording() const {
@@ -1207,6 +1367,14 @@ namespace Flux {
 
     bool Renderer::IsShowingRayShadowMask() const {
         return m_impl->rayShadows && m_impl->rayShadows->IsShowingMask();
+    }
+
+    void Renderer::SetGBufferView(GBufferView view) {
+        m_impl->lighting->SetView(view);
+    }
+
+    GBufferView Renderer::GetGBufferView() const {
+        return m_impl->lighting->GetView();
     }
 
     void Renderer::SetGroundDetail(GroundDetail detail) {

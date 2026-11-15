@@ -9,6 +9,7 @@
 #include "Flux/Renderer/RHI/Pipeline.hpp"
 #include "Flux/Renderer/RHI/Texture.hpp"
 
+#include <array>
 #include <cstdint>
 #include <span>
 
@@ -39,17 +40,16 @@ namespace Flux::RHI {
         const Texture* colorTarget = nullptr;
         std::uint32_t colorLayer = 0;
         std::uint32_t colorMip = 0; // texture cube ou à niveaux de mip : la passe couvre ce niveau (sa taille)
-        // Avec colorTarget seulement : seconde texture de la même taille, effacée à 0.
-        const Texture* secondColorTarget = nullptr;
-        // Avec secondColorTarget seulement : troisième texture de la même taille, effacée à 0.
-        const Texture* thirdColorTarget = nullptr;
+        // Avec colorTarget seulement : cibles suivantes (SV_Target1, 2…) de la même taille, effacées à 0 (ou gardées
+        // avec loadColor), jusqu'au premier nullptr ; même couche et même niveau que colorTarget quand elles en ont.
+        std::array<const Texture*, MaxColorTargets - 1> extraColorTargets{};
         // Tampon de profondeur gardé après la passe, pour être lu ensuite (CreateRenderTarget sampled).
         bool keepDepth = false;
         // La profondeur d'avant est gardée au lieu d'être effacée (une passe précédente l'a déjà remplie) ; sans
         // couleur, CommandList::ClearDepth efface les parties à redessiner.
         bool loadDepth = false;
-        // Avec colorTarget seulement : la couleur d'avant (et la seconde) est gardée au lieu d'être effacée, la passe
-        // continue ce qu'une précédente a dessiné.
+        // Avec colorTarget seulement : la couleur d'avant (et celle des cibles suivantes) est gardée au lieu d'être
+        // effacée, la passe continue ce qu'une précédente a dessiné.
         bool loadColor = false;
     };
 
@@ -73,6 +73,8 @@ namespace Flux::RHI {
         virtual std::span<CommandList* const> Fork(std::uint32_t count) = 0;
         // Prépare chaque texture à son nouvel usage, en une barrière pour toutes : attend ce qui l'écrivait ou la
         // lisait avant, change son layout. Sans effet pour une texture déjà lue (Sampled) et relue. Hors d'une passe.
+        // La barrière part avec la commande suivante, regroupée avec celles posées entre-temps (ComputeBarrier, fin
+        // de la passe d'avant) : un seul vidage des caches au lieu de plusieurs.
         virtual void UseTextures(std::span<const TextureUse> uses) = 0;
         // Prévoit des barrières sans rien enregistrer : dans l'ordre, chaque texture note son nouvel usage et `from`
         // reçoit celui d'avant. Ces TextureUse passés plus tard à UseTextures, dans n'importe quelle liste, posent
@@ -112,9 +114,10 @@ namespace Flux::RHI {
         virtual void DrawMeshTasks(std::uint32_t groups) = 0;
         // Compute shader du pipeline lié (CreateComputePipeline), en groupes de threads ; hors d'une passe.
         virtual void Dispatch(std::uint32_t groupsX, std::uint32_t groupsY = 1, std::uint32_t groupsZ = 1) = 0;
-        // Les buffers écrits par les Dispatch précédents deviennent lisibles par la suite : sommets, index, shaders,
-        // et CPU (Readback). Hors d'une passe.
-        virtual void ComputeBarrier() = 0;
+        // Les buffers écrits par les Dispatch précédents deviennent lisibles par `readers` (les calculs suivants
+        // toujours), et réinscriptibles après ce qu'ils lisaient. Hors d'une passe. Comme UseTextures, la barrière peut
+        // attendre la commande suivante pour partir avec les autres en un seul appel : rien ne change pour l'appelant.
+        virtual void ComputeBarrier(ComputeReaders readers) = 0;
         // Chaque niveau de mip de la texture recalculé par réduction de moitié du précédent, à partir du niveau 0 (écrit
         // par un compute shader, par exemple) ; la texture finit lue par les shaders (Sampled). Hors d'une passe.
         virtual void GenerateMipmaps(const Texture& texture) = 0;

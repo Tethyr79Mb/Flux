@@ -97,6 +97,7 @@ namespace FluxEditor {
                                            {"Spot", "Spot", UI::Icon::Light},
                                            {"Ciel", "Ciel", UI::Icon::Sky},
                                            {"Volume intérieur", "Intérieur", UI::Icon::Collider},
+                                           {"Sonde de reflets", "Sonde de reflets", UI::Icon::Sky},
                                            {"Interface...", "Interface", UI::Icon::Window},
                                            {"Son...", "Son", UI::Icon::Sound},
                                            {"Planète", "Planète", UI::Icon::Planet},
@@ -197,7 +198,7 @@ namespace FluxEditor {
             ui.BeginDisabled(playing);
             constexpr std::string_view Categories[] = {"Formes", "Lumières", "Espace", "Physique (en mode Jouer)", "Interface", "Son", "Logique"};
             category("Formes", {Item::Empty, Item::Cube, Item::Model});
-            category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior});
+            category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior, Item::ReflectionProbe});
             category("Espace", {Item::Planet}); // Monde : bouton de la barre de menus
             category("Physique (en mode Jouer)", {Item::Character, Item::Ship});
             category("Interface", {Item::ScreenImage, Item::Interface});
@@ -450,6 +451,8 @@ namespace FluxEditor {
                 scene.Add<SoundComponent>(entity).file = std::move(*soundFile);
             } else if (item == Item::Interior) {
                 scene.Add<InteriorComponent>(entity);
+            } else if (item == Item::ReflectionProbe) {
+                scene.Add<ReflectionProbeComponent>(entity);
             } else if (item == Item::Planet) {
                 scene.Add<PlanetComponent>(entity);
                 scene.Add<CloudsComponent>(entity);
@@ -461,8 +464,6 @@ namespace FluxEditor {
                     scene.Add<OrbitComponent>(entity, OrbitComponent{.distance = SunDistance / 1.0e9,
                                                                      .angle = std::fmod(40.0 * static_cast<double>(count), 360.0)});
                 }
-                // Liseré bleuté au bord du disque, vu de l'espace : la planète se détache du noir, même côté nuit.
-                scene.Add<RimLightComponent>(entity, RimLightComponent{.intensity = 0.8f, .sharpness = 6.0f});
             } else if (item == Item::Light || item == Item::Spot) {
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 if (item == Item::Spot) {

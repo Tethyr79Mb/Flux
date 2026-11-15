@@ -4,6 +4,8 @@
 
 #include "Flux/Planetology/Planet.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Planetology/ReliefWetness.hpp"
+#include "Planetology/TreeSowing.hpp"
 #include "Planetology/VegetationLibrary.hpp"
 
 #include <cmath>
@@ -31,6 +33,14 @@ bool RunVegetationTests() {
     CHECK(biome && biome->plains == 0.0f && biome->hills == 1.0f && biome->mountains == 1.0f);
     CHECK(biome->minTemperature == -5.0f && biome->maxTemperature == 10.0f && biome->species.size() == 1);
     CHECK(!Planetology::ParseVegetationBiome(R"({"temperature": [5]})"));
+    // Sol : tout convient par défaut ; roches et profondeur de la terre lues, ramenées dans [0, 1], relues à l'identique.
+    CHECK(biome->granite == 1.0f && biome->basalt == 1.0f && biome->minSoil == 0.0f && biome->maxSoil == 1.0f);
+    auto rocky = Planetology::ParseVegetationBiome(R"({"rocks": {"limestone": 0, "basalt": 3}, "soil": [0.4, 1.5]})");
+    CHECK(rocky && rocky->limestone == 0.0f && rocky->basalt == 1.0f && rocky->granite == 1.0f);
+    CHECK(rocky->minSoil == 0.4f && rocky->maxSoil == 1.0f);
+    auto rockyAgain = Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome(*rocky));
+    CHECK(rockyAgain && rockyAgain->limestone == 0.0f && rockyAgain->minSoil == 0.4f && rockyAgain->maxSoil == 1.0f);
+    CHECK(!Planetology::ParseVegetationBiome(R"({"rocks": [1, 0]})"));
     CHECK(!Planetology::ParseVegetationBiome(R"({"species": [{"species": "a"}, {"species": "b"}, {"species": "c"},
                                                              {"species": "d"}, {"species": "e"}]})"));
 
@@ -55,6 +65,8 @@ bool RunVegetationTests() {
     // Désert (biome 2) sans arbres ; montagne (biome 3) : épicéas et sapins seulement, pas de plaines.
     CHECK(set.biomes[1].humidity[2] == 0.0f);
     CHECK(set.biomes[2].zones[0] == 0.0f && set.biomes[2].zones[2] == 1.0f);
+    // Sol sans borne au GPU quand le biome ne limite rien (montagne), bornée sinon.
+    CHECK(set.biomes[2].soil[0] < 0.0f && set.biomes[2].soil[1] > 1.0f);
     CHECK(set.biomeSpecies[2][0] >> 8 == 2 && set.biomeSpecies[2][1] >> 8 == 2);
     CHECK(set.biomes[2].color[3] == 200.0f); // taille des bosquets absente du fichier : par défaut
     // Relu tel quel tant que rien ne change.
@@ -112,5 +124,32 @@ bool RunVegetationTests() {
         plains += zones.mountains < 0.01 && zones.hills < 0.01 ? 1 : 0;
     }
     CHECK(mountains > 4 && plains > 40);
+
+    // Humidité du relief : de -1 (crête) à 1 (creux), creux et crêtes présents ; continue d'une plaine à sa voisine
+    // (mêmes points sur le bord commun) ; aucune grille sur les tuiles trop grandes pour voir les vallons.
+    CHECK(Planetology::GetWetnessLayout(terrain, 0).side == 0);
+    const std::uint32_t plainLevel = Planetology::GetPlainLevel(terrain);
+    const Planetology::WetnessLayout layout = Planetology::GetWetnessLayout(terrain, plainLevel);
+    CHECK(layout.side >= 2 && layout.fade == 1.0f && layout.octaves < octaves);
+    int hollows = 0;
+    int ridges = 0;
+    for (int i = 0; i < 40; ++i) {
+        const double a = i * 2.399963;
+        const double y = 0.9 - (i + 0.5) / 22.0;
+        const double r = std::sqrt(1.0 - y * y);
+        Planetology::TileKey key = Planetology::FindTile({r * std::cos(a), y, r * std::sin(a)}, plainLevel);
+        key.x = std::min(key.x, (1u << plainLevel) - 2u);
+        Planetology::WetnessGrid grid, next;
+        Planetology::BuildWetnessGrid(terrain, key, grid);
+        Planetology::BuildWetnessGrid(terrain, {key.face, key.level, key.x + 1, key.y}, next);
+        for (std::uint32_t k = 0; k <= Planetology::TileQuads; k += 4) {
+            const double wet = Planetology::SampleWetness(grid, Planetology::TileQuads, k);
+            CHECK(wet > -1.0 && wet < 1.0);
+            CHECK(std::abs(wet - Planetology::SampleWetness(next, 0.0, k)) < 1.0e-9);
+            hollows += wet > 0.2 ? 1 : 0;
+            ridges += wet < -0.2 ? 1 : 0;
+        }
+    }
+    CHECK(hollows > 10 && ridges > 10);
     return true;
 }

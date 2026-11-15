@@ -170,11 +170,11 @@ namespace Flux {
         commands.BindPipeline(*m_clear);
         commands.SetBindGroup(0, *frame.group);
         commands.Dispatch(1);
-        commands.ComputeBarrier();
+        commands.ComputeBarrier(RHI::ComputeReaders::Compute);
         commands.BindPipeline(*m_cull);
         commands.SetBindGroup(0, *frame.group);
         commands.Dispatch((frame.tested + GroupSize - 1) / GroupSize);
-        commands.ComputeBarrier(); // commandes et entités lues par les dessins
+        commands.ComputeBarrier(RHI::ComputeReaders::Draw | RHI::ComputeReaders::Host); // commandes et entités lues par les dessins
     }
 
     void OcclusionCulling::BuildPyramid(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::Texture& depth,
@@ -210,7 +210,8 @@ namespace Flux {
         frame.pyramidGroup->SetTexture(DepthSlot, depth, *m_sampler);
         frame.pyramidGroup->SetBuffer(TargetPyramidSlot, *pyramid.buffer);
 
-        commands.ComputeBarrier(); // l'image en vol a fini de lire ce buffer (son test) avant qu'il soit réécrit
+        // L'image en vol a fini de lire ce buffer (son test) avant qu'il soit réécrit.
+        commands.ComputeBarrier(RHI::ComputeReaders::Compute);
         commands.BindPipeline(*m_pyramidPipeline);
         commands.SetBindGroup(0, *frame.pyramidGroup);
         RHI::Extent source = size;
@@ -220,7 +221,7 @@ namespace Flux {
             commands.PushConstants(&constants, sizeof(constants));
             commands.Dispatch((sizes[l].width + PyramidGroupSize - 1) / PyramidGroupSize,
                               (sizes[l].height + PyramidGroupSize - 1) / PyramidGroupSize);
-            commands.ComputeBarrier();
+            commands.ComputeBarrier(RHI::ComputeReaders::Compute);
             source = sizes[l];
         }
         pyramid.size = size;
