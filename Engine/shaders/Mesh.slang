@@ -524,7 +524,7 @@ float CloudShadow(float3 worldPosition);
 // l'équateur aux pôles (axe y de la planète ; froide surtout au-delà de 50°), 6,5 °C de moins par km d'altitude, plus
 // des écarts de quelques degrés. Humidité : bruit de 300 km et de 30 km autour de celle de la planète, plus forte dans
 // les 2 % du relief au-dessus de la mer. Ces échelles ne s'effacent pas au loin : vues de l'espace, les zones restent.
-// Lumière de contour d'une planète (RimLightComponent) : selon sa sphère, pas son relief, pour un liseré net au bord
+// Lumière de contour d'une planète sans air (RimLightComponent ; avec air, l'atmosphère fait le halo) : selon sa sphère, pas son relief, pour un liseré net au bord
 // du disque sans faire briller chaque montagne de profil. Ajoutée après l'air : elle reste visible à travers lui.
 float3 PlanetRim(PlanetData planet, float3 worldUp, float3 toEye)
 {
