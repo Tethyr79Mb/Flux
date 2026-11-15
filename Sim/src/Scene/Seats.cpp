@@ -53,6 +53,18 @@ namespace Flux::Seats {
             transform.position = {local.x, local.y, local.z};
             transform.rotation = Math::Normalize(inverse * scene.GetWorldRotation(seat));
         }
+
+        void Enter(Scene& scene, CharacterComponent& character, SeatState state) {
+            character.seatState = state;
+            character.seatTime = 0.0f;
+            // Aux commandes : le vaisseau garde la vitesse qu'il avait vers l'avant.
+            if (state == SeatState::Seated && scene.Get<SeatComponent>(character.seat).pilot) {
+                if (const Entity ship = scene.GetShip(character.seat); ship != NullEntity) {
+                    ShipComponent& component = scene.Get<ShipComponent>(ship);
+                    component.cruiseSpeed = -component.velocity.z;
+                }
+            }
+        }
     }
 
     void Update(Scene& scene, Entity player, double deltaSeconds, const SeatInput& input, const DurationsFunction& durations) {
@@ -69,17 +81,7 @@ namespace Flux::Seats {
             character->seatState = SeatState::Standing;
         }
         character->seatTime += static_cast<float>(deltaSeconds);
-        const auto enter = [&](SeatState state) {
-            character->seatState = state;
-            character->seatTime = 0.0f;
-            // Aux commandes : le vaisseau garde la vitesse qu'il avait vers l'avant.
-            if (state == SeatState::Seated && scene.Get<SeatComponent>(character->seat).pilot) {
-                if (const Entity ship = scene.GetShip(character->seat); ship != NullEntity) {
-                    ShipComponent& component = scene.Get<ShipComponent>(ship);
-                    component.cruiseSpeed = -component.velocity.z;
-                }
-            }
-        };
+        const auto enter = [&](SeatState state) { Enter(scene, *character, state); };
 
         switch (character->seatState) {
             case SeatState::Standing:
@@ -112,6 +114,32 @@ namespace Flux::Seats {
                     enter(SeatState::Standing);
                 }
                 break;
+        }
+    }
+
+    bool Sit(Scene& scene, Entity character, Entity seat) {
+        auto* component = scene.IsValid(character) ? scene.TryGet<CharacterComponent>(character) : nullptr;
+        if (!component || !scene.IsValid(seat) || !scene.TryGet<SeatComponent>(seat)) {
+            return false;
+        }
+        if (component->seat == seat) {
+            Enter(scene, *component, SeatState::Seated);
+            return true;
+        }
+        if (IsOccupied(scene, seat)) {
+            return false;
+        }
+        Board(scene, character, seat);
+        component->seat = seat;
+        Enter(scene, *component, SeatState::Seated);
+        return true;
+    }
+
+    void StandUp(Scene& scene, Entity character) {
+        auto* component = scene.IsValid(character) ? scene.TryGet<CharacterComponent>(character) : nullptr;
+        if (component && component->seat != NullEntity) {
+            component->seat = NullEntity;
+            Enter(scene, *component, SeatState::Standing);
         }
     }
 

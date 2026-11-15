@@ -12,6 +12,7 @@ namespace Flux {
 namespace FluxEditor {
     class InterfaceEditor;
     class McpServer;
+    class PlayMode;
     class SceneDocument;
     class SceneEditor;
     class UndoHistory;
@@ -27,11 +28,12 @@ namespace FluxEditor {
         bool playing = false;                                 // mode Jouer : rien ne se modifie
         const std::vector<std::filesystem::path>* prefabs = nullptr; // ContentBrowser::GetPrefabs
         SceneDocument* document = nullptr;                    // fichier de la scène (open_scene)
+        PlayMode* playMode = nullptr;                         // boutons Jouer / Pause / Arrêter (play)
     };
 
     // Outils de l'éditeur pour Claude : mesures du panneau Moteur, objets de la scène (lire, modifier, créer, dupliquer,
     // supprimer, sélectionner, annuler), composants, caméra, panneau Placer, capture d'écran, ouverture d'une scène,
-    // vues de débogage du rendu.
+    // vues de débogage du rendu, mode Jouer et sièges (s'asseoir aux commandes sans clavier).
     void RegisterEditorTools(McpServer& server, EditorToolContext& context);
     // Interfaces (.fluxui) dans l'éditeur d'interface : lister, ouvrir, lire, ajouter, régler, déplacer, supprimer
     // (annulable), enregistrer (InterfaceTools.cpp).

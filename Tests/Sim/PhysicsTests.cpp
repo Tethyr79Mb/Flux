@@ -465,6 +465,35 @@ namespace {
 
     // Poste de pilotage : le joueur s'y assoit (E), y reste posé pendant que le vaisseau accélère et vire sous ses
     // commandes, puis se relève devant le siège.
+    // Seats::Sit (outils de l'éditeur) : assis tout de suite, loin du siège et hors du vaisseau ; il y monte et le
+    // pilote. Un siège pris est refusé ; StandUp le relève à bord.
+    bool RunSeatSitTests() {
+        Scene scene;
+        const Entity ship = scene.CreateEntity("Vaisseau");
+        scene.Add<ShipComponent>(ship).velocity = {0.0f, 0.0f, -5.0f};
+        const Entity seat = scene.CreateEntity("Poste de pilotage", ship);
+        scene.Get<TransformComponent>(seat).position = {0.0, 0.0, -3.0};
+        scene.Add<SeatComponent>(seat).pilot = true;
+        const Entity hero = scene.CreateEntity("Joueur");
+        scene.Get<TransformComponent>(hero).position = {50.0, 0.0, 0.0};
+        scene.Add<CharacterComponent>(hero);
+        const Entity other = scene.CreateEntity("Passager");
+        scene.Add<CharacterComponent>(other).player = false;
+
+        CHECK(Seats::Sit(scene, hero, seat));
+        const CharacterComponent& character = scene.Get<CharacterComponent>(hero);
+        CHECK(character.seat == seat && character.seatState == SeatState::Seated);
+        CHECK(scene.GetParent(hero) == ship);
+        CHECK(Ships::GetPilotedShip(scene, hero) == ship);
+        CHECK(std::abs(scene.Get<ShipComponent>(ship).cruiseSpeed - 5.0f) < 1.0e-4f); // garde sa vitesse vers l'avant
+        CHECK(!Seats::Sit(scene, other, seat));
+        CHECK(!Seats::Sit(scene, hero, ship)); // pas un siège
+        Seats::StandUp(scene, hero);
+        CHECK(character.seat == NullEntity && character.seatState == SeatState::Standing);
+        CHECK(scene.GetParent(hero) == ship);
+        return true;
+    }
+
     bool RunSeatTests() {
         Scene scene;
         const Entity ship = scene.CreateEntity("Vaisseau");
@@ -1342,7 +1371,7 @@ namespace {
 
 bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunSlopeTests() && RunTwoCharactersTests() && RunShipTests()
-        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
+        && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatSitTests() && RunSeatBoardingTests() && RunMeshTests()
         && RunShipCollisionTests() && RunShipFallTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
         && RunFarPlanetTests() && RunPlanetTreeTests() && RunWorldTests() && RunCarriedOutsideGravityTests();
 }

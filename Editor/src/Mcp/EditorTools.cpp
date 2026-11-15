@@ -1,5 +1,6 @@
 #include "Mcp/EditorTools.hpp"
 
+#include "Document/PlayMode.hpp"
 #include "Document/SceneDocument.hpp"
 #include "Document/UndoHistory.hpp"
 #include "Mcp/McpServer.hpp"
@@ -17,6 +18,7 @@
 #include <Flux/Scene/ComponentRegistry.hpp>
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
+#include <Flux/Scene/Seats.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -772,6 +774,88 @@ namespace FluxEditor {
                 }
                 context.sceneEditor.Select(engine.GetScene(), NullEntity);
                 return McpToolResult::Text("scène ouverte : " + file);
+            },
+        });
+
+        server.AddTool({
+            .name = "play",
+            .description = "Mode Jouer, comme les boutons de la barre d'outils : start (jouer la scène ouverte), stop (arrêter : "
+                           "la scène éditée revient telle qu'avant), pause, resume. La scène du jeu se lit avec "
+                           "get_entity et list_entities ; elle n'est pas modifiable par les autres outils.",
+            .inputSchema = Schema({{"action", {{"type", "string"}, {"enum", {"start", "stop", "pause", "resume"}}}}}, {"action"}),
+            .run = [&engine, &context](const Json& arguments) -> McpOutcome {
+                if (!context.playMode) {
+                    return McpToolResult::Error("mode Jouer indisponible");
+                }
+                PlayMode& play = *context.playMode;
+                const std::string action = arguments.at("action").get<std::string>();
+                if (action == "start") {
+                    play.Start(engine, context.document ? context.document->GetPath() : std::filesystem::path());
+                } else if (action == "stop") {
+                    play.Stop(engine);
+                } else if (action == "pause" || action == "resume") {
+                    if (!play.IsPlaying()) {
+                        return McpToolResult::Error("le jeu ne tourne pas");
+                    }
+                    if ((engine.GetGameState() == GameState::Paused) != (action == "resume")) {
+                        play.TogglePause(engine);
+                    }
+                } else {
+                    return McpToolResult::Error(std::format("action « {} » inconnue", action));
+                }
+                // context.playing suit à l'image suivante (main.cpp) : on le met à jour tout de suite pour l'outil suivant.
+                context.playing = play.IsPlaying();
+                const char* state = !play.IsPlaying() ? "arrêté" : engine.GetGameState() == GameState::Paused ? "en pause" : "en cours";
+                return McpToolResult::Text(std::format("jeu {}", state));
+            },
+        });
+
+        server.AddTool({
+            .name = "sit",
+            .description = "Pendant le jeu (play start), assoit tout de suite le joueur sur un siège (SeatComponent), sans "
+                           "animation ni distance à respecter : un poste de pilotage le met aux commandes du vaisseau, "
+                           "comme Interagir (F) à côté. seat : Uuid ou nom du siège ; sans seat, il se relève. character : "
+                           "un autre personnage que le joueur.",
+            .inputSchema = Schema({{"seat", EntityArgument}, {"character", EntityArgument}}),
+            .run = [&engine, &context](const Json& arguments) -> McpOutcome {
+                if (!context.playing) {
+                    return McpToolResult::Error("seulement pendant le jeu (play start) : assis, le joueur changerait la scène éditée");
+                }
+                Scene& scene = engine.GetScene();
+                Entity character = NullEntity;
+                if (arguments.contains("character")) {
+                    const auto found = FindEntity(scene, arguments, "character");
+                    if (!found) {
+                        return McpToolResult::Error(found.error());
+                    }
+                    character = *found;
+                } else {
+                    for (const auto [entity, component] : scene.GetRegistry().view<const CharacterComponent>().each()) {
+                        if (component.player) {
+                            character = entity;
+                            break;
+                        }
+                    }
+                }
+                if (character == NullEntity || !scene.TryGet<CharacterComponent>(character)) {
+                    return McpToolResult::Error("aucun personnage joué dans la scène");
+                }
+                if (!arguments.contains("seat")) {
+                    Seats::StandUp(scene, character);
+                    return McpToolResult::Text("debout");
+                }
+                const auto seat = FindEntity(scene, arguments, "seat");
+                if (!seat) {
+                    return McpToolResult::Error(seat.error());
+                }
+                if (!scene.TryGet<SeatComponent>(*seat)) {
+                    return McpToolResult::Error("ce n'est pas un siège (SeatComponent)");
+                }
+                if (!Seats::Sit(scene, character, *seat)) {
+                    return McpToolResult::Error("siège déjà pris");
+                }
+                const bool pilot = scene.Get<SeatComponent>(*seat).pilot;
+                return McpToolResult::Text(pilot ? "assis aux commandes" : "assis");
             },
         });
 
