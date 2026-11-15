@@ -94,19 +94,19 @@ namespace Game {
                     g_text += extra.text;
                 }
             }
-            const Math::Vector2i size = engine.GetWindow().GetSize();
-            const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
+            const HudView view = engine.GetHudView(); // la vue de la scène dans l'éditeur, sinon la fenêtre
+            const Math::Vector2f screen = view.GetSize();
             UI::DrawList& list = engine.GetRenderer().GetOverlay();
             const float textSize = 20.0f;
             const Math::Vector2f extent = list.MeasureText(g_text, textSize);
-            const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, screen.y - extent.y - 40.0f};
+            const Math::Vector2f topLeft{view.GetCenter().x - extent.x * 0.5f, view.max.y - extent.y - 40.0f};
             list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 10.0f}, topLeft + extent + Math::Vector2f{14.0f, 10.0f},
                                 {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
             list.AddText(topLeft, g_text, textSize, {0.85f, 0.95f, 1.0f, 1.0f});
 
             // Manche de la souris : un petit cercle au centre (zone morte), le pointeur et un trait qui l'y relie. Plus le
             // pointeur est loin, plus le vaisseau tourne vite ; ramené au centre, il cesse de tourner.
-            const Math::Vector2f center = screen * 0.5f;
+            const Math::Vector2f center = view.GetCenter();
             const float reach = 0.18f * screen.y; // bord du cercle du manche, à fond
             constexpr Math::LinearColor StickColor{0.85f, 0.95f, 1.0f, 0.55f};
             list.AddCircleOutline(center, 0.06f * reach, StickColor, 1.5f);

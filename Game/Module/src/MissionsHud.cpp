@@ -53,7 +53,7 @@ namespace Game {
             return name ? name->name : std::string("le donneur");
         }
 
-        void DrawWindow(Engine& engine, MissionState& missions, Entity player, Math::Vector2f screen) {
+        void DrawWindow(Engine& engine, MissionState& missions, Entity player, const HudView& view) {
             Scene& scene = engine.GetScene();
             if (missions.window == NullEntity || !scene.IsValid(missions.window) || !scene.TryGet<MissionGiverComponent>(missions.window)
                 || Missions::FindGiver(scene, player) != missions.window) {
@@ -64,7 +64,7 @@ namespace Game {
             const MissionGiverComponent& mission = scene.Get<MissionGiverComponent>(giver);
             bool open = true;
             UI::Context& ui = engine.GetUi();
-            if (ui.BeginPanel(NameOf(scene, giver) + "###mission", {(screen.x - WindowWidth) * 0.5f, screen.y * 0.3f}, WindowWidth,
+            if (ui.BeginPanel(NameOf(scene, giver) + "###mission", {view.GetCenter().x - WindowWidth * 0.5f, view.min.y + view.GetSize().y * 0.3f}, WindowWidth,
                               0.0f, &open)) {
                 ui.Text(mission.title);
                 ui.Separator();
@@ -103,13 +103,13 @@ namespace Game {
             }
         }
 
-        void DrawInfo(Engine& engine, MissionState& missions, Entity player, Math::Vector2f screen, double deltaSeconds) {
+        void DrawInfo(Engine& engine, MissionState& missions, Entity player, const HudView& view, double deltaSeconds) {
             const Scene& scene = engine.GetScene();
             UI::DrawList& list = engine.GetRenderer().GetOverlay();
             constexpr float Size = 18.0f;
             const auto box = [&](const std::string& text, float y, Math::LinearColor color) {
                 const Math::Vector2f extent = list.MeasureText(text, Size);
-                const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, y};
+                const Math::Vector2f topLeft{view.GetCenter().x - extent.x * 0.5f, view.min.y + y};
                 list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 8.0f}, topLeft + extent + Math::Vector2f{14.0f, 8.0f},
                                     {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
                 list.AddText(topLeft, text, Size, color);
@@ -117,7 +117,7 @@ namespace Game {
             // À pied près d'un donneur, fenêtre fermée : comment lui parler.
             if (missions.window == NullEntity) {
                 if (const Entity giver = Missions::FindGiver(scene, player); giver != NullEntity) {
-                    box("F : parler à " + NameOf(scene, giver), screen.y * 0.62f, {1.0f, 1.0f, 1.0f, 1.0f});
+                    box("F : parler à " + NameOf(scene, giver), view.GetSize().y * 0.62f, {1.0f, 1.0f, 1.0f, 1.0f});
                 }
             }
             float y = 20.0f;
@@ -154,7 +154,7 @@ namespace Game {
                 return;
             }
             const Math::Vector3d offset = Math::Delta(eye, scene.GetWorldPosition(nearest));
-            if (const auto point = ScreenProjection(camera, {}, screen).ToScreen(offset)) {
+            if (const auto point = ScreenProjection(camera, view.min, view.max).ToScreen(offset)) {
                 constexpr float Half = 10.0f; // losange
                 const Math::Vector2f c = *point;
                 list.AddLine({c.x, c.y - Half}, {c.x + Half, c.y}, MissionColor, 2.0f);
@@ -171,10 +171,9 @@ namespace Game {
             if (!state) {
                 return;
             }
-            const Math::Vector2i size = engine.GetWindow().GetSize();
-            const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
-            DrawInfo(engine, state->missions, player, screen, deltaSeconds);
-            DrawWindow(engine, state->missions, player, screen);
+            const HudView view = engine.GetHudView();
+            DrawInfo(engine, state->missions, player, view, deltaSeconds);
+            DrawWindow(engine, state->missions, player, view);
         }
 
         constexpr const char* HudSystem = "Missions : affichage";

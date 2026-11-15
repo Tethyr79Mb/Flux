@@ -479,10 +479,13 @@ namespace Flux {
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             // HUD sous les interfaces de la scène (menus, inventaire) ; rien sous un menu opaque plein écran, connu à
             // l'image précédente (les interfaces sont dessinées après).
-            if (const Entity player = GetFollowedPlayer(); player != NullEntity && m_drawScreenUi && !m_interfaceCovered) {
+            // Dans l'éditeur (m_drawScreenUi faux), seulement quand il a donné sa vue du jeu à cette image.
+            if (const Entity player = GetFollowedPlayer();
+                player != NullEntity && (m_drawScreenUi || m_hudView) && !m_interfaceCovered) {
                 // Aussi en pause (infos de vol, destinations), avec le temps du jeu : arrêté, les messages attendent.
                 RunHudSystems(m_gameState == GameState::Running && !m_interfacePaused ? deltaSeconds : 0.0);
             }
+            m_hudView.reset();
             if (m_drawScreenUi) {
                 ScreenUi::Draw(GetScene(), m_renderer->GetOverlay(), {}, {static_cast<float>(size.x), static_cast<float>(size.y)},
                                GetScreenUiOptions());
@@ -842,6 +845,14 @@ namespace Flux {
         }
     }
 
+
+    HudView Engine::GetHudView() const {
+        if (m_hudView) {
+            return *m_hudView;
+        }
+        const Math::Vector2i size = m_window->GetSize();
+        return {{}, {static_cast<float>(size.x), static_cast<float>(size.y)}};
+    }
 
     Math::Vector2f Engine::GetSteerPointer() const {
         return m_playerCamera->GetSteerPointer();
