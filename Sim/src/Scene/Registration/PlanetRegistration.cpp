@@ -89,6 +89,24 @@ namespace Flux {
                    {.speed = 100.0, .min = 1000.0, .max = 1.0e6, .decimals = 0})
             .Field("zoneWidth", "Largeur des zones (m)", &PlanetComponent::zoneWidth,
                    {.speed = 1000.0, .min = 50000.0, .max = 1.0e7, .decimals = 0})
+            .Field("continentWidth", "Largeur des continents (m)", &PlanetComponent::continentWidth,
+                   {.speed = 1000.0, .min = 100000.0, .max = 2.0e7, .decimals = 0})
+            .Field("mountainShare", "Part des montagnes", &PlanetComponent::mountainShare,
+                   {.speed = 0.01, .min = 0.05, .max = 4.0, .decimals = 2})
+            .Field("hillShare", "Part des collines", &PlanetComponent::hillShare,
+                   {.speed = 0.01, .min = 0.0, .max = 3.0, .decimals = 2})
+            .Field("hillHeight", "Hauteur des collines", &PlanetComponent::hillHeight,
+                   {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
+            .Field("peakDensity", "Densité des sommets", &PlanetComponent::peakDensity,
+                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("plainRoughness", "Rugosité des plaines", &PlanetComponent::plainRoughness,
+                   {.speed = 0.01, .min = 0.0, .max = 5.0, .decimals = 2})
+            .Field("reliefRoughness", "Rugosité des reliefs", &PlanetComponent::reliefRoughness,
+                   {.speed = 0.01, .min = 0.0, .max = 5.0, .decimals = 2})
+            .Field("gullyDepth", "Ravines", &PlanetComponent::gullyDepth,
+                   {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
+            .Field("erosion", "Érosion", &PlanetComponent::erosion, {.speed = 0.01, .min = 0.0, .max = 5.0, .decimals = 2})
+            .Field("warp", "Déformation", &PlanetComponent::warp, {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
             .Field("seed", "Graine", &PlanetComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
             .Group("ground", "Sol")
             .Field("color", "Couleur de la roche", &PlanetComponent::color, {.alpha = false})

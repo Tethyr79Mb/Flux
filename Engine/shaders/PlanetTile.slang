@@ -33,8 +33,11 @@ struct TileInputs
     float4 axisN;  // xyz : normale de la face ; w : rayon
     float4 axisS;  // xyz : axe s ; w : relief
     float4 axisT;  // xyz : axe t ; w : profondeur des jupes
-    uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalage des couches à la largeur des montagnes
+    uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (OctaveShift)
     uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float)
+    // Réglages de la forme (Terrain::ShapeConstants) : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains,
+    // detailHills, detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, -, -, -).
+    float4 shape[4];
     float4 columns[Columns];
     int4 cells[OctaveCount];
     float4 fractions[OctaveCount]; // couches déformées : au point déformé du centre
@@ -75,16 +78,10 @@ groupshared float highestShared[GroupSize];
 // Boîtes des paquets en construction : bas xyz puis haut xyz de chacun, en OrderedFloat (min et max atomiques).
 groupshared uint meshletBounds[MeshletCount * 6];
 
-// Réglages du relief, comme dans Planet.cpp.
-static const float DetailPlains = 0.012;
-static const float DetailHills = 0.03;
-static const float DetailMountains = 0.065;
-static const float ChainStart = 0.75;
-static const float ChainEnd = 0.95;
+// Réglages du relief, comme dans Planet.cpp ; ceux que la planète peut changer sont dans tile.shape.
 static const float Foothills = 0.05;
 static const float ChainBase = 0.2;
 static const float PeakHeight = 0.85;
-static const uint PeakChance = 218;
 static const float PeakSecondary = 0.45;
 static const float PeakSlabInner = 0.35;
 static const float PeakSlabOuter = 0.5;
@@ -100,7 +97,6 @@ static const float PeakSpurSharpness = 6.0;
 static const uint PeakSpurCount = 4;
 static const float PeakStretchSoftness = 0.2;
 static const float PeakBlend = 0.04;
-static const float GullyAmplitude = 0.09;
 static const float GullyStartSlope = 0.08;
 static const float GullyFullSlope = 0.35;
 static const float GullyGain = 0.5;
@@ -108,13 +104,9 @@ static const float GullyBranch = 1.5;
 static const float GullyJitter = 0.5;
 static const float GullySharpness = 4.0;
 static const float MountainWeight = 0.85;
-static const float HillWeight = 0.15;
-static const float WarpLarge = 0.06;
-static const float WarpSmall = 0.012;
 
-// Échelle d'une couche (LayerScale dans Planet.cpp) : suit le rayon, garde sa taille en mètres sur les grandes
-// planètes (zones), ou suit la largeur des montagnes.
-static const uint ScalePlanet = 0;
+// Échelle d'une couche (LayerScale dans Planet.cpp) : largeur des continents, des zones ou des montagnes.
+static const uint ScaleContinent = 0;
 static const uint ScaleZone = 1;
 static const uint ScaleMountain = 2;
 
@@ -130,7 +122,7 @@ struct Layer
     uint erodedOctaves;
 };
 static const Layer Layers[9] = {
-    { 0, 5, 0.5, ScalePlanet, 0.0, 0 },   // continents
+    { 0, 5, 0.5, ScaleContinent, 0.0, 0 },   // continents
     { 1, 3, 0.5, ScaleZone, 0.0, 0 },     // zones des chaînes de montagnes
     { 2, 5, 0.5, ScaleZone, 0.0, 0 },     // zones de collines
     { 2, 4, 0.5, ScaleMountain, 0.0, 0 }, // sommets
@@ -141,10 +133,12 @@ static const Layer Layers[9] = {
     { 3, 7, 0.5, ScaleMountain, 0.0, 0 }, // ravines
 };
 
-// Octaves qu'une couche perd plus tôt (Terrain::GetScaleShift et GetZoneShift, rangés dans options.w).
+// Octaves qu'une couche perd plus tôt (Terrain::GetScaleShift, GetZoneShift et GetContinentShift, 8 bits chacun dans
+// options.w).
 uint OctaveShift(uint scale)
 {
-    return scale == ScaleMountain ? (tile.options.w & 0xFFFFu) : scale == ScaleZone ? (tile.options.w >> 16) : 0u;
+    const uint at = scale == ScaleMountain ? 0u : scale == ScaleZone ? 8u : 16u;
+    return (tile.options.w >> at) & 0xFFu;
 }
 
 float Fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
@@ -341,7 +335,7 @@ float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeS
             slope += Tangent(n.yzw, direction) * (tile.fractions[o].w * amplitude);
         }
         const float steep = slopeScale * length(slope);
-        sum += amplitude * n.x / (1.0 + L.erosion * steep * steep);
+        sum += amplitude * n.x / (1.0 + L.erosion * tile.shape[2].y * steep * steep);
         amplitude *= L.gain;
     }
     return sum;
@@ -374,7 +368,7 @@ float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
                 for (int l = -1; l <= 1; ++l) {
                     const int3 c = (cell + int3(i, j, l)) & 255;
                     const uint h = permutation[permutation[permutation[c.x] + uint(c.y)] + uint(c.z)];
-                    if (permutation[h + 3] >= PeakChance) { continue; }
+                    if (float(permutation[h + 3]) >= tile.shape[3].x) { continue; }
                     const float3 e = f - float3(i, j, l) - PeakVector(h, 0) * 0.7 - 0.5;
                     const float radial = dot(e, direction);
                     const float slab = 1.0 - smoothstep(PeakSlabInner, PeakSlabOuter, abs(radial));
@@ -443,7 +437,7 @@ float Gullies(float3 point, float3 direction, uint octaves, float3 slope, float 
     const float relief = tile.axisS.w;
     const float radius = tile.axisN.w;
     float sum = 0.0;
-    float amplitude = GullyAmplitude * amount;
+    float amplitude = tile.shape[2].x * amount;
     for (uint k = L.first; k < last; ++k) {
         const float steep = length(slope);
         const float fade = saturate((steep - GullyStartSlope) / (GullyFullSlope - GullyStartSlope));
@@ -517,14 +511,15 @@ float Height(float3 delta, uint octaves, out float2 zones)
     const float toSlope = relief / tile.axisN.w;
     const float3 direction = tile.center.xyz + delta;
     // Points déformés, relatifs à ceux du centre de la tuile (Terrain::GetWarpedPoints).
-    const float3 large = delta + WarpChange(delta, 6, WarpLarge);
-    const float3 small = large + WarpChange(delta, 7, WarpSmall);
+    const float3 large = delta + WarpChange(delta, 6, tile.shape[2].z);
+    const float3 small = large + WarpChange(delta, 7, tile.shape[2].w);
     const float continents = Fbm(large, direction, 0, octaves, 0.0);
     const float land = smoothstep(-0.26, 0.06, continents);
-    const float hillZone = smoothstep(0.05, 0.4, Fbm(large, direction, 2, octaves, 0.0));
+    const float4 zone = tile.shape[0];
+    const float hillZone = smoothstep(zone.z, zone.w, Fbm(large, direction, 2, octaves, 0.0));
     const float chains = 1.0 - abs(Fbm(large, direction, 1, octaves, 0.0));
-    const float mountainZone = smoothstep(ChainStart, ChainEnd, chains) * smoothstep(0.0, 0.2, continents);
-    zones = float2(hillZone, smoothstep(ChainStart - Foothills, ChainEnd, chains) * smoothstep(0.0, 0.2, continents));
+    const float mountainZone = smoothstep(zone.x, zone.y, chains) * smoothstep(0.0, 0.2, continents);
+    zones = float2(hillZone, smoothstep(zone.x - Foothills, zone.y, chains) * smoothstep(0.0, 0.2, continents));
     float peaks = 0.0;
     float gullies = 0.0;
     if (mountainZone > 0.0) {
@@ -532,11 +527,12 @@ float Height(float3 delta, uint octaves, out float2 zones)
         peaks = Peaks(small, direction, octaves, slope);
         gullies = Gullies(large, direction, octaves, slope * (toSlope * MountainWeight * mountainZone * PeakHeight), mountainZone);
     }
-    const float hills = hillZone > 0.0 ? Fbm(small, direction, 4, octaves, toSlope * HillWeight * hillZone) : 0.0;
-    const float roughness = DetailPlains + DetailHills * hillZone + DetailMountains * mountainZone;
+    const float4 detailShape = tile.shape[1];
+    const float hills = hillZone > 0.0 ? Fbm(small, direction, 4, octaves, toSlope * detailShape.w * hillZone) : 0.0;
+    const float roughness = detailShape.x + detailShape.y * hillZone + detailShape.z * mountainZone;
     const float detail = Fbm(delta, direction, 5, octaves, toSlope * roughness);
     const float height = -0.4 + 0.45 * land + 0.15 * continents + MountainWeight * mountainZone * (ChainBase + PeakHeight * peaks)
-                       + gullies + HillWeight * hillZone * hills + roughness * detail;
+                       + gullies + detailShape.w * hillZone * hills + roughness * detail;
     return relief * clamp(height, -1.0, 1.0);
 }
 

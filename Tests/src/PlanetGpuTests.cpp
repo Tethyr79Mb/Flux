@@ -35,7 +35,7 @@ namespace {
         }
         Planetology::PlanetRenderer& renderer = **created;
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
-        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth, planet.zoneWidth);
+        const Planetology::Terrain terrain(planet);
         // Pas au centre de la face : c'est le coin commun de quatre tuiles à tous les niveaux.
         const Math::Vector3d up = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
         const double ground = planet.radius + terrain.GetHeight(up, terrain.GetOctaves(terrain.GetMaxLevel()));
@@ -99,7 +99,7 @@ namespace {
     // l'arrêt. Sans vitesse (images à plus d'une demi-seconde d'écart), rien d'avance.
     bool CheckMovingCamera(RHI::Device& device) {
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
-        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth, planet.zoneWidth);
+        const Planetology::Terrain terrain(planet);
         const Math::Vector3d start = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
         const Math::Vector3d east = Math::Normalize(Math::Cross(start, Math::Vector3d{0.0, 0.0, 1.0}));
         const double altitude = planet.radius + terrain.GetHeight(start, terrain.GetOctaves(terrain.GetMaxLevel())) + 300.0;
@@ -253,9 +253,15 @@ bool RunPlanetGpuTests() {
     // le plus fin, ailleurs sur une autre face.
     const Planetology::Terrain small(60000.0, 800.0, 5);
     const Planetology::Terrain large(200000.0, 4500.0, 7, 20000.0, 420000.0);
-    const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0, 420000.0);
+    // Sur la Terre, tous les réglages de la forme loin de leur valeur par défaut (le GPU les lit dans TileInputs::shape).
+    const Planetology::Terrain earth(6.37e6, 8000.0, 42,
+                                     Planetology::ReliefShape{.mountainWidth = 20000.0, .zoneWidth = 420000.0,
+                                                              .continentWidth = 2.0e6, .mountainShare = 1.6, .hillShare = 1.5,
+                                                              .hillHeight = 1.4, .peakDensity = 0.6, .plainRoughness = 2.0,
+                                                              .reliefRoughness = 1.5, .gullies = 1.8, .erosion = 0.5, .warp = 1.7});
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
     CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
+    CHECK(earth.GetContinentShift() == 4);                          // continents de 2000 km : décalés de 4
     std::vector<Case> cases;
     for (const Planetology::Terrain* terrain : {&small, &large, &earth}) {
         const std::uint32_t max = terrain->GetMaxLevel();
