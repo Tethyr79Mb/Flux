@@ -8,6 +8,7 @@
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/OcclusionCulling.hpp"
 #include "Renderer/RayTracingScene.hpp"
+#include "Renderer/ReflectionProbes.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Planetology/VegetationRenderer.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
@@ -41,9 +42,10 @@ namespace Flux {
     class MeshRenderer {
         public:
         // `motionFormat` : seconde cible de la passe de la scène, où les opaques écrivent leur mouvement propre
-        // (PostRenderer::GetMotionTarget).
-        static std::expected<std::unique_ptr<MeshRenderer>, std::string> Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                 RHI::Format motionFormat, RHI::Format depthFormat);
+        // (PostRenderer::GetMotionTarget). `environment` préfiltre aussi les sondes de reflets ; il doit vivre plus longtemps.
+        static std::expected<std::unique_ptr<MeshRenderer>, std::string> Create(RHI::Device& device, EnvironmentRenderer& environment,
+                                                                                 RHI::Format colorFormat, RHI::Format motionFormat,
+                                                                                 RHI::Format depthFormat);
 
         ModelCache& GetModels() { return *m_models; }
 
@@ -170,6 +172,11 @@ namespace Flux {
         // cette image si ImpostorPending est faux.
         bool ImpostorPending(std::uint32_t frameIndex) const { return m_impostors->GetCapture(frameIndex).has_value(); }
         void BakeImpostor(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Capture d'une sonde de reflets (ReflectionProbes), hors d'une passe, après les ombres et l'environnement et
+        // avant la passe principale ; rien à faire à cette image si ProbeCapturePending est faux. Les objets seulement
+        // (opaques), sur le ciel tel que les surfaces le reflètent.
+        bool ProbeCapturePending() const { return m_probes->GetCapture().has_value() && !m_modelPasses[ProbeModelPass].empty(); }
+        void CaptureProbe(RHI::CommandList& commands, std::uint32_t frameIndex);
         // Arbres des planètes (VegetationRenderer), après les objets et avant le sol qu'ils cachent en partie.
         void DrawVegetation(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         // Herbe des planètes (shaders/Grass.slang), avant le sol : il n'éclaire pas ce qu'elle cache.
@@ -351,10 +358,11 @@ namespace Flux {
             std::uint32_t count;
             float distance; // du plus proche
         };
-        // Passes des modèles : opaques, transparents, puis une par cascade d'ombres.
+        // Passes des modèles : opaques, transparents, une par cascade d'ombres, puis la capture d'une sonde de reflets.
         static constexpr std::size_t OpaqueModelPass = 0;
         static constexpr std::size_t TransparentModelPass = 1;
-        static constexpr std::size_t ModelPassCount = 2 + ShadowCascadeCount;
+        static constexpr std::size_t ProbeModelPass = 2 + ShadowCascadeCount;
+        static constexpr std::size_t ModelPassCount = 3 + ShadowCascadeCount;
 
         // Doit correspondre à MeshTask dans shaders/ModelMesh.slang : une tâche des mesh shaders, jusqu'à
         // MeshTaskMeshlets paquets d'une primitive d'une entité.
@@ -419,6 +427,10 @@ namespace Flux {
             // Arbres : pré-passe de profondeur du seuil d'alpha (masked n'éclaire ensuite que la même profondeur).
             std::unique_ptr<RHI::Pipeline> depthMasked;        // faces arrière éliminées
             std::unique_ptr<RHI::Pipeline> depthMaskedDoubleSided;
+            // Capture d'une sonde de reflets (vertexProbe, fragmentProbe), couleur et profondeur seules. Vue en miroir
+            // (faces d'une texture cube) : les faces avant d'un objet y tournent dans l'autre sens, d'où Front éliminé.
+            std::unique_ptr<RHI::Pipeline> probe;
+            std::unique_ptr<RHI::Pipeline> probeDoubleSided;
         };
 
         // Relie ce qui change d'un appel à l'autre (pipeline, sommets, groupes), seulement quand il le faut.
@@ -482,7 +494,9 @@ namespace Flux {
         void AddToBatch(const RHI::Pipeline& pipeline, std::uint32_t page, bool merge);
         bool BuildModelBatches(std::uint32_t frameIndex);
         void BindPipeline(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, const RHI::Pipeline& pipeline) const;
-        void DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const;
+        // cascade : DrawParams::cascade (face de la sonde pour ProbeModelPass) ; par défaut, la cascade de la passe d'ombres.
+        void DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
+                         std::uint32_t cascade = ~0u) const;
         void DrawTiles(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
                        const RHI::Pipeline& pipeline) const;
         void DrawTrees(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex,
@@ -496,6 +510,11 @@ namespace Flux {
         std::unique_ptr<Planetology::VegetationRenderer> m_vegetation;
         std::unique_ptr<TreeImpostors> m_impostors; // avant m_models dans la destruction : il lui rend ses cases
         std::unique_ptr<RHI::Pipeline> m_impostorBake; // capture (vertexImpostorBake)
+        std::unique_ptr<RHI::Pipeline> m_probeSky;     // fond de la capture d'une sonde (vertexProbeSky)
+        std::unique_ptr<ReflectionProbes> m_probes;
+        std::vector<ReflectionProbes::Probe> m_probeList; // sondes de l'image, les plus proches d'abord
+        // Reflets liés à chaque case de sonde du groupe de chaque image (ceux du ciel tant qu'elle n'est pas prête).
+        std::array<std::array<const RHI::Texture*, ReflectionProbes::MaxProbes>, RHI::FramesInFlight> m_boundProbes{};
         std::unique_ptr<RHI::Pipeline> m_impostor;     // dessin au loin (vertexImpostor)
         std::unique_ptr<RHI::Pipeline> m_impostorShadow; // ombre des forêts (vertexImpostorShadow)
         std::unique_ptr<RHI::Buffer> m_impostorIndices; // un carré : 0 1 2 2 1 3

@@ -119,7 +119,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
   - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
   - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
-  - ⬜ A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations.
+  - 🔨 A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations. Fait (2026-11-14) : sondes fixes (composant « Sonde de reflets », 4 au plus par image), capturées par le GPU en 256 pixels (objets opaques sur le ciel), préfiltrées comme le ciel, lues avec parallaxe de boîte et fondu vers le ciel ; refaites quand elles bougent, quand le ciel ou le soleil change, à la fin d'un chargement ou à intervalle choisi. À faire : sol des planètes, arbres, eau et transparents absents des captures ; diffus tiré du niveau le plus flou (pas d'irradiance à part) ; capture d'un coup (pas étalée sur plusieurs images) ; pas de boîte dessinée dans l'éditeur ; reflets de l'écran.
   - ⬜ A7. Ombres des lampes (atlas) et brouillard volumique (froxels).
   - ⬜ B1. Lumière renvoyée par la planète proche (ligne suivante).
   - ⬜ B2. Matières lues au point touché par un rayon.
@@ -448,7 +448,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 ## Dettes et limites connues
 - Un processeur sans AVX2 s'arrête net au lancement, sans message (à ajouter avec la configuration de distribution).
 - Les lumières sont parcourues pixel par pixel, sans tuiles (lent au-delà de quelques dizaines).
-- Les reflets viennent seulement du ciel, pas de la scène.
+- Hors des sondes de reflets, les reflets viennent seulement du ciel ; dedans, d'une capture fixe (objets qui bougent absents ou figés).
 - L'atlas de police est régénéré au démarrage et limité au Latin-1.
 - Le mode Jouer copie la scène en JSON (lent sur une grosse scène).
 - Pas de DPI : l'interface suppose une mise à l'échelle Windows de 100 %.

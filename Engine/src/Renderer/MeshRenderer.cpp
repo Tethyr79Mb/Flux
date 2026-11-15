@@ -61,6 +61,15 @@ namespace Flux {
         };
         static_assert(sizeof(InteriorData) == 80);
 
+        // Doit correspondre à ProbeData dans shaders/Mesh.slang : une sonde de reflets prête (ReflectionProbes).
+        struct ProbeData
+        {
+            std::array<std::array<float, 4>, 3> axes;
+            std::array<float, 4> halfSize; // w : fondu depuis les bords
+            std::array<float, 4> origin;   // point de la capture ; w : intensité
+        };
+        static_assert(sizeof(ProbeData) == 80);
+
         // Planètes dessinées au plus dans une image (leur sol) : au-delà, les suivantes prennent la première.
         constexpr std::size_t MaxPlanets = 4;
         // Cime des forêts vue de loin : couleur moyenne (linéaire) de l'imposteur de l'épicéa par défaut
@@ -102,9 +111,14 @@ namespace Flux {
             std::array<std::uint32_t, 4> shadowOptions;
             std::array<float, 4> cascadeDepthRanges; // profondeur couverte par chaque cascade proche (mètres)
             std::array<float, 4> terrainDepthRanges; // xy : celle des deux cascades du relief
+            std::array<ProbeData, ReflectionProbes::MaxProbes> probes;
+            std::array<Math::Matrix4f, 6> probeFaces; // capture d'une sonde : relatif caméra -> clip de chaque face
+            std::array<float, 4> probeEye;            // point de la capture
+            std::array<std::uint32_t, 4> probeOptions; // x : sondes dans probes
         };
         static_assert(sizeof(FrameData) == 576 + 4 * 64 + 3 * 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
                                                + sizeof(Planetology::AtmosphereGpu) + 128
+                                               + ReflectionProbes::MaxProbes * sizeof(ProbeData) + 6 * 64 + 32
                       && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
 
@@ -152,6 +166,9 @@ namespace Flux {
         constexpr std::uint32_t ForestCascade = ShadowCascadeCount + TerrainShadowCascadeCount;
         constexpr std::uint32_t SceneStructureSlot = 19; // ray tracing seulement (shaders/MeshRays.slang)
         constexpr std::uint32_t AtmosphereMultipleSlot = 20; // diffusion multiple de l'air (SkyLighting::atmosphereMultiple)
+        constexpr std::uint32_t FirstProbeSlot = 21; // reflets des sondes, un emplacement chacune (ReflectionProbes::MaxProbes)
+        // Près de la capture d'une sonde, les faces du cube commencent à ce point (m) : plus près, un objet est coupé.
+        constexpr float ProbeNearPlane = 0.05f;
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
         // (32 Mo de sommets par page). Au-delà, les modèles des pages suivantes restent sur le chemin des sommets.
         constexpr std::uint32_t MaxModelMeshPages = 64;
@@ -235,9 +252,16 @@ namespace Flux {
         }
     }
 
-    std::expected<std::unique_ptr<MeshRenderer>, std::string> MeshRenderer::Create(RHI::Device& device, RHI::Format colorFormat,
-                                                                                   RHI::Format motionFormat, RHI::Format depthFormat) {
+    std::expected<std::unique_ptr<MeshRenderer>, std::string> MeshRenderer::Create(RHI::Device& device, EnvironmentRenderer& environment,
+                                                                                   RHI::Format colorFormat, RHI::Format motionFormat,
+                                                                                   RHI::Format depthFormat) {
+        static_assert(ReflectionProbes::MaxProbes == 4); // les emplacements FirstProbeSlot à + 3
         std::unique_ptr<MeshRenderer> renderer(new MeshRenderer(device));
+        auto probes = ReflectionProbes::Create(device, environment);
+        if (!probes) {
+            return std::unexpected(probes.error());
+        }
+        renderer->m_probes = std::move(*probes);
         auto models = ModelCache::Create(device);
         if (!models) {
             return std::unexpected(models.error());
@@ -331,6 +355,10 @@ namespace Flux {
             RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, pixels},
             RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, pixels},
             RHI::Binding{AtmosphereMultipleSlot, RHI::BindingType::Texture, both}, // marche de l'air hors des tables, ciel dans l'eau
+            RHI::Binding{FirstProbeSlot + 0, RHI::BindingType::Texture, pixels},
+            RHI::Binding{FirstProbeSlot + 1, RHI::BindingType::Texture, pixels},
+            RHI::Binding{FirstProbeSlot + 2, RHI::BindingType::Texture, pixels},
+            RHI::Binding{FirstProbeSlot + 3, RHI::BindingType::Texture, pixels},
             RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, pixels},
         };
         // La structure de la scène n'existe qu'avec le ray tracing (sinon, type de liaison inconnu du pilote).
@@ -661,6 +689,50 @@ namespace Flux {
             !result) {
             return result;
         }
+        // Capture des sondes de reflets : la couleur seule, dans une face de texture cube (ReflectionProbes::Format),
+        // sans mouvement ni lumière du soleil à part. Le ciel d'abord, sans profondeur (vertexProbeSky).
+        const auto createProbe = [&](Pipelines& pipelines, std::span<const RHI::VertexBufferLayout> buffers,
+                                     std::span<const RHI::VertexAttribute> attributes,
+                                     const char* vertex) -> std::expected<void, std::string> {
+            RHI::PipelineDesc desc;
+            desc.shaderPath = ShaderPath("Mesh");
+            desc.vertexBuffers = buffers;
+            desc.vertexAttributes = attributes;
+            desc.bindGroupLayouts = layouts;
+            desc.pushConstantsSize = sizeof(DrawParams);
+            desc.vertexEntryPoint = vertex;
+            desc.fragmentEntryPoint = "fragmentProbe";
+            desc.colorFormat = ReflectionProbes::Format;
+            desc.depthFormat = RHI::Format::D32Float;
+            desc.depthTest = true;
+            desc.depthWrite = true;
+            desc.depthCompare = RHI::CompareOp::Greater; // reverse-Z
+            desc.cullMode = RHI::CullMode::Front;        // vue en miroir : ce sont les faces arrière
+            if (auto result = create(pipelines.probe, desc); !result) {
+                return result;
+            }
+            desc.cullMode = RHI::CullMode::None;
+            return create(pipelines.probeDoubleSided, desc);
+        };
+        if (auto result = createProbe(m_static, staticBuffers, staticAttributes, "vertexProbe"); !result) {
+            return result;
+        }
+        if (auto result = createProbe(m_skinned, skinnedBuffers, skinnedAttributes, "vertexProbeSkinned"); !result) {
+            return result;
+        }
+        {
+            RHI::PipelineDesc desc;
+            desc.shaderPath = ShaderPath("Mesh");
+            desc.bindGroupLayouts = layouts;
+            desc.pushConstantsSize = sizeof(DrawParams);
+            desc.vertexEntryPoint = "vertexProbeSky";
+            desc.fragmentEntryPoint = "fragmentProbeSky";
+            desc.colorFormat = ReflectionProbes::Format;
+            desc.depthFormat = RHI::Format::D32Float; // celle de la passe, ni lue ni écrite
+            if (auto result = create(m_probeSky, desc); !result) {
+                return result;
+            }
+        }
         if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
                                              "fragmentTreeOpaque", "fragmentTree", true, true, false, nullptr, "vertexTreeDepth"});
             !result) {
@@ -930,6 +1002,7 @@ namespace Flux {
         m_jointMatrices.clear();
         m_lights.clear();
         m_interiors.clear();
+        m_probeList.clear();
         m_thrusters.clear();
         m_planetData.clear();
         m_hasClouds = false;
@@ -987,6 +1060,9 @@ namespace Flux {
                                          outside(local.z, interior->size.z, transform.scale.z)};
                 m_interiors.push_back({transform, interior, Math::Length(gap)});
             }
+            if (const auto* probe = scene.TryGet<ReflectionProbeComponent>(transform.entity)) {
+                m_probeList.push_back({transform, probe, static_cast<float>(Math::Length(transform.position))});
+            }
             EntityDraw draw{.transform = &transform};
             if (const auto* renderer = scene.TryGet<MeshRendererComponent>(transform.entity)) {
                 draw.model = renderer->mesh == MeshType::Sphere ? &m_models->GetSphere() : &m_models->GetCube();
@@ -1023,6 +1099,18 @@ namespace Flux {
             }
             m_entityDraws.push_back(draw);
         }
+
+        // Sondes de reflets : les plus proches de la caméra, et celle à capturer à cette image (ses objets voisins sont
+        // gardés par ComputeEntity, même hors du champ).
+        if (m_probeList.size() > ReflectionProbes::MaxProbes) {
+            std::ranges::nth_element(m_probeList, m_probeList.begin() + ReflectionProbes::MaxProbes, {},
+                                     &ReflectionProbes::Probe::distance);
+            m_probeList.resize(ReflectionProbes::MaxProbes);
+        }
+        const double probeSeconds = std::chrono::duration<double>(Clock::now() - m_start).count();
+        m_probes->Prepare(m_probeList, camera.position,
+                          {sky.toSun, sky.sunColor, sky.ambient, sky.environmentSource}, m_models->GetLoadingCount() > 0,
+                          probeSeconds);
 
         const auto computeEntities = [&](std::uint32_t begin, std::uint32_t end) {
             for (std::uint32_t i = begin; i < end; ++i) {
@@ -1162,7 +1250,9 @@ namespace Flux {
         // Un modèle animé peut sortir de sa boîte de repos (bras levés) : marge pour ne pas l'écarter trop tôt.
         draw.inView = view.Contains(relativeCenter, draw.model->IsAnimated() ? 1.5f * radius : radius);
         // Ni en vue ni dans une ombre : rien à dessiner, ni pose à calculer (personnage loin derrière la caméra).
-        if (!draw.inView && !CastsAnyShadow(relativeCenter, radius)) {
+        const std::optional<Math::Vector3f> capture = m_probes->GetCapture();
+        const bool captured = capture && Math::Length(relativeCenter - *capture) < ReflectionProbes::CaptureRange + radius;
+        if (!draw.inView && !captured && !CastsAnyShadow(relativeCenter, radius)) {
             return;
         }
         draw.kept = true;
@@ -1585,6 +1675,69 @@ namespace Flux {
                              0.5f * std::max(interior.size.z, 0.0f) * std::abs(transform.scale.z), std::max(interior.fade, 1.0e-3f)};
             const float luminance = Photometry::FromNits(std::max(interior.luminance, 0.0f));
             data.ambient = {interior.ambient.r * luminance, interior.ambient.g * luminance, interior.ambient.b * luminance, 0.0f};
+        }
+        // Sondes de reflets prêtes, dans leur ordre ; les emplacements restants gardent le ciel (jamais lus).
+        std::array<const RHI::Texture*, ReflectionProbes::MaxProbes> probeTextures{};
+        probeTextures.fill(sky.environment);
+        const std::span<const ReflectionProbes::Ready> ready = m_probes->GetReady();
+        for (std::size_t i = 0; i < ready.size(); ++i) {
+            const RelativeTransform& transform = ready[i].probe->transform;
+            const ReflectionProbeComponent& probe = *ready[i].probe->component;
+            const Math::Vector3f offset{probe.boxOffset.x * transform.scale.x, probe.boxOffset.y * transform.scale.y,
+                                        probe.boxOffset.z * transform.scale.z};
+            const Math::Vector3f center = Math::Vector3f(transform.position) + transform.rotation.Rotate(offset);
+            ProbeData& data = frame.probes[i];
+            const std::array axes{Math::Vector3f{1.0f, 0.0f, 0.0f}, Math::Vector3f{0.0f, 1.0f, 0.0f}, Math::Vector3f{0.0f, 0.0f, 1.0f}};
+            for (std::size_t a = 0; a < 3; ++a) {
+                const Math::Vector3f axis = transform.rotation.Rotate(axes[a]);
+                data.axes[a] = ToArray(axis, -Math::Dot(axis, center));
+            }
+            data.halfSize = {0.5f * std::max(probe.size.x, 0.0f) * std::abs(transform.scale.x),
+                             0.5f * std::max(probe.size.y, 0.0f) * std::abs(transform.scale.y),
+                             0.5f * std::max(probe.size.z, 0.0f) * std::abs(transform.scale.z), std::max(probe.fade, 1.0e-3f)};
+            data.origin = ToArray(ready[i].origin, std::max(probe.intensity, 0.0f));
+            probeTextures[i] = &m_probes->GetReflections(ready[i].slot); // le shader lit la sonde i dans probeMap(i)
+        }
+        frame.probeOptions = {static_cast<std::uint32_t>(ready.size()), 0u, 0u, 0u};
+        for (std::uint32_t i = 0; i < ReflectionProbes::MaxProbes; ++i) {
+            if (probeTextures[i] && probeTextures[i] != m_boundProbes[frameIndex][i]) {
+                m_frameGroups[frameIndex]->SetTexture(FirstProbeSlot + i, *probeTextures[i], *sky.environmentSampler);
+                m_boundProbes[frameIndex][i] = probeTextures[i];
+            }
+        }
+        // Capture à cette image : les six faces vues du point de la sonde (comme CubeFaceDirection dans
+        // shaders/CubeMap.slang : le pixel (u, v) de la face f regarde avant + u x droite + v x bas), reverse-Z infini.
+        if (const std::optional<Math::Vector3f> capture = m_probes->GetCapture()) {
+            struct Face
+            {
+                Math::Vector3f forward, right, down;
+            };
+            const std::array<Face, 6> faces{{
+                {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, -1.0f, 0.0f}},
+                {{-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, -1.0f, 0.0f}},
+                {{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+                {{0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}},
+                {{0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f}},
+                {{0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f}},
+            }};
+            for (std::size_t f = 0; f < faces.size(); ++f) {
+                // Lignes : x = droite.d, y = bas.d, z = near, w = avant.d, avec d = p - centre.
+                const Face& face = faces[f];
+                Math::Matrix4f& m = frame.probeFaces[f];
+                m = {};
+                const std::array rows{face.right, face.down, Math::Vector3f{}, face.forward};
+                for (std::size_t r = 0; r < 4; ++r) {
+                    if (r == 2) {
+                        m.columns[3][2] = ProbeNearPlane;
+                        continue;
+                    }
+                    m.columns[0][r] = rows[r].x;
+                    m.columns[1][r] = rows[r].y;
+                    m.columns[2][r] = rows[r].z;
+                    m.columns[3][r] = -Math::Dot(rows[r], *capture);
+                }
+            }
+            frame.probeEye = ToArray(*capture);
         }
         // Structure de la scène : liée quand elle change (refaite plus grande). Toujours une liée dès qu'elle existe : les
         // shaders *Rays la déclarent, même quand shadowOptions.z les en détourne.
@@ -2154,6 +2307,26 @@ namespace Flux {
             }
             AddBatches(false, false); // le test ne vaut que pour la vue de la caméra
         }
+        // Capture d'une sonde de reflets : les opaques autour d'elle, entiers (ni blocs écartés ni test des cachés, qui
+        // valent pour la caméra). Les transparents n'y sont pas.
+        passStarts[ProbeModelPass] = m_modelBatches.size();
+        if (const std::optional<Math::Vector3f> capture = m_probes->GetCapture()) {
+            for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
+                const MeshDraw& draw = m_draws[d];
+                if (!draw.visible || Math::Length(draw.center - *capture) >= ReflectionProbes::CaptureRange + draw.radius) {
+                    continue;
+                }
+                const Pipelines& pipelines = GetPipelines(draw);
+                for (const ModelPrimitive& primitive : draw.model->primitives) {
+                    const GpuMaterial& material = draw.model->materials[primitive.material];
+                    if (!IsTransparent(draw, material)) {
+                        m_batchEntries.push_back({material.doubleSided ? pipelines.probeDoubleSided.get() : pipelines.probe.get(),
+                                                  draw.model, &primitive, d, draw.distance});
+                    }
+                }
+            }
+            AddBatches(false, false);
+        }
         passStarts[ModelPassCount] = m_modelBatches.size();
         if (!BuildMeshTasks(frameIndex)) {
             return false;
@@ -2286,8 +2459,11 @@ namespace Flux {
 
     // Les lots d'une passe des modèles : un appel indirect chacun, les changements d'état seulement quand il le faut.
     // Matériaux lus dans la table (groupe 2) : rien à relier d'un modèle ou d'un matériau à l'autre.
-    void MeshRenderer::DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass) const {
-        const std::uint32_t cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
+    void MeshRenderer::DrawBatches(RHI::CommandList& commands, BindState& state, std::uint32_t frameIndex, std::size_t pass,
+                                   std::uint32_t cascade) const {
+        if (cascade == ~0u) {
+            cascade = pass >= 2 ? static_cast<std::uint32_t>(pass - 2) : 0u;
+        }
         for (const ModelBatch& batch : m_modelPasses[pass]) {
             if (batch.page != state.page) {
                 state.page = batch.page;
@@ -2436,6 +2612,37 @@ namespace Flux {
         commands.GenerateMipmaps(*capture->color);
         commands.GenerateMipmaps(*capture->normal);
         m_impostors->Captured();
+    }
+
+    // Les six faces de la sonde à capturer, chacune sur le ciel tel que les surfaces le reflètent, puis son préfiltrage
+    // (ReflectionProbes::FinishCapture).
+    void MeshRenderer::CaptureProbe(RHI::CommandList& commands, std::uint32_t frameIndex) {
+        if (!ProbeCapturePending()) {
+            return;
+        }
+        const RHI::Texture& cube = m_probes->GetCaptureCube();
+        const RHI::Texture& depth = m_probes->GetCaptureDepth();
+        const std::array<RHI::TextureUse, 2> targets{RHI::TextureUse{&cube, RHI::TextureAccess::ColorTarget, true},
+                                                     RHI::TextureUse{&depth, RHI::TextureAccess::DepthTarget, true}};
+        commands.UseTextures(targets);
+        constexpr auto size = static_cast<float>(ReflectionProbes::Size);
+        for (std::uint32_t face = 0; face < 6; ++face) {
+            commands.BeginRenderPass({.clearColor = {0.0f, 0.0f, 0.0f, 1.0f}, .depth = &depth, .clearDepth = 0.0f,
+                                      .colorTarget = &cube, .colorLayer = face});
+            commands.SetViewport({0.0f, 0.0f, size, size});
+            commands.SetScissor({0, 0, ReflectionProbes::Size, ReflectionProbes::Size});
+            BindState state;
+            BindPipeline(commands, state, frameIndex, *m_probeSky);
+            state.group = &m_models->GetWhiteGroup();
+            commands.SetBindGroup(0, *state.group);
+            const DrawParams params{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, face, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                    0u, 0u, {}};
+            commands.PushConstants(&params, sizeof(params));
+            commands.Draw(3, 0);
+            DrawBatches(commands, state, frameIndex, ProbeModelPass, face);
+            commands.EndRenderPass();
+        }
+        m_probes->FinishCapture(commands, frameIndex);
     }
 
     void MeshRenderer::ComputeTiles(RHI::CommandList& commands, std::uint32_t frameIndex) {

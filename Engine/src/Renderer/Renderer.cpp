@@ -735,6 +735,22 @@ namespace Flux {
                 .Reads(impostors)
                 .Writes(forestShadowMap)
                 .Step("ombres des forêts", [this](RHI::CommandList& commands) { meshes->DrawForestShadows(commands, frame.index); });
+            // Une sonde de reflets photographiée, quand elle doit l'être : après les ombres et l'environnement qui
+            // l'éclairent, avant la scène qui la lit (ses textures, hors du graphe, changent d'usage dans l'étape).
+            const auto probes = graph.AddResource("sondes de reflets");
+            graph.AddPass("sonde de reflets")
+                .When([this] { return sceneVisible && meshes->ProbeCapturePending(); })
+                .Reads(cpu)
+                .Reads(rayScene)
+                .Reads(shadowMap)
+                .Reads(terrainShadowMap)
+                .Reads(forestShadowMap)
+                .Reads(airRayleigh)
+                .Reads(airMie)
+                .Reads(reflections)
+                .Reads(irradiance)
+                .Writes(probes)
+                .Step("sonde de reflets", [this](RHI::CommandList& commands) { meshes->CaptureProbe(commands, frame.index); });
             const auto renderViewport = [this](RHI::CommandList& commands) {
                 commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
                 commands.SetScissor({0, 0, frame.render.width, frame.render.height});
@@ -789,6 +805,7 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Reads(sceneDepth)
                 .Reads(gbufferBase)
                 .Reads(gbufferNormals)
@@ -817,6 +834,7 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -949,6 +967,7 @@ namespace Flux {
                 .Reads(airMie)
                 .Reads(reflections)
                 .Reads(irradiance)
+                .Reads(probes)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -1116,7 +1135,7 @@ namespace Flux {
             return std::unexpected(exposure.error());
         }
         impl->exposure = std::move(*exposure);
-        auto meshes = MeshRenderer::Create(*impl->device, sceneFormat, motionFormat, DepthFormat);
+        auto meshes = MeshRenderer::Create(*impl->device, *impl->environment, sceneFormat, motionFormat, DepthFormat);
         if (!meshes) {
             return std::unexpected(meshes.error());
         }

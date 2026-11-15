@@ -51,6 +51,13 @@ namespace Flux {
         // déjà cibles de rendu, la source lisible.
         void Bake(RHI::CommandList& commands, std::uint32_t frameIndex);
 
+        // Sondes de reflets (ReflectionProbes) : un groupe qui donne `cube` (avec ses mips, Format) au préfiltrage, puis
+        // le préfiltrage de ce cube de `size` pixels dans `reflections` (GetReflectionMips niveaux, Format), hors de
+        // toute passe : le cube déjà lisible, `reflections` laissé lisible.
+        std::unique_ptr<RHI::BindGroup> CreateSourceGroup(const RHI::Texture& cube);
+        void FilterProbe(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::BindGroup& source, std::uint32_t size,
+                         const RHI::Texture& reflections);
+
         const RHI::Texture& GetReflections() const { return *m_reflections; }
         const RHI::Texture& GetIrradiance() const { return *m_irradiance; }
         const RHI::Sampler& GetSampler() const { return *m_sampler; }
@@ -58,6 +65,9 @@ namespace Flux {
 
         private:
         explicit EnvironmentRenderer(RHI::Device& device) : m_device(device) {}
+        // Les niveaux de `reflections` préfiltrés depuis `source` (groupe de m_skyLayout, cube de `size` pixels).
+        void Prefilter(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::BindGroup& source, std::uint32_t size,
+                       const RHI::Texture& reflections);
 
         RHI::Device& m_device;
         std::unique_ptr<RHI::Sampler> m_sampler;          // linéaire, bords des faces raccordés

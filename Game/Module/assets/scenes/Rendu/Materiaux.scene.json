@@ -1554,6 +1554,120 @@
         ],
         "roughness": 0.6
       }
+    },
+    {
+      "id": "515c0a8f62d07666",
+      "name": "Matières texturées",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "3ddd50ebad91301f",
+      "name": "Pierre (roche du sol des planètes)",
+      "parent": "515c0a8f62d07666",
+      "transform": {
+        "position": [
+          0,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "model": {
+        "model": "Modeles/Rendu/SpherePierre.glb"
+      }
+    },
+    {
+      "id": "6b42007735000d51",
+      "name": "Pierre polie (rugosité 0,15)",
+      "parent": "515c0a8f62d07666",
+      "transform": {
+        "position": [
+          1.5,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "model": {
+        "model": "Modeles/Rendu/SpherePierre.glb",
+        "overrideMaterial": true,
+        "metallic": 0.0,
+        "roughness": 0.15
+      }
+    },
+    {
+      "id": "17fc3f5c535d8198",
+      "name": "Sonde de reflets (sol 60 m)",
+      "transform": {
+        "position": [
+          0,
+          0.75,
+          -11
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "reflectionProbe": {
+        "size": [
+          60,
+          20,
+          60
+        ],
+        "boxOffset": [
+          0,
+          9.25,
+          1
+        ],
+        "fade": 1.0,
+        "intensity": 1.0,
+        "refresh": 0.0
+      }
     }
   ]
 }

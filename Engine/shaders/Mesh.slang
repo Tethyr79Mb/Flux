@@ -15,6 +15,7 @@
 // la surface (shaders/Atmosphere.slang).
 
 #include "Atmosphere.slang"
+#include "CubeMap.slang"
 #include "PlanetClimate.slang"
 
 // Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
@@ -26,6 +27,17 @@ struct InteriorData
 };
 
 static const uint MaxInteriors = 8;
+
+// Doit correspondre à ProbeData dans MeshRenderer.cpp : une sonde de reflets (ReflectionProbeComponent), sa boîte et
+// le point d'où elle a été capturée.
+struct ProbeData
+{
+    float4 axes[3];  // local[i] = dot(axes[i].xyz, position relative à la caméra) + axes[i].w (axes unitaires)
+    float4 halfSize; // xyz : demi-taille (m) ; w : fondu depuis les bords, en dedans (m)
+    float4 origin;   // xyz : point de la capture, relatif à la caméra ; w : intensité
+};
+
+static const uint MaxProbes = 4;
 
 // Doit correspondre à PlanetData dans MeshRenderer.cpp : le sol d'une planète (PlanetComponent).
 struct PlanetData
@@ -98,6 +110,12 @@ struct FrameData
     uint4 shadowOptions;
     float4 cascadeDepthRanges; // profondeur couverte par chaque cascade proche, en mètres (de 0 à 1 dans sa carte)
     float4 terrainDepthRanges; // xy : celle des deux cascades du relief
+    ProbeData probes[MaxProbes];
+    // Capture d'une sonde (vertexProbe) : face f de la texture cube aux colonnes [4f, 4f + 3], relatif caméra -> clip
+    // de la face ; probeEye.xyz, le point de la capture (relatif à la caméra).
+    float4 probeFaces[6 * 4];
+    float4 probeEye;
+    uint4 probeOptions; // x : sondes dans probes
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -202,6 +220,12 @@ struct MaterialData
 [[vk::binding(5, 1)]] SamplerCube environmentMap;
 // Lumière diffuse du ciel reçue par une surface de chaque orientation, divisée par pi (EnvironmentRenderer).
 [[vk::binding(15, 1)]] SamplerCube irradianceMap;
+// Reflets des sondes (FrameData::probes), préfiltrés comme environmentMap (un niveau de mip par rugosité). Quatre
+// liaisons plutôt qu'un tableau : le RHI n'a de tableaux que pour les images des matériaux.
+[[vk::binding(21, 1)]] SamplerCube probeMap0;
+[[vk::binding(22, 1)]] SamplerCube probeMap1;
+[[vk::binding(23, 1)]] SamplerCube probeMap2;
+[[vk::binding(24, 1)]] SamplerCube probeMap3;
 // Entités des lots de modèles, lot après lot : l'instance i d'un appel dessine l'entité instances[i].x avec le
 // matériau instances[i].y (les appels des tuiles de planète donnent directement l'indice dans draws).
 [[vk::binding(6, 1)]] StructuredBuffer<uint2> instances;
@@ -272,6 +296,14 @@ float4 Transform(float4 columns[4], float3 p)
     return columns[0] * p.x + columns[1] * p.y + columns[2] * p.z + columns[3];
 }
 
+// Le point p (relatif à la caméra) dans la face `face` de la sonde en cours de capture (FrameData::probeFaces).
+float4 ProbeTransform(uint face, float3 p)
+{
+    const uint c = face * 4;
+    return frame[0].probeFaces[c] * p.x + frame[0].probeFaces[c + 1] * p.y + frame[0].probeFaces[c + 2] * p.z
+         + frame[0].probeFaces[c + 3];
+}
+
 // Position et normale du sommet dans le modèle, déplacées par ses os (moyenne pondérée de leurs matrices).
 void Skin(SkinnedVertexInput input, uint firstJoint, out float3 position, out float3 normal)
 {
@@ -326,6 +358,30 @@ VertexOutput vertexMain(VertexInput input, uint instance : SV_VulkanInstanceID)
 {
     const uint2 entry = instances[instance];
     VertexOutput output = MovingOutput(entry.x, input.position, input.normal, input.uv);
+    output.material = entry.y;
+    return output;
+}
+
+// Capture d'une sonde (MeshRenderer::CaptureProbe) : la face params.cascade de sa texture cube, vue de son centre.
+[shader("vertex")]
+VertexOutput vertexProbe(VertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const uint2 entry = instances[instance];
+    VertexOutput output = Output(entry.x, input.position, input.normal, input.uv);
+    output.position = ProbeTransform(params.cascade, output.worldPosition);
+    output.material = entry.y;
+    return output;
+}
+
+[shader("vertex")]
+VertexOutput vertexProbeSkinned(SkinnedVertexInput input, uint instance : SV_VulkanInstanceID)
+{
+    const uint2 entry = instances[instance];
+    float3 position;
+    float3 normal;
+    Skin(input, asuint(draws[entry.x].normal[1].w), position, normal);
+    VertexOutput output = Output(entry.x, position, normal, input.uv);
+    output.position = ProbeTransform(params.cascade, output.worldPosition);
     output.material = entry.y;
     return output;
 }
@@ -604,6 +660,9 @@ static float2 shadowPixel = float2(0.0);
 static float3 sunDirect = float3(0.0);   // lumière directe du soleil de LightSurface
 static float3 sunRadiance = float3(0.0); // la même, telle qu'elle arrive dans l'image (air, exposition)
 static bool traceSunHere = false;
+// Capture d'une sonde de reflets (fragmentProbe) : l'œil est au point de la capture, les reflets viennent du ciel seul
+// (pas des sondes, qu'elle est en train de refaire), et la lumière sort sans pré-exposition.
+static bool probeCapture = false;
 // Ombre simple (fixée par le programme de pixel, herbe) : cascades proches sans recherche d'obstacles ni pénombre
 // variable, pénombre la plus étroite et 4 lectures. L'herbe est trop fine et bouge trop pour qu'on voie la différence,
 // et c'était une bonne part de son coût au pixel.
@@ -1098,17 +1157,78 @@ float InteriorAt(float3 worldPosition, out float3 interiorLight)
     return inside;
 }
 
-float3 Ambient(Surface s, float occlusion, float inside, float3 interiorLight, float skyScale)
+float3 SampleProbe(uint index, float3 direction, float mip)
+{
+    switch (index) {
+        case 0: return probeMap0.SampleLevel(direction, mip).rgb;
+        case 1: return probeMap1.SampleLevel(direction, mip).rgb;
+        case 2: return probeMap2.SampleLevel(direction, mip).rgb;
+        default: return probeMap3.SampleLevel(direction, mip).rgb;
+    }
+}
+
+// Sonde de reflets où se trouve ce point (la plus en dedans de sa boîte) : son poids (0 dehors, 1 au-delà du fondu
+// depuis les bords), son reflet dans `direction` et sa lumière diffuse autour de `normal`. Le reflet est recalé sur la
+// boîte (correction de parallaxe) : le rayon réfléchi part du point, touche un mur de la boîte, et c'est ce point du
+// mur qu'on lit, vu du centre de la capture. Juste pour une pièce dont les murs sont ceux de la boîte, approché
+// ailleurs. Diffus : le niveau le plus flou (rugosité 1), proche de la moyenne pondérée par le cosinus.
+float ProbeAt(float3 worldPosition, float3 direction, float3 normal, float mip, out float3 specular, out float3 diffuse)
+{
+    specular = float3(0.0);
+    diffuse = float3(0.0);
+    const FrameData f = frame[0];
+    if (probeCapture) {
+        return 0.0;
+    }
+    float best = 0.0;
+    uint chosen = 0;
+    for (uint i = 0; i < f.probeOptions.x; ++i) {
+        const ProbeData probe = f.probes[i];
+        const float3 local = float3(dot(probe.axes[0].xyz, worldPosition) + probe.axes[0].w,
+                                    dot(probe.axes[1].xyz, worldPosition) + probe.axes[1].w,
+                                    dot(probe.axes[2].xyz, worldPosition) + probe.axes[2].w);
+        const float3 margin = probe.halfSize.xyz - abs(local);
+        const float weight = saturate(min(margin.x, min(margin.y, margin.z)) / probe.halfSize.w);
+        if (weight > best) {
+            best = weight;
+            chosen = i;
+        }
+    }
+    if (best <= 0.0) {
+        return 0.0;
+    }
+    const ProbeData probe = f.probes[chosen];
+    const float3 local = float3(dot(probe.axes[0].xyz, worldPosition) + probe.axes[0].w,
+                                dot(probe.axes[1].xyz, worldPosition) + probe.axes[1].w,
+                                dot(probe.axes[2].xyz, worldPosition) + probe.axes[2].w);
+    const float3 localDirection = float3(dot(probe.axes[0].xyz, direction), dot(probe.axes[1].xyz, direction),
+                                         dot(probe.axes[2].xyz, direction));
+    // Sortie de la boîte le long du rayon : le plus proche des trois plans vers lesquels il va.
+    const float3 safe = select(abs(localDirection) > 1.0e-6, localDirection, float3(1.0e-6));
+    const float3 exits = (sign(safe) * probe.halfSize.xyz - local) / safe;
+    const float distance = max(min(exits.x, min(exits.y, exits.z)), 0.0);
+    specular = SampleProbe(chosen, worldPosition + direction * distance - probe.origin.xyz, mip) * probe.origin.w;
+    diffuse = SampleProbe(chosen, normal, f.environment.z) * probe.origin.w;
+    return best;
+}
+
+float3 Ambient(Surface s, float3 worldPosition, float occlusion, float inside, float3 interiorLight, float skyScale)
 {
     const FrameData f = frame[0];
     const float sky = f.environment.x * skyScale;
     // Dans un volume intérieur, la lumière du volume remplace celle du ciel (fondue près des bords).
-    const float3 diffuseLight = lerp(irradianceMap.SampleLevel(s.normal, 0.0).rgb * sky, interiorLight, inside);
+    float3 diffuseLight = lerp(irradianceMap.SampleLevel(s.normal, 0.0).rgb * sky, interiorLight, inside);
     const float3 reflected = reflect(-s.toEye, s.normal);
     // Rugueux : la direction du reflet glisse vers la normale (le lobe s'élargit autour d'elle).
     const float3 reflectDirection = normalize(lerp(reflected, s.normal, s.roughness * s.roughness));
-    const float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, s.roughness * f.environment.z).rgb * sky,
-                                      interiorLight, inside);
+    const float mip = s.roughness * f.environment.z;
+    float3 specularLight = lerp(environmentMap.SampleLevel(reflectDirection, mip).rgb * sky, interiorLight, inside);
+    // Dans une sonde, ce qu'elle a vu remplace le ciel et le volume intérieur : la pièce et ses objets, éclairés.
+    float3 probeSpecular;
+    float3 probeDiffuse;
+    const float probe = ProbeAt(worldPosition, reflectDirection, s.normal, mip, probeSpecular, probeDiffuse);
+    specularLight = lerp(specularLight, probeSpecular, probe);
+    diffuseLight = lerp(diffuseLight, probeDiffuse, probe);
     const float nv = saturate(dot(s.normal, s.toEye));
     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
     const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
@@ -1215,7 +1335,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     if (HasAtmosphere(f.atmosphere)) {
         skyScale = AtmosphereNightSky(f.atmosphere, worldPosition - f.atmosphere.center.xyz, toSun);
     }
-    float3 ambient = Ambient(surface, occlusion, inside, interiorLight, skyScale);
+    float3 ambient = Ambient(surface, worldPosition, occlusion, inside, interiorLight, skyScale);
     if (HasAtmosphere(f.atmosphere)) {
         // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
         const float3 local = worldPosition - f.atmosphere.center.xyz;
@@ -2128,6 +2248,42 @@ SceneOutput fragmentOpaque(VertexOutput input, bool frontFacing : SV_IsFrontFace
     return SceneResult(color, Motion(input));
 }
 
+// Capture d'une sonde : la couleur seule, sans mouvement ni lumière du soleil à part (le rayon vers le soleil est
+// lancé ici, comme pour les transparents). Les faces d'une texture cube sont vues en miroir (repère indirect) : ce que
+// le GPU croit être une face arrière est une face avant.
+[shader("fragment")]
+float4 fragmentProbe(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target
+{
+    probeCapture = true;
+    traceSunHere = true;
+    return float4(MeshColor(input, !frontFacing, true).rgb, 1.0);
+}
+
+// Fond de la capture d'une sonde : le ciel tel que les surfaces le reflètent (environmentMap x environment.x), sans
+// tampon de sommets (un triangle qui couvre la face).
+struct ProbeSkyOutput
+{
+    float4 position : SV_Position;
+    float2 clip     : TEXCOORD;
+};
+
+[shader("vertex")]
+ProbeSkyOutput vertexProbeSky(uint vertexId : SV_VulkanVertexID)
+{
+    const float2 clip = float2((vertexId << 1) & 2, vertexId & 2) * 2.0 - 1.0;
+    ProbeSkyOutput output;
+    output.position = float4(clip, 0.0, 1.0);
+    output.clip = clip;
+    return output;
+}
+
+[shader("fragment")]
+float4 fragmentProbeSky(ProbeSkyOutput input) : SV_Target
+{
+    const float3 direction = CubeFaceDirection(params.cascade, input.clip.x, input.clip.y);
+    return float4(environmentMap.SampleLevel(direction, 0.0).rgb * frame[0].environment.x, 1.0);
+}
+
 // Feuillage des arbres (vertexTree) : ses normales pointent vers l'extérieur de la couronne des deux côtés d'une carte
 // (éclairage doux, en volume) ; les retourner sur la face arrière assombrirait une moitié de l'arbre. Après la
 // pré-passe (vertexTreeDepth), les feuilles cachées sont écartées avant ce programme (profondeur testée sans être
@@ -2223,7 +2379,8 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     const float metallic = m.metallic;
     Surface surface;
     surface.normal = normal;
-    surface.toEye = normalize(-input.worldPosition); // la caméra est à l'origine
+    // La caméra est à l'origine ; pendant la capture d'une sonde, l'œil est à son centre.
+    surface.toEye = normalize((probeCapture ? frame[0].probeEye.xyz : float3(0.0)) - input.worldPosition);
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
     surface.roughness = m.roughness;
@@ -2262,7 +2419,8 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     const float3 scattered = airGiven ? airScattered : AirTo(input.worldPosition, transmittance);
     lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
     sunRadiance = transparent ? float3(0.0) : Radiance(sunDirect * transmittance);
-    return float4(Radiance(lit), alpha);
+    // Sonde : la lumière telle quelle, à l'échelle du ciel qu'elle remplace (environmentMap x environment.x).
+    return float4(probeCapture ? min(lit, float3(60000.0)) : Radiance(lit), alpha);
 }
 
 // --- G-buffer des modèles opaques : passe « G-buffer », éclairée ensuite par Lighting.slang (LightingRenderer). ---
