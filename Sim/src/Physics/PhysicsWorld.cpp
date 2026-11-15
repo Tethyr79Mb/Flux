@@ -773,7 +773,10 @@ namespace Flux {
                 // cherche plus son sol à chaque image : son enveloppe englobe le hangar, et un chasseur racine garé
                 // dedans lui faisait tester ses 19 000 triangles un par un (26 ms par image et par chasseur).
                 const bool resting = !falls && entity != piloted && !ship.autopilot;
-                if ((!shape || resting) && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
+                // Posé à bord d'une station (sur le pont, ou amarré : Docking le dit posé), sans pilote : le décor du
+                // hangar ne bouge pas, rien à retester. Amarré à son quai, il ne tombe pas non plus sur le pont.
+                const bool parkedAboard = !root && ship.grounded && entity != piloted && !ship.autopilot;
+                if ((!shape || resting || parkedAboard) && ship.velocity == Math::Vector3f{} && ship.angularVelocity == Math::Vector3f{}) {
                     continue;
                 }
                 ship.grounded = false;

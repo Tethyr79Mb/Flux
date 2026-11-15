@@ -349,7 +349,15 @@ namespace Game::Docking {
             if (pilot.stage != AutopilotStage::Off) {
                 Drive(scene, entity, ship, pilot, delta);
             } else if (IsDocked(scene, entity)) {
-                Hold(ship); // amarré : les commandes du pilote ne le bougent pas
+                if (ship.velocity.y > 0.0f) {
+                    // Le pilote décolle à la main (Monter) : le quai est rendu, il vole dans le hangar et en sort
+                    // comme il veut (PhysicsWorld le remet à la racine hors de la station). Avant, il restait
+                    // bloqué au quai tant qu'on n'appuyait pas sur L.
+                    Release(scene, pilot);
+                    ship.grounded = false;
+                } else {
+                    Hold(ship); // amarré : les autres commandes du pilote ne le bougent pas
+                }
             } else if (pilot.dock != NullEntity) {
                 Release(scene, pilot); // séparé de sa station autrement (éditeur, code du jeu)
             }
