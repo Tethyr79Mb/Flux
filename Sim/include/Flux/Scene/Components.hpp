@@ -177,6 +177,9 @@ namespace Flux {
         float minEv100 = 3.0f;
         float maxEv100 = 17.0f; // scène la plus claire suivie (au-delà, l'image se brûle)
         float adaptationSpeed = 3.0f; // par seconde, vers plus clair (3 : presque fini en une seconde) ; 3 fois moins vite vers plus sombre
+        // Dans l'espace (hors de l'air d'une planète et d'un Intérieur), l'œil ne s'habitue pas au noir plus de ce nombre
+        // de stops sous le gris moyen au soleil : le côté nuit d'une planète reste sombre.
+        float spaceAdaptation = 3.0f;
     };
 
     // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des

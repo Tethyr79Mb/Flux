@@ -75,7 +75,9 @@ namespace Flux {
         void SetJobSystem(JobSystem* jobs) { m_jobs = jobs; }
         // Réglages de l'exposition du Ciel de la scène ; sans Ciel, exposition fixe de 1. Lus avant Prepare : la
         // pré-exposition de l'image en dépend.
-        static Exposure::Settings GetExposureSettings(const Scene& scene, const Camera& camera);
+        static FLUX_API Exposure::Settings GetExposureSettings(const Scene& scene, const Camera& camera); // exporté pour ExposureTests
+        // Part de l'espace là où est la caméra : 1 hors de l'air de toute planète, 0 au sol d'une planète qui en a.
+        static float GetSpaceWeight(const Scene& scene, const Camera& camera);
         // Réglages de l'œil de l'Intérieur où se trouve la caméra : `weight` 1 dans sa boîte, fondu dehors sur son
         // `fade`, 0 au-delà ; `compensation` déjà multipliée par `weight`.
         struct InteriorExposure
