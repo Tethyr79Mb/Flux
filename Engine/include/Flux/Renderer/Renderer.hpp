@@ -8,6 +8,7 @@
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
+#include "Flux/Renderer/GBufferView.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -218,6 +219,9 @@ namespace Flux {
         // Vue de débogage des ombres en rayons (RayShadowRenderer::SetShowMask) ; sans effet sans ray tracing.
         void SetShowRayShadowMask(bool enabled);
         bool IsShowingRayShadowMask() const;
+        // Vue de débogage du G-buffer des modèles opaques (LightingRenderer), à la place de leur éclairage.
+        void SetGBufferView(GBufferView view);
+        GBufferView GetGBufferView() const;
         // Détail du sol des planètes (DefaultGroundDetail par défaut) : plus fin, plus de tuiles à calculer et dessiner.
         void SetGroundDetail(GroundDetail detail);
         GroundDetail GetGroundDetail() const;

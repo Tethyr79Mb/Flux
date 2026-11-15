@@ -194,6 +194,7 @@ namespace Flux::Planetology {
             float relief = -1.0f;
             std::int32_t seed = 0;
             float mountainWidth = 0.0f;
+            float zoneWidth = 0.0f;
             std::unordered_map<std::uint64_t, Node> nodes;
             std::vector<Request> requests;
             std::uint64_t lastUsed = 0;
