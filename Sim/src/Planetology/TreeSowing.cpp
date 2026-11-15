@@ -360,7 +360,8 @@ namespace Flux::Planetology {
                 constexpr double e = 0.25;
                 const Math::Vector3d du = ground(u + e, v) - local;
                 const Math::Vector3d dv = ground(u, v + e) - local;
-                if (std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), direction)) < maxSlope) {
+                // Comme SowPlace : <= et borné à 1 (une pente maximale nulle n'en laisse aucun).
+                if (std::min(std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), direction)), 1.0) <= maxSlope) {
                     continue;
                 }
                 const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * set.biomes[biome].humidity[3];

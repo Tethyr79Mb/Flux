@@ -177,6 +177,9 @@ namespace Flux {
         float minEv100 = 3.0f;
         float maxEv100 = 17.0f; // scène la plus claire suivie (au-delà, l'image se brûle)
         float adaptationSpeed = 3.0f; // par seconde, vers plus clair (3 : presque fini en une seconde) ; 3 fois moins vite vers plus sombre
+        // Dans l'espace (hors de l'air d'une planète et d'un Intérieur), l'œil ne s'habitue pas au noir plus de ce nombre
+        // de stops sous le gris moyen au soleil : le côté nuit d'une planète reste sombre.
+        float spaceAdaptation = 3.0f;
     };
 
     // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des
@@ -239,6 +242,21 @@ namespace Flux {
         // des plaines gardent cette taille quel que soit le rayon. Plus petit : chaînes plus serrées, moins de plaines.
         // Par défaut, la taille qu'ils ont naturellement à 200 km de rayon (relief réglé sur la scène Gameplay).
         float zoneWidth = 420000.0f;
+        // m, taille des continents (et des océans entre eux) : la même quel que soit le rayon. Par défaut, leur taille à
+        // 200 km de rayon ; plus grand, de plus grands continents.
+        float continentWidth = 840000.0f;
+        // Forme du relief (Planetology::ReliefShape), 1 : comme à l'origine. Part des terres en montagne (largeur des
+        // chaînes) et en collines, hauteur des collines, chance qu'un sommet pousse (0 à 1), détail fin des plaines et des
+        // reliefs, profondeur des ravines, érosion (versants lisses), déformation (côtes et chaînes tordues).
+        float mountainShare = 1.0f;
+        float hillShare = 1.0f;
+        float hillHeight = 1.0f;
+        float peakDensity = 0.85f;
+        float plainRoughness = 1.0f;
+        float reliefRoughness = 1.0f;
+        float gullyDepth = 1.0f;
+        float erosion = 1.0f;
+        float warp = 1.0f;
         std::int32_t seed = 1;
         // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), plage
         // de sable jusqu'à beachHeight mètres au-dessus du niveau de la mer (elle suit la mer), neige au-dessus de

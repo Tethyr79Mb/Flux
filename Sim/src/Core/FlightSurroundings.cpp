@@ -35,8 +35,7 @@ namespace Flux {
         }
         const auto same = [&](const Relief& relief) {
             return relief.terrain->GetRadius() == nearest->radius && relief.terrain->GetRelief() == nearest->relief
-                && relief.seed == nearest->seed && relief.width == nearest->mountainWidth
-                && relief.zoneWidth == nearest->zoneWidth;
+                && relief.seed == nearest->seed && relief.shape == Planetology::GetReliefShape(*nearest);
         };
         auto found = std::ranges::find_if(m_reliefs, same);
         if (found == m_reliefs.end()) {
@@ -44,9 +43,8 @@ namespace Flux {
             if (m_reliefs.size() >= MaxReliefs) {
                 m_reliefs.erase(m_reliefs.begin());
             }
-            m_reliefs.push_back({std::make_shared<const Planetology::Terrain>(nearest->radius, nearest->relief,
-                                                                              nearest->seed, nearest->mountainWidth, nearest->zoneWidth),
-                                 nearest->seed, nearest->mountainWidth, nearest->zoneWidth});
+            m_reliefs.push_back({std::make_shared<const Planetology::Terrain>(*nearest), nearest->seed,
+                                 Planetology::GetReliefShape(*nearest)});
             found = m_reliefs.end() - 1;
         }
         const Planetology::Terrain* terrain = found->terrain.get();

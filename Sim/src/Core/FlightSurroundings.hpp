@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Planetology/Planet.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/Scene/Ships.hpp"
 
@@ -28,8 +29,7 @@ namespace Flux {
         {
             std::shared_ptr<const Planetology::Terrain> terrain;
             std::int32_t seed = 0;
-            float width = 0.0f;
-            float zoneWidth = 0.0f;
+            Planetology::ReliefShape shape;
         };
         std::vector<Relief> m_reliefs;
     };

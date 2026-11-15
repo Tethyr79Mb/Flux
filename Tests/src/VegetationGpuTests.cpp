@@ -161,7 +161,7 @@ bool RunVegetationGpuTests() {
     VegetationSet everywhere;
     everywhere.species = {Species(0.7f, 1.3f, 90.0f)};
     AddBiome(everywhere, {1.0f, 1.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}});
-    const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth, planet.zoneWidth);
+    const Planetology::Terrain terrain(planet);
     const std::uint32_t level = VegetationRenderer::GetPlainLevel(terrain);
     CHECK(level > 0 && level < terrain.GetMaxLevel());
     const std::vector<Planetology::TileKey> keys{Planetology::FindTile(Math::Normalize(Math::Vector3d{0.3, 0.8, -0.5}), level),

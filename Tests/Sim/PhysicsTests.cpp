@@ -984,7 +984,7 @@ namespace {
         Scene scene;
         const Entity planet = scene.CreateEntity("Planète");
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth, planetComponent.zoneWidth);
+        const Planetology::Terrain terrain(planetComponent);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1107,7 +1107,7 @@ namespace {
         const Entity planet = scene.CreateEntity("Planète");
         scene.Get<TransformComponent>(planet).position = center;
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth, planetComponent.zoneWidth);
+        const Planetology::Terrain terrain(planetComponent);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1138,7 +1138,7 @@ namespace {
         Scene scene;
         const Entity planet = scene.CreateEntity("Planète");
         const PlanetComponent& planetComponent = scene.Add<PlanetComponent>(planet);
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth, planetComponent.zoneWidth);
+        const Planetology::Terrain terrain(planetComponent);
         const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
         const auto ground = [&](const Math::Vector3d& direction) {
             return terrain.GetRadius() + terrain.GetHeight(direction, octaves);
@@ -1250,7 +1250,7 @@ namespace {
         vegetation = VegetationComponent{};
         vegetation.biome1 = "Vegetation/Foret.biome.json";
         vegetation.biome2 = vegetation.biome3 = vegetation.biome4 = vegetation.biome5 = vegetation.biome6 = "";
-        const Planetology::Terrain terrain(planetComponent.radius, planetComponent.relief, planetComponent.seed, planetComponent.mountainWidth, planetComponent.zoneWidth);
+        const Planetology::Terrain terrain(planetComponent);
         Planetology::VegetationLibrary library;
         const Planetology::VegetationSet& set = library.Get(assets, vegetation);
         CHECK(set.biomes.size() == 1 && set.species.size() == 1 && set.species[0].trunkRadius == 0.5f);

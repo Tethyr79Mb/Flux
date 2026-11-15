@@ -13,6 +13,10 @@
 // Tout est calculé en double dans le repère de la planète (centre à l'origine) ; une tuile garde ses sommets en float
 // relatifs à son centre, qui ne dépasse pas quelques kilomètres : précision au millimètre même loin du centre.
 // Recherche et choix : /mnt/project-files/Recherche/cube-sphere-planetes.md.
+namespace Flux {
+    struct PlanetComponent;
+}
+
 namespace Flux::Planetology {
     // Quadrillage d'une tuile (de côté), le même à tous les niveaux.
     constexpr std::uint32_t TileQuads = 32;
@@ -63,16 +67,39 @@ namespace Flux::Planetology {
     // Inverse : la face où tombe la direction et ses coordonnées (s, t) de -1 à 1.
     FLUX_SIM_API void FaceFromDirection(const Math::Vector3d& direction, std::uint32_t& face, double& s, double& t);
 
+    // Réglages de la forme du relief (PlanetComponent) ; les valeurs par défaut donnent le relief d'origine.
+    struct ReliefShape
+    {
+        // Largeurs en mètres, 0 : à l'échelle du rayon. Une planète trop petite pour elles les garde à sa mesure.
+        double mountainWidth = 0.0;  // largeur des montagnes (deux sommets voisins sont à environ largeur / 6)
+        double zoneWidth = 0.0;      // écart entre deux chaînes (zones de montagnes et de collines, déformations, détail)
+        double continentWidth = 0.0; // taille des continents et des océans
+        // Facteurs, 1 : comme à l'origine.
+        double mountainShare = 1.0;   // largeur des bandes des chaînes (part des terres en montagne)
+        double hillShare = 1.0;       // part des terres en collines
+        double hillHeight = 1.0;      // hauteur des collines
+        double peakDensity = 218.0 / 256.0; // chance qu'une maille du réseau des sommets porte un sommet (0 à 1)
+        double plainRoughness = 1.0;  // détail fin des plaines
+        double reliefRoughness = 1.0; // détail fin des collines et des montagnes
+        double gullies = 1.0;         // profondeur des ravines
+        double erosion = 1.0;         // force de l'érosion (versants lisses, détail sur les crêtes)
+        double warp = 1.0;            // déformation (côtes découpées, chaînes tordues)
+
+        bool operator==(const ReliefShape&) const = default;
+    };
+    // Les réglages du relief d'une planète.
+    FLUX_SIM_API ReliefShape GetReliefShape(const PlanetComponent& planet);
+
     // Forme du terrain : rayon, relief (bruit fractal évalué sur la direction 3D, donc sans couture entre les faces),
     // le même pour une même graine.
     class FLUX_SIM_API Terrain {
         public:
         Terrain() : Terrain(1000.0, 0.0, 1) {}
-        // mountainWidth : largeur des montagnes en mètres (deux sommets voisins sont à environ largeur / 6), 0 : à l'échelle du rayon
-        // (environ un rayon). zoneWidth : écart en mètres entre deux chaînes de montagnes (taille des zones de montagnes et
-        // de collines, des déformations et du détail), 0 : à l'échelle du rayon (environ 2 rayons). Comme pour les
-        // montagnes, une planète trop petite garde ses zones à sa mesure.
-        Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0, double zoneWidth = 0.0);
+        Terrain(double radius, double relief, std::int32_t seed, const ReliefShape& shape);
+        Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0, double zoneWidth = 0.0)
+            : Terrain(radius, relief, seed, ReliefShape{.mountainWidth = mountainWidth, .zoneWidth = zoneWidth}) {}
+        // Celui d'une planète (rayon, relief, graine et ReliefShape).
+        explicit Terrain(const PlanetComponent& planet);
 
         double GetRadius() const { return m_radius; }
         double GetRelief() const { return m_relief; }
@@ -110,6 +137,22 @@ namespace Flux::Planetology {
         // des collines, déformations, détail ; voir zoneWidth).
         double GetZoneScale() const { return m_zoneScale; }
         std::uint32_t GetZoneShift() const { return m_zoneShift; }
+        // De même pour les continents (largeur des continents).
+        double GetContinentScale() const { return m_continentScale; }
+        std::uint32_t GetContinentShift() const { return m_continentShift; }
+        // Réglages de la forme, rangés pour le GPU (TileGpuInputs::shape).
+        struct ShapeConstants
+        {
+            double chainStart, chainEnd;  // zone de montagnes : de 1 - |bruit| = chainStart à chainEnd
+            double hillStart, hillEnd;    // zone de collines : du bruit = hillStart à hillEnd
+            double detailPlains, detailHills, detailMountains; // amplitude du détail (fraction du relief)
+            double hillWeight;            // part du relief des collines
+            double gullyAmplitude;
+            double erosion;               // facteur des forces d'érosion des couches
+            double warpLarge, warpSmall;  // radians (à l'échelle des zones)
+            std::uint32_t peakChance;     // sur 256
+        };
+        const ShapeConstants& GetShapeConstants() const { return m_shape; }
 
         private:
         // Bruit de Perlin et, si demandée, sa pente (par rapport à p ; nulle sinon).
@@ -137,6 +180,9 @@ namespace Flux::Planetology {
         std::uint32_t m_shift = 0;
         double m_zoneScale = 1.0;
         std::uint32_t m_zoneShift = 0;
+        double m_continentScale = 1.0;
+        std::uint32_t m_continentShift = 0;
+        ShapeConstants m_shape{};
         std::array<std::uint8_t, 512> m_permutation{};
     };
 
@@ -201,17 +247,20 @@ namespace Flux::Planetology {
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
-        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : GetScaleShift | GetZoneShift << 16
+        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (GetScaleShift | GetZoneShift << 8 | GetContinentShift << 16)
         // Humidité du relief (GetWetnessLayout) : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu
         // (bits d'un float).
         std::array<std::uint32_t, 4> wetness{};
+        // Terrain::ShapeConstants : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains, detailHills,
+        // detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, 0, 0, 0).
+        std::array<std::array<float, 4>, 4> shape{};
         // Colonne i (x : a - a_c, y : a + a_c, a = tan(s.π/4)) et ligne i (z : b - b_c, w : b + b_c), décalage i - 2.
         std::array<std::array<float, 4>, Columns> columns{};
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)
         std::array<std::array<float, 4>, Octaves> fractions{};    // xyz : position dans la maille ; w : fréquence
         std::array<std::uint32_t, 128> permutation{};             // 512 octets, 4 par entier
     };
-    static_assert(sizeof(TileGpuInputs) == 96 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
+    static_assert(sizeof(TileGpuInputs) == 96 + 64 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
     FLUX_SIM_API void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs);
 
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni
