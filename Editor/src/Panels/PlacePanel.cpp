@@ -461,8 +461,6 @@ namespace FluxEditor {
                     scene.Add<OrbitComponent>(entity, OrbitComponent{.distance = SunDistance / 1.0e9,
                                                                      .angle = std::fmod(40.0 * static_cast<double>(count), 360.0)});
                 }
-                // Liseré bleuté au bord du disque, vu de l'espace : la planète se détache du noir, même côté nuit.
-                scene.Add<RimLightComponent>(entity, RimLightComponent{.intensity = 0.8f, .sharpness = 6.0f});
             } else if (item == Item::Light || item == Item::Spot) {
                 LightComponent& light = scene.Add<LightComponent>(entity);
                 if (item == Item::Spot) {
