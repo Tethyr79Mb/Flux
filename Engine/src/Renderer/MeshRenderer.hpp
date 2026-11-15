@@ -160,10 +160,11 @@ namespace Flux {
         bool ForestShadowsPending() const { return m_forestShadows; }
         void DrawForestShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         const RHI::Texture& GetForestShadowMap() const { return *m_forestShadowMap; }
-        // Passe principale, dans cet ordre (le fond du ciel entre le sol et l'eau). Le sol après les entités : ce
-        // qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres transparents : vue
-        // d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés pour que le
-        // Renderer mesure chacun au GPU.
+        // Modèles opaques, dans la passe « G-buffer » (leur surface, éclairée ensuite par LightingRenderer), avant la
+        // passe principale. Puis celle-ci, dans cet ordre (le fond du ciel entre le sol et l'eau) : le sol après les
+        // entités, ce qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres
+        // transparents : vue d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés
+        // pour que le Renderer mesure chacun au GPU.
         void DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         // Capture d'un imposteur d'arbre (TreeImpostors), hors d'une passe, avant la passe principale ; rien à faire à
         // cette image si ImpostorPending est faux.
@@ -181,7 +182,7 @@ namespace Flux {
         // Une planète de l'image a des nuages (dessinés par Planetology::CloudRenderer).
         bool HasClouds() const { return m_hasClouds; }
         // Groupes 0 à 2 des shaders de Mesh.slang (sol neutre, image, tables des modèles), pour les passes d'ailleurs
-        // qui en incluent les données (nuages : shaders/Clouds.slang). BindScene les lie, après le pipeline.
+        // qui en incluent les données (nuages : shaders/Clouds.slang ; éclairage : Lighting.slang). BindScene les lie, après le pipeline.
         std::array<const RHI::BindGroupLayout*, 3> GetSceneLayouts() const;
         void BindScene(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         void DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const;

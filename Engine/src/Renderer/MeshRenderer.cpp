@@ -5,6 +5,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Renderer/LightingRenderer.hpp"
 #include "Scene/Photometry.hpp"
 
 #include <algorithm>
@@ -306,14 +307,16 @@ namespace Flux {
         renderer->m_shadowDepthSampler = std::move(*shadowDepthSampler);
         renderer->m_shadowTaps = recommended ? ShadowTaps : ShadowTapsMinimum;
 
-        constexpr RHI::ShaderStage both = RHI::ShaderStage::Vertex | RHI::ShaderStage::Fragment;
+        // Les pixels et l'éclairage des modèles opaques (LightingRenderer, en compute) lisent les mêmes données.
+        constexpr RHI::ShaderStage pixels = RHI::ShaderStage::Fragment | RHI::ShaderStage::Compute;
+        constexpr RHI::ShaderStage both = RHI::ShaderStage::Vertex | pixels;
         constexpr std::array bindings{
             RHI::Binding{JointSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{DrawSlot, RHI::BindingType::StorageBuffer, both},
             RHI::Binding{FrameSlot, RHI::BindingType::StorageBuffer, both},
-            RHI::Binding{ShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-            RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
-            RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{ShadowMapSlot, RHI::BindingType::Texture, pixels},
+            RHI::Binding{LightSlot, RHI::BindingType::StorageBuffer, pixels},
+            RHI::Binding{EnvironmentSlot, RHI::BindingType::Texture, pixels},
             RHI::Binding{InstanceSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{TreeSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{AirRayleighSlot, RHI::BindingType::Texture, both}, // lue par sommet (sol, eau, arbres) et par pixel
@@ -322,13 +325,13 @@ namespace Flux {
             RHI::Binding{TileCommandSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{MeshTaskSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
             RHI::Binding{MeshletStatSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Vertex},
-            RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-            RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-            RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-            RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
-            RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, RHI::ShaderStage::Fragment},
+            RHI::Binding{TerrainShadowMapSlot, RHI::BindingType::Texture, pixels},
+            RHI::Binding{IrradianceSlot, RHI::BindingType::Texture, pixels},
+            RHI::Binding{ShadowDepthSlot, RHI::BindingType::Texture, pixels},
+            RHI::Binding{TerrainShadowDepthSlot, RHI::BindingType::Texture, pixels},
+            RHI::Binding{ForestShadowMapSlot, RHI::BindingType::Texture, pixels},
             RHI::Binding{AtmosphereMultipleSlot, RHI::BindingType::Texture, both}, // marche de l'air hors des tables, ciel dans l'eau
-            RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, RHI::ShaderStage::Fragment},
+            RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, pixels},
         };
         // La structure de la scène n'existe qu'avec le ray tracing (sinon, type de liaison inconnu du pilote).
         const std::span<const RHI::Binding> frameBindings = renderer->m_rayTracing ? std::span(bindings)
@@ -465,6 +468,19 @@ namespace Flux {
             // Seuil d'alpha avec pré-passe de profondeur (Pipelines::depthMasked, ce programme de sommets) : les
             // pipelines à seuil n'éclairent ensuite que les pixels de même profondeur, sans l'écrire.
             const char* depthVertex = nullptr;
+            // Opaques dans la passe « G-buffer » (modèles : fragment et maskedFragment l'écrivent), éclairés ensuite par
+            // LightingRenderer ; sinon dans la passe de la scène.
+            bool gbuffer = false;
+        };
+        // Cibles de la passe « G-buffer » après l'image de la scène : mouvement, les trois textures du G-buffer, puis la
+        // lumière du soleil à part (ray tracing), effacée sans être écrite.
+        const auto setGBufferTargets = [&](RHI::PipelineDesc& desc) {
+            desc.extraColors = {};
+            desc.extraColors[0] = {motionFormat, true};
+            desc.extraColors[1] = {LightingRenderer::BaseFormat, true};
+            desc.extraColors[2] = {LightingRenderer::NormalFormat, true};
+            desc.extraColors[3] = {LightingRenderer::SurfaceFormat, true};
+            desc.extraColors[4] = {sunFormat, false};
         };
         const auto create = [&](std::unique_ptr<RHI::Pipeline>& pipeline, const RHI::PipelineDesc& desc) {
             auto created = m_device.CreatePipeline(desc);
@@ -536,6 +552,12 @@ namespace Flux {
                 desc.depthWrite = !transparent;
                 // Prémultiplié : les reflets d'un verre s'ajoutent entiers, quel que soit son alpha (Mesh.slang).
                 desc.blend = transparent ? RHI::BlendMode::Premultiplied : RHI::BlendMode::Opaque;
+                if (kind.gbuffer && !transparent) {
+                    setGBufferTargets(desc);
+                    return create(pipeline, desc);
+                }
+                desc.extraColors = {};
+                desc.extraColors[0].format = motionFormat;
                 // Transparents : le mouvement reste celui de ce qu'on voit à travers.
                 desc.extraColors[0].write = kind.motion && !transparent;
                 // Lumière du soleil à part (ray tracing) : écrite par les mêmes programmes que le mouvement ; l'eau,
@@ -630,12 +652,12 @@ namespace Flux {
             return createMain(pipelines.transparentBack, RHI::CullMode::Front, true, false);
         };
         if (auto result = createAll(m_static, {staticBuffers, staticAttributes, staticShadow, "vertexMain", "vertexShadow",
-                                               "fragmentOpaque", "fragmentMain", true, true});
+                                               "fragmentGBuffer", "fragmentGBufferMasked", true, true, true, nullptr, nullptr, true});
             !result) {
             return result;
         }
         if (auto result = createAll(m_skinned, {skinnedBuffers, skinnedAttributes, skinnedShadow, "vertexSkinned", "vertexShadowSkinned",
-                                                "fragmentOpaque", "fragmentMain", true, true});
+                                                "fragmentGBuffer", "fragmentGBufferMasked", true, true, true, nullptr, nullptr, true});
             !result) {
             return result;
         }
@@ -797,10 +819,7 @@ namespace Flux {
             mesh.bindGroupLayouts = meshLayouts;
             mesh.pushConstantsSize = sizeof(DrawParams);
             mesh.colorFormat = colorFormat;
-            mesh.extraColors[0].format = motionFormat;
-            mesh.extraColors[0].write = true;
-            mesh.extraColors[1].format = sunFormat;
-            mesh.extraColors[1].write = sunFormat != RHI::Format::Undefined;
+            setGBufferTargets(mesh); // dans la passe « G-buffer », comme m_static
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -810,15 +829,15 @@ namespace Flux {
                 mesh.cullMode = cullMode;
                 return create(pipeline, mesh);
             };
-            auto created = createMesh(m_modelMesh.opaque, "fragmentOpaque", RHI::CullMode::Back);
+            auto created = createMesh(m_modelMesh.opaque, "fragmentGBuffer", RHI::CullMode::Back);
             if (created) {
-                created = createMesh(m_modelMesh.opaqueDoubleSided, "fragmentOpaque", RHI::CullMode::None);
+                created = createMesh(m_modelMesh.opaqueDoubleSided, "fragmentGBuffer", RHI::CullMode::None);
             }
             if (created) {
-                created = createMesh(m_modelMesh.masked, "fragmentMain", RHI::CullMode::Back);
+                created = createMesh(m_modelMesh.masked, "fragmentGBufferMasked", RHI::CullMode::Back);
             }
             if (created) {
-                created = createMesh(m_modelMesh.maskedDoubleSided, "fragmentMain", RHI::CullMode::None);
+                created = createMesh(m_modelMesh.maskedDoubleSided, "fragmentGBufferMasked", RHI::CullMode::None);
             }
             if (created) {
                 Log::Info("Modèles : mesh shaders, paquets écartés par le GPU");

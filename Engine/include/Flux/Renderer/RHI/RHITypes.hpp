@@ -52,6 +52,7 @@ namespace Flux::RHI {
         RGBA16Uint,
         RGBA16Float, // couleur au-delà de 1 (lumières, ciel) sans perte
         RG16Float,   // deux valeurs signées (déplacement des pixels d'une image à l'autre)
+        RGBA16Unorm, // quatre valeurs de 0 à 1 précises (normales du G-buffer, octaédriques)
         R8Unorm,     // une valeur de 0 à 1 (masque)
         // Compressés par blocs de 4 x 4 pixels, 16 octets chacun (1 octet par pixel au lieu de 4) : textures lues
         // souvent (sol des planètes). Device::HasTextureCompressionBC.
