@@ -1,0 +1,56 @@
+{
+  "format": "flux.ui",
+  "version": 1,
+  "nextId": 3,
+  "elements": [
+    {
+      "id": 1,
+      "type": "window",
+      "name": "Inventaire",
+      "anchor": "center",
+      "position": [
+        -17.0,
+        6.0
+      ],
+      "size": [
+        1030.0,
+        771.0
+      ],
+      "text": "Inventaire",
+      "fontSize": 24.0,
+      "textColor": [
+        0.80695236,
+        0.8549927,
+        0.90466136,
+        1.0
+      ],
+      "titleHeight": 40.0,
+      "titleColor": [
+        0.010329823,
+        0.017641952,
+        0.03189603,
+        1.0
+      ],
+      "background": [
+        0.005181517,
+        0.008023192,
+        0.014443844,
+        0.94
+      ],
+      "border": [
+        0.06124607,
+        0.5149178,
+        0.71569365,
+        0.6
+      ],
+      "borderWidth": 1.0,
+      "radius": 10.0,
+      "shadow": true,
+      "movable": true,
+      "closeButton": true,
+      "closeOnEscape": true,
+      "openOnEscape": false,
+      "pausesGame": false
+    }
+  ]
+}
