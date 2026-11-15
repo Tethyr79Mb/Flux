@@ -1084,7 +1084,8 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
         const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
         const float3 up = normalize(local);
-        if (abs(dot(normalize(cross(du, dv)), up)) < traits.z) {
+        // <= et borné à 1 : une pente maximale nulle n'en laisse aucun, même là où le float arrondit le sol à plat.
+        if (min(abs(dot(normalize(cross(du, dv)), up)), 1.0) <= traits.z) {
             continue;
         }
         const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * sowVegetation[0].biomes[biome].humidity.w;
