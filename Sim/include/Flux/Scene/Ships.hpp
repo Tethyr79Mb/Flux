@@ -26,6 +26,9 @@ namespace Flux {
         // Haut du lieu où est le vaisseau piloté (dans le monde, unitaire ; opposé à la gravité du dehors), pour
         // ShipComponent::levelAssist ; nul sans gravité (pas d'aide).
         Math::Vector3f up{};
+        // Part de l'aide à plat ici, de 0 à 1 : entière à bord d'un vaisseau porteur et près du sol d'une planète,
+        // nulle en orbite et dans l'espace, où il n'y a pas d'horizon à suivre (Ships::GetLevelWeight).
+        float level = 1.0f;
         // Densité de l'air là où il est (0 dans l'espace, 1 au sol d'une atmosphère comme celle de la Terre) :
         // ShipComponent::airGrip.
         float air = 0.0f;
@@ -63,6 +66,9 @@ namespace Flux {
 
         // Vaisseau du poste de pilotage où le joueur est assis, NullEntity sinon.
         FLUX_SIM_API Entity GetPilotedShip(const Scene& scene, Entity player);
+        // ShipInput::level près d'une planète, selon la distance à sa limite (FlightState::boundary : le haut de
+        // l'atmosphère, ou le sol sans atmosphère) : 1 jusqu'à 2 km au-dessus, puis de moins en moins jusqu'à 10 km.
+        FLUX_SIM_API float GetLevelWeight(double boundary);
         // Vitesse (monde, m/s) d'un vaisseau, ou du vaisseau qui porte l'entité ; nulle hors de tout vaisseau (le
         // décor ne bouge pas seul). Visée en avance des armes et des missiles.
         FLUX_SIM_API Math::Vector3f GetWorldVelocity(const Scene& scene, Entity entity);

@@ -690,6 +690,17 @@ namespace {
         flight.levelAssist = true;
         frames(3.0, {.up = up});
         CHECK(std::abs(bank()) < 1.0f);
+        // En orbite (level nul), l'aide s'efface : l'inclinaison reste, comme sans elle. Entière jusqu'à 2 km au-dessus
+        // de l'atmosphère, nulle à 10 km.
+        frames(0.5, {.roll = 1.0f, .up = up, .level = 0.0f});
+        frames(0.5, {.up = up, .level = 0.0f});
+        const float orbit = bank();
+        frames(1.0, {.up = up, .level = 0.0f});
+        CHECK(orbit < -8.0f && std::abs(bank() - orbit) < 1.0f);
+        frames(3.0, {.up = up});
+        CHECK(std::abs(bank()) < 1.0f);
+        CHECK(Ships::GetLevelWeight(0.0) == 1.0f && Ships::GetLevelWeight(2000.0) == 1.0f);
+        CHECK(std::abs(Ships::GetLevelWeight(6000.0) - 0.5f) < 0.001f && Ships::GetLevelWeight(213000.0) == 0.0f);
 
         // Dans l'air, la vitesse se range derrière le nez : un glissement de côté de 150 m/s fond en une seconde
         // (dans l'espace, les propulseurs n'en retirent que 10 m/s). La vitesse max y est la même que dans l'espace.
