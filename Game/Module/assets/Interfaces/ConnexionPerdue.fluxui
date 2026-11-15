@@ -1,0 +1,174 @@
+{
+  "format": "flux.ui",
+  "version": 1,
+  "nextId": 5,
+  "elements": [
+    {
+      "id": 1,
+      "type": "window",
+      "name": "Connexion perdue",
+      "anchor": "center",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        620.0,
+        300.0
+      ],
+      "visible": false,
+      "text": "Connexion perdue",
+      "fontSize": 24.0,
+      "textColor": [
+        0.80695236,
+        0.8549927,
+        0.90466136,
+        1.0
+      ],
+      "titleHeight": 0.0,
+      "titleColor": [
+        0.010329823,
+        0.017641952,
+        0.03189603,
+        1.0
+      ],
+      "background": [
+        0.001517635,
+        0.002731743,
+        0.0047769533,
+        0.92
+      ],
+      "border": [
+        0.06124607,
+        0.5775805,
+        0.79129803,
+        0.6
+      ],
+      "borderWidth": 1.0,
+      "radius": 10.0,
+      "shadow": true,
+      "movable": false,
+      "closeButton": false,
+      "closeOnEscape": false,
+      "openOnEscape": false,
+      "pausesGame": false,
+      "openAction": "",
+      "children": [
+        {
+          "id": 2,
+          "type": "text",
+          "name": "Titre",
+          "anchor": "top",
+          "position": [
+            0.0,
+            36.0
+          ],
+          "size": [
+            580.0,
+            44.0
+          ],
+          "text": "Connexion au serveur interrompue",
+          "fontSize": 30.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "radius": 0.0,
+          "binding": ""
+        },
+        {
+          "id": 3,
+          "type": "text",
+          "name": "Raison",
+          "anchor": "top",
+          "position": [
+            0.0,
+            110.0
+          ],
+          "size": [
+            560.0,
+            36.0
+          ],
+          "text": "{}",
+          "fontSize": 22.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "radius": 0.0,
+          "binding": "Raison de la coupure"
+        },
+        {
+          "id": 4,
+          "type": "button",
+          "name": "OK",
+          "anchor": "bottom",
+          "position": [
+            0.0,
+            -40.0
+          ],
+          "size": [
+            260.0,
+            56.0
+          ],
+          "text": "OK",
+          "fontSize": 26.0,
+          "textColor": [
+            0.80695236,
+            0.8549927,
+            0.90466136,
+            1.0
+          ],
+          "align": "center",
+          "background": [
+            0.00699541,
+            0.012983031,
+            0.023153365,
+            1.0
+          ],
+          "hoverColor": [
+            0.017641952,
+            0.08021983,
+            0.13843162,
+            1.0
+          ],
+          "pressedColor": [
+            0.012983031,
+            0.30498737,
+            0.5149178,
+            1.0
+          ],
+          "border": [
+            0.06124607,
+            0.5775805,
+            0.79129803,
+            0.6
+          ],
+          "borderWidth": 1.0,
+          "radius": 8.0,
+          "action": "callFunction",
+          "target": "Quitter le serveur",
+          "binding": ""
+        }
+      ]
+    }
+  ]
+}

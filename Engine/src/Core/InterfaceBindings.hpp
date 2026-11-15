@@ -25,6 +25,7 @@ namespace Flux {
             std::function<double()> get{};
             std::function<void(double)> set{};
             std::function<std::string()> getText{}; // texte : prioritaire sur get pour un élément Texte
+            std::function<void(std::string)> setText{}; // champ de texte : le texte que le joueur a écrit
             std::vector<std::string> options{};     // valeur à choix : ceux des listes déroulantes liées
             std::string_view category{};            // pour l'éditeur (texte constant)
         };

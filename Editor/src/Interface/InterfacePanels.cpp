@@ -41,6 +41,7 @@ namespace FluxEditor {
                 case ElementType::ProgressBar: return UI::Icon::ProgressBar;
                 case ElementType::ScrollArea: return UI::Icon::ScrollArea;
                 case ElementType::Dropdown: return UI::Icon::Dropdown;
+                case ElementType::TextField: return UI::Icon::Text;
                 case ElementType::Count: break;
             }
             return UI::Icon::None;

@@ -105,6 +105,16 @@ namespace Flux {
                                 element.value = static_cast<float>(value->get());
                             }
                             break;
+                        case Interface::ElementType::TextField:
+                            if (element.id == changed && value->setText) {
+                                value->setText(element.text);
+                            } else if (value->getText) {
+                                // Recopié seulement quand il diffère.
+                                if (std::string text = value->getText(); text != element.text) {
+                                    element.text = std::move(text);
+                                }
+                            }
+                            break;
                         case Interface::ElementType::ProgressBar:
                             if (value->get) {
                                 element.value = static_cast<float>(value->get());

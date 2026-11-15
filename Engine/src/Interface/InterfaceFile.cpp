@@ -24,7 +24,8 @@ namespace Flux::Interface {
         constexpr std::size_t MaxOptions = 256; // choix d'une liste déroulante
 
         constexpr std::array<std::string_view, static_cast<std::size_t>(ElementType::Count)> TypeKeys{
-            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs", "progressBar", "scrollArea", "dropdown"};
+            "window", "frame", "text", "image", "button", "checkbox", "slider", "tabs", "progressBar", "scrollArea", "dropdown",
+            "textField"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(Anchor::Count)> AnchorKeys{
             "topLeft", "top", "topRight", "left", "center", "right", "bottomLeft", "bottom", "bottomRight", "stretch"};
         constexpr std::array<std::string_view, static_cast<std::size_t>(TextAlign::Count)> AlignKeys{"left", "center", "right"};
