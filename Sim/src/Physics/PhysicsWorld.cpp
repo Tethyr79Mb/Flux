@@ -1698,7 +1698,17 @@ namespace Flux {
     Math::Vector3f PhysicsWorld::GetOutsideGravity(const Scene& scene, Entity entity) const {
         const Impl& impl = *m_impl;
         const Math::Vector3f base = FromJolt(impl.grids.front()->system->GetGravity());
-        if (!scene.IsValid(entity) || !impl.anchored) {
+        if (!scene.IsValid(entity)) {
+            return base;
+        }
+        // Garé dans le hangar d'un autre vaisseau (enfant de la station), la gravité de son pont : la station n'est pas
+        // alignée sur la planète voisine. Avec celle de la planète, l'aide au pilotage roulait le chasseur garé et la
+        // caméra penchait l'horizon : la station semblait s'incliner.
+        if (const Entity carrier = scene.GetShip(entity); carrier != NullEntity) {
+            const float deck = scene.Get<ShipComponent>(carrier).gravity;
+            return scene.GetWorldRotation(carrier).Rotate(Math::Vector3f{0.0f, -deck, 0.0f});
+        }
+        if (!impl.anchored) {
             return base;
         }
         return impl.planetGround.GetGravity(Math::Delta(impl.anchor, scene.GetWorldPosition(entity)), base);

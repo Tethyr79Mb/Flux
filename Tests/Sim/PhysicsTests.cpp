@@ -126,6 +126,31 @@ namespace {
         return true;
     }
 
+    // Chasseur garé dans le hangar d'une station penchée de 30° sur la gravité du dehors : son « dehors » est le pont
+    // de la station (l'aide au pilotage et la caméra le suivent), pas la planète. Sinon, assis aux commandes, le
+    // chasseur roulait sur lui-même et la station semblait s'incliner.
+    bool RunCarriedOutsideGravityTests() {
+        Scene scene;
+        const Entity station = scene.CreateEntity("Station");
+        scene.Add<ShipComponent>(station).fallsWithoutPilot = false;
+        scene.Get<TransformComponent>(station).rotation =
+            Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, std::numbers::pi_v<float> / 6.0f);
+        const Entity fighter = scene.CreateEntity("Chasseur");
+        scene.Add<ShipComponent>(fighter);
+        scene.SetParent(fighter, station);
+
+        PhysicsWorld world;
+        Run(world, scene, 0.1);
+        const Math::Vector3f deck = scene.GetWorldRotation(station).Rotate(Math::Vector3f{0.0f, -9.81f, 0.0f});
+        CHECK(Math::Length(world.GetOutsideGravity(scene, fighter) - deck) < 1.0e-3f);
+        // La station elle-même garde la gravité du monde.
+        CHECK(Math::Length(world.GetOutsideGravity(scene, station) - Math::Vector3f{0.0f, -9.81f, 0.0f}) < 1.0e-3f);
+        // Pont en apesanteur : pas de verticale, l'aide au pilotage ne redresse rien.
+        scene.Get<ShipComponent>(station).gravity = 0.0f;
+        CHECK(Math::Length(world.GetOutsideGravity(scene, fighter)) < 1.0e-6f);
+        return true;
+    }
+
     // Réglages absurdes (tailles nulles, rotation nulle, rebond parfait) : la simulation reste finie.
     bool RunDegenerateTests() {
         Scene scene;
@@ -1287,5 +1312,5 @@ bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunSlopeTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
         && RunShipCollisionTests() && RunShipFallTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
-        && RunFarPlanetTests() && RunPlanetTreeTests() && RunWorldTests();
+        && RunFarPlanetTests() && RunPlanetTreeTests() && RunWorldTests() && RunCarriedOutsideGravityTests();
 }

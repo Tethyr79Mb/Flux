@@ -68,7 +68,8 @@ namespace Flux {
         // planète qui l'attire, ou du monde. La caméra qui suit le joueur garde l'horizon droit selon lui.
         Math::Vector3f GetUp(const Scene& scene, Entity entity) const;
         // Gravité du dehors là où se trouve une entité (m/s², repère du monde) : celle des planètes ou du monde,
-        // sans celle des vaisseaux. Nulle dans l'espace (aide au pilotage, ShipComponent::levelAssist).
+        // sans celle des vaisseaux. Nulle dans l'espace (aide au pilotage, ShipComponent::levelAssist). Sauf pour un
+        // vaisseau garé dans un autre (enfant d'une station) : son dehors est le hangar, avec la gravité de son pont.
         Math::Vector3f GetOutsideGravity(const Scene& scene, Entity entity) const;
         // Densité de l'air du dehors là où se trouve une entité (1 : au sol sur Terre) : celle de l'atmosphère des
         // planètes ou du monde (WorldComponent::air). Le vaisseau y est porté (ShipComponent::airGrip).
