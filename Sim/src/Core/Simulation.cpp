@@ -212,6 +212,10 @@ namespace Flux {
                     const FlightState flight = m_flightSurroundings->Get(m_scene, m_physics.get(), ship);
                     shipInput.air = flight.air;
                     if (flight.nearPlanet) {
+                        // À bord d'un porteur, le haut est celui de son pont : aide entière.
+                        if (m_scene.GetShip(ship) == NullEntity) {
+                            shipInput.level = Ships::GetLevelWeight(flight.boundary);
+                        }
                         shipInput.planetUp = Math::Vector3f(flight.up);
                         shipInput.planetDistance = static_cast<float>(flight.boundary);
                         shipInput.planetCenter = static_cast<float>(flight.center);

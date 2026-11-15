@@ -61,17 +61,21 @@ namespace Flux::Ships {
             Math::Vector3f turn{std::clamp(input.stickPitch, -1.0f, 1.0f) * rate.x,
                                 std::clamp(input.stickYaw, -1.0f, 1.0f) * rate.y, // vers la gauche
                                 -std::clamp(input.roll, -1.0f, 1.0f) * rate.z};  // +z : vers la gauche
-            if (ship.levelAssist && Math::Length(input.up) > 0.5f) {
-                // Haut du lieu dans les axes du vaisseau.
+            // En orbite, l'aide s'efface (level) : sinon, sorti d'une station, le vaisseau roulerait d'un coup pour se
+            // caler sur l'horizon d'une planète à des centaines de km.
+            const float level = ship.levelAssist && Math::Length(input.up) > 0.5f ? std::clamp(input.level, 0.0f, 1.0f) : 0.0f;
+            if (level > 0.0f) {
+                // Haut du lieu dans les axes du vaisseau. Le lacet tourne autour de lui (du haut du vaisseau sans aide).
                 const Math::Vector3f up = rotation.Conjugate().Rotate(input.up);
-                turn = Math::Vector3f{turn.x, 0.0f, turn.z} + up * turn.y;
+                turn = Math::Vector3f{turn.x, 0.0f, turn.z}
+                     + (Math::Vector3f{0.0f, 1.0f, 0.0f} * (1.0f - level) + up * level) * turn.y;
                 if (input.roll == 0.0f) {
                     // Inclinaison : angle de l'aile droite au-dessus de l'horizon (sur le dos : au-delà de 90°).
                     // Indéfinie nez à la verticale : l'aide s'efface.
                     const float horizontal = std::sqrt(up.x * up.x + up.y * up.y);
                     const float weight = std::clamp((horizontal - 0.1f) / 0.3f, 0.0f, 1.0f);
                     const float bank = std::atan2(up.x, up.y);
-                    turn.z -= bank * Degrees * ship.levelRate * weight * weight * (3.0f - 2.0f * weight);
+                    turn.z -= bank * Degrees * ship.levelRate * level * weight * weight * (3.0f - 2.0f * weight);
                 }
                 turn.x = std::clamp(turn.x, -rate.x, rate.x);
                 turn.y = std::clamp(turn.y, -rate.y, rate.y);
@@ -82,10 +86,9 @@ namespace Flux::Ships {
             // qu'il va vite (5° en 10 s à 5 km/s sur 600 km de rayon), et les propulseurs ne rattrapent pas la vitesse.
             // Pas en mode voyage : là, on vise librement à travers l'espace.
             Math::Vector3f carry{};
-            if (ship.levelAssist && Math::Length(input.up) > 0.5f && Math::Length(input.planetUp) > 0.5f && input.planetCenter > 0.0f
-                && !ship.grounded) {
+            if (level > 0.0f && Math::Length(input.planetUp) > 0.5f && input.planetCenter > 0.0f && !ship.grounded) {
                 const Math::Vector3f up = rotation.Conjugate().Rotate(input.planetUp);
-                carry = Math::Cross(up, ship.velocity) * (Degrees * (1.0f - ship.travelLevel) / input.planetCenter);
+                carry = Math::Cross(up, ship.velocity) * (Degrees * level * (1.0f - ship.travelLevel) / input.planetCenter);
                 turn = turn + carry;
             }
             if (ship.grounded) {
@@ -212,6 +215,13 @@ namespace Flux::Ships {
     Entity GetPilotedShip(const Scene& scene, Entity player) {
         const Entity seat = Seats::GetPilotSeat(scene, player);
         return seat != NullEntity ? scene.GetShip(seat) : NullEntity;
+    }
+
+    float GetLevelWeight(double boundary) {
+        constexpr double Full = 2000.0;  // m au-dessus de la limite : aide entière en dessous
+        constexpr double None = 10000.0; // plus d'aide au-dessus
+        const float away = static_cast<float>(std::clamp((boundary - Full) / (None - Full), 0.0, 1.0));
+        return 1.0f - away * away * (3.0f - 2.0f * away);
     }
 
     Math::Vector3f GetWorldVelocity(const Scene& scene, Entity entity) {

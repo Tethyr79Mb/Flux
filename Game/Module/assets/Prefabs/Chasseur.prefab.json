@@ -33,7 +33,7 @@
         "turnRate": 60.0,
         "turnAcceleration": 360.0,
         "strafeSpeed": 10.0,
-        "levelAssist": true,
+        "levelAssist": false,
         "levelRate": 1.5,
         "airGrip": 2.0,
         "boost": 2.0,
