@@ -47,6 +47,7 @@ namespace Flux {
     class FrameStats;
     class Input;
     class PlayerCamera;
+    struct InjectedCommand;
     class QuickSave;
     class Renderer;
     class TransformInterpolation;
@@ -287,6 +288,13 @@ namespace Flux {
         // personnage sans joueur. Pour l'instant, seul le joueur de cet écran (GetPlayer) en a une, et il l'a aussi
         // sans personnage (GetPlayer() == NullEntity : vol libre de l'éditeur).
         const PlayerCommand& GetPlayerCommand(Entity player) const;
+        // Éditeur (outil « input » de Claude) : actions ajoutées à celles du clavier pendant seconds, puis relâchées
+        // seules. held : tenues tout du long ; pressed : un seul appui (mode voyage, interagir) ; stick : manche du
+        // pilote (lacet, tangage, de -1 à 1) à la place de celui de la souris. Remplace la commande ajoutée d'avant ;
+        // oubliée à l'arrêt du jeu.
+        void InjectCommand(std::span<const InputActionId> held, std::span<const InputActionId> pressed,
+                           std::optional<Math::Vector2f> stick, double seconds);
+        void ClearInjectedCommand();
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent, touchent et sont dessinés par le moteur.
         std::vector<Projectile>& GetProjectiles() { return m_simulation.GetProjectiles(); }
         // Projectiles arrivés sur un corps à cette image (l'éclat d'impact est déjà montré) : au jeu d'en retirer
@@ -350,6 +358,7 @@ namespace Flux {
         std::unique_ptr<LoadingScreen> m_loadingScreen;
         std::unique_ptr<QuickSave> m_quickSave;                 // F7 / F8 / F9
         std::unique_ptr<FrameStats> m_frameStats;               // temps moyens du panneau Moteur
+        std::unique_ptr<InjectedCommand> m_injected; // commande ajoutée par l'éditeur (InjectCommand)
         std::unique_ptr<Input> m_stepInput; // touches retenues pour le prochain pas (Input::Accumulate)
         bool m_inStep = false;              // pendant un pas : le jeu lit GetPlayerCommand, pas le clavier
         // Actions lues par le moteur, par leur bit dans PlayerCommand : la marche (SampleLocalCommand) et celles du client.

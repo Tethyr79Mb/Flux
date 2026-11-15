@@ -82,6 +82,7 @@ namespace Flux {
           m_loadingScreen(std::make_unique<LoadingScreen>(config.loadingScreen)),
           m_quickSave(std::make_unique<QuickSave>()),
           m_frameStats(std::make_unique<FrameStats>()),
+          m_injected(std::make_unique<InjectedCommand>()),
           m_stepInput(std::make_unique<Input>()),
           m_interpolation(std::make_unique<TransformInterpolation>()) {
         Log::Info("Flux {}", GetFullVersion());
@@ -257,7 +258,33 @@ namespace Flux {
         view.forward = m_camera.GetForward();
         m_simulation.SetLocalCommand(Flux::SampleLocalCommand(*m_stepInput, *m_inputActions, IsKeyboardFree(), view,
                                                               {m_actions.forward, m_actions.back, m_actions.left, m_actions.right},
-                                                              m_simulation.GetClock().GetStep()));
+                                                              m_simulation.GetClock().GetStep(), m_injected.get()));
+    }
+
+    void Engine::InjectCommand(std::span<const InputActionId> held, std::span<const InputActionId> pressed,
+                               std::optional<Math::Vector2f> stick, double seconds) {
+        InjectedCommand command;
+        for (const InputActionId action : held) {
+            if (action < MaxInputActions) {
+                command.held.set(action);
+            }
+        }
+        for (const InputActionId action : pressed) {
+            if (action < MaxInputActions) {
+                command.pressed.set(action);
+            }
+        }
+        if (stick) {
+            command.steer = true;
+            command.stickYaw = std::clamp(stick->x, -1.0f, 1.0f);
+            command.stickPitch = std::clamp(stick->y, -1.0f, 1.0f);
+        }
+        command.steps = std::max(1, static_cast<int>(std::ceil(seconds / SimulationClock::StepSeconds)));
+        *m_injected = command;
+    }
+
+    void Engine::ClearInjectedCommand() {
+        *m_injected = {};
     }
 
     const Input& Engine::GetCurrentInput() const {
@@ -619,6 +646,7 @@ namespace Flux {
             m_interpolation->Clear();
             m_impacts.clear();
             m_simulation.Stop();
+            ClearInjectedCommand();
             m_audio->StopAll();
             m_interfaces->ClearInstances(); // cases cochées, fenêtres déplacées : le prochain jeu repart du fichier
             m_interfaceBindings->ClearActions();

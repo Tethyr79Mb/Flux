@@ -12,6 +12,7 @@
 #include <Flux/Core/Project.hpp>
 #include <Flux/Graphics/Camera.hpp>
 #include <Flux/Graphics/FlyCameraController.hpp>
+#include <Flux/Input/InputActions.hpp>
 #include <Flux/Math/Quaternion.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Renderer/Renderer.hpp>
@@ -19,6 +20,7 @@
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/Scene/Seats.hpp>
+#include <Flux/Scene/Ships.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -28,9 +30,11 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <numbers>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace FluxEditor {
     using namespace Flux;
@@ -856,6 +860,131 @@ namespace FluxEditor {
                 }
                 const bool pilot = scene.Get<SeatComponent>(*seat).pilot;
                 return McpToolResult::Text(pilot ? "assis aux commandes" : "assis");
+            },
+        });
+
+        server.AddTool({
+            .name = "input",
+            .description = "Pendant le jeu (play start), ajoute des commandes à celles du clavier, comme si un joueur "
+                           "tenait les touches : à pied ou aux commandes d'un vaisseau (sit). hold : actions tenues "
+                           "pendant seconds (« Avancer », « Reculer », « Gauche », « Droite », « Boost », « Freiner »...), "
+                           "press : actions appuyées une fois (« Mode voyage »...), par leur nom dans l'écran des touches. "
+                           "stick : manche du pilote [lacet vers la gauche, tangage nez vers le haut], de -1 à 1, à la "
+                           "place de la souris. seconds : durée (1 par défaut, 60 au plus), après quoi tout est relâché "
+                           "seul. Chaque appel remplace le précédent ; sans argument, tout est relâché. Un nom inconnu "
+                           "donne la liste des actions.",
+            .inputSchema = Schema({{"hold", {{"type", "array"}, {"items", {{"type", "string"}}}}},
+                                   {"press", {{"type", "array"}, {"items", {{"type", "string"}}}}},
+                                   {"stick", {{"type", "array"}, {"items", {{"type", "number"}}}}},
+                                   {"seconds", {{"type", "number"}}}}),
+            .run = [&engine, &context](const Json& arguments) -> McpOutcome {
+                if (!context.playing) {
+                    return McpToolResult::Error("seulement pendant le jeu (play start)");
+                }
+                const InputActions& actions = engine.GetInputActions();
+                const auto read = [&](const char* key) -> std::expected<std::vector<InputActionId>, std::string> {
+                    std::vector<InputActionId> ids;
+                    if (!arguments.contains(key)) {
+                        return ids;
+                    }
+                    if (!arguments.at(key).is_array()) {
+                        return std::unexpected(std::format("{} : une liste de noms d'actions", key));
+                    }
+                    for (const Json& name : arguments.at(key)) {
+                        const InputActionId id = name.is_string() ? actions.GetId(name.get<std::string>()) : NoInputAction;
+                        if (id == NoInputAction) {
+                            std::string known;
+                            for (const InputAction& action : actions.GetActions()) {
+                                known += known.empty() ? "" : ", ";
+                                known += action.name;
+                            }
+                            return std::unexpected(std::format("action inconnue : {}. Actions : {}", name.dump(), known));
+                        }
+                        ids.push_back(id);
+                    }
+                    return ids;
+                };
+                const auto held = read("hold");
+                if (!held) {
+                    return McpToolResult::Error(held.error());
+                }
+                const auto pressed = read("press");
+                if (!pressed) {
+                    return McpToolResult::Error(pressed.error());
+                }
+                std::optional<Math::Vector2f> stick;
+                if (arguments.contains("stick")) {
+                    const Json& value = arguments.at("stick");
+                    if (!value.is_array() || value.size() != 2 || !value[0].is_number() || !value[1].is_number()) {
+                        return McpToolResult::Error("stick : [lacet, tangage], deux nombres de -1 à 1");
+                    }
+                    stick = Math::Vector2f{value[0].get<float>(), value[1].get<float>()};
+                }
+                if (held->empty() && pressed->empty() && !stick) {
+                    engine.ClearInjectedCommand();
+                    return McpToolResult::Text("commandes relâchées");
+                }
+                const double seconds = std::clamp(arguments.value("seconds", 1.0), 0.0, 60.0);
+                engine.InjectCommand(*held, *pressed, stick, seconds);
+                return McpToolResult::Text(std::format("commandes tenues {:.2f} s", seconds));
+            },
+        });
+
+        server.AddTool({
+            .name = "ship_state",
+            .description = "État de vol d'un vaisseau pendant le jeu, avec ce que get_entity ne montre pas (champs non "
+                           "enregistrés) : posé, pilote automatique, vitesse de croisière, mode voyage, poussée, en plus "
+                           "de la vitesse et de la vitesse de rotation (repère du vaisseau, -z vers l'avant ; °/s), du "
+                           "parent, de la position dans le monde et de l'altitude. ship : Uuid ou nom ; sans ship, le "
+                           "vaisseau piloté par le joueur.",
+            .inputSchema = Schema({{"ship", EntityArgument}}),
+            .run = [&engine](const Json& arguments) -> McpOutcome {
+                Scene& scene = engine.GetScene();
+                Entity ship = NullEntity;
+                if (arguments.contains("ship")) {
+                    const auto found = FindEntity(scene, arguments, "ship");
+                    if (!found) {
+                        return McpToolResult::Error(found.error());
+                    }
+                    ship = *found;
+                } else if (const Entity player = engine.GetPlayer(); player != NullEntity) {
+                    ship = Ships::GetPilotedShip(scene, player);
+                }
+                const ShipComponent* component = ship != NullEntity ? scene.TryGet<ShipComponent>(ship) : nullptr;
+                if (!component) {
+                    return McpToolResult::Error("aucun vaisseau (ShipComponent) : donner ship, ou asseoir le joueur aux commandes (sit)");
+                }
+                const Math::WorldPosition world = scene.GetWorldPosition(ship);
+                const Math::Quaternionf rotation = scene.GetWorldRotation(ship);
+                const Entity parent = scene.GetParent(ship);
+                Json state = {
+                    {"name", scene.Get<NameComponent>(ship).name},
+                    {"parent", parent != NullEntity ? scene.Get<NameComponent>(parent).name : std::string{}},
+                    {"sector", {world.sector.x, world.sector.y, world.sector.z}},
+                    {"position", {world.offset.x, world.offset.y, world.offset.z}},
+                    {"rotation", {rotation.x, rotation.y, rotation.z, rotation.w}},
+                    {"velocity", {component->velocity.x, component->velocity.y, component->velocity.z}},
+                    {"speed", Math::Length(component->velocity)},
+                    {"angularVelocity", {component->angularVelocity.x, component->angularVelocity.y, component->angularVelocity.z}},
+                    {"grounded", component->grounded},
+                    {"autopilot", component->autopilot},
+                    {"passThrough", component->passThrough},
+                    {"cruiseSpeed", component->cruiseSpeed},
+                    {"travel", component->travel},
+                    {"travelLevel", component->travelLevel},
+                    {"throttle", component->throttle},
+                    {"levelAssist", component->levelAssist},
+                    {"step", engine.GetSimulationClock().GetStep()},
+                };
+                if (engine.GetGameState() != GameState::Stopped) {
+                    const FlightState flight = engine.GetFlightState(ship);
+                    state["nearPlanet"] = flight.nearPlanet;
+                    state["air"] = flight.air;
+                    if (flight.nearPlanet) {
+                        state["altitude"] = flight.altitude;
+                    }
+                }
+                return McpToolResult::Text(state.dump());
             },
         });
 

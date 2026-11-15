@@ -68,6 +68,19 @@ bool RunPlayerCommandTests() {
     CHECK(command.held.none() && command.pressed.none() && command.move == Math::Vector3f{} && command.stickYaw == 0.5f);
     SetKey(input, Key::D, false);
 
+    // Commande ajoutée par l'éditeur (outil « input ») : deux pas de frein tenu, un appui sur le mode voyage et le
+    // manche, même clavier pris ; puis tout se relâche seul et la souris reprend le manche.
+    InjectedCommand injected{.steer = true, .stickYaw = -1.0f, .stickPitch = 0.25f, .steps = 2};
+    injected.held.set(pilot.brake);
+    injected.pressed.set(pilot.travel);
+    command = SampleLocalCommand(input, actions, false, eye, walk, 9, &injected);
+    CHECK(command.IsDown(pilot.brake) && command.WasPressed(pilot.brake) && command.WasPressed(pilot.travel));
+    CHECK(!command.IsDown(pilot.travel) && command.stickYaw == -1.0f && command.stickPitch == 0.25f);
+    command = SampleLocalCommand(input, actions, false, eye, walk, 10, &injected);
+    CHECK(command.IsDown(pilot.brake) && !command.WasPressed(pilot.brake) && !command.WasPressed(pilot.travel));
+    command = SampleLocalCommand(input, actions, false, eye, walk, 11, &injected);
+    CHECK(command.held.none() && command.pressed.none() && command.stickYaw == 0.5f && injected.steps == 0);
+
     // Un vaisseau piloté par commandes seulement : 2 s de poussée à 10 m/s² (vitesse de croisière 20 m/s), mode
     // voyage demandé une seule fois par un appui, puis frein jusqu'à l'arrêt.
     Scene scene;
@@ -99,7 +112,6 @@ bool RunPlayerCommandTests() {
     CHECK(held.IsDown(pilot.travel) && !Piloting::ReadShipInput(held, pilot).travel);
     SetKey(input, Key::Tab, false);
 
-    SetKey(input, Key::W, false);
     SetKey(input, Key::X, true);
     input.BeginFrame();
     read = steps(4.0);
