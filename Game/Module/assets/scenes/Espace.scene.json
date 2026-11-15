@@ -79,7 +79,7 @@
         "inclination": 0.0
       },
       "planet": {
-        "radius": 300000.0,
+        "radius": 200000.0,
         "relief": 3500.0,
         "mountainWidth": 60000.0,
         "seed": 1,
