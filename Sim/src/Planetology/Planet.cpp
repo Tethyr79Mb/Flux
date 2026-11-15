@@ -112,6 +112,22 @@ namespace Flux::Planetology {
         constexpr double WarpLarge = 0.06;
         constexpr double WarpSmall = 0.012;
 
+        // Échelle d'une couche du relief :
+        // - Planet : suit le rayon (les continents : quelques-uns par planète, quelle que soit sa taille) ;
+        // - Zone : garde sa taille en mètres au-delà de ZoneRadius (Terrain::m_zoneScale) : zones des montagnes et des
+        //   collines, déformations et détail. À l'échelle du rayon, une planète de 300 km avait des plaines 1,5 fois plus
+        //   larges et plus lisses qu'une de 200 km, et une Terre des plaines de plusieurs milliers de kilomètres. Pas à
+        //   la largeur des montagnes : des zones aussi fines faisaient de minces bandes sinueuses, des « racines » vues
+        //   d'orbite, et le détail plus fin à la même hauteur rendait les plaines trop raides pour se poser. Une zone
+        //   large et aux bords doux (ChainStart, ChainEnd, et ChainBase bas pour ne pas faire de plateau) porte plusieurs
+        //   sommets, comme un vrai massif ;
+        // - Mountain : suit la largeur des montagnes (Terrain::m_scale) : sommets, collines et ravines.
+        enum class LayerScale : std::uint8_t { Planet, Zone, Mountain };
+        // Rayon de planète (m) jusqu'où les couches Zone suivent le rayon : celui des planètes dont le relief a été
+        // réglé (scène Gameplay). Au-delà, elles gardent la taille qu'elles ont à ce rayon ; en deçà, la planète les
+        // garde à sa mesure.
+        constexpr double ZoneRadius = 200000.0;
+
         // Couches du relief (voir GetHeight), dans l'ordre de TileGpuInputs::cells et de shaders/PlanetTile.slang.
         struct Layer
         {
@@ -119,15 +135,9 @@ namespace Flux::Planetology {
             std::uint32_t last;
             double gain;
             Math::Vector3d offset; // sépare les couches (sinon elles suivraient les mêmes formes)
-            // Suit la largeur des montagnes (Terrain::m_scale) plutôt que le rayon : montagnes et collines gardent
-            // leur taille en mètres sur une grande planète. Le détail reste à l'échelle de la planète : plus fin de
-            // m_scale à la même hauteur, il rendait toutes les plaines trop raides pour se poser. Les zones, les
-            // continents et les déformations aussi : des zones à la largeur des montagnes faisaient de minces bandes
-            // sinueuses, des « racines » vues d'orbite. Une zone large et aux bords doux (ChainStart, ChainEnd, et
-            // ChainBase bas pour ne pas faire de plateau) porte plusieurs sommets, comme un vrai massif.
-            bool scaled;
-            // Perd ses octaves Terrain::m_shift niveaux plus tôt (couches à l'échelle des montagnes).
-            bool shifted;
+            // Échelle de la couche (voir LayerScale) ; une couche plus fine que le rayon perd aussi ses octaves autant
+            // de niveaux plus tôt (Terrain::m_shift ou m_zoneShift).
+            LayerScale scale;
             double erosion;        // force de l'érosion, 0 : aucune
             // Octaves dont la pente compte pour l'érosion (les suivantes sont atténuées selon la pente déjà connue) : la
             // pente coûte autant que le bruit, et les octaves fines du détail sont les plus nombreuses.
@@ -135,20 +145,20 @@ namespace Flux::Planetology {
         };
         enum LayerIndex { Continents, MountainZone, HillZone, PeakField, Hills, Detail, WarpLargeField, WarpSmallField, GullyField };
         constexpr std::array<Layer, 9> Layers{{
-            {0, 5, 0.5, {0.0, 0.0, 0.0}, false, false, 0.0, 0},
-            {1, 3, 0.5, {31.7, -12.3, 7.1}, false, false, 0.0, 0},
-            {2, 5, 0.5, {-8.9, 44.2, -19.6}, false, false, 0.0, 0},
+            {0, 5, 0.5, {0.0, 0.0, 0.0}, LayerScale::Planet, 0.0, 0},
+            {1, 3, 0.5, {31.7, -12.3, 7.1}, LayerScale::Zone, 0.0, 0},
+            {2, 5, 0.5, {-8.9, 44.2, -19.6}, LayerScale::Zone, 0.0, 0},
             // Sommets : deux réseaux, les grands sommets puis les sommets secondaires (voir Terrain::Peaks).
-            {2, 4, 0.5, {17.3, -41.7, 8.9}, true, true, 0.0, 0},
-            {4, 9, 0.5, {5.3, 23.9, -33.1}, true, true, ErosionHills, 5},
-            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, false, false, ErosionDetail, 6},
+            {2, 4, 0.5, {17.3, -41.7, 8.9}, LayerScale::Mountain, 0.0, 0},
+            {4, 9, 0.5, {5.3, 23.9, -33.1}, LayerScale::Mountain, ErosionHills, 5},
+            {DetailFirstOctave, MaxOctaves, DetailGain, {-23.1, 5.7, 31.3}, LayerScale::Zone, ErosionDetail, 6},
             // Déformations : toutes leurs octaves, quel que soit le niveau de la tuile (sinon le terrain glisserait
             // d'un niveau à l'autre).
-            {0, 3, 0.5, {-37.9, 13.3, 21.7}, false, false, 0.0, 0},
-            {3, 6, 0.5, {11.1, -29.3, -45.7}, false, false, 0.0, 0},
+            {0, 3, 0.5, {-37.9, 13.3, 21.7}, LayerScale::Zone, 0.0, 0},
+            {3, 6, 0.5, {11.1, -29.3, -45.7}, LayerScale::Zone, 0.0, 0},
             // Ravines : cellules de 1/12 de la largeur des montagnes (une maille du réseau = longueur d'onde / 2π) et plus
             // fines (voir Terrain::Gullies).
-            {3, 7, 0.5, {-2.9, 37.1, 15.3}, true, true, 0.0, 0},
+            {3, 7, 0.5, {-2.9, 37.1, 15.3}, LayerScale::Mountain, 0.0, 0},
         }};
         static_assert([] {
             std::uint32_t count = 0;
@@ -157,6 +167,13 @@ namespace Flux::Planetology {
             }
             return count;
         }() == TileGpuInputs::Octaves);
+
+        double FrequencyScale(const Terrain& terrain, LayerScale scale) {
+            return scale == LayerScale::Mountain ? terrain.GetScale() : scale == LayerScale::Zone ? terrain.GetZoneScale() : 1.0;
+        }
+        std::uint32_t OctaveShift(const Terrain& terrain, LayerScale scale) {
+            return scale == LayerScale::Mountain ? terrain.GetScaleShift() : scale == LayerScale::Zone ? terrain.GetZoneShift() : 0u;
+        }
 
         // Partie d'un vecteur tangente à la sphère en direction (unitaire).
         Math::Vector3d Tangent(const Math::Vector3d& v, const Math::Vector3d& direction) {
@@ -242,6 +259,8 @@ namespace Flux::Planetology {
         const double natural = m_radius * 2.0 * std::numbers::pi / (BaseFrequency * std::ldexp(1.0, static_cast<int>(Layers[PeakField].first)));
         m_scale = mountainWidth > 0.0 ? std::clamp(natural / mountainWidth, 1.0, 65536.0) : 1.0;
         m_shift = static_cast<std::uint32_t>(std::ceil(std::log2(m_scale) - 1e-9));
+        m_zoneScale = std::clamp(m_radius / ZoneRadius, 1.0, 65536.0);
+        m_zoneShift = static_cast<std::uint32_t>(std::ceil(std::log2(m_zoneScale) - 1e-9));
         // Environ 1,5 m entre deux sommets au niveau le plus fin.
         const double faceEdge = 0.5 * std::numbers::pi * m_radius;
         const double levels = std::ceil(std::log2(faceEdge / (1.5 * static_cast<double>(TileQuads))));
@@ -268,8 +287,9 @@ namespace Flux::Planetology {
         const double spacing = 0.5 * std::numbers::pi / (static_cast<double>(TileQuads) * std::ldexp(1.0, static_cast<int>(level)));
         const double wavelength = 2.0 * std::numbers::pi / BaseFrequency;
         const double octaves = std::floor(std::log2(wavelength / (2.0 * spacing))) + 1.0;
-        // Une octave d'une couche à la largeur des montagnes compte comme m_shift octaves plus loin (voir Fbm).
-        return static_cast<std::uint32_t>(std::clamp(octaves, 1.0, static_cast<double>(MaxOctaves + m_shift)));
+        // Une octave d'une couche à la largeur des montagnes compte comme m_shift octaves plus loin, d'une couche Zone
+        // comme m_zoneShift (voir Fbm).
+        return static_cast<std::uint32_t>(std::clamp(octaves, 1.0, static_cast<double>(MaxOctaves + std::max(m_shift, m_zoneShift))));
     }
 
     Terrain::Sample Terrain::Noise(const Math::Vector3d& p, bool withGradient) const {
@@ -329,12 +349,12 @@ namespace Flux::Planetology {
         const double gain = layer.gain;
         const double total = (1.0 - std::pow(gain, static_cast<double>(layer.last - layer.first))) / (1.0 - gain);
         // Une couche plus fine de m_scale perd ses octaves m_shift niveaux plus tôt (m_shift arrondi au-dessus : le
-        // GPU fait le même choix sans calcul en virgule).
-        const std::uint32_t shift = layer.shifted ? m_shift : 0u;
+        // GPU fait le même choix sans calcul en virgule) ; de même pour m_zoneScale.
+        const std::uint32_t shift = OctaveShift(*this, layer.scale);
         const std::uint32_t last = std::min(layer.last, octaves > shift ? octaves - shift : 0u);
         double sum = 0.0;
         double amplitude = 1.0 / total;
-        double frequency = BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * (layer.scaled ? m_scale : 1.0);
+        double frequency = BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * FrequencyScale(*this, layer.scale);
         Math::Vector3d p = point * frequency + layer.offset;
         Math::Vector3d slope{}; // pente de la couche (par radian), octaves déjà sommées et celle-ci
         for (std::uint32_t k = layer.first; k < last; ++k) {
@@ -498,12 +518,14 @@ namespace Flux::Planetology {
     }
 
     Math::Vector3d Terrain::Warp(const Math::Vector3d& direction, std::uint32_t layerIndex, double amount) const {
-        // Pente d'un bruit lent, tangente à la sphère, en radians : un champ de déplacement sans à-coup.
+        // Pente d'un bruit lent, tangente à la sphère, en radians : un champ de déplacement sans à-coup. Plus fin de
+        // m_zoneScale sur une grande planète, il pousse d'autant moins loin (en radians) : le même en mètres.
         const Layer& layer = Layers[layerIndex];
         const double total = (1.0 - std::pow(layer.gain, static_cast<double>(layer.last - layer.first))) / (1.0 - layer.gain);
-        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first))) + layer.offset;
+        const double scale = FrequencyScale(*this, layer.scale);
+        Math::Vector3d p = direction * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * scale) + layer.offset;
         Math::Vector3d warp{};
-        double amplitude = amount / total;
+        double amplitude = amount / (total * scale);
         for (std::uint32_t k = layer.first; k < layer.last; ++k) {
             warp += Tangent(Noise(p, true).gradient, direction) * amplitude;
             amplitude *= layer.gain;
@@ -574,7 +596,7 @@ namespace Flux::Planetology {
         };
         const auto layerTail = [&](LayerIndex index) {
             const Layer& layer = Layers[index];
-            const std::uint32_t shift = layer.shifted ? m_shift : 0u;
+            const std::uint32_t shift = OctaveShift(*this, layer.scale);
             return tail(layer.first, layer.last, layer.gain, octaves > shift ? octaves - shift : 0u);
         };
         const double omitted = 0.6 * layerTail(Continents) + MountainWeight * PeakHeight * layerTail(PeakField) + HillWeight * layerTail(Hills)
@@ -760,7 +782,7 @@ namespace Flux::Planetology {
         inputs.axisN = float4(f.normal, R);
         inputs.axisS = float4(f.s, terrain.GetRelief());
         inputs.axisT = float4(f.t, depth);
-        inputs.options = {octaves, key.level > 0 ? terrain.GetOctaves(key.level - 1u) : octaves, key.level, terrain.GetScaleShift()};
+        inputs.options = {octaves, key.level > 0 ? terrain.GetOctaves(key.level - 1u) : octaves, key.level, terrain.GetScaleShift() | terrain.GetZoneShift() << 16};
         const WetnessLayout wetness = GetWetnessLayout(terrain, key.level);
         inputs.wetness = {wetness.octaves, wetness.side, std::bit_cast<std::uint32_t>(wetness.fade), 0};
         for (std::uint32_t i = 0; i < TileGpuInputs::Columns; ++i) {
@@ -777,7 +799,7 @@ namespace Flux::Planetology {
             const bool small = index == PeakField || index == Hills;
             const bool large = index == Continents || index == MountainZone || index == HillZone || index == GullyField;
             const Math::Vector3d& point = small ? warped.small : large ? warped.large : dc;
-            const double scale = layer.scaled ? terrain.GetScale() : 1.0;
+            const double scale = FrequencyScale(terrain, layer.scale);
             Math::Vector3d p = point * (BaseFrequency * std::ldexp(1.0, static_cast<int>(layer.first)) * scale) + layer.offset;
             for (std::uint32_t k = layer.first; k < layer.last; ++k, ++octave) {
                 const Math::Vector3d cell{std::floor(p.x), std::floor(p.y), std::floor(p.z)};

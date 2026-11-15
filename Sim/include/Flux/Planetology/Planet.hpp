@@ -104,6 +104,10 @@ namespace Flux::Planetology {
         // qu'elle décale (log2 arrondi au-dessus).
         double GetScale() const { return m_scale; }
         std::uint32_t GetScaleShift() const { return m_shift; }
+        // De même pour les couches qui gardent leur taille en mètres sur les grandes planètes (zones des montagnes et
+        // des collines, déformations, détail) : 1 jusqu'à 200 km de rayon.
+        double GetZoneScale() const { return m_zoneScale; }
+        std::uint32_t GetZoneShift() const { return m_zoneShift; }
 
         private:
         // Bruit de Perlin et, si demandée, sa pente (par rapport à p ; nulle sinon).
@@ -129,6 +133,8 @@ namespace Flux::Planetology {
         std::uint32_t m_maxLevel;
         double m_scale = 1.0;
         std::uint32_t m_shift = 0;
+        double m_zoneScale = 1.0;
+        std::uint32_t m_zoneShift = 0;
         std::array<std::uint8_t, 512> m_permutation{};
     };
 
@@ -193,7 +199,7 @@ namespace Flux::Planetology {
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
-        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : GetScaleShift
+        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : GetScaleShift | GetZoneShift << 16
         // Humidité du relief (GetWetnessLayout) : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu
         // (bits d'un float).
         std::array<std::uint32_t, 4> wetness{};

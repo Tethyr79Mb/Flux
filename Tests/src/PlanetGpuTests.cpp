@@ -255,6 +255,7 @@ bool RunPlanetGpuTests() {
     const Planetology::Terrain large(200000.0, 4500.0, 7, 20000.0);
     const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0);
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
+    CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
     std::vector<Case> cases;
     for (const Planetology::Terrain* terrain : {&small, &large, &earth}) {
         const std::uint32_t max = terrain->GetMaxLevel();

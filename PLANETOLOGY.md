@@ -26,7 +26,9 @@ Ordre conseillé des réglages, du plus grand au plus fin :
 2. **Largeur des montagnes.** Elle fixe l'écart entre deux grands sommets voisins, environ un sixième de la largeur (8 km
    pour 50 km par défaut). Elle ne dépend pas
    du rayon : une grande planète a plus de chaînes, pas des chaînes plus larges. Sur une planète trop petite pour
-   cette largeur, les montagnes restent à la taille que permet le rayon.
+   cette largeur, les montagnes restent à la taille que permet le rayon. Les zones de montagnes et de collines, les
+   déformations et le détail gardent aussi leur taille en kilomètres au-delà de 200 km de rayon (`ZoneRadius`) :
+   seuls les continents grandissent avec la planète.
 3. **Relief.** C'est la hauteur des plus hauts sommets au-dessus du niveau zéro (et la profondeur des creux). **La
    raideur dépend du rapport relief / largeur.** Repères :
    - 2000 à 3000 m pour 50 km : montagnes franches, versants de 20 à 30° ;
@@ -129,20 +131,21 @@ de la précédente et une amplitude plus faible (gain).
 | Couche | Rôle | Octaves | Taille |
 |---|---|---|---|
 | Continents | terres et bassins | 0 à 4 | planète |
-| Zone de montagnes | où passent les chaînes | 1 à 2 | planète |
-| Zone de collines | où sont les collines | 2 à 4 | planète |
+| Zone de montagnes | où passent les chaînes | 1 à 2 | zone |
+| Zone de collines | où sont les collines | 2 à 4 | zone |
 | Sommets | grands sommets, puis sommets secondaires (deux réseaux) | 2 à 3 | largeur des montagnes |
 | Collines | bosses moyennes | 4 à 8 | largeur des montagnes |
-| Détail | rochers, bosses fines (gain 0,58) | 6 à 21 | planète |
-| Grande déformation | tord continents et zones | 0 à 2 | planète |
-| Petite déformation | tord les collines | 3 à 5 | planète |
+| Détail | rochers, bosses fines (gain 0,58) | 6 à 21 | zone |
+| Grande déformation | tord continents et zones | 0 à 2 | zone |
+| Petite déformation | tord les collines | 3 à 5 | zone |
 | Ravines | sillons dans le sens de la pente, en arbre | 3 à 6 | largeur des montagnes |
 
 Une tuile ne calcule que les octaves plus grandes que deux fois l'écart de ses sommets (`Terrain::GetOctaves`). Les
 plus fines ne se verraient pas et coûteraient cher. Une octave ne dépend que des plus grandes, si bien qu'une tuile
 grossière garde la forme de ses enfants. Les couches « à la largeur des montagnes » (sommets, ravines et collines) ont une fréquence multipliée par
-`Terrain::GetScale` et perdent leurs octaves `GetScaleShift` niveaux plus tôt. Les zones restent à l'échelle de la
-planète : chaque chaîne est large et porte de nombreux sommets.
+`Terrain::GetScale` et perdent leurs octaves `GetScaleShift` niveaux plus tôt. Les couches « zone » suivent le rayon
+jusqu'à 200 km, puis gardent cette taille (`GetZoneScale`, `GetZoneShift` ; la déformation pousse d'autant moins loin
+en radians) : chaque chaîne reste large et porte de nombreux sommets, et les plaines ne s'étirent pas avec le rayon.
 
 ### La formule, pas à pas (`Terrain::GetHeight`)
 
@@ -211,6 +214,10 @@ Défauts déjà rencontrés :
 - **Des plaines où l'on ne peut pas se poser** (2026-10-19). Le détail fin suivait aussi la largeur des montagnes :
   plus fin à la même hauteur, il était quatre fois plus raide, et aucune plaine ne restait sous 5° de pente. Le détail
   est revenu à l'échelle de la planète ; `PlanetTests` vérifie qu'une terre sur deux reste une plaine.
+- **De très grandes plaines vides** (2026-11-15, vu par Bruno à 300 km de rayon contre 200 km). Les zones, la
+  déformation et le détail suivaient le rayon : plaines de 30 km en moyenne à 200 km de rayon, 46 km à 300 km, 300 km
+  sur une planète de 2000 km, et plus lisses. Ils gardent maintenant la taille qu'ils ont à 200 km (35 à 38 km de
+  plaine en moyenne jusqu'à 2000 km) ; une planète de 200 km ou moins ne change pas. `PlanetTests` le vérifie.
 - **Des racines au lieu de montagnes** (2026-10-19, vu par Bruno au sol et d'orbite). Les crêtes `1 - |bruit|`
   suivent les lignes où le bruit de Perlin passe par zéro : des boucles fines, toutes de la même hauteur, avec du plat
   entre elles. Ni le « ridged multifractal » de Musgrave ni d'autres puissances n'y changeaient rien. Remplacées par
@@ -255,7 +262,8 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
 - ✅ 1. Bruit avec sa pente exacte (fondation des étapes suivantes).
 - ✅ 2. Érosion analytique.
 - ✅ 3. Déformation du domaine : côtes découpées, chaînes allongées.
-- 🔧 Largeur des montagnes en mètres, indépendante du rayon. Limites : quelques sommets un peu plats, et les tuiles
+- 🔧 Largeur des montagnes en mètres, indépendante du rayon ; zones, déformations et détail aussi au-delà de 200 km.
+  Limites : la taille des zones est fixe (pas de réglage par planète) ; quelques sommets un peu plats, et les tuiles
   lointaines ne sont pas plus fines alors que le terrain est plus raide.
 - 🔧 4. Vraies montagnes : sommets placés un par un, aux versants de pentes différentes et aux contreforts, vallées
   d'altitude entre eux, ravines en arbre (bruit d'érosion). Limites : contreforts encore réguliers (quatre par
