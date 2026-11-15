@@ -233,9 +233,12 @@ namespace Flux {
         float radius = 60000.0f; // m, au niveau zéro du relief
         float relief = 800.0f;   // m, hauteur des plus hautes montagnes (et profondeur des creux)
         // m, écart entre les grandes crêtes : les montagnes et les collines gardent cette taille quel que soit le rayon
-        // (sinon elles grandiraient avec lui). Une planète trop petite pour elles les garde à sa mesure. Leurs zones et le
-        // détail gardent la taille qu'ils ont à 200 km de rayon (Terrain, ZoneRadius).
+        // (sinon elles grandiraient avec lui). Une planète trop petite pour elles les garde à sa mesure.
         float mountainWidth = 50000.0f;
+        // m, écart entre deux chaînes de montagnes : les zones de montagnes et de collines, ce qui les tord et le détail
+        // des plaines gardent cette taille quel que soit le rayon. Plus petit : chaînes plus serrées, moins de plaines.
+        // Par défaut, la taille qu'ils ont naturellement à 200 km de rayon (relief réglé sur la scène Gameplay).
+        float zoneWidth = 420000.0f;
         std::int32_t seed = 1;
         // Sol, choisi au pixel (shaders/Mesh.slang, fragmentPlanet) : roche dans les pentes (color, roughness), plage
         // de sable jusqu'à beachHeight mètres au-dessus du niveau de la mer (elle suit la mer), neige au-dessus de

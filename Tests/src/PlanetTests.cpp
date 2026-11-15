@@ -55,9 +55,10 @@ bool RunPlanetTests() {
     CHECK(earth.GetOctaves(0) < earth.GetOctaves(10) && earth.GetOctaves(10) <= earth.GetOctaves(18));
 
     // Les plaines (entre les zones de collines et de montagnes) gardent leur largeur en kilomètres sur une grande
-    // planète : elles grandissaient avec le rayon (30 km en moyenne à 200 km de rayon, 92 km à 600 km).
+    // planète (largeur des zones) : elles grandissaient avec le rayon (30 km en moyenne à 200 km de rayon, 92 km à
+    // 600 km).
     const auto plainWidth = [](double radius) {
-        const Planetology::Terrain planet(radius, 2500.0, 1, 50000.0);
+        const Planetology::Terrain planet(radius, 2500.0, 1, 50000.0, PlanetComponent{}.zoneWidth);
         double total = 0.0;
         int count = 0;
         for (int circle = 0; circle < 5; ++circle) {
@@ -82,7 +83,11 @@ bool RunPlanetTests() {
     const double plainsSmall = plainWidth(200000.0);
     const double plainsLarge = plainWidth(600000.0);
     CHECK(plainsSmall > 10.0 && plainsLarge < 1.4 * plainsSmall && plainsLarge > 0.7 * plainsSmall);
-    CHECK(Planetology::Terrain(200000.0, 2500.0, 1).GetZoneShift() == 0 && earth.GetZoneShift() == 5);
+    // Largeur des zones par défaut : rien ne change jusqu'à 200 km de rayon ; sur une Terre, zones décalées de 5 octaves.
+    const double zoneWidth = PlanetComponent{}.zoneWidth;
+    CHECK(Planetology::Terrain(200000.0, 2500.0, 1, 50000.0, zoneWidth).GetZoneScale() == 1.0);
+    CHECK(Planetology::Terrain(6.0e6, 8000.0, 1, 50000.0, zoneWidth).GetZoneShift() == 5);
+    CHECK(Planetology::Terrain(6.0e6, 8000.0, 1).GetZoneShift() == 0); // 0 : à l'échelle du rayon
 
     // Deux tuiles voisines d'une même face : bords confondus, normales égales (calculées avec une rangée de plus).
     Planetology::TileMesh left;

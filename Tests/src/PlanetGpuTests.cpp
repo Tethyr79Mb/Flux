@@ -35,7 +35,7 @@ namespace {
         }
         Planetology::PlanetRenderer& renderer = **created;
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
-        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth, planet.zoneWidth);
         // Pas au centre de la face : c'est le coin commun de quatre tuiles à tous les niveaux.
         const Math::Vector3d up = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
         const double ground = planet.radius + terrain.GetHeight(up, terrain.GetOctaves(terrain.GetMaxLevel()));
@@ -99,7 +99,7 @@ namespace {
     // l'arrêt. Sans vitesse (images à plus d'une demi-seconde d'écart), rien d'avance.
     bool CheckMovingCamera(RHI::Device& device) {
         const PlanetComponent planet{.radius = 60000.0f, .relief = 800.0f, .seed = 5};
-        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+        const Planetology::Terrain terrain(planet.radius, planet.relief, planet.seed, planet.mountainWidth, planet.zoneWidth);
         const Math::Vector3d start = Math::Normalize(Math::Vector3d{0.13, 1.0, 0.07});
         const Math::Vector3d east = Math::Normalize(Math::Cross(start, Math::Vector3d{0.0, 0.0, 1.0}));
         const double altitude = planet.radius + terrain.GetHeight(start, terrain.GetOctaves(terrain.GetMaxLevel())) + 300.0;
@@ -252,8 +252,8 @@ bool RunPlanetGpuTests() {
     // et une de la taille de la Terre (décalées de 9) ; à chacune une racine, une tuile moyenne et une tuile du niveau
     // le plus fin, ailleurs sur une autre face.
     const Planetology::Terrain small(60000.0, 800.0, 5);
-    const Planetology::Terrain large(200000.0, 4500.0, 7, 20000.0);
-    const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0);
+    const Planetology::Terrain large(200000.0, 4500.0, 7, 20000.0, 420000.0);
+    const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0, 420000.0);
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
     CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
     std::vector<Case> cases;

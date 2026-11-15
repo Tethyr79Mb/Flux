@@ -69,8 +69,10 @@ namespace Flux::Planetology {
         public:
         Terrain() : Terrain(1000.0, 0.0, 1) {}
         // mountainWidth : largeur des montagnes en mètres (deux sommets voisins sont à environ largeur / 6), 0 : à l'échelle du rayon
-        // (environ un rayon).
-        Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0);
+        // (environ un rayon). zoneWidth : écart en mètres entre deux chaînes de montagnes (taille des zones de montagnes et
+        // de collines, des déformations et du détail), 0 : à l'échelle du rayon (environ 2 rayons). Comme pour les
+        // montagnes, une planète trop petite garde ses zones à sa mesure.
+        Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0, double zoneWidth = 0.0);
 
         double GetRadius() const { return m_radius; }
         double GetRelief() const { return m_relief; }
@@ -105,7 +107,7 @@ namespace Flux::Planetology {
         double GetScale() const { return m_scale; }
         std::uint32_t GetScaleShift() const { return m_shift; }
         // De même pour les couches qui gardent leur taille en mètres sur les grandes planètes (zones des montagnes et
-        // des collines, déformations, détail) : 1 jusqu'à 200 km de rayon.
+        // des collines, déformations, détail ; voir zoneWidth).
         double GetZoneScale() const { return m_zoneScale; }
         std::uint32_t GetZoneShift() const { return m_zoneShift; }
 

@@ -334,13 +334,14 @@ namespace Flux::Planetology {
             }
             PlanetState& state = m_planets[entity];
             if (!state.terrain || planet.radius != state.radius || planet.relief != state.relief || planet.seed != state.seed
-                || planet.mountainWidth != state.mountainWidth) {
+                || planet.mountainWidth != state.mountainWidth || planet.zoneWidth != state.zoneWidth) {
                 RemoveTiles(system, state);
-                state.terrain = std::make_shared<const Terrain>(planet.radius, planet.relief, planet.seed, planet.mountainWidth);
+                state.terrain = std::make_shared<const Terrain>(planet.radius, planet.relief, planet.seed, planet.mountainWidth, planet.zoneWidth);
                 state.radius = planet.radius;
                 state.relief = planet.relief;
                 state.seed = planet.seed;
                 state.mountainWidth = planet.mountainWidth;
+                state.zoneWidth = planet.zoneWidth;
             }
             const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);

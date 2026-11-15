@@ -114,7 +114,7 @@ namespace Flux::Planetology {
 
         // Échelle d'une couche du relief :
         // - Planet : suit le rayon (les continents : quelques-uns par planète, quelle que soit sa taille) ;
-        // - Zone : garde sa taille en mètres au-delà de ZoneRadius (Terrain::m_zoneScale) : zones des montagnes et des
+        // - Zone : garde sa taille en mètres (largeur des zones, Terrain::m_zoneScale) : zones des montagnes et des
         //   collines, déformations et détail. À l'échelle du rayon, une planète de 300 km avait des plaines 1,5 fois plus
         //   larges et plus lisses qu'une de 200 km, et une Terre des plaines de plusieurs milliers de kilomètres. Pas à
         //   la largeur des montagnes : des zones aussi fines faisaient de minces bandes sinueuses, des « racines » vues
@@ -123,10 +123,6 @@ namespace Flux::Planetology {
         //   sommets, comme un vrai massif ;
         // - Mountain : suit la largeur des montagnes (Terrain::m_scale) : sommets, collines et ravines.
         enum class LayerScale : std::uint8_t { Planet, Zone, Mountain };
-        // Rayon de planète (m) jusqu'où les couches Zone suivent le rayon : celui des planètes dont le relief a été
-        // réglé (scène Gameplay). Au-delà, elles gardent la taille qu'elles ont à ce rayon ; en deçà, la planète les
-        // garde à sa mesure.
-        constexpr double ZoneRadius = 200000.0;
 
         // Couches du relief (voir GetHeight), dans l'ordre de TileGpuInputs::cells et de shaders/PlanetTile.slang.
         struct Layer
@@ -252,14 +248,17 @@ namespace Flux::Planetology {
         t = std::atan(Math::Dot(onCube, f.t)) / QuarterPi;
     }
 
-    Terrain::Terrain(double radius, double relief, std::int32_t seed, double mountainWidth)
+    Terrain::Terrain(double radius, double relief, std::int32_t seed, double mountainWidth, double zoneWidth)
         : m_radius(std::max(radius, 1.0)), m_relief(std::max(relief, 0.0)) {
         // Largeur des montagnes : la longueur d'onde du réseau des sommets (2π mailles), qui fait sinon environ un rayon.
         // Seulement plus fines : sur une petite planète, elles gardent la taille que permet son rayon.
         const double natural = m_radius * 2.0 * std::numbers::pi / (BaseFrequency * std::ldexp(1.0, static_cast<int>(Layers[PeakField].first)));
         m_scale = mountainWidth > 0.0 ? std::clamp(natural / mountainWidth, 1.0, 65536.0) : 1.0;
         m_shift = static_cast<std::uint32_t>(std::ceil(std::log2(m_scale) - 1e-9));
-        m_zoneScale = std::clamp(m_radius / ZoneRadius, 1.0, 65536.0);
+        // Largeur des zones : la longueur d'onde du bruit des chaînes (2πR / 3, 419 km à 200 km de rayon), de même
+        // seulement plus fine.
+        const double zones = m_radius * 2.0 * std::numbers::pi / (BaseFrequency * std::ldexp(1.0, static_cast<int>(Layers[MountainZone].first)));
+        m_zoneScale = zoneWidth > 0.0 ? std::clamp(zones / zoneWidth, 1.0, 65536.0) : 1.0;
         m_zoneShift = static_cast<std::uint32_t>(std::ceil(std::log2(m_zoneScale) - 1e-9));
         // Environ 1,5 m entre deux sommets au niveau le plus fin.
         const double faceEdge = 0.5 * std::numbers::pi * m_radius;
