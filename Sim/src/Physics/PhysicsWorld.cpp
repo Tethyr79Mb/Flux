@@ -825,8 +825,10 @@ namespace Flux {
                         ship.angularVelocity = {};
                         if (falls) {
                             // Posé sans pilote : freins serrés. Il ne glisse pas sur une pente avec la vitesse de sa
-                            // chute (sans frottement, il partirait à l'infini).
+                            // chute (sans frottement, il partirait à l'infini). Et il descend sur le sol (1 mm près) :
+                            // sinon il restait en l'air de ce qui le séparait du sol à cette image (jusqu'à 15 cm).
                             ship.velocity = {};
+                            lift += down * std::max(0.0f, 0.15f * fraction - 0.001f);
                         }
                     } else if (falls) {
                         const float delta = static_cast<float>(deltaSeconds);
