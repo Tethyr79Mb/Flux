@@ -4,6 +4,7 @@
 #include "Flux/Core/Log.hpp"
 #include "Flux/Graphics/Camera.hpp"
 #include "Flux/Platform/Filesystem.hpp"
+#include "Flux/Planetology/Atmosphere.hpp"
 #include "Planetology/PlanetRenderer.hpp"
 #include "Scene/Photometry.hpp"
 
@@ -255,11 +256,44 @@ namespace Flux {
         return result;
     }
 
+    float SkyRenderer::GetSpaceWeight(const Scene& scene, const Camera& camera) {
+        // Comme AtmosphereNightSky (shaders/Atmosphere.slang) : 0 au sol, 1 au haut de l'air, fondu entre les deux.
+        float inAir = 0.0f;
+        for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
+            if (scene.GetShip(entity) != NullEntity) {
+                continue; // une planète dans un vaisseau : un décor
+            }
+            const Planetology::AtmosphereParameters air = Planetology::MakeAtmosphereParameters(planet);
+            if (air.top <= air.radius) {
+                continue;
+            }
+            const double distance = Math::Length(Math::Delta(camera.position, scene.GetWorldPosition(entity)));
+            inAir = std::max(inAir, static_cast<float>(std::clamp((air.top - distance) / (air.top - air.radius), 0.0, 1.0)));
+        }
+        return 1.0f - inAir;
+    }
+
     Exposure::Settings SkyRenderer::GetExposureSettings(const Scene& scene, const Camera& camera) {
         for (const auto [entity, sky] : scene.GetRegistry().view<const SkyComponent>().each()) {
             // Dans un Intérieur, ses bornes remplacent celles du Ciel (fondues près de ses bords).
             const InteriorExposure interior = GetInteriorExposure(scene, camera);
-            const float minEv = std::lerp(sky.minEv100, interior.minEv100, interior.weight);
+            float skyMinEv = sky.minEv100;
+            // Dans l'espace, l'œil reste réglé sur le soleil. Sans ce plancher, une vue où rien n'est au soleil (côté nuit
+            // d'une planète) n'était éclairée que par la lumière ambiante du ciel, triche voulue pour déboucher les
+            // ombres (Prepare), et l'exposition la remontait jusqu'à l'aspect du plein jour (EV100 8 au lieu de 15).
+            // Au sol, la nuit, l'œil s'habitue encore jusqu'à minEv100.
+            float sunLux = sky.sunIlluminance;
+            for (const auto [sunEntity, sun] : scene.GetRegistry().view<const SunComponent>().each()) {
+                sunLux = sun.illuminance; // comme Prepare : le premier Soleil posé
+                break;
+            }
+            if (sunLux > 0.0f) {
+                // EV100 où le gris moyen (18 %) au soleil est au gris moyen de l'image (L x 100 / 12,5, Lagarde 2014).
+                const float sunEv = std::log2(sunLux * 0.18f / std::numbers::pi_v<float> * 8.0f);
+                const float spaceMinEv = std::max(sky.minEv100, sunEv - std::max(sky.spaceAdaptation, 0.0f));
+                skyMinEv = std::lerp(sky.minEv100, spaceMinEv, GetSpaceWeight(scene, camera));
+            }
+            const float minEv = std::lerp(skyMinEv, interior.minEv100, interior.weight);
             const float maxEv = std::max(std::lerp(sky.maxEv100, interior.maxEv100, interior.weight), minEv);
             // La scène la plus claire donne l'exposition la plus basse.
             return {.automatic = sky.autoExposure, .compensation = sky.exposure + interior.compensation,

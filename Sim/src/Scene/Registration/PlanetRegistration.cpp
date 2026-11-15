@@ -51,7 +51,9 @@ namespace Flux {
             .RemovedField("exposureMin")
             .RemovedField("exposureMax")
             .Field("adaptationSpeed", "Exposition : vitesse d'adaptation", &SkyComponent::adaptationSpeed,
-                   {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2});
+                   {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2})
+            .Field("spaceAdaptation", "Exposition : nuit dans l'espace (stops sous le soleil)", &SkyComponent::spaceAdaptation,
+                   {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 1});
         registry.Register<WorldComponent>("world", "Monde")
             .Field("gravity", "Gravité (m/s²)", &WorldComponent::gravity,
                    {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
