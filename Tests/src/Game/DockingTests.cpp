@@ -255,6 +255,8 @@ namespace {
         scene.Get<TransformComponent>(floor).scale = {60.0f, 1.0f, 60.0f};
         scene.Add<ColliderComponent>(floor);
         const Entity fighter = AddFighter(scene, "Chasseur", {0.0, 5.0, 0.0});
+        // Porté par ses moteurs, comme avec un pilote : sans, il tomberait sur le sol du hangar et y serrerait ses freins.
+        scene.Get<ShipComponent>(fighter).fallsWithoutPilot = false;
         scene.Add<WarpDriveComponent>(fighter);
         scene.SetParent(fighter, station);
         scene.Get<TransformComponent>(fighter).position = {0.0, 5.0, 0.0};

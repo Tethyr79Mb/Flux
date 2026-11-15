@@ -126,6 +126,31 @@ namespace {
         return true;
     }
 
+    // Chasseur garé dans le hangar d'une station penchée de 30° sur la gravité du dehors : son « dehors » est le pont
+    // de la station (l'aide au pilotage et la caméra le suivent), pas la planète. Sinon, assis aux commandes, le
+    // chasseur roulait sur lui-même et la station semblait s'incliner.
+    bool RunCarriedOutsideGravityTests() {
+        Scene scene;
+        const Entity station = scene.CreateEntity("Station");
+        scene.Add<ShipComponent>(station).fallsWithoutPilot = false;
+        scene.Get<TransformComponent>(station).rotation =
+            Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, std::numbers::pi_v<float> / 6.0f);
+        const Entity fighter = scene.CreateEntity("Chasseur");
+        scene.Add<ShipComponent>(fighter);
+        scene.SetParent(fighter, station);
+
+        PhysicsWorld world;
+        Run(world, scene, 0.1);
+        const Math::Vector3f deck = scene.GetWorldRotation(station).Rotate(Math::Vector3f{0.0f, -9.81f, 0.0f});
+        CHECK(Math::Length(world.GetOutsideGravity(scene, fighter) - deck) < 1.0e-3f);
+        // La station elle-même garde la gravité du monde.
+        CHECK(Math::Length(world.GetOutsideGravity(scene, station) - Math::Vector3f{0.0f, -9.81f, 0.0f}) < 1.0e-3f);
+        // Pont en apesanteur : pas de verticale, l'aide au pilotage ne redresse rien.
+        scene.Get<ShipComponent>(station).gravity = 0.0f;
+        CHECK(Math::Length(world.GetOutsideGravity(scene, fighter)) < 1.0e-6f);
+        return true;
+    }
+
     // Réglages absurdes (tailles nulles, rotation nulle, rebond parfait) : la simulation reste finie.
     bool RunDegenerateTests() {
         Scene scene;
@@ -935,6 +960,38 @@ namespace {
         CHECK(std::abs(scene.Get<TransformComponent>(falling).position.y - 1.0) < 0.05 && scene.Get<ShipComponent>(falling).grounded);
         CHECK(scene.Get<TransformComponent>(station).position.y == 20.0);
 
+        // Garé un peu haut dans le hangar d'une station penchée (enfant de la station, sans amarrage) : il tombe sur le
+        // pont, s'y pose, et ne tourne plus au manche (avant, sans collision, il tournait sur place dès qu'on
+        // s'asseyait aux commandes et la station semblait s'incliner).
+        Scene hangar;
+        const Entity carrier = hangar.CreateEntity("Porte-vaisseaux");
+        TransformComponent& carrierTransform = hangar.Get<TransformComponent>(carrier);
+        carrierTransform.position = {0.0, 50.0, 0.0};
+        carrierTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, std::numbers::pi_v<float> / 6.0f);
+        hangar.Add<ShipComponent>(carrier).fallsWithoutPilot = false;
+        const Entity deck = hangar.CreateEntity("Pont", carrier);
+        TransformComponent& deckTransform = hangar.Get<TransformComponent>(deck);
+        deckTransform.position = {0.0, -0.1, 0.0};
+        deckTransform.scale = {60.0f, 0.2f, 60.0f};
+        hangar.Add<ColliderComponent>(deck);
+        const Entity parked = hangar.CreateEntity("Garé", carrier);
+        hangar.Get<TransformComponent>(parked).position = {0.0, 3.0, 0.0};
+        hangar.Add<ShipComponent>(parked);
+        const Entity parkedHull = hangar.CreateEntity("Coque", parked);
+        hangar.Get<TransformComponent>(parkedHull).scale = {4.0f, 2.0f, 6.0f};
+        hangar.Add<ColliderComponent>(parkedHull);
+        PhysicsWorld hangarWorld;
+        Run(hangarWorld, hangar, 3.0);
+        const TransformComponent& parkedTransform = hangar.Get<TransformComponent>(parked);
+        CHECK(std::abs(parkedTransform.position.y - 1.0) < 0.05 && hangar.Get<ShipComponent>(parked).grounded);
+        const Math::Quaternionf parkedRotation = parkedTransform.rotation;
+        for (int frame = 0; frame < 60; ++frame) {
+            Ships::Update(hangar, parked, Frame, ShipInput{.roll = 1.0f, .stickYaw = 1.0f, .stickPitch = 1.0f});
+            hangarWorld.Update(hangar, Frame, {});
+        }
+        CHECK(std::abs(Math::Dot(parkedTransform.rotation, parkedRotation)) > 0.99999f);
+        CHECK(carrierTransform.position.y == 50.0);
+
         // Une planète dans la scène : sa gravité s'arrête à deux rayons de son centre ; au-delà, l'espace.
         Scene space;
         const Entity planet = space.CreateEntity("Planète");
@@ -1287,5 +1344,5 @@ bool RunPhysicsTests() {
     return RunFallTests() && RunDegenerateTests() && RunCharacterTests() && RunSlopeTests() && RunTwoCharactersTests() && RunShipTests()
         && RunBoardingTests() && RunCameraTests() && RunSeatTests() && RunSeatBoardingTests() && RunMeshTests()
         && RunShipCollisionTests() && RunShipFallTests() && RunShipRestingTests() && RunPlanetSurfaceTests() && RunPlanetRampTests()
-        && RunFarPlanetTests() && RunPlanetTreeTests() && RunWorldTests();
+        && RunFarPlanetTests() && RunPlanetTreeTests() && RunWorldTests() && RunCarriedOutsideGravityTests();
 }
