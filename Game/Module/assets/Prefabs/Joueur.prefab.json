@@ -1,0 +1,44 @@
+{
+  "format": "flux.prefab",
+  "version": 2,
+  "entities": [
+    {
+      "id": "420e44d849dee759",
+      "name": "Joueur",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "models/Personnage-Anime (2).glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": false,
+        "metallic": 1.0,
+        "roughness": 0.3,
+        "farModel": "",
+        "farDistance": 2000.0
+      },
+      "character": {
+        "radius": 0.3,
+        "height": 1.8,
+        "walkSpeed": 2.0,
+        "runSpeed": 5.0,
+        "jumpSpeed": 4.5,
+        "acceleration": 10.0,
+        "player": true
+      },
+      "animator": {
+        "animation": "Marche",
+        "idleAnimation": "Repos",
+        "runAnimation": "Course",
+        "airAnimation": "Chute",
+        "sitDownAnimation": "S'asseoir",
+        "seatedAnimation": "Assis",
+        "standUpAnimation": "Se lever",
+        "speed": 1.0,
+        "loop": true
+      }
+    }
+  ]
+}

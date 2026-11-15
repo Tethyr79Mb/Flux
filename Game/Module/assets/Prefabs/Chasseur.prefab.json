@@ -1,0 +1,135 @@
+{
+  "format": "flux.prefab",
+  "version": 2,
+  "entities": [
+    {
+      "id": "09677a776eca2dfa",
+      "name": "Chasseur",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "rimLight": {
+        "color": [0.45, 0.7, 1.0, 1.0],
+        "intensity": 1.0,
+        "sharpness": 4.0
+      },
+      "thruster": {
+        "color": [0.25, 0.5, 1.0, 1.0],
+        "width": 2.3,
+        "height": 0.8,
+        "length": 7.0,
+        "intensity": 1.0,
+        "idle": 0.15,
+        "light": 8.0
+      },
+      "ship": {
+        "gravity": 9.81,
+        "velocity": [0.0, 0.0, 0.0],
+        "angularVelocity": [0.0, 0.0, 0.0],
+        "maxSpeed": 100000.0,
+        "acceleration": 500.0,
+        "turnRate": 60.0,
+        "turnAcceleration": 360.0,
+        "strafeSpeed": 10.0,
+        "levelAssist": true,
+        "levelRate": 1.5,
+        "airGrip": 2.0,
+        "boost": 2.0,
+        "travelFactor": 10.0,
+        "travelSpoolTime": 3.0
+      }
+    },
+    {
+      "id": "89f1c08786a5ccf1",
+      "name": "Coque",
+      "parent": "09677a776eca2dfa",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": {
+        "model": "Modeles/Chasseur/Chasseur.glb",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "overrideMaterial": true,
+        "metallic": 0.6,
+        "roughness": 0.3
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Chasseur/Chasseur-collision.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "42f2622c96fb3214",
+      "name": "Verrière",
+      "parent": "09677a776eca2dfa",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "collider": {
+        "shape": "mesh",
+        "size": [1.0, 1.0, 1.0],
+        "radius": 0.5,
+        "height": 2.0,
+        "center": [0.0, 0.0, 0.0],
+        "mesh": "Modeles/Chasseur/Chasseur-verriere.glb",
+        "simulatePhysics": false,
+        "cameraOnly": false,
+        "mass": 0.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "gravityFactor": 1.0
+      }
+    },
+    {
+      "id": "58f6e303e4d1cdc3",
+      "name": "Poste de pilotage",
+      "parent": "09677a776eca2dfa",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "seat": {
+        "pilot": true,
+        "eye": [0.0, 1.15, 0.2],
+        "exit": [-3.5, -2.3, 1.4],
+        "reach": 10.0
+      }
+    },
+    {
+      "id": "3308db668f1625b0",
+      "name": "Reacteur",
+      "parent": "09677a776eca2dfa",
+      "transform": {
+        "position": [43.64219830030018, 10.390963520464494, 50.73629566912103],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "thruster": {
+        "color": [0.25, 0.5, 1.0, 1.0],
+        "width": 2.3,
+        "height": 0.8,
+        "length": 7.0,
+        "intensity": 1.0,
+        "idle": 0.15,
+        "light": 8.0
+      }
+    }
+  ]
+}
