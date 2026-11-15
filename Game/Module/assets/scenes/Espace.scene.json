@@ -1,7 +1,7 @@
 {
   "format": "flux.scene",
   "version": 2,
-  "engine": 87,
+  "engine": 90,
   "entities": [
     {
       "id": "84cf33416a14e256",
@@ -31,7 +31,8 @@
         "exposure": 0.0,
         "minEv100": 3.0,
         "maxEv100": 17.0,
-        "adaptationSpeed": 3.0
+        "adaptationSpeed": 3.0,
+        "spaceAdaptation": 3.0
       }
     },
     {
@@ -79,9 +80,10 @@
         "inclination": 0.0
       },
       "planet": {
-        "radius": 200000.0,
+        "radius": 600000.0,
         "relief": 3500.0,
         "mountainWidth": 60000.0,
+        "zoneWidth": 420000.0,
         "seed": 1,
         "color": [0.42, 0.38, 0.33, 1.0],
         "roughness": 0.9,
@@ -155,7 +157,7 @@
       "name": "Station orbitale",
       "sector": [150, 0, 0],
       "transform": {
-        "position": [-400541046.6987579, 3072.418446962826, 6321.718892468065],
+        "position": [-400813269.3, 3072.418446962826, 6321.718892468065],
         "rotation": [0.0, 0.9983474, 0.0, 0.05746769],
         "scale": [1.0, 1.0, 1.0]
       },
