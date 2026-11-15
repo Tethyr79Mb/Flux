@@ -112,6 +112,7 @@ bool RunPlayerCommandTests() {
     CHECK(held.IsDown(pilot.travel) && !Piloting::ReadShipInput(held, pilot).travel);
     SetKey(input, Key::Tab, false);
 
+    SetKey(input, Key::W, false);
     SetKey(input, Key::X, true);
     input.BeginFrame();
     read = steps(4.0);
