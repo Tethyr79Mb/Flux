@@ -33,7 +33,8 @@ namespace FluxEditor {
 
     // Outils de l'éditeur pour Claude : mesures du panneau Moteur, objets de la scène (lire, modifier, créer, dupliquer,
     // supprimer, sélectionner, annuler), composants, caméra, panneau Placer, capture d'écran, ouverture d'une scène,
-    // vues de débogage du rendu, mode Jouer et sièges (s'asseoir aux commandes sans clavier).
+    // vues de débogage du rendu, mode Jouer, sièges (s'asseoir aux commandes sans clavier), commandes du joueur tenues un
+    // temps (input) et état de vol d'un vaisseau (ship_state).
     void RegisterEditorTools(McpServer& server, EditorToolContext& context);
     // Interfaces (.fluxui) dans l'éditeur d'interface : lister, ouvrir, lire, ajouter, régler, déplacer, supprimer
     // (annulable), enregistrer (InterfaceTools.cpp).

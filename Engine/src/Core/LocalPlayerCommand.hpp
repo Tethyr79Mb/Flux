@@ -8,6 +8,7 @@
 #include "Flux/Math/WorldPosition.hpp"
 #include "Flux/Scene/PlayerCommand.hpp"
 
+#include <bitset>
 #include <cstdint>
 
 namespace Flux {
@@ -34,8 +35,22 @@ namespace Flux {
         InputActionId right = NoInputAction;
     };
 
+    // Commande ajoutée à celle du clavier et de la souris pendant quelques pas, puis relâchée seule (Engine::InjectCommand :
+    // l'outil « input » de l'éditeur pilote sans personne aux commandes).
+    struct InjectedCommand
+    {
+        std::bitset<MaxInputActions> held;    // tenues pendant steps pas, enfoncées au premier
+        std::bitset<MaxInputActions> pressed; // enfoncées au premier pas seulement (un appui)
+        bool steer = false;                   // le manche ci-dessous remplace celui de la souris
+        float stickYaw = 0.0f;
+        float stickPitch = 0.0f;
+        int steps = 0;      // pas restants
+        bool first = true;  // prochain pas : le premier
+    };
+
     // keyboardFree faux (saisie dans un champ, touche en cours de réassignation) : aucune action, la vue reste.
-    // Exportée pour les tests seulement.
+    // injected : ajoutée même clavier pris, et un de ses pas consommé. Exportée pour les tests seulement.
     FLUX_API PlayerCommand SampleLocalCommand(const Input& input, const InputActions& actions, bool keyboardFree, const LocalView& view,
-                                              const WalkActions& walk, std::uint64_t step);
+                                              const WalkActions& walk, std::uint64_t step,
+                                              InjectedCommand* injected = nullptr);
 }
