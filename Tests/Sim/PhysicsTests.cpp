@@ -960,6 +960,38 @@ namespace {
         CHECK(std::abs(scene.Get<TransformComponent>(falling).position.y - 1.0) < 0.05 && scene.Get<ShipComponent>(falling).grounded);
         CHECK(scene.Get<TransformComponent>(station).position.y == 20.0);
 
+        // Garé un peu haut dans le hangar d'une station penchée (enfant de la station, sans amarrage) : il tombe sur le
+        // pont, s'y pose, et ne tourne plus au manche (avant, sans collision, il tournait sur place dès qu'on
+        // s'asseyait aux commandes et la station semblait s'incliner).
+        Scene hangar;
+        const Entity carrier = hangar.CreateEntity("Porte-vaisseaux");
+        TransformComponent& carrierTransform = hangar.Get<TransformComponent>(carrier);
+        carrierTransform.position = {0.0, 50.0, 0.0};
+        carrierTransform.rotation = Math::Quaternionf::FromAxisAngle({0.0f, 0.0f, 1.0f}, std::numbers::pi_v<float> / 6.0f);
+        hangar.Add<ShipComponent>(carrier).fallsWithoutPilot = false;
+        const Entity deck = hangar.CreateEntity("Pont", carrier);
+        TransformComponent& deckTransform = hangar.Get<TransformComponent>(deck);
+        deckTransform.position = {0.0, -0.1, 0.0};
+        deckTransform.scale = {60.0f, 0.2f, 60.0f};
+        hangar.Add<ColliderComponent>(deck);
+        const Entity parked = hangar.CreateEntity("Garé", carrier);
+        hangar.Get<TransformComponent>(parked).position = {0.0, 3.0, 0.0};
+        hangar.Add<ShipComponent>(parked);
+        const Entity parkedHull = hangar.CreateEntity("Coque", parked);
+        hangar.Get<TransformComponent>(parkedHull).scale = {4.0f, 2.0f, 6.0f};
+        hangar.Add<ColliderComponent>(parkedHull);
+        PhysicsWorld hangarWorld;
+        Run(hangarWorld, hangar, 3.0);
+        const TransformComponent& parkedTransform = hangar.Get<TransformComponent>(parked);
+        CHECK(std::abs(parkedTransform.position.y - 1.0) < 0.05 && hangar.Get<ShipComponent>(parked).grounded);
+        const Math::Quaternionf parkedRotation = parkedTransform.rotation;
+        for (int frame = 0; frame < 60; ++frame) {
+            Ships::Update(hangar, parked, Frame, ShipInput{.roll = 1.0f, .stickYaw = 1.0f, .stickPitch = 1.0f});
+            hangarWorld.Update(hangar, Frame, {});
+        }
+        CHECK(std::abs(Math::Dot(parkedTransform.rotation, parkedRotation)) > 0.99999f);
+        CHECK(carrierTransform.position.y == 50.0);
+
         // Une planète dans la scène : sa gravité s'arrête à deux rayons de son centre ; au-delà, l'espace.
         Scene space;
         const Entity planet = space.CreateEntity("Planète");
