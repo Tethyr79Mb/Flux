@@ -30,6 +30,11 @@ namespace Flux {
         FLUX_SIM_API void Update(Scene& scene, Entity player, double deltaSeconds, const SeatInput& input,
                              const DurationsFunction& durations);
 
+        // Assoit tout de suite un personnage sur un siège libre, sans animation ni distance à respecter (outils de
+        // l'éditeur, tests) : il monte à bord du vaisseau du siège comme avec Interagir. Faux si le siège est pris.
+        FLUX_SIM_API bool Sit(Scene& scene, Entity character, Entity seat);
+        // Relève tout de suite un personnage assis (sans animation) ; il reste à bord.
+        FLUX_SIM_API void StandUp(Scene& scene, Entity character);
         // Poste de pilotage où le joueur est assis (étape Seated), NullEntity sinon.
         FLUX_SIM_API Entity GetPilotSeat(const Scene& scene, Entity player);
     }

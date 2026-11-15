@@ -196,7 +196,8 @@ int main(int argc, char** argv) {
     contentBrowser.SetVegetationPanel(&vegetationPanel);
     // Claude (Claude Code sur ce PC) branché sur l'éditeur : mesures, objets de la scène, caméra, captures.
     FluxEditor::EditorToolContext toolContext{.engine = engine, .sceneEditor = sceneEditor, .history = history,
-                                              .prefabs = &contentBrowser.GetPrefabs(), .document = &document};
+                                              .prefabs = &contentBrowser.GetPrefabs(), .document = &document,
+                                              .playMode = &playMode};
     FluxEditor::McpServer mcp;
     FluxEditor::RegisterEditorTools(mcp, toolContext);
     FluxEditor::RegisterInterfaceTools(mcp, toolContext, interfaceEditor);
