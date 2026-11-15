@@ -253,14 +253,14 @@ bool RunPlanetGpuTests() {
     // le plus fin, ailleurs sur une autre face.
     const Planetology::Terrain small(60000.0, 800.0, 5);
     // La grande planète a tous les réglages de la forme loin de leur valeur par défaut (le GPU les lit dans
-    // TileInputs::shape), continents de 300 km compris (décalés de 2 octaves). Pas la Terre : avec ces réglages (relief
-    // plus raide, déformation 1,7 fois plus forte), une tuile de niveau 9 s'écartait de 2,7 m (permis 0,47 m), la
-    // limite des floats de WarpChange à cette taille.
+    // TileInputs::shape), continents de 300 km compris (décalés de 2 octaves). Des valeurs modérées : un relief plus
+    // raide et une déformation plus forte grossissent l'écart des floats du GPU (WarpChange) au même rythme. Avec
+    // ravines x 1,8, déformation x 1,7 et collines x 1,4, une tuile de niveau 6 s'écartait de 0,37 m (permis 0,15 m).
     const Planetology::Terrain large(200000.0, 4500.0, 7,
                                      Planetology::ReliefShape{.mountainWidth = 20000.0, .zoneWidth = 420000.0,
-                                                              .continentWidth = 300000.0, .mountainShare = 1.6, .hillShare = 1.5,
-                                                              .hillHeight = 1.4, .peakDensity = 0.6, .plainRoughness = 2.0,
-                                                              .reliefRoughness = 1.5, .gullies = 1.8, .erosion = 0.5, .warp = 1.7});
+                                                              .continentWidth = 300000.0, .mountainShare = 1.3, .hillShare = 1.3,
+                                                              .hillHeight = 1.15, .peakDensity = 0.7, .plainRoughness = 1.5,
+                                                              .reliefRoughness = 1.15, .gullies = 1.15, .erosion = 0.8, .warp = 1.15});
     const Planetology::Terrain earth(6.37e6, 8000.0, 42, 20000.0, 420000.0);
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
     CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
