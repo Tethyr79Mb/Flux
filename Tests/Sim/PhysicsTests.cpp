@@ -674,13 +674,14 @@ namespace {
             const Math::Vector3f local = scene.GetWorldRotation(ship).Conjugate().Rotate(up);
             return std::atan2(local.x, local.y) * 180.0f / std::numbers::pi_v<float>;
         };
+        ShipComponent& flight = scene.Get<ShipComponent>(ship);
+        flight.levelAssist = true; // éteinte par défaut
         frames(1.0, {.lift = 1.0f, .up = up});
         frames(0.5, {.roll = 1.0f, .up = up});
         const float banked = bank();
         CHECK(banked < -8.0f);
         frames(3.0, {.up = up});
         CHECK(std::abs(bank()) < 1.0f);
-        ShipComponent& flight = scene.Get<ShipComponent>(ship);
         flight.levelAssist = false;
         frames(0.5, {.roll = 1.0f, .up = up});
         frames(0.5, {.up = up}); // le roulis s'arrête (100 °/s² par défaut)

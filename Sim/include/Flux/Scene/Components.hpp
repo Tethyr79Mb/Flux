@@ -503,8 +503,9 @@ namespace Flux {
         Math::Vector3f turnAcceleration{60.0f, 50.0f, 100.0f};
         float strafeSpeed = 10.0f;     // m/s, glissement sur les côtés, montée et descente (décoller, se poser)
         // Aide au pilotage là où il y a une gravité (planète, sol) : sans roulis commandé, les ailes reviennent à plat
-        // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Touche H en vol.
-        bool levelAssist = true;
+        // (ShipComponent::levelRate), et le lacet tourne autour de la verticale du lieu. Éteinte par défaut (le vaisseau
+        // garde l'assiette qu'on lui donne) ; touche H en vol. Allumée, elle s'efface en orbite (ShipInput::level).
+        bool levelAssist = false;
         float levelRate = 1.5f;        // 1/s : vitesse de retour à plat (1,5 : l'inclinaison fond de 78 % par seconde)
         // Dans l'atmosphère d'une planète : vitesse à laquelle l'air range sa vitesse derrière son nez (1/s, au sol,
         // moins haut où l'air est moins dense ; comme un avion porté par ses ailes). Dans l'espace, rien : il garde
