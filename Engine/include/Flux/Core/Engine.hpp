@@ -95,6 +95,14 @@ namespace Flux {
         Paused,  // mise à jour appelée avec un temps écoulé nul : le jeu est figé mais ses panneaux restent
     };
 
+    // Rectangle de l'écran, en pixels de la fenêtre, où le jeu est montré.
+    struct HudView {
+        Math::Vector2f min;
+        Math::Vector2f max;
+        Math::Vector2f GetSize() const { return max - min; }
+        Math::Vector2f GetCenter() const { return (min + max) * 0.5f; }
+    };
+
     class FLUX_API Engine {
         public:
         // Fonction du jeu ou de l'éditeur ; quand elle est appelée (chaque image ou chaque pas) : voir SetGameUpdate,
@@ -295,6 +303,11 @@ namespace Flux {
         // Pointeur virtuel du pilote (le manche de la souris), pour l'afficher : -1 à 1 au bord de son cercle, x vers
         // la droite, y vers le bas ; nul quand le joueur ne pilote pas ou que la souris est libérée (Alt, menu).
         Math::Vector2f GetSteerPointer() const;
+        // Zone de l'écran où le jeu est montré, pour y placer ses affichages (HUD) : la fenêtre entière, ou la vue de
+        // la scène dans l'éditeur.
+        HudView GetHudView() const;
+        // Éditeur, à chaque image du mode Jouer : sa vue de la scène. Le HUD du jeu s'y dessine alors, comme dans le jeu.
+        void SetHudView(Math::Vector2f viewMin, Math::Vector2f viewMax) { m_hudView = HudView{viewMin, viewMax}; }
         // Planète la plus proche du vaisseau, altitude, air (aide au pilotage, infos de vol du jeu). Recrée le relief
         // seulement quand la planète change.
         FlightState GetFlightState(Entity ship);
@@ -337,6 +350,7 @@ namespace Flux {
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;
         bool m_drawScreenUi = true;
+        std::optional<HudView> m_hudView; // donnée par l'éditeur pour cette image
         bool m_freeCamera = true;
         std::optional<std::string> m_requestedScene;
         std::filesystem::path m_scenePath;

@@ -784,6 +784,7 @@ namespace FluxEditor {
             m_screenDrag.active = false;
             m_hoveredAxis = -1;
             m_screenRects.clear();
+            engine.SetHudView(view.min, view.max); // infos de vol, manche de la souris, missions : dans la vue
             ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max, engine.GetScreenUiOptions());
             return;
         }

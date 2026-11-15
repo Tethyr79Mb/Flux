@@ -29,14 +29,13 @@ namespace Game {
             const NavigationState& state = playerState->navigation;
             const auto* drive = scene.TryGet<WarpDriveComponent>(ship);
             const WarpStage stage = drive ? drive->stage : WarpStage::Off;
-            const Math::Vector2i size = engine.GetWindow().GetSize();
-            const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
+            const HudView view = engine.GetHudView();
             const Camera& camera = engine.GetCamera();
             UI::DrawList& list = engine.GetRenderer().GetOverlay();
             constexpr float Size = 16.0f;
             constexpr Math::LinearColor DestinationColor{0.55f, 0.8f, 1.0f, 0.85f};
             constexpr Math::LinearColor AimColor{0.75f, 0.95f, 1.0f, 1.0f};
-            const ScreenProjection projection(camera, {}, screen);
+            const ScreenProjection projection(camera, view.min, view.max);
             for (int i = 0; i < static_cast<int>(state.destinations.size()); ++i) {
                 const Warp::Destination& destination = state.destinations[static_cast<std::size_t>(i)];
                 const bool aimed = i == state.aim;
@@ -65,7 +64,7 @@ namespace Game {
                                                        std::min(drive->charge / Warp::ChargeTime, 1.0f) * 100.0f)
                                          : std::format("Warp vers {} : {}", state.warpName, FormatDistance(Warp::GetRemaining(scene, ship)));
             const Math::Vector2f extent = list.MeasureText(text, 18.0f);
-            const Math::Vector2f topLeft{(screen.x - extent.x) * 0.5f, screen.y * 0.7f};
+            const Math::Vector2f topLeft{view.GetCenter().x - extent.x * 0.5f, view.min.y + view.GetSize().y * 0.7f};
             list.AddRoundedRect(topLeft - Math::Vector2f{14.0f, 8.0f}, topLeft + extent + Math::Vector2f{14.0f, 8.0f}, {0.0f, 0.0f, 0.0f, 0.45f}, 8.0f);
             list.AddText(topLeft, text, 18.0f, AimColor);
         }

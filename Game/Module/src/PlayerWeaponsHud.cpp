@@ -25,10 +25,9 @@ namespace Game {
                 return;
             }
             const Camera& camera = engine.GetCamera();
-            const Math::Vector2i size = engine.GetWindow().GetSize();
-            const Math::Vector2f screen{static_cast<float>(size.x), static_cast<float>(size.y)};
+            const HudView view = engine.GetHudView();
             const Math::Vector3d offset = Math::Delta(camera.position, scene.GetWorldPosition(lockTarget));
-            const auto point = ScreenProjection(camera, {}, screen).ToScreen(offset);
+            const auto point = ScreenProjection(camera, view.min, view.max).ToScreen(offset);
             if (!point) {
                 return;
             }

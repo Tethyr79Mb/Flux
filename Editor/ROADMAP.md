@@ -45,7 +45,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ✅ Aimant des armes : une arme lâchée sur un emport dans l'onglet Scènes, ou déplacée au gizmo à moins de 1 m de
   lui, s'y fixe (enfant, à sa place exacte) ; refus expliqué si l'emport ne l'accepte pas (genre, taille, déjà occupé).
   Depuis le 2026-11-01, la règle (ce qui est arme, emport, et le refus) est déclarée par le jeu (`MountRule`).
-- 🔧 Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu. À améliorer : la scène est copiée en JSON, lent sur une grosse scène.
+- 🔧 Mode Jouer (F5), pause (F6), scène en lecture seule pendant le jeu. Le HUD du jeu (infos de vol, manche de la souris, missions, cibles) se dessine dans la vue. À améliorer : la scène est copiée en JSON, lent sur une grosse scène.
 - ✅ Scène de démarrage du projet.
 
 ### Contenu (assets)
