@@ -29,22 +29,27 @@ Ordre conseillé des réglages, du plus grand au plus fin :
    cette largeur, les montagnes restent à la taille que permet le rayon.
    **Largeur des zones** : l'écart entre deux chaînes de montagnes (420 km par défaut, la taille naturelle à 200 km de
    rayon). Les zones de montagnes et de collines, les déformations et le détail des plaines la gardent quel que soit le
-   rayon : seuls les continents grandissent avec la planète. Plus petite : chaînes plus serrées, plaines plus étroites
-   (250 km : plaines de 21 km en moyenne au lieu de 31).
+   rayon. Plus petite : chaînes plus serrées, plaines plus étroites (250 km : plaines de 21 km en moyenne au lieu de 31).
+   **Largeur des continents** : leur taille (et celle des océans), 840 km par défaut (taille naturelle à 200 km de
+   rayon). Plus petite : plus de continents, plus de côtes. Elle ne peut pas dépasser la taille que permet le rayon.
 3. **Relief.** C'est la hauteur des plus hauts sommets au-dessus du niveau zéro (et la profondeur des creux). **La
    raideur dépend du rapport relief / largeur.** Repères :
    - 2000 à 3000 m pour 50 km : montagnes franches, versants de 20 à 30° ;
    - 4500 m pour 20 km : aiguilles, à éviter.
 4. **Graine.** Une autre graine donne une autre planète avec les mêmes réglages.
 5. **Mer.** `Niveau de la mer` est en % du relief, 0 % étant le niveau zéro. On voit le fond là où l'eau est peu
-   profonde.
-6. **Climat.** La température baisse vers les pôles (axe y de la planète) et avec l'altitude (6,5 °C par km).
+   profonde. Part d'océan : 54 % à 0 %, 25 % à -25 %, 17 % à -35 %, 12 % à -40 %.
+6. **Forme du relief.** Des facteurs, 1 redonnant le relief d'origine : `Part des montagnes` (largeur des chaînes : 2
+   double presque les terres en montagne), `Part des collines`, `Hauteur des collines`, `Densité des sommets` (chance
+   qu'une maille porte un sommet, 0,85), `Rugosité des plaines` (garder bas pour se poser), `Rugosité des reliefs`,
+   `Ravines`, `Érosion` (versants lisses, détail sur les crêtes) et `Déformation` (côtes découpées, chaînes tordues).
+7. **Climat.** La température baisse vers les pôles (axe y de la planète) et avec l'altitude (6,5 °C par km).
    L'humidité suit des bandes de latitude comme sur Terre (humide à l'équateur et vers 55°, sec vers 25-30° et aux
    pôles, bords ondulés), autour du réglage de la planète. Ils choisissent la matière du sol (herbe, terre, sable, neige), la roche
    prenant les pentes. La neige commence à `Neige à partir de` (% du relief) : baisser le relief la fait descendre.
-7. **Atmosphère.** Densité (1 = Terre), hauteur et couleur du ciel. Elle règle aussi la vitesse permise au vaisseau :
+8. **Atmosphère.** Densité (1 = Terre), hauteur et couleur du ciel. Elle règle aussi la vitesse permise au vaisseau :
    le mode voyage est bridé à mesure que l'air s'épaissit.
-8. **Nuages, puis végétation.** Les biomes de la planète (8 au plus, dans l'ordre : le premier qui convient prend le
+9. **Nuages, puis végétation.** Les biomes de la planète (8 au plus, dans l'ordre : le premier qui convient prend le
    sol) décident des forêts et des espèces : zone du relief (plaines, collines, montagnes et leurs piémonts),
    altitude, température, humidité. Jamais sur la plage, sous la neige ni sur une pente trop raide pour l'espèce.
 
@@ -187,14 +192,15 @@ Une chaîne de montagnes est faite de trois choses :
 L'érosion analytique (méthode d'Inigo Quilez) reste sur les collines et le détail. Chaque octave est atténuée là où
 la couche est déjà en pente, par un facteur `1 / (1 + force × pente²)`, la pente étant mesurée en mètres par mètre.
 
-Les réglages sont des constantes en tête de `Planet.cpp`, recopiées dans `PlanetTile.slang` :
+Les autres réglages sont des constantes en tête de `Planet.cpp`, recopiées dans `PlanetTile.slang` ; ceux de la forme
+(ci-dessus) passent par `Terrain::ShapeConstants`, envoyés au GPU dans `TileGpuInputs::shape` :
 
 | Constante | Effet |
 |---|---|
 | `ChainStart`, `ChainEnd` | largeur des bandes de chaînes (plus bas : chaînes plus larges) |
 | `ChainBase` | hauteur du dos de la chaîne (trop haut : un plateau) |
 | `PeakHeight`, `PeakLowest`, `PeakSecondary` | hauteur des sommets au-dessus du dos, du plus bas, des secondaires |
-| `PeakChance`, `PeakRadius` | nombre de sommets, largeur de leur pied (plus large : versants plus doux) |
+| `PeakRadius` | largeur du pied des sommets (plus large : versants plus doux) |
 | `PeakAsymmetry`, `PeakElongation`, `PeakSpurs` | différences de pente autour d'un sommet, contreforts |
 | `PeakShape`, `PeakTop`, `PeakTip` | profil d'un versant (concavité, sommet arrondi ou pointu) |
 | `GullyAmplitude`, `GullyGain` | profondeur des ravines (première octave, puis d'une octave à la suivante) |

@@ -89,6 +89,45 @@ bool RunPlanetTests() {
     CHECK(Planetology::Terrain(6.0e6, 8000.0, 1, 50000.0, zoneWidth).GetZoneShift() == 5);
     CHECK(Planetology::Terrain(6.0e6, 8000.0, 1).GetZoneShift() == 0); // 0 : à l'échelle du rayon
 
+    // Réglages de la forme : par défaut, le relief d'origine (jusqu'à 200 km de rayon) ; plus de part des montagnes,
+    // plus de terres en montagne ; des continents plus petits, plus de côtes.
+    {
+        PlanetComponent planet;
+        planet.radius = 200000.0f;
+        planet.relief = 2500.0f;
+        const Planetology::Terrain byDefault(planet);
+        const Planetology::Terrain original(200000.0, 2500.0, planet.seed, planet.mountainWidth, planet.zoneWidth);
+        planet.mountainShare = 2.0f;
+        const Planetology::Terrain moreMountains(planet);
+        planet.mountainShare = 1.0f;
+        planet.continentWidth = 300000.0f;
+        const Planetology::Terrain smallContinents(planet);
+        int mountains = 0;
+        int moreMountainsCount = 0;
+        int coastChanges = 0;
+        int smallCoastChanges = 0;
+        bool previousLand = false;
+        bool previousSmallLand = false;
+        for (int i = 0; i < 4000; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / 4000.0;
+            const Math::Vector3d direction{0.8 * std::cos(a), 0.6, 0.8 * std::sin(a)};
+            Planetology::Terrain::Zones zones;
+            const double height = byDefault.GetHeight(direction, 12, &zones);
+            CHECK(height == original.GetHeight(direction, 12));
+            mountains += zones.mountains > 0.5 ? 1 : 0;
+            moreMountains.GetHeight(direction, 12, &zones);
+            moreMountainsCount += zones.mountains > 0.5 ? 1 : 0;
+            const bool land = height > 0.0;
+            const bool smallLand = smallContinents.GetHeight(direction, 12) > 0.0;
+            coastChanges += i > 0 && land != previousLand ? 1 : 0;
+            smallCoastChanges += i > 0 && smallLand != previousSmallLand ? 1 : 0;
+            previousLand = land;
+            previousSmallLand = smallLand;
+        }
+        CHECK(moreMountainsCount > mountains + mountains / 4);
+        CHECK(smallCoastChanges > coastChanges);
+    }
+
     // Deux tuiles voisines d'une même face : bords confondus, normales égales (calculées avec une rangée de plus).
     Planetology::TileMesh left;
     Planetology::TileMesh right;
