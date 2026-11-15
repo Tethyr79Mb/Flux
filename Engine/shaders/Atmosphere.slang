@@ -357,7 +357,10 @@ float2 AtmosphereAirTexel(float2 uv, uint slice)
 // rien de jour (le ciel bleu de l'atmosphère le cache, AtmosphereAmbient éclaire à sa place), peu la nuit (la nuit
 // tombe du côté opposé au soleil, avec un crépuscule), toute au-dessus de l'air. De jour, la nébuleuse teintait en
 // violet le personnage et les vaisseaux posés.
-static const float AtmosphereNightSkyLight = 0.12;
+// Faible : au sol, la nuit, l'œil s'habitue (exposition jusqu'à minEv100) et l'image garde la même clarté ; vue de
+// l'espace, l'œil reste réglé sur le soleil (SkyRenderer::GetExposureSettings) et le côté nuit doit y rester sombre.
+// À 0,12, les nuages, blancs, y restaient gris clair.
+static const float AtmosphereNightSkyLight = 0.02;
 
 float AtmosphereNightSky(AtmosphereData a, float3 position, float3 toSun)
 {
