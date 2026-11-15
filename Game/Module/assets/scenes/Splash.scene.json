@@ -1,0 +1,27 @@
+{
+  "format": "flux.scene",
+  "version": 2,
+  "engine": 87,
+  "entities": [
+    {
+      "id": "d0e4543a2541add2",
+      "name": "Image",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "screenImage": {
+        "image": "textures/vecteezy_starry-sky-with-a-yellowish-hue-the-stars-are-scattered_53857845.jpg",
+        "tint": [1.0, 1.0, 1.0, 1.0],
+        "opacity": 1.0,
+        "fit": "cover",
+        "width": 0.0,
+        "height": 0.0,
+        "anchor": "center",
+        "offsetX": 0.0,
+        "offsetY": 0.0
+      }
+    }
+  ]
+}
