@@ -93,6 +93,7 @@ namespace Flux::Planetology {
             float relief = -1.0f;
             std::int32_t seed = 0;
             float mountainWidth = 0.0f;
+            float zoneWidth = 0.0f;
             float gravity = 0.0f;
             float atmosphere = 0.0f;
             float atmosphereHeight = 0.0f;

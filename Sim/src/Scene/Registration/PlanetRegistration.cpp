@@ -87,6 +87,8 @@ namespace Flux {
                    {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
             .Field("mountainWidth", "Largeur des montagnes (m)", &PlanetComponent::mountainWidth,
                    {.speed = 100.0, .min = 1000.0, .max = 1.0e6, .decimals = 0})
+            .Field("zoneWidth", "Largeur des zones (m)", &PlanetComponent::zoneWidth,
+                   {.speed = 1000.0, .min = 50000.0, .max = 1.0e7, .decimals = 0})
             .Field("seed", "Graine", &PlanetComponent::seed, {.speed = 0.1, .min = 0.0, .max = 1.0e6, .decimals = 0})
             .Group("ground", "Sol")
             .Field("color", "Couleur de la roche", &PlanetComponent::color, {.alpha = false})

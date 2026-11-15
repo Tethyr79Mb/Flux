@@ -112,29 +112,40 @@ static const float HillWeight = 0.15;
 static const float WarpLarge = 0.06;
 static const float WarpSmall = 0.012;
 
-// Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, à la largeur des montagnes,
-// octaves perdues plus tôt, érosion et octaves dont la pente compte.
+// Échelle d'une couche (LayerScale dans Planet.cpp) : suit le rayon, garde sa taille en mètres sur les grandes
+// planètes (zones), ou suit la largeur des montagnes.
+static const uint ScalePlanet = 0;
+static const uint ScaleZone = 1;
+static const uint ScaleMountain = 2;
+
+// Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, échelle, érosion et octaves
+// dont la pente compte.
 struct Layer
 {
     uint first;
     uint last;
     float gain;
-    bool scaled;
-    bool shifted;
+    uint scale;
     float erosion;
     uint erodedOctaves;
 };
 static const Layer Layers[9] = {
-    { 0, 5, 0.5, false, false, 0.0, 0 },   // continents
-    { 1, 3, 0.5, false, false, 0.0, 0 },   // zones des chaînes de montagnes
-    { 2, 5, 0.5, false, false, 0.0, 0 },   // zones de collines
-    { 2, 4, 0.5, true, true, 0.0, 0 },     // sommets
-    { 4, 9, 0.5, true, true, 4.0, 5 },     // collines
-    { 6, 22, 0.58, false, false, 3.0, 6 }, // détail
-    { 0, 3, 0.5, false, false, 0.0, 0 },   // grande déformation
-    { 3, 6, 0.5, false, false, 0.0, 0 },   // petite déformation
-    { 3, 7, 0.5, true, true, 0.0, 0 },     // ravines
+    { 0, 5, 0.5, ScalePlanet, 0.0, 0 },   // continents
+    { 1, 3, 0.5, ScaleZone, 0.0, 0 },     // zones des chaînes de montagnes
+    { 2, 5, 0.5, ScaleZone, 0.0, 0 },     // zones de collines
+    { 2, 4, 0.5, ScaleMountain, 0.0, 0 }, // sommets
+    { 4, 9, 0.5, ScaleMountain, 4.0, 5 }, // collines
+    { 6, 22, 0.58, ScaleZone, 3.0, 6 },   // détail
+    { 0, 3, 0.5, ScaleZone, 0.0, 0 },     // grande déformation
+    { 3, 6, 0.5, ScaleZone, 0.0, 0 },     // petite déformation
+    { 3, 7, 0.5, ScaleMountain, 0.0, 0 }, // ravines
 };
+
+// Octaves qu'une couche perd plus tôt (Terrain::GetScaleShift et GetZoneShift, rangés dans options.w).
+uint OctaveShift(uint scale)
+{
+    return scale == ScaleMountain ? (tile.options.w & 0xFFFFu) : scale == ScaleZone ? (tile.options.w >> 16) : 0u;
+}
 
 float Fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 float FadeSlope(float t) { return 30.0 * t * t * (t * (t - 2.0) + 1.0); }
@@ -313,8 +324,8 @@ float Fbm(float3 point, float3 direction, uint layer, uint octaves, float slopeS
 {
     const Layer L = Layers[layer];
     const float total = (1.0 - pow(L.gain, float(L.last - L.first))) / (1.0 - L.gain);
-    // Fréquences déjà multipliées dans fractions.w ; la couche perd ses octaves options.w niveaux plus tôt.
-    const uint shift = L.shifted ? tile.options.w : 0;
+    // Fréquences déjà multipliées dans fractions.w ; la couche perd ses octaves OctaveShift niveaux plus tôt.
+    const uint shift = OctaveShift(L.scale);
     const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(layer);
     float sum = 0.0;
@@ -346,7 +357,8 @@ float3 PeakVector(uint h, uint index)
 float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
 {
     const Layer L = Layers[3];
-    const uint last = min(L.last, octaves > tile.options.w ? octaves - tile.options.w : 0);
+    const uint shift = OctaveShift(ScaleMountain);
+    const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(3);
     float sum = 0.0;
     float3 gradient = float3(0.0, 0.0, 0.0);
@@ -425,7 +437,8 @@ float Peaks(float3 point, float3 direction, uint octaves, out float3 slope)
 float Gullies(float3 point, float3 direction, uint octaves, float3 slope, float amount)
 {
     const Layer L = Layers[8];
-    const uint last = min(L.last, octaves > tile.options.w ? octaves - tile.options.w : 0);
+    const uint shift = OctaveShift(ScaleMountain);
+    const uint last = min(L.last, octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(8);
     const float relief = tile.axisS.w;
     const float radius = tile.axisN.w;
@@ -478,10 +491,13 @@ float3 WarpChange(float3 delta, uint layer, float amount)
         total += amplitude;
         amplitude *= L.gain;
     }
+    // Plus fine de m_zoneScale sur une grande planète, elle pousse d'autant moins loin (Terrain::Warp) : l'échelle se lit
+    // dans la fréquence de la première octave, BaseFrequency (1,5) x 2^first x m_zoneScale.
+    const float scale = tile.fractions[base].w / (1.5 * float(1u << L.first));
     // Direction du point : celle du centre, plus δ.
     const Shifted3 direction = MakeShifted3(tile.center.xyz, delta);
     float3 change = float3(0.0);
-    amplitude = amount / total;
+    amplitude = amount / (total * scale);
     for (uint k = L.first; k < L.last; ++k) {
         const uint o = base + k - L.first;
         const float4 fraction = tile.fractions[o];
