@@ -26,7 +26,7 @@ target_link_libraries(FluxTests PRIVATE ws2_32)
 # Les tests du RHI (calculs sur le GPU) voient les en-têtes internes du moteur ; seul RHI::Device::Create* est exporté.
 target_include_directories(FluxTests PRIVATE ${PROJECT_SOURCE_DIR}/Engine/src ${PROJECT_SOURCE_DIR}/Sim/src)
 flux_add_shaders(FluxTestShaders shaders/ComputeTests.slang shaders/CloudNoiseTests.slang shaders/TransferTests.slang
-                  shaders/EnvironmentTests.slang)
+                  shaders/EnvironmentTests.slang shaders/OceanWavesTests.slang)
 add_dependencies(FluxTests FluxTestShaders)
 flux_set_warnings(FluxTests)
 flux_precompile_headers(FluxTests)

@@ -43,6 +43,7 @@ bool RunRayTracingTests();
 bool RunTransferTests();
 bool RunPlanetGpuTests();
 bool RunCloudNoiseTests();
+bool RunOceanWavesGpuTests();
 bool RunVegetationGpuTests();
 bool RunWeaponsTests();
 bool RunDockingAutopilotTests();
