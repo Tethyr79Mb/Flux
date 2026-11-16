@@ -1,8 +1,8 @@
 // Herbe des planètes en mesh shaders (voir Grass.slang), quand le GPU les a : une tâche (taskGrass) par tuile proche
 // teste ses 64 carrés de 4 x 4 mailles : hors du champ, caché derrière ce que voyait l'image précédente, sans herbe
 // (aux coins et au centre), ou trop loin pour garder un brin, il est écarté. Chaque carré retenu envoie ses brins à
-// meshGrass par groupes de 32 (un thread par brin), en 3 segments de près, 2 puis 1 au loin, avec son climat, son air et
-// l'ombre des nuages calculés une fois (LightGrassPatch).
+// meshGrass par groupes de 32 (un thread par brin), en 3 segments de près, 2 puis 1 au loin, avec son climat calculé une
+// fois (GrassClimate).
 // Des carrés de 4 x 4 et non les paquets de 8 x 8 du sol : un paquet à cheval sur le bord de l'image ou derrière un
 // arbre fabriquait tous ses brins, jusqu'à quatre fois trop (regard vers le ciel : l'herbe des pieds coûtait encore la
 // moitié de son prix). Les bornes d'un carré viennent de ses 25 sommets (le sol est plan entre eux).
@@ -38,7 +38,6 @@ struct GrassPayload
     // densité (bits d'un float).
     uint4 patches[GrassPatchCount];
     float3 climates[GrassPatchCount]; // GrassClimate au centre du carré
-    GrassPatchLight lights[GrassPatchCount]; // LightGrassPatch au centre du carré
 };
 
 groupshared GrassPayload grass;
@@ -108,7 +107,6 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             InterlockedAdd(grassCount, 1, slot);
             grass.patches[slot] = uint4(thread + segments * 256, groups, blades, asuint(total));
             grass.climates[slot] = climate;
-            grass.lights[slot] = LightGrassPatch(center);
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -156,7 +154,7 @@ void meshGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID, in payload
     GrassBlade blade = NoGrassBlade();
     if (index < patch.z) {
         blade = MakeGrassBlade(tile.draw, tile.firstVertex, seed, index, origin, float(GrassPatchQuads),
-                               asfloat(patch.w), tile.climates[entry], tile.lights[entry]);
+                               asfloat(patch.w), tile.climates[entry]);
     }
     // Les brins vivants à la suite, sans trou.
     if (thread == 0) {

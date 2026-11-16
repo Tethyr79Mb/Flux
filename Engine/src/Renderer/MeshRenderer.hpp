@@ -162,11 +162,11 @@ namespace Flux {
         bool ForestShadowsPending() const { return m_forestShadows; }
         void DrawForestShadows(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         const RHI::Texture& GetForestShadowMap() const { return *m_forestShadowMap; }
-        // Modèles opaques, dans la passe « G-buffer » (leur surface, éclairée ensuite par LightingRenderer), avant la
-        // passe principale. Puis celle-ci, dans cet ordre (le fond du ciel entre le sol et l'eau) : le sol après les
-        // entités, ce qu'elles en cachent (un vaisseau posé dessus) n'est pas éclairé. L'eau avant les autres
-        // transparents : vue d'au-dessus de la mer, tout transparent devant elle est plus près (une verrière). Séparés
-        // pour que le Renderer mesure chacun au GPU.
+        // Dans la passe « G-buffer » (leur surface, éclairée ensuite par LightingRenderer), dans cet ordre : modèles
+        // opaques, arbres (DrawVegetation), herbe, sol (DrawGround) ; le sol en dernier, ce que les autres en cachent (un
+        // vaisseau posé dessus) ne lit pas ses matières. Puis la passe principale : fond du ciel, puis l'eau (DrawOcean),
+        // avant les autres transparents : vue d'au-dessus de la mer, tout transparent devant elle est plus près (une
+        // verrière). Séparés pour que le Renderer mesure chacun au GPU.
         void DrawOpaque(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         // Capture d'un imposteur d'arbre (TreeImpostors), hors d'une passe, avant la passe principale ; rien à faire à
         // cette image si ImpostorPending est faux.

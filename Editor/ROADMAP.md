@@ -20,6 +20,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   titrés avec une aide sous chacun, préréglages Bas à Ultra, « Rétablir par défaut » par page, recherche des touches.
   Limites : V-Sync non enregistrée ; pas de seconde touche ni de manette ; pas d'aperçu du thème avant de le choisir.
 - ✅ Console.
+- 🔧 Vue seule en plein écran (F11, Fenêtre > Vue seule ; Échap ou F11 pour sortir) : la vue 3D ou le jeu (F5) sur
+  tout l'écran, sans panneaux ni aides ; Alt+Entrée garde le plein écran avec les panneaux. Capture F12 en PNG sans
+  les aides, dans `Captures/` du projet. Limites : capture à la taille de l'écran seulement (une capture haute
+  résolution rendue hors écran viendra si besoin) ; un panneau flottant posé sur la vue est capturé hors vue seule.
 - ✅ Version de l'éditeur dans le titre.
 - ✅ Logo FluxEngine : icône du programme et de sa fenêtre (losange seul), écran d'accueil pendant le démarrage, en-tête du README.
 
@@ -32,6 +36,9 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   mériterait), les composants du jeu partagent la même icône, la colonne prend environ 40 pixels aux libellés.
 - ✅ Barre d'outils « Texte » : poser un texte à l'écran, choisir sa police (dossier `Polices/` du projet, « Ajouter
   une police... » la copie), sa taille et sa couleur ; sur le texte sélectionné (annulable), sinon pour le prochain.
+- 🔧 Étiquette flottante (« Placer » > Interface, 2026-11-16) : un texte accroché à un objet, face à l'écran, de taille
+  constante, dans la vue et dans le jeu ; un clic dessus sélectionne l'objet. Limites : toujours par-dessus la 3D
+  (pas cachée par les objets devant), police de l'interface seulement.
 - ✅ Panneau « Placer » : cube, personnage, vaisseaux (maquette, Chasseur), station (maquette, posée à l'horizontale, entrée face à la caméra), station orbitale (catégorie Espace, porte du joueur face à la caméra, avec le hangar du joueur derrière son champ bleu), cible (cube à points de vie), lumières, ciel, soleil, planète, son, interface…
 - ✅ Objets du jeu dans « Placer » déclarés par le jeu (`Engine::GetEditorExtensions`, 2026-11-01) : chasseur, cible et stations sont dans GameModule ; l'éditeur ne connaît plus leurs composants.
 - ✅ « Placer » en liste à icônes par catégories repliables, avec recherche ; modes du gizmo en pictogrammes dans la vue ; chemin cliquable dans Contenu.

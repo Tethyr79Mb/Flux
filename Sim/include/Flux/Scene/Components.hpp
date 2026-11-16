@@ -627,6 +627,19 @@ namespace Flux {
         std::string file; // chemin relatif au dossier des assets, avec des « / » (interfaces/Menu.fluxui)
     };
 
+    // Étiquette flottante : un texte accroché à un point de la scène (le nom d'un matériau au-dessus de sa sphère),
+    // dessiné à plat face à l'écran et toujours de la même taille, par-dessus la 3D (les objets devant ne le cachent
+    // pas). Taille en pixels d'un écran de 1080 lignes, comme ScreenTextComponent.
+    struct WorldLabelComponent
+    {
+        std::string text = "Étiquette";
+        float size = 24.0f;
+        Math::LinearColor color{1.0f, 1.0f, 1.0f};
+        float height = 0.0f;      // m, le long du haut de l'entité (son +y tourné) : au-dessus de l'objet
+        float maxDistance = 0.0f; // m ; au-delà, cachée ; 0 : visible de partout
+        bool background = true;   // fond sombre derrière le texte, lisible sur un ciel clair
+    };
+
     // Passe à une autre scène après un délai ou sur confirmation du joueur (écran de démarrage) : voir SceneChange.
     // Seulement pendant le jeu (Ars Solaris.exe, ou le mode Jouer de l'éditeur).
     struct SceneChangeComponent

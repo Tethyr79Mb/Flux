@@ -764,14 +764,14 @@ namespace FluxEditor {
         }
     }
 
-    void SceneViewport::Update(Engine& engine, SceneEditor& sceneEditor, const UI::Rect& view) {
+    void SceneViewport::Update(Engine& engine, SceneEditor& sceneEditor, const UI::Rect& view, bool clean) {
         UI::Context& ui = engine.GetUi();
         const Input& input = engine.GetWindow().GetInput();
         Scene& scene = engine.GetScene();
         const Camera& camera = engine.GetCamera();
         const Vector2f size = view.GetSize();
         // La grille sert à placer les objets : pas en mode Jouer, où la vue montre le jeu tel quel.
-        engine.GetRenderer().SetGridVisible(m_grid && engine.GetGameState() == GameState::Stopped);
+        engine.GetRenderer().SetGridVisible(m_grid && !clean && engine.GetGameState() == GameState::Stopped);
         if (size.x < 1.0f || size.y < 1.0f) {
             m_drag.axis = -1;
             m_screenDrag.active = false;
@@ -786,6 +786,20 @@ namespace FluxEditor {
             m_screenRects.clear();
             engine.SetHudView(view.min, view.max); // infos de vol, manche de la souris, missions : dans la vue
             ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max, engine.GetScreenUiOptions());
+            return;
+        }
+        if (clean) {
+            // Un glissement en cours est lâché tel quel (pas d'annulation : l'objet reste où la souris l'a mis).
+            m_drag.axis = -1;
+            m_screenDrag.active = false;
+            m_hoveredAxis = -1;
+            m_openSnapList = -1;
+            m_screenRects.clear();
+            // Textes et images de la scène comme dans le jeu, sans les cadres des éléments vides ; les interfaces
+            // (.fluxui) restent à l'éditeur d'interfaces et au mode Jouer, comme dans la vue normale.
+            ScreenUi::DrawOptions options = engine.GetScreenUiOptions();
+            options.interfaces = {};
+            ScreenUi::Draw(scene, engine.GetRenderer().GetOverlay(), view.min, view.max, options);
             return;
         }
 
@@ -940,7 +954,9 @@ namespace FluxEditor {
                 });
                 if (grabbed) {
                     // La poignée est saisie : ni sélection, ni élément à l'écran.
-                } else if (item != m_screenRects.rend() && ScreenUi::IsScreenElement(scene, item->entity)) {
+                } else if (item != m_screenRects.rend()
+                           && (ScreenUi::IsScreenElement(scene, item->entity) || scene.TryGet<WorldLabelComponent>(item->entity))) {
+                    // Une étiquette flottante sélectionne son objet, déplacé ensuite par le gizmo (FindOffset : rien).
                     sceneEditor.Select(scene, item->entity);
                     // Une image étirée ou qui couvre l'écran se sélectionne mais ne se déplace pas.
                     if (const std::optional<ScreenUi::Offset> offset = ScreenUi::FindOffset(scene, item->entity)) {

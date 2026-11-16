@@ -934,7 +934,8 @@ namespace Flux {
     ScreenUi::DrawOptions Engine::GetScreenUiOptions() {
         return {.textures = [this](std::string_view path) { return LoadAssetTexture(path); },
                 .interfaces = [this](const ScreenUi::InterfaceRequest& request) { return DrawInterface(request); },
-                .fonts = [this](std::string_view path) { return LoadAssetFont(path); }};
+                .fonts = [this](std::string_view path) { return LoadAssetFont(path); },
+                .camera = &m_camera};
     }
 
     std::optional<std::pair<Math::Vector2f, Math::Vector2f>> Engine::DrawInterface(const ScreenUi::InterfaceRequest& request) {
