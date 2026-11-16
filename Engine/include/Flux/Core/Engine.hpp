@@ -12,6 +12,7 @@
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
+#include "Flux/Renderer/ModelDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
 #include "Flux/Scene/PlayerCommand.hpp"
@@ -85,6 +86,7 @@ namespace Flux {
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
         VegetationDistance vegetationDistance = DefaultVegetationDistance;
+        ModelDetail modelDetail = DefaultModelDetail;
         bool bloom = true; // à Renderer::DefaultBloom, sinon coupé
         float volume = 1.0f; // volume général, 0 à 1
     };

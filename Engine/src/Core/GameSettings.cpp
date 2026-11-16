@@ -91,6 +91,15 @@ namespace Flux::GameSettingsFile {
                 warnings->push_back("« vegetationDistance » ignoré (valeur non valide)");
             }
         }
+        if (const auto detail = document.find("modelDetail"); detail != document.end()) {
+            const auto found = detail->is_string() ? std::ranges::find(ModelDetailKeys, detail->get<std::string>())
+                                                   : ModelDetailKeys.end();
+            if (found != ModelDetailKeys.end()) {
+                settings.modelDetail = static_cast<ModelDetail>(found - ModelDetailKeys.begin());
+            } else if (warnings) {
+                warnings->push_back("« modelDetail » ignoré (valeur non valide)");
+            }
+        }
         if (const auto upscaling = document.find("upscaling"); upscaling != document.end()) {
             const auto found = upscaling->is_string() ? std::ranges::find(UpscalingKeys, upscaling->get<std::string>()) : UpscalingKeys.end();
             if (found != UpscalingKeys.end()) {
@@ -120,6 +129,7 @@ namespace Flux::GameSettingsFile {
         document["groundDetail"] = GroundDetailKeys[static_cast<std::size_t>(settings.groundDetail)];
         document["cloudQuality"] = CloudQualityKeys[static_cast<std::size_t>(settings.cloudQuality)];
         document["vegetationDistance"] = VegetationDistanceKeys[static_cast<std::size_t>(settings.vegetationDistance)];
+        document["modelDetail"] = ModelDetailKeys[static_cast<std::size_t>(settings.modelDetail)];
         document["upscaling"] = UpscalingKeys[static_cast<std::size_t>(settings.upscaling)];
         document["sharpness"] = std::round(settings.sharpness * 100.0) / 100.0;
         document["bloom"] = settings.bloom;

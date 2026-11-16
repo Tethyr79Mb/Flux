@@ -417,8 +417,11 @@ namespace {
             }
             CHECK(index == primitive.firstIndex + primitive.indexCount);
         }
-        for (std::size_t i = 0; i < model.indices.size(); i += 3) {
-            after.push_back(Canonical(model.indices[i], model.indices[i + 1], model.indices[i + 2]));
+        // Le modèle complet seulement : ses niveaux simplifiés (la plaque, plate, en a) sont rangés après lui.
+        for (const ModelPrimitive& primitive : model.primitives) {
+            for (std::uint32_t i = primitive.firstIndex; i < primitive.firstIndex + primitive.indexCount; i += 3) {
+                after.push_back(Canonical(model.indices[i], model.indices[i + 1], model.indices[i + 2]));
+            }
         }
         std::ranges::sort(before);
         std::ranges::sort(after);
@@ -449,6 +452,97 @@ namespace {
         CHECK(animated.meshlets.empty() && animated.primitives[0].meshletCount == 0);
         return true;
     }
+
+    // Niveaux de détail : chacun plus léger que le précédent, écart qui grandit, primitives qui suivent celles du
+    // modèle complet (matériau, ombres), paquets qui couvrent ses triangles, bords gardés (pas de fente entre pièces).
+    bool RunLodTests() {
+        // Colline de 64 x 64 carrés (8 192 triangles) de 25,6 m (sous la taille des blocs), deux matériaux (moitiés
+        // gauche et droite, sommets partagés sur la limite : un bord pour chacune).
+        ModelData model;
+        model.materials.resize(2);
+        model.materials[1].baseColor = {1.0f, 0.0f, 0.0f, 1.0f};
+        constexpr std::uint32_t Side = 64;
+        for (std::uint32_t y = 0; y <= Side; ++y) {
+            for (std::uint32_t x = 0; x <= Side; ++x) {
+                const float fx = 0.4f * static_cast<float>(x);
+                const float fy = 0.4f * static_cast<float>(y);
+                const float height = 1.6f * std::sin(fx * 0.25f) * std::cos(fy * 0.33f);
+                model.vertices.push_back({{fx, fy, height}, {0, 0, 1}, {fx / Side, fy / Side}});
+            }
+        }
+        for (std::uint32_t half = 0; half < 2; ++half) {
+            const auto first = static_cast<std::uint32_t>(model.indices.size());
+            for (std::uint32_t y = 0; y < Side; ++y) {
+                for (std::uint32_t x = half * Side / 2; x < (half + 1) * Side / 2; ++x) {
+                    const std::uint32_t corner = y * (Side + 1) + x;
+                    model.indices.insert(model.indices.end(),
+                                         {corner, corner + 1, corner + Side + 2, corner, corner + Side + 2, corner + Side + 1});
+                }
+            }
+            model.primitives.push_back({first, static_cast<std::uint32_t>(model.indices.size()) - first, half});
+        }
+        model.bounds = {{0, 0, -1.6f}, {0.4f * Side, 0.4f * Side, 1.6f}};
+        PrepareModel(model);
+
+        CHECK(model.clusters.empty() && model.primitives.size() == 2 && !model.lods.empty() && model.lods.size() <= ModelMaxLods);
+        const auto triangles = [](const std::vector<ModelPrimitive>& primitives) {
+            std::uint32_t count = 0;
+            for (const ModelPrimitive& primitive : primitives) {
+                count += primitive.indexCount / 3;
+            }
+            return count;
+        };
+        std::uint32_t previousTriangles = triangles(model.primitives);
+        float previousError = 0.0f;
+        const auto referenced = [&](const ModelLod& lod, std::uint32_t vertex) {
+            for (const ModelPrimitive& primitive : lod.primitives) {
+                for (std::uint32_t i = primitive.firstIndex; i < primitive.firstIndex + primitive.indexCount; ++i) {
+                    if (model.indices[i] == vertex) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        for (const ModelLod& lod : model.lods) {
+            const std::uint32_t count = triangles(lod.primitives);
+            CHECK(count > 0 && count < previousTriangles);
+            CHECK(lod.error >= previousError && lod.error < 1.6f);
+            previousTriangles = count;
+            previousError = lod.error;
+            CHECK(lod.primitives.size() == model.primitives.size());
+            for (std::uint32_t p = 0; p < lod.primitives.size(); ++p) {
+                const ModelPrimitive& primitive = lod.primitives[p];
+                CHECK(primitive.material == model.primitives[p].material);
+                CHECK(primitive.firstIndex + primitive.indexCount <= model.indices.size());
+                std::uint32_t index = primitive.firstIndex;
+                for (std::uint32_t m = primitive.firstMeshlet; m < primitive.firstMeshlet + primitive.meshletCount; ++m) {
+                    CHECK(model.meshlets[m].firstIndex == index);
+                    index += model.meshlets[m].triangleCount * 3u;
+                }
+                CHECK(index == primitive.firstIndex + primitive.indexCount);
+            }
+            // Opaques à une face : une seule primitive d'ombre, qui couvre les deux.
+            CHECK(lod.shadowPrimitives.size() == 1 && lod.shadowPrimitives[0].firstIndex == lod.primitives[0].firstIndex
+                  && lod.shadowPrimitives[0].indexCount == count * 3);
+            // Coins du modèle et milieu de la limite entre les deux matériaux : sur des bords, gardés.
+            for (const std::uint32_t vertex : {0u, Side, Side * (Side + 1), (Side + 1) * (Side + 1) - 1, Side / 2 * (Side + 1) + Side / 2}) {
+                CHECK(referenced(lod, vertex));
+            }
+        }
+        for (const std::uint32_t index : model.indices) {
+            CHECK(index < model.vertices.size());
+        }
+
+        // Petit modèle (un triangle) : pas de niveaux, il coûte déjà peu.
+        ModelData small;
+        small.materials.resize(1);
+        AddTriangle(small, {0, 0, 0}, 0);
+        small.bounds = {{0, 0, 0}, {1, 1, 0}};
+        PrepareModel(small);
+        CHECK(small.lods.empty());
+        return true;
+    }
 }
 
 bool RunModelTests() {
@@ -456,7 +550,7 @@ bool RunModelTests() {
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunPrepareTests() && RunMeshletTests() && RunTextGltfTests(directory) && RunBinaryGltfTests(directory)
+    const bool passed = RunPrepareTests() && RunMeshletTests() && RunLodTests() && RunTextGltfTests(directory) && RunBinaryGltfTests(directory)
                      && RunMeshoptTests(directory) && RunErrorTests(directory);
     std::filesystem::remove_all(directory, error);
     return passed;

@@ -9,6 +9,7 @@
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
 #include "Flux/Renderer/GBufferView.hpp"
+#include "Flux/Renderer/ModelDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 #include "Flux/Scene/Components.hpp"
 #include "Flux/UI/DrawList.hpp"
@@ -231,6 +232,10 @@ namespace Flux {
         // Distance d'affichage des arbres (DefaultVegetationDistance par défaut) : facteur de la portée de chaque planète.
         void SetVegetationDistance(VegetationDistance distance);
         VegetationDistance GetVegetationDistance() const;
+        // Détail des modèles (DefaultModelDetail par défaut) : écart toléré à l'écran avant de passer à un niveau
+        // simplifié.
+        void SetModelDetail(ModelDetail detail);
+        ModelDetail GetModelDetail() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

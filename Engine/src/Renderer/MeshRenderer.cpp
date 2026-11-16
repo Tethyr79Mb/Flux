@@ -932,15 +932,15 @@ namespace Flux {
                                            : *pipelines.shadow;
     }
 
-    const RHI::Pipeline& MeshRenderer::OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material) {
-        if (material.alphaCutoff > 0.0f) {
+    const RHI::Pipeline& MeshRenderer::OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material, bool fading) {
+        if (material.alphaCutoff > 0.0f || fading) {
             return material.doubleSided ? *pipelines.maskedDoubleSided : *pipelines.masked;
         }
         return material.doubleSided ? *pipelines.opaqueDoubleSided : *pipelines.opaque;
     }
 
-    const RHI::Pipeline& MeshRenderer::ModelMeshPipeline(const GpuMaterial& material) const {
-        if (material.alphaCutoff > 0.0f) {
+    const RHI::Pipeline& MeshRenderer::ModelMeshPipeline(const GpuMaterial& material, bool fading) const {
+        if (material.alphaCutoff > 0.0f || fading) {
             return material.doubleSided ? *m_modelMesh.maskedDoubleSided : *m_modelMesh.masked;
         }
         return material.doubleSided ? *m_modelMesh.opaqueDoubleSided : *m_modelMesh.opaque;
@@ -976,6 +976,8 @@ namespace Flux {
         const Clock::time_point start = Clock::now();
         double groundMilliseconds = 0.0;
         m_models->Update();
+        m_lodSeconds = std::chrono::duration<double>(start - m_start).count();
+        m_lodPixelsPerMeter = m_viewHeight / (2.0f * std::tan(0.5f * camera.verticalFov)) / GetModelDetailPixels(m_modelDetail);
         // La lumière de contour est un effet, pas une lumière : la même à l'écran à toute exposition (réglée pour
         // l'exposition 1, le plein soleil), sinon elle éblouirait dans un intérieur ou dans le noir de l'espace.
         m_rimScale = 1.0f / std::max(sky.preExposure, 1.0e-6f);
@@ -1081,6 +1083,8 @@ namespace Flux {
                         std::swap(draw.model, draw.farModel); // complet pas encore chargé : la version lointaine, même de près
                     }
                 }
+                draw.automaticLod = component->automaticLod;
+                draw.lodBias = component->lodBias;
                 draw.tint = component->tint;
                 if (component->overrideMaterial) {
                     draw.materialOverride = true;
@@ -1096,6 +1100,7 @@ namespace Flux {
             if (index >= m_previousWorld.size()) {
                 m_previousWorld.resize(index + 1);
                 m_previousFrame.resize(index + 1, 0);
+                m_lodStates.resize(index + 1);
             }
             m_entityDraws.push_back(draw);
         }
@@ -1144,9 +1149,24 @@ namespace Flux {
                 const auto [clusterCenter, clusterRadius] = SphereOf(*draw.transform, cluster);
                 m_clusters.push_back({clusterCenter, clusterRadius, draw.inView && view.Contains(clusterCenter, clusterRadius)});
             }
-            m_draws.push_back({draw.model, draw.tint, draw.emissive, draw.metallic, draw.roughness, draw.materialOverride,
-                               draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
-                               draw.uniformScale, firstCluster, false});
+            MeshDraw added{draw.model, draw.tint, draw.emissive, draw.metallic, draw.roughness, draw.materialOverride,
+                           draw.center, draw.radius, Math::Length(draw.center), draw.visible, draw.inView,
+                           draw.uniformScale, firstCluster, false};
+            added.lod = draw.lod;
+            added.automaticLod = draw.automaticLod;
+            added.scale = draw.scale;
+            added.fade = draw.fade;
+            m_draws.push_back(added);
+            // En fondu : le niveau qui part, dessiné une seconde fois sur les pixels que l'autre laisse.
+            if (draw.fade > 0.0f) {
+                m_drawData.back().surface[2] = draw.fade;
+                added.lod = draw.fadeFrom;
+                added.fade = -draw.fade;
+                m_draws.push_back(added);
+                DrawData leaving = m_drawData.back();
+                leaving.surface[2] = -draw.fade;
+                m_drawData.push_back(leaving);
+            }
         }
         // Ray tracing : toutes les entités gardées, en vue ou non (une hors du champ peut faire de l'ombre dedans).
         // Une entité teintée transparente laisse passer la lumière : pas de rayon arrêté par elle.
@@ -1154,7 +1174,8 @@ namespace Flux {
         if (m_rayTracing) {
             m_rayTracing->Begin();
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
-                m_draws[d].traced = m_draws[d].tint.a >= 1.0f && m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
+                m_draws[d].traced = m_draws[d].tint.a >= 1.0f && m_draws[d].fade >= 0.0f
+                                 && m_rayTracing->Add(*m_draws[d].model, m_drawData[d].world, d);
             }
             m_rayShadowsActive = m_rayTracing->End(frameIndex) && m_rayTracedShadows;
         }
@@ -1189,12 +1210,16 @@ namespace Flux {
                 continue;
             }
             bool opaque = false;
-            for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
-                if (const ClusterDraw* cluster = FindCluster(m_draws[d], model.primitives[p]); cluster && !cluster->inView) {
+            const std::vector<ModelPrimitive>& primitives = model.GetPrimitives(m_draws[d].lod);
+            for (std::uint32_t p = 0; p < primitives.size(); ++p) {
+                if (const ClusterDraw* cluster = FindCluster(m_draws[d], primitives[p]); cluster && !cluster->inView) {
                     continue;
                 }
-                if (IsTransparent(m_draws[d], model.materials[model.primitives[p].material])) {
-                    m_transparent.push_back({d, p});
+                if (IsTransparent(m_draws[d], model.materials[primitives[p].material])) {
+                    // Un fondu ne tramerait pas les transparents : seuls ceux du niveau qui arrive.
+                    if (m_draws[d].fade >= 0.0f) {
+                        m_transparent.push_back({d, p});
+                    }
                 } else {
                     opaque = true;
                 }
@@ -1223,6 +1248,67 @@ namespace Flux {
         if (m_rayTracing) {
             m_rayTracing->BuildTopLevel(commands, frameIndex);
         }
+    }
+
+    // Niveau de détail de l'entité : le plus léger dont l'écart au modèle complet reste sous l'écart toléré à l'écran
+    // (ModelDetail), vu de `distance` (au bord de sa sphère). Un changement de niveau passe par un fondu de
+    // LodFadeSeconds ; un autre ne commence qu'à la fin du précédent. Sur un fil de travail : n'écrit que la case de
+    // l'entité.
+    void MeshRenderer::SelectLod(std::size_t entity, float distance, EntityDraw& draw) {
+        const GpuModel& model = *draw.model;
+        draw.lod = 0;
+        draw.fade = 0.0f;
+        const std::uint32_t count = draw.automaticLod ? model.GetLodCount() : 1u;
+        LodState& state = m_lodStates[entity];
+        if (count <= 1) {
+            state = {&model, m_preparedFrame};
+            return;
+        }
+        // Pixels d'un écart d'un mètre du modèle, divisés par l'écart toléré.
+        const float pixels = m_lodPixelsPerMeter * draw.scale * std::max(draw.lodBias, 0.01f) / std::max(distance, 1.0e-3f);
+        const auto fits = [&](std::uint32_t level, float tolerance) { return model.lods[level - 1].error * pixels <= tolerance; };
+        std::uint32_t target = 0;
+        while (target + 1 < count && fits(target + 1, 1.0f)) {
+            ++target;
+        }
+        if (state.model != &model || state.frame + 1 != m_preparedFrame || state.level >= count) {
+            state = {&model, m_preparedFrame, target, target};
+        } else {
+            if (target > state.level) {
+                std::uint32_t level = state.level;
+                while (level < target && fits(level + 1, LodHysteresis)) {
+                    ++level;
+                }
+                target = level;
+            }
+            if (target != state.level && m_lodSeconds - state.fadeStart >= LodFadeSeconds) {
+                state.previous = state.level;
+                state.level = target;
+                state.fadeStart = m_lodSeconds;
+            }
+            state.frame = m_preparedFrame;
+        }
+        draw.lod = state.level;
+        const double progress = (m_lodSeconds - state.fadeStart) / LodFadeSeconds;
+        if (state.previous != state.level && progress < 1.0) {
+            draw.fadeFrom = state.previous;
+            draw.fade = std::max(static_cast<float>(progress), 1.0e-3f);
+        }
+    }
+
+    // Niveau de l'ombre d'une entité dans une cascade : le plus léger dont l'écart reste sous un demi-texel de la
+    // carte, sans descendre sous celui qu'on voit (une ombre plus fine que l'objet ne se remarquerait pas).
+    std::uint32_t MeshRenderer::ShadowLod(const MeshDraw& draw, std::size_t cascade) const {
+        const GpuModel& model = *draw.model;
+        if (!draw.automaticLod) {
+            return 0;
+        }
+        const float tolerance = 0.5f * m_cascades[cascade].texelSize / std::max(draw.scale, 1.0e-6f);
+        std::uint32_t level = draw.lod;
+        while (level < model.lods.size() && model.lods[level].error <= tolerance) {
+            ++level;
+        }
+        return level;
     }
 
     std::pair<Math::Vector3f, float> MeshRenderer::SphereOf(const RelativeTransform& transform, const Math::Box3f& box) {
@@ -1258,6 +1344,8 @@ namespace Flux {
         draw.kept = true;
         draw.center = relativeCenter;
         draw.radius = radius;
+        draw.scale = std::max({std::abs(transform.scale.x), std::abs(transform.scale.y), std::abs(transform.scale.z)});
+        SelectLod(static_cast<std::size_t>(entt::to_entity(transform.entity)), Math::Length(relativeCenter) - radius, draw);
         const Math::Matrix4f world = Math::Matrix4f::Translation(Math::Vector3f(transform.position))
                                    * transform.rotation.ToMatrix()
                                    * Math::Matrix4f::Scale(transform.scale);
@@ -2219,9 +2307,10 @@ namespace Flux {
         for (const std::uint32_t d : m_opaque) {
             const MeshDraw& draw = m_draws[d];
             const Pipelines& pipelines = GetPipelines(draw);
-            for (const ModelPrimitive& primitive : draw.model->primitives) {
+            const bool fading = draw.fade != 0.0f;
+            for (const ModelPrimitive& primitive : draw.model->GetPrimitives(draw.lod)) {
                 const GpuMaterial& material = draw.model->materials[primitive.material];
-                if (IsTransparent(draw, material)) {
+                if (IsTransparent(draw, material) || primitive.indexCount == 0) {
                     continue;
                 }
                 float distance = draw.distance - draw.radius;
@@ -2234,11 +2323,11 @@ namespace Flux {
                 // Modèle fixe découpé en paquets : en mesh shaders, le GPU écarte ce qu'il ne verra pas paquet par
                 // paquet (le test des entités cachées est alors fait par paquet, dans la tâche).
                 if (primitive.meshletCount > 0 && m_modelMesh.opaque && GetModelMeshGroup(draw.model->resources.page)) {
-                    m_meshEntries.push_back({&ModelMeshPipeline(material), draw.model->resources.page, distance, d, material.index,
+                    m_meshEntries.push_back({&ModelMeshPipeline(material, fading), draw.model->resources.page, distance, d, material.index,
                                              primitive.firstMeshlet, primitive.meshletCount, draw.uniformScale});
                     continue;
                 }
-                m_batchEntries.push_back({&OpaquePipeline(pipelines, material), draw.model, &primitive, d, distance,
+                m_batchEntries.push_back({&OpaquePipeline(pipelines, material, fading), draw.model, &primitive, d, distance,
                                           OcclusionSphere(draw, primitive)});
             }
         }
@@ -2253,7 +2342,7 @@ namespace Flux {
         for (const TransparentDraw& item : m_transparent) {
             const MeshDraw& draw = m_draws[item.draw];
             const Pipelines& pipelines = GetPipelines(draw);
-            const ModelPrimitive& primitive = draw.model->primitives[item.primitive];
+            const ModelPrimitive& primitive = draw.model->GetPrimitives(draw.lod)[item.primitive];
             const GpuMaterial& material = draw.model->materials[primitive.material];
             const std::uint32_t page = draw.model->resources.page;
             const bool first = m_modelBatches.size() == passStarts[TransparentModelPass];
@@ -2284,13 +2373,14 @@ namespace Flux {
             passStarts[2 + c] = m_modelBatches.size();
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
                 const MeshDraw& draw = m_draws[d];
-                if (!CastsShadow(draw.center, draw.radius, c)) {
+                // Le niveau qui part d'un fondu n'a pas d'ombre : celle du niveau qui arrive suffit.
+                if (draw.fade < 0.0f || !CastsShadow(draw.center, draw.radius, c)) {
                     continue;
                 }
                 const Pipelines& pipelines = GetPipelines(draw);
-                for (const ModelPrimitive& primitive : draw.model->shadowPrimitives) {
+                for (const ModelPrimitive& primitive : draw.model->GetShadowPrimitives(ShadowLod(draw, c))) {
                     const GpuMaterial& material = draw.model->materials[primitive.material];
-                    if (IsTransparent(draw, material)) {
+                    if (IsTransparent(draw, material) || primitive.indexCount == 0) {
                         continue;
                     }
                     // Opaque et dans la structure du ray tracing : son ombre vient des rayons. Seuil d'alpha : pas
@@ -2317,9 +2407,9 @@ namespace Flux {
                     continue;
                 }
                 const Pipelines& pipelines = GetPipelines(draw);
-                for (const ModelPrimitive& primitive : draw.model->primitives) {
+                for (const ModelPrimitive& primitive : draw.model->GetPrimitives(draw.lod)) {
                     const GpuMaterial& material = draw.model->materials[primitive.material];
-                    if (!IsTransparent(draw, material)) {
+                    if (!IsTransparent(draw, material) && primitive.indexCount > 0) {
                         m_batchEntries.push_back({material.doubleSided ? pipelines.probeDoubleSided.get() : pipelines.probe.get(),
                                                   draw.model, &primitive, d, draw.distance});
                     }

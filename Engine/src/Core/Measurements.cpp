@@ -132,12 +132,13 @@ namespace Flux {
         std::string text;
         text += std::format("Mesures de Flux {} du {}\n", GetFullVersion(), Time(now, "%d/%m/%Y à %H:%M:%S"));
         text += std::format("GPU : {}\n", context.device);
-        text += std::format("Image : {} x {}, V-Sync {} ({} images), anticrénelage {}, détail du sol {}, nuages {}, végétation {}\n",
+        text += std::format("Image : {} x {}, V-Sync {} ({} images), anticrénelage {}, détail du sol {}, nuages {}, végétation {}, modèles {}\n",
                             context.width, context.height, context.vsync ? "oui" : "non", context.swapchainImages,
                             context.temporalAA ? "oui" : "non",
                             GroundDetailLabels[static_cast<std::size_t>(context.groundDetail)],
                             CloudQualityLabels[static_cast<std::size_t>(context.cloudQuality)],
-                            VegetationDistanceLabels[static_cast<std::size_t>(context.vegetationDistance)]);
+                            VegetationDistanceLabels[static_cast<std::size_t>(context.vegetationDistance)],
+                            ModelDetailLabels[static_cast<std::size_t>(context.modelDetail)]);
         text += std::format("Mise à l'échelle : {}, scène dessinée en {} x {}\n",
                             UpscalingLabels[static_cast<std::size_t>(context.upscaling)], context.renderSize.x,
                             context.renderSize.y);

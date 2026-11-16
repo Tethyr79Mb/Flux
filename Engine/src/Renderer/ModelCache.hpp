@@ -85,6 +85,9 @@ namespace Flux {
         // firstMeshlet : dans les paquets de la page (meshletCount à 0 sans mesh shaders).
         std::vector<ModelPrimitive> primitives;
         std::vector<ModelPrimitive> shadowPrimitives; // ModelData::shadowPrimitives
+        // ModelData::lods, plages dans la page comme ci-dessus : le niveau 0 est le modèle complet, le niveau n
+        // lods[n - 1]. Le ray tracing ne connaît que le modèle complet.
+        std::vector<ModelLod> lods;
         std::vector<Math::Box3f> clusters;            // ModelData::clusters ; vide : un seul bloc
         Math::Box3f bounds;
         bool animated = false; // page de modèles animés : os et poids (ModelSkinVertex) à côté des sommets
@@ -98,6 +101,13 @@ namespace Flux {
         std::chrono::steady_clock::time_point checked{};
 
         bool IsAnimated() const { return animated; }
+        std::uint32_t GetLodCount() const { return static_cast<std::uint32_t>(lods.size()) + 1; }
+        const std::vector<ModelPrimitive>& GetPrimitives(std::uint32_t lod) const {
+            return lod == 0 ? primitives : lods[lod - 1].primitives;
+        }
+        const std::vector<ModelPrimitive>& GetShadowPrimitives(std::uint32_t lod) const {
+            return lod == 0 ? shadowPrimitives : lods[lod - 1].shadowPrimitives;
+        }
     };
 
     // Page de géométrie : sommets, indices (32 bits) et, pour les modèles animés, os et poids de plusieurs modèles,

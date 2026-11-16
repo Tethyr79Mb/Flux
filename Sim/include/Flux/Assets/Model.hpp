@@ -86,6 +86,18 @@ namespace Flux {
         std::uint32_t primitive = 0; // dans ModelData::primitives (son matériau, son bloc)
     };
 
+    // Niveau de détail simplifié d'un modèle fixe, fait au chargement (meshoptimizer) : mêmes sommets, moins de
+    // triangles. Ses primitives suivent une à une celles du modèle complet (même matériau, même bloc ; une petite pièce
+    // peut n'en garder aucun) ; ses indices et ses paquets sont rangés après ceux des niveaux plus fins.
+    struct ModelLod
+    {
+        float error = 0.0f; // écart le plus grand (m, repère du modèle) entre ce niveau et le modèle complet
+        std::vector<ModelPrimitive> primitives;
+        std::vector<ModelPrimitive> shadowPrimitives;
+    };
+    // Niveaux simplifiés au plus, chacun visant la moitié des triangles du précédent.
+    inline constexpr std::uint32_t ModelMaxLods = 4;
+
     // Os qui déforment un sommet d'un modèle animé, envoyés au GPU à côté de ModelVertex (SkinInput dans
     // shaders/Mesh.slang).
     struct ModelSkinVertex
@@ -173,6 +185,9 @@ namespace Flux {
         std::vector<ModelMeshlet> meshlets;
         std::vector<std::uint32_t> meshletVertices;
         std::vector<std::uint8_t> meshletTriangles;
+        // Niveaux simplifiés d'un modèle fixe, du plus fin au plus léger (le modèle complet n'y est pas) ; vides pour
+        // un modèle animé, un petit modèle, ou si la simplification ne gagne presque rien (pièces toutes petites).
+        std::vector<ModelLod> lods;
         // Ce qui a été ignoré sans empêcher le chargement (image illisible, primitive en lignes...).
         std::vector<std::string> warnings;
 
@@ -192,8 +207,8 @@ namespace Flux {
     // dont il a été modélisé. Les matériaux identiques (tout sauf le nom) n'en font plus qu'un, les triangles d'un même
     // matériau ne forment plus qu'une primitive, et shadowPrimitives est rempli. Un modèle fixe dont un côté dépasse
     // 2 x ModelClusterSize est en plus découpé en blocs de ModelClusterSize (selon le centre de chaque triangle). Enfin
-    // chaque primitive d'un modèle fixe est découpée en paquets (meshlets), ses indices rangés paquet par paquet, sauf
-    // si meshlets = false.
+    // un modèle fixe reçoit ses niveaux simplifiés (lods) et chaque primitive, de chaque niveau, est découpée en paquets
+    // (meshlets), ses indices rangés paquet par paquet ; ni l'un ni l'autre si meshlets = false (collisions).
     inline constexpr float ModelClusterSize = 16.0f;
     FLUX_SIM_API void PrepareModel(ModelData& model, bool meshlets = true);
 

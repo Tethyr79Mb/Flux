@@ -474,6 +474,7 @@ namespace Flux {
                 workers->Run(tracersDone, prepareTracers);
             }
             meshes->SetJobSystem(workers);
+            meshes->SetViewHeight(renderHeight);
             meshes->Prepare(scene, camera, aspect, hidden, skyLighting, temporal, assetsDirectory, frameIndex);
             const MeshRenderer::PrepareTimes& parts = meshes->GetPrepareTimes();
             timings.prepareEntities = parts.entities;
@@ -1391,6 +1392,14 @@ namespace Flux {
 
     VegetationDistance Renderer::GetVegetationDistance() const {
         return m_impl->meshes->GetVegetationDistance();
+    }
+
+    void Renderer::SetModelDetail(ModelDetail detail) {
+        m_impl->meshes->SetModelDetail(detail);
+    }
+
+    ModelDetail Renderer::GetModelDetail() const {
+        return m_impl->meshes->GetModelDetail();
     }
 
     void Renderer::SetCloudQuality(CloudQuality quality) {
