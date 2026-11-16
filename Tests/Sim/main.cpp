@@ -16,6 +16,7 @@ int main() {
         {"projet", RunProjectTests},
         {"changement de scène", RunSceneChangeTests},
         {"modèles 3D (glTF)", RunModelTests},
+        {"mips des images", RunImageTests},
         {"physique (Jolt)", RunPhysicsTests},
         {"animation squelettique", RunAnimationTests},
         {"fils de travail (JobSystem)", RunJobSystemTests},

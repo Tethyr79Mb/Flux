@@ -48,6 +48,13 @@ namespace Flux::Vk {
         std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTexture(RHI::Format format, RHI::Extent extent,
                                                                                 const RHI::StagingBuffer& source,
                                                                                 std::uint64_t offset, bool mipmaps) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTextureLevels(RHI::Format format, RHI::Extent extent,
+                                                                                      std::uint32_t levels,
+                                                                                      std::span<const std::uint8_t> pixels) override;
+        std::expected<std::unique_ptr<RHI::Texture>, std::string> CreateTextureLevels(RHI::Format format, RHI::Extent extent,
+                                                                                      std::uint32_t levels,
+                                                                                      const RHI::StagingBuffer& source,
+                                                                                      std::uint64_t offset) override;
         std::expected<std::unique_ptr<RHI::StagingBuffer>, std::string> CreateStagingBuffer(std::uint64_t size) override;
         void ReleaseStaging(std::unique_ptr<RHI::StagingBuffer> staging) override;
         void BeginAsyncUploads() override;

@@ -21,6 +21,7 @@ bool RunPrefabTests();
 bool RunProjectTests();
 bool RunJobSystemTests();
 bool RunModelTests();
+bool RunImageTests();
 bool RunPhysicsTests();
 bool RunAnimationTests();
 bool RunVegetationTests();

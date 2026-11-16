@@ -28,8 +28,15 @@ namespace Flux {
             // restée dans rgba (vide ou taille fausse). staging nul : toutes restées dans rgba (mémoire refusée).
             std::unique_ptr<RHI::StagingBuffer> staging;
             std::vector<std::uint64_t> imageOffsets;
+            // Niveaux de mip rangés à imageOffsets[i] avec l'image (BuildMipChain : feuillage) ; 1 : niveau 0 seul, le
+            // GPU calcule les autres.
+            std::vector<std::uint32_t> imageLevels;
         };
         static constexpr std::uint64_t NoImage = UINT64_MAX;
+
+        // Seuil d'alpha de chaque image de data.images servant de couleur de base à un matériau à seuil (feuillage), 0
+        // pour les autres : leurs mips sont calculés par BuildMipChain pour garder la couverture.
+        static std::vector<float> GetMaskedCutoffs(const ModelData& data);
 
         // device : de quoi créer les mémoires d'envoi, depuis les fils de lecture (doit vivre plus longtemps).
         explicit ModelLoader(RHI::Device& device);

@@ -60,6 +60,11 @@ namespace Flux::Vk {
                                                                      std::span<const std::uint8_t> pixels, std::uint32_t levels,
                                                                      ImageLayers kind = ImageLayers::Single,
                                                                      std::uint32_t layerCount = 1);
+        // Texture 2D simple et ses `levels` niveaux RGBA8 déjà calculés, depuis une mémoire d'envoi (à sourceOffset) :
+        // feuillage, dont les mips gardent la couverture de l'alpha (BuildMipChain).
+        static std::expected<Image, std::string> CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
+                                                                     VkBuffer source, VkDeviceSize sourceOffset,
+                                                                     std::uint32_t levels);
 
         Image() = default;
         ~Image();
@@ -87,6 +92,10 @@ namespace Flux::Vk {
         private:
         // Image échantillonnée dont `upload` envoie le niveau 0 (faces ou couches à la suite), les niveaux suivants
         // réduits par le GPU.
+        // Image à `levels` niveaux donnés, envoyés par upload (régions des niveaux, octets attendus).
+        static std::expected<Image, std::string> CreateLevels(Device& device, VkFormat format, VkExtent2D extent, std::uint32_t levels,
+                                                              ImageLayers kind, std::uint32_t layerCount, std::uint64_t bytes,
+                                                              const std::function<bool(const Transfer::ImageWrite&)>& upload);
         static std::expected<Image, std::string> CreateSampled(Device& device, VkFormat format, VkExtent2D extent, bool mipmaps,
                                                                ImageLayers kind, std::uint32_t layerCount,
                                                                const std::function<bool(const Transfer::ImageWrite&)>& upload);

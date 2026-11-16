@@ -196,26 +196,26 @@ namespace Flux::Vk {
         }
     }
 
-    std::expected<Image, std::string> Image::CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
-                                                                 std::span<const std::uint8_t> pixels, std::uint32_t levels,
-                                                                 ImageLayers kind, std::uint32_t layerCount) {
+    std::expected<Image, std::string> Image::CreateLevels(Device& device, VkFormat format, VkExtent2D extent, std::uint32_t levels,
+                                                          ImageLayers kind, std::uint32_t layerCount, std::uint64_t bytes,
+                                                          const std::function<bool(const Transfer::ImageWrite&)>& upload) {
         const std::uint32_t layers = kind == ImageLayers::Cube ? 6u : kind == ImageLayers::Array ? layerCount : 1u;
         std::vector<VkBufferImageCopy> regions(levels);
         std::uint64_t offset = 0;
         for (std::uint32_t level = 0; level < levels; ++level) {
             const std::uint32_t width = std::max(extent.width >> level, 1u);
             const std::uint32_t height = std::max(extent.height >> level, 1u);
-            const std::uint64_t bytes = LevelBytes(format, width, height);
-            if (bytes == 0) {
+            const std::uint64_t levelBytes = LevelBytes(format, width, height);
+            if (levelBytes == 0) {
                 return std::unexpected("format de texture non pris en charge pour des mips donnés");
             }
             regions[level].bufferOffset = offset;
             regions[level].imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
             regions[level].imageExtent = {width, height, 1};
-            offset += bytes * layers;
+            offset += levelBytes * layers;
         }
-        if (offset != pixels.size()) {
-            return std::unexpected(std::format("texture : {} octets donnés, {} attendus pour {} niveaux", pixels.size(), offset, levels));
+        if (offset != bytes) {
+            return std::unexpected(std::format("texture : {} octets donnés, {} attendus pour {} niveaux", bytes, offset, levels));
         }
         auto image = Allocate(device, format, extent, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                               VK_IMAGE_ASPECT_COLOR_BIT, levels, kind, layerCount);
@@ -228,11 +228,28 @@ namespace Flux::Vk {
         write.levels = levels;
         write.layers = layers;
         write.regions = regions;
-        const bool copied = device.UploadImage(write, pixels);
-        if (!copied) {
+        if (!upload(write)) {
             return std::unexpected("envoi d'une texture au GPU");
         }
         return image;
+    }
+
+    std::expected<Image, std::string> Image::CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
+                                                                 std::span<const std::uint8_t> pixels, std::uint32_t levels,
+                                                                 ImageLayers kind, std::uint32_t layerCount) {
+        return CreateLevels(device, format, extent, levels, kind, layerCount, pixels.size(),
+                            [&](const Transfer::ImageWrite& write) { return device.UploadImage(write, pixels); });
+    }
+
+    std::expected<Image, std::string> Image::CreateTextureLevels(Device& device, VkFormat format, VkExtent2D extent,
+                                                                 VkBuffer source, VkDeviceSize sourceOffset, std::uint32_t levels) {
+        // L'appelant (RhiDevice::CreateTextureLevels) a vérifié que la mémoire d'envoi les contient tous.
+        std::uint64_t bytes = 0;
+        for (std::uint32_t level = 0; level < levels; ++level) {
+            bytes += LevelBytes(format, std::max(extent.width >> level, 1u), std::max(extent.height >> level, 1u));
+        }
+        return CreateLevels(device, format, extent, levels, ImageLayers::Single, 1, bytes,
+                            [&](const Transfer::ImageWrite& write) { return device.UploadImage(write, source, sourceOffset); });
     }
 
     Image::~Image() {

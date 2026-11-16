@@ -421,7 +421,8 @@ namespace Flux {
     // son matériau blanc.
     std::expected<GpuModel, std::string> ModelCache::Upload(const ModelData& data, std::string_view name,
                                                             const RHI::StagingBuffer* staging,
-                                                            std::span<const std::uint64_t> imageOffsets) {
+                                                            std::span<const std::uint64_t> imageOffsets,
+                                                            std::span<const std::uint32_t> imageLevels) {
         GpuModel model;
         model.resources = GpuModelResources(*this);
         GpuModelResources& resources = model.resources;
@@ -465,6 +466,7 @@ namespace Flux {
         // Case de la table des images envoyée pour cet indice de ModelData::images ; 0 (blanche) si aucune.
         std::vector<std::uint32_t> colorSlots(data.images.size(), 0);
         std::vector<std::uint32_t> dataSlots(data.images.size(), 0);
+        const std::vector<float> maskedCutoffs = ModelLoader::GetMaskedCutoffs(data);
         const auto send = [&](std::size_t i, RHI::Format format) -> std::uint32_t {
             if (resources.imageCount == 0) {
                 return 0;
@@ -472,8 +474,22 @@ namespace Flux {
             const ImageData& pixels = data.images[i];
             const RHI::Extent extent{static_cast<std::uint32_t>(pixels.size.x), static_cast<std::uint32_t>(pixels.size.y)};
             const std::uint64_t offset = i < imageOffsets.size() ? imageOffsets[i] : ModelLoader::NoImage;
-            auto image = staging && offset != ModelLoader::NoImage ? m_device.CreateTexture(format, extent, *staging, offset, true)
-                                                                    : m_device.CreateTexture(format, extent, pixels.rgba, true);
+            // Feuillage : mips qui gardent la couverture de l'alpha (sinon les feuilles s'évaporent de loin et le tronc
+            // reste seul), calculés par le fil de lecture ou, sans mémoire d'envoi, ici.
+            const bool masked = format == RHI::Format::RGBA8Srgb && maskedCutoffs[i] > 0.0f;
+            std::expected<std::unique_ptr<RHI::Texture>, std::string> image;
+            if (staging && offset != ModelLoader::NoImage) {
+                const std::uint32_t levels = masked && i < imageLevels.size() ? imageLevels[i] : 1;
+                image = levels > 1 ? m_device.CreateTextureLevels(format, extent, levels, *staging, offset)
+                                   : m_device.CreateTexture(format, extent, *staging, offset, true);
+            } else if (masked) {
+                std::uint32_t levels = 0;
+                const std::vector<std::uint8_t> chain = BuildMipChain(pixels, maskedCutoffs[i], levels);
+                image = levels > 1 ? m_device.CreateTextureLevels(format, extent, levels, chain)
+                                   : m_device.CreateTexture(format, extent, pixels.rgba, true);
+            } else {
+                image = m_device.CreateTexture(format, extent, pixels.rgba, true);
+            }
             if (!image) {
                 Log::Warning("modèle {} : image {} : {}", name, i, image.error());
                 return 0;
@@ -633,7 +649,7 @@ namespace Flux {
         }
         // Places neuves (aucune image en vol ne les lit) : rien à attendre, même pour un rechargement.
         m_device.BeginAsyncUploads();
-        auto uploaded = Upload(*result.data, name, result.staging.get(), result.imageOffsets);
+        auto uploaded = Upload(*result.data, name, result.staging.get(), result.imageOffsets, result.imageLevels);
         const std::uint64_t ticket = m_device.EndAsyncUploads();
         m_device.ReleaseStaging(std::move(result.staging));
         if (!uploaded) {

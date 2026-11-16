@@ -156,6 +156,42 @@ namespace Flux::Vk {
         return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
     }
 
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTextureLevels(RHI::Format format, RHI::Extent extent,
+                                                                                             std::uint32_t levels,
+                                                                                             std::span<const std::uint8_t> pixels) {
+        if (format != RHI::Format::RGBA8Unorm && format != RHI::Format::RGBA8Srgb) {
+            return std::unexpected("texture à mips donnés : RGBA8 seulement");
+        }
+        auto image = Image::CreateTextureLevels(*m_device, ToVulkan(format), {extent.width, extent.height}, pixels, levels);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
+    }
+
+    std::expected<std::unique_ptr<RHI::Texture>, std::string> RhiDevice::CreateTextureLevels(RHI::Format format, RHI::Extent extent,
+                                                                                             std::uint32_t levels,
+                                                                                             const RHI::StagingBuffer& source,
+                                                                                             std::uint64_t offset) {
+        const auto& staging = static_cast<const RhiStagingBuffer&>(source);
+        if (format != RHI::Format::RGBA8Unorm && format != RHI::Format::RGBA8Srgb) {
+            return std::unexpected("texture à mips donnés : RGBA8 seulement");
+        }
+        std::uint64_t bytes = 0;
+        for (std::uint32_t level = 0; level < levels; ++level) {
+            bytes += std::uint64_t{std::max(extent.width >> level, 1u)} * std::max(extent.height >> level, 1u) * 4;
+        }
+        if (levels == 0 || offset + bytes > staging.GetSize()) {
+            return std::unexpected("texture depuis une mémoire d'envoi : niveaux hors de la mémoire");
+        }
+        auto image = Image::CreateTextureLevels(*m_device, ToVulkan(format), {extent.width, extent.height}, staging.GetHandle(),
+                                                offset, levels);
+        if (!image) {
+            return std::unexpected(image.error());
+        }
+        return std::make_unique<RhiTexture>(std::move(*image), format, VK_IMAGE_ASPECT_COLOR_BIT, RHI::TextureAccess::Sampled);
+    }
+
     std::expected<std::unique_ptr<RHI::StagingBuffer>, std::string> RhiDevice::CreateStagingBuffer(std::uint64_t size) {
         // VMA est sûr entre fils (allocateur créé sans VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT).
         auto buffer = Vk::Buffer::Create(m_device->GetAllocator(), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Vk::Buffer::Memory::Staging);
