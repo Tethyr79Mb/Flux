@@ -116,7 +116,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Éclairage réaliste (plan du 2026-11-13 : https://claude.ai/artifact/JprtbD2cuivx7WQ3CnF6Tu ; repli GTX 1060 dans le plan) :
   - ✅ A1. RHI : jusqu'à 8 cibles de couleur par passe (`extraColorTargets`, `extraColors`), vérifié au choix du GPU.
   - 🔧 A2. G-buffer (2026-11-14, 16 octets par pixel : couleur de base et sorte de matériau, normales de la carte et de la face en octaèdre 16 bits, métal, rugosité, occlusion) et passe d'éclairage en compute pour les modèles opaques ; image identique avec et sans ray tracing, temps GPU égal (±0,03 ms). Limites : lampes encore parcourues une à une par pixel (grappes en A4) ; vue de contrôle passée par la courbe de tons.
-  - ⬜ A3. Sol, arbres, herbe dans le G-buffer ; air, nuages et intérieurs dans la passe d'éclairage. Océan et transparents restent en direct.
+  - ✅ A3. Sol, arbres (de près et imposteurs), herbe dans le G-buffer (2026-11-16, sortes de matière : modèle, feuillage, brin, imposteur) ; air, ombre des nuages et intérieurs dans la passe d'éclairage, une fois par pixel visible. Image identique à master (sol, forêt, orbite) et plus rapide sur la RX 7700 XT : au sol avec arbres 3,70 → 2,46 ms, forêt 1,71 → 1,44 ms, orbite 2,36 → 2,16 ms (arbres 1,72 → 0,69 ms). Océan et transparents restent en direct.
   - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
   - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
   - 🔨 A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations. Fait (2026-11-14) : sondes fixes (composant « Sonde de reflets », 4 au plus par image), capturées par le GPU en 256 pixels (objets opaques sur le ciel), préfiltrées comme le ciel, lues avec parallaxe de boîte et fondu vers le ciel ; refaites quand elles bougent, quand le ciel ou le soleil change, à la fin d'un chargement ou à intervalle choisi. À faire : sol des planètes, arbres, eau et transparents absents des captures ; diffus tiré du niveau le plus flou (pas d'irradiance à part) ; capture d'un coup (pas étalée sur plusieurs images) ; pas de boîte dessinée dans l'éditeur ; reflets de l'écran.
@@ -130,8 +130,8 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - ⬜ Ciel plus fin (nébuleuse en 2048 ou 4096, compressée BC6H) réglable dans les détails des options graphiques (idée de Bruno).
 - ✅ Élimination hors champ, opaques triés, mesure CPU et GPU (panneau Moteur en sections repliables : temps par passe du graphe de rendu, étapes, scène, mémoire) et de la mémoire (RAM du processus, mémoire vidéo).
 - ✅ Relevé des mesures dans un fichier (demande de Bruno du 2026-10-22) : bouton « Enregistrer les mesures (10 s) » du panneau Moteur, ou `FLUX_MESURES=secondes` dès la fin du chargement ; `Mesures/mesures-<date>.txt` à côté de l'exécutable avec réglages, caméra, durées d'image (médiane, 1 % les plus longues), CPU, passes et étapes du GPU (calculs détaillés : tuiles de planète, semis et tri des arbres, objets cachés) et compteurs de la scène (moyenne, min, max ; tuiles calculées et plaines semées à chaque image).
-- ✅ Feuillage des arbres sans éclairage caché : pré-passe de profondeur (seuil d'alpha), puis éclairage de la seule feuille visible ; ombre des nuages par sommet (mesuré au profiler : 40 % de l'image avant). Feuilles sans reflet du soleil (blanches à contre-jour avant), lumière enveloppante et traversante réglables dans Végétation.
-- 🔧 Sol des planètes allégé : tuiles de près à loin (par bandes de distance), ombre des nuages par sommet, lectures sous 5 % de poids et couleur moyenne de près évitées. Mesh shaders quand la carte les a (voir « Fonctions selon le GPU »). À améliorer : coût des pixels encore à mesurer chez Bruno.
+- ✅ Feuillage des arbres sans éclairage caché : pré-passe de profondeur (seuil d'alpha), puis éclairage de la seule feuille visible ; ombre des nuages au pixel dans la passe d'éclairage depuis A3 (avant par sommet, mesuré au profiler : 40 % de l'image avant). Feuilles sans reflet du soleil (blanches à contre-jour avant), lumière enveloppante et traversante réglables dans Végétation.
+- 🔧 Sol des planètes allégé : tuiles de près à loin (par bandes de distance), ombre des nuages et air au pixel dans la passe d'éclairage (A3), lectures sous 5 % de poids et couleur moyenne de près évitées. Mesh shaders quand la carte les a (voir « Fonctions selon le GPU »). À améliorer : coût des pixels encore à mesurer chez Bruno.
 - ✅ Diagnostic de plantage GPU : étape bloquée et panne du pilote dans plantage-gpu.txt (repères AMD, VK_EXT_device_fault).
 - ✅ Étapes de l'image nommées pour les outils de mesure (Radeon GPU Profiler, Nsight, RenderDoc), en Debug comme en Release (VK_EXT_debug_utils si présente).
 - ✅ Calcul sur GPU (compute shaders dans le RHI).
@@ -223,7 +223,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
-- ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour le sol et l'eau, plus au pixel.
+- ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour l'eau ; pour le sol, les arbres et l'herbe, une fois par pixel visible dans la passe d'éclairage (A3).
 - 🔧 Ciel et air lus dans deux tables refaites à chaque image quand la caméra est dans l'air (Hillaire 2020), au lieu
   de 16 à 24 pas par sommet et par pixel ; écart mesuré sous 1,5 % de la marche d'avant. Limites : vu de l'espace,
   marche d'avant (l'air n'y couvre qu'un anneau).
