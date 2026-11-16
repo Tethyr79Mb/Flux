@@ -6,6 +6,7 @@
 #include "Mcp/McpServer.hpp"
 #include "Panels/PlacePanel.hpp"
 #include "Panels/SceneEditor.hpp"
+#include "Panels/ViewCapture.hpp"
 
 #include <Flux/Assets/Image.hpp>
 #include <Flux/Core/Engine.hpp>
@@ -276,25 +277,6 @@ namespace FluxEditor {
                         out[c] = static_cast<std::uint8_t>(sum[c] / count);
                     }
                 }
-            }
-            return target;
-        }
-
-        ImageData Crop(const ImageData& source, int left, int top, int right, int bottom) {
-            left = std::clamp(left, 0, source.size.x);
-            right = std::clamp(right, left, source.size.x);
-            top = std::clamp(top, 0, source.size.y);
-            bottom = std::clamp(bottom, top, source.size.y);
-            if (right - left <= 0 || bottom - top <= 0) {
-                return source;
-            }
-            ImageData target;
-            target.size = {right - left, bottom - top};
-            target.rgba.resize(static_cast<std::size_t>(target.size.x) * static_cast<std::size_t>(target.size.y) * 4);
-            for (int y = 0; y < target.size.y; ++y) {
-                const std::uint8_t* from = source.rgba.data() + (static_cast<std::size_t>(top + y) * source.size.x + left) * 4;
-                std::copy_n(from, static_cast<std::size_t>(target.size.x) * 4,
-                            target.rgba.data() + static_cast<std::size_t>(y) * target.size.x * 4);
             }
             return target;
         }
@@ -1078,8 +1060,8 @@ namespace FluxEditor {
                     }
                     if (!window) {
                         const UI::Rect& view = context.view;
-                        *image = Crop(*image, static_cast<int>(view.min.x), static_cast<int>(view.min.y),
-                                      static_cast<int>(view.max.x), static_cast<int>(view.max.y));
+                        *image = CropImage(*image, static_cast<int>(view.min.x), static_cast<int>(view.min.y),
+                                           static_cast<int>(view.max.x), static_cast<int>(view.max.y));
                     }
                     const ImageData shrunk = Shrink(*image, maxSize);
                     const std::vector<std::uint8_t> png = EncodePng(shrunk);

@@ -2,6 +2,7 @@
 
 #include <Flux/Core/Engine.hpp>
 #include <Flux/Core/Log.hpp>
+#include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Filesystem.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Renderer/Renderer.hpp>
@@ -34,12 +35,34 @@ namespace FluxEditor {
         }
     }
 
-    void EditorLayout::DrawWindowMenu(UI::Context& ui) {
+    void EditorLayout::DrawWindowMenu(Engine& engine) {
+        UI::Context& ui = engine.GetUi();
         if (ui.BeginMenu("Fenêtre")) {
+            if (ui.MenuItem("Vue seule en plein écran", "F11")) {
+                SetViewOnly(engine, true);
+            }
             if (ui.MenuItem("Réinitialiser la disposition")) {
                 BuildDefault(ui);
             }
             ui.EndMenu();
+        }
+    }
+
+    void EditorLayout::SetViewOnly(Engine& engine, bool viewOnly) {
+        m_viewOnly = viewOnly;
+        engine.GetWindow().SetFullscreen(viewOnly);
+    }
+
+    void EditorLayout::HandleShortcuts(Engine& engine, bool playing) {
+        Window& window = engine.GetWindow();
+        const Input& input = window.GetInput();
+        if (input.WasKeyPressed(Key::F11)) {
+            // Le moteur a déjà basculé le plein écran de la fenêtre à cette frame : la vue seule le suit.
+            m_viewOnly = window.IsFullscreen();
+        } else if (m_viewOnly && !window.IsFullscreen()) {
+            m_viewOnly = false; // sortie du plein écran par Alt+Entrée : les panneaux reviennent avec la bordure
+        } else if (m_viewOnly && !playing && input.WasKeyPressed(Key::Escape) && !engine.GetUi().WantsKeyboard()) {
+            SetViewOnly(engine, false);
         }
     }
 
@@ -49,6 +72,12 @@ namespace FluxEditor {
             Load(ui);
         }
         const Math::Vector2i size = engine.GetWindow().GetSize();
+        if (m_viewOnly) {
+            // Sans DockSpace à cette frame, la disposition reste en mémoire telle quelle pour le retour des panneaux.
+            const UI::Rect view{{0.0f, 0.0f}, {static_cast<float>(size.x), static_cast<float>(size.y)}};
+            engine.GetRenderer().SetSceneViewport(view.min, view.max);
+            return view;
+        }
         const UI::Rect view = ui.DockSpace({0.0f, ui.GetMenuBarHeight()},
                                            {static_cast<float>(size.x), static_cast<float>(size.y) - ui.GetStatusBarHeight()});
         engine.GetRenderer().SetSceneViewport(view.min, view.max);

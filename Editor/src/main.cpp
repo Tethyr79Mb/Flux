@@ -29,6 +29,7 @@
 #include "Panels/SceneViewport.hpp"
 #include "Panels/SettingsWindow.hpp"
 #include "Panels/TextTools.hpp"
+#include "Panels/ViewCapture.hpp"
 #include "Panels/WorldWindow.hpp"
 
 #include <charconv>
@@ -187,6 +188,7 @@ int main(int argc, char** argv) {
     FluxEditor::InterfaceEditor interfaceEditor;
     FluxEditor::VegetationPanel vegetationPanel;
     FluxEditor::ConsolePanel console;
+    FluxEditor::ViewCapture capture; // F12
     // Pas de panneau « Moteur » (images/s, GPU...) : l'éditeur a son panneau Caméra et Fichier > Paramètres.
     Flux::Engine engine({.title = "Flux Editor", .windowSize = {1600, 900}, .maximized = true, .showDebugOverlay = false,
                           .drawScreenUi = false, .loadingScreen = false}); // la vue dessine l'interface de la scène
@@ -205,8 +207,12 @@ int main(int argc, char** argv) {
     engine.SetEditorUpdate([&](Flux::Engine& e, double deltaSeconds) {
         // Barre de menus d'abord : « Ouvrir » ou « Arrêter » remplacent la scène avant que les panneaux la décrivent.
         playMode.HandleShortcuts(e, document.GetPath());
-        if (playMode.IsPlaying()) {
-            interfaceEditor.ShowScene(); // le jeu se joue dans la vue de la scène
+        layout.HandleShortcuts(e, playMode.IsPlaying());
+        capture.HandleShortcuts(e);
+        // Vue seule (F11) : la vue 3D sur tout l'écran, sans rien de l'éditeur autour ni dedans.
+        const bool viewOnly = layout.IsViewOnly();
+        if (playMode.IsPlaying() || viewOnly) {
+            interfaceEditor.ShowScene(); // le jeu se joue dans la vue de la scène, et la vue seule la montre
         }
         document.SetLocked(playMode.IsPlaying());
         // Raccourcis du panneau Végétation (Ctrl+Z quand la souris est dessus), puis de l'interface affichée, sinon
@@ -223,7 +229,7 @@ int main(int argc, char** argv) {
             }
         }
         Flux::UI::Context& ui = e.GetUi();
-        if (ui.BeginMainMenuBar()) {
+        if (!viewOnly && ui.BeginMainMenuBar()) {
             if (ui.BeginMenu("Fichier")) {
                 if (interfaceEditor.IsActive()) {
                     interfaceEditor.DrawFileMenuItems(ui, e);
@@ -239,15 +245,17 @@ int main(int argc, char** argv) {
                 ui.EndMenu();
             }
             DrawEditMenu(e, history, sceneEditor, interfaceEditor);
-            layout.DrawWindowMenu(ui);
+            layout.DrawWindowMenu(e);
             if (ui.MenuBarButton("Monde", world.IsOpen(), Flux::UI::Icon::Planet)) {
                 world.Toggle();
             }
             ui.SetItemTooltip("Gravité, air et chute max de la scène");
             ui.EndMainMenuBar();
         }
-        DrawToolBar(e, document, history, sceneEditor, interfaceEditor, playMode, settings, textTools);
-        console.DrawStatusBar(e, StatusDetails(e, document, sceneEditor, playMode.IsPlaying()));
+        if (!viewOnly) {
+            DrawToolBar(e, document, history, sceneEditor, interfaceEditor, playMode, settings, textTools);
+            console.DrawStatusBar(e, StatusDetails(e, document, sceneEditor, playMode.IsPlaying()));
+        }
         document.SetLocked(playMode.IsPlaying());
         if (document.TakeReplaced()) {
             history.Clear(); // l'historique parlait de l'ancienne scène
@@ -263,24 +271,35 @@ int main(int argc, char** argv) {
         mcp.Update();
         history.BeginFrame(e, sceneEditor.GetSelection());
 
-        // Onglets au-dessus de la vue : la scène, ou une interface ouverte (qui remplace alors la vue 3D).
-        const Flux::UI::Rect view = interfaceEditor.DrawTabs(e, layout.Update(e));
-        toolContext.view = view;
-        const bool editingInterface = interfaceEditor.IsActive();
-        if (!editingInterface) {
-            placePanel.Update(e, sceneEditor, history, view, contentBrowser.GetPrefabs(), viewport.IsDroppingToGround()); // « Placer » pose dans la vue 3D
+        if (viewOnly) {
+            // Ni panneaux ni onglets : ceux qui ne sont pas décrits à cette frame ne s'affichent pas, et la
+            // disposition les retrouve au retour. La console relit le journal à son retour.
+            const Flux::UI::Rect view = layout.Update(e);
+            toolContext.view = view;
+            viewport.Update(e, sceneEditor, view, true);
+            interfaceEditor.Update(e, view); // vue de la scène affichée (ShowScene) : elle n'y dessine rien
+            capture.Update(e, view);
+        } else {
+            // Onglets au-dessus de la vue : la scène, ou une interface ouverte (qui remplace alors la vue 3D).
+            const Flux::UI::Rect view = interfaceEditor.DrawTabs(e, layout.Update(e));
+            toolContext.view = view;
+            const bool editingInterface = interfaceEditor.IsActive();
+            if (!editingInterface) {
+                placePanel.Update(e, sceneEditor, history, view, contentBrowser.GetPrefabs(), viewport.IsDroppingToGround()); // « Placer » pose dans la vue 3D
+            }
+            sceneEditor.Update(e, history, document, contentBrowser);
+            if (!editingInterface) {
+                viewport.Update(e, sceneEditor, view, capture.IsCapturingFrame()); // après l'inspecteur : le gizmo suit ses modifications
+            }
+            interfaceEditor.Update(e, view);
+            vegetationPanel.Update(e);
+            contentBrowser.Update(e, document, deltaSeconds);
+            FluxEditor::DrawCameraPanel(e);
+            console.Update(e);
+            settings.Draw(e);
+            world.Draw(e, sceneEditor, history, playMode.IsPlaying());
+            capture.Update(e, view);
         }
-        sceneEditor.Update(e, history, document, contentBrowser);
-        if (!editingInterface) {
-            viewport.Update(e, sceneEditor, view); // après l'inspecteur : le gizmo suit ses modifications
-        }
-        interfaceEditor.Update(e, view);
-        vegetationPanel.Update(e);
-        contentBrowser.Update(e, document, deltaSeconds);
-        FluxEditor::DrawCameraPanel(e);
-        console.Update(e);
-        settings.Draw(e);
-        world.Draw(e, sceneEditor, history, playMode.IsPlaying());
 
         if (sceneEditor.TakeModified()) {
             history.NoteModified();
