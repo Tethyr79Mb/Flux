@@ -2539,10 +2539,13 @@ namespace Flux {
                 }
                 state.page = BindState::NoPage; // indices du carré liés à la place de ceux d'une page
                 commands.BindIndexBuffer(*m_impostorIndices);
-                // color : sphère du modèle détaillé, celle de la capture ; material : atlas de couleur.
+                // color : sphère du modèle détaillé, celle de la capture ; emissive : bande de fondu (ImpostorFade) ;
+                // material : atlas de couleur.
                 const Math::Vector3f center = model.bounds.GetCenter();
+                const std::array<float, 2> fade = list == Planetology::VegetationRenderer::Far ? m_vegetation->GetImpostorFade()
+                                                                                                : std::array{0.0f, 0.0f};
                 const DrawParams params{{center.x, center.y, center.z, Math::Length(model.bounds.GetSize() * 0.5f)},
-                                        {0.0f, 0.0f, 0.0f, 0.0f}, cascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
+                                        {fade[0], fade[1], 0.0f, 0.0f}, cascade, 0.0f, 0u, 1.0f, 1.0f, 0.0f, 0.0f,
                                         draw.impostor, m_treeDraw, {}};
                 commands.PushConstants(&params, sizeof(params));
                 commands.DrawIndexedIndirect(m_vegetation->GetCommands(frameIndex), draw.command * sizeof(RHI::DrawIndexedCommand), 1);

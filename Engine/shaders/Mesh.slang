@@ -2689,7 +2689,25 @@ struct ImpostorVertexOutput
     nointerpolation float3 weights : WEIGHTS; // leur part (somme 1)
     nointerpolation float4 rotation : ROTATION; // de l'arbre (quaternion), pour ses normales
     nointerpolation float radius : RADIUS;
+    nointerpolation float fade : FADE; // part de l'imposteur gardée (ImpostorFade)
 };
+
+// Fondu de l'imposteur sur le modèle de près (VegetationRenderer::ImpostorFadeShare) : dans la bande avant farDistance,
+// l'arbre est dessiné en entier par son modèle et par son imposteur, dont une part de pixels de plus en plus petite
+// reste en approchant. Le modèle apparaît derrière l'imposteur au lieu de le remplacer d'un coup. params.emissive :
+// début de la bande et 1 / sa largeur (0 : pas de fondu).
+float ImpostorFade(float3 center)
+{
+    return params.emissive.y > 0.0 ? saturate((length(center) - params.emissive.x) * params.emissive.y) : 1.0;
+}
+
+// Trame au pixel (bruit à gradient entrelacé, Jimenez 2014), décalée à chaque image : le TAA en fait un fondu continu.
+float ImpostorDither(float2 pixel)
+{
+    const float shift = float(uint(frame[0].cameraForward.w * 60.0) % 64u) * 5.588238;
+    pixel += shift;
+    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
+}
 
 // Point `local` (repère de l'arbre, sphère unité) sur l'image de la vue `view`, comme vertexImpostorBake.
 float2 ImpostorUv(uint view, float3 local)
@@ -2745,6 +2763,7 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
     output.tint = TreeTint(instance);
     output.rotation = rotation;
     output.radius = radius;
+    output.fade = ImpostorFade(center);
     return output;
 }
 
@@ -2752,6 +2771,9 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
 [shader("fragment")]
 GBufferOutput fragmentImpostor(ImpostorVertexOutput input)
 {
+    if (input.fade < 1.0 && ImpostorDither(input.position.xy) >= input.fade) {
+        discard;
+    }
     float4 color = float4(0.0);
     float4 packed = float4(0.0);
     const float2 uvs[3] = {input.uv0, input.uv1, input.uv2};
