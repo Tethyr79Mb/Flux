@@ -496,8 +496,9 @@ namespace Flux {
             // Seuil d'alpha avec pré-passe de profondeur (Pipelines::depthMasked, ce programme de sommets) : les
             // pipelines à seuil n'éclairent ensuite que les pixels de même profondeur, sans l'écrire.
             const char* depthVertex = nullptr;
-            // Opaques dans la passe « G-buffer » (modèles : fragment et maskedFragment l'écrivent), éclairés ensuite par
-            // LightingRenderer ; sinon dans la passe de la scène.
+            // Opaques dans la passe « G-buffer » (modèles, arbres, sol : fragment, maskedFragment et geometryFragment
+            // l'écrivent, la pré-passe des arbres y est aussi), éclairés ensuite par LightingRenderer ; sinon dans la
+            // passe de la scène.
             bool gbuffer = false;
         };
         // Cibles de la passe « G-buffer » après l'image de la scène : mouvement, les trois textures du G-buffer, puis la
@@ -617,10 +618,13 @@ namespace Flux {
                 desc.vertexEntryPoint = kind.depthVertex;
                 desc.vertexAttributes = kind.shadowAttributes;
                 desc.fragmentEntryPoint = "fragmentShadow";
+                // Mêmes cibles que la passe où elle est dessinée (celles de createMain), aucune écrite : fragmentShadow
+                // n'écrit que la profondeur.
                 desc.writeColor = false;
-                desc.extraColors[0].write = false; // fragmentShadow n'écrit pas le mouvement
-                desc.extraColors[1].write = false;
-                desc.extraColors[1].blend = false;
+                for (RHI::ExtraColorTarget& extra : desc.extraColors) {
+                    extra.write = false;
+                    extra.blend = false;
+                }
                 desc.depthWrite = true;
                 desc.blend = RHI::BlendMode::Opaque;
                 // Profondeur écrite un peu plus loin (reverse-Z : plus petite) : rien ne garantit au bit près la même
@@ -656,10 +660,14 @@ namespace Flux {
                 // Plus proche ou égal à la profondeur de la pré-passe, écrite un peu plus loin exprès (voir plus haut).
                 desc.depthCompare = RHI::CompareOp::GreaterOrEqual;
                 desc.blend = RHI::BlendMode::Opaque;
-                desc.extraColors[0].write = kind.motion;
-                desc.extraColors[1].format = sunFormat;
-                desc.extraColors[1].write = kind.motion;
-                desc.extraColors[1].blend = false;
+                if (kind.gbuffer) {
+                    setGBufferTargets(desc);
+                } else {
+                    desc.extraColors[0].write = kind.motion;
+                    desc.extraColors[1].format = sunFormat;
+                    desc.extraColors[1].write = kind.motion;
+                    desc.extraColors[1].blend = false;
+                }
                 auto result = create(pipeline, desc);
                 desc.depthCompare = RHI::CompareOp::Greater;
                 return result;
@@ -734,7 +742,7 @@ namespace Flux {
             }
         }
         if (auto result = createAll(m_tree, {staticBuffers, staticAttributes, staticShadow, "vertexTree", "vertexTreeShadow",
-                                             "fragmentTreeOpaque", "fragmentTree", true, true, false, nullptr, "vertexTreeDepth"});
+                                             "fragmentTreeOpaque", "fragmentTree", true, true, false, nullptr, "vertexTreeDepth", true});
             !result) {
             return result;
         }
@@ -765,9 +773,7 @@ namespace Flux {
             desc.vertexBuffers = {};
             desc.vertexAttributes = {};
             desc.colorFormat = colorFormat;
-            desc.extraColors[0].format = motionFormat;
-            desc.extraColors[1].format = sunFormat; // dans la passe de la scène : lumière du soleil à part, comme les arbres
-            desc.extraColors[1].write = sunFormat != RHI::Format::Undefined;
+            setGBufferTargets(desc); // dans la passe « G-buffer », comme les arbres de près
             desc.depthFormat = depthFormat;
             if (auto result = create(m_impostor, desc); !result) {
                 return result;
@@ -786,7 +792,7 @@ namespace Flux {
             }
         }
         if (auto result = createAll(m_planet, {planetBuffers, planetAttributes, planetShadow, "vertexPlanet", "vertexShadowPlanet",
-                                               "fragmentPlanet", "fragmentMain", true, false, false, "fragmentPlanetGeometry"});
+                                               "fragmentPlanet", "fragmentMain", true, false, false, "fragmentPlanetGeometry", nullptr, true});
             !result) {
             return result;
         }
@@ -809,10 +815,7 @@ namespace Flux {
             mesh.bindGroupLayouts = meshLayouts;
             mesh.pushConstantsSize = sizeof(DrawParams);
             mesh.colorFormat = colorFormat;
-            mesh.extraColors[0].format = motionFormat;
-            mesh.extraColors[0].write = true;
-            mesh.extraColors[1].format = sunFormat;
-            mesh.extraColors[1].write = sunFormat != RHI::Format::Undefined;
+            setGBufferTargets(mesh); // dans la passe « G-buffer », comme m_planet
             mesh.depthFormat = depthFormat;
             mesh.depthTest = true;
             mesh.depthWrite = true;
@@ -841,10 +844,7 @@ namespace Flux {
             grass.bindGroupLayouts = grassLayouts;
             grass.pushConstantsSize = sizeof(DrawParams);
             grass.colorFormat = colorFormat;
-            grass.extraColors[0].format = motionFormat;
-            grass.extraColors[0].write = true;
-            grass.extraColors[1].format = sunFormat;
-            grass.extraColors[1].write = sunFormat != RHI::Format::Undefined;
+            setGBufferTargets(grass); // dans la passe « G-buffer », avec le sol
             grass.depthFormat = depthFormat;
             grass.depthTest = true;
             grass.depthWrite = true;
