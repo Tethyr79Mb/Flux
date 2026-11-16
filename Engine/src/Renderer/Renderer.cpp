@@ -755,9 +755,10 @@ namespace Flux {
                 commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
                 commands.SetScissor({0, 0, frame.render.width, frame.render.height});
             };
-            // Modèles opaques : leur surface dans le G-buffer, leur lumière propre (émissif, contour) dans l'image de la
-            // scène, effacée ici à la couleur du fond. La lumière du soleil à part (ray tracing) est effacée, la passe
-            // « éclairage » l'écrit.
+            // Modèles opaques, arbres, herbe et sol des planètes : leur surface dans le G-buffer, leur lumière propre
+            // (émissif, contour) dans l'image de la scène, effacée ici à la couleur du fond. La lumière du soleil à part
+            // (ray tracing) est effacée, la passe « éclairage » l'écrit. Étapes enregistrées en même temps, chacune dans
+            // sa liste (arbres et sol sont les plus longs).
             const auto gbufferBase = targets.gbufferBase;
             const auto gbufferNormals = targets.gbufferNormals;
             const auto gbufferSurface = targets.gbufferSurface;
@@ -769,6 +770,8 @@ namespace Flux {
                 .When(scene)
                 .Reads(cpu)
                 .Reads(culled)
+                .Reads(tiles)
+                .Reads(impostors)
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
@@ -789,8 +792,11 @@ namespace Flux {
                                                    .keepDepth = true};
                     },
                     renderViewport)
-                .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); });
-            // Les pixels des modèles éclairés en compute, avec le code du rendu direct (LightingRenderer).
+                .Step("objets", [this](RHI::CommandList& commands) { meshes->DrawOpaque(commands, frame.index); })
+                .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
+                .Step("herbe", [this](RHI::CommandList& commands) { meshes->DrawGrass(commands, frame.index); })
+                .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); });
+            // Les pixels du G-buffer éclairés en compute, avec le code du rendu direct (LightingRenderer).
             auto lightingPass = graph.AddPass("éclairage");
             if (rayShadows) {
                 lightingPass.Writes(targets.sceneSun, RHI::TextureAccess::Storage);
@@ -823,7 +829,6 @@ namespace Flux {
                 .Reads(cpu)
                 .Reads(tiles)
                 .Reads(culled)
-                .Reads(impostors)
                 .Reads(shadowMap)
                 .Reads(terrainShadowMap)
                 .Reads(forestShadowMap)
@@ -838,8 +843,8 @@ namespace Flux {
                 .Writes(sceneColor)
                 .Writes(motion)
                 .Writes(sceneDepth)
-                // Étapes enregistrées en même temps, chacune dans sa liste (arbres, sol sont les plus longs). La suite
-                // de la passe « G-buffer » : image, mouvement et profondeur gardés.
+                // Étapes enregistrées en même temps, chacune dans sa liste. La suite de la passe « G-buffer » et de
+                // l'éclairage : image, mouvement et profondeur gardés.
                 .BeginParallel(
                     [this] {
                         return RHI::RenderPassDesc{.depth = graph.GetTexture(targets.sceneDepth),
@@ -849,9 +854,6 @@ namespace Flux {
                                                    .keepDepth = true, .loadDepth = true, .loadColor = true};
                     },
                     renderViewport)
-                .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
-                .Step("herbe", [this](RHI::CommandList& commands) { meshes->DrawGrass(commands, frame.index); })
-                .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); })
                 .Step("fond du ciel", [this](RHI::CommandList& commands) { sky->Draw(commands, frame.index); })
                 .Step("océan", [this](RHI::CommandList& commands) { meshes->DrawOcean(commands, frame.index); });
             // Ombres des modèles fixes en rayons (RayShadowRenderer), ajoutées à l'image de la scène avant les nuages et
