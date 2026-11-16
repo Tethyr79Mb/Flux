@@ -92,7 +92,7 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
             // Le soleil aussi : le cœur de l'arbre est à l'ombre de ses branches (pas tout à fait : la lumière passe).
             surface.roughness = 0.8;
             shadowLift = 1.2 * material.y * ImpostorRadiusScale;
-            clouds *= lerp(1.0, material.z, 0.7);
+            clouds *= lerp(1.0, material.z, 0.9);
         }
     }
     float inside;

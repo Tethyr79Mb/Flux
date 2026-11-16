@@ -2668,7 +2668,9 @@ ImpostorBakeTargets fragmentImpostorBake(ImpostorBakeOutput input)
     // du haut, éclairées. Approchée par la distance à l'axe (y, le haut de l'arbre) et la hauteur ; avec l'occlusion
     // du matériau.
     const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
-    const float open = saturate(0.35 + 2.0 * length(input.local.xz) + 0.25 * input.local.y);
+    // Réglée sur le détaillé (choix de Bruno, 2026-11-16) : avec 0,35 + 2 x distance, presque toutes les aiguilles
+    // passaient pour éclairées et les imposteurs ressortaient plus clairs et plus jaunes (luminance 72 contre 54-63).
+    const float open = saturate(0.2 + 1.4 * length(input.local.xz) + 0.2 * input.local.y);
     ImpostorBakeTargets output;
     output.color = float4(base.rgb, 1.0);
     output.normal = float4(normal * 0.5 + 0.5, open * occlusion);
