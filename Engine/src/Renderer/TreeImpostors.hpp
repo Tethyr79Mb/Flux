@@ -17,14 +17,17 @@ namespace Flux {
     // photographié une fois par le GPU, au premier besoin, sous Grid x Grid directions de la demi-sphère du haut
     // (vertexImpostorBake), dans deux atlas à niveaux de mip rangés dans la table des images de ModelCache : couleur
     // (alpha : couverture) et normales. Une capture par image au plus ; en attendant, le modèle lointain sert.
-    // Mémoire : 2 x Size² x 4 octets plus les mips, environ 11 Mo par espèce.
+    // Mémoire : 2 x Size² x 4 octets plus les mips, environ 44 Mo par espèce.
     class TreeImpostors {
         public:
         // Doit correspondre à ImpostorGrid dans shaders/Mesh.slang.
         static constexpr std::uint32_t Grid = 8;
-        static constexpr std::uint32_t Size = 1024; // 128 pixels par vue
+        // 256 pixels par vue : un conifère de 40 m reste net dès 250 m (farDistance par défaut) sur un écran 1080p ;
+        // avec 128, l'imposteur était flou en deçà de 500 m et le passage aux imposteurs repoussé là où les maillages
+        // sont les plus laids (aiguilles plus fines qu'un pixel).
+        static constexpr std::uint32_t Size = 2048;
         // Jusqu'à 4 pixels par vue : plus bas, les vues voisines se mélangeraient.
-        static constexpr std::uint32_t MipLevels = 6;
+        static constexpr std::uint32_t MipLevels = 7;
         static constexpr RHI::Format ColorFormat = RHI::Format::RGBA8Srgb;
         static constexpr RHI::Format NormalFormat = RHI::Format::RGBA8Unorm;
         static constexpr RHI::Format DepthFormat = RHI::Format::D32Float;

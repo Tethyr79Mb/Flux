@@ -255,7 +255,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   aussi les ombres, imposteur octaédrique au loin), vent, jusqu'à 5 km par défaut, puis la couleur des forêts sur le
   sol (visible de haut et de l'espace). Imposteurs (`TreeImpostors`) : le modèle détaillé de chaque espèce pris par le
   GPU sous 8×8 vues de la demi-sphère du haut à sa première apparition (atlas couleur et normales 1024², environ
-  11 Mo par espèce), un carré par arbre qui mélange les trois vues les plus proches ; tous les arbres gardés jusqu'à la
+  44 Mo par espèce, 256 pixels par vue), un carré par arbre qui mélange les trois vues les plus proches ; tous les arbres gardés jusqu'à la
   portée (plus d'éclaircissement au loin). Ombres des forêts au loin (demande de Bruno du 2026-11-09) : une carte de
   plus en deux cartes centrées sur la caméra (rayon 1 km et portée, 4096² chacune, 2048 sur le minimum ; indépendantes
   du regard, choisies par la distance), refaite à chaque image avec

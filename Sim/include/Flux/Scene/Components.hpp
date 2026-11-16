@@ -320,8 +320,10 @@ namespace Flux {
         std::string biome6 = "Vegetation/Biomes/Plaine.biome.json";
         std::string biome7;
         std::string biome8;
-        float lodDistance = 60.0f; // m
-        float farDistance = 300.0f;
+        // Imposteurs tôt : au-delà de 200-300 m, les aiguilles des maillages sont plus fines qu'un pixel et les arbres
+        // se dégarnissent (12 % de la silhouette couverte contre 60 % pour l'imposteur, mesuré le 2026-11-16).
+        float lodDistance = 100.0f; // m
+        float farDistance = 250.0f;
         float range = 5000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)
         // Éclairage du feuillage (shaders/Mesh.slang, ShadeFoliage) : de combien la lumière du soleil déborde sur les
         // feuilles tournées de l'autre côté (0 : pas du tout), et la part qui traverse une feuille vue à contre-jour.
