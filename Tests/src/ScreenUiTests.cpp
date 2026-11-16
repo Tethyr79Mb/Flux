@@ -1,6 +1,7 @@
 // Textes et images à l'écran : placement selon l'ancre, le décalage et la taille de la vue ; sauvegarde des composants.
 #include "Check.hpp"
 
+#include "Flux/Graphics/Camera.hpp"
 #include "Flux/Graphics/Font.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -187,6 +188,31 @@ namespace {
         return true;
     }
 
+    // Étiquettes flottantes : centrées sur leur point projeté, rien derrière la caméra ni au-delà de leur distance.
+    bool RunWorldLabelTests(const UI::Font& font) {
+        UI::DrawList list(font);
+        Scene scene;
+        const Entity ahead = scene.CreateEntity("Devant");
+        scene.Get<TransformComponent>(ahead).position = {0.0, -1.0, -10.0};
+        scene.Add<WorldLabelComponent>(ahead, WorldLabelComponent{.text = "Or", .size = 24.0f, .height = 1.0f});
+        const Entity behind = scene.CreateEntity("Derrière");
+        scene.Get<TransformComponent>(behind).position = {0.0, 0.0, 10.0};
+        scene.Add<WorldLabelComponent>(behind, WorldLabelComponent{.text = "Fer"});
+        const Entity distant = scene.CreateEntity("Loin");
+        scene.Get<TransformComponent>(distant).position = {0.0, 0.0, -50.0};
+        scene.Add<WorldLabelComponent>(distant, WorldLabelComponent{.text = "Cuivre", .maxDistance = 20.0f});
+
+        Camera camera; // à l'origine, vers -z
+        std::vector<ScreenUi::ItemRect> rects;
+        ScreenUi::Draw(scene, list, {0.0f, 0.0f}, {1920.0f, 1080.0f}, {.rects = &rects}); // sans caméra : rien
+        CHECK(rects.empty());
+        ScreenUi::Draw(scene, list, {0.0f, 0.0f}, {1920.0f, 1080.0f}, {.rects = &rects, .camera = &camera});
+        CHECK(rects.size() == 1 && rects[0].entity == ahead);
+        // Relevée de sa hauteur (1 m) jusqu'à l'axe de visée : au centre de la vue, fond compris.
+        CHECK(!rects.empty() && Near((rects[0].min + rects[0].max) * 0.5f, {960.0f, 540.0f}));
+        return true;
+    }
+
     bool RunSaveTests() {
         ComponentRegistry components;
         RegisterEngineComponents(components);
@@ -250,5 +276,6 @@ bool RunScreenUiTests() {
         std::printf("ÉCHEC : police au chemin accentué (%s)\n", other.error().c_str());
         return false;
     }
-    return RunLayoutTests(**font) && RunImageLayoutTests(**font) && RunFontTests(**font, **other) && RunSaveTests();
+    return RunLayoutTests(**font) && RunImageLayoutTests(**font) && RunFontTests(**font, **other) && RunWorldLabelTests(**font)
+        && RunSaveTests();
 }

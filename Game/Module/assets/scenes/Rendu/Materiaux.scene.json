@@ -108,6 +108,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Plastique blanc : rugosité 0 à 1",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -142,6 +155,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0
+      },
+      "worldLabel": {
+        "text": "rugosité 0.0",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -176,6 +202,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.2
+      },
+      "worldLabel": {
+        "text": "rugosité 0.2",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -210,6 +249,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.4
+      },
+      "worldLabel": {
+        "text": "rugosité 0.4",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -244,6 +296,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.6
+      },
+      "worldLabel": {
+        "text": "rugosité 0.6",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -278,6 +343,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.8
+      },
+      "worldLabel": {
+        "text": "rugosité 0.8",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -312,6 +390,19 @@
         ],
         "metallic": 0.0,
         "roughness": 1.0
+      },
+      "worldLabel": {
+        "text": "rugosité 1.0",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -334,6 +425,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Aluminium : rugosité 0 à 1",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -368,6 +472,19 @@
         ],
         "metallic": 1.0,
         "roughness": 0
+      },
+      "worldLabel": {
+        "text": "rugosité 0.0",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -402,6 +519,19 @@
         ],
         "metallic": 1.0,
         "roughness": 0.2
+      },
+      "worldLabel": {
+        "text": "rugosité 0.2",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -436,6 +566,19 @@
         ],
         "metallic": 1.0,
         "roughness": 0.4
+      },
+      "worldLabel": {
+        "text": "rugosité 0.4",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -470,6 +613,19 @@
         ],
         "metallic": 1.0,
         "roughness": 0.6
+      },
+      "worldLabel": {
+        "text": "rugosité 0.6",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -504,6 +660,19 @@
         ],
         "metallic": 1.0,
         "roughness": 0.8
+      },
+      "worldLabel": {
+        "text": "rugosité 0.8",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -538,6 +707,19 @@
         ],
         "metallic": 1.0,
         "roughness": 1.0
+      },
+      "worldLabel": {
+        "text": "rugosité 1.0",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -560,6 +742,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Couleurs (albédo), rugosité 0,5",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -594,6 +789,19 @@
         ],
         "metallic": 0,
         "roughness": 0.5
+      },
+      "worldLabel": {
+        "text": "Charbon (4 %)",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -628,6 +836,19 @@
         ],
         "metallic": 0,
         "roughness": 0.5
+      },
+      "worldLabel": {
+        "text": "Gris 18 %",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -662,6 +883,19 @@
         ],
         "metallic": 0,
         "roughness": 0.5
+      },
+      "worldLabel": {
+        "text": "Blanc (80 %)",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -696,6 +930,19 @@
         ],
         "metallic": 0,
         "roughness": 0.5
+      },
+      "worldLabel": {
+        "text": "Rouge",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -730,6 +977,19 @@
         ],
         "metallic": 0,
         "roughness": 0.5
+      },
+      "worldLabel": {
+        "text": "Vert",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -764,6 +1024,19 @@
         ],
         "metallic": 0,
         "roughness": 0.5
+      },
+      "worldLabel": {
+        "text": "Bleu",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -786,6 +1059,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Métaux, rugosité 0,25",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -820,6 +1106,19 @@
         ],
         "metallic": 1,
         "roughness": 0.25
+      },
+      "worldLabel": {
+        "text": "Or",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -854,6 +1153,19 @@
         ],
         "metallic": 1,
         "roughness": 0.25
+      },
+      "worldLabel": {
+        "text": "Cuivre",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -888,6 +1200,19 @@
         ],
         "metallic": 1,
         "roughness": 0.25
+      },
+      "worldLabel": {
+        "text": "Fer",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -922,6 +1247,19 @@
         ],
         "metallic": 1,
         "roughness": 0.25
+      },
+      "worldLabel": {
+        "text": "Aluminium",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -956,6 +1294,19 @@
         ],
         "metallic": 1,
         "roughness": 0.25
+      },
+      "worldLabel": {
+        "text": "Argent",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -990,6 +1341,19 @@
         ],
         "metallic": 1,
         "roughness": 0.25
+      },
+      "worldLabel": {
+        "text": "Chrome",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1012,6 +1376,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Lumière propre",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1047,6 +1424,19 @@
         "metallic": 0,
         "roughness": 0.5,
         "luminance": 10000
+      },
+      "worldLabel": {
+        "text": "10 000 cd/m²",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1082,6 +1472,19 @@
         "metallic": 0,
         "roughness": 0.5,
         "luminance": 30000
+      },
+      "worldLabel": {
+        "text": "30 000 cd/m²",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1117,6 +1520,19 @@
         "metallic": 0,
         "roughness": 0.5,
         "luminance": 100000
+      },
+      "worldLabel": {
+        "text": "100 000 cd/m²",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1139,6 +1555,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Cubes (arêtes vives)",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1173,6 +1602,19 @@
         ],
         "metallic": 0,
         "roughness": 0.3
+      },
+      "worldLabel": {
+        "text": "Plastique blanc",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1207,6 +1649,19 @@
         ],
         "metallic": 1,
         "roughness": 0.1
+      },
+      "worldLabel": {
+        "text": "Fer poli",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1241,6 +1696,19 @@
         ],
         "metallic": 1,
         "roughness": 0.6
+      },
+      "worldLabel": {
+        "text": "Or mat",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1263,6 +1731,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Verre",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1297,6 +1778,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.0
+      },
+      "worldLabel": {
+        "text": "Clair",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1331,6 +1825,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.0
+      },
+      "worldLabel": {
+        "text": "Teinté vert",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1365,6 +1872,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.0
+      },
+      "worldLabel": {
+        "text": "Fumé",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1399,6 +1919,19 @@
         ],
         "metallic": 0.0,
         "roughness": 0.35
+      },
+      "worldLabel": {
+        "text": "Dépoli",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1575,6 +2108,19 @@
           1,
           1
         ]
+      },
+      "worldLabel": {
+        "text": "Matières texturées",
+        "size": 20.0,
+        "color": [
+          1.0,
+          0.85,
+          0.55,
+          1.0
+        ],
+        "height": 1.7,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1601,6 +2147,19 @@
       },
       "model": {
         "model": "Modeles/Rendu/SpherePierre.glb"
+      },
+      "worldLabel": {
+        "text": "Roche des planètes",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {
@@ -1630,6 +2189,19 @@
         "overrideMaterial": true,
         "metallic": 0.0,
         "roughness": 0.15
+      },
+      "worldLabel": {
+        "text": "Pierre polie",
+        "size": 16.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "height": 0.75,
+        "maxDistance": 0.0,
+        "background": true
       }
     },
     {

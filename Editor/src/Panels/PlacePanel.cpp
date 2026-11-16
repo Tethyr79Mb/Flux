@@ -99,6 +99,7 @@ namespace FluxEditor {
                                            {"Volume intérieur", "Intérieur", UI::Icon::Collider},
                                            {"Sonde de reflets", "Sonde de reflets", UI::Icon::Sky},
                                            {"Interface...", "Interface", UI::Icon::Window},
+                                           {"Étiquette flottante", "Étiquette", UI::Icon::Text},
                                            {"Son...", "Son", UI::Icon::Sound},
                                            {"Planète", "Planète", UI::Icon::Planet},
                                            {"Soleil", "Soleil", UI::Icon::Light},
@@ -201,7 +202,7 @@ namespace FluxEditor {
             category("Lumières", {Item::Light, Item::Spot, Item::Sky, Item::Sun, Item::Interior, Item::ReflectionProbe});
             category("Espace", {Item::Planet}); // Monde : bouton de la barre de menus
             category("Physique (en mode Jouer)", {Item::Character, Item::Ship});
-            category("Interface", {Item::ScreenImage, Item::Interface});
+            category("Interface", {Item::ScreenImage, Item::Interface, Item::WorldLabel});
             category("Son", {Item::Sound});
             category("Logique", {Item::SceneChange});
             // Catégories que seul le jeu remplit, dans l'ordre de leur premier objet.
@@ -453,6 +454,8 @@ namespace FluxEditor {
                 scene.Add<InteriorComponent>(entity);
             } else if (item == Item::ReflectionProbe) {
                 scene.Add<ReflectionProbeComponent>(entity);
+            } else if (item == Item::WorldLabel) {
+                scene.Add<WorldLabelComponent>(entity); // posée dans la 3D comme un objet, au point visé
             } else if (item == Item::Planet) {
                 scene.Add<PlanetComponent>(entity);
                 scene.Add<CloudsComponent>(entity);
