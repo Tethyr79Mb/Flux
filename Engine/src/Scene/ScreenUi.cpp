@@ -1,5 +1,7 @@
 #include "Flux/Scene/ScreenUi.hpp"
 
+#include "Flux/Graphics/Camera.hpp"
+#include "Flux/Scene/Picking.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/UI/DrawList.hpp"
 
@@ -139,6 +141,42 @@ namespace Flux::ScreenUi {
             }
         }
 
+        // Étiquettes flottantes : centrées sur leur point projeté, cachées derrière la caméra et au-delà de leur distance.
+        // Une position du monde par étiquette (remonte la hiérarchie) : quelques dizaines par scène au plus.
+        void DrawLabels(const DrawContext& context, const Camera& camera) {
+            const auto labels = context.scene.GetRegistry().view<const WorldLabelComponent>();
+            if (labels.empty()) {
+                return;
+            }
+            const ScreenProjection projection(camera, context.viewMin, context.viewMax);
+            const UI::FontRef font{&context.list.GetFont(), UI::FontTexture};
+            for (const auto [entity, label] : labels.each()) {
+                if (label.text.empty()) {
+                    continue;
+                }
+                Math::Vector3d point = Math::Delta(camera.position, context.scene.GetWorldPosition(entity));
+                if (label.height != 0.0f) {
+                    point += Math::Vector3d(context.scene.GetWorldRotation(entity).Rotate(Math::Vector3f{0.0f, label.height, 0.0f}));
+                }
+                if (label.maxDistance > 0.0f && Math::Length(point) > label.maxDistance) {
+                    continue;
+                }
+                const std::optional<Vector2f> center = projection.ToScreen(point);
+                if (!center) {
+                    continue;
+                }
+                const float pixelSize = label.size * context.scale;
+                const Vector2f size = UI::DrawList::MeasureText(*font.font, label.text, pixelSize);
+                const Vector2f topLeft = *center - size * 0.5f;
+                const Vector2f padding = Vector2f{0.4f, 0.15f} * pixelSize;
+                if (label.background) {
+                    context.list.AddRect(topLeft - padding, topLeft + size + padding, {0.0f, 0.0f, 0.0f, 0.55f});
+                }
+                context.list.AddText(font, topLeft, label.text, pixelSize, label.color);
+                AddRect(context, entity, topLeft - padding, topLeft + size + padding);
+            }
+        }
+
         void DrawEntity(const DrawContext& context, Entity entity) {
             if (const auto* component = context.scene.TryGet<InterfaceComponent>(entity)) {
                 DrawInterface(context, entity, *component);
@@ -171,6 +209,9 @@ namespace Flux::ScreenUi {
         const DrawContext context{scene, list, viewMin, viewMax, scale, options};
         // Rien ne déborde de la vue (dans l'éditeur, sur les panneaux voisins).
         list.SetClipRect(viewMin, viewMax);
+        if (options.camera) {
+            DrawLabels(context, *options.camera);
+        }
         scene.ForEachRoot([&](Entity root) { DrawEntity(context, root); });
         list.ResetClipRect();
     }

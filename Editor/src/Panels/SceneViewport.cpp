@@ -940,7 +940,9 @@ namespace FluxEditor {
                 });
                 if (grabbed) {
                     // La poignée est saisie : ni sélection, ni élément à l'écran.
-                } else if (item != m_screenRects.rend() && ScreenUi::IsScreenElement(scene, item->entity)) {
+                } else if (item != m_screenRects.rend()
+                           && (ScreenUi::IsScreenElement(scene, item->entity) || scene.TryGet<WorldLabelComponent>(item->entity))) {
+                    // Une étiquette flottante sélectionne son objet, déplacé ensuite par le gizmo (FindOffset : rien).
                     sceneEditor.Select(scene, item->entity);
                     // Une image étirée ou qui couvre l'écran se sélectionne mais ne se déplace pas.
                     if (const std::optional<ScreenUi::Offset> offset = ScreenUi::FindOffset(scene, item->entity)) {

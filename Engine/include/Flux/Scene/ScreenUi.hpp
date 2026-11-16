@@ -13,9 +13,10 @@
 
 namespace Flux {
     class Scene;
+    struct Camera;
 
     // Éléments d'interface de la scène (ScreenTextComponent, ScreenImageComponent, InterfaceComponent) : dessinés à plat par-dessus la 3D, dans l'écran du jeu
-    // ou dans la vue de l'éditeur.
+    // ou dans la vue de l'éditeur. Aussi les étiquettes flottantes (WorldLabelComponent), accrochées à un point de la 3D.
     namespace ScreenUi {
         // Hauteur d'écran de référence : tailles et décalages sont exprimés pour 1080 lignes, puis mis à l'échelle
         // de la vue (un texte de 64 fait 64 pixels en 1080p, 85 en 1440p, et reste proportionné dans l'éditeur).
@@ -58,10 +59,11 @@ namespace Flux {
             // Éditeur : un cadre gris remplace une image sans fichier ou introuvable, pour la voir et la sélectionner.
             bool placeholders = false;
             FontResolver fonts{}; // sans : les textes sont tous dans la police de la liste
+            const Camera* camera = nullptr; // celle de la vue ; sans : les étiquettes flottantes ne sont pas dessinées
         };
 
         // Dessine les éléments de la scène dans la vue min-max, dans l'ordre de la hiérarchie (le dernier par-dessus) ;
-        // sur une même entité, l'image passe sous le texte.
+        // sur une même entité, l'image passe sous le texte. Les étiquettes flottantes d'abord, sous les menus et le HUD.
         FLUX_API void Draw(const Scene& scene, UI::DrawList& list, Math::Vector2f viewMin, Math::Vector2f viewMax,
                            const DrawOptions& options = {});
 

@@ -27,6 +27,14 @@ namespace Flux {
             .Enum("anchor", "Ancre", &ScreenTextComponent::anchor, Anchors)
             .Field("offsetX", "Décalage X", &ScreenTextComponent::offsetX, {.speed = 1.0, .decimals = 0})
             .Field("offsetY", "Décalage Y", &ScreenTextComponent::offsetY, {.speed = 1.0, .decimals = 0});
+        registry.Register<WorldLabelComponent>("worldLabel", "Étiquette flottante")
+            .Field("text", "Texte", &WorldLabelComponent::text)
+            .Field("size", "Taille", &WorldLabelComponent::size, {.speed = 0.5, .min = 1.0, .max = 500.0, .decimals = 0})
+            .Field("color", "Couleur", &WorldLabelComponent::color)
+            .Field("height", "Hauteur", &WorldLabelComponent::height, {.speed = 0.01, .decimals = 2})
+            .Field("maxDistance", "Distance maximale", &WorldLabelComponent::maxDistance,
+                   {.speed = 0.5, .min = 0.0, .decimals = 1})
+            .Field("background", "Fond", &WorldLabelComponent::background);
         registry.Register<SoundComponent>("sound", "Son")
             .Asset("file", "Fichier", &SoundComponent::file, AssetType::Sound)
             .Field("volume", "Volume", &SoundComponent::volume, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})

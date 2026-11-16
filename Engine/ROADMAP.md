@@ -105,7 +105,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 - 🔨 Scènes de test du rendu (`assets/scenes/Rendu/`, 2026-11-10) et vue de débogage « Cartes d'ombre en couleur »
   (panneau Moteur). Fait : scène des ombres (poteaux fins, contact au sol, plans inclinés, abri, barreaux, repères de
   cascades, tour à 350 m) ; scène des matériaux (2026-11-13, primitive « Sphère » : rugosité 0 à 1 en plastique et en
-  fer, albédos de 4 à 80 %, six métaux, lumière propre, cubes). À faire : intérieur sombre, lumières locales. Corrigé
+  fer, albédos de 4 à 80 %, six métaux, lumière propre, cubes ; nom de chaque matière en étiquette flottante). À faire : intérieur sombre, lumières locales. Corrigé
   sur la scène des ombres : pénombre selon la distance (PCSS), fondu entre cascades, décalage normal d'un demi-texel
   (pente du plan à la lecture) ; obstacles jusqu'à 3 km aplatis dans les cartes. Reste : 23 cm par texel de 60 à 200 m.
 - 🔧 Ciel spatial généré ou panorama ; volumes « Intérieur » ; lumière de contour. Reflets et ambiante tirés du ciel par le GPU, en HDR, refaits seulement quand le ciel change (`EnvironmentRenderer`, 2026-11-02) : cube de 128 pixels préfiltré GGX (un niveau de mip par rugosité), lumière diffuse dans un cube d'irradiance ; plus de cube 8 bits calculé par le CPU ni de copie C++ du bruit du ciel. À améliorer : ciel seulement (ni la scène, ni l'air de la planète), pas de reflet net (128 pixels), intérieurs en couleur unie.
