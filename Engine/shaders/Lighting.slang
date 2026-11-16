@@ -74,6 +74,7 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
     float clouds = CloudShadow(worldPosition);
     bool foliage = false;
     float shadowLift = 0.0;
+    float occlusion = material.z;
     if (kind == 1) { // GBufferStandard : métal, rugosité, occlusion, reflet des non-métaux
         const float metallic = material.x;
         surface.diffuse = base.rgb * (1.0 - metallic);
@@ -89,14 +90,17 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
             // Le carré fait face à la caméra, son ombre (vertexImpostorShadow) face au soleil : lue sur le carré, la
             // moitié de l'arbre derrière ce second carré était dans sa propre ombre, et les forêts au loin bien plus
             // sombres que de près. Lue à 1,2 rayon vers le soleil, devant son ombre ; celle des voisins reste.
-            // Le soleil aussi : le cœur de l'arbre est à l'ombre de ses branches (pas tout à fait : la lumière passe).
+            // L'ombre de l'arbre sur lui-même, lue dans ses vues capturées (ImpostorSunVisibility), retire le soleil
+            // comme les cascades le font pour le modèle détaillé. Le ciel n'est pas éteint : le détaillé ne l'est pas non
+            // plus (pas d'occlusion de son propre feuillage).
             surface.roughness = 0.8;
             shadowLift = 1.2 * material.y * ImpostorRadiusScale;
-            clouds *= lerp(1.0, material.z, 0.8);
+            clouds *= material.z;
+            occlusion = 1.0;
         }
     }
     float inside;
-    const float3 lit = LightSurface(surface, geometryNormal, worldPosition, material.z, clouds, inside, foliage, material.xw,
+    const float3 lit = LightSurface(surface, geometryNormal, worldPosition, occlusion, clouds, inside, foliage, material.xw,
                                     shadowLift);
     float3 transmittance;
     const float3 scattered = AirTo(worldPosition, transmittance);

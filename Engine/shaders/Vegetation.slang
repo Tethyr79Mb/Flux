@@ -12,7 +12,7 @@
 #include "DepthPyramid.slang"
 
 static const uint ListCount = 8;     // VegetationRenderer::ListCount
-static const float ImpostorFadeShare = 0.15; // VegetationRenderer::ImpostorFadeShare
+static const float ImpostorFadeShare = 0.3;  // VegetationRenderer::ImpostorFadeShare
 static const uint MaxSpecies = 8;    // VegetationRenderer::MaxSpecies
 static const uint MaxCommands = 128; // VegetationRenderer::MaxCommands
 static const uint SpeciesLists = ListCount * MaxSpecies;

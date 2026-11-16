@@ -16,7 +16,8 @@ namespace Flux {
     // Imposteurs des arbres des planètes (vertexImpostor dans shaders/Mesh.slang) : le modèle détaillé de chaque espèce
     // photographié une fois par le GPU, au premier besoin, sous Grid x Grid directions de la demi-sphère du haut
     // (vertexImpostorBake), dans deux atlas à niveaux de mip rangés dans la table des images de ModelCache : couleur
-    // (alpha : couverture) et normales. Une capture par image au plus ; en attendant, le modèle lointain sert.
+    // (alpha : couverture) et normales (alpha : profondeur dans la vue, pour l'ombre de l'arbre sur lui-même). Une
+    // capture par image au plus ; en attendant, le modèle lointain sert.
     // Mémoire : 2 x Size² x 4 octets plus les mips, environ 44 Mo par espèce.
     class TreeImpostors {
         public:

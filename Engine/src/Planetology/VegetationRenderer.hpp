@@ -145,8 +145,8 @@ namespace Flux::Planetology {
         Stats GetStats() const { return m_stats; }
         // Bande de fondu des imposteurs sur les modèles de près, avant farDistance (shaders/Vegetation.slang, même
         // part) : les arbres y sont dessinés deux fois, l'imposteur s'effaçant en approchant. Le changement de modèle
-        // se voyait d'un coup.
-        static constexpr float ImpostorFadeShare = 0.15f;
+        // se voyait d'un coup ; sur 15 %, l'écart de lumière restant passait en quelques mètres (« l'arbre s'allume »).
+        static constexpr float ImpostorFadeShare = 0.3f;
         // Début de la bande (m) et 1 / sa largeur, pour ImpostorFade (shaders/Mesh.slang) ; 0 : pas de fondu.
         std::array<float, 2> GetImpostorFade() const {
             const float width = m_farDistance * ImpostorFadeShare;
