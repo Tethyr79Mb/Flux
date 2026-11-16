@@ -40,6 +40,7 @@ namespace Flux {
             GroundDetail groundDetail = DefaultGroundDetail;
             CloudQuality cloudQuality = DefaultCloudQuality;
             VegetationDistance vegetationDistance = DefaultVegetationDistance;
+            ModelDetail modelDetail = DefaultModelDetail;
             bool occlusionCulling = false;  // « Objets cachés écartés »
             bool groundGeometryOnly = false; // « Sol et herbe sans pixels »
             std::uint32_t groundMeshThreads = 0; // 0 : sol par les sommets

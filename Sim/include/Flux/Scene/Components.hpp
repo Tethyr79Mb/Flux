@@ -88,6 +88,11 @@ namespace Flux {
         // sont chargées ; tant que le modèle complet ne l'est pas, la version lointaine le remplace même de près.
         std::string farModel;
         float farDistance = 2000.0f;
+        // Niveaux simplifiés faits au chargement (ModelData::lods), choisis selon la taille du modèle à l'écran.
+        // lodBias : plus de 1 garde le détail plus loin (vaisseau du joueur, objet regardé de près), moins de 1 le
+        // simplifie plus tôt (décor).
+        bool automaticLod = true;
+        float lodBias = 1.0f;
     };
 
     // Lumière de contour (« rim light ») : les bords de l'objet vus de profil s'éclairent de cette couleur, comme en

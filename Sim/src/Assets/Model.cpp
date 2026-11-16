@@ -910,63 +910,149 @@ namespace Flux {
             std::vector<meshopt_Meshlet> meshlets;
             std::vector<std::uint32_t> meshletVertices;
             std::vector<std::uint8_t> meshletTriangles;
-            for (std::uint32_t p = 0; p < model.primitives.size(); ++p) {
-                ModelPrimitive& primitive = model.primitives[p];
-                const std::span<const std::uint32_t> source(model.indices.data() + primitive.firstIndex, primitive.indexCount);
-                globals.clear();
-                positions.clear();
-                localIndices.clear();
-                for (const std::uint32_t index : source) {
-                    if (local[index] == std::numeric_limits<std::uint32_t>::max()) {
-                        local[index] = static_cast<std::uint32_t>(globals.size());
-                        globals.push_back(index);
-                        positions.push_back(model.vertices[index].position);
+            // Modèle complet puis chaque niveau : leurs indices se suivent dans cet ordre, les plages restent les mêmes.
+            std::vector<std::vector<ModelPrimitive>*> lists{&model.primitives};
+            for (ModelLod& lod : model.lods) {
+                lists.push_back(&lod.primitives);
+            }
+            for (std::vector<ModelPrimitive>* list : lists) {
+                for (std::uint32_t p = 0; p < list->size(); ++p) {
+                    ModelPrimitive& primitive = (*list)[p];
+                    const std::span<const std::uint32_t> source(model.indices.data() + primitive.firstIndex, primitive.indexCount);
+                    globals.clear();
+                    positions.clear();
+                    localIndices.clear();
+                    for (const std::uint32_t index : source) {
+                        if (local[index] == std::numeric_limits<std::uint32_t>::max()) {
+                            local[index] = static_cast<std::uint32_t>(globals.size());
+                            globals.push_back(index);
+                            positions.push_back(model.vertices[index].position);
+                        }
+                        localIndices.push_back(local[index]);
                     }
-                    localIndices.push_back(local[index]);
-                }
-                for (const std::uint32_t index : globals) {
-                    local[index] = std::numeric_limits<std::uint32_t>::max();
-                }
+                    for (const std::uint32_t index : globals) {
+                        local[index] = std::numeric_limits<std::uint32_t>::max();
+                    }
 
-                // Poids du cône 0,25 (conseil de meshoptimizer) : paquets un peu plus plats, plus souvent écartés de dos.
-                meshlets.resize(meshopt_buildMeshletsBound(localIndices.size(), ModelMeshletMaxVertices, ModelMeshletMaxTriangles));
-                meshletVertices.resize(localIndices.size());
-                meshletTriangles.resize(localIndices.size());
-                meshlets.resize(meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(), meshletTriangles.data(),
-                                                      localIndices.data(), localIndices.size(), &positions[0].x, positions.size(),
-                                                      sizeof(Math::Vector3f), ModelMeshletMaxVertices, ModelMeshletMaxTriangles, 0.25f));
-                const bool doubleSided = model.materials[primitive.material].doubleSided;
-                primitive.firstMeshlet = static_cast<std::uint32_t>(model.meshlets.size());
-                primitive.meshletCount = static_cast<std::uint32_t>(meshlets.size());
-                primitive.firstIndex = static_cast<std::uint32_t>(indices.size());
-                for (const meshopt_Meshlet& meshlet : meshlets) {
-                    std::uint32_t* vertices = meshletVertices.data() + meshlet.vertex_offset;
-                    std::uint8_t* triangles = meshletTriangles.data() + meshlet.triangle_offset;
-                    meshopt_optimizeMeshlet(vertices, triangles, meshlet.triangle_count, meshlet.vertex_count);
-                    const meshopt_Bounds bounds = meshopt_computeMeshletBounds(vertices, triangles, meshlet.triangle_count, &positions[0].x,
-                                                                               positions.size(), sizeof(Math::Vector3f));
-                    ModelMeshlet& out = model.meshlets.emplace_back();
-                    out.center = {bounds.center[0], bounds.center[1], bounds.center[2]};
-                    out.radius = bounds.radius;
-                    out.coneAxis = {bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2]};
-                    out.coneCutoff = doubleSided ? 2.0f : bounds.cone_cutoff;
-                    out.firstIndex = static_cast<std::uint32_t>(indices.size());
-                    out.firstVertex = static_cast<std::uint32_t>(model.meshletVertices.size());
-                    out.firstTriangle = static_cast<std::uint32_t>(model.meshletTriangles.size());
-                    out.vertexCount = static_cast<std::uint16_t>(meshlet.vertex_count);
-                    out.triangleCount = static_cast<std::uint16_t>(meshlet.triangle_count);
-                    out.primitive = p;
-                    for (std::uint32_t v = 0; v < meshlet.vertex_count; ++v) {
-                        model.meshletVertices.push_back(globals[vertices[v]]);
+                    if (localIndices.empty()) { // pièce effacée par un niveau simplifié
+                        primitive.firstMeshlet = static_cast<std::uint32_t>(model.meshlets.size());
+                        primitive.meshletCount = 0;
+                        primitive.firstIndex = static_cast<std::uint32_t>(indices.size());
+                        continue;
                     }
-                    for (std::uint32_t i = 0; i < meshlet.triangle_count * 3; ++i) {
-                        model.meshletTriangles.push_back(triangles[i]);
-                        indices.push_back(globals[vertices[triangles[i]]]);
+                    // Poids du cône 0,25 (conseil de meshoptimizer) : paquets un peu plus plats, plus souvent écartés de dos.
+                    meshlets.resize(meshopt_buildMeshletsBound(localIndices.size(), ModelMeshletMaxVertices, ModelMeshletMaxTriangles));
+                    meshletVertices.resize(localIndices.size());
+                    meshletTriangles.resize(localIndices.size());
+                    meshlets.resize(meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(), meshletTriangles.data(),
+                                                          localIndices.data(), localIndices.size(), &positions[0].x, positions.size(),
+                                                          sizeof(Math::Vector3f), ModelMeshletMaxVertices, ModelMeshletMaxTriangles, 0.25f));
+                    const bool doubleSided = model.materials[primitive.material].doubleSided;
+                    primitive.firstMeshlet = static_cast<std::uint32_t>(model.meshlets.size());
+                    primitive.meshletCount = static_cast<std::uint32_t>(meshlets.size());
+                    primitive.firstIndex = static_cast<std::uint32_t>(indices.size());
+                    for (const meshopt_Meshlet& meshlet : meshlets) {
+                        std::uint32_t* vertices = meshletVertices.data() + meshlet.vertex_offset;
+                        std::uint8_t* triangles = meshletTriangles.data() + meshlet.triangle_offset;
+                        meshopt_optimizeMeshlet(vertices, triangles, meshlet.triangle_count, meshlet.vertex_count);
+                        const meshopt_Bounds bounds = meshopt_computeMeshletBounds(vertices, triangles, meshlet.triangle_count, &positions[0].x,
+                                                                                   positions.size(), sizeof(Math::Vector3f));
+                        ModelMeshlet& out = model.meshlets.emplace_back();
+                        out.center = {bounds.center[0], bounds.center[1], bounds.center[2]};
+                        out.radius = bounds.radius;
+                        out.coneAxis = {bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2]};
+                        out.coneCutoff = doubleSided ? 2.0f : bounds.cone_cutoff;
+                        out.firstIndex = static_cast<std::uint32_t>(indices.size());
+                        out.firstVertex = static_cast<std::uint32_t>(model.meshletVertices.size());
+                        out.firstTriangle = static_cast<std::uint32_t>(model.meshletTriangles.size());
+                        out.vertexCount = static_cast<std::uint16_t>(meshlet.vertex_count);
+                        out.triangleCount = static_cast<std::uint16_t>(meshlet.triangle_count);
+                        out.primitive = p;
+                        for (std::uint32_t v = 0; v < meshlet.vertex_count; ++v) {
+                            model.meshletVertices.push_back(globals[vertices[v]]);
+                        }
+                        for (std::uint32_t i = 0; i < meshlet.triangle_count * 3; ++i) {
+                            model.meshletTriangles.push_back(triangles[i]);
+                            indices.push_back(globals[vertices[triangles[i]]]);
+                        }
+                        model.meshletTriangles.resize((model.meshletTriangles.size() + 3) & ~std::size_t{3}, 0);
                     }
-                    model.meshletTriangles.resize((model.meshletTriangles.size() + 3) & ~std::size_t{3}, 0);
                 }
             }
             model.indices = std::move(indices);
+        }
+    }
+
+    namespace {
+        // Niveaux simplifiés : chaque primitive à part (les plages d'un même bloc et matériau restent ensemble), bords
+        // ouverts gardés (entre deux blocs, deux matériaux ou deux pièces : pas de fente). Les coutures d'UV et de
+        // normales ne sont pas des bords : meshoptimizer réunit les sommets de même position. Chaque niveau repart du
+        // modèle complet, pour un écart exact (partir du précédent irait deux fois plus vite, mais en additionnant les
+        // écarts on les double à peu près : le niveau servirait deux fois moins loin). Il vise 1/2^niveau des
+        // triangles sans dépasser un écart de LodErrorStep x 2^niveau de la taille du modèle (une petite pièce s'arrête
+        // avant, plutôt que de déformer tout le niveau). meshopt_SimplifySparse : coût selon les indices de la
+        // primitive, pas les sommets du modèle (sinon quadratique sur une station à blocs).
+        constexpr float LodErrorStep = 0.0025f;
+        // Un niveau qui garde plus que cette part des triangles du précédent ne vaut pas sa mémoire : on s'arrête.
+        constexpr float LodMinGain = 0.8f;
+        constexpr std::size_t LodMinTriangles = 256; // en dessous, le modèle complet coûte déjà peu
+
+        void BuildLods(ModelData& model) {
+            model.lods.clear();
+            if (model.IsAnimated() || model.indices.size() < 3 * LodMinTriangles) {
+                return;
+            }
+            const Math::Vector3f size = model.bounds.GetSize();
+            const float extent = std::max({size.x, size.y, size.z});
+            const std::size_t fullCount = model.indices.size();
+            std::vector<std::uint32_t> simplified;
+            std::size_t previousCount = fullCount;
+            model.indices.reserve(2 * fullCount);
+            for (std::uint32_t level = 1; level <= ModelMaxLods; ++level) {
+                const auto ratio = std::ldexp(1.0, -static_cast<int>(level));
+                const float maxError = LodErrorStep * extent * std::ldexp(1.0f, static_cast<int>(level) - 1);
+                ModelLod lod;
+                const std::size_t first = model.indices.size();
+                for (const ModelPrimitive& primitive : model.primitives) {
+                    const std::uint32_t* source = model.indices.data() + primitive.firstIndex;
+                    simplified.resize(primitive.indexCount);
+                    const auto target = static_cast<std::size_t>(static_cast<double>(primitive.indexCount / 3) * ratio) * 3;
+                    float error = 0.0f;
+                    const std::size_t count = meshopt_simplify(
+                        simplified.data(), source, primitive.indexCount, &model.vertices[0].position.x, model.vertices.size(),
+                        sizeof(ModelVertex), target, maxError,
+                        meshopt_SimplifyLockBorder | meshopt_SimplifySparse | meshopt_SimplifyErrorAbsolute, &error);
+                    lod.error = std::max(lod.error, error);
+                    ModelPrimitive& out = lod.primitives.emplace_back(primitive);
+                    out.firstIndex = static_cast<std::uint32_t>(model.indices.size());
+                    out.indexCount = static_cast<std::uint32_t>(count);
+                    out.firstMeshlet = 0;
+                    out.meshletCount = 0;
+                    model.indices.insert(model.indices.end(), simplified.begin(), simplified.begin() + static_cast<std::ptrdiff_t>(count));
+                }
+                const std::size_t count = model.indices.size() - first;
+                if (static_cast<float>(count) > LodMinGain * static_cast<float>(previousCount)) {
+                    model.indices.resize(first);
+                    break;
+                }
+                // Ombres : chaque primitive d'ombre du modèle complet réunit des primitives qui se suivent ; celle du
+                // niveau réunit les mêmes, rangées à la suite elles aussi.
+                std::size_t p = 0;
+                for (const ModelPrimitive& shadow : model.shadowPrimitives) {
+                    while (p < model.primitives.size() && model.primitives[p].firstIndex < shadow.firstIndex) {
+                        ++p;
+                    }
+                    ModelPrimitive& out = lod.shadowPrimitives.emplace_back(shadow);
+                    out.firstIndex = p < lod.primitives.size() ? lod.primitives[p].firstIndex : static_cast<std::uint32_t>(model.indices.size());
+                    out.indexCount = 0;
+                    const std::uint32_t end = shadow.firstIndex + shadow.indexCount;
+                    for (; p < model.primitives.size() && model.primitives[p].firstIndex < end; ++p) {
+                        out.indexCount += lod.primitives[p].indexCount;
+                    }
+                }
+                previousCount = count;
+                model.lods.push_back(std::move(lod));
+            }
         }
     }
 
@@ -1066,6 +1152,7 @@ namespace Flux {
         }
         model.indices = std::move(indices);
         if (meshlets && !model.IsAnimated()) {
+            BuildLods(model);
             BuildMeshlets(model);
         }
     }

@@ -3,6 +3,7 @@
 #include "Flux/Animation/Animation.hpp"
 #include "Flux/Graphics/ShadowCascades.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
+#include "Flux/Renderer/ModelDetail.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Planetology/GroundTextures.hpp"
 #include "Renderer/ModelCache.hpp"
@@ -130,6 +131,10 @@ namespace Flux {
         GroundDetail GetGroundDetail() const { return m_planets->GetGroundDetail(); }
         void SetVegetationDistance(VegetationDistance distance) { m_vegetationDistance = distance; }
         VegetationDistance GetVegetationDistance() const { return m_vegetationDistance; }
+        void SetModelDetail(ModelDetail detail) { m_modelDetail = detail; }
+        ModelDetail GetModelDetail() const { return m_modelDetail; }
+        // Hauteur de l'image rendue (pixels), pour l'écart à l'écran des niveaux de détail ; avant Prepare.
+        void SetViewHeight(float pixels) { m_viewHeight = pixels; }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
         // cible (le graphe de rendu la rend ensuite lisible pour la scène). Une étape par cascade, chacune
         // enregistrable dans sa liste : elle pose son viewport et ses liaisons.
@@ -212,6 +217,12 @@ namespace Flux {
             bool uniformScale = false; // échelle uniforme et positive : le cône des normales des paquets reste juste
             std::uint32_t firstCluster = 0; // dans m_clusters, si son modèle est découpé en blocs (GpuModel::clusters)
             bool traced = false; // dans la structure haute du ray tracing de l'image
+            std::uint32_t lod = 0; // niveau de détail dessiné (GpuModel::GetPrimitives)
+            bool automaticLod = true;
+            float scale = 1.0f;    // la plus grande échelle de l'entité : écart des niveaux en mètres du monde
+            // Fondu entre deux niveaux (DrawData::surface.z) : > 0 le niveau qui arrive, < 0 celui qui part (une
+            // seconde entrée de m_draws, sans ombre ni transparents ni ray tracing) ; 0 aucun.
+            float fade = 0.0f;
         };
         // Un bloc d'un grand modèle dessiné (GpuModel::clusters), relatif à la caméra.
         struct ClusterDraw
@@ -274,6 +285,8 @@ namespace Flux {
             const GpuModel* model = nullptr;
             const GpuModel* farModel = nullptr;
             float farDistance = 0.0f;
+            bool automaticLod = true;  // ModelComponent::automaticLod
+            float lodBias = 1.0f;      // ModelComponent::lodBias
             Math::LinearColor tint;
             Math::LinearColor emissive{0.0f, 0.0f, 0.0f};
             float metallic = 1.0f;
@@ -286,8 +299,25 @@ namespace Flux {
             bool uniformScale = false;
             Math::Vector3f center;
             float radius = 0.0f;
+            float scale = 1.0f;
+            std::uint32_t lod = 0;
+            std::uint32_t fadeFrom = 0; // niveau qui part, si fade > 0
+            float fade = 0.0f;          // avancée du fondu vers lod, dans ]0, 1[ ; 0 : aucun
             DrawData data;
         };
+        // Niveau de détail d'une entité, d'une image à l'autre (par indice d'entité, comme m_previousWorld).
+        struct LodState
+        {
+            const GpuModel* model = nullptr; // un autre modèle (version lointaine, rechargé) : on repart sans fondu
+            std::uint32_t frame = 0;         // dernière image où elle a été préparée
+            std::uint32_t level = 0;
+            std::uint32_t previous = 0;
+            double fadeStart = -1.0e9; // secondes (m_lodSeconds)
+        };
+        // Durée du fondu entre deux niveaux.
+        static constexpr double LodFadeSeconds = 0.3;
+        // Vers un niveau plus léger seulement sous cette part de l'écart toléré : pas d'aller-retour à la limite.
+        static constexpr float LodHysteresis = 0.75f;
         // Période (m) des coordonnées des textures du sol : multiple de leurs tailles (GroundScale dans Mesh.slang).
         static constexpr double GroundPeriod = 1024.0;
 
@@ -478,11 +508,14 @@ namespace Flux {
         // Sphère englobant `box` du modèle de l'entité, relative à la caméra.
         static std::pair<Math::Vector3f, float> SphereOf(const RelativeTransform& transform, const Math::Box3f& box);
         void ComputeEntity(const Scene& scene, const ViewCone& view, const TemporalView& temporal, Entity hidden, EntityDraw& draw);
+        void SelectLod(std::size_t entity, float distance, EntityDraw& draw);
+        std::uint32_t ShadowLod(const MeshDraw& draw, std::size_t cascade) const;
         const ClusterDraw* FindCluster(const MeshDraw& draw, const ModelPrimitive& primitive) const; // nullptr : un bloc
         std::filesystem::path ShaderPath(std::string_view name) const;
         static const RHI::Pipeline& ShadowPipeline(const Pipelines& pipelines, const GpuMaterial& material);
-        static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material);
-        const RHI::Pipeline& ModelMeshPipeline(const GpuMaterial& material) const;
+        // fading : en fondu entre deux niveaux de détail, par le pipeline à seuil d'alpha (seul à avoir le discard).
+        static const RHI::Pipeline& OpaquePipeline(const Pipelines& pipelines, const GpuMaterial& material, bool fading = false);
+        const RHI::Pipeline& ModelMeshPipeline(const GpuMaterial& material, bool fading) const;
         const RHI::BindGroup* GetModelMeshGroup(std::uint32_t page);
         bool BuildMeshTasks(std::uint32_t frameIndex);
         void ReadMeshletStats(std::uint32_t frameIndex);
@@ -655,6 +688,10 @@ namespace Flux {
         std::vector<Math::Matrix4f> m_previousWorld;
         std::vector<std::uint32_t> m_previousFrame;
         std::uint32_t m_preparedFrame = 0;
+        std::vector<LodState> m_lodStates; // par indice d'entité
+        double m_lodSeconds = 0.0;         // depuis m_start, à cette image
+        float m_lodPixelsPerMeter = 0.0f;  // pixels d'un mètre à 1 m de la caméra, divisés par l'écart toléré
+        float m_viewHeight = 1080.0f;
         std::vector<std::uint32_t> m_opaque;        // dans m_draws, visibles
         std::vector<ClusterDraw> m_clusters;
         std::vector<TransparentDraw> m_transparent; // triés du plus loin au plus proche
@@ -669,6 +706,7 @@ namespace Flux {
         std::vector<Planetology::PlanetRenderer::Plain> m_plains;
         const VegetationComponent* m_vegetationComponent = nullptr; // de la planète à arbres de l'image
         VegetationDistance m_vegetationDistance = DefaultVegetationDistance;
+        ModelDetail m_modelDetail = DefaultModelDetail;
         std::uint32_t m_treeDraw = 0; // DrawData neutre des arbres (teinte blanche, sans contour)
         std::vector<TileDraw> m_tileDraws;
         std::vector<DrawData> m_tileData; // envoyées au GPU après m_drawData

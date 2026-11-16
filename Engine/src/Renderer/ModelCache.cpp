@@ -536,7 +536,13 @@ namespace Flux {
         }
         model.primitives = data.primitives;
         model.shadowPrimitives = data.shadowPrimitives;
-        for (std::vector<ModelPrimitive>* primitives : {&model.primitives, &model.shadowPrimitives}) {
+        model.lods = data.lods;
+        std::vector<std::vector<ModelPrimitive>*> lists{&model.primitives, &model.shadowPrimitives};
+        for (ModelLod& lod : model.lods) {
+            lists.push_back(&lod.primitives);
+            lists.push_back(&lod.shadowPrimitives);
+        }
+        for (std::vector<ModelPrimitive>* primitives : lists) {
             for (ModelPrimitive& primitive : *primitives) {
                 primitive.firstIndex += resources.firstIndex;
                 primitive.firstMeshlet += resources.firstMeshlet;

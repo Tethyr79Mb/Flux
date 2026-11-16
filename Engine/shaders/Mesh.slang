@@ -144,7 +144,9 @@ struct DrawData
     // entités de teintes différentes.
     float4 tint;              // multiplie la couleur du matériau
     float4 emissive;          // ajouté à celui du matériau ; w : 1 si surface remplace métal et rugosité
-    float4 surface;           // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent) ; arbres : zw, ShadeFoliage
+    // x : métal, y : rugosité (multiplient ceux du matériau, ou les remplacent) ; z : fondu entre deux niveaux de
+    // détail (LodFadeHidden ; 0 : aucun) ; arbres : zw, ShadeFoliage
+    float4 surface;
 };
 
 // Doit correspondre à DrawParams dans MeshRenderer.cpp : réglages de l'appel. Les modèles n'y lisent que cascade et
@@ -2297,15 +2299,30 @@ struct MeshMaterial
     float occlusion;
 };
 
-// alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard.
+// Fondu entre deux niveaux de détail d'un modèle (MeshRenderer, LodFadeSeconds) : les deux sont dessinés, et chaque
+// pixel n'en garde qu'un selon un bruit qui change à chaque image (l'anticrénelage temporel en fait un fondu).
+// surface.z = t > 0 : le niveau qui arrive, gardé là où le bruit est sous t ; -t : celui qui part, gardé ailleurs.
+bool LodFadeHidden(float fade, float2 pixel)
+{
+    if (fade == 0.0) {
+        return false;
+    }
+    const float2 p = pixel + float(frame[0].lightCount.w % 64u) * 5.588238;
+    const float noise = frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+    return fade > 0.0 ? noise >= fade : noise < -fade;
+}
+
+// alphaTest connu à chaque appel : la branche disparaît, et avec elle le discard. Un modèle en fondu entre deux
+// niveaux de détail passe par le pipeline à seuil d'alpha (MeshRenderer) : seul celui-là paie le discard.
 [ForceInline]
-MeshMaterial ReadMeshMaterial(VertexOutput input, bool frontFacing, bool alphaTest, float3 tint = float3(1.0))
+MeshMaterial ReadMeshMaterial(VertexOutput input, bool frontFacing, bool alphaTest, float3 tint = float3(1.0),
+                              bool lodFade = true)
 {
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
     MeshMaterial m;
     m.base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
-    if (alphaTest && m.base.a < material.alphaCutoff) {
+    if (alphaTest && (m.base.a < material.alphaCutoff || (lodFade && LodFadeHidden(draw.surface.z, input.position.xy)))) {
         discard;
     }
     // Face arrière d'un matériau double face : éclairée comme vue de son côté.
@@ -2472,7 +2489,8 @@ GBufferOutput GBufferUnlit(float3 color)
 [ForceInline]
 GBufferOutput MeshGBuffer(VertexOutput input, bool frontFacing, bool alphaTest, float3 tint = float3(1.0), bool foliage = false)
 {
-    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest, tint);
+    // Arbres : leur surface.zw sert à ShadeFoliage, pas au fondu des niveaux de détail des modèles.
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest, tint, !foliage);
     const DrawData draw = draws[input.draw];
     // Le volume intérieur n'éteint que le contour : cherché seulement s'il y en a un.
     float inside = 0.0;
