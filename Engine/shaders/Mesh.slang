@@ -422,15 +422,11 @@ float3 TreePosition(float4 placement, float3 position, out float4 rotation, uint
     return placement.xyz + TreeRotate(rotation, position * placement.w);
 }
 
-// Arbres : l'air entre la caméra et le sommet est calculé par sommet (comme les tuiles de planète), pas par pixel :
-// le feuillage à seuil d'alpha se recouvre beaucoup, et ses 16 pas de marche dans l'air par pixel coûtaient plus que
-// tout le reste de l'arbre.
+// Arbres : écrits dans le G-buffer ; l'air et l'ombre des nuages viennent de la passe d'éclairage, une fois par pixel
+// visible (le feuillage à seuil d'alpha se recouvre beaucoup : au pixel de l'arbre, ils coûtaient plus que lui).
 struct TreeVertexOutput
 {
     VertexOutput base;
-    float3 airTransmittance : AIR_TRANSMITTANCE;
-    float3 airScattered : AIR_SCATTERED;
-    float clouds : CLOUDS; // ombre des nuages (CloudShadow), par sommet comme pour le sol
     nointerpolation float3 tint : TINT; // de l'arbre (TreeTint)
 };
 
@@ -465,8 +461,6 @@ TreeVertexOutput vertexTree(VertexInput input, uint instance : SV_VulkanInstance
     output.previousClip = Transform(f.previousViewProjection, output.worldPosition + f.cameraDelta.xyz);
     output.staticClip = output.previousClip;
     tree.base = output;
-    tree.airScattered = AirTo(output.worldPosition, tree.airTransmittance);
-    tree.clouds = CloudShadow(output.worldPosition);
     tree.tint = TreeTint(instance);
     return tree;
 }
@@ -550,14 +544,7 @@ struct PlanetVertexOutput
     // cimes. Par sommet : ses taches font des centaines de mètres.
     float forest : FOREST;
     float3 forestColor : FOREST_COLOR;
-    // L'air entre la caméra et le sommet (voir AirTo) : calculé par sommet, pas par pixel. Il varie doucement avec la
-    // distance, et les tuiles gardent à peu près la même taille à l'écran : la différence ne se voit pas, et le pixel
-    // n'a plus ses 16 pas de marche dans l'air.
-    float3 airTransmittance : AIR_TRANSMITTANCE;
-    float3 airScattered : AIR_SCATTERED;
-    // Ombre des nuages (voir CloudShadow), par sommet comme l'air : ses taches font des centaines de mètres, et au pixel
-    // elle coûtait jusqu'à cinq bruits.
-    float clouds : CLOUDS;
+    // L'air et l'ombre des nuages : dans la passe d'éclairage (Lighting.slang), une fois par pixel visible.
 };
 
 // Ce que l'océan garde des tuiles de planète : ni normale, ni position du sol, ni climat, ni forêt, que fragmentOcean
@@ -642,8 +629,6 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
         output.forest = forest;
         output.forestColor = color / max(forest, 1.0e-6);
     }
-    output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
-    output.clouds = CloudShadow(output.base.worldPosition);
     return output;
 }
 
@@ -1875,43 +1860,42 @@ float2 Motion(VertexOutput input)
     return (input.previousClip.xy / input.previousClip.w - input.staticClip.xy / input.staticClip.w) * 0.5;
 }
 
+// Sol des planètes dans le G-buffer (GBufferStandard), éclairé ensuite par la passe d'éclairage ; immobile.
 [shader("fragment")]
-SceneOutput fragmentPlanet(PlanetVertexOutput input)
+GBufferOutput fragmentPlanet(PlanetVertexOutput input)
 {
-    const float4 color = PlanetColor(input);
-    return SceneResult(color, float2(0.0));
+    return PlanetGBuffer(input);
 }
 
-// Mesure (panneau Moteur, « Sol sans pixels ») : le sol dessiné avec un pixel presque gratuit. Le temps qui reste est
-// celui des sommets et des triangles ; l'écart avec le vrai sol, celui des pixels. Chaque entrée est lue (pour un
-// coût nul) : une sortie du programme de sommets que personne ne lit est signalée par la validation de Vulkan.
+// Mesure (panneau Moteur, « Sol sans pixels ») : le sol dessiné avec un pixel presque gratuit, sans éclairage (sorte
+// de matière 0). Le temps qui reste est celui des sommets et des triangles ; l'écart avec le vrai sol, celui des pixels
+// et de leur éclairage. Chaque entrée est lue (pour un coût nul) : une sortie du programme de sommets que personne ne
+// lit est signalée par la validation de Vulkan.
 [shader("fragment")]
-SceneOutput fragmentPlanetGeometry(PlanetVertexOutput input)
+GBufferOutput fragmentPlanetGeometry(PlanetVertexOutput input)
 {
-    const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition + input.airTransmittance
-                             + input.airScattered, float3(1.0))
-                       + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0)) + input.clouds
+    const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition, float3(1.0))
+                       + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0))
                        + float(input.base.draw);
-    return SceneResult(float4(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30, 1.0), float2(0.0));
+    return GBufferUnlit(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30);
 }
 
-float4 PlanetColor(PlanetVertexOutput input)
+GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
 {
     const PlanetSurface v = input.base;
-    shadowPixel = v.position.xy;
     const DrawData draw = draws[v.draw];
     const PlanetData planet = frame[0].planets[asuint(draw.rim.w)];
     const float3 local = input.planetPosition;
     const float3 up = normalize(local);
     const float altitude = length(local) - planet.shape.x;
-    // Fond sous plus de 30 m d'eau : l'eau le cache (opaque à 0,1 % près), inutile de l'éclairer. Seulement si la
-    // caméra est au-dessus de la mer : de dessous, l'eau n'est pas dessinée.
+    // Fond sous plus de 30 m d'eau : l'eau le cache (opaque à 0,1 % près), inutile de lire ses matières ni de
+    // l'éclairer. Seulement si la caméra est au-dessus de la mer : de dessous, l'eau n'est pas dessinée.
     const float sea = planet.water.w;
     if (length(local) < sea - 30.0) {
         const float3 toCamera = float3(dot(v.worldPosition, draw.normal[0].xyz), dot(v.worldPosition, draw.normal[1].xyz),
                                        dot(v.worldPosition, draw.normal[2].xyz));
         if (length(local - toCamera) > sea) {
-            return float4(0.0, 0.0, 0.0, 1.0);
+            return GBufferUnlit(float3(0.0));
         }
     }
     float3 normal = normalize(v.normal);
@@ -2056,13 +2040,12 @@ float4 PlanetColor(PlanetVertexOutput input)
         surface.diffuse = lerp(surface.diffuse, input.forestColor, canopy);
         surface.roughness = lerp(surface.roughness, 0.8, canopy);
     }
-    surface.normal = normal;
-    float inside;
-    const float3 lit = LightSurface(surface, normalize(v.normal), v.worldPosition, occlusion, input.clouds, inside);
+    // Contour d'une planète sans air (PlanetRim) en lumière propre : la passe d'éclairage la voile de l'air, qui n'y est pas.
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
-    const float3 rim = PlanetRim(planet, worldUp, normalize(-v.worldPosition));
-    sunRadiance = Radiance(sunDirect * input.airTransmittance);
-    return float4(Radiance(lit * input.airTransmittance + input.airScattered + rim), 1.0);
+    const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
+    // Que des non-métaux : la couleur de base est la diffuse, le reflet de face (1 % sous le pré) rangé à part.
+    return GBufferResult(rim, float2(0.0), surface.diffuse, GBufferStandard, normal, normalize(v.normal),
+                         float4(0.0, surface.roughness, occlusion, surface.f0.x / GBufferSpecular));
 }
 
 // Sol sans images : couleurs unies de la planète, avec un grain de bruit (couleur et petit relief) de près. Renvoie la
@@ -2291,20 +2274,18 @@ float4 fragmentProbeSky(ProbeSkyOutput input) : SV_Target
 // pré-passe (vertexTreeDepth), les feuilles cachées sont écartées avant ce programme (profondeur testée sans être
 // écrite : le seuil d'alpha ne l'empêche pas). Le seuil reste nécessaire : là où la carte est transparente, la
 // profondeur est celle de ce qui est derrière, plus loin, et la carte entière serait dessinée.
+// Dans le G-buffer, comme les modèles (GBufferFoliage).
 [shader("fragment")]
-SceneOutput fragmentTree(TreeVertexOutput input)
+GBufferOutput fragmentTree(TreeVertexOutput input)
 {
-    const float4 color = MeshColor(input.base, true, true, true, input.airTransmittance, input.airScattered, input.clouds, true, input.tint);
-    return SceneResult(color, Motion(input.base));
+    return MeshGBuffer(input.base, true, true, input.tint, true);
 }
 
 // Écorce des arbres : opaque, sans seuil.
 [shader("fragment")]
-SceneOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
+GBufferOutput fragmentTreeOpaque(TreeVertexOutput input, bool frontFacing : SV_IsFrontFace)
 {
-    const float4 color = MeshColor(input.base, frontFacing, false, true, input.airTransmittance, input.airScattered, input.clouds, false,
-                                   input.tint);
-    return SceneResult(color, Motion(input.base));
+    return MeshGBuffer(input.base, frontFacing, false, input.tint);
 }
 
 // Matériau d'un modèle vu en un pixel, avant tout éclairage (MeshColor, MeshGBuffer).
@@ -2379,17 +2360,12 @@ float3 MeshUnlit(VertexOutput input, float3 normal, float3 toEye, float inside)
     return unlit;
 }
 
-// airGiven : l'air jusqu'au point est déjà calculé (par sommet), sinon il l'est ici. clouds : ombre des nuages déjà
-// calculée (par sommet), négative pour la calculer ici. foliage : feuillage des arbres (ShadeFoliage). tint :
-// multiplie la couleur (TreeTint).
+// Rendu direct d'un modèle (transparents, sondes de reflets) : les opaques passent par le G-buffer (MeshGBuffer).
 [ForceInline]
-float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airGiven = false,
-                 float3 airTransmittance = float3(1.0), float3 airScattered = float3(0.0), float clouds = -1.0,
-                 bool foliage = false, float3 tint = float3(1.0))
+float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
 {
     shadowPixel = input.position.xy;
-    const DrawData draw = draws[input.draw];
-    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest, tint, !foliage); // arbres : surface.zw à eux
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest);
     const float4 base = m.base;
     const float3 geometryNormal = m.geometryNormal;
     const float3 normal = m.normal;
@@ -2401,9 +2377,6 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     surface.diffuse = base.rgb * (1.0 - metallic);
     surface.f0 = lerp(float3(0.04), base.rgb, metallic);
     surface.roughness = m.roughness;
-    if (foliage) {
-        surface.roughness = max(surface.roughness, 0.7); // reflet du ciel flou : vu rasant, il blanchissait aussi
-    }
     // Verre : un transparent lisse (verrière, hublot). Il ne diffuse presque rien : sa couleur de base peinte sur 30 %
     // de la surface, éclairée par le soleil, voilait l'écran plus fort que tout ce qu'on voyait à travers (et réglait
     // l'exposition sur elle). Il ne garde que ses reflets (soleil, ciel, lampes), entiers quel que soit son alpha,
@@ -2426,25 +2399,35 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest, bool airG
     }
 
     float inside;
-    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion,
-                             clouds < 0.0 ? CloudShadow(input.worldPosition) : clouds, inside, foliage, draw.surface.zw);
+    float3 lit = LightSurface(surface, geometryNormal, input.worldPosition, occlusion, CloudShadow(input.worldPosition), inside);
     lit += MeshUnlit(input, normal, surface.toEye, inside);
     // Mélange prémultiplié (transparents) : la lumière de la surface pèse son alpha, sauf les reflets d'un verre ;
     // l'air devant elle aussi (derrière, le fond a déjà le sien).
     const float alpha = transparent ? base.a : 1.0;
-    float3 transmittance = airTransmittance;
-    const float3 scattered = airGiven ? airScattered : AirTo(input.worldPosition, transmittance);
+    float3 transmittance;
+    const float3 scattered = AirTo(input.worldPosition, transmittance);
     lit = lit * (glass ? 1.0 : alpha) * transmittance + scattered * alpha;
     sunRadiance = transparent ? float3(0.0) : Radiance(sunDirect * transmittance);
     // Sonde : la lumière telle quelle, à l'échelle du ciel qu'elle remplace (environmentMap x environment.x).
     return float4(probeCapture ? min(lit, float3(60000.0)) : Radiance(lit), alpha);
 }
 
-// --- G-buffer des modèles opaques : passe « G-buffer », éclairée ensuite par Lighting.slang (LightingRenderer). ---
+// --- G-buffer : passe « G-buffer » (modèles opaques, arbres, herbe, sol des planètes), éclairée ensuite en compute par
+// Lighting.slang (LightingRenderer). L'air, l'ombre des nuages et les volumes intérieurs y sont calculés une fois par
+// pixel visible, au lieu de par sommet ou par carré de brins : pas de surcoût du recouvrement, et plus de dégradé
+// grossier d'une grande tuile lointaine à l'autre. ---
 
-// Sorte de matière (alpha de GBufferOutput::base) : modèle éclairé comme MeshColor. 0 : rien d'écrit, la passe
-// d'éclairage saute le pixel.
-static const float GBufferStandard = 1.0 / 255.0;
+// Sorte de matière (alpha de GBufferOutput::base), et ce que contient alors GBufferOutput::surface. 0 : rien d'écrit
+// (fond, fond de mer caché, mesure « sans pixels »), la passe d'éclairage saute le pixel.
+static const float GBufferStandard = 1.0 / 255.0; // modèles, écorce, sol : métal, rugosité, occlusion, reflet (GBufferSpecular)
+static const float GBufferFoliage = 2.0 / 255.0;  // feuillage (ShadeFoliage) : leaves.x, rugosité, occlusion, leaves.y
+static const float GBufferGrass = 3.0 / 255.0;    // brins : comme GBufferFoliage, ombre simplifiée (simpleShadow)
+static const float GBufferImpostor = 4.0 / 255.0; // arbre au loin : leaves.x, rayon / ImpostorRadiusScale, ombre du feuillage, leaves.y
+// Reflet de face des non-métaux (f0) rangé sur 8 bits : f0 / GBufferSpecular, 0,5 pour les 4 % habituels ; le pré
+// (PlanetColor) descend à 1 %.
+static const float GBufferSpecular = 0.08;
+// Rayon d'un imposteur rangé sur 8 bits (25 cm près) : son ombre est lue 1,2 rayon plus près du soleil.
+static const float ImpostorRadiusScale = 64.0;
 
 // Direction unitaire en deux nombres de 0 à 1 (octaèdre déplié, Cigolle et al. 2014) : 16 bits chacun gardent
 // l'angle à mieux qu'un centième de degré.
@@ -2470,30 +2453,58 @@ float3 DecodeOctahedron(float2 encoded)
 // à part (SV_Target5) est effacée, pas écrite : la passe d'éclairage la remplit.
 struct GBufferOutput
 {
-    float4 color   : SV_Target0; // lumière propre (MeshUnlit), multipliée par l'exposition, avant l'air
+    float4 color   : SV_Target0; // lumière propre (MeshUnlit, contour d'une planète), multipliée par l'exposition, avant l'air
     float2 motion  : SV_Target1;
-    float4 base    : SV_Target2; // rgb : couleur de base ; a : GBufferStandard
+    float4 base    : SV_Target2; // rgb : couleur de base ; a : sorte de matière (GBufferStandard…)
     float4 normals : SV_Target3; // xy : normale de la carte ; zw : de la face (EncodeOctahedron)
-    float4 surface : SV_Target4; // métal, rugosité, occlusion, réserve
+    float4 surface : SV_Target4; // selon la sorte de matière
 };
 
-[ForceInline]
-GBufferOutput MeshGBuffer(VertexOutput input, bool frontFacing, bool alphaTest)
+GBufferOutput GBufferResult(float3 unlit, float2 motion, float3 base, float kind, float3 normal, float3 geometryNormal,
+                            float4 surface)
 {
-    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest);
+    GBufferOutput output;
+    output.color = float4(Radiance(unlit), 1.0);
+    output.motion = motion;
+    output.base = float4(base, kind);
+    output.normals = float4(EncodeOctahedron(normal), EncodeOctahedron(geometryNormal));
+    output.surface = surface;
+    return output;
+}
+
+// Rien à éclairer : `color` écrite telle quelle (déjà en lumière de l'image), la passe d'éclairage saute le pixel.
+GBufferOutput GBufferUnlit(float3 color)
+{
+    GBufferOutput output;
+    output.color = float4(color, 1.0);
+    output.motion = float2(0.0);
+    output.base = float4(0.0);
+    output.normals = float4(0.5);
+    output.surface = float4(0.0);
+    return output;
+}
+
+// Modèle ou arbre (tint : TreeTint). foliage : feuillage des arbres (ShadeFoliage, réglages leaves de l'entité), sa
+// rugosité au moins 0,7 comme dans MeshColor ; son métal ignoré (des feuilles).
+[ForceInline]
+GBufferOutput MeshGBuffer(VertexOutput input, bool frontFacing, bool alphaTest, float3 tint = float3(1.0), bool foliage = false)
+{
+    // Arbres : leur surface.zw sert à ShadeFoliage, pas au fondu des niveaux de détail des modèles.
+    const MeshMaterial m = ReadMeshMaterial(input, frontFacing, alphaTest, tint, !foliage);
+    const DrawData draw = draws[input.draw];
     // Le volume intérieur n'éteint que le contour : cherché seulement s'il y en a un.
     float inside = 0.0;
-    if (draws[input.draw].rim.w > 0.0) {
+    if (draw.rim.w > 0.0) {
         float3 interiorLight;
         inside = InteriorAt(input.worldPosition, interiorLight);
     }
-    GBufferOutput output;
-    output.color = float4(Radiance(MeshUnlit(input, m.normal, normalize(-input.worldPosition), inside)), 1.0);
-    output.motion = Motion(input);
-    output.base = float4(m.base.rgb, GBufferStandard);
-    output.normals = float4(EncodeOctahedron(m.normal), EncodeOctahedron(m.geometryNormal));
-    output.surface = float4(m.metallic, m.roughness, m.occlusion, 0.0);
-    return output;
+    const float3 unlit = MeshUnlit(input, m.normal, normalize(-input.worldPosition), inside);
+    if (foliage) {
+        return GBufferResult(unlit, Motion(input), m.base.rgb, GBufferFoliage, m.normal, m.geometryNormal,
+                             float4(draw.surface.z, max(m.roughness, 0.7), m.occlusion, draw.surface.w));
+    }
+    return GBufferResult(unlit, Motion(input), m.base.rgb, GBufferStandard, m.normal, m.geometryNormal,
+                         float4(m.metallic, m.roughness, m.occlusion, 0.04 / GBufferSpecular));
 }
 
 // Modèle opaque sans seuil d'alpha (voir fragmentOpaque) et avec seuil (fragmentMain), dans le G-buffer.
@@ -2691,9 +2702,6 @@ struct ImpostorVertexOutput
     float2 uv0 : TEXCOORD0;
     float2 uv1 : TEXCOORD1;
     float2 uv2 : TEXCOORD2;
-    float3 airTransmittance : AIR_TRANSMITTANCE;
-    float3 airScattered : AIR_SCATTERED;
-    float clouds : CLOUDS;
     nointerpolation float3 tint : TINT;
     nointerpolation uint3 views : VIEWS;      // les trois vues mélangées (j x ImpostorGrid + i)
     nointerpolation float3 weights : WEIGHTS; // leur part (somme 1)
@@ -2752,18 +2760,16 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
     output.uv2 = ImpostorUv(output.views.z, local);
     output.worldPosition = center + TreeRotate(rotation, local) * radius;
     output.position = Transform(frame[0].viewProjection, output.worldPosition);
-    output.airScattered = AirTo(output.worldPosition, output.airTransmittance);
-    output.clouds = CloudShadow(output.worldPosition);
     output.tint = TreeTint(instance);
     output.rotation = rotation;
     output.radius = radius;
     return output;
 }
 
+// Dans le G-buffer (GBufferImpostor), éclairé par la passe d'éclairage.
 [shader("fragment")]
-SceneOutput fragmentImpostor(ImpostorVertexOutput input)
+GBufferOutput fragmentImpostor(ImpostorVertexOutput input)
 {
-    shadowPixel = input.position.xy; // rotation des lectures de l'ombre (ShadowRotation)
     float4 color = float4(0.0);
     float4 packed = float4(0.0);
     const float2 uvs[3] = {input.uv0, input.uv1, input.uv2};
@@ -2786,22 +2792,10 @@ SceneOutput fragmentImpostor(ImpostorVertexOutput input)
     const float3 normal = normalize(TreeRotate(input.rotation, packed.rgb / color.a * 2.0 - 1.0));
     const float shade = saturate(packed.a / color.a);
     const DrawData draw = draws[params.draw];
-    Surface surface;
-    surface.normal = normal;
-    surface.toEye = normalize(-input.worldPosition);
-    surface.diffuse = base * draw.tint.rgb;
-    surface.f0 = float3(0.04);
-    surface.roughness = 0.8; // feuillage mat (comme MeshColor, foliage)
-    float inside;
-    // Le carré fait face à la caméra, son ombre (vertexImpostorShadow) face au soleil : lue sur le carré, la moitié de
-    // l'arbre derrière ce second carré était dans sa propre ombre, et les forêts au loin bien plus sombres que de près.
-    // Lue à 1,2 rayon vers le soleil, devant son ombre ; celle des voisins reste.
-    // Le soleil aussi : le cœur de l'arbre est à l'ombre de ses branches (pas tout à fait : la lumière passe).
-    float3 lit = LightSurface(surface, normal, input.worldPosition, shade, input.clouds * lerp(1.0, shade, 0.7), inside,
-                              true, draw.surface.zw, 1.2 * input.radius);
-    lit = lit * input.airTransmittance + input.airScattered;
-    sunRadiance = Radiance(sunDirect * input.airTransmittance);
-    return SceneResult(float4(Radiance(lit), 1.0), float2(0.0)); // arbres immobiles
+    // Feuillage mat (rugosité 0,8, comme les arbres de près) et immobile. L'ombre du feuillage capturée éteint le ciel
+    // (occlusion) et une part du soleil ; son rayon, pour lire l'ombre plus près du soleil (Lighting.slang).
+    return GBufferResult(float3(0.0), float2(0.0), base * draw.tint.rgb, GBufferImpostor, normal, normal,
+                         float4(draw.surface.z, input.radius / ImpostorRadiusScale, shade, draw.surface.w));
 }
 
 // Ombre d'un arbre au loin (cascade params.cascade, forêts au loin) : son imposteur vu du soleil, profondeur seule. Le

@@ -201,7 +201,7 @@ parallèles, prises sous verrou), `VulkanTimestamps` (heures du GPU),
 entre types du RHI et de Vulkan sont toutes dans `VulkanTypes`.
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, G-buffer des modèles opaques puis leur éclairage en compute, scène HDR (arbres, sol, fond du ciel, océan), nuages en demi-résolution
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, G-buffer (modèles opaques, arbres, herbe, sol) puis leur éclairage en compute, scène HDR (fond du ciel, océan), nuages en demi-résolution
 (marche, historique, composition), transparents, masque réactif (en FSR), pyramide de profondeur, anticrénelage ou FSR
 (mouvement complet puis agrandissement), bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
@@ -323,15 +323,18 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    proches (obstacles à 300 m au plus) et du relief (montagne plus loin vers le soleil), puis le relief seul. La
    tranche du relief se choisit par la distance à la caméra, pas par la profondeur : l'ombre d'un point ne change pas
    quand la caméra tourne ; chaque tranche fondue dans la suivante sur son dernier dixième.
-4. G-buffer puis éclairage (2026-11-14) : les modèles opaques (`DrawOpaque`, `fragmentGBuffer` de `Mesh.slang`)
+4. G-buffer puis éclairage (2026-11-14, sol et végétation le 2026-11-16) : les modèles opaques (`DrawOpaque`,
+   `fragmentGBuffer` de `Mesh.slang`), puis les arbres et leurs imposteurs, l'herbe et le sol des planètes
    écrivent leur surface en 16 octets par pixel, à la taille de la vue 3D : couleur de base sRGB et sorte de matériau
-   (alpha, 0 = rien d'écrit), normales de la carte et de la face (octaèdre, RGBA16Unorm), métal, rugosité, occlusion
-   (RGBA8) ; leur émissif et leur lumière de contour vont déjà dans l'image de la scène, leur mouvement dans sa cible.
+   (alpha, 0 = rien d'écrit ; modèle, feuillage, brin ou imposteur), normales de la carte et de la face (octaèdre,
+   RGBA16Unorm), et en RGBA8 selon la sorte : métal, rugosité, occlusion et reflet des non-métaux, ou les réglages du
+   feuillage ; leur émissif et leur lumière de contour vont déjà dans l'image de la scène, leur mouvement dans sa cible.
    La passe « éclairage » (`LightingRenderer`, `Lighting.slang`, 8 x 8 pixels par groupe) refait la position depuis la
-   profondeur et appelle les mêmes fonctions que le dessin direct (`LightSurface`, `AirTo`) ; avec le ray tracing, elle
+   profondeur et appelle les mêmes fonctions que le dessin direct (`LightSurface`, `AirTo`, `CloudShadow`) : l'air, l'ombre
+   des nuages et les volumes intérieurs une fois par pixel visible, plus par sommet ni par carré de brins ; avec le ray tracing, elle
    écrit à part la lumière directe du soleil. Vue de contrôle du G-buffer : panneau Moteur et outil MCP `debug_view`.
    Puis la scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur
-   (textures du graphe, lues par `PostRenderer`), reprise après l'éclairage (couleur et profondeur gardées) : arbres, herbe, sol, fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
+   (textures du graphe, lues par `PostRenderer`), reprise après l'éclairage (couleur et profondeur gardées) : fond du ciel puis soleil (`Sun.slang` : disque assombri au bord, halo, rayons en étoile
    ou trait horizontal selon `SunComponent::rays`, bien plus lumineux que le blanc), océans ; puis les nuages (voir plus bas), transparents,
    flammes des réacteurs (additives, sans tri). PBR métal/rugosité, lumières ponctuelles et spots, volumes intérieurs, atmosphère et océans dans `Mesh.slang`.
    Les matériaux opaques sans seuil d'alpha passent par `fragmentOpaque`, qui ne jette aucun pixel : le GPU teste la
@@ -541,8 +544,8 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   de l'air sont refaites en début d'image (`SkyRenderer::Bake`, `skyTableFragment` et `airTableFragment` dans
   `Sky.slang`) : le ciel vu de la caméra (256 x 128, resserré près de l'horizon) et l'air jusqu'à ce qu'elle voit
   (64 x 64 regards sur le champ élargi, 64 distances). Elles gardent les sommes avant les fonctions de phase,
-  appliquées à la lecture : le halo du soleil reste net. Le ciel, et l'air du sol, de l'eau, des arbres (par sommet),
-  des modèles et des nuages (par pixel), y lisent au lieu de marcher le long du regard ; vu de l'espace, ou pour un
+  appliquées à la lecture : le halo du soleil reste net. Le ciel, l'air de l'eau (par sommet), celui de ce qu'éclaire
+  la passe « éclairage » et des nuages (par pixel), y lisent au lieu de marcher le long du regard ; vu de l'espace, ou pour un
   point hors de la table (derrière la caméra), la marche d'avant.
 - Nuages (`CloudsComponent`, `Planetology/CloudRenderer`, `shaders/Clouds.slang`) : une couche épaisse entre deux
   sphères (base et sommet), sans maillage, marchée par le GPU dans trois passes du graphe placées après la scène
@@ -565,7 +568,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
      bilinéaire et par la ressemblance de profondeur (bord d'une montagne), mélangés sur la scène ; un pixel plus
      proche que le premier nuage (moyenne des seuls voisins qui en voient un) n'en reçoit pas.
   Leur ombre (`CloudShadow`, Mesh.slang) lit la même carte météo et multiplie le soleil de tout ce qui est éclairé
-  (objets, sol, eau) ; calculée par sommet pour le sol (ses taches font des centaines de mètres), au pixel ailleurs.
+  (objets, sol, végétation, eau), au pixel dans la passe « éclairage ».
   Le RHI y a gagné les textures 3D (`CreateVolumeTexture`), leur écriture par compute shader
   (`BindingType::StorageTexture`, `TextureAccess::Storage`) et `CommandList::GenerateMipmaps`.
 - Sommets des tuiles rangés dans des pages de 256 cases (`PlanetTileCompute`) ; chaque passe (sol, eau, cascade
@@ -622,7 +625,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   (`ShadeFoliage` : à contre-jour, le Fresnel rasant les blanchissait), un éclairage enveloppant (la lumière déborde un
   peu sur la face à l'ombre), et cette face reçoit une part du soleil qui les traverse
   (« Lumière enveloppante » 0,3 et « Lumière traversante » 0,4 du composant Végétation, passées par la `DrawData` neutre
-  des arbres, `surface.zw`). L'air et l'ombre des nuages sont calculés par sommet. Modèles :
+  des arbres, `surface.zw`), rangés dans le G-buffer. L'air et l'ombre des nuages : passe « éclairage ». Modèles :
   `assets/Modeles/Arbre`, générés par `/mnt/project-files/Modeles/Arbre/tree.py` (Blender). Les plaines vont jusqu'à
   la portée du composant (5 km par défaut) : sous une tuile dessinée plus grossière, `PlanetRenderer::AddPlains` ajoute celles qu'elle couvre.
   Au loin, imposteurs octaédriques (`Renderer/TreeImpostors`) : le modèle détaillé est pris par le GPU sous 8×8 vues
@@ -631,7 +634,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   `vertexImpostor` dessine un carré tourné vers la caméra sans tampon de sommets et projette le point sur les trois
   vues les plus proches, mélangées. Tous les arbres sont gardés ; ils rapetissent près de la portée, et
   `fragmentPlanet` peint la cime des forêts sur le sol (mêmes taches et climat, `ForestAt`, calculés par sommet) à
-  partir de la moitié de la portée. L'air des arbres est calculé par sommet (`TreeVertexOutput`).
+  partir de la moitié de la portée.
 
 ## Interface (FluxUI)
 
