@@ -9,3 +9,6 @@ out/
 Game/Module/assets/models/
 Game/Module/assets/textures/vecteezy_*
 Game/Module/assets/scenes/*.avant-*
+
+# Captures F12 de l'éditeur (à côté du .fluxproject)
+Game/Module/Captures/

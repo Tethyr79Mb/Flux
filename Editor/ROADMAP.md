@@ -20,6 +20,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
   titrés avec une aide sous chacun, préréglages Bas à Ultra, « Rétablir par défaut » par page, recherche des touches.
   Limites : V-Sync non enregistrée ; pas de seconde touche ni de manette ; pas d'aperçu du thème avant de le choisir.
 - ✅ Console.
+- 🔧 Vue seule en plein écran (F11, Fenêtre > Vue seule ; Échap ou F11 pour sortir) : la vue 3D ou le jeu (F5) sur
+  tout l'écran, sans panneaux ni aides ; Alt+Entrée garde le plein écran avec les panneaux. Capture F12 en PNG sans
+  les aides, dans `Captures/` du projet. Limites : capture à la taille de l'écran seulement (une capture haute
+  résolution rendue hors écran viendra si besoin) ; un panneau flottant posé sur la vue est capturé hors vue seule.
 - ✅ Version de l'éditeur dans le titre.
 - ✅ Logo FluxEngine : icône du programme et de sa fenêtre (losange seul), écran d'accueil pendant le démarrage, en-tête du README.
 

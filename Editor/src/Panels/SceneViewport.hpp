@@ -36,8 +36,9 @@ namespace FluxEditor {
         public:
         enum class GizmoMode { Move, Rotate, Scale };
 
-        // view : rectangle de la vue 3D (retourné par EditorLayout::Update).
-        void Update(Flux::Engine& engine, SceneEditor& sceneEditor, const Flux::UI::Rect& view);
+        // view : rectangle de la vue 3D (retourné par EditorLayout::Update). clean : la scène telle que dans le jeu,
+        // sans grille, icônes, sélection, gizmo ni barre d'outils, et sans clic (vue seule, capture F12).
+        void Update(Flux::Engine& engine, SceneEditor& sceneEditor, const Flux::UI::Rect& view, bool clean = false);
         // Bouton « Poser au sol » enfoncé : Placer y pose aussi les objets.
         bool IsDroppingToGround() const { return m_dropToGround; }
         // Vrai si la scène a été modifiée (déplacement au gizmo, d'un texte ou d'une image) depuis le dernier appel.
