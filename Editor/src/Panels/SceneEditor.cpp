@@ -16,6 +16,7 @@
 #include <Flux/Platform/Input.hpp>
 #include <Flux/Platform/Window.hpp>
 #include <Flux/Scene/ComponentRegistry.hpp>
+#include <Flux/Scene/Orbits.hpp>
 #include <Flux/Scene/Scene.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
 #include <Flux/UI/Context.hpp>
@@ -863,6 +864,7 @@ namespace FluxEditor {
                     if (mounting) {
                         Mounts::Mount(scene, entity, parent);
                     }
+                    Orbits::Reparented(scene, entity); // une planète lâchée sur une planète devient sa lune
                     history.Push(mounting ? "Fixer (" + rule->title + ")" : std::string("Déplacer dans la hiérarchie"), id, std::move(previous),
                                  UndoHistory::Capture(engine, id));
                 }
