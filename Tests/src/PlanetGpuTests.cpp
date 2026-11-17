@@ -265,10 +265,10 @@ bool RunPlanetGpuTests() {
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
     CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
     CHECK(large.GetContinentShift() == 2);
-    // Une lune au relief faible criblée de cratères (TileInputs::shape[3] et [4]), réglages loin des défauts : grands
-    // cratères complexes (fond plat, pic central), petits de 4 m.
+    // Une lune au relief faible criblée de cratères (TileInputs::shape[3] et [4]), réglages loin des défauts : trois
+    // réseaux par taille, grands cratères complexes (fond plat, pic central), petits de 4 m.
     const Planetology::Terrain moon(50000.0, 300.0, 9,
-                                    Planetology::ReliefShape{.craters = {.density = 0.7, .maxRadius = 4000.0, .minRadius = 4.0,
+                                    Planetology::ReliefShape{.craters = {.density = 2.3, .maxRadius = 4000.0, .minRadius = 4.0,
                                                                          .smallShare = 1.2, .depth = 0.18, .rimHeight = 0.05,
                                                                          .wear = 0.6, .complexRadius = 1500.0}});
     CHECK(moon.GetCraterOctaves() == 10 && moon.GetCraterShift() == 5);

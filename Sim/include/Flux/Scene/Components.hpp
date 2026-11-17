@@ -313,7 +313,9 @@ namespace Flux {
     // réglage « Relief » de la planète (une lune peut n'avoir que ses cratères).
     struct CraterComponent
     {
-        float density = 0.5f;          // 0 à 1 : chance qu'une place porte un cratère ; 0 : aucun
+        // 0 : aucun ; jusqu'à 1, chance qu'une place porte un cratère ; au-delà, plusieurs réseaux superposés (jusqu'à
+        // 4 : un sol saturé, chaque unité coûte un réseau de plus par taille).
+        float density = 1.5f;
         float maxRadius = 8000.0f;     // m, rayon des plus grands (au plus 12 % du rayon de la planète)
         float minRadius = 15.0f;       // m, rayon des plus petits (environ ; au plus 10 tailles, chacune moitié de la précédente)
         float smallShare = 1.0f;       // part des petits par rapport aux grands, 1 : comme sur la Lune

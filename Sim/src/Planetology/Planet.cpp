@@ -109,6 +109,11 @@ namespace Flux::Planetology {
         constexpr double CraterReach = 2.5;
         constexpr double CraterSlabInner = 0.15;
         constexpr double CraterSlabOuter = 0.2;
+        // Densité au-delà de 1 : jusqu'à CraterCopies réseaux par taille, décalés les uns des autres (copie c : c x
+        // CraterCopyCell mailles plus la fraction de c x CraterCopyShift, pour d'autres tirages et d'autres places).
+        constexpr std::uint32_t CraterCopies = 4;
+        constexpr Math::Vector3d CraterCopyCell{17.0, 31.0, 47.0};
+        constexpr Math::Vector3d CraterCopyShift{0.37, 0.71, 0.53};
         // Un cratère n'apparaît que sur les tuiles où sa maille fait au moins 2^CraterDetailShift fois l'écart que
         // GetOctaves demande aux autres couches : environ un diamètre pour deux sommets de la tuile. Plus tôt, les petits
         // cratères tomberaient entre les sommets (du bruit, et cher).
@@ -316,11 +321,15 @@ namespace Flux::Planetology {
             const double largest = radius * CraterRadius / (BaseFrequency * layout.scale);
             const double sizes = std::floor(std::log2(largest / std::max(shape.minRadius, 1.0e-3))) + 1.0;
             layout.octaves = static_cast<std::uint32_t>(std::clamp(sizes, 1.0, static_cast<double>(CraterOctaves)));
-            // Au plus profond (et au plus haut) : chaque taille à son plus grand, deux fois (cratères qui se chevauchent).
+            // Au plus profond (et au plus haut) : chaque taille à son plus grand, deux fois par réseau (cratères qui se
+            // chevauchent).
+            double density = std::min(shape.density, static_cast<double>(CraterCopies));
             for (std::uint32_t k = 0; k < layout.octaves; ++k) {
                 const double diameter = 2.0 * largest * std::ldexp(1.0, -static_cast<int>(k));
-                layout.depth += 2.0 * std::max(shape.depth, 0.0) * diameter;
-                layout.rise += 2.0 * std::max(shape.rimHeight, 0.0) * diameter;
+                const double copies = std::ceil(density);
+                layout.depth += 2.0 * copies * std::max(shape.depth, 0.0) * diameter;
+                layout.rise += 2.0 * copies * std::max(shape.rimHeight, 0.0) * diameter;
+                density = std::min(density * std::max(shape.smallShare, 0.0), static_cast<double>(CraterCopies));
             }
             return layout;
         }
@@ -380,7 +389,7 @@ namespace Flux::Planetology {
                    .warpLarge = WarpLarge * std::max(shape.warp, 0.0),
                    .warpSmall = WarpSmall * std::max(shape.warp, 0.0),
                    .peakChance = static_cast<std::uint32_t>(std::clamp(std::round(shape.peakDensity * 256.0), 0.0, 256.0)),
-                   .craterChance = std::clamp(shape.craters.density, 0.0, 1.0),
+                   .craterChance = std::clamp(shape.craters.density, 0.0, static_cast<double>(CraterCopies)),
                    .craterGain = std::max(shape.craters.smallShare, 0.0),
                    .craterDepth = std::max(shape.craters.depth, 0.0),
                    .craterRim = std::max(shape.craters.rimHeight, 0.0),
@@ -694,38 +703,47 @@ namespace Flux::Planetology {
         const auto& P = m_permutation;
         double sum = 0.0;
         double frequency = BaseFrequency * m_craterScale;
-        double chance = m_shape.craterChance;
+        double density = m_shape.craterChance;
         Math::Vector3d p = direction * frequency + layer.offset;
-        for (std::uint32_t k = 0; k < last; ++k, frequency *= 2.0, p *= 2.0, chance = std::min(chance * m_shape.craterGain, 1.0)) {
-            // Les 2 x 2 x 2 mailles dont un point peut tomber à moins d'une demi-maille de celui-ci.
-            const Math::Vector3d base{std::floor(p.x - 0.5), std::floor(p.y - 0.5), std::floor(p.z - 0.5)};
-            const Math::Vector3d f = p - base;
-            const auto cx = static_cast<std::int64_t>(base.x), cy = static_cast<std::int64_t>(base.y), cz = static_cast<std::int64_t>(base.z);
-            const double threshold = chance * 256.0;
+        for (std::uint32_t k = 0; k < last; ++k) {
             const double cell = m_radius / frequency; // m
-            for (int i = 0; i <= 1; ++i) {
-                for (int j = 0; j <= 1; ++j) {
-                    for (int l = 0; l <= 1; ++l) {
-                        const std::uint32_t h = P[P[P[(cx + i) & 255] + ((cy + j) & 255)] + ((cz + l) & 255)];
-                        if (P[h + 3] >= threshold) {
-                            continue;
+            for (std::uint32_t copy = 0; copy < CraterCopies && density > copy; ++copy) {
+                const double c = copy;
+                const Math::Vector3d shift = CraterCopyShift * c;
+                const Math::Vector3d q = p + Math::Vector3d{shift.x - std::floor(shift.x), shift.y - std::floor(shift.y), shift.z - std::floor(shift.z)};
+                // Les 2 x 2 x 2 mailles dont un point peut tomber à moins d'une demi-maille de celui-ci.
+                const Math::Vector3d base{std::floor(q.x - 0.5), std::floor(q.y - 0.5), std::floor(q.z - 0.5)};
+                const Math::Vector3d f = q - base;
+                const Math::Vector3d at = base + CraterCopyCell * c;
+                const auto cx = static_cast<std::int64_t>(at.x), cy = static_cast<std::int64_t>(at.y), cz = static_cast<std::int64_t>(at.z);
+                const double threshold = std::min(density - c, 1.0) * 256.0;
+                for (int i = 0; i <= 1; ++i) {
+                    for (int j = 0; j <= 1; ++j) {
+                        for (int l = 0; l <= 1; ++l) {
+                            const std::uint32_t h = P[P[P[(cx + i) & 255] + ((cy + j) & 255)] + ((cz + l) & 255)];
+                            if (P[h + 3] >= threshold) {
+                                continue;
+                            }
+                            const auto random = [&](std::uint32_t index) { return P[h + index] / 255.0; };
+                            // Du point au centre du cratère (en mailles) : sa part le long de la verticale décide s'il est
+                            // dans la couche, le reste donne la distance.
+                            const Math::Vector3d e = Math::Vector3d{double(i) + random(0), double(j) + random(1), double(l) + random(2)} - f;
+                            const double radial = Math::Dot(e, direction);
+                            const double slab = SmoothStep(CraterSlabOuter, CraterSlabInner, std::abs(radial));
+                            const Math::Vector3d flat = e - direction * radial;
+                            const double radius = CraterRadius * (0.5 + 0.5 * random(4));
+                            const double r2 = Math::Dot(flat, flat);
+                            if (slab <= 0.0 || r2 >= radius * radius * (CraterReach * CraterReach)) {
+                                continue;
+                            }
+                            sum += slab * CraterProfile(m_shape, std::sqrt(r2) / radius, radius * cell, random(5));
                         }
-                        const auto random = [&](std::uint32_t index) { return P[h + index] / 255.0; };
-                        // Du point au centre du cratère (en mailles) : sa part le long de la verticale décide s'il est
-                        // dans la couche, le reste donne la distance.
-                        const Math::Vector3d e = Math::Vector3d{double(i) + random(0), double(j) + random(1), double(l) + random(2)} - f;
-                        const double radial = Math::Dot(e, direction);
-                        const double slab = SmoothStep(CraterSlabOuter, CraterSlabInner, std::abs(radial));
-                        const Math::Vector3d flat = e - direction * radial;
-                        const double radius = CraterRadius * (0.5 + 0.5 * random(4));
-                        const double r2 = Math::Dot(flat, flat);
-                        if (slab <= 0.0 || r2 >= radius * radius * (CraterReach * CraterReach)) {
-                            continue;
-                        }
-                        sum += slab * CraterProfile(m_shape, std::sqrt(r2) / radius, radius * cell, random(5));
                     }
                 }
             }
+            frequency *= 2.0;
+            p *= 2.0;
+            density = std::min(density * m_shape.craterGain, static_cast<double>(CraterCopies));
         }
         return sum;
     }

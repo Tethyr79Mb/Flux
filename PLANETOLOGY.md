@@ -199,7 +199,8 @@ la couche est déjà en pente, par un facteur `1 / (1 + force × pente²)`, la p
 
 Un réseau 3D par taille, chaque taille deux fois plus fine que la précédente : quatre fois plus de places par
 surface, soit autant de cratères par taille que sur la Lune (nombre en 1 / diamètre²). Chaque maille porte au plus un
-cratère (`Densité`, puis x `Part des petits` d'une taille à la suivante), placé au hasard, de rayon 0,09 à 0,18 maille
+cratère (`Densité`, puis x `Part des petits` d'une taille à la suivante ; au-delà de 1, jusqu'à 4 réseaux décalés
+superposés, chacun 8 mailles de plus à lire), placé au hasard, de rayon 0,09 à 0,18 maille
 (`CraterRadius`). Comme pour les sommets, seules comptent les mailles dont le point tombe près de la sphère
 (`CraterSlabInner`, `CraterSlabOuter`). Tout tient à moins d'une demi-maille du point : 8 mailles lues par taille.
 

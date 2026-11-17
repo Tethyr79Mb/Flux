@@ -110,6 +110,9 @@ static const float CraterRadius = 0.18;
 static const float CraterReach = 2.5;
 static const float CraterSlabInner = 0.15;
 static const float CraterSlabOuter = 0.2;
+static const uint CraterCopies = 4;
+static const float3 CraterCopyCell = float3(17.0, 31.0, 47.0);
+static const float3 CraterCopyShift = float3(0.37, 0.71, 0.53);
 static const float CraterFloor = 0.5;
 static const float CraterPeak = 0.35;
 static const float CraterPeakRadius = 0.25;
@@ -542,34 +545,40 @@ float Craters(float3 delta, float3 direction, uint octaves)
     const uint last = min(uint(tile.shape[3].w), octaves > shift ? octaves - shift : 0);
     const uint base = FirstOctaveIndex(9);
     const float radius = tile.axisN.w;
-    float chance = tile.shape[3].y;
+    float density = tile.shape[3].y;
     float sum = 0.0;
     for (uint k = 0; k < last; ++k) {
         const uint o = base + k;
-        // Les 2 x 2 x 2 mailles dont un point peut tomber à moins d'une demi-maille de celui-ci.
-        int3 cell;
-        float3 f;
-        Lattice(o, delta, -0.5, cell, f);
-        const float threshold = chance * 256.0;
-        const float cellSize = radius / tile.fractions[o].w;
-        for (int i = 0; i <= 1; ++i) {
-            for (int j = 0; j <= 1; ++j) {
-                for (int l = 0; l <= 1; ++l) {
-                    const int3 c = (cell + int3(i, j, l)) & 255;
-                    const uint h = permutation[permutation[permutation[c.x] + uint(c.y)] + uint(c.z)];
-                    if (float(permutation[h + 3]) >= threshold) { continue; }
-                    const float3 e = float3(i, j, l) + float3(PeakRandom(h, 0), PeakRandom(h, 1), PeakRandom(h, 2)) - f;
-                    const float radial = dot(e, direction);
-                    const float slab = 1.0 - smoothstep(CraterSlabInner, CraterSlabOuter, abs(radial));
-                    const float3 flat = e - direction * radial;
-                    const float size = CraterRadius * (0.5 + 0.5 * PeakRandom(h, 4));
-                    const float r2 = dot(flat, flat);
-                    if (slab <= 0.0 || r2 >= size * size * (CraterReach * CraterReach)) { continue; }
-                    sum += slab * CraterProfile(sqrt(r2) / size, size * cellSize, PeakRandom(h, 5));
+        const float4 fraction = tile.fractions[o];
+        const float cellSize = radius / fraction.w;
+        for (uint copy = 0; copy < CraterCopies && density > float(copy); ++copy) {
+            // Réseau décalé de la copie (CraterCopyCell, CraterCopyShift), puis les 2 x 2 x 2 mailles dont un point
+            // peut tomber à moins d'une demi-maille de celui-ci.
+            const float c = float(copy);
+            const float3 q = fraction.xyz + delta * fraction.w + frac(CraterCopyShift * c);
+            const float3 floored = floor(q - 0.5);
+            const int3 cell = tile.cells[o].xyz + int3(floored) + int3(CraterCopyCell) * int(copy);
+            const float3 f = q - floored;
+            const float threshold = min(density - c, 1.0) * 256.0;
+            for (int i = 0; i <= 1; ++i) {
+                for (int j = 0; j <= 1; ++j) {
+                    for (int l = 0; l <= 1; ++l) {
+                        const int3 n = (cell + int3(i, j, l)) & 255;
+                        const uint h = permutation[permutation[permutation[n.x] + uint(n.y)] + uint(n.z)];
+                        if (float(permutation[h + 3]) >= threshold) { continue; }
+                        const float3 e = float3(i, j, l) + float3(PeakRandom(h, 0), PeakRandom(h, 1), PeakRandom(h, 2)) - f;
+                        const float radial = dot(e, direction);
+                        const float slab = 1.0 - smoothstep(CraterSlabInner, CraterSlabOuter, abs(radial));
+                        const float3 flat = e - direction * radial;
+                        const float size = CraterRadius * (0.5 + 0.5 * PeakRandom(h, 4));
+                        const float r2 = dot(flat, flat);
+                        if (slab <= 0.0 || r2 >= size * size * (CraterReach * CraterReach)) { continue; }
+                        sum += slab * CraterProfile(sqrt(r2) / size, size * cellSize, PeakRandom(h, 5));
+                    }
                 }
             }
         }
-        chance = min(chance * tile.shape[3].z, 1.0);
+        density = min(density * tile.shape[3].z, float(CraterCopies));
     }
     return sum;
 }

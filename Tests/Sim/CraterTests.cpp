@@ -60,6 +60,23 @@ bool RunCraterTests() {
     CHECK(highest > 20.0);   // sur un rebord
     CHECK(touched > Samples / 2);
 
+    // Densité au-delà de 1 : plusieurs réseaux par taille, bien plus de sol creusé.
+    const auto hollowed = [&](float density) {
+        const CraterComponent settings{.density = density};
+        const Planetology::Terrain dense(moon, &settings);
+        std::mt19937 again(5);
+        int count = 0;
+        for (int i = 0; i < 2000; ++i) {
+            const Math::Vector3d d = Math::Normalize(Math::Vector3d{unit(again), unit(again), unit(again)});
+            count += dense.GetHeight(d, fine) < -1.0 ? 1 : 0;
+        }
+        return count / 2000.0;
+    };
+    const double sparse = hollowed(0.5), usual = hollowed(1.5), saturated = hollowed(4.0);
+    std::printf("       sol creusé de plus d'un mètre : %.0f %% (densité 0,5), %.0f %% (1,5), %.0f %% (4)\n", 100.0 * sparse,
+                100.0 * usual, 100.0 * saturated);
+    CHECK(sparse < usual && usual < saturated);
+
     // Sans marche : le long d'une ligne de 2 km au pas de 0,25 m, la hauteur ne saute jamais (pentes des parois au plus
     // de l'ordre de 1).
     const Math::Vector3d start = randomDirection();

@@ -160,7 +160,7 @@ namespace Flux {
                    {.speed = 10.0, .min = 100.0, .max = 1.0e6, .decimals = 0})
             .Field("skyColor", "Couleur du ciel", &PlanetComponent::skyColor, {.alpha = false});
         registry.Register<CraterComponent>("craters", "Cratères")
-            .Field("density", "Densité", &CraterComponent::density, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("density", "Densité", &CraterComponent::density, {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
             .Field("maxRadius", "Rayon des plus grands (m)", &CraterComponent::maxRadius,
                    {.speed = 10.0, .min = 1.0, .max = 1.0e6, .decimals = 0})
             .Field("minRadius", "Rayon des plus petits (m)", &CraterComponent::minRadius,
