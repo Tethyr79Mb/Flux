@@ -29,7 +29,7 @@ namespace Flux::Planetology {
         std::array<float, 4> water{}; // couleur linéaire ; w : rayon de la surface de l'océan (0 : aucun)
         std::array<float, 4> soil{};
         std::array<float, 4> climate{}; // température à l'équateur, aux pôles (°C), humidité, 1 si textures du sol (GroundTextures)
-        std::array<float, 4> beach{};   // altitude du niveau de la mer, hauteur de la plage au-dessus (m)
+        std::array<float, 4> beach{};   // altitude du niveau de la mer, hauteur de la plage au-dessus (m) ; z : 1 sans zones (roche partout)
         std::array<float, 4> rim{};     // couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
         // Nuages (CloudsComponent) : centre de la planète relatif à la caméra et rayon de leur couche (w, 0 : aucun) ;
         // rotation de la planète (quaternion) ; couverture, opacité, 1 / taille des formations, angle de dérive ; couleur et

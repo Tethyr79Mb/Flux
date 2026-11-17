@@ -50,7 +50,7 @@ struct PlanetData
     float4 water;             // rgb : couleur de l'eau (linéaire) ; w : rayon de la surface de l'océan (0 : aucun)
     float4 soil;
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
-    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m)
+    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m) ; z : 1 sans zones
     float4 rim;               // rgb : couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
     float4 clouds;            // xyz : centre de la planète relatif à la caméra ; w : rayon de la couche de nuages (0 : aucune)
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
@@ -1788,6 +1788,17 @@ GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, floa
     const float frozen = smoothstep(-2.0, -8.0, cover.temperature);
     cover.snow = max(smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief), frozen)
                * smoothstep(0.5, 0.65, flatness);
+    if (planet.beach.z > 0.0) {
+        // Sans zones (PlanetComponent::zones, une lune) : roche partout, aussi avec les textures du sol, qui ne passent
+        // pas par les couleurs de chaque matière.
+        cover.rock = 1.0;
+        cover.beach = 0.0;
+        cover.grassy = 0.0;
+        cover.desert = 0.0;
+        cover.patches = 0.0;
+        cover.foot = 0.0;
+        cover.snow = 0.0;
+    }
     return cover;
 }
 
