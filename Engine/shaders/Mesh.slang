@@ -2808,7 +2808,7 @@ float ImpostorSunVisibility(uint normals, float3 local, float3 normal, uint3 sun
 // cime reste en place quand on tourne autour ou qu'on passe au-dessus. Un peu plus grand que la sphère, pour garder
 // les bords de l'arbre vus d'une vue voisine (jusqu'à 1 / cos de l'écart entre deux vues).
 [shader("vertex")]
-ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : SV_VulkanInstanceID)
+ImpostorVertexOutput vertexImpostor(uint vertex : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID)
 {
     const float4 placement = treeInstances[instance * 2];
     float4 rotation = treeInstances[instance * 2 + 1];
@@ -2904,7 +2904,7 @@ struct ImpostorShadowOutput
 };
 
 [shader("vertex")]
-ImpostorShadowOutput vertexImpostorShadow(uint vertex : SV_VertexID, uint instance : SV_VulkanInstanceID)
+ImpostorShadowOutput vertexImpostorShadow(uint vertex : SV_VulkanVertexID, uint instance : SV_VulkanInstanceID)
 {
     const FrameData f = frame[0];
     const float4 placement = treeInstances[instance * 2];

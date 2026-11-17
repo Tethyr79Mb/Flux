@@ -65,7 +65,8 @@ struct Constants
 
 groupshared uint permutation[512];
 groupshared float wideHeights[Wide * Wide];
-groupshared uint wideZones[Wide * Wide]; // Terrain::Zones, deux demi-floats (f32tof16)
+groupshared uint wideZones[Wide * Wide]; // Terrain::Zones, deux demi-floats (packHalf2x16 : sans les types 16 bits
+                                         // de f32tof16, qui demandent shaderInt16)
 groupshared float coarseHeights[Coarse * Coarse];
 // Humidité du relief : hauteurs du point et de ses quatre voisins pour chaque point de la grille, puis la grille.
 static const uint MaxWetnessSide = 8; // Planetology::MaxWetnessSide
@@ -645,7 +646,7 @@ struct TileVertex
 float2 WideZones(uint i, uint j)
 {
     const uint packed = wideZones[(j + 1) * Wide + (i + 1)];
-    return float2(f16tof32(packed & 0xFFFFu), f16tof32(packed >> 16));
+    return unpackHalf2x16ToFloat(packed);
 }
 
 TileVertex BuildVertex(uint i, uint j)
@@ -768,7 +769,7 @@ void computeMain(uint thread : SV_GroupIndex)
             const uint j = p / Wide;
             float2 zones;
             wideHeights[p] = Height(Delta(i + 1, j + 1), tile.options.x, zones);
-            wideZones[p] = f32tof16(zones.x) | (f32tof16(zones.y) << 16);
+            wideZones[p] = packHalf2x16(zones);
         } else {
             const uint c = p - Wide * Wide;
             const uint ci = c % Coarse;

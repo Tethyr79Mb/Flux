@@ -191,6 +191,12 @@ else()
 endif()
 FetchContent_MakeAvailable(JoltPhysics)
 set(CMAKE_CXX_FLAGS_DEBUG "${FLUX_CXX_FLAGS_DEBUG}")
+# Jolt s'ajoute /fp:fast sous MSVC. Avec MSVC 19.52 (Visual Studio 2026), /fp:fast et /O2 donnent une physique fausse
+# en Debug : caisse qui ne se pose pas (PhysicsTests), JPH_ASSERT(IsNormalized()) dans MoveKinematic à chaque image.
+# /fp:precise (celui de notre code) en Debug et en Release : même calcul partout, rien de réordonné en silence.
+if (MSVC)
+    target_compile_options(Jolt PRIVATE /fp:precise)
+endif()
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
