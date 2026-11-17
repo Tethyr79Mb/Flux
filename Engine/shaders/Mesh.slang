@@ -1723,6 +1723,14 @@ float3 LithologyTint(float3 lithology, uint layer)
     return layer == GroundSoil ? lerp(float3(1.0), tint, 0.3) : tint;
 }
 
+// Sans zones (beach.z, une lune) : la roche-mère ne garde que sa clarté (mers sombres de basalte, hautes terres
+// claires), sans l'ocre du grès ni le rose du granit.
+float3 PlanetLithologyTint(PlanetData planet, float3 lithology, uint layer)
+{
+    const float3 tint = LithologyTint(lithology, layer);
+    return planet.beach.z > 0.0 ? float3(dot(tint, float3(0.2126, 0.7152, 0.0722))) : tint;
+}
+
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
 void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 {
@@ -1997,7 +2005,7 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
             if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
-                sample.color *= GroundTint(planet, layer) * LithologyTint(input.geology.xyz, layer);
+                sample.color *= GroundTint(planet, layer) * PlanetLithologyTint(planet, input.geology.xyz, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     sample.color *= GrassDryTint(temperature, macro, 0.0);
@@ -2076,7 +2084,7 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
     ground = lerp(ground, float4(grassColor, planet.grass.w), grassy * (1.0 - patches));
     ground = lerp(ground, planet.sand * float4(LithologyTint(lithology, GroundSand), 1.0), max(desert, beach));
     ground = lerp(ground, soil, foot);
-    ground = lerp(ground, planet.rock * float4(LithologyTint(lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
+    ground = lerp(ground, planet.rock * float4(PlanetLithologyTint(planet, lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
     ground = lerp(ground, planet.snow, snow);
     const float3 color = ground.rgb * (1.0 + fine * lerp(0.3, 0.5, rock) * saturate(1.0 - distance / 400.0));
 
