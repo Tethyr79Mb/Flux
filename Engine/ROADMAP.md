@@ -257,7 +257,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   aussi les ombres, imposteur octaédrique au loin), vent, jusqu'à 5 km par défaut, puis la couleur des forêts sur le
   sol (visible de haut et de l'espace). Imposteurs (`TreeImpostors`) : le modèle détaillé de chaque espèce pris par le
   GPU sous 8×8 vues de la demi-sphère du haut à sa première apparition (atlas couleur et normales 1024², environ
-  11 Mo par espèce), un carré par arbre qui mélange les trois vues les plus proches ; tous les arbres gardés jusqu'à la
+  44 Mo par espèce, 256 pixels par vue), un carré par arbre qui mélange les trois vues les plus proches ; tous les arbres gardés jusqu'à la
   portée (plus d'éclaircissement au loin). Ombres des forêts au loin (demande de Bruno du 2026-11-09) : une carte de
   plus en deux cartes centrées sur la caméra (rayon 1 km et portée, 4096² chacune, 2048 sur le minimum ; indépendantes
   du regard, choisies par la distance), refaite à chaque image avec
@@ -267,7 +267,14 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   plus), arbres d'une plaine semée en vue qui apparaissent un à un en 0,5 s ; budget de 4 plaines semées par image
   encore à régler sur mesure. Arbres en vue cachés (relief, autres arbres, objets) écartés par le GPU dans la pyramide de
   profondeur de l'image précédente, comme les objets ; leurs ombres restent (compteur « cachés » au panneau Moteur). Conifères générés (épicéa, sapin et pin, deux variantes chacun, `Modeles/Coniferes`) en plus
-  du feuillu ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
+  du feuillu. Mips des textures à seuil d'alpha (feuillage) calculés au chargement en gardant la couverture (`BuildMipChain`,
+  Castaño) : les feuilles ne s'évaporent plus à mi-distance (tronc seul avant). Limite : l'atlas des imposteurs garde des
+  mips moyennés (seuil 0,5). Imposteurs dès 200 m par défaut (détaillé directement à l'imposteur), en fondu tramé
+  sur 30 % de la distance (le modèle apparaît derrière l'imposteur qui s'efface) ; l'imposteur garde la profondeur de
+  chaque vue et en lit l'ombre de l'arbre sur lui-même vers le soleil (comme le détaillé dans les cascades, au lieu
+  d'une formule réglée à l'œil) ; limites : arbres dessinés deux fois dans la bande, profondeur sur 8 bits, imposteur
+  sans occlusion du ciel (comme le détaillé), arbres de 200 m encore grands à l'écran (de meilleurs modèles simplifiés
+  repousseraient l'imposteur) ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
   Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud,
   réglés dans le panneau Végétation de l'éditeur avec aperçu en direct, `Planetology::SetVegetationPreview`) :
   une planète liste jusqu'à 8 biomes, chacun avec ses conditions (plaines, collines, montagnes et piémonts, altitude,

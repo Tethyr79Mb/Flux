@@ -12,6 +12,7 @@
 #include "DepthPyramid.slang"
 
 static const uint ListCount = 8;     // VegetationRenderer::ListCount
+static const float ImpostorFadeShare = 0.3;  // VegetationRenderer::ImpostorFadeShare
 static const uint MaxSpecies = 8;    // VegetationRenderer::MaxSpecies
 static const uint MaxCommands = 128; // VegetationRenderer::MaxCommands
 static const uint SpeciesLists = ListCount * MaxSpecies;
@@ -248,7 +249,9 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         if (inView && !hidden) {
             if (distance < distances.y) {
                 Append(distance < distances.x ? 0 : 1, species, tint, position, scale, rotation);
-            } else {
+            }
+            // Dans la bande avant farDistance, l'imposteur aussi, qui s'efface en approchant (ImpostorFade).
+            if (distance >= distances.y * (1.0 - ImpostorFadeShare)) {
                 // Au loin, l'imposteur (vertexImpostor, deux triangles) : tous gardés, aucun arbre n'apparaît en
                 // approchant (on n'en gardait qu'une part, qui grandissait avec la proximité). Près de la portée, ils
                 // rapetissent jusqu'à disparaître ; la couleur des forêts sur le sol (fragmentPlanet) prend le relais.

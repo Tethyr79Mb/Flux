@@ -63,23 +63,51 @@ namespace Flux {
         }
     }
 
+    std::vector<float> ModelLoader::GetMaskedCutoffs(const ModelData& data) {
+        std::vector<float> cutoffs(data.images.size(), 0.0f);
+        for (const ModelMaterial& material : data.materials) {
+            const int image = material.baseColorImage;
+            if (material.alphaCutoff > 0.0f && !material.blend && image >= 0 && static_cast<std::size_t>(image) < cutoffs.size()
+                && cutoffs[static_cast<std::size_t>(image)] == 0.0f) {
+                cutoffs[static_cast<std::size_t>(image)] = material.alphaCutoff; // le premier matériau qui la lit
+            }
+        }
+        return cutoffs;
+    }
+
     void ModelLoader::Stage(Result& result) {
         if (!result.data || result.data->images.empty()) {
             return;
         }
         std::vector<ImageData>& images = result.data->images;
+        // Mips du feuillage calculés ici, sur le fil de lecture (quelques dizaines de ms pour une 4096).
+        const std::vector<float> cutoffs = GetMaskedCutoffs(*result.data);
+        std::vector<std::vector<std::uint8_t>> chains(images.size());
+        result.imageLevels.assign(images.size(), 1);
         result.imageOffsets.assign(images.size(), NoImage);
         std::uint64_t size = 0;
         for (std::size_t i = 0; i < images.size(); ++i) {
             const ImageData& image = images[i];
-            const std::uint64_t bytes = std::uint64_t(std::max(image.size.x, 0)) * std::uint64_t(std::max(image.size.y, 0)) * 4;
-            if (bytes > 0 && image.rgba.size() == bytes) {
-                result.imageOffsets[i] = size;
-                size = (size + bytes + ImageAlignment - 1) / ImageAlignment * ImageAlignment;
+            std::uint64_t bytes = std::uint64_t(std::max(image.size.x, 0)) * std::uint64_t(std::max(image.size.y, 0)) * 4;
+            if (bytes == 0 || image.rgba.size() != bytes) {
+                continue;
             }
+            if (cutoffs[i] > 0.0f) {
+                std::uint32_t levels = 0;
+                chains[i] = BuildMipChain(image, cutoffs[i], levels);
+                if (levels > 1) {
+                    result.imageLevels[i] = levels;
+                    bytes = chains[i].size();
+                } else {
+                    chains[i] = {};
+                }
+            }
+            result.imageOffsets[i] = size;
+            size = (size + bytes + ImageAlignment - 1) / ImageAlignment * ImageAlignment;
         }
         if (size == 0) {
             result.imageOffsets.clear();
+            result.imageLevels.clear();
             return;
         }
         auto staging = m_device.CreateStagingBuffer(size);
@@ -87,13 +115,17 @@ namespace Flux {
             // Les pixels restent dans les images : le fil de l'image les copiera (plus lent, mais affiché).
             Log::Warning("modèle : mémoire d'envoi de {} Mo refusée ({}), images copiées au chargement", size >> 20, staging.error());
             result.imageOffsets.clear();
+            result.imageLevels.clear();
             return;
         }
         for (std::size_t i = 0; i < images.size(); ++i) {
-            if (result.imageOffsets[i] != NoImage) {
-                (*staging)->Write(result.imageOffsets[i], images[i].rgba.data(), images[i].rgba.size());
-                images[i].rgba = {}; // rendue tout de suite : une 4096 pèse 64 Mo
+            if (result.imageOffsets[i] == NoImage) {
+                continue;
             }
+            const std::vector<std::uint8_t>& pixels = chains[i].empty() ? images[i].rgba : chains[i];
+            (*staging)->Write(result.imageOffsets[i], pixels.data(), pixels.size());
+            images[i].rgba = {}; // rendue tout de suite : une 4096 pèse 64 Mo
+            chains[i] = {};
         }
         result.staging = std::move(*staging);
     }

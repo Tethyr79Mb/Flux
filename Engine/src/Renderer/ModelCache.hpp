@@ -182,11 +182,12 @@ namespace Flux {
         private:
         friend class GpuModelResources;
         explicit ModelCache(RHI::Device& device) : m_device(device), m_loader(device) {}
-        // staging, imageOffsets : pixels des images déjà dans une mémoire d'envoi (ModelLoader::Result), sinon lus
-        // dans data.images.
+        // staging, imageOffsets, imageLevels : pixels des images (et mips du feuillage) déjà dans une mémoire d'envoi
+        // (ModelLoader::Result), sinon lus dans data.images.
         std::expected<GpuModel, std::string> Upload(const ModelData& data, std::string_view name,
                                                     const RHI::StagingBuffer* staging = nullptr,
-                                                    std::span<const std::uint64_t> imageOffsets = {});
+                                                    std::span<const std::uint64_t> imageOffsets = {},
+                                                    std::span<const std::uint32_t> imageLevels = {});
         // Détruit le modèle quand le GPU ne s'en sert plus (rend ses places aux tables à ce moment-là).
         void Retire(GpuModel model);
         bool PlaceGeometry(const ModelData& data, GpuModelResources& resources);

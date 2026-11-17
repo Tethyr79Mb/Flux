@@ -2422,7 +2422,7 @@ float4 MeshColor(VertexOutput input, bool frontFacing, bool alphaTest)
 static const float GBufferStandard = 1.0 / 255.0; // modèles, écorce, sol : métal, rugosité, occlusion, reflet (GBufferSpecular)
 static const float GBufferFoliage = 2.0 / 255.0;  // feuillage (ShadeFoliage) : leaves.x, rugosité, occlusion, leaves.y
 static const float GBufferGrass = 3.0 / 255.0;    // brins : comme GBufferFoliage, ombre simplifiée (simpleShadow)
-static const float GBufferImpostor = 4.0 / 255.0; // arbre au loin : leaves.x, rayon / ImpostorRadiusScale, ombre du feuillage, leaves.y
+static const float GBufferImpostor = 4.0 / 255.0; // arbre au loin : leaves.x, rayon / ImpostorRadiusScale, soleil passé entre ses branches, leaves.y
 // Reflet de face des non-métaux (f0) rangé sur 8 bits : f0 / GBufferSpecular, 0,5 pour les 4 % habituels ; le pré
 // (PlanetColor) descend à 1 %.
 static const float GBufferSpecular = 0.08;
@@ -2632,7 +2632,6 @@ struct ImpostorBakeOutput
     float4 position : SV_Position;
     float3 normal   : NORMAL;
     float2 uv       : TEXCOORD;
-    float3 local    : LOCAL; // dans la sphère unité de l'arbre
     nointerpolation float3 toEye : TO_EYE;
     nointerpolation uint material : MATERIAL;
 };
@@ -2657,7 +2656,6 @@ ImpostorBakeOutput vertexImpostorBake(VertexInput input, uint instance : SV_Vulk
                              saturate(0.5 + 0.5 * dot(local, toEye)), 1.0);
     output.normal = input.normal;
     output.uv = input.uv;
-    output.local = local;
     output.toEye = toEye;
     output.material = params.material;
     return output;
@@ -2666,7 +2664,7 @@ ImpostorBakeOutput vertexImpostorBake(VertexInput input, uint instance : SV_Vulk
 struct ImpostorBakeTargets
 {
     float4 color  : SV_Target0; // linéaire (cible sRGB) ; alpha 1 là où il y a l'arbre, 0 ailleurs (effacée)
-    float4 normal : SV_Target1; // repère de l'arbre, de [-1, 1] vers [0, 1] ; alpha : ombre du feuillage (ImpostorShade)
+    float4 normal : SV_Target1; // repère de l'arbre, de [-1, 1] vers [0, 1] ; alpha : profondeur dans la vue
 };
 
 [shader("fragment")]
@@ -2681,15 +2679,11 @@ ImpostorBakeTargets fragmentImpostorBake(ImpostorBakeOutput input)
     // montre que des faces avant.
     float3 normal = normalize(input.normal);
     normal = dot(normal, input.toEye) < 0.0 ? -normal : normal;
-    // Ombre du feuillage sur lui-même, que le modèle détaillé reçoit des cascades et l'imposteur non (un seul carré) :
-    // les aiguilles près du tronc, au cœur de l'arbre, sont dans l'ombre des autres ; celles du bout des branches et
-    // du haut, éclairées. Approchée par la distance à l'axe (y, le haut de l'arbre) et la hauteur ; avec l'occlusion
-    // du matériau.
-    const float occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
-    const float open = saturate(0.35 + 2.0 * length(input.local.xz) + 0.25 * input.local.y);
+    // Profondeur de la vue (reverse-Z, 1 : le bord de la sphère côté œil), gardée à côté de la normale : l'imposteur
+    // en refait le point 3D de l'arbre, et son ombre sur lui-même vers le soleil (ImpostorSunVisibility).
     ImpostorBakeTargets output;
     output.color = float4(base.rgb, 1.0);
-    output.normal = float4(normal * 0.5 + 0.5, open * occlusion);
+    output.normal = float4(normal * 0.5 + 0.5, input.position.z);
     return output;
 }
 
@@ -2705,9 +2699,29 @@ struct ImpostorVertexOutput
     nointerpolation float3 tint : TINT;
     nointerpolation uint3 views : VIEWS;      // les trois vues mélangées (j x ImpostorGrid + i)
     nointerpolation float3 weights : WEIGHTS; // leur part (somme 1)
+    nointerpolation uint3 sunViews : SUN_VIEWS;      // de même vers le soleil (ImpostorSunVisibility)
+    nointerpolation float3 sunWeights : SUN_WEIGHTS;
     nointerpolation float4 rotation : ROTATION; // de l'arbre (quaternion), pour ses normales
     nointerpolation float radius : RADIUS;
+    nointerpolation float fade : FADE; // part de l'imposteur gardée (ImpostorFade)
 };
+
+// Fondu de l'imposteur sur le modèle de près (VegetationRenderer::ImpostorFadeShare) : dans la bande avant farDistance,
+// l'arbre est dessiné en entier par son modèle et par son imposteur, dont une part de pixels de plus en plus petite
+// reste en approchant. Le modèle apparaît derrière l'imposteur au lieu de le remplacer d'un coup. params.emissive :
+// début de la bande et 1 / sa largeur (0 : pas de fondu).
+float ImpostorFade(float3 center)
+{
+    return params.emissive.y > 0.0 ? saturate((length(center) - params.emissive.x) * params.emissive.y) : 1.0;
+}
+
+// Trame au pixel (bruit à gradient entrelacé, Jimenez 2014), décalée à chaque image : le TAA en fait un fondu continu.
+float ImpostorDither(float2 pixel)
+{
+    const float shift = float(uint(frame[0].cameraForward.w * 60.0) % 64u) * 5.588238;
+    pixel += shift;
+    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
+}
 
 // Point `local` (repère de l'arbre, sphère unité) sur l'image de la vue `view`, comme vertexImpostorBake.
 float2 ImpostorUv(uint view, float3 local)
@@ -2716,6 +2730,75 @@ float2 ImpostorUv(uint view, float3 local)
     float3 up;
     ImpostorBasis(ImpostorViewDirection(uint2(view % ImpostorGrid, view / ImpostorGrid)), right, up);
     return float2(0.5 + 0.5 * dot(local, right), 0.5 - 0.5 * dot(local, up));
+}
+
+// Les trois vues capturées autour de la direction `toEye` (repère de l'arbre, demi-sphère du haut) et leur part : la
+// case de la grille où tombe la direction, coupée en deux triangles.
+void ImpostorViews(float3 toEye, out uint3 views, out float3 weights)
+{
+    const float2 grid = (EncodeHemiOctahedron(toEye) * 0.5 + 0.5) * float(ImpostorGrid - 1);
+    const float2 cell = min(floor(grid), float(ImpostorGrid - 2));
+    const float2 f = saturate(grid - cell);
+    const uint2 c = uint2(cell);
+    if (f.x + f.y < 1.0) {
+        views = uint3(c.y * ImpostorGrid + c.x, c.y * ImpostorGrid + c.x + 1, (c.y + 1) * ImpostorGrid + c.x);
+        weights = float3(1.0 - f.x - f.y, f.x, f.y);
+    } else {
+        views = uint3((c.y + 1) * ImpostorGrid + c.x + 1, (c.y + 1) * ImpostorGrid + c.x, c.y * ImpostorGrid + c.x + 1);
+        weights = float3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
+    }
+}
+
+// Point de l'arbre vu en `uv` (dans sa case, comme ImpostorUv) dans la vue `view`, à la profondeur `depth` capturée
+// (fragmentImpostorBake) : dans la sphère unité de l'arbre.
+float3 ImpostorPoint(uint view, float2 uv, float depth)
+{
+    const float3 toEye = ImpostorViewDirection(uint2(view % ImpostorGrid, view / ImpostorGrid));
+    float3 right;
+    float3 up;
+    ImpostorBasis(toEye, right, up);
+    return right * (2.0 * uv.x - 1.0) + up * (1.0 - 2.0 * uv.y) + toEye * (2.0 * depth - 1.0);
+}
+
+// Texel de l'atlas `image` (Grid x Grid cases) au point `uv` de la case de la vue `view`.
+int3 ImpostorTexel(uint image, uint view, float2 uv)
+{
+    uint width;
+    uint height;
+    materialImages[NonUniformResourceIndex(image)].GetDimensions(width, height);
+    const float2 atlas = (float2(view % ImpostorGrid, view / ImpostorGrid) + clamp(uv, 0.0, 0.999)) / float(ImpostorGrid);
+    return int3(int2(atlas * float2(width, height)), 0);
+}
+
+// Part du soleil qui atteint le point `local` de l'arbre à travers ses propres branches : comme une carte d'ombres,
+// le point comparé à la profondeur capturée dans les vues vers le soleil (`sunViews`, mélangées), 2 x 2 texels
+// chacune. Le modèle détaillé reçoit cette ombre des cascades ; l'imposteur, un seul carré, la lit ici (sa propre
+// ombre dans les cascades est sautée, shadowLift dans Lighting.slang). `normals` : l'atlas des normales ; `normal` :
+// celle du point (repère de l'arbre).
+float ImpostorSunVisibility(uint normals, float3 local, float3 normal, uint3 sunViews, float3 sunWeights)
+{
+    // Profondeur rangée sur 8 bits (1 / 255 du diamètre) : deux pas et demi de marge, et le point avancé de deux
+    // texels le long de sa normale côté soleil (une feuille de biais s'ombrait elle-même par plaques).
+    const float bias = 0.01;
+    const float normalOffset = 4.0 / 256.0;
+    float visible = 0.0;
+    [unroll]
+    for (uint k = 0; k < 3; ++k) {
+        const uint view = sunViews[k];
+        const float3 toSun = ImpostorViewDirection(uint2(view % ImpostorGrid, view / ImpostorGrid));
+        const float3 probe = local + normal * (dot(normal, toSun) < 0.0 ? -normalOffset : normalOffset);
+        const float depth = saturate(0.5 + 0.5 * dot(probe, toSun));
+        const int3 texel = ImpostorTexel(normals, view, ImpostorUv(view, probe));
+        float lit = 0.0;
+        [unroll]
+        for (uint t = 0; t < 4; ++t) {
+            // 0 : rien de capturé (fond effacé), donc rien devant.
+            const float front = materialImages[NonUniformResourceIndex(normals)].Load(texel + int3(t & 1u, t >> 1u, 0)).a;
+            lit += front <= depth + bias ? 0.25 : 0.0;
+        }
+        visible += lit * sunWeights[k];
+    }
+    return visible;
 }
 
 // Un arbre au loin (liste Far de VegetationRenderer) : sommets 0 à 3 de son carré (index 0 1 2 2 1 3), sans tampon
@@ -2737,19 +2820,12 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
     const float4 inverse = float4(-rotation.xyz, rotation.w);
     float3 toEye = TreeRotate(inverse, normalize(-center));
     toEye = normalize(float3(toEye.x, max(toEye.y, 0.0), toEye.z) + float3(0.0, 1.0e-4, 0.0));
-    // Les trois vues autour : la case de la grille où tombe la direction, coupée en deux triangles.
-    const float2 grid = (EncodeHemiOctahedron(toEye) * 0.5 + 0.5) * float(ImpostorGrid - 1);
-    const float2 cell = min(floor(grid), float(ImpostorGrid - 2));
-    const float2 f = saturate(grid - cell);
-    const uint2 c = uint2(cell);
     ImpostorVertexOutput output;
-    if (f.x + f.y < 1.0) {
-        output.views = uint3(c.y * ImpostorGrid + c.x, c.y * ImpostorGrid + c.x + 1, (c.y + 1) * ImpostorGrid + c.x);
-        output.weights = float3(1.0 - f.x - f.y, f.x, f.y);
-    } else {
-        output.views = uint3((c.y + 1) * ImpostorGrid + c.x + 1, (c.y + 1) * ImpostorGrid + c.x, c.y * ImpostorGrid + c.x + 1);
-        output.weights = float3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
-    }
+    ImpostorViews(toEye, output.views, output.weights);
+    // Le soleil dans le même repère, pour l'ombre de l'arbre sur lui-même ; jamais par-dessous, comme vertexImpostorShadow.
+    float3 toSun = TreeRotate(inverse, frame[0].toSun.xyz);
+    toSun = normalize(float3(toSun.x, max(toSun.y, 0.0), toSun.z) + float3(0.0, 1.0e-4, 0.0));
+    ImpostorViews(toSun, output.sunViews, output.sunWeights);
     float3 right;
     float3 up;
     ImpostorBasis(toEye, right, up);
@@ -2763,6 +2839,7 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
     output.tint = TreeTint(instance);
     output.rotation = rotation;
     output.radius = radius;
+    output.fade = ImpostorFade(center);
     return output;
 }
 
@@ -2770,6 +2847,9 @@ ImpostorVertexOutput vertexImpostor(uint vertex : SV_VertexID, uint instance : S
 [shader("fragment")]
 GBufferOutput fragmentImpostor(ImpostorVertexOutput input)
 {
+    if (input.fade < 1.0 && ImpostorDither(input.position.xy) >= input.fade) {
+        discard;
+    }
     float4 color = float4(0.0);
     float4 packed = float4(0.0);
     const float2 uvs[3] = {input.uv0, input.uv1, input.uv2};
@@ -2787,13 +2867,29 @@ GBufferOutput fragmentImpostor(ImpostorVertexOutput input)
         discard;
     }
     const float3 base = color.rgb / color.a * input.tint;
-    // Normales ramenées par la couverture (alpha de la couleur) ; l'alpha des normales, moyenné de même, est l'ombre
-    // du feuillage capturée (fragmentImpostorBake).
-    const float3 normal = normalize(TreeRotate(input.rotation, packed.rgb / color.a * 2.0 - 1.0));
-    const float shade = saturate(packed.a / color.a);
+    // Normales ramenées par la couverture (alpha de la couleur).
+    const float3 treeNormal = normalize(packed.rgb / color.a * 2.0 - 1.0);
+    const float3 normal = TreeRotate(input.rotation, treeNormal);
+    // Le point de l'arbre vu ici, refait de la profondeur capturée par chaque vue qui l'a (texel exact, sans mip), puis
+    // son ombre sur lui-même vers le soleil.
+    const uint normals = params.material + 1;
+    float3 local = float3(0.0);
+    float found = 0.0;
+    [unroll]
+    for (uint k = 0; k < 3; ++k) {
+        const uint view = input.views[k];
+        const float depth = materialImages[NonUniformResourceIndex(normals)].Load(ImpostorTexel(normals, view, uvs[k])).a;
+        if (depth > 0.0) {
+            local += ImpostorPoint(view, uvs[k], depth) * input.weights[k];
+            found += input.weights[k];
+        }
+    }
+    // Aucune vue ne l'a au texel près (bord d'une branche) : le plan du carré, par le centre.
+    local = found > 0.0 ? local / found : ImpostorPoint(input.views.x, input.uv0, 0.5);
+    const float shade = ImpostorSunVisibility(normals, local, treeNormal, input.sunViews, input.sunWeights);
     const DrawData draw = draws[params.draw];
-    // Feuillage mat (rugosité 0,8, comme les arbres de près) et immobile. L'ombre du feuillage capturée éteint le ciel
-    // (occlusion) et une part du soleil ; son rayon, pour lire l'ombre plus près du soleil (Lighting.slang).
+    // Feuillage mat (rugosité 0,8, comme les arbres de près) et immobile. L'ombre de l'arbre sur lui-même retire le
+    // soleil ; son rayon, pour lire l'ombre des voisins plus près du soleil (Lighting.slang).
     return GBufferResult(float3(0.0), float2(0.0), base * draw.tint.rgb, GBufferImpostor, normal, normal,
                          float4(draw.surface.z, input.radius / ImpostorRadiusScale, shade, draw.surface.w));
 }

@@ -96,6 +96,16 @@ namespace Flux::RHI {
         virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTexture(Format format, Extent extent,
                                                                                    const StagingBuffer& source, std::uint64_t offset,
                                                                                    bool mipmaps = false) = 0;
+        // Texture RGBA8 et ses `levels` niveaux de mip déjà calculés (BuildMipChain : feuillage dont les mips gardent
+        // la couverture), à la suite, chacun moitié du précédent arrondi en dessous jusqu'à 1 ; dans pixels ou dans une
+        // mémoire d'envoi à `offset`.
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTextureLevels(Format format, Extent extent,
+                                                                                         std::uint32_t levels,
+                                                                                         std::span<const std::uint8_t> pixels) = 0;
+        virtual std::expected<std::unique_ptr<Texture>, std::string> CreateTextureLevels(Format format, Extent extent,
+                                                                                         std::uint32_t levels,
+                                                                                         const StagingBuffer& source,
+                                                                                         std::uint64_t offset) = 0;
         // Mémoire d'envoi de `size` octets ; appelable depuis n'importe quel fil (fils de chargement).
         virtual std::expected<std::unique_ptr<StagingBuffer>, std::string> CreateStagingBuffer(std::uint64_t size) = 0;
         // Rend une mémoire d'envoi dont les copies sont enregistrées : détruite quand elles sont finies.
