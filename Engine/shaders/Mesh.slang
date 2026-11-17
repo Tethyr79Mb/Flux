@@ -2005,6 +2005,11 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
             if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
+                if (planet.beach.z > 0.0) {
+                    // Sans zones (une lune) : l'image de roche en gris, la teinte seule donne la couleur (une image
+                    // brune ne se corrige pas en la multipliant).
+                    sample.color = float3(dot(sample.color, float3(0.2126, 0.7152, 0.0722)));
+                }
                 sample.color *= GroundTint(planet, layer) * PlanetLithologyTint(planet, input.geology.xyz, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
