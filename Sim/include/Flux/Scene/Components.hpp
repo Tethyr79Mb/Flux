@@ -289,6 +289,9 @@ namespace Flux {
         Math::LinearColor soilTint{1.0f, 1.0f, 1.0f};
         Math::LinearColor sandTint{1.0f, 1.0f, 1.0f};
         Math::LinearColor snowTint{1.0f, 1.0f, 1.0f};
+        // Couleurs de la roche-mère (0 à 1) : granit, calcaire, grès et basalte teintent la roche, le sable et la terre
+        // par régions de plusieurs dizaines de km (basalte sombre). 0 : la même couleur partout.
+        float lithologyTint = 1.0f;
         float temperature = 20.0f;      // °C à l'équateur, au niveau zéro
         float poleTemperature = -30.0f; // °C aux pôles
         float humidity = 0.5f;          // 0 : planète désertique, 1 : très humide

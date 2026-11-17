@@ -124,6 +124,8 @@ namespace Flux {
             .Field("soilTint", "Teinte de la texture de terre", &PlanetComponent::soilTint, {.alpha = false})
             .Field("sandTint", "Teinte de la texture de sable", &PlanetComponent::sandTint, {.alpha = false})
             .Field("snowTint", "Teinte de la texture de neige", &PlanetComponent::snowTint, {.alpha = false})
+            .Field("lithologyTint", "Couleurs de la roche-mère", &PlanetComponent::lithologyTint,
+                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Group("climate", "Climat")
             .Field("temperature", "Température à l'équateur (°C)", &PlanetComponent::temperature,
                    {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})

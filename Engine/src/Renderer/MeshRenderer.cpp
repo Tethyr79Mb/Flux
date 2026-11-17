@@ -1463,7 +1463,8 @@ namespace Flux {
                                     material(planet.soilColor, planet.soilTint, 0.95f),
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                                      m_groundGroup ? 1.0f : 0.0f},
-                                    {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), planet.zones ? 0.0f : 1.0f, 0.0f}});
+                                    {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), planet.zones ? 0.0f : 1.0f,
+                                     std::clamp(planet.lithologyTint, 0.0f, 1.0f)}});
             // Portée de l'herbe : le sol y montre de la terre sous les brins (PlanetColor).
             m_planetData[index].shape[3] = grass ? m_grass.range : 0.0f;
             // Lumière de contour sur les corps sans air seulement : une atmosphère dessine déjà son halo vu de l'espace

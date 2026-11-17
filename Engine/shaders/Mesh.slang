@@ -50,7 +50,7 @@ struct PlanetData
     float4 water;             // rgb : couleur de l'eau (linéaire) ; w : rayon de la surface de l'océan (0 : aucun)
     float4 soil;
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
-    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m) ; z : 1 sans zones
+    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m) ; z : 1 sans zones ; w : couleurs de la roche-mère (0 à 1)
     float4 rim;               // rgb : couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
     float4 clouds;            // xyz : centre de la planète relatif à la caméra ; w : rayon de la couche de nuages (0 : aucune)
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
@@ -1726,11 +1726,12 @@ float3 LithologyTint(float3 lithology, uint layer)
 }
 
 // Sans zones (beach.z, une lune) : la roche-mère ne garde que sa clarté (mers sombres de basalte, hautes terres
-// claires), sans l'ocre du grès ni le rose du granit.
+// claires), sans l'ocre du grès ni le rose du granit. beach.w (PlanetComponent::lithologyTint) en règle la force.
 float3 PlanetLithologyTint(PlanetData planet, float3 lithology, uint layer)
 {
-    const float3 tint = LithologyTint(lithology, layer);
-    return planet.beach.z > 0.0 ? float3(dot(tint, float3(0.2126, 0.7152, 0.0722))) : tint;
+    const float3 full = LithologyTint(lithology, layer);
+    const float3 tint = planet.beach.z > 0.0 ? float3(dot(full, float3(0.2126, 0.7152, 0.0722))) : full;
+    return lerp(float3(1.0), tint, planet.beach.w);
 }
 
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
