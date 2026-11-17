@@ -123,7 +123,7 @@ namespace Flux::Planetology {
         return node != state->second.nodes.end() && node->second.tile != NoTile;
     }
 
-    void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
+    void PlanetRenderer::Collect(Entity entity, const PlanetComponent& planet, const CraterComponent* craters, const Math::Vector3d& position,
                                  const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                                  std::vector<Plain>* plains, std::uint32_t plainLevel, double plainRange,
                                  const ViewTest* castsShadow, const ShadowSpacing* shadowSpacing) {
@@ -131,30 +131,30 @@ namespace Flux::Planetology {
             return;
         }
         PlanetState& state = m_planets[entity];
-        if (planet.radius != state.radius || planet.relief != state.relief || planet.seed != state.seed
-            || GetReliefShape(planet) != state.shape) {
+        if (const ReliefShape shape = GetReliefShape(planet, craters); planet.radius != state.radius || planet.relief != state.relief
+            || planet.seed != state.seed || shape != state.shape) {
             // Autre forme : toutes les tuiles sont à refaire.
             for (auto& [key, node] : state.nodes) {
                 Retire(node);
             }
             state.nodes.clear();
-            state.terrain = std::make_shared<const Terrain>(planet);
+            state.terrain = std::make_shared<const Terrain>(planet, craters);
             state.owner = m_nextOwner++; // les tuiles de l'ancienne forme encore en cours seront ignorées
             state.radius = planet.radius;
             state.relief = planet.relief;
             state.seed = planet.seed;
-            state.shape = GetReliefShape(planet);
+            state.shape = shape;
         }
         state.lastUsed = m_frame;
         state.requests.clear();
 
         const Terrain& terrain = *state.terrain;
         const Math::Vector3d camera = rotation.Conjugate().Rotate(-position);
-        const double maxRadius = terrain.GetRadius() + terrain.GetRelief();
+        const double maxRadius = terrain.GetRadius() + terrain.GetRelief() + terrain.GetCraterRise();
         // Rien n'est plus bas que le sol le plus bas possible ; avec un océan, caméra au-dessus de lui, rien n'est plus
         // bas que sa surface non plus : ce qui passe sous son horizon (eau, fond, îles basses) est caché. Le fond vu
         // au travers de l'eau ne l'est qu'en rasant la surface, où elle reflète tout (fresnel de fragmentOcean).
-        double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief(), 1.0);
+        double minRadius = std::max(terrain.GetRadius() - terrain.GetRelief() - terrain.GetCraterDepth(), 1.0);
         if (const double sea = GetSeaRadius(planet); planet.ocean && sea > minRadius && Math::Length(camera) > sea) {
             minRadius = sea;
         }
@@ -425,7 +425,7 @@ namespace Flux::Planetology {
         m_computed[frameIndex].push_back({state.owner, key.Pack()});
         node.tile = tile;
         // Point le plus bas prudent jusqu'au retour des mesures du GPU.
-        node.lowest = state.terrain->GetRadius() - 1.5 * state.terrain->GetRelief() - node.bounds.edge;
+        node.lowest = state.terrain->GetRadius() - 1.5 * state.terrain->GetRelief() - state.terrain->GetCraterDepth() - node.bounds.edge;
         node.measured = false;
         node.lastUsed = m_frame;
         return true;

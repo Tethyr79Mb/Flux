@@ -306,6 +306,23 @@ namespace Flux {
         Math::LinearColor skyColor{0.175f, 0.41f, 1.0f}; // ce que l'air diffuse le plus : bleu sur Terre, orangé sur Mars
     };
 
+    // Cratères d'une planète (modificateur du relief, sur l'entité de son PlanetComponent), pour les lunes et les
+    // planètes sans air : creusés dans le relief, sur le GPU (tuiles) comme sur le CPU (collision). De toutes tailles,
+    // du plus grand au plus petit, beaucoup plus de petits que de grands (comme sur la Lune). Chacun : une cuvette, un
+    // rebord relevé, des éjectas autour ; les grands ont un fond plat et un pic central. En mètres, indépendants du
+    // réglage « Relief » de la planète (une lune peut n'avoir que ses cratères).
+    struct CraterComponent
+    {
+        float density = 0.5f;          // 0 à 1 : chance qu'une place porte un cratère ; 0 : aucun
+        float maxRadius = 8000.0f;     // m, rayon des plus grands (au plus 12 % du rayon de la planète)
+        float minRadius = 15.0f;       // m, rayon des plus petits (environ ; au plus 10 tailles, chacune moitié de la précédente)
+        float smallShare = 1.0f;       // part des petits par rapport aux grands, 1 : comme sur la Lune
+        float depth = 0.2f;            // profondeur d'un cratère frais (du rebord au fond) / son diamètre
+        float rimHeight = 0.04f;       // hauteur du rebord au-dessus du sol / diamètre
+        float wear = 0.5f;             // 0 à 1 : usure des plus vieux (rebord et cuvette adoucis)
+        float complexRadius = 3000.0f; // m, rayon à partir duquel un cratère prend un fond plat et un pic central
+    };
+
     // Végétation d'une planète (sur l'entité de son PlanetComponent) : des arbres semés par le GPU autour de la caméra,
     // toujours aux mêmes endroits (Planetology/VegetationRenderer.hpp). Seulement là où pousserait l'herbe du sol : pente
     // douce, assez humide, ni plage, ni neige, ni gel ; en forêts (cover : part de ces plaines couverte) plutôt

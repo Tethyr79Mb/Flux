@@ -527,7 +527,9 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   lues), chacun avec son profil et des versants de pentes différentes, unis par un maximum doux, leur pente calculée
   exactement. Les ravines (`Terrain::Gullies`, bruit d'érosion sur un réseau 3D de 27 cellules par octave) suivent la
   pente des sommets et se ramifient ; sur les collines et le détail, chaque octave est atténuée selon
-  la pente réelle déjà sommée de sa couche (érosion analytique).
+  la pente réelle déjà sommée de sa couche (érosion analytique). Cratères (`Terrain::Craters`, composant
+  `CraterComponent` sur l'entité de la planète, `ReliefShape::craters`) : un réseau 3D par taille, 8 mailles lues,
+  ajoutés en mètres.
   Une octave ne dépend que des octaves plus grandes : une tuile grossière garde la forme de ses enfants.
   Sommets, ravines et collines suivent la largeur des montagnes en mètres (`PlanetComponent::mountainWidth`), pas le
   rayon : leurs fréquences sont multipliées par `Terrain::GetScale` et elles perdent leurs octaves `GetScaleShift`

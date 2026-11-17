@@ -16,6 +16,7 @@ namespace Flux {
         }
         const Math::WorldPosition position = scene.GetWorldPosition(ship);
         const PlanetComponent* nearest = nullptr;
+        const CraterComponent* craters = nullptr;
         Math::Vector3d offset{};
         Math::Quaternionf rotation;
         for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
@@ -25,6 +26,7 @@ namespace Flux {
             const Math::Vector3d candidate = Math::Delta(scene.GetWorldPosition(entity), position);
             if (!nearest || Math::Length(candidate) - planet.radius < Math::Length(offset) - nearest->radius) {
                 nearest = &planet;
+                craters = scene.GetRegistry().try_get<CraterComponent>(entity);
                 offset = candidate;
                 rotation = scene.GetWorldRotation(entity);
             }
@@ -33,9 +35,10 @@ namespace Flux {
         if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
             return flight;
         }
+        const Planetology::ReliefShape shape = Planetology::GetReliefShape(*nearest, craters);
         const auto same = [&](const Relief& relief) {
             return relief.terrain->GetRadius() == nearest->radius && relief.terrain->GetRelief() == nearest->relief
-                && relief.seed == nearest->seed && relief.shape == Planetology::GetReliefShape(*nearest);
+                && relief.seed == nearest->seed && relief.shape == shape;
         };
         auto found = std::ranges::find_if(m_reliefs, same);
         if (found == m_reliefs.end()) {
@@ -43,8 +46,7 @@ namespace Flux {
             if (m_reliefs.size() >= MaxReliefs) {
                 m_reliefs.erase(m_reliefs.begin());
             }
-            m_reliefs.push_back({std::make_shared<const Planetology::Terrain>(*nearest), nearest->seed,
-                                 Planetology::GetReliefShape(*nearest)});
+            m_reliefs.push_back({std::make_shared<const Planetology::Terrain>(*nearest, craters), nearest->seed, shape});
             found = m_reliefs.end() - 1;
         }
         const Planetology::Terrain* terrain = found->terrain.get();

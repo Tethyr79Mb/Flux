@@ -52,7 +52,7 @@ namespace {
             };
             tiles.clear();
             renderer.BeginFrame(0);
-            renderer.Collect(static_cast<Entity>(1), planet, position, Math::Quaternionf{}, inView, tiles);
+            renderer.Collect(static_cast<Entity>(1), planet, nullptr, position, Math::Quaternionf{}, inView, tiles);
             renderer.EndFrame(0);
             return device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); });
         };
@@ -141,7 +141,7 @@ namespace {
                 time += std::chrono::duration_cast<std::chrono::steady_clock::duration>(moving > 0 ? step : std::chrono::duration<double>(1.0 / 60.0));
                 tiles.clear();
                 renderer.BeginFrame(0, time);
-                renderer.Collect(static_cast<Entity>(1), planet, position, Math::Quaternionf{}, inView, tiles);
+                renderer.Collect(static_cast<Entity>(1), planet, nullptr, position, Math::Quaternionf{}, inView, tiles);
                 renderer.EndFrame(0);
                 if (!device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); })) {
                     return std::unexpected(std::string("envoi au GPU"));
@@ -265,8 +265,15 @@ bool RunPlanetGpuTests() {
     CHECK(small.GetScaleShift() == 0 && large.GetScaleShift() == 4 && earth.GetScaleShift() == 9);
     CHECK(large.GetZoneShift() == 0 && earth.GetZoneShift() == 5); // zones, déformations et détail décalés de 5 sur la Terre
     CHECK(large.GetContinentShift() == 2);
+    // Une lune au relief faible criblée de cratères (TileInputs::shape[3] et [4]), réglages loin des défauts : grands
+    // cratères complexes (fond plat, pic central), petits de 4 m.
+    const Planetology::Terrain moon(50000.0, 300.0, 9,
+                                    Planetology::ReliefShape{.craters = {.density = 0.7, .maxRadius = 4000.0, .minRadius = 4.0,
+                                                                         .smallShare = 1.2, .depth = 0.18, .rimHeight = 0.05,
+                                                                         .wear = 0.6, .complexRadius = 1500.0}});
+    CHECK(moon.GetCraterOctaves() == 10 && moon.GetCraterShift() == 5);
     std::vector<Case> cases;
-    for (const Planetology::Terrain* terrain : {&small, &large, &earth}) {
+    for (const Planetology::Terrain* terrain : {&small, &large, &earth, &moon}) {
         const std::uint32_t max = terrain->GetMaxLevel();
         const std::uint32_t middle = max / 2;
         cases.push_back({terrain, {0, 0, 0, 0}});
@@ -288,6 +295,23 @@ bool RunPlanetGpuTests() {
         }
         cases.push_back({terrain, Planetology::FindTile(peak, middle)});
         cases.push_back({terrain, Planetology::FindTile(peak, max)});
+        if (terrain->GetCraterOctaves() > 0) {
+            // Au fond d'un cratère, et sur une paroi (entre le fond et le rebord) au détail le plus fin.
+            Math::Vector3d bottom{0.0, 1.0, 0.0};
+            double lowest = 1.0e30;
+            for (int k = 0; k < 2000; ++k) {
+                const double z = 1.0 - 2.0 * (k + 0.5) / 2000.0;
+                const double r = std::sqrt(1.0 - z * z);
+                const Math::Vector3d direction{r * std::cos(2.39996 * k), z, r * std::sin(2.39996 * k)};
+                if (const double height = terrain->GetHeight(direction, terrain->GetOctaves(middle)); height < lowest) {
+                    lowest = height;
+                    bottom = direction;
+                }
+            }
+            cases.push_back({terrain, Planetology::FindTile(bottom, middle)});
+            cases.push_back({terrain, Planetology::FindTile(bottom, max)});
+            cases.push_back({terrain, Planetology::FindTile(Math::Normalize(bottom + Math::Vector3d{0.03, 0.0, 0.0}), max)});
+        }
     }
 
     // Toutes dans la même page : chacune doit écrire dans sa case.
@@ -314,7 +338,7 @@ bool RunPlanetGpuTests() {
         // Erreur permise : le float du relief, le millimètre, et celui de la position et de la déformation, relatifs au
         // centre de la tuile : quelques 1e-5 de sa taille aux pointes des sommets (30 cm sur une tuile de 20 km d'une
         // Terre, vue de plus de 20 km ; un millimètre sur celles du sol, où se fait la collision).
-        const double tolerance = 0.005 + 3.0e-5 * mesh.radius + 4.0e-6 * c.terrain->GetRelief();
+        const double tolerance = 0.005 + 3.0e-5 * mesh.radius + 4.0e-6 * (c.terrain->GetRelief() + c.terrain->GetCraterDepth());
         double worst = 0.0;
         for (std::uint32_t v = 0; v < Planetology::TileVertexCount; ++v) {
             const double error = Math::Length(Math::Vector3d(vertices[v].position) - Math::Vector3d(mesh.vertices[v].position));
