@@ -35,6 +35,9 @@ float3 GBufferDebug(uint view, float3 base, float3 normal, float4 surface)
     return surface.xyz;
 }
 
+// Part du soleil gardée côté à contre-jour d'un imposteur, malgré son ombre sur lui-même (computeLighting).
+static const float ImpostorBacklitLeak = 0.5;
+
 [shader("compute")]
 [numthreads(LightingGroupSize, LightingGroupSize, 1)]
 void computeLighting(uint3 id : SV_DispatchThreadID)
@@ -95,7 +98,11 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
             // plus (pas d'occlusion de son propre feuillage).
             surface.roughness = 0.8;
             shadowLift = 1.2 * material.y * ImpostorRadiusScale;
-            clouds *= material.z;
+            // Côté à contre-jour, la lumière traverse pourtant les aiguilles : le détaillé la garde (ses cascades, à
+            // cette distance, ne l'éteignent pas tout à fait) ; sans cette part, l'imposteur était 30 % plus sombre et
+            // sans rouge du soleil (mesuré, 2026-11-17).
+            const float backlit = saturate(-4.0 * dot(geometryNormal, f.toSun.xyz));
+            clouds *= lerp(material.z, 1.0, ImpostorBacklitLeak * backlit);
             occlusion = 1.0;
         }
     }
