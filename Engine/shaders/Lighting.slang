@@ -99,8 +99,9 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
             surface.roughness = 0.8;
             shadowLift = 1.2 * material.y * ImpostorRadiusScale;
             // Côté à contre-jour, la lumière traverse pourtant les aiguilles : le détaillé la garde (ses cascades, à
-            // cette distance, ne l'éteignent pas tout à fait) ; sans cette part, l'imposteur était 30 % plus sombre et
-            // sans rouge du soleil (mesuré, 2026-11-17).
+            // cette distance, ne l'éteignent pas tout à fait). Mesuré le 2026-11-17 sur les mêmes conifères à 150-300 m :
+            // sans cette part, l'imposteur était 15 % plus sombre à contre-jour, 11 % avec 0,25, 6 % avec 0,5 ; de côté,
+            // aucun changement.
             const float backlit = saturate(-4.0 * dot(geometryNormal, f.toSun.xyz));
             clouds *= lerp(material.z, 1.0, ImpostorBacklitLeak * backlit);
             occlusion = 1.0;

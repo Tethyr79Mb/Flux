@@ -272,7 +272,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   mips moyennés (seuil 0,5). Imposteurs dès 200 m par défaut (détaillé directement à l'imposteur), en fondu tramé
   sur 30 % de la distance (le modèle apparaît derrière l'imposteur qui s'efface) ; l'imposteur garde la profondeur de
   chaque vue et en lit l'ombre de l'arbre sur lui-même vers le soleil (comme le détaillé dans les cascades, au lieu
-  d'une formule réglée à l'œil) ; limites : arbres dessinés deux fois dans la bande, profondeur sur 8 bits, imposteur
+  d'une formule réglée à l'œil), avec une part de soleil gardée à contre-jour (la lumière traverse les aiguilles) ; limites : arbres dessinés deux fois dans la bande, profondeur sur 8 bits, imposteur
   sans occlusion du ciel (comme le détaillé), arbres de 200 m encore grands à l'écran (de meilleurs modèles simplifiés
   repousseraient l'imposteur) ; plan de la forêt façon Star Citizen en 4 étapes (`/mnt/project-files/Plans/arbres-realistes.md`).
   Biomes et espèces en fichiers (`Vegetation/Biomes/*.biome.json`, `Vegetation/Especes/*.espece.json`, relus à chaud,
