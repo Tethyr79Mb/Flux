@@ -94,7 +94,7 @@ struct FrameData
     // x : nombre de lumières dans lights ; y : nombre de volumes intérieurs ; z : de planètes ; w : numéro de l'image
     // pour les bruits qui changent à chaque image (0 : fixes, sans anticrénelage temporel)
     uint4 lightCount;
-    // Rotation maximale de l'image de chaque matière du sol (radians, GroundRock et suivantes : [0].xyzw puis [1].x) :
+    // Rotation maximale de l'image de chaque matière du sol (radians, GroundRock et suivantes : [0].xyzw puis [1].xy) :
     // pi, tournée au hasard ; moins, toutes dans à peu près le même sens (rides du sable). Voir GroundTextures.hpp.
     float4 groundRotations[2];
     InteriorData interiors[MaxInteriors];
@@ -1505,7 +1505,8 @@ static const uint GroundGrass = 1;
 static const uint GroundSoil = 2;
 static const uint GroundSand = 3;
 static const uint GroundSnow = 4;
-static const uint GroundLayers = 5;
+static const uint GroundMoon = 5; // sol des planètes sans zones (lunes) : régolithe, ou la roche sans son image
+static const uint GroundLayers = 6;
 // Côté d'une image sur le sol (m), de près et de loin (la répétition se voit moins). GroundPeriod (1024 m) en est un
 // multiple.
 static const float GroundNearScale = 4.0;
@@ -1700,7 +1701,8 @@ float3 GroundTint(PlanetData planet, uint layer)
 {
     float3 tint;
     switch (layer) {
-        case GroundRock: tint = planet.rock.rgb; break;
+        case GroundRock:
+        case GroundMoon: tint = planet.rock.rgb; break;
         case GroundGrass: tint = planet.grass.rgb; break;
         case GroundSoil: tint = planet.soil.rgb; break;
         case GroundSand: tint = planet.sand.rgb; break;
@@ -1714,7 +1716,7 @@ float3 GroundTint(PlanetData planet, uint layer)
 // grès, noir sur basalte), la terre un peu ; l'herbe et la neige rien.
 float3 LithologyTint(float3 lithology, uint layer)
 {
-    if (layer != GroundRock && layer != GroundSand && layer != GroundSoil) {
+    if (layer != GroundRock && layer != GroundMoon && layer != GroundSand && layer != GroundSoil) {
         return float3(1.0);
     }
     const float basalt = saturate(1.0 - lithology.x - lithology.y - lithology.z);
@@ -1945,11 +1947,12 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
     const float grassRange = planet.forest.y > 0.0 ? planet.shape.w : 0.0;
     const float underBlades = grassRange > 0.0 ? smoothstep(min(50.0, grassRange), min(20.0, 0.5 * grassRange), distance) : 0.0;
     if (planet.climate.w > 0.0) {
-        float weights[GroundLayers] = { 0.0, 0.0, 1.0, 0.0, 0.0 };
+        float weights[GroundLayers] = { 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 };
         CoverGround(weights, GroundGrass, grassy * (1.0 - patches));
         CoverGround(weights, GroundSand, max(desert, beach));
         CoverGround(weights, GroundSoil, foot);
-        CoverGround(weights, GroundRock, rock);
+        // Sans zones (une lune), la roche partout est l'image de la lune.
+        CoverGround(weights, planet.beach.z > 0.0 ? GroundMoon : GroundRock, rock);
         CoverGround(weights, GroundSnow, snow);
         const float underGrass = weights[GroundGrass] * underBlades;
         weights[GroundGrass] -= underGrass;

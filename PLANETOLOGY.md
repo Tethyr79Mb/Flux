@@ -306,7 +306,7 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   océanique. Un type règle le poids de chaque couche du relief (cratères et canyons pour la martienne, plaines de
   glace et crevasses pour la gelée, coulées et cônes pour la lave), les matières du sol, le climat, l'atmosphère et
   la surface liquide (eau, glace ou lave émissive). Les couches nouvelles vont dans `Terrain::GetHeight` et `Height`.
-  Textures du sol propres à chaque planète (une lune n'a aujourd'hui que la roche commune, teintée) : un seul tableau
+  Textures du sol propres à chaque planète (aujourd'hui, une seule matière « lune » commune à toutes les planètes sans zones, teintée) : un seul tableau
   avec les matières de toutes les planètes, chaque planète lit ses couches (~55 Mo par jeu de 5 en BC7 2048²).
 - ⬜ 9. (À décider par Bruno) Érosion hydraulique précalculée. C'est la plus réaliste, mais elle stocke une carte par
   planète, ce qui va contre la décision du 2026-10-07.

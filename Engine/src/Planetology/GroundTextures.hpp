@@ -16,10 +16,11 @@
 namespace Flux::Planetology {
     // Matières du sol des planètes : une couche de chaque tableau de textures, dans cet ordre (fragmentPlanet dans
     // shaders/Mesh.slang).
-    enum class GroundLayer : std::uint32_t { Rock, Grass, Soil, Sand, Snow, Count };
+    // Moon : le sol des planètes sans zones (lunes), facultatif : sans ses images, celles de la roche.
+    enum class GroundLayer : std::uint32_t { Rock, Grass, Soil, Sand, Snow, Moon, Count };
 
     // Images du sol des planètes, lues dans le dossier Textures/Sol des assets, un sous-dossier par matière (roche,
-    // herbe, terre, sable, neige) : <nom>/<nom>-couleur, <nom>-normales (OpenGL : vert vers le haut), <nom>-rugosite
+    // herbe, terre, sable, neige et, facultatif, lune) : <nom>/<nom>-couleur, <nom>-normales (OpenGL : vert vers le haut), <nom>-rugosite
     // et, si elle existe, <nom>-occlusion (.png ou .jpg, toutes de la même taille, carrées). Regroupées en deux tableaux de
     // textures (couleur et rugosité en alpha ; normales en rouge-vert et occlusion en bleu), liés au groupe 0 des tuiles de planète
     // (ModelCache::GroundColorSlot et suivants).
@@ -50,7 +51,7 @@ namespace Flux::Planetology {
         // relue avec les images quand matieres.json change (sans redécoder les images).
         const std::array<float, static_cast<std::size_t>(GroundLayer::Count)>& GetMaxAngles() const { return m_maxAngles; }
         // En degrés : sable et neige ±10°, le reste libre.
-        static constexpr std::array<float, static_cast<std::size_t>(GroundLayer::Count)> DefaultMaxAngles{180.0f, 180.0f, 180.0f, 10.0f, 10.0f};
+        static constexpr std::array<float, static_cast<std::size_t>(GroundLayer::Count)> DefaultMaxAngles{180.0f, 180.0f, 180.0f, 10.0f, 10.0f, 180.0f};
 
         // Pixels des deux tableaux, décodés hors du fil principal : RGBA8 au niveau 0 seul (mips faits par le GPU), ou
         // BC7 avec tous leurs niveaux (niveau 0 de toutes les couches, puis niveau 1...).
