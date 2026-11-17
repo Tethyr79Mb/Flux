@@ -101,6 +101,27 @@ bool RunSceneTests() {
     Orbits::Update(scene);
     CHECK(Near(Math::Delta(scene.GetWorldPosition(sun), scene.GetWorldPosition(planet)), {0.0, 0.0, -2.0e9}, 1.0e-3));
 
+    // Lune : une planète lâchée sur une planète tourne autour d'elle, à 60 rayons, dans son repère (sans secteur) ;
+    // rendue à la racine, elle reprend une orbite autour du soleil sans bouger.
+    scene.Add<PlanetComponent>(planet).radius = 100000.0f;
+    const Entity moon = scene.CreateEntity("Lune");
+    scene.Add<PlanetComponent>(moon);
+    scene.Add<SectorComponent>(moon, Math::Vector3i64{150, 0, 0});
+    OrbitComponent& moonOrbit = scene.Add<OrbitComponent>(moon, OrbitComponent{.distance = 150.0, .angle = 90.0, .inclination = 5.0});
+    CHECK(scene.SetParentKeepingWorld(moon, planet));
+    Orbits::Reparented(scene, moon);
+    CHECK(std::abs(moonOrbit.distance - 0.006) < 1.0e-9 && moonOrbit.inclination == 0.0);
+    CHECK(scene.TryGet<SectorComponent>(moon) == nullptr);
+    CHECK(Near(Math::Delta(scene.GetWorldPosition(planet), scene.GetWorldPosition(moon)), {0.0, 0.0, -6.0e6}, 1.0e-3));
+    moonOrbit.angle = 0.0;
+    Orbits::Update(scene);
+    CHECK(Near(Math::Delta(scene.GetWorldPosition(planet), scene.GetWorldPosition(moon)), {6.0e6, 0.0, 0.0}, 1.0e-3));
+    const Math::WorldPosition moonBefore = scene.GetWorldPosition(moon);
+    CHECK(scene.SetParentKeepingWorld(moon, NullEntity));
+    Orbits::Reparented(scene, moon);
+    CHECK(Near(Math::Delta(moonBefore, scene.GetWorldPosition(moon)), {}, 1.0e-3));
+    CHECK(std::abs(moonOrbit.distance - Math::Length(Math::Delta(scene.GetWorldPosition(sun), moonBefore)) / 1.0e9) < 1.0e-9);
+
     // Glisser dans la hiérarchie : un vaisseau racine lâché sur une station tournée, loin dans un secteur, reste où il
     // est (avant, sa position de racine devenait sa position dans le repère de la station : envoyé à 46 millions de km).
     const Entity station = scene.CreateEntity("Station");

@@ -222,8 +222,9 @@ namespace Flux {
     // Orbite autour du Soleil de la scène (SunComponent), pour ranger un système autour de son étoile comme dans EVE
     // Online : l'objet (une planète, en général) est à `distance` millions de km du soleil, à `angle` degrés autour de
     // lui dans le plan horizontal (0 : vers +x) et `inclination` degrés au-dessus. Rien ne tourne pendant le jeu.
-    // Distance nulle : prise de la position actuelle (Orbits::Update). Un objet à la racine seulement ; ce qui est posé
-    // près d'une planète sans en être l'enfant ne la suit pas quand l'orbite change.
+    // Distance nulle : prise de la position actuelle (Orbits::Update). Un enfant (une lune, enfant de sa planète) tourne
+    // autour de son parent, dans le plan de son équateur. Ce qui est posé près d'une planète sans en être l'enfant ne
+    // la suit pas quand l'orbite change.
     struct OrbitComponent
     {
         double distance = 0.0;

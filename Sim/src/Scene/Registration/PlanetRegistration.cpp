@@ -76,7 +76,7 @@ namespace Flux {
                    {"none", "Aucun", SunRays::None}});
         registry.Register<OrbitComponent>("orbit", "Orbite")
             .Field("distance", "Distance (millions de km)", &OrbitComponent::distance,
-                   {.speed = 0.1, .min = 0.0, .max = 1.0e5, .decimals = 3})
+                   {.speed = 0.1, .min = 0.0, .max = 1.0e5, .decimals = 4})
             .Field("angle", "Angle (°)", &OrbitComponent::angle,
                    {.speed = 0.1, .min = -360.0, .max = 360.0, .decimals = 2})
             .Field("inclination", "Inclinaison (°)", &OrbitComponent::inclination,

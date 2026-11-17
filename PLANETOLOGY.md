@@ -16,7 +16,7 @@ entité. **Placer > Espace > Planète** la pose à trois rayons devant la camér
 | Planète | forme (rayon, relief, montagnes, graine), sol, climat, mer, gravité, atmosphère |
 | Végétation | arbres semés par le GPU autour de la caméra ; leurs troncs ont une collision (semis refait par le CPU) ; herbe générée par le GPU à chaque image sur le sol proche (`Grass.slang`), là où le sol montre de l'herbe |
 | Nuages | une couche de nuages en volume (cumulus, stratus) qui dérive et fait de l'ombre |
-| Orbite | place la planète autour de son étoile |
+| Orbite | place la planète autour de son étoile, ou une lune autour de sa planète (lune = planète enfant d'une planète : glissée dessus dans la hiérarchie, elle se met à 60 rayons d'elle, dans le plan de son équateur ; rien ne tourne en jeu) |
 
 Ordre conseillé des réglages, du plus grand au plus fin :
 
@@ -284,6 +284,8 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   océanique. Un type règle le poids de chaque couche du relief (cratères et canyons pour la martienne, plaines de
   glace et crevasses pour la gelée, coulées et cônes pour la lave), les matières du sol, le climat, l'atmosphère et
   la surface liquide (eau, glace ou lave émissive). Les couches nouvelles vont dans `Terrain::GetHeight` et `Height`.
+  Textures du sol propres à chaque planète (une lune n'a aujourd'hui que la roche commune, teintée) : un seul tableau
+  avec les matières de toutes les planètes, chaque planète lit ses couches (~55 Mo par jeu de 5 en BC7 2048²).
 - ⬜ 9. (À décider par Bruno) Érosion hydraulique précalculée. C'est la plus réaliste, mais elle stocke une carte par
   planète, ce qui va contre la décision du 2026-10-07.
 - ⬜ 10. Rochers et cailloux posés sur le sol en instancing, plutôt que des octaves toujours plus fines.

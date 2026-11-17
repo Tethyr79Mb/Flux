@@ -50,7 +50,7 @@ struct PlanetData
     float4 water;             // rgb : couleur de l'eau (linéaire) ; w : rayon de la surface de l'océan (0 : aucun)
     float4 soil;
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
-    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m)
+    float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m) ; z : 1 sans zones
     float4 rim;               // rgb : couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
     float4 clouds;            // xyz : centre de la planète relatif à la caméra ; w : rayon de la couche de nuages (0 : aucune)
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
@@ -1723,6 +1723,14 @@ float3 LithologyTint(float3 lithology, uint layer)
     return layer == GroundSoil ? lerp(float3(1.0), tint, 0.3) : tint;
 }
 
+// Sans zones (beach.z, une lune) : la roche-mère ne garde que sa clarté (mers sombres de basalte, hautes terres
+// claires), sans l'ocre du grès ni le rose du granit.
+float3 PlanetLithologyTint(PlanetData planet, float3 lithology, uint layer)
+{
+    const float3 tint = LithologyTint(lithology, layer);
+    return planet.beach.z > 0.0 ? float3(dot(tint, float3(0.2126, 0.7152, 0.0722))) : tint;
+}
+
 // Recouvre les matières déjà posées par `layer` à hauteur de `amount` (comme une couche de peinture).
 void CoverGround(inout float weights[GroundLayers], uint layer, float amount)
 {
@@ -1788,6 +1796,17 @@ GroundCover GetGroundCover(PlanetData planet, float3 local, float flatness, floa
     const float frozen = smoothstep(-2.0, -8.0, cover.temperature);
     cover.snow = max(smoothstep(planet.shape.z - 0.0375 * relief, planet.shape.z + 0.0375 * relief, altitude + macro * 0.19 * relief), frozen)
                * smoothstep(0.5, 0.65, flatness);
+    if (planet.beach.z > 0.0) {
+        // Sans zones (PlanetComponent::zones, une lune) : roche partout, aussi avec les textures du sol, qui ne passent
+        // pas par les couleurs de chaque matière.
+        cover.rock = 1.0;
+        cover.beach = 0.0;
+        cover.grassy = 0.0;
+        cover.desert = 0.0;
+        cover.patches = 0.0;
+        cover.foot = 0.0;
+        cover.snow = 0.0;
+    }
     return cover;
 }
 
@@ -1986,7 +2005,12 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
             const float weight = k == 0 ? max(firstWeight - third, 1.0e-3) : secondWeight - third;
             if (k == 0 || weight > GroundMinimumWeight) {
                 GroundSample sample = SampleGroundScales(layer, p, dpdx, dpdy, localNormal, blend, distance);
-                sample.color *= GroundTint(planet, layer) * LithologyTint(input.geology.xyz, layer);
+                if (planet.beach.z > 0.0) {
+                    // Sans zones (une lune) : l'image de roche en gris, la teinte seule donne la couleur (une image
+                    // brune ne se corrige pas en la multipliant).
+                    sample.color = float3(dot(sample.color, float3(0.2126, 0.7152, 0.0722)));
+                }
+                sample.color *= GroundTint(planet, layer) * PlanetLithologyTint(planet, input.geology.xyz, layer);
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     sample.color *= GrassDryTint(temperature, macro, 0.0);
@@ -2065,7 +2089,7 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
     ground = lerp(ground, float4(grassColor, planet.grass.w), grassy * (1.0 - patches));
     ground = lerp(ground, planet.sand * float4(LithologyTint(lithology, GroundSand), 1.0), max(desert, beach));
     ground = lerp(ground, soil, foot);
-    ground = lerp(ground, planet.rock * float4(LithologyTint(lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
+    ground = lerp(ground, planet.rock * float4(PlanetLithologyTint(planet, lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
     ground = lerp(ground, planet.snow, snow);
     const float3 color = ground.rgb * (1.0 + fine * lerp(0.3, 0.5, rock) * saturate(1.0 - distance / 400.0));
 
