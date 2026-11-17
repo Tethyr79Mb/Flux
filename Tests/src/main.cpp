@@ -33,6 +33,7 @@ int main() {
         {"envois vers le GPU (file de transfert)", RunTransferTests},
         {"tuiles de planète sur le GPU", RunPlanetGpuTests},
         {"bruit 3D des nuages sur le GPU", RunCloudNoiseTests},
+        {"vagues de l'océan sur le GPU (FFT)", RunOceanWavesGpuTests},
         {"arbres des planètes sur le GPU", RunVegetationGpuTests},
         {"armes des vaisseaux", RunWeaponsTests},
         {"collisions des vaisseaux et amarrage", RunDockingAutopilotTests},

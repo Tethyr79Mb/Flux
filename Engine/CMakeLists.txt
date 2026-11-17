@@ -72,6 +72,7 @@ flux_add_shaders(FluxShaders
         shaders/MeshRays.slang
         shaders/ModelMesh.slang
         shaders/ModelMeshRays.slang
+        shaders/OceanWaves.slang
         shaders/Overlay.slang
         shaders/PlanetMesh.slang
         shaders/PlanetMeshRays.slang
