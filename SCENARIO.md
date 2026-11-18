@@ -49,7 +49,8 @@ Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, archit
   monde croit extraterrestres. Absents, connus par leurs ruines, leurs signaux et leurs machines. Leur vérité
   (section 5) se dévoile au niveau maximum.
 - **Les Solariens** (*Solarians*, nom de Bruno) : l'espèce inconnue, qui vit cachée dans le système Solaris et que
-  tous prennent pour des extraterrestres. Ils ne communiquent pas. Leurs premiers signes apparaissent vers le
+  tous prennent pour des extraterrestres. Ils ne communiquent pas. On les découvre par la suite de quêtes de la
+  campagne (choix de Bruno) ; leurs premiers signes apparaissent vers le
   niveau 40, sur le monde glacé. Ce sont en réalité l'autre branche des Architectes (section 5). Le joueur, lui, est
   toujours humain.
 - **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
