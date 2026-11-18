@@ -33,6 +33,11 @@ namespace Flux {
         float ambient = 1.0f;       // multiplie les textures de l'environnement (lumière ambiante et reflets)
         // Multiplie la lumière écrite dans l'image de la scène (pré-exposition : Radiance dans shaders/Mesh.slang).
         float preExposure = 1.0f;
+        // Occlusion ambiante du ciel de la scène (SkyComponent::occlusionRadius et suivants ; sans ciel, leurs valeurs
+        // par défaut).
+        float occlusionRadius = 1.0f;
+        float occlusionIntensity = 1.0f;
+        float occlusionFalloff = 0.6f;
         // D'où l'environnement tire sa lumière (EnvironmentRenderer::Prepare).
         EnvironmentSource environmentSource;
         // Textures de l'environnement, remplies par le Renderer (EnvironmentRenderer) : reflets et leur nombre de

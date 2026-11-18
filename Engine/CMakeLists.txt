@@ -55,6 +55,7 @@ flux_precompile_headers(FluxEngine)
 flux_add_version(FluxEngine)
 
 flux_add_shaders(FluxShaders
+        shaders/AmbientOcclusion.slang
         shaders/CloudNoise.slang
         shaders/Clouds.slang
         shaders/Culling.slang

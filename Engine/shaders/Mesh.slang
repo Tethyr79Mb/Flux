@@ -16,6 +16,7 @@
 
 #include "Atmosphere.slang"
 #include "CubeMap.slang"
+#include "Octahedron.slang"
 #include "PlanetClimate.slang"
 
 // Doit correspondre à InteriorData dans MeshRenderer.cpp : un volume intérieur (boîte), où le ciel n'éclaire pas.
@@ -1199,7 +1200,10 @@ float ProbeAt(float3 worldPosition, float3 direction, float3 normal, float mip, 
     return best;
 }
 
-float3 Ambient(Surface s, float3 worldPosition, float occlusion, float inside, float3 interiorLight, float skyScale)
+// specularOcclusion : part des reflets gardée, si elle diffère de `occlusion` (négative : la même ; Lighting.slang la tire
+// de l'occlusion ambiante de l'écran).
+float3 Ambient(Surface s, float3 worldPosition, float occlusion, float inside, float3 interiorLight, float skyScale,
+               float specularOcclusion = -1.0)
 {
     const FrameData f = frame[0];
     const float sky = f.environment.x * skyScale;
@@ -1223,7 +1227,7 @@ float3 Ambient(Surface s, float3 worldPosition, float occlusion, float inside, f
     const float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
     const float2 scaleBias = float2(-1.04, 1.04) * a004 + r.zw;
     const float3 specular = s.f0 * scaleBias.x + scaleBias.y;
-    return (s.diffuse * diffuseLight + specular * specularLight) * occlusion;
+    return s.diffuse * diffuseLight * occlusion + specular * specularLight * (specularOcclusion < 0.0 ? occlusion : specularOcclusion);
 }
 
 // Lumière renvoyée vers l'œil par les lumières de la scène (ponctuelles et spots) : leur intensité (l'éclairement à
@@ -1303,8 +1307,9 @@ static const float GlassRoughness = 0.2;
 
 // foliage : éclairée par ShadeFoliage (réglages leaves), et l'ombre lue aussi pour la face à l'ombre (la lumière la traverse).
 // shadowLift : l'ombre lue ce nombre de mètres plus près du soleil (imposteurs, pour ne pas lire leur propre ombre).
+// specularOcclusion : voir Ambient.
 float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition, float occlusion, float clouds, out float inside,
-                    bool foliage = false, float2 leaves = float2(0.0), float shadowLift = 0.0)
+                    bool foliage = false, float2 leaves = float2(0.0), float shadowLift = 0.0, float specularOcclusion = -1.0)
 {
     const FrameData f = frame[0];
     const float3 toSun = f.toSun.xyz;
@@ -1322,7 +1327,7 @@ float3 LightSurface(Surface surface, float3 geometryNormal, float3 worldPosition
     if (HasAtmosphere(f.atmosphere)) {
         skyScale = AtmosphereNightSky(f.atmosphere, worldPosition - f.atmosphere.center.xyz, toSun);
     }
-    float3 ambient = Ambient(surface, worldPosition, occlusion, inside, interiorLight, skyScale);
+    float3 ambient = Ambient(surface, worldPosition, occlusion, inside, interiorLight, skyScale, specularOcclusion);
     if (HasAtmosphere(f.atmosphere)) {
         // Le soleil traverse l'air jusqu'ici ; le ciel éclaire aussi (pas dans un volume intérieur).
         const float3 local = worldPosition - f.atmosphere.center.xyz;
@@ -2456,26 +2461,6 @@ static const float GBufferImpostor = 4.0 / 255.0; // arbre au loin : leaves.x, r
 static const float GBufferSpecular = 0.08;
 // Rayon d'un imposteur rangé sur 8 bits (25 cm près) : son ombre est lue 1,2 rayon plus près du soleil.
 static const float ImpostorRadiusScale = 64.0;
-
-// Direction unitaire en deux nombres de 0 à 1 (octaèdre déplié, Cigolle et al. 2014) : 16 bits chacun gardent
-// l'angle à mieux qu'un centième de degré.
-float2 EncodeOctahedron(float3 n)
-{
-    n /= abs(n.x) + abs(n.y) + abs(n.z);
-    const float2 side = float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
-    const float2 e = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * side;
-    return e * 0.5 + 0.5;
-}
-
-float3 DecodeOctahedron(float2 encoded)
-{
-    const float2 e = encoded * 2.0 - 1.0;
-    float3 n = float3(e, 1.0 - abs(e.x) - abs(e.y));
-    const float fold = saturate(-n.z);
-    n.x += n.x >= 0.0 ? -fold : fold;
-    n.y += n.y >= 0.0 ? -fold : fold;
-    return normalize(n);
-}
 
 // Cibles de la passe « G-buffer » (LightingRenderer::BaseFormat et suivants). Avec le ray tracing, la lumière du soleil
 // à part (SV_Target5) est effacée, pas écrite : la passe d'éclairage la remplit.

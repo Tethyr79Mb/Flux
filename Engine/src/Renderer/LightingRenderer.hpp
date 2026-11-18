@@ -13,7 +13,8 @@ namespace Flux {
     // Éclairage différé des modèles opaques (shaders/Lighting.slang) : la passe « G-buffer » a écrit leur surface (couleur
     // de base, normales, métal, rugosité, occlusion) et, dans l'image de la scène, leur lumière propre (émissif et
     // contour) ; Draw éclaire chaque pixel où un modèle a été écrit, en compute, avec le même code que le rendu direct
-    // (LightSurface de Mesh.slang : soleil et ombres, ciel, volumes intérieurs, lampes, air). Le sol, les arbres,
+    // (LightSurface de Mesh.slang : soleil et ombres, ciel, volumes intérieurs, lampes, air), la lumière ambiante
+    // assombrie par l'occlusion ambiante (AmbientOcclusionRenderer). Le sol, les arbres,
     // l'herbe, l'eau et les transparents restent en rendu direct, dessinés ensuite dans la même image.
     // Coût : un passage par pixel de la vue (8 x 8 par groupe), les pixels sans modèle quittent aussitôt ; les lampes
     // sont toutes parcourues par chaque pixel éclairé, comme en rendu direct (pas encore de tuiles).
@@ -38,13 +39,15 @@ namespace Flux {
             const RHI::Texture* surface = nullptr;
             const RHI::Texture* color = nullptr; // l'image de la scène, lue (émissif et contour) puis écrite
             const RHI::Texture* sun = nullptr;
+            const RHI::Texture* ambientOcclusion = nullptr; // lissée (AmbientOcclusionRenderer::WorkFormat)
         };
         // Après chaque changement de taille des textures (GPU à l'arrêt).
         void Bind(const Targets& targets);
 
         // Hors d'une passe : le graphe a mis les barrières (image de la scène et soleil en Storage, le reste lu).
-        // nearPlane : celui de la caméra (profondeur = proche / distance devant elle).
-        void Draw(RHI::CommandList& commands, std::uint32_t frameIndex, float nearPlane) const;
+        // nearPlane : celui de la caméra (profondeur = proche / distance devant elle). occlusionStride : pas entre deux
+        // pixels de l'occlusion ambiante (AmbientOcclusionRenderer::GetStride), 0 sans elle.
+        void Draw(RHI::CommandList& commands, std::uint32_t frameIndex, float nearPlane, std::uint32_t occlusionStride) const;
 
         // Vue de débogage : à la place de l'éclairage des modèles, une donnée du G-buffer.
         void SetView(GBufferView view) { m_view = view; }

@@ -100,6 +100,16 @@ namespace Flux::GameSettingsFile {
                 warnings->push_back("« modelDetail » ignoré (valeur non valide)");
             }
         }
+        if (const auto occlusion = document.find("ambientOcclusion"); occlusion != document.end()) {
+            const auto found = occlusion->is_string()
+                                   ? std::ranges::find(AmbientOcclusionQualityKeys, occlusion->get<std::string>())
+                                   : AmbientOcclusionQualityKeys.end();
+            if (found != AmbientOcclusionQualityKeys.end()) {
+                settings.ambientOcclusion = static_cast<AmbientOcclusionQuality>(found - AmbientOcclusionQualityKeys.begin());
+            } else if (warnings) {
+                warnings->push_back("« ambientOcclusion » ignoré (valeur non valide)");
+            }
+        }
         if (const auto upscaling = document.find("upscaling"); upscaling != document.end()) {
             const auto found = upscaling->is_string() ? std::ranges::find(UpscalingKeys, upscaling->get<std::string>()) : UpscalingKeys.end();
             if (found != UpscalingKeys.end()) {
@@ -130,6 +140,7 @@ namespace Flux::GameSettingsFile {
         document["cloudQuality"] = CloudQualityKeys[static_cast<std::size_t>(settings.cloudQuality)];
         document["vegetationDistance"] = VegetationDistanceKeys[static_cast<std::size_t>(settings.vegetationDistance)];
         document["modelDetail"] = ModelDetailKeys[static_cast<std::size_t>(settings.modelDetail)];
+        document["ambientOcclusion"] = AmbientOcclusionQualityKeys[static_cast<std::size_t>(settings.ambientOcclusion)];
         document["upscaling"] = UpscalingKeys[static_cast<std::size_t>(settings.upscaling)];
         document["sharpness"] = std::round(settings.sharpness * 100.0) / 100.0;
         document["bloom"] = settings.bloom;
