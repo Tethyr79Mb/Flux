@@ -48,7 +48,7 @@ Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, archit
 - **Les Architectes** (*Architects* en anglais, nom donné par les humains) : les bâtisseurs des Portes, que tout le
   monde croit extraterrestres. Absents, connus par leurs ruines, leurs signaux et leurs machines. Leur vérité
   (section 5) se dévoile au niveau maximum.
-- **Les Silencieux** (*The Silent*, nom provisoire) : une vraie espèce inconnue, non humaine, qui ne communique pas.
+- **Les Silencieux** (*The Silent*, nom provisoire) : une race extraterrestre inconnue, qui ne communique pas.
   Invisible au début ; ses premiers signes apparaissent vers le niveau 40, sur le monde glacé.
 - **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
   Premier adversaire « étranger » du joueur.
