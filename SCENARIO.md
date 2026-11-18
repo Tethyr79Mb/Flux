@@ -48,6 +48,8 @@ Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, archit
 - **Les Architectes** (*Architects* en anglais, nom donné par les humains) : les bâtisseurs des Portes, que tout le
   monde croit extraterrestres. Absents, connus par leurs ruines, leurs signaux et leurs machines. Leur vérité
   (section 5) se dévoile au niveau maximum.
+- **Les Silencieux** (*The Silent*, nom provisoire) : une vraie espèce inconnue, non humaine, qui ne communique pas.
+  Invisible au début ; ses premiers signes apparaissent vers le niveau 40, sur le monde glacé.
 - **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
   Premier adversaire « étranger » du joueur.
 - **Les Écorcheurs** : pirates et pilleurs d'épaves, nés de la flotte coupée de la Terre lors de la fermeture.
@@ -59,7 +61,8 @@ Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, archit
 Choix de Bruno (2026-11-18) : les Architectes sont des **ancêtres humains**.
 - Il y a environ 13 000 ans, une civilisation humaine oubliée a quitté la Terre, construit les Portes et fait de
   Solaris son monde. L'Ars Solaris, autour d'Héliade, alimentait tout son réseau.
-- Elle s'est effondrée (cause à fixer, voir les questions ouvertes) ; sur Terre, les survivants sont retombés à l'âge
+- Elle s'est effondrée sous l'attaque des Silencieux (proposé, à valider). Les Architectes ont éteint la Porte de la
+  Faille pour leur couper la route ; sur Terre, les survivants sont retombés à l'âge
   de pierre. L'histoire humaine connue commence après.
 - La Porte de la Faille s'est rallumée parce que l'Ars Solaris a détecté des humains utilisant les Portes : elle
   reconnaît ses héritiers. Les Sentinelles, elles, n'attaquent que ce qu'elles ne reconnaissent pas, d'où un
@@ -67,6 +70,9 @@ Choix de Bruno (2026-11-18) : les Architectes sont des **ancêtres humains**.
 - Indices semés en chemin : écritures proches de langues anciennes, restes humains dans les ruines, ADN identique.
 - Conséquence pour le monde ouvert : les quatre factions découvrent qu'elles se disputent leur propre héritage ;
   chacune en tire une lecture différente, ce qui relance leurs rivalités sans PvP.
+- Le revers : en rallumant la Porte, l'Ars Solaris a aussi rouvert la route aux Silencieux. C'est la menace du monde
+  ouvert : événements de serveur et opérations en groupe contre eux, qui donnent aux quatre factions une raison de
+  s'allier.
 
 ## 6. Le système Solaris (à caler sur les planètes du jeu)
 
@@ -131,6 +137,5 @@ niveau, de faction et de réputation, chapitres enchaînés, variantes par facti
 
 ## 11. Questions ouvertes
 
-- Ce qui a fait tomber les Architectes, et s'il existe aussi une vraie espèce inconnue, dirigée par l'IA (question
-  posée à Bruno).
+- Les Silencieux : leur nom définitif, leur apparence, et ce qu'ils veulent.
 - Noms définitifs des factions, du système et des lieux.
