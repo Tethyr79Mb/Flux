@@ -80,6 +80,7 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
   Il ne change jamais les statistiques du vaisseau.
 - **Le livre de compétences**, comme dans EVE, mais qui progresse à l'usage et non avec le temps : piloter améliore
   le pilotage, miner le minage, tirer la précision. Ce sont les compétences qui rendent le joueur meilleur.
+- Seules les actions utiles font progresser (validé par Bruno) : vraie cible, vraie cargaison, vraie mission.
 - Un débutant peut donc voler avec un ancien : l'écart vient des compétences acquises, pas du niveau.
 
 ## 8. Avis franc et risques
