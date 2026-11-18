@@ -111,7 +111,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 
 ## Plus tard
 - ⬜ Mise à l'échelle DPI (écrans 125 %, 150 %).
-- ⬜ Éditeur de matériaux.
+- ⬜ Éditeur de matériaux (Bruno, 2026-11-18) : fichiers matériau (couleur de base, normale, rugosité, métal, émission) créés dans le Contenu et édités dans l'inspecteur, glissés sur un objet ou sur une partie précise d'un modèle (sous-mesh) pour remplacer le matériau du glTF.
 - ⬜ Éditeur de terrain des planètes (réglages en direct avec aperçu).
 - ⬜ Profileur dans l'éditeur (historique des temps CPU / GPU).
 
