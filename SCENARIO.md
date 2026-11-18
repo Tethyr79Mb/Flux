@@ -45,15 +45,30 @@ Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, archit
 
 ## 4. Les factions de l'IA
 
-- **Les Architectes** (*Architects* en anglais, nom donné par les humains) : l'espèce inconnue. Absente au début, connue par ses ruines, ses
-  signaux et ses machines. Sa vérité se dévoile au niveau maximum.
+- **Les Architectes** (*Architects* en anglais, nom donné par les humains) : les bâtisseurs des Portes, que tout le
+  monde croit extraterrestres. Absents, connus par leurs ruines, leurs signaux et leurs machines. Leur vérité
+  (section 5) se dévoile au niveau maximum.
 - **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
   Premier adversaire « étranger » du joueur.
 - **Les Écorcheurs** : pirates et pilleurs d'épaves, nés de la flotte coupée de la Terre lors de la fermeture.
 - **Le Cartel de Vesper** : contrebande, trafic d'artefacts ; il travaille en secret pour des membres des quatre
   factions et sert de levier pour les trahisons de l'histoire.
 
-## 5. Le système Solaris (à caler sur les planètes du jeu)
+## 5. La vérité des Architectes (secret, révélé au niveau 50)
+
+Choix de Bruno (2026-11-18) : les Architectes sont des **ancêtres humains**.
+- Il y a environ 13 000 ans, une civilisation humaine oubliée a quitté la Terre, construit les Portes et fait de
+  Solaris son monde. L'Ars Solaris, autour d'Héliade, alimentait tout son réseau.
+- Elle s'est effondrée (cause à fixer, voir les questions ouvertes) ; sur Terre, les survivants sont retombés à l'âge
+  de pierre. L'histoire humaine connue commence après.
+- La Porte de la Faille s'est rallumée parce que l'Ars Solaris a détecté des humains utilisant les Portes : elle
+  reconnaît ses héritiers. Les Sentinelles, elles, n'attaquent que ce qu'elles ne reconnaissent pas, d'où un
+  indice tardif : certaines laissent passer les humains porteurs d'artefacts.
+- Indices semés en chemin : écritures proches de langues anciennes, restes humains dans les ruines, ADN identique.
+- Conséquence pour le monde ouvert : les quatre factions découvrent qu'elles se disputent leur propre héritage ;
+  chacune en tire une lecture différente, ce qui relance leurs rivalités sans PvP.
+
+## 6. Le système Solaris (à caler sur les planètes du jeu)
 
 Un seul système, découpé en zones de niveau comme les continents de WoW. Les planètes et les lunes sont fixes.
 
@@ -66,7 +81,7 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
 | Monde glacé lointain | signaux des Architectes | 40-50 |
 | Orbite basse d'Héliade (structures solaires) | fin de l'histoire, monde ouvert | niveau max |
 
-## 6. La structure de l'histoire
+## 7. La structure de l'histoire
 
 1. **Introduction de faction (niveaux 1-10)** : quatre débuts différents, dans la ville de la faction. Le joueur
    apprend à piloter, à marcher, à combattre, et arrive dans Solaris.
@@ -76,7 +91,7 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
 3. **Fin de l'histoire (niveau max)** : la révélation sur les Architectes et l'Ars Solaris, et le monde ouvert s'ouvre :
    les structures solaires, des missions répétables, la réputation, les événements de serveur et le commerce.
 
-## 7. La progression (Bruno, 2026-11-18)
+## 8. La progression (Bruno, 2026-11-18)
 
 - **Le niveau** (expérience des missions) débloque du contenu : classes de vaisseaux, zones, chapitres, équipements.
   Il ne change jamais les statistiques du vaisseau.
@@ -85,7 +100,7 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
 - Seules les actions utiles font progresser (validé par Bruno) : vraie cible, vraie cargaison, vraie mission.
 - Un débutant peut donc voler avec un ancien : l'écart vient des compétences acquises, pas du niveau.
 
-## 8. Avis franc et risques
+## 9. Avis franc et risques
 
 - **Coût du contenu.** SWTOR a coûté des centaines de millions pour huit histoires complètes et doublées. Quatre
   histoires entières sont hors de portée : d'où une trame commune avec des variantes de faction et quatre
@@ -93,10 +108,12 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
 - **Compétences à l'usage.** Le risque connu (Ultima Online, Skyrim) : répéter une action sans but pour monter,
   avec des scripts. Parades : seules les actions utiles comptent (vraie cible, vraie cargaison), gains décroissants
   à force de répéter, calcul sur le serveur.
+- **Ancêtres humains et réalisme.** Il faut expliquer pourquoi la Terre ne garde aucune trace d'une civilisation
+  spatiale : elle aurait tout bâti hors de la Terre, et le peu resté au sol aurait disparu sous la fin de l'ère glaciaire.
 - **Le Pacte doit vivre en jeu.** Sans PvP, il faut que la rivalité se sente : classement des factions, course aux
   découvertes, zones dont le contrôle change selon les missions réussies par chaque faction.
 
-## 9. Ce que la trame demande au moteur
+## 10. Ce que la trame demande au moteur
 
 **Graphe de missions** (prévu après le multijoueur, `.fluxmission`) : nœuds de dialogue avec PNJ, conditions de
 niveau, de faction et de réputation, chapitres enchaînés, variantes par faction dans un même graphe, récompenses
@@ -112,7 +129,8 @@ niveau, de faction et de réputation, chapitres enchaînés, variantes par facti
 - Groupes : un joueur avance son histoire quand le groupe est à la même étape ; les autres l'aident et gagnent
   expérience et réputation.
 
-## 10. Questions ouvertes
+## 11. Questions ouvertes
 
-- Les vraies intentions des Architectes (la fin de la trame) : à écrire ensemble, en dernier.
+- Ce qui a fait tomber les Architectes, et s'il existe aussi une vraie espèce inconnue, dirigée par l'IA (question
+  posée à Bruno).
 - Noms définitifs des factions, du système et des lieux.
