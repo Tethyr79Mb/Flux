@@ -10,6 +10,7 @@ provisoires tant que Bruno ne les a pas validés.
 - Quatre factions jouables, choisies à la création du personnage, comme dans EVE Online. Pas de PvP.
 - Des factions dirigées par l'IA, dont une espèce inconnue.
 - Jeu scénarisé jusqu'au niveau maximum, façon World of Warcraft ou Star Wars: The Old Republic, puis monde ouvert.
+- Une histoire commune aux quatre factions, avec des variantes par faction (confirmé par Bruno).
 - Un seul système solaire au lancement. Inspiration principale : EVE Online.
 - Ton (choisi par Claude, à confirmer) : sérieux et réaliste, comme The Expanse, avec une part de mystère. Pas d'humour
   parodique, pas de magie : l'étrange vient de l'espèce inconnue et reste explicable à la fin.
