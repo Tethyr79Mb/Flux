@@ -17,7 +17,8 @@ struct RayShadowParams
     float4 up;      // xyz : haut, de même ; w : décalage en y
     float4 forward; // xyz : avant (unitaire) ; w : plan proche (profondeur = proche / distance devant la caméra)
     float4 toSun;   // xyz : vers le soleil (unitaire) ; w : tangente de son rayon apparent
-    float4 size;    // xy : taille de l'image ; z : mètres par pixel à 1 m devant la caméra ; w : inutilisé
+    float4 size;    // xy : taille de l'image ; z : mètres par pixel à 1 m devant la caméra ; w : écart toléré des niveaux de
+                    // détail (pixels)
     uint4 options;  // x : numéro de l'image (bruit) ; y : 0 lignes, 1 colonnes (computeFilter)
 };
 [[vk::push_constant]] ConstantBuffer<RayShadowParams> params;
@@ -47,6 +48,32 @@ float3 PixelPosition(int2 pixel, float viewDepth)
     const float2 uv = (float2(pixel) + 0.5) / params.size.xy;
     const float2 clip = uv * 2.0 - 1.0 - float2(params.right.w, params.up.w); // y vers le bas, sans le sous-pixel
     return (params.forward.xyz + params.right.xyz * clip.x - params.up.xyz * clip.y) * viewDepth;
+}
+
+// Normale de la surface vue au pixel, tirée de la profondeur (côté caméra) : de chaque côté, le voisin le plus proche
+// en profondeur, pour ne pas prendre la pente d'un bord d'objet.
+float3 DepthNormal(int2 pixel, float3 position, float viewDepth)
+{
+    const int2 size = int2(params.size.xy);
+    const int2 left = max(pixel - int2(1, 0), 0);
+    const int2 right = min(pixel + int2(1, 0), size - 1);
+    const int2 above = max(pixel - int2(0, 1), 0);
+    const int2 below = min(pixel + int2(0, 1), size - 1);
+    const float leftDepth = ViewDepth(left);
+    const float rightDepth = ViewDepth(right);
+    const float aboveDepth = ViewDepth(above);
+    const float belowDepth = ViewDepth(below);
+    const float3 dx = abs(rightDepth - viewDepth) < abs(leftDepth - viewDepth)
+                          ? PixelPosition(right, rightDepth) - position : position - PixelPosition(left, leftDepth);
+    const float3 dy = abs(belowDepth - viewDepth) < abs(aboveDepth - viewDepth)
+                          ? PixelPosition(below, belowDepth) - position : position - PixelPosition(above, aboveDepth);
+    const float3 normal = cross(dy, dx);
+    const float length2 = dot(normal, normal);
+    if (length2 <= 1.0e-20) {
+        return -normalize(position);
+    }
+    const float3 n = normal * rsqrt(length2);
+    return dot(n, position) > 0.0 ? -n : n;
 }
 
 // Bruit à gradient entrelacé, décalé à chaque image (comme ShadowRotation dans Mesh.slang).
@@ -86,7 +113,11 @@ void computeTrace(uint3 id : SV_DispatchThreadID)
     RayDesc ray;
     // Départ un peu vers la caméra (la surface ne se touche pas elle-même : précision de la profondeur et des
     // positions, qui baisse avec la distance) et vers le soleil.
-    ray.Origin = position * (1.0 - 1.0e-4) + toSun * (0.005 + 2.0e-5 * distance);
+    // Et le long de la normale, de l'écart des niveaux de détail : la surface dessinée, simplifiée, passe sous celle du
+    // modèle complet que voient les rayons (des facettes d'ombre près de la limite jour/nuit des sphères vues de loin).
+    const float lodOffset = params.size.w * params.size.z * distance;
+    ray.Origin = position * (1.0 - 1.0e-4) + toSun * (0.005 + 2.0e-5 * distance)
+                 + DepthNormal(pixel, position, viewDepth) * lodOffset;
     ray.Direction = normalize(toSun + side * disk.x + sunUp * disk.y);
     ray.TMin = 0.0;
     ray.TMax = MaxDistance;

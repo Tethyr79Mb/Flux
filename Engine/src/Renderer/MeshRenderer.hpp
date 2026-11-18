@@ -125,6 +125,9 @@ namespace Flux {
             std::array<float, 4> forward; // w : plan proche
             std::array<float, 4> toSun;   // w : tangente du rayon apparent du soleil
             std::uint32_t noiseFrame = 0;
+            // Écart toléré à l'écran des niveaux de détail (pixels, ModelDetail) : le ray tracing ne connaît que le
+            // modèle complet, une surface simplifiée peut passer jusqu'à cet écart sous lui.
+            float lodPixels = 1.0f;
         };
         const RayShadowView& GetRayShadowView() const { return m_rayShadowView; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
