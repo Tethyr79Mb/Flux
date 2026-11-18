@@ -50,8 +50,7 @@ Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, archit
   (section 5) se dévoile au niveau maximum.
 - **Les Solariens** (*Solarians*, nom de Bruno) : l'espèce inconnue, qui vit cachée dans le système Solaris et que
   tous prennent pour des extraterrestres. Ils ne communiquent pas. On les découvre par la suite de quêtes de la
-  campagne (choix de Bruno) ; leurs premiers signes apparaissent vers le
-  niveau 40, sur le monde glacé. Ce sont en réalité l'autre branche des Architectes (section 5). Le joueur, lui, est
+  campagne (choix de Bruno), en trouvant leur Porte cachée sur le monde glacé vers le niveau 40. Ce sont en réalité l'autre branche des Architectes (section 5). Le joueur, lui, est
   toujours humain.
 - **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
   Premier adversaire « étranger » du joueur.
@@ -70,7 +69,9 @@ Choix de Bruno (2026-11-18) : les Architectes sont des **ancêtres humains**.
     Revenus sur Terre, ils sont retombés à l'âge de pierre : ce sont nos ancêtres. L'histoire humaine connue
     commence après.
   - La branche transformée est restée dans Solaris, au point d'être méconnaissable : ce sont les Solariens. Ils
-    vivent à l'écart (monde glacé, structures de l'Ars Solaris), loin des planètes où arrivent les humains.
+    n'y gardent que des avant-postes cachés près de l'Ars Solaris. Leur refuge est derrière leur propre Porte,
+    enfouie sous la glace du monde glacé : la découvrir est le tournant de la campagne (vers le niveau 40).
+    Ce refuge se joue d'abord en instance ; il peut devenir le deuxième système du jeu dans une extension.
 - La Porte de la Faille s'est rallumée parce que l'Ars Solaris a détecté des humains utilisant les Portes : elle
   reconnaît ses héritiers. Les Sentinelles, elles, n'attaquent que ce qu'elles ne reconnaissent pas, d'où un
   indice tardif : certaines laissent passer les humains porteurs d'artefacts.
