@@ -36,6 +36,9 @@ static const float Pi = 3.14159265;
 static const float HalfPi = 1.57079633;
 // Distance rangée au plus loin (16 bits flottants : 65 504 au plus). Au-delà, le rayon tient sous un pixel.
 static const float MaxStoredDepth = 60000.0;
+// Rayon à l'écran (pixels) sous lequel rien n'est cherché, et au-dessus duquel l'occlusion compte en entier.
+static const float MinScreenRadius = 1.5;
+static const float FadeScreenRadius = 4.0;
 // Écart le plus court entre le pixel et un échantillon, en pixels : plus près, on lirait le pixel lui-même.
 static const float MinSampleDistance = 1.3;
 // Plancher de la sortie : un coin fermé n'est jamais tout noir (XeGTAO garde 3 %).
@@ -56,11 +59,19 @@ float3 PixelPosition(int2 pixel, float viewDepth)
     return (params.forward.xyz + params.right.xyz * clip.x - params.up.xyz * clip.y) * viewDepth;
 }
 
-// Bruit à gradient entrelacé, décalé à chaque image (comme dans RayShadows.slang).
-float Noise(float2 pixel, float offset)
+// Angle des tranches : bruit à gradient entrelacé, décalé à chaque image (comme dans RayShadows.slang).
+float SliceNoise(float2 cell)
 {
-    const float2 p = pixel + float(params.options.x % 64u) * offset;
+    const float2 p = cell + float(params.options.x % 64u) * 5.588238;
     return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+}
+
+// Départ des pas : suite R2 (Roberts 2018), décalée à chaque image par le nombre d'or. Un second bruit à gradient
+// entrelacé (même lu en x et y échangés) suivait le premier sur les diagonales : hachures régulières sur les surfaces
+// vues en biais et traits en étoile autour des contacts (vus sur la RX 7700 XT le 2026-11-18).
+float StepNoise(float2 cell)
+{
+    return frac(0.5 + dot(cell, float2(0.7548776662, 0.5698402910)) + float(params.options.x % 64u) * 0.6180339887);
 }
 
 // acos à 0,2 % près, sans l'appel complet (XeGTAO_FastACos).
@@ -90,10 +101,12 @@ void computeAmbientOcclusion(uint3 id : SV_DispatchThreadID)
     const float storedDepth = min(viewDepth, MaxStoredDepth);
     // Rayon à l'écran : sous un pixel et demi, rien de visible à chercher (le sol au loin, une planète vue d'orbite).
     float screenRadius = params.size.w / (viewDepth * params.size.z);
-    if (screenRadius < 1.5) {
+    if (screenRadius < MinScreenRadius) {
         target[id.xy] = float2(1.0, storedDepth);
         return;
     }
+    // Fondu vers « rien ne cache » juste au-dessus : la limite ne trace plus de bande sur le sol au loin.
+    const float fade = saturate((screenRadius - MinScreenRadius) / (FadeScreenRadius - MinScreenRadius));
     // Rayon borné à l'écran tout près de la caméra : les lectures trop loin les unes des autres ratent le cache.
     screenRadius = min(screenRadius, params.settings.w);
 
@@ -107,8 +120,10 @@ void computeAmbientOcclusion(uint3 id : SV_DispatchThreadID)
     const float3 up = normalize(params.up.xyz);
     const uint slices = params.options.z;
     const uint steps = params.options.w;
-    const float sliceNoise = Noise(float2(pixel), 5.588238);
-    const float stepNoise = Noise(float2(pixel.yx), 7.137891);
+    // Bruits tirés sur la grille des pixels calculés : en Moyenne, sur les seuls pixels pairs, le motif du bruit à
+    // gradient entrelacé se répétait en bandes.
+    const float sliceNoise = SliceNoise(float2(id.xy));
+    const float stepNoise = StepNoise(float2(id.xy));
     const float minStep = MinSampleDistance / screenRadius;
 
     float visibility = 0.0;
@@ -164,7 +179,7 @@ void computeAmbientOcclusion(uint3 id : SV_DispatchThreadID)
         visibility += projectedLength * (arc0 + arc1);
     }
     visibility = pow(saturate(visibility / float(slices)), params.settings.z);
-    target[id.xy] = float2(max(visibility, MinVisibility), storedDepth);
+    target[id.xy] = float2(lerp(1.0, max(visibility, MinVisibility), fade), storedDepth);
 }
 
 // Poids d'un voisin selon l'écart de distance (relatif) : nul au-delà de 5 %, une autre surface.
