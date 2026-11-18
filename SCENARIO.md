@@ -74,25 +74,34 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
 3. **Fin de l'histoire (niveau max)** : la révélation sur les Bâtisseurs et l'Ars Solaris, et le monde ouvert s'ouvre :
    les structures solaires, des missions répétables, la réputation, les événements de serveur et le commerce.
 
-## 7. Avis franc et risques
+## 7. La progression (Bruno, 2026-11-18)
+
+- **Le niveau** (expérience des missions) débloque du contenu : classes de vaisseaux, zones, chapitres, équipements.
+  Il ne change jamais les statistiques du vaisseau.
+- **Le livre de compétences**, comme dans EVE, mais qui progresse à l'usage et non avec le temps : piloter améliore
+  le pilotage, miner le minage, tirer la précision. Ce sont les compétences qui rendent le joueur meilleur.
+- Un débutant peut donc voler avec un ancien : l'écart vient des compétences acquises, pas du niveau.
+
+## 8. Avis franc et risques
 
 - **Coût du contenu.** SWTOR a coûté des centaines de millions pour huit histoires complètes et doublées. Quatre
   histoires entières sont hors de portée : d'où une trame commune avec des variantes de faction et quatre
   introductions distinctes. C'est la plus grosse économie possible sans perdre le choix de faction.
-- **Niveaux et réalisme.** Les niveaux de WoW s'accordent mal avec un vaisseau réaliste (un tir tue, quel que soit le
-  niveau). Proposé : le niveau donne l'accès (zones, licences de vaisseaux, équipement) plus qu'une puissance brute,
-  avec un ajustement de niveau quand des joueurs de niveaux différents jouent ensemble.
+- **Compétences à l'usage.** Le risque connu (Ultima Online, Skyrim) : répéter une action sans but pour monter,
+  avec des scripts. Parades : seules les actions utiles comptent (vraie cible, vraie cargaison), gains décroissants
+  à force de répéter, calcul sur le serveur.
 - **Le Pacte doit vivre en jeu.** Sans PvP, il faut que la rivalité se sente : classement des factions, course aux
   découvertes, zones dont le contrôle change selon les missions réussies par chaque faction.
 
-## 8. Ce que la trame demande au moteur
+## 9. Ce que la trame demande au moteur
 
 **Graphe de missions** (prévu après le multijoueur, `.fluxmission`) : nœuds de dialogue avec PNJ, conditions de
 niveau, de faction et de réputation, chapitres enchaînés, variantes par faction dans un même graphe, récompenses
-(expérience, réputation, licences, objets).
+(expérience, réputation, licences, objets). Le gain de compétences, lui, vient des actions et non des missions.
 
 **Multijoueur** :
-- Progression par personnage (niveau, chapitres faits, réputation) dans PostgreSQL.
+- Progression par personnage (niveau, compétences, chapitres faits, réputation) dans PostgreSQL ; les compétences
+  sont calculées par le serveur, jamais par le client.
 - État du monde à deux niveaux : **global** (le même pour tous : événements de serveur, contrôle des zones) et
   **personnel** (l'avancée de son histoire). Ce qui dépend de l'histoire personnelle passe par des **phases** :
   le serveur ne montre à un joueur que les entités de son étape (un PNJ mort pour lui, vivant pour un autre).
@@ -100,7 +109,7 @@ niveau, de faction et de réputation, chapitres enchaînés, variantes par facti
 - Groupes : un joueur avance son histoire quand le groupe est à la même étape ; les autres l'aident et gagnent
   expérience et réputation.
 
-## 9. Questions ouvertes
+## 10. Questions ouvertes
 
 - Les quatre factions peuvent-elles grouper entre elles ? Recommandé : oui (le Pacte et l'ennemi commun le justifient).
 - Niveau maximum : 50 proposé.
