@@ -64,6 +64,7 @@ namespace Flux {
                        .cloudQuality = settings.cloudQuality,
                        .vegetationDistance = settings.vegetationDistance,
                        .modelDetail = settings.modelDetail,
+                       .ambientOcclusion = settings.ambientOcclusion,
                        .bloom = settings.bloom,
                        .volume = settings.volume});
         engine.SetProject(*project);
@@ -118,6 +119,7 @@ namespace Flux {
         settings.cloudQuality = engine.GetRenderer().GetCloudQuality();
         settings.vegetationDistance = engine.GetRenderer().GetVegetationDistance();
         settings.modelDetail = engine.GetRenderer().GetModelDetail();
+        settings.ambientOcclusion = engine.GetRenderer().GetAmbientOcclusion();
         settings.bloom = engine.GetRenderer().GetBloom() > 0.0f;
         settings.volume = engine.GetAudio().GetMasterVolume();
         return settings;

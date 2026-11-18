@@ -6,7 +6,8 @@
 namespace Flux {
     namespace {
         // Doit correspondre à DrawParams dans shaders/Mesh.slang (MeshRenderer.cpp), dont Lighting.slang lit ses
-        // réglages : color.x, plan proche de la caméra ; cascade, vue de débogage (GBufferView).
+        // réglages : color.x, plan proche de la caméra ; color.y, pas de l'occlusion ambiante (0 sans elle) ; cascade,
+        // vue de débogage (GBufferView).
         struct LightingParams
         {
             std::array<float, 4> color;
@@ -22,6 +23,7 @@ namespace Flux {
         constexpr std::uint32_t SurfaceSlot = 3;
         constexpr std::uint32_t ColorSlot = 4;
         constexpr std::uint32_t SunSlot = 5;
+        constexpr std::uint32_t OcclusionSlot = 6;
         constexpr std::uint32_t GroupSize = 8; // comme dans Lighting.slang
     }
 
@@ -43,9 +45,10 @@ namespace Flux {
             RHI::Binding{NormalSlot, RHI::BindingType::Texture, compute},
             RHI::Binding{SurfaceSlot, RHI::BindingType::Texture, compute},
             RHI::Binding{ColorSlot, RHI::BindingType::StorageTexture, compute},
+            RHI::Binding{OcclusionSlot, RHI::BindingType::Texture, compute},
             RHI::Binding{SunSlot, RHI::BindingType::StorageTexture, compute},
         };
-        // La lumière du soleil à part n'existe qu'avec le ray tracing (LightingRays.slang).
+        // La lumière du soleil à part (la dernière) n'existe qu'avec le ray tracing (LightingRays.slang).
         const std::span<const RHI::Binding> used = renderer->m_rayTracing ? std::span(bindings) : std::span(bindings).first(bindings.size() - 1);
         auto layout = device.CreateBindGroupLayout({.bindings = used, .maxGroups = 1});
         if (!layout) {
@@ -76,13 +79,15 @@ namespace Flux {
         m_group->SetTexture(NormalSlot, *targets.normals, *m_pointSampler);
         m_group->SetTexture(SurfaceSlot, *targets.surface, *m_pointSampler);
         m_group->SetStorageTexture(ColorSlot, *targets.color);
+        m_group->SetTexture(OcclusionSlot, *targets.ambientOcclusion, *m_pointSampler);
         if (m_rayTracing) {
             m_group->SetStorageTexture(SunSlot, *targets.sun);
         }
     }
 
-    void LightingRenderer::Draw(RHI::CommandList& commands, std::uint32_t frameIndex, float nearPlane) const {
-        const LightingParams params{{nearPlane, 0.0f, 0.0f, 0.0f}, {}, static_cast<std::uint32_t>(m_view), {}};
+    void LightingRenderer::Draw(RHI::CommandList& commands, std::uint32_t frameIndex, float nearPlane,
+                                std::uint32_t occlusionStride) const {
+        const LightingParams params{{nearPlane, static_cast<float>(occlusionStride), 0.0f, 0.0f}, {}, static_cast<std::uint32_t>(m_view), {}};
         commands.BindPipeline(*m_lighting);
         m_meshes.BindScene(commands, frameIndex);
         commands.SetBindGroup(3, *m_group);

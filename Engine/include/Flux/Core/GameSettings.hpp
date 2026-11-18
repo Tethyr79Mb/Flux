@@ -5,6 +5,7 @@
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
+#include "Flux/Renderer/AmbientOcclusion.hpp"
 #include "Flux/Renderer/ModelDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
 
@@ -31,6 +32,7 @@ namespace Flux {
         CloudQuality cloudQuality = DefaultCloudQuality;
         VegetationDistance vegetationDistance = DefaultVegetationDistance;
         ModelDetail modelDetail = DefaultModelDetail;
+        AmbientOcclusionQuality ambientOcclusion = DefaultAmbientOcclusionQuality;
         bool bloom = true;
         float volume = 1.0f;       // volume général, 0 à 1
         bool showEngineStats = true; // panneau « Moteur » (images/s, temps CPU et GPU)

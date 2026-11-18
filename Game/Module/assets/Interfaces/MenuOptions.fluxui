@@ -1,7 +1,7 @@
 {
   "format": "flux.ui",
   "version": 1,
-  "nextId": 124,
+  "nextId": 127,
   "elements": [
     {
       "id": 1,
@@ -1284,13 +1284,129 @@
                   "binding": "Distance de la végétation"
                 },
                 {
+                  "id": 124,
+                  "type": "text",
+                  "name": "Occlusion ambiante",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    894.0
+                  ],
+                  "size": [
+                    532.0,
+                    36.0
+                  ],
+                  "text": "Occlusion ambiante",
+                  "fontSize": 24.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 125,
+                  "type": "text",
+                  "name": "Aide Occlusion ambiante",
+                  "anchor": "topLeft",
+                  "position": [
+                    48.0,
+                    934.0
+                  ],
+                  "size": [
+                    1072.0,
+                    28.0
+                  ],
+                  "text": "Coins et dessous des objets assombris. Moyenne : pour les petites cartes.",
+                  "fontSize": 18.0,
+                  "textColor": [
+                    0.26225072,
+                    0.33245158,
+                    0.4125427,
+                    1.0
+                  ],
+                  "align": "left",
+                  "background": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "radius": 0.0,
+                  "binding": ""
+                },
+                {
+                  "id": 126,
+                  "type": "dropdown",
+                  "name": "Choix Occlusion ambiante",
+                  "anchor": "topLeft",
+                  "position": [
+                    600.0,
+                    890.0
+                  ],
+                  "size": [
+                    520.0,
+                    44.0
+                  ],
+                  "options": [
+                    "Désactivée",
+                    "Moyenne",
+                    "Haute"
+                  ],
+                  "value": 2.0,
+                  "fontSize": 22.0,
+                  "textColor": [
+                    0.80695236,
+                    0.8549927,
+                    0.90466136,
+                    1.0
+                  ],
+                  "background": [
+                    0.009134057,
+                    0.015996292,
+                    0.027320892,
+                    1.0
+                  ],
+                  "hoverColor": [
+                    0.017641952,
+                    0.034339808,
+                    0.057805434,
+                    1.0
+                  ],
+                  "accent": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    1.0
+                  ],
+                  "border": [
+                    0.06124607,
+                    0.5775805,
+                    0.79129803,
+                    0.45
+                  ],
+                  "borderWidth": 1.0,
+                  "radius": 6.0,
+                  "binding": "Occlusion ambiante"
+                },
+                {
                   "id": 29,
                   "type": "text",
                   "name": "Titre Effets",
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    908.0
+                    1000.0
                   ],
                   "size": [
                     1072.0,
@@ -1321,7 +1437,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    946.0
+                    1038.0
                   ],
                   "size": [
                     1072.0,
@@ -1349,7 +1465,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    966.0
+                    1058.0
                   ],
                   "size": [
                     532.0,
@@ -1380,7 +1496,7 @@
                   "anchor": "topLeft",
                   "position": [
                     48.0,
-                    1006.0
+                    1098.0
                   ],
                   "size": [
                     1072.0,
@@ -1411,7 +1527,7 @@
                   "anchor": "topLeft",
                   "position": [
                     600.0,
-                    964.0
+                    1056.0
                   ],
                   "size": [
                     40.0,

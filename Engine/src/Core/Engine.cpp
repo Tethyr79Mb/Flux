@@ -109,6 +109,7 @@ namespace Flux {
         m_renderer->SetCloudQuality(config.cloudQuality);
         m_renderer->SetVegetationDistance(config.vegetationDistance);
         m_renderer->SetModelDetail(config.modelDetail);
+        m_renderer->SetAmbientOcclusion(config.ambientOcclusion);
         m_renderer->SetBloom(config.bloom ? Renderer::DefaultBloom : 0.0f);
         // Les modèles sont chargés par le rendu : la simulation y lit la durée des animations des sièges.
         m_simulation.SetAnimationDurations([renderer = m_renderer.get()](const std::filesystem::path& model, const std::string& animation) {
@@ -184,6 +185,15 @@ namespace Flux {
                                              },
                                              .getText = {},
                                              .options = {ModelDetailLabels.begin(), ModelDetailLabels.end()}});
+        // Numéro dans AmbientOcclusionQualityLabels (0 Désactivée à 2 Haute).
+        m_interfaceBindings->SetEngineValue("Occlusion ambiante", "Graphismes",
+                                            {.get = [this] { return static_cast<double>(m_renderer->GetAmbientOcclusion()); },
+                                             .set = [this](double value) {
+                                                 m_renderer->SetAmbientOcclusion(static_cast<AmbientOcclusionQuality>(std::clamp(
+                                                     std::lround(value), 0l, static_cast<long>(AmbientOcclusionQualityCount) - 1)));
+                                             },
+                                             .getText = {},
+                                             .options = {AmbientOcclusionQualityLabels.begin(), AmbientOcclusionQualityLabels.end()}});
         // Numéro dans CloudQualityLabels (0 Bas à 2 Élevé).
         m_interfaceBindings->SetEngineValue("Qualité des nuages", "Graphismes",
                                             {.get = [this] { return static_cast<double>(m_renderer->GetCloudQuality()); },
@@ -421,6 +431,7 @@ namespace Flux {
                     .cloudQuality = m_renderer->GetCloudQuality(),
                     .vegetationDistance = m_renderer->GetVegetationDistance(),
                     .modelDetail = m_renderer->GetModelDetail(),
+                    .ambientOcclusion = m_renderer->GetAmbientOcclusion(),
                     .occlusionCulling = m_renderer->IsOcclusionCullingEnabled(),
                     .groundGeometryOnly = m_renderer->IsGroundGeometryOnly(),
                     .groundMeshThreads = render.groundMeshThreads,

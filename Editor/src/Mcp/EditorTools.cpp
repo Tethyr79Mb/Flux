@@ -982,7 +982,8 @@ namespace FluxEditor {
                            "séparer leur coût de géométrie de celui de leur éclairage dans engine_stats. parallel_recording : "
                            "case « Rendu sur plusieurs fils » du jeu. gbuffer : à la place de l'éclairage des objets opaques, "
                            "une donnée de leur G-buffer (none, base_color, normals, metal_roughness : métal en rouge, "
-                           "rugosité en vert, occlusion en bleu). Sans argument : l'état actuel.",
+                           "rugosité en vert, occlusion en bleu ; ambient_occlusion : l'occlusion ambiante GTAO en gris). "
+                           "Sans argument : l'état actuel.",
             .inputSchema = Schema({{"shadow_cascades", {{"type", "boolean"}}}, {"ray_shadows", {{"type", "boolean"}}},
                                    {"ray_mask", {{"type", "boolean"}}}, {"geometry_only", {{"type", "boolean"}}},
                                    {"parallel_recording", {{"type", "boolean"}}},
@@ -1014,7 +1015,7 @@ namespace FluxEditor {
                     const std::string key = arguments.at("gbuffer").get<std::string>();
                     const auto found = std::ranges::find(GBufferViewKeys, key);
                     if (found == GBufferViewKeys.end()) {
-                        return McpToolResult::Error("gbuffer : none, base_color, normals ou metal_roughness");
+                        return McpToolResult::Error("gbuffer : none, base_color, normals, metal_roughness ou ambient_occlusion");
                     }
                     renderer.SetGBufferView(static_cast<GBufferView>(found - GBufferViewKeys.begin()));
                 }

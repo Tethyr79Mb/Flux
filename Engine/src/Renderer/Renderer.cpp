@@ -7,6 +7,7 @@
 #include "Flux/Scene/Scene.hpp"
 #include "Renderer/EnvironmentRenderer.hpp"
 #include "Renderer/ExposureRenderer.hpp"
+#include "Renderer/AmbientOcclusionRenderer.hpp"
 #include "Renderer/LightingRenderer.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
@@ -118,6 +119,7 @@ namespace Flux {
         std::unique_ptr<Planetology::CloudRenderer> clouds;
         std::unique_ptr<LightingRenderer> lighting;    // modèles opaques, après la passe « G-buffer »
         std::unique_ptr<RayShadowRenderer> rayShadows; // nul sans ray tracing
+        std::unique_ptr<AmbientOcclusionRenderer> ambientOcclusion; // GTAO, entre le G-buffer et l'éclairage
         // FSR : créé pour la taille de la vue quand un mode FSR est choisi, libéré en Natif (sa mémoire vidéo).
         std::unique_ptr<RHI::Upscaler> upscaler;
         RHI::Extent upscalerExtent;
@@ -177,6 +179,7 @@ namespace Flux {
             std::uint32_t cloudCopy = 0; // exemplaire de l'historique des nuages écrit à cette image
             bool fsr = false;           // FSR agrandit cette image (sinon anticrénelage, ou rien)
             RHI::UpscaleInputs upscale; // ses paramètres, textures remplies par sa passe
+            AmbientOcclusionRenderer::Settings occlusion; // réglages du ciel de la scène
         };
         FrameState frame;
         // Textures de travail du graphe.
@@ -196,6 +199,9 @@ namespace Flux {
             RenderGraph::ResourceId gbufferBase = 0;
             RenderGraph::ResourceId gbufferNormals = 0;
             RenderGraph::ResourceId gbufferSurface = 0;
+            // Occlusion ambiante, brute puis lissée (AmbientOcclusionRenderer::WorkFormat).
+            RenderGraph::ResourceId occlusionRaw = 0;
+            RenderGraph::ResourceId occlusion = 0;
             // Ray tracing seulement (sinon 0) : lumière du soleil à part, puis rayons et lissages (RayShadowRenderer).
             RenderGraph::ResourceId sceneSun = 0;
             RenderGraph::ResourceId rays = 0;
@@ -241,7 +247,11 @@ namespace Flux {
                             .normals = graph.GetTexture(targets.gbufferNormals),
                             .surface = graph.GetTexture(targets.gbufferSurface),
                             .color = graph.GetTexture(targets.sceneColor),
-                            .sun = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr});
+                            .sun = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr,
+                            .ambientOcclusion = graph.GetTexture(targets.occlusion)});
+            ambientOcclusion->Bind({.depth = graph.GetTexture(targets.sceneDepth), .base = graph.GetTexture(targets.gbufferBase),
+                                    .normals = graph.GetTexture(targets.gbufferNormals),
+                                    .raw = graph.GetTexture(targets.occlusionRaw), .filtered = graph.GetTexture(targets.occlusion)});
             if (rayShadows) {
                 rayShadows->Bind({.depth = graph.GetTexture(targets.sceneDepth), .sun = graph.GetTexture(targets.sceneSun),
                                   .rays = graph.GetTexture(targets.rays), .rows = graph.GetTexture(targets.rayRows),
@@ -456,6 +466,8 @@ namespace Flux {
             timings.sceneLuminance = exposure->GetLuminance();
             sky->SetJobSystem(jobs);
             SkyLighting skyLighting = sky->Prepare(scene, camera, aspect, renderHeight, assetsDirectory, frame.preExposure, frameIndex);
+            frame.occlusion = {.radius = skyLighting.occlusionRadius, .intensity = skyLighting.occlusionIntensity,
+                               .falloff = skyLighting.occlusionFalloff};
             frame.cameraInAir = skyLighting.atmosphere.scale[1] > 0.0f;
             environment->Prepare(skyLighting.environmentSource, frameIndex);
             skyLighting.environment = &environment->GetReflections();
@@ -639,6 +651,11 @@ namespace Flux {
                                                          {LightingRenderer::NormalFormat, TextureSize::Render});
             targets.gbufferSurface = graph.CreateTexture("G-buffer : matière", Lifetime::Frame,
                                                          {LightingRenderer::SurfaceFormat, TextureSize::Render});
+            // Occlusion ambiante à la taille de rendu ; en Moyenne, seul le quart en haut à gauche sert (pas de
+            // textures à refaire quand la qualité change).
+            constexpr RenderGraph::TextureDesc occlusionDesc{AmbientOcclusionRenderer::WorkFormat, TextureSize::Render, true, true};
+            targets.occlusionRaw = graph.CreateTexture("occlusion ambiante brute", Lifetime::Frame, occlusionDesc);
+            targets.occlusion = graph.CreateTexture("occlusion ambiante", Lifetime::Frame, occlusionDesc);
             if (rayShadows) {
                 targets.sceneSun = graph.CreateTexture("lumière du soleil", Lifetime::Frame,
                                                        {MeshRenderer::SunFormat, TextureSize::Render, true, true});
@@ -797,6 +814,24 @@ namespace Flux {
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
                 .Step("herbe", [this](RHI::CommandList& commands) { meshes->DrawGrass(commands, frame.index); })
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); });
+            // Occlusion ambiante des pixels du G-buffer (AmbientOcclusionRenderer), lue par la passe « éclairage ».
+            const auto occlusionActive = [this] { return sceneVisible && ambientOcclusion->IsActive(); };
+            graph.AddPass("occlusion ambiante")
+                .When(occlusionActive)
+                .Reads(sceneDepth)
+                .Reads(gbufferBase)
+                .Reads(gbufferNormals)
+                .Writes(targets.occlusionRaw, RHI::TextureAccess::Storage)
+                .Step("occlusion ambiante", [this](RHI::CommandList& commands) {
+                    ambientOcclusion->Compute(commands, meshes->GetRayShadowView(), frame.occlusion);
+                });
+            graph.AddPass("lissage de l'occlusion")
+                .When(occlusionActive)
+                .Reads(targets.occlusionRaw)
+                .Writes(targets.occlusion, RHI::TextureAccess::Storage)
+                .Step("lissage de l'occlusion", [this](RHI::CommandList& commands) {
+                    ambientOcclusion->Denoise(commands, meshes->GetRayShadowView(), frame.occlusion);
+                });
             // Les pixels du G-buffer éclairés en compute, avec le code du rendu direct (LightingRenderer).
             auto lightingPass = graph.AddPass("éclairage");
             if (rayShadows) {
@@ -817,9 +852,10 @@ namespace Flux {
                 .Reads(gbufferBase)
                 .Reads(gbufferNormals)
                 .Reads(gbufferSurface)
+                .Reads(targets.occlusion)
                 .Writes(sceneColor, RHI::TextureAccess::Storage)
                 .Step("éclairage", [this](RHI::CommandList& commands) {
-                    lighting->Draw(commands, frame.index, meshes->GetRayShadowView().forward[3]);
+                    lighting->Draw(commands, frame.index, meshes->GetRayShadowView().forward[3], ambientOcclusion->GetStride());
                 });
             auto scenePass = graph.AddPass("scène");
             if (rayShadows) {
@@ -1148,6 +1184,11 @@ namespace Flux {
             return std::unexpected(lighting.error());
         }
         impl->lighting = std::move(*lighting);
+        auto ambientOcclusion = AmbientOcclusionRenderer::Create(*impl->device);
+        if (!ambientOcclusion) {
+            return std::unexpected(ambientOcclusion.error());
+        }
+        impl->ambientOcclusion = std::move(*ambientOcclusion);
         if (impl->meshes->HasRayTracing()) {
             auto rayShadows = RayShadowRenderer::Create(*impl->device, sceneFormat);
             if (!rayShadows) {
@@ -1378,6 +1419,14 @@ namespace Flux {
 
     GBufferView Renderer::GetGBufferView() const {
         return m_impl->lighting->GetView();
+    }
+
+    void Renderer::SetAmbientOcclusion(AmbientOcclusionQuality quality) {
+        m_impl->ambientOcclusion->SetQuality(quality);
+    }
+
+    AmbientOcclusionQuality Renderer::GetAmbientOcclusion() const {
+        return m_impl->ambientOcclusion->GetQuality();
     }
 
     void Renderer::SetGroundDetail(GroundDetail detail) {
