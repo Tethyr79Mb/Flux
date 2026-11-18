@@ -1,0 +1,159 @@
+# Scénario : la trame d'Ars Solaris
+
+Ce document fixe l'univers, les factions et la structure de l'histoire, puis ce qu'ils demandent au moteur (graphe de
+missions, multijoueur). Il complète `ARCHITECTURE.md` (technique) et `Engine/ROADMAP.md` (avancement). Les noms sont
+provisoires tant que Bruno ne les a pas validés.
+
+## 1. Les choix de Bruno (2026-11-18)
+
+- Piste retenue : « L'Héritage solaire » (frontière, mystère d'une espèce inconnue).
+- Quatre factions jouables, choisies à la création du personnage, comme dans EVE Online. Pas de PvP.
+- Des factions dirigées par l'IA, dont une espèce inconnue.
+- Jeu scénarisé jusqu'au niveau maximum, façon World of Warcraft ou Star Wars: The Old Republic, puis monde ouvert.
+- Une histoire commune aux quatre factions, avec des variantes par faction (confirmé par Bruno).
+- Les joueurs des quatre factions peuvent jouer en groupe ensemble.
+- Niveau maximum : 50.
+- Un seul système solaire au lancement. Inspiration principale : EVE Online.
+- Ton (choisi par Claude, à confirmer) : sérieux et réaliste, comme The Expanse, avec une part de mystère. Pas d'humour
+  parodique, pas de magie : l'étrange vient de l'espèce inconnue et reste explicable à la fin.
+
+## 2. L'univers
+
+**Époque.** An 2740. L'humanité occupe le système solaire et une poignée de colonies, reliées par les **Portes** :
+des anneaux trouvés dans l'espace au XXIIIe siècle, que personne ne sait construire. On sait seulement les allumer.
+
+**L'événement de départ.** La Porte de la Faille, éteinte depuis toujours, s'allume seule et ouvre sur un système
+inconnu : **Solaris**, autour de l'étoile **Héliade**. On y trouve des planètes habitables, des ruines, et autour de
+l'étoile des structures gigantesques qui captent son énergie. Les savants les appellent l'*Ars Solaris*, « l'art du
+soleil » : le nom du jeu.
+
+**Pourquoi pas de PvP.** Les quatre puissances ont signé le **Pacte de Solaris** : partage du système, neutralité
+armée, interdiction de combattre entre signataires. Le Pacte tient parce que la Porte s'est déjà fermée une fois,
+pendant une escarmouche, et a laissé une flotte coupée de la Terre. Personne ne veut recommencer. Les rivalités passent
+par l'économie, la course aux découvertes et les coups bas des factions IA.
+
+## 3. Les factions jouables
+
+| Faction | Qui | Ce qu'elle veut à Solaris | Départ |
+|---|---|---|---|
+| **Concorde terrienne** | gouvernement de la Terre, armée, administration | garder le contrôle de la Porte et l'ordre | station militaire près de la Porte |
+| **Consortium Halcyon** | alliance de corporations, industrie, commerce | exploiter les ressources et la technologie des ruines | station industrielle en orbite d'une géante |
+| **Libres Colonies** | colons indépendants, prospecteurs, anciens réfugiés | une terre à eux, loin de la Terre et des corporations | colonie au sol sur une planète tempérée |
+| **Ordre de l'Aube** | savants et explorateurs, presque une confrérie | comprendre les Architectes avant que les autres ne pillent tout | base de recherche sur une lune, près des ruines |
+
+Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, architecture) et son regard sur le mystère.
+
+## 4. Les factions de l'IA
+
+- **Les Architectes** (*Architects* en anglais, nom donné par les humains) : les bâtisseurs des Portes, que tout le
+  monde croit extraterrestres. Absents, connus par leurs ruines, leurs signaux et leurs machines. Leur vérité
+  (section 5) se dévoile au niveau maximum.
+- **Les Solariens** (*Solarians*, nom de Bruno) : l'espèce inconnue, qui vit cachée dans le système Solaris et que
+  tous prennent pour des extraterrestres. Ils ne communiquent pas. On les découvre par la suite de quêtes de la
+  campagne (choix de Bruno), en trouvant leur Porte cachée sur le monde glacé vers le niveau 40. Ce sont en réalité l'autre branche des Architectes (section 5). Le joueur, lui, est
+  toujours humain.
+- **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
+  Premier adversaire « étranger » du joueur.
+- **Les Écorcheurs** : pirates et pilleurs d'épaves, nés de la flotte coupée de la Terre lors de la fermeture.
+- **Le Cartel de Vesper** : contrebande, trafic d'artefacts ; il travaille en secret pour des membres des quatre
+  factions et sert de levier pour les trahisons de l'histoire.
+
+## 5. La vérité des Architectes (secret, révélé au niveau 50)
+
+Choix de Bruno (2026-11-18) : les Architectes sont des **ancêtres humains**.
+- Il y a environ 13 000 ans, une civilisation humaine oubliée a quitté la Terre, construit les Portes et fait de
+  Solaris son monde. L'Ars Solaris, autour d'Héliade, alimentait tout son réseau.
+- Elle s'est **scindée en deux branches** (choix de Bruno), sur une question à trancher : rester humains ou se
+  transformer (machines, génétique) pour durer. La guerre entre elles a fait tomber la civilisation.
+  - La branche restée humaine a perdu. Ses survivants ont fui par la Porte de la Faille et l'ont éteinte derrière eux.
+    Revenus sur Terre, ils sont retombés à l'âge de pierre : ce sont nos ancêtres. L'histoire humaine connue
+    commence après.
+  - La branche transformée est restée dans Solaris, au point d'être méconnaissable : ce sont les Solariens. Ils
+    n'y gardent que des avant-postes cachés près de l'Ars Solaris. Leur refuge est derrière leur propre Porte,
+    enfouie sous la glace du monde glacé : la découvrir est le tournant de la campagne (vers le niveau 40).
+    Ce refuge se joue d'abord en instance ; il peut devenir le deuxième système du jeu dans une extension.
+- La Porte de la Faille s'est rallumée parce que l'Ars Solaris a détecté des humains utilisant les Portes : elle
+  reconnaît ses héritiers. Les Sentinelles, elles, n'attaquent que ce qu'elles ne reconnaissent pas, d'où un
+  indice tardif : certaines laissent passer les humains porteurs d'artefacts.
+- Indices semés en chemin : écritures proches de langues anciennes, restes humains dans les ruines, ADN identique,
+  puis, plus tard, des traces d'ADN humain dans les tissus des Solariens : ce sont des cousins.
+- Conséquence pour le monde ouvert : les quatre factions découvrent qu'elles se disputent leur propre héritage ;
+  chacune en tire une lecture différente, ce qui relance leurs rivalités sans PvP.
+- Le revers : les Solariens voient dans les humains les descendants de leurs ennemis, revenus prendre ce qu'ils
+  considèrent comme leur héritage. C'est la menace du monde ouvert : événements de serveur et opérations en
+  groupe contre eux, qui donnent aux quatre factions une raison de s'allier. Savoir qu'ils sont des cousins ouvre
+  plus tard la question d'un dialogue (contenu possible après le lancement).
+
+## 6. Le système Solaris
+
+Un seul système au lancement (Bruno) : 4 à 5 planètes de la taille de celles de Star Citizen, des lunes visitables
+et des ceintures d'astéroïdes. Planètes et lunes sont fixes. Le système est découpé en zones de niveau, comme les
+continents de WoW, et chaque faction y a sa zone et ses stations.
+
+| Lieu | Rôle | Niveaux |
+|---|---|---|
+| La Porte de la Faille et ses stations | départs, ville commune neutre, Concorde | 1-10 |
+| Planète tempérée (forêts) | Libres Colonies, premières ruines au sol | 10-20 |
+| Ceinture intérieure d'astéroïdes | minage, Écorcheurs, épaves | 15-25 |
+| Géante gazeuse et ses lunes | Consortium Halcyon (industrie), Ordre de l'Aube (lune des ruines) | 20-30 |
+| Planète désertique | grandes ruines, Sentinelles | 30-40 |
+| Monde glacé lointain et ceinture extérieure | Porte cachée des Solariens, Cartel de Vesper | 40-50 |
+| Orbite basse d'Héliade (structures solaires) | fin de l'histoire, monde ouvert | 50 |
+
+**Monter en charge sans ajouter de systèmes** (Bruno) : quand il y a trop de joueurs, la même zone se répartit sur
+plusieurs serveurs (copies de l'univers, zones découpées) et les moments forts des quêtes passent en instances.
+De nouveaux systèmes ne viennent qu'avec des extensions.
+
+## 7. La structure de l'histoire
+
+1. **Introduction de faction (niveaux 1-10)** : quatre débuts différents, dans la ville de la faction. Le joueur
+   apprend à piloter, à marcher, à combattre, et arrive dans Solaris.
+2. **Trame principale (10 à max)** : une histoire commune en chapitres, un par zone, avec des variantes par faction
+   (qui donne la mission, ce qu'on y gagne, le regard sur l'événement). Fil rouge : comprendre pourquoi la Porte s'est
+   rouverte, et ce que veulent les Architectes.
+3. **Fin de l'histoire (niveau max)** : la révélation sur les Architectes et l'Ars Solaris, et le monde ouvert s'ouvre :
+   les structures solaires, des missions répétables, la réputation, les événements de serveur et le commerce.
+
+## 8. La progression (Bruno, 2026-11-18)
+
+- **Le niveau** (expérience des missions) débloque du contenu : classes de vaisseaux, zones, chapitres, équipements.
+  Il ne change jamais les statistiques du vaisseau.
+- **Le livre de compétences**, comme dans EVE, mais qui progresse à l'usage et non avec le temps : piloter améliore
+  le pilotage, miner le minage, tirer la précision. Ce sont les compétences qui rendent le joueur meilleur.
+- Seules les actions utiles font progresser (validé par Bruno) : vraie cible, vraie cargaison, vraie mission.
+- Un débutant peut donc voler avec un ancien : l'écart vient des compétences acquises, pas du niveau.
+
+## 9. Avis franc et risques
+
+- **Coût du contenu.** SWTOR a coûté des centaines de millions pour huit histoires complètes et doublées. Quatre
+  histoires entières sont hors de portée : d'où une trame commune avec des variantes de faction et quatre
+  introductions distinctes. C'est la plus grosse économie possible sans perdre le choix de faction.
+- **Compétences à l'usage.** Le risque connu (Ultima Online, Skyrim) : répéter une action sans but pour monter,
+  avec des scripts. Parades : seules les actions utiles comptent (vraie cible, vraie cargaison), gains décroissants
+  à force de répéter, calcul sur le serveur.
+- **Ancêtres humains et réalisme.** Il faut expliquer pourquoi la Terre ne garde aucune trace d'une civilisation
+  spatiale : elle aurait tout bâti hors de la Terre, et le peu resté au sol aurait disparu sous la fin de l'ère glaciaire.
+- **Le Pacte doit vivre en jeu.** Sans PvP, il faut que la rivalité se sente : classement des factions, course aux
+  découvertes, zones dont le contrôle change selon les missions réussies par chaque faction.
+
+## 10. Ce que la trame demande au moteur
+
+**Graphe de missions** (prévu après le multijoueur, `.fluxmission`) : nœuds de dialogue avec PNJ, conditions de
+niveau, de faction et de réputation, chapitres enchaînés, variantes par faction dans un même graphe, récompenses
+(expérience, réputation, licences, objets). Le gain de compétences, lui, vient des actions et non des missions.
+
+**Multijoueur** :
+- Progression par personnage (niveau, compétences, chapitres faits, réputation) dans PostgreSQL ; les compétences
+  sont calculées par le serveur, jamais par le client.
+- État du monde à deux niveaux : **global** (le même pour tous : événements de serveur, contrôle des zones) et
+  **personnel** (l'avancée de son histoire). Ce qui dépend de l'histoire personnelle passe par des **phases** :
+  le serveur ne montre à un joueur que les entités de son étape (un PNJ mort pour lui, vivant pour un autre).
+- Moments forts de l'histoire en **instances** (zone Instance déjà prévue), seul ou en groupe.
+- Groupes : un joueur avance son histoire quand le groupe est à la même étape ; les autres l'aident et gagnent
+  expérience et réputation.
+
+## 11. Questions ouvertes
+
+- Les Solariens : apparence, et la vraie raison de la scission (proposée : rester humains ou se
+  transformer).
+- Noms définitifs des factions, du système et des lieux.
