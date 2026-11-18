@@ -84,18 +84,25 @@ Choix de Bruno (2026-11-18) : les Architectes sont des **ancêtres humains**.
   groupe contre eux, qui donnent aux quatre factions une raison de s'allier. Savoir qu'ils sont des cousins ouvre
   plus tard la question d'un dialogue (contenu possible après le lancement).
 
-## 6. Le système Solaris (à caler sur les planètes du jeu)
+## 6. Le système Solaris
 
-Un seul système, découpé en zones de niveau comme les continents de WoW. Les planètes et les lunes sont fixes.
+Un seul système au lancement (Bruno) : 4 à 5 planètes de la taille de celles de Star Citizen, des lunes visitables
+et des ceintures d'astéroïdes. Planètes et lunes sont fixes. Le système est découpé en zones de niveau, comme les
+continents de WoW, et chaque faction y a sa zone et ses stations.
 
 | Lieu | Rôle | Niveaux |
 |---|---|---|
-| La Porte de la Faille et ses stations | départs, ville commune neutre | 1-10 |
-| Planète tempérée (forêts, colonies) | premières ruines au sol | 10-20 |
-| Géante gazeuse et ses lunes | industrie, pirates, épaves | 20-30 |
+| La Porte de la Faille et ses stations | départs, ville commune neutre, Concorde | 1-10 |
+| Planète tempérée (forêts) | Libres Colonies, premières ruines au sol | 10-20 |
+| Ceinture intérieure d'astéroïdes | minage, Écorcheurs, épaves | 15-25 |
+| Géante gazeuse et ses lunes | Consortium Halcyon (industrie), Ordre de l'Aube (lune des ruines) | 20-30 |
 | Planète désertique | grandes ruines, Sentinelles | 30-40 |
-| Monde glacé lointain | signaux des Architectes | 40-50 |
-| Orbite basse d'Héliade (structures solaires) | fin de l'histoire, monde ouvert | niveau max |
+| Monde glacé lointain et ceinture extérieure | Porte cachée des Solariens, Cartel de Vesper | 40-50 |
+| Orbite basse d'Héliade (structures solaires) | fin de l'histoire, monde ouvert | 50 |
+
+**Monter en charge sans ajouter de systèmes** (Bruno) : quand il y a trop de joueurs, la même zone se répartit sur
+plusieurs serveurs (copies de l'univers, zones découpées) et les moments forts des quêtes passent en instances.
+De nouveaux systèmes ne viennent qu'avec des extensions.
 
 ## 7. La structure de l'histoire
 
