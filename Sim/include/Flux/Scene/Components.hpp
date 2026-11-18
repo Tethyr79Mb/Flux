@@ -188,7 +188,7 @@ namespace Flux {
         // Occlusion ambiante (GTAO, si les réglages graphiques l'activent) : la lumière ambiante assombrie dans les coins,
         // sous et entre les objets. Portée des obstacles (m), force (0 : aucune, 1 : normale), part de la fin de la
         // portée où un obstacle compte de moins en moins.
-        float occlusionRadius = 1.0f;
+        float occlusionRadius = 2.0f;
         float occlusionIntensity = 1.0f;
         float occlusionFalloff = 0.6f;
     };

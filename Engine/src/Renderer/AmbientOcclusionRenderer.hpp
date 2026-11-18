@@ -11,7 +11,7 @@
 namespace Flux {
     // Occlusion ambiante GTAO (shaders/AmbientOcclusion.slang) des pixels du G-buffer, entre sa passe et celle de
     // l'éclairage, qui en assombrit la seule lumière ambiante (ciel, sondes, intérieurs, air, rebond du sol) : Compute
-    // cherche l'horizon autour de chaque pixel dans la profondeur, Denoise lisse sur 3 x 3 sans traverser les bords.
+    // cherche l'horizon autour de chaque pixel dans la profondeur, Denoise lisse sur 5 x 5 sans traverser les bords.
     // Le bruit change à chaque image : l'anticrénelage temporel en fait la moyenne.
     // Coût : Haute, 3 tranches de 3 pas des deux côtés (18 lectures de profondeur) par pixel de rendu ; Moyenne,
     // 2 tranches de 3 pas sur un pixel sur quatre. Les pixels lointains (rayon sous 1,5 pixel) sortent aussitôt. Pas de
@@ -26,7 +26,7 @@ namespace Flux {
         // Réglages de la scène (composant Ciel).
         struct Settings
         {
-            float radius = 1.0f;    // m : portée des obstacles
+            float radius = 2.0f;    // m : portée des obstacles (1 m ne touchait pas le dessous d'un vaisseau)
             float intensity = 1.0f; // 0 : aucune occlusion, 1 : celle de XeGTAO
             float falloff = 0.6f;   // part de la fin du rayon où un obstacle compte de moins en moins
         };

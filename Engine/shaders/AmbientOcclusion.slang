@@ -7,7 +7,7 @@
 //    tranches et pas tirés par pixel et par image : l'anticrénelage temporel (ou FSR) qui lisse l'image en fait la
 //    moyenne, sans historique à part. Pleine taille de rendu (Haute) ou un pixel sur deux en x et en y (Moyenne,
 //    écrit dans le quart en haut à gauche de la texture).
-// 2. computeDenoise : moyenne 3 x 3 des voisins à la même profondeur (les bords des objets restent nets).
+// 2. computeDenoise : moyenne 5 x 5 des voisins à la même profondeur (les bords des objets restent nets).
 // Sortie : x, la part de la lumière ambiante qui arrive (1 : rien ne la cache) ; y, la distance devant la caméra (m)
 // du pixel, que le lissage et l'agrandissement de la demi-résolution (Lighting.slang) comparent.
 
@@ -27,7 +27,7 @@ struct AmbientOcclusionParams
 
 [[vk::binding(0, 0)]] Sampler2D sceneDepth;
 [[vk::binding(1, 0)]] Sampler2D gbufferBase;    // a : sorte de matière (0 : rien d'écrit, pas d'occlusion)
-[[vk::binding(2, 0)]] Sampler2D gbufferNormals; // xy : normale de la carte (octaédrique)
+[[vk::binding(2, 0)]] Sampler2D gbufferNormals; // zw : normale de la face (octaédrique)
 [[vk::binding(3, 0)]] [[vk::image_format("rg16f")]] RWTexture2D<float2> target;
 [[vk::binding(4, 0)]] Sampler2D source;         // computeDenoise : l'occlusion brute
 
@@ -123,7 +123,9 @@ void computeAmbientOcclusion(uint3 id : SV_DispatchThreadID)
 
     const float3 position = PixelPosition(pixel, viewDepth);
     const float3 toEye = normalize(-position);
-    float3 normal = DecodeOctahedron(gbufferNormals.Load(int3(pixel, 0)).xy);
+    // Normale de la face, pas celle de la carte : le relief fin d'une carte de normales (pierre, roche) faisait de
+    // grandes taches presque noires de près ; ce petit relief a déjà l'occlusion de sa texture.
+    float3 normal = DecodeOctahedron(gbufferNormals.Load(int3(pixel, 0)).zw);
     if (dot(normal, toEye) < 0.0) {
         normal = -normal; // face arrière (feuilles, brins à deux faces) : l'occlusion du côté vu
     }
@@ -195,6 +197,9 @@ void computeAmbientOcclusion(uint3 id : SV_DispatchThreadID)
     target[id.xy] = float2(lerp(1.0, max(visibility, MinVisibility), fade), storedDepth);
 }
 
+// Poids du lissage selon l'écart en pixels (0, 1, 2) : 1-4-6-4-1.
+static const float DenoiseKernel[3] = { 6.0, 4.0, 1.0 };
+
 // Poids d'un voisin selon l'écart de distance (relatif) : nul au-delà de 5 %, une autre surface.
 float DepthWeight(float depth, float center)
 {
@@ -216,16 +221,14 @@ void computeDenoise(uint3 id : SV_DispatchThreadID)
         target[pixel] = center;
         return;
     }
-    float sum = center.x;
-    float total = 1.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            if (x == 0 && y == 0) {
-                continue;
-            }
+    // Noyau 5 x 5 presque gaussien (1-4-6-4-1, séparable). En 3 x 3, l'anticrénelage laissait des hachures sur les
+    // surfaces vues en biais en Haute, et des griffures et un peigne aux arêtes en Moyenne.
+    float sum = 0.0;
+    float total = 0.0;
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
             const float2 neighbour = source.Load(int3(clamp(pixel + int2(x, y), int2(0), size - 1), 0)).xy;
-            // Noyau 1-2-1 : les coins comptent moitié moins que les côtés.
-            const float weight = DepthWeight(neighbour.y, center.y) * ((x == 0 || y == 0) ? 0.5 : 0.25);
+            const float weight = DepthWeight(neighbour.y, center.y) * DenoiseKernel[abs(x)] * DenoiseKernel[abs(y)];
             sum += neighbour.x * weight;
             total += weight;
         }

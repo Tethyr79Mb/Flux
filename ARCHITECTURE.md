@@ -335,7 +335,7 @@ Ordre des passes dans une image (2 images en vol, `RHI::FramesInFlight`) :
    écrit à part la lumière directe du soleil. Vue de contrôle du G-buffer : panneau Moteur et outil MCP `debug_view`.
    Entre les deux, l'occlusion ambiante GTAO (`AmbientOcclusionRenderer`, `AmbientOcclusion.slang`, 2026-11-18) : horizons
    cherchés dans la profondeur autour de chaque pixel (3 tranches de 3 pas en Haute, 2 de 3 sur un pixel sur quatre en
-   Moyenne), bruit par image moyenné par l'anticrénelage, lissage 3 x 3 aux bords ; l'éclairage l'agrandit en suivant
+   Moyenne), bruit par image moyenné par l'anticrénelage, lissage 5 x 5 aux bords ; l'éclairage l'agrandit en suivant
    la profondeur et n'en assombrit que l'ambiante (ciel, sondes, intérieurs, air, rebond du sol), avec le multi-rebond
    de Jimenez et l'occlusion des reflets de Lagarde. Portée, force et fondu dans le Ciel ; qualité dans les options.
    Puis la scène, dans une image HDR (RGBA16Float, lumière linéaire) à la taille de la vue 3D avec sa propre profondeur

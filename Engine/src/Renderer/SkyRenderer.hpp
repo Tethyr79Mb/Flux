@@ -35,7 +35,7 @@ namespace Flux {
         float preExposure = 1.0f;
         // Occlusion ambiante du ciel de la scène (SkyComponent::occlusionRadius et suivants ; sans ciel, leurs valeurs
         // par défaut).
-        float occlusionRadius = 1.0f;
+        float occlusionRadius = 2.0f;
         float occlusionIntensity = 1.0f;
         float occlusionFalloff = 0.6f;
         // D'où l'environnement tire sa lumière (EnvironmentRenderer::Prepare).
