@@ -41,6 +41,9 @@ static const float MinScreenRadius = 1.5;
 static const float FadeScreenRadius = 4.0;
 // Écart le plus court entre le pixel et un échantillon, en pixels : plus près, on lirait le pixel lui-même.
 static const float MinSampleDistance = 1.3;
+// Sinus des angles au-dessus du plan tangent où un obstacle commence à compter, puis compte en entier (3° et 9°).
+static const float AngleBiasStart = 0.05;
+static const float AngleBiasEnd = 0.16;
 // Plancher de la sortie : un coin fermé n'est jamais tout noir (XeGTAO garde 3 %).
 static const float MinVisibility = 0.03;
 
@@ -72,6 +75,14 @@ float SliceNoise(float2 cell)
 float StepNoise(float2 cell)
 {
     return frac(0.5 + dot(cell, float2(0.7548776662, 0.5698402910)) + float(params.options.x % 64u) * 0.6180339887);
+}
+
+// Un obstacle à peine au-dessus du plan tangent ne compte pas, puis de plus en plus jusqu'à ~9° : une sphère ou un
+// cylindre en facettes (profondeur plate par triangle, normale lissée) s'assombrissait en motifs suivant ses facettes
+// (vu sur les sphères de la scène des matériaux le 2026-11-18). Même idée que l'« angle bias » de HBAO.
+float AngleWeight(float3 horizon, float3 normal)
+{
+    return saturate((dot(horizon, normal) - AngleBiasStart) / (AngleBiasEnd - AngleBiasStart));
 }
 
 // acos à 0,2 % près, sans l'appel complet (XeGTAO_FastACos).
@@ -158,14 +169,16 @@ void computeAmbientOcclusion(uint3 id : SV_DispatchThreadID)
             if (depth0 > 0.0) {
                 const float3 delta = PixelPosition(sample0, depth0) - position;
                 const float distance = length(delta);
-                const float weight = saturate(distance * params.settings.x + params.settings.y);
-                horizonCos0 = max(horizonCos0, lerp(lowCos0, dot(delta, toEye) / max(distance, 1.0e-6), weight));
+                const float3 horizon = delta / max(distance, 1.0e-6);
+                const float weight = saturate(distance * params.settings.x + params.settings.y) * AngleWeight(horizon, normal);
+                horizonCos0 = max(horizonCos0, lerp(lowCos0, dot(horizon, toEye), weight));
             }
             if (depth1 > 0.0) {
                 const float3 delta = PixelPosition(sample1, depth1) - position;
                 const float distance = length(delta);
-                const float weight = saturate(distance * params.settings.x + params.settings.y);
-                horizonCos1 = max(horizonCos1, lerp(lowCos1, dot(delta, toEye) / max(distance, 1.0e-6), weight));
+                const float3 horizon = delta / max(distance, 1.0e-6);
+                const float weight = saturate(distance * params.settings.x + params.settings.y) * AngleWeight(horizon, normal);
+                horizonCos1 = max(horizonCos1, lerp(lowCos1, dot(horizon, toEye), weight));
             }
         }
         // Angles des horizons depuis l'œil, gardés dans l'hémisphère de la normale ; intégrale du cosinus entre eux.
