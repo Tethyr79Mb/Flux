@@ -39,15 +39,15 @@ par l'économie, la course aux découvertes et les coups bas des factions IA.
 | **Concorde terrienne** | gouvernement de la Terre, armée, administration | garder le contrôle de la Porte et l'ordre | station militaire près de la Porte |
 | **Consortium Halcyon** | alliance de corporations, industrie, commerce | exploiter les ressources et la technologie des ruines | station industrielle en orbite d'une géante |
 | **Libres Colonies** | colons indépendants, prospecteurs, anciens réfugiés | une terre à eux, loin de la Terre et des corporations | colonie au sol sur une planète tempérée |
-| **Ordre de l'Aube** | savants et explorateurs, presque une confrérie | comprendre les bâtisseurs avant que les autres ne pillent tout | base de recherche sur une lune, près des ruines |
+| **Ordre de l'Aube** | savants et explorateurs, presque une confrérie | comprendre les Architectes avant que les autres ne pillent tout | base de recherche sur une lune, près des ruines |
 
 Chaque faction a sa ville de départ, ses vaisseaux, son style (couleurs, architecture) et son regard sur le mystère.
 
 ## 4. Les factions de l'IA
 
-- **Les Bâtisseurs** (nom humain, provisoire) : l'espèce inconnue. Absente au début, connue par ses ruines, ses
+- **Les Architectes** (*Architects* en anglais, nom donné par les humains) : l'espèce inconnue. Absente au début, connue par ses ruines, ses
   signaux et ses machines. Sa vérité se dévoile au niveau maximum.
-- **Les Sentinelles** : machines des Bâtisseurs, encore actives, qui défendent les ruines et les structures solaires.
+- **Les Sentinelles** : machines des Architectes, encore actives, qui défendent les ruines et les structures solaires.
   Premier adversaire « étranger » du joueur.
 - **Les Écorcheurs** : pirates et pilleurs d'épaves, nés de la flotte coupée de la Terre lors de la fermeture.
 - **Le Cartel de Vesper** : contrebande, trafic d'artefacts ; il travaille en secret pour des membres des quatre
@@ -63,7 +63,7 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
 | Planète tempérée (forêts, colonies) | premières ruines au sol | 10-20 |
 | Géante gazeuse et ses lunes | industrie, pirates, épaves | 20-30 |
 | Planète désertique | grandes ruines, Sentinelles | 30-40 |
-| Monde glacé lointain | signaux des Bâtisseurs | 40-50 |
+| Monde glacé lointain | signaux des Architectes | 40-50 |
 | Orbite basse d'Héliade (structures solaires) | fin de l'histoire, monde ouvert | niveau max |
 
 ## 6. La structure de l'histoire
@@ -72,8 +72,8 @@ Un seul système, découpé en zones de niveau comme les continents de WoW. Les 
    apprend à piloter, à marcher, à combattre, et arrive dans Solaris.
 2. **Trame principale (10 à max)** : une histoire commune en chapitres, un par zone, avec des variantes par faction
    (qui donne la mission, ce qu'on y gagne, le regard sur l'événement). Fil rouge : comprendre pourquoi la Porte s'est
-   rouverte, et ce que veulent les Bâtisseurs.
-3. **Fin de l'histoire (niveau max)** : la révélation sur les Bâtisseurs et l'Ars Solaris, et le monde ouvert s'ouvre :
+   rouverte, et ce que veulent les Architectes.
+3. **Fin de l'histoire (niveau max)** : la révélation sur les Architectes et l'Ars Solaris, et le monde ouvert s'ouvre :
    les structures solaires, des missions répétables, la réputation, les événements de serveur et le commerce.
 
 ## 7. La progression (Bruno, 2026-11-18)
@@ -114,5 +114,5 @@ niveau, de faction et de réputation, chapitres enchaînés, variantes par facti
 
 ## 10. Questions ouvertes
 
-- Les vraies intentions des Bâtisseurs (la fin de la trame) : à écrire ensemble, en dernier.
+- Les vraies intentions des Architectes (la fin de la trame) : à écrire ensemble, en dernier.
 - Noms définitifs des factions, du système et des lieux.
