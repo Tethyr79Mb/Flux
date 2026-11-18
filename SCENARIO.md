@@ -11,6 +11,7 @@ provisoires tant que Bruno ne les a pas validés.
 - Des factions dirigées par l'IA, dont une espèce inconnue.
 - Jeu scénarisé jusqu'au niveau maximum, façon World of Warcraft ou Star Wars: The Old Republic, puis monde ouvert.
 - Une histoire commune aux quatre factions, avec des variantes par faction (confirmé par Bruno).
+- Les joueurs des quatre factions peuvent jouer en groupe ensemble.
 - Un seul système solaire au lancement. Inspiration principale : EVE Online.
 - Ton (choisi par Claude, à confirmer) : sérieux et réaliste, comme The Expanse, avec une part de mystère. Pas d'humour
   parodique, pas de magie : l'étrange vient de l'espèce inconnue et reste explicable à la fin.
@@ -112,7 +113,6 @@ niveau, de faction et de réputation, chapitres enchaînés, variantes par facti
 
 ## 10. Questions ouvertes
 
-- Les quatre factions peuvent-elles grouper entre elles ? Recommandé : oui (le Pacte et l'ennemi commun le justifient).
 - Niveau maximum : 50 proposé.
 - Les vraies intentions des Bâtisseurs (la fin de la trame) : à écrire ensemble, en dernier.
 - Noms définitifs des factions, du système et des lieux.
