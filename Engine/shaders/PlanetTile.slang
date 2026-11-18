@@ -19,7 +19,7 @@ static const uint TileSide = TileQuads + 1;
 static const uint Wide = TileSide + 2;          // grille avec une rangée de plus autour (normales du bord)
 static const uint Coarse = TileQuads / 2 + 3;   // sommets de la parente, de -2 à TileQuads + 2, de deux en deux
 static const uint Columns = TileSide + 4;
-static const uint OctaveCount = 43;
+static const uint OctaveCount = 53;
 static const uint GroupSize = 256;
 static const uint VertexCount = TileSide * TileSide + 4 * TileSide; // TileVertexCount
 static const uint MeshletQuads = 8;                                 // TileMeshletQuads
@@ -36,8 +36,9 @@ struct TileInputs
     uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (OctaveShift)
     uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float)
     // Réglages de la forme (Terrain::ShapeConstants) : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains,
-    // detailHills, detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, -, -, -).
-    float4 shape[4];
+    // detailHills, detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance,
+    // craterChance, craterGain, tailles de cratères), (craterDepth, craterRim, craterWear, craterComplex).
+    float4 shape[5];
     float4 columns[Columns];
     int4 cells[OctaveCount];
     float4 fractions[OctaveCount]; // couches déformées : au point déformé du centre
@@ -105,11 +106,24 @@ static const float GullyBranch = 1.5;
 static const float GullyJitter = 0.5;
 static const float GullySharpness = 4.0;
 static const float MountainWeight = 0.85;
+static const float CraterRadius = 0.18;
+static const float CraterReach = 2.5;
+static const float CraterSlabInner = 0.15;
+static const float CraterSlabOuter = 0.2;
+static const uint CraterCopies = 4;
+static const float3 CraterCopyCell = float3(17.0, 31.0, 47.0);
+static const float3 CraterCopyShift = float3(0.37, 0.71, 0.53);
+static const float CraterFloor = 0.5;
+static const float CraterPeak = 0.35;
+static const float CraterPeakRadius = 0.25;
+static const float CraterWorn = 0.8;
 
-// Échelle d'une couche (LayerScale dans Planet.cpp) : largeur des continents, des zones ou des montagnes.
+// Échelle d'une couche (LayerScale dans Planet.cpp) : largeur des continents, des zones, des montagnes ou rayon des
+// plus grands cratères.
 static const uint ScaleContinent = 0;
 static const uint ScaleZone = 1;
 static const uint ScaleMountain = 2;
+static const uint ScaleCrater = 3;
 
 // Couches du relief, comme Layers dans Planet.cpp : premières et dernières octaves, gain, échelle, érosion et octaves
 // dont la pente compte.
@@ -122,7 +136,7 @@ struct Layer
     float erosion;
     uint erodedOctaves;
 };
-static const Layer Layers[9] = {
+static const Layer Layers[10] = {
     { 0, 5, 0.5, ScaleContinent, 0.0, 0 },   // continents
     { 1, 3, 0.5, ScaleZone, 0.0, 0 },     // zones des chaînes de montagnes
     { 2, 5, 0.5, ScaleZone, 0.0, 0 },     // zones de collines
@@ -132,13 +146,14 @@ static const Layer Layers[9] = {
     { 0, 3, 0.5, ScaleZone, 0.0, 0 },     // grande déformation
     { 3, 6, 0.5, ScaleZone, 0.0, 0 },     // petite déformation
     { 3, 7, 0.5, ScaleMountain, 0.0, 0 }, // ravines
+    { 0, 10, 0.5, ScaleCrater, 0.0, 0 },  // cratères
 };
 
-// Octaves qu'une couche perd plus tôt (Terrain::GetScaleShift, GetZoneShift et GetContinentShift, 8 bits chacun dans
-// options.w).
+// Octaves qu'une couche perd plus tôt (Terrain::GetScaleShift, GetZoneShift, GetContinentShift et GetCraterShift, 8 bits
+// chacun dans options.w).
 uint OctaveShift(uint scale)
 {
-    const uint at = scale == ScaleMountain ? 0u : scale == ScaleZone ? 8u : 16u;
+    const uint at = scale == ScaleMountain ? 0u : scale == ScaleZone ? 8u : scale == ScaleContinent ? 16u : 24u;
     return (tile.options.w >> at) & 0xFFu;
 }
 
@@ -503,12 +518,78 @@ float3 WarpChange(float3 delta, uint layer, float amount)
     return change;
 }
 
+// CraterProfile (Planet.cpp) : profil d'un cratère de rayon `radius` (m) à x rayons de son centre.
+float CraterProfile(float x, float radius, float age)
+{
+    const float4 crater = tile.shape[4];
+    const float complex = crater.w;
+    const float size = radius > complex ? 2.0 * complex * sqrt(radius / complex) : 2.0 * radius;
+    const float worn = crater.z * age;
+    const float depth = crater.x * size * (1.0 - CraterWorn * worn);
+    const float rim = crater.y * size * (1.0 - worn);
+    if (x >= 1.0) {
+        const float tail = 1.0 / (CraterReach * CraterReach * CraterReach);
+        return rim * (1.0 / (x * x * x) - tail) / (1.0 - tail);
+    }
+    const float grown = saturate(radius / complex - 1.0);
+    const float floorPart = CraterFloor * grown;
+    const float s = max(x - floorPart, 0.0) / (1.0 - floorPart);
+    const float peak = max(1.0 - x / CraterPeakRadius, 0.0);
+    return rim - depth + depth * s * s + CraterPeak * grown * depth * peak * peak;
+}
+
+// Terrain::Craters : hauteur (m) des cratères au point delta.
+float Craters(float3 delta, float3 direction, uint octaves)
+{
+    const uint shift = OctaveShift(ScaleCrater);
+    const uint last = min(uint(tile.shape[3].w), octaves > shift ? octaves - shift : 0);
+    const uint base = FirstOctaveIndex(9);
+    const float radius = tile.axisN.w;
+    float density = tile.shape[3].y;
+    float sum = 0.0;
+    for (uint k = 0; k < last; ++k) {
+        const uint o = base + k;
+        const float4 fraction = tile.fractions[o];
+        const float cellSize = radius / fraction.w;
+        for (uint copy = 0; copy < CraterCopies && density > float(copy); ++copy) {
+            // Réseau décalé de la copie (CraterCopyCell, CraterCopyShift), puis les 2 x 2 x 2 mailles dont un point
+            // peut tomber à moins d'une demi-maille de celui-ci.
+            const float c = float(copy);
+            const float3 q = fraction.xyz + delta * fraction.w + frac(CraterCopyShift * c);
+            const float3 floored = floor(q - 0.5);
+            const int3 cell = tile.cells[o].xyz + int3(floored) + int3(CraterCopyCell) * int(copy);
+            const float3 f = q - floored;
+            const float threshold = min(density - c, 1.0) * 256.0;
+            for (int i = 0; i <= 1; ++i) {
+                for (int j = 0; j <= 1; ++j) {
+                    for (int l = 0; l <= 1; ++l) {
+                        const int3 n = (cell + int3(i, j, l)) & 255;
+                        const uint h = permutation[permutation[permutation[n.x] + uint(n.y)] + uint(n.z)];
+                        if (float(permutation[h + 3]) >= threshold) { continue; }
+                        const float3 e = float3(i, j, l) + float3(PeakRandom(h, 0), PeakRandom(h, 1), PeakRandom(h, 2)) - f;
+                        const float radial = dot(e, direction);
+                        const float slab = 1.0 - smoothstep(CraterSlabInner, CraterSlabOuter, abs(radial));
+                        const float3 flat = e - direction * radial;
+                        const float size = CraterRadius * (0.5 + 0.5 * PeakRandom(h, 4));
+                        const float r2 = dot(flat, flat);
+                        if (slab <= 0.0 || r2 >= size * size * (CraterReach * CraterReach)) { continue; }
+                        sum += slab * CraterProfile(sqrt(r2) / size, size * cellSize, PeakRandom(h, 5));
+                    }
+                }
+            }
+        }
+        density = min(density * tile.shape[3].z, float(CraterCopies));
+    }
+    return sum;
+}
+
 // Terrain::GetHeight ; zones : Terrain::Zones (collines, montagnes et piémonts).
 float Height(float3 delta, uint octaves, out float2 zones)
 {
     zones = float2(0.0);
     const float relief = tile.axisS.w;
-    if (relief <= 0.0) { return 0.0; }
+    const float craters = tile.shape[3].w > 0.0 ? Craters(delta, tile.center.xyz + delta, octaves) : 0.0;
+    if (relief <= 0.0) { return craters; }
     const float toSlope = relief / tile.axisN.w;
     const float3 direction = tile.center.xyz + delta;
     // Points déformés, relatifs à ceux du centre de la tuile (Terrain::GetWarpedPoints).
@@ -534,7 +615,7 @@ float Height(float3 delta, uint octaves, out float2 zones)
     const float detail = Fbm(delta, direction, 5, octaves, toSlope * roughness);
     const float height = -0.4 + 0.45 * land + 0.15 * continents + MountainWeight * mountainZone * (ChainBase + PeakHeight * peaks)
                        + gullies + detailShape.w * hillZone * hills + roughness * detail;
-    return relief * clamp(height, -1.0, 1.0);
+    return relief * clamp(height, -1.0, 1.0) + craters;
 }
 
 float Height(float3 delta, uint octaves)

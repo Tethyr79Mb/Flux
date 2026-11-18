@@ -16,6 +16,7 @@ entité. **Placer > Espace > Planète** la pose à trois rayons devant la camér
 | Planète | forme (rayon, relief, montagnes, graine), sol, climat, mer, gravité, atmosphère |
 | Végétation | arbres semés par le GPU autour de la caméra ; leurs troncs ont une collision (semis refait par le CPU) ; herbe générée par le GPU à chaque image sur le sol proche (`Grass.slang`), là où le sol montre de l'herbe |
 | Nuages | une couche de nuages en volume (cumulus, stratus) qui dérive et fait de l'ombre |
+| Cratères | modificateur du relief : cratères de toutes tailles creusés dans le sol (lunes, planètes sans air) ; voir §3 |
 | Orbite | place la planète autour de son étoile, ou une lune autour de sa planète (lune = planète enfant d'une planète : glissée dessus dans la hiérarchie, elle se met à 60 rayons d'elle, dans le plan de son équateur ; rien ne tourne en jeu) |
 
 Ordre conseillé des réglages, du plus grand au plus fin :
@@ -146,6 +147,7 @@ de la précédente et une amplitude plus faible (gain).
 | Grande déformation | tord continents et zones | 0 à 2 | zone |
 | Petite déformation | tord les collines | 3 à 5 | zone |
 | Ravines | sillons dans le sens de la pente, en arbre | 3 à 6 | largeur des montagnes |
+| Cratères (composant Cratères) | une taille de cratère par octave | 0 à 9 | rayon des plus grands |
 
 Une tuile ne calcule que les octaves plus grandes que deux fois l'écart de ses sommets (`Terrain::GetOctaves`). Les
 plus fines ne se verraient pas et coûteraient cher. Une octave ne dépend que des plus grandes, si bien qu'une tuile
@@ -164,6 +166,7 @@ en radians) : chaque chaîne reste large et porte de nombreux sommets, et les pl
 4. **Montagnes et collines,** calculées seulement dans leur zone : une plaine ne paie ni les sommets ni les ravines.
 5. **Détail fin.** Presque rien en plaine (1,2 % du relief), plus en collines (3 %) et en montagne (6,5 %).
 6. **Somme.** Bassins vers -0,4, plaines vers 0,05 à 0,1, sommets jusqu'à 1, le tout multiplié par le relief.
+7. **Cratères,** si la planète a le composant : leur hauteur en mètres s'ajoute (relief 0 : une lune faite de cratères).
 
 ## 3. Les montagnes en détail
 
@@ -191,6 +194,23 @@ Une chaîne de montagnes est faite de trois choses :
 
 L'érosion analytique (méthode d'Inigo Quilez) reste sur les collines et le détail. Chaque octave est atténuée là où
 la couche est déjà en pente, par un facteur `1 / (1 + force × pente²)`, la pente étant mesurée en mètres par mètre.
+
+### Les cratères (`Terrain::Craters`)
+
+Un réseau 3D par taille, chaque taille deux fois plus fine que la précédente : quatre fois plus de places par
+surface, soit autant de cratères par taille que sur la Lune (nombre en 1 / diamètre²). Chaque maille porte au plus un
+cratère (`Densité`, puis x `Part des petits` d'une taille à la suivante ; au-delà de 1, jusqu'à 4 réseaux décalés
+superposés, chacun 8 mailles de plus à lire), placé au hasard, de rayon 0,09 à 0,18 maille
+(`CraterRadius`). Comme pour les sommets, seules comptent les mailles dont le point tombe près de la sphère
+(`CraterSlabInner`, `CraterSlabOuter`). Tout tient à moins d'une demi-maille du point : 8 mailles lues par taille.
+
+Profil : cuvette en parabole (`Profondeur / diamètre`, 0,2 pour un cratère frais), rebord (`Rebord / diamètre`,
+0,04), éjectas en 1 / x³ jusqu'à 2,5 rayons (`CraterReach`). Au-delà de `Fond plat et pic à partir de`, un fond plat
+et un pic central apparaissent (pleins au double), et la profondeur croît comme la racine du rayon. `Usure` : chaque
+cratère tire un âge ; les plus vieux perdent leur rebord et jusqu'à 80 % de leur creux (`CraterWorn`).
+
+Les plus grands font au plus 12 % du rayon de la planète. Une taille n'est calculée que sur les tuiles dont les
+sommets sont plus serrés que ses cratères (`CraterDetailShift`) ; sans composant, rien n'est calculé ni changé.
 
 Les autres réglages sont des constantes en tête de `Planet.cpp`, recopiées dans `PlanetTile.slang` ; ceux de la forme
 (ci-dessus) passent par `Terrain::ShapeConstants`, envoyés au GPU dans `TileGpuInputs::shape` :
@@ -279,12 +299,14 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   plus sur le CPU en montagne qu'avant le bruit d'érosion (collision des tuiles proches).
 - ⬜ 5. Plateaux, terrasses et falaises (mesas, canyons). Une falaise restera une pente raide, pas un mur vertical.
 - ⬜ 6. Vallées et rivières par formule. Crédibles de loin, sans garantir que l'eau descende toujours.
-- ⬜ 7. Cratères, pour les lunes et les planètes sans air.
+- 🔧 7. Cratères, pour les lunes et les planètes sans air (composant « Cratères », réglable dans l'inspecteur).
+  Limites : sol de la même couleur dedans et autour (ni fond sombre ni traînées claires d'éjectas) ; cratères qui se
+  chevauchent additionnés (un récent ne remplace pas l'ancien) ; motif des petits répété tous les 256 mailles.
 - ⬜ 8. Types de planète (demande de Bruno du 2026-11-07) : rocheuse, martienne, gelée, de lave ; plus tard lune,
   océanique. Un type règle le poids de chaque couche du relief (cratères et canyons pour la martienne, plaines de
   glace et crevasses pour la gelée, coulées et cônes pour la lave), les matières du sol, le climat, l'atmosphère et
   la surface liquide (eau, glace ou lave émissive). Les couches nouvelles vont dans `Terrain::GetHeight` et `Height`.
-  Textures du sol propres à chaque planète (une lune n'a aujourd'hui que la roche commune, teintée) : un seul tableau
+  Textures du sol propres à chaque planète (aujourd'hui, une seule matière « lune » commune à toutes les planètes sans zones, teintée) : un seul tableau
   avec les matières de toutes les planètes, chaque planète lit ses couches (~55 Mo par jeu de 5 en BC7 2048²).
 - ⬜ 9. (À décider par Bruno) Érosion hydraulique précalculée. C'est la plus réaliste, mais elle stocke une carte par
   planète, ce qui va contre la décision du 2026-10-07.

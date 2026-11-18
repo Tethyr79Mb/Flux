@@ -15,6 +15,7 @@
 // Recherche et choix : /mnt/project-files/Recherche/cube-sphere-planetes.md.
 namespace Flux {
     struct PlanetComponent;
+    struct CraterComponent;
 }
 
 namespace Flux::Planetology {
@@ -67,6 +68,21 @@ namespace Flux::Planetology {
     // Inverse : la face où tombe la direction et ses coordonnées (s, t) de -1 à 1.
     FLUX_SIM_API void FaceFromDirection(const Math::Vector3d& direction, std::uint32_t& face, double& s, double& t);
 
+    // Cratères (CraterComponent), densité 0 : aucun.
+    struct CraterShape
+    {
+        double density = 0.0;
+        double maxRadius = 8000.0;   // m
+        double minRadius = 15.0;     // m
+        double smallShare = 1.0;
+        double depth = 0.2;          // / diamètre
+        double rimHeight = 0.04;     // / diamètre
+        double wear = 0.5;
+        double complexRadius = 3000.0; // m
+
+        bool operator==(const CraterShape&) const = default;
+    };
+
     // Réglages de la forme du relief (PlanetComponent) ; les valeurs par défaut donnent le relief d'origine.
     struct ReliefShape
     {
@@ -84,11 +100,14 @@ namespace Flux::Planetology {
         double gullies = 1.0;         // profondeur des ravines
         double erosion = 1.0;         // force de l'érosion (versants lisses, détail sur les crêtes)
         double warp = 1.0;            // déformation (côtes découpées, chaînes tordues)
+        CraterShape craters;
 
         bool operator==(const ReliefShape&) const = default;
     };
-    // Les réglages du relief d'une planète.
-    FLUX_SIM_API ReliefShape GetReliefShape(const PlanetComponent& planet);
+    // Les réglages du relief d'une planète, avec ses cratères s'il en a (composant de la même entité).
+    FLUX_SIM_API ReliefShape GetReliefShape(const PlanetComponent& planet, const CraterComponent* craters = nullptr);
+    // Profondeur (m) que ses cratères peuvent ajouter sous le relief d'une planète, au plus (Terrain::GetCraterDepth).
+    FLUX_SIM_API double GetCraterDepth(const PlanetComponent& planet, const CraterComponent* craters);
 
     // Forme du terrain : rayon, relief (bruit fractal évalué sur la direction 3D, donc sans couture entre les faces),
     // le même pour une même graine.
@@ -98,11 +117,15 @@ namespace Flux::Planetology {
         Terrain(double radius, double relief, std::int32_t seed, const ReliefShape& shape);
         Terrain(double radius, double relief, std::int32_t seed, double mountainWidth = 0.0, double zoneWidth = 0.0)
             : Terrain(radius, relief, seed, ReliefShape{.mountainWidth = mountainWidth, .zoneWidth = zoneWidth}) {}
-        // Celui d'une planète (rayon, relief, graine et ReliefShape).
-        explicit Terrain(const PlanetComponent& planet);
+        // Celui d'une planète (rayon, relief, graine et ReliefShape), avec ses cratères s'il en a.
+        explicit Terrain(const PlanetComponent& planet, const CraterComponent* craters = nullptr);
 
         double GetRadius() const { return m_radius; }
         double GetRelief() const { return m_relief; }
+        // Profondeur (m) que les cratères peuvent ajouter sous le relief, et au-dessus (rebords), au plus : 0 sans
+        // cratères. Le relief va de -GetRelief() - GetCraterDepth() à GetRelief() + GetCraterRise().
+        double GetCraterDepth() const { return m_craterDepth; }
+        double GetCraterRise() const { return m_craterRise; }
         // Niveau le plus fin utile : environ un mètre et demi entre deux sommets.
         std::uint32_t GetMaxLevel() const { return m_maxLevel; }
         // Octaves du bruit pour une tuile de ce niveau : celles dont le détail est plus grand que l'écart de ses
@@ -140,6 +163,11 @@ namespace Flux::Planetology {
         // De même pour les continents (largeur des continents).
         double GetContinentScale() const { return m_continentScale; }
         std::uint32_t GetContinentShift() const { return m_continentShift; }
+        // De même pour les cratères (rayon des plus grands), décalés en plus de CraterDetailShift octaves : un cratère
+        // n'apparaît que sur les tuiles dont les sommets sont plus serrés que lui. Et le nombre de leurs tailles.
+        double GetCraterScale() const { return m_craterScale; }
+        std::uint32_t GetCraterShift() const { return m_craterShift; }
+        std::uint32_t GetCraterOctaves() const { return m_craterOctaves; }
         // Réglages de la forme, rangés pour le GPU (TileGpuInputs::shape).
         struct ShapeConstants
         {
@@ -151,6 +179,9 @@ namespace Flux::Planetology {
             double erosion;               // facteur des forces d'érosion des couches
             double warpLarge, warpSmall;  // radians (à l'échelle des zones)
             std::uint32_t peakChance;     // sur 256
+            // Cratères : chance de la plus grande taille (0 à 1), multipliée par craterGain d'une taille à la suivante
+            // (au plus 1) ; profondeur et rebord / diamètre ; usure (0 à 1) ; rayon (m) des cratères complexes.
+            double craterChance, craterGain, craterDepth, craterRim, craterWear, craterComplex;
         };
         const ShapeConstants& GetShapeConstants() const { return m_shape; }
 
@@ -172,6 +203,8 @@ namespace Flux::Planetology {
                        Math::Vector3d slope, double amount) const;
         // Déplacement (radians, tangent à la sphère) du point où se lisent les couches déformées.
         Math::Vector3d Warp(const Math::Vector3d& direction, std::uint32_t layer, double amount) const;
+        // Hauteur (m) des cratères au point (direction).
+        double Craters(const Math::Vector3d& direction, std::uint32_t octaves) const;
 
         double m_radius;
         double m_relief;
@@ -182,6 +215,11 @@ namespace Flux::Planetology {
         std::uint32_t m_zoneShift = 0;
         double m_continentScale = 1.0;
         std::uint32_t m_continentShift = 0;
+        double m_craterScale = 1.0;
+        std::uint32_t m_craterShift = 0;
+        std::uint32_t m_craterOctaves = 0; // 0 : aucun cratère
+        double m_craterDepth = 0.0;
+        double m_craterRise = 0.0;
         ShapeConstants m_shape{};
         std::array<std::uint8_t, 512> m_permutation{};
     };
@@ -241,26 +279,27 @@ namespace Flux::Planetology {
     struct TileGpuInputs
     {
         static constexpr std::uint32_t Columns = TileSide + 4; // décalages -2 à TileQuads + 2 de la grille de la face
-        static constexpr std::uint32_t Octaves = 43;            // somme des octaves de chaque couche du relief
+        static constexpr std::uint32_t Octaves = 53;            // somme des octaves de chaque couche du relief
 
         std::array<float, 4> center{}; // xyz : d_c ; w : |v_c| (v_c = normale + a_c.s + b_c.t, avant normalisation)
         std::array<float, 4> axisN{};  // xyz : normale de la face ; w : rayon
         std::array<float, 4> axisS{};  // xyz : axe s ; w : relief
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
-        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (GetScaleShift | GetZoneShift << 8 | GetContinentShift << 16)
+        std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (GetScaleShift | GetZoneShift << 8 | GetContinentShift << 16 | GetCraterShift << 24)
         // Humidité du relief (GetWetnessLayout) : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu
         // (bits d'un float).
         std::array<std::uint32_t, 4> wetness{};
         // Terrain::ShapeConstants : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains, detailHills,
-        // detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, 0, 0, 0).
-        std::array<std::array<float, 4>, 4> shape{};
+        // detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, craterChance,
+        // craterGain, tailles de cratères), (craterDepth, craterRim, craterWear, craterComplex).
+        std::array<std::array<float, 4>, 5> shape{};
         // Colonne i (x : a - a_c, y : a + a_c, a = tan(s.π/4)) et ligne i (z : b - b_c, w : b + b_c), décalage i - 2.
         std::array<std::array<float, 4>, Columns> columns{};
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)
         std::array<std::array<float, 4>, Octaves> fractions{};    // xyz : position dans la maille ; w : fréquence
         std::array<std::uint32_t, 128> permutation{};             // 512 octets, 4 par entier
     };
-    static_assert(sizeof(TileGpuInputs) == 96 + 64 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
+    static_assert(sizeof(TileGpuInputs) == 96 + 80 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
     FLUX_SIM_API void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs);
 
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni

@@ -96,13 +96,14 @@ namespace Flux::Planetology {
         // Début d'une image : avant les appels à Collect. Le GPU a fini l'image précédente de même indice. `now` : heure
         // de l'image, d'où vient la vitesse de la caméra (les tests en donnent une).
         void BeginFrame(std::uint32_t frameIndex, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
-        // Ajoute à `tiles` les tuiles de la planète à dessiner. `position` : son centre relatif à la caméra. Avec
+        // Ajoute à `tiles` les tuiles de la planète à dessiner (`craters` : ses cratères, s'il en a). `position` : son
+        // centre relatif à la caméra. Avec
         // `plains`, y ajoute aussi les tuiles du niveau `plainLevel` en vue à moins de `plainRange` mètres : celles
         // visitées, et sous une tuile plus grossière dessinée, celles qu'elle couvre ; puis, marquées ahead, celles
         // proches de la caméra ou de là où elle va, en vue ou non. Avec `castsShadow`, les tuiles hors
         // du champ dont l'ombre peut y tomber sont ajoutées aussi (Tile::shadowOnly), sans plaines ni calcul en avance :
         // une montagne derrière la caméra, soleil dans le dos.
-        void Collect(Entity entity, const PlanetComponent& planet, const Math::Vector3d& position,
+        void Collect(Entity entity, const PlanetComponent& planet, const CraterComponent* craters, const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                      std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0,
                      const ViewTest* castsShadow = nullptr, const ShadowSpacing* shadowSpacing = nullptr);

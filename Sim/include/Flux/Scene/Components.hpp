@@ -289,6 +289,9 @@ namespace Flux {
         Math::LinearColor soilTint{1.0f, 1.0f, 1.0f};
         Math::LinearColor sandTint{1.0f, 1.0f, 1.0f};
         Math::LinearColor snowTint{1.0f, 1.0f, 1.0f};
+        // Couleurs de la roche-mère (0 à 1) : granit, calcaire, grès et basalte teintent la roche, le sable et la terre
+        // par régions de plusieurs dizaines de km (basalte sombre). 0 : la même couleur partout.
+        float lithologyTint = 1.0f;
         float temperature = 20.0f;      // °C à l'équateur, au niveau zéro
         float poleTemperature = -30.0f; // °C aux pôles
         float humidity = 0.5f;          // 0 : planète désertique, 1 : très humide
@@ -304,6 +307,25 @@ namespace Flux {
         float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre
         float atmosphereHeight = 30000.0f; // m au-dessus du sol, là où elle s'arrête (presque tout est dans le bas)
         Math::LinearColor skyColor{0.175f, 0.41f, 1.0f}; // ce que l'air diffuse le plus : bleu sur Terre, orangé sur Mars
+    };
+
+    // Cratères d'une planète (modificateur du relief, sur l'entité de son PlanetComponent), pour les lunes et les
+    // planètes sans air : creusés dans le relief, sur le GPU (tuiles) comme sur le CPU (collision). De toutes tailles,
+    // du plus grand au plus petit, beaucoup plus de petits que de grands (comme sur la Lune). Chacun : une cuvette, un
+    // rebord relevé, des éjectas autour ; les grands ont un fond plat et un pic central. En mètres, indépendants du
+    // réglage « Relief » de la planète (une lune peut n'avoir que ses cratères).
+    struct CraterComponent
+    {
+        // 0 : aucun ; jusqu'à 1, chance qu'une place porte un cratère ; au-delà, plusieurs réseaux superposés (jusqu'à
+        // 4 : un sol saturé, chaque unité coûte un réseau de plus par taille).
+        float density = 1.5f;
+        float maxRadius = 8000.0f;     // m, rayon des plus grands (au plus 12 % du rayon de la planète)
+        float minRadius = 15.0f;       // m, rayon des plus petits (environ ; au plus 10 tailles, chacune moitié de la précédente)
+        float smallShare = 1.0f;       // part des petits par rapport aux grands, 1 : comme sur la Lune
+        float depth = 0.2f;            // profondeur d'un cratère frais (du rebord au fond) / son diamètre
+        float rimHeight = 0.04f;       // hauteur du rebord au-dessus du sol / diamètre
+        float wear = 0.5f;             // 0 à 1 : usure des plus vieux (rebord et cuvette adoucis)
+        float complexRadius = 3000.0f; // m, rayon à partir duquel un cratère prend un fond plat et un pic central
     };
 
     // Végétation d'une planète (sur l'entité de son PlanetComponent) : des arbres semés par le GPU autour de la caméra,

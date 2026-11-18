@@ -1039,7 +1039,7 @@ namespace Flux {
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
                 const Clock::time_point planetStart = Clock::now();
-                AddPlanet(transform, *planet, scene.TryGet<RimLightComponent>(transform.entity),
+                AddPlanet(transform, *planet, scene.TryGet<CraterComponent>(transform.entity), scene.TryGet<RimLightComponent>(transform.entity),
                           scene.TryGet<CloudsComponent>(transform.entity), scene.TryGet<VegetationComponent>(transform.entity), view,
                           assetsDirectory);
                 groundMilliseconds += since(planetStart);
@@ -1389,7 +1389,7 @@ namespace Flux {
 
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
-    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const RimLightComponent* rim,
+    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const CraterComponent* craters, const RimLightComponent* rim,
                                  const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view,
                                  const std::filesystem::path& assetsDirectory) {
         m_planetTiles.clear();
@@ -1418,7 +1418,7 @@ namespace Flux {
         };
         // Portée de la planète (réglage artistique) multipliée par la distance choisie par le joueur.
         const float rangeScale = GetVegetationDistanceScale(m_vegetationDistance);
-        m_planets->Collect(transform.entity, planet, transform.position, transform.rotation,
+        m_planets->Collect(transform.entity, planet, craters, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
                            m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
                            trees ? static_cast<double>(vegetation->range * rangeScale) : 0.0, &castsShadow, &shadowSpacing);
@@ -1463,7 +1463,8 @@ namespace Flux {
                                     material(planet.soilColor, planet.soilTint, 0.95f),
                                     {planet.temperature, planet.poleTemperature, std::clamp(planet.humidity, 0.0f, 1.0f),
                                      m_groundGroup ? 1.0f : 0.0f},
-                                    {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), planet.zones ? 0.0f : 1.0f, 0.0f}});
+                                    {planet.seaLevel * 0.01f * planet.relief, std::max(planet.beachHeight, 0.0f), planet.zones ? 0.0f : 1.0f,
+                                     std::clamp(planet.lithologyTint, 0.0f, 1.0f)}});
             // Portée de l'herbe : le sol y montre de la terre sous les brins (PlanetColor).
             m_planetData[index].shape[3] = grass ? m_grass.range : 0.0f;
             // Lumière de contour sur les corps sans air seulement : une atmosphère dessine déjà son halo vu de l'espace

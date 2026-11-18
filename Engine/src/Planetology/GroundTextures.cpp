@@ -22,7 +22,7 @@
 namespace Flux::Planetology {
     namespace {
         constexpr std::array<std::string_view, static_cast<std::size_t>(GroundLayer::Count)> LayerNames{
-            "roche", "herbe", "terre", "sable", "neige"};
+            "roche", "herbe", "terre", "sable", "neige", "lune"};
         // Plus grand côté gardé : au-delà, l'image est réduite de moitié jusqu'à tenir (5 couches x 3 tableaux de
         // 2048² avec leurs mips : 335 Mo sans compression).
         constexpr int MaxSize = 2048;
@@ -264,6 +264,11 @@ namespace Flux::Planetology {
                                                                std::tuple{"rugosite", Channel::Roughness, true},
                                                                std::tuple{"occlusion", Channel::Occlusion, false}}) {
                     std::filesystem::path path = FindImage(directory, LayerNames[layer], suffix);
+                    // Sans image de lune : celle de la roche (la couleur décide pour toute la matière).
+                    if (layer == static_cast<std::uint32_t>(GroundLayer::Moon)
+                        && FindImage(directory, LayerNames[layer], "couleur").empty()) {
+                        path = FindImage(directory, LayerNames[static_cast<std::size_t>(GroundLayer::Rock)], suffix);
+                    }
                     if (!path.empty()) {
                         jobs.push_back({std::move(path), layer, channel});
                     } else if (required) {

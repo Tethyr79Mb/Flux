@@ -124,6 +124,8 @@ namespace Flux {
             .Field("soilTint", "Teinte de la texture de terre", &PlanetComponent::soilTint, {.alpha = false})
             .Field("sandTint", "Teinte de la texture de sable", &PlanetComponent::sandTint, {.alpha = false})
             .Field("snowTint", "Teinte de la texture de neige", &PlanetComponent::snowTint, {.alpha = false})
+            .Field("lithologyTint", "Couleurs de la roche-mère", &PlanetComponent::lithologyTint,
+                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Group("climate", "Climat")
             .Field("temperature", "Température à l'équateur (°C)", &PlanetComponent::temperature,
                    {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})
@@ -159,6 +161,21 @@ namespace Flux {
             .Field("atmosphereHeight", "Hauteur de l'atmosphère (m)", &PlanetComponent::atmosphereHeight,
                    {.speed = 10.0, .min = 100.0, .max = 1.0e6, .decimals = 0})
             .Field("skyColor", "Couleur du ciel", &PlanetComponent::skyColor, {.alpha = false});
+        registry.Register<CraterComponent>("craters", "Cratères")
+            .Field("density", "Densité", &CraterComponent::density, {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
+            .Field("maxRadius", "Rayon des plus grands (m)", &CraterComponent::maxRadius,
+                   {.speed = 10.0, .min = 1.0, .max = 1.0e6, .decimals = 0})
+            .Field("minRadius", "Rayon des plus petits (m)", &CraterComponent::minRadius,
+                   {.speed = 0.5, .min = 1.0, .max = 1.0e6, .decimals = 1})
+            .Field("smallShare", "Part des petits", &CraterComponent::smallShare,
+                   {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
+            .Field("depth", "Profondeur / diamètre", &CraterComponent::depth,
+                   {.speed = 0.005, .min = 0.0, .max = 1.0, .decimals = 3})
+            .Field("rimHeight", "Rebord / diamètre", &CraterComponent::rimHeight,
+                   {.speed = 0.001, .min = 0.0, .max = 0.5, .decimals = 3})
+            .Field("wear", "Usure", &CraterComponent::wear, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("complexRadius", "Fond plat et pic à partir de (m)", &CraterComponent::complexRadius,
+                   {.speed = 10.0, .min = 1.0, .max = 1.0e6, .decimals = 0});
         registry.Register<CloudsComponent>("clouds", "Nuages")
             .Field("altitude", "Altitude (m)", &CloudsComponent::altitude,
                    {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})

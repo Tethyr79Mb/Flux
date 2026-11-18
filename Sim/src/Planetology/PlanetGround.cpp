@@ -333,14 +333,15 @@ namespace Flux::Planetology {
                 continue; // une planète dans un vaisseau : un décor, pas un sol
             }
             PlanetState& state = m_planets[entity];
-            if (!state.terrain || planet.radius != state.radius || planet.relief != state.relief || planet.seed != state.seed
-                || GetReliefShape(planet) != state.shape) {
+            const CraterComponent* craters = scene.GetRegistry().try_get<CraterComponent>(entity);
+            if (const ReliefShape shape = GetReliefShape(planet, craters); !state.terrain || planet.radius != state.radius
+                || planet.relief != state.relief || planet.seed != state.seed || shape != state.shape) {
                 RemoveTiles(system, state);
-                state.terrain = std::make_shared<const Terrain>(planet);
+                state.terrain = std::make_shared<const Terrain>(planet, craters);
                 state.radius = planet.radius;
                 state.relief = planet.relief;
                 state.seed = planet.seed;
-                state.shape = GetReliefShape(planet);
+                state.shape = shape;
             }
             const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);

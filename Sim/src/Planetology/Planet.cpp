@@ -98,6 +98,34 @@ namespace Flux::Planetology {
         // Part du relief des montagnes et des collines dans leur zone.
         constexpr double MountainWeight = 0.85;
         constexpr double HillWeight = 0.15;
+        // Cratères (Terrain::Craters) : au plus un par maille d'un réseau 3D par taille, placé au hasard dans sa maille,
+        // chaque taille deux fois plus fine que la précédente (quatre fois plus de places par surface : autant de
+        // cratères par taille que sur la Lune, où leur nombre est en 1 / diamètre²). Seules comptent les mailles dont
+        // le point tombe près de la sphère (CraterSlabInner, effacé à CraterSlabOuter). Rayon : de la moitié à
+        // CraterRadius maille ; éjectas jusqu'à CraterReach rayons. Tout tient à moins d'une demi-maille du point
+        // (√(0,2² + 0,18² x 2,5²) < 0,5) : les 2 x 2 x 2 mailles autour de lui suffisent.
+        constexpr std::uint32_t CraterOctaves = 10;
+        constexpr double CraterRadius = 0.18;
+        constexpr double CraterReach = 2.5;
+        constexpr double CraterSlabInner = 0.15;
+        constexpr double CraterSlabOuter = 0.2;
+        // Densité au-delà de 1 : jusqu'à CraterCopies réseaux par taille, décalés les uns des autres (copie c : c x
+        // CraterCopyCell mailles plus la fraction de c x CraterCopyShift, pour d'autres tirages et d'autres places).
+        constexpr std::uint32_t CraterCopies = 4;
+        constexpr Math::Vector3d CraterCopyCell{17.0, 31.0, 47.0};
+        constexpr Math::Vector3d CraterCopyShift{0.37, 0.71, 0.53};
+        // Un cratère n'apparaît que sur les tuiles où sa maille fait au moins 2^CraterDetailShift fois l'écart que
+        // GetOctaves demande aux autres couches : environ un diamètre pour deux sommets de la tuile. Plus tôt, les petits
+        // cratères tomberaient entre les sommets (du bruit, et cher).
+        constexpr std::uint32_t CraterDetailShift = 4;
+        // Cratère complexe (plus grand que craterComplex) : fond plat jusqu'à CraterFloor de son rayon et pic central
+        // (CraterPeak de la profondeur, sur CraterPeakRadius du rayon), pleins à deux fois craterComplex ; sa profondeur
+        // croît alors comme la racine du rayon (les grands cratères sont proportionnellement moins profonds).
+        constexpr double CraterFloor = 0.5;
+        constexpr double CraterPeak = 0.35;
+        constexpr double CraterPeakRadius = 0.25;
+        // Usure : un cratère au plus usé garde (1 - CraterWorn) de sa profondeur ; son rebord s'efface.
+        constexpr double CraterWorn = 0.8;
 
         // Érosion : chaque octave est atténuée là où la couche est déjà en pente (1 / (1 + force x pente²), la pente
         // en mètres par mètre). Les versants restent lisses et creusés de ravines, le détail se garde pour les sommets
@@ -123,7 +151,8 @@ namespace Flux::Planetology {
         //   large et aux bords doux (ChainStart, ChainEnd, et ChainBase bas pour ne pas faire de plateau) porte plusieurs
         //   sommets, comme un vrai massif ;
         // - Mountain : suit la largeur des montagnes (Terrain::m_scale) : sommets, collines et ravines.
-        enum class LayerScale : std::uint8_t { Continent, Zone, Mountain };
+        // - Crater : suit le rayon des plus grands cratères (Terrain::m_craterScale).
+        enum class LayerScale : std::uint8_t { Continent, Zone, Mountain, Crater };
 
         // Couches du relief (voir GetHeight), dans l'ordre de TileGpuInputs::cells et de shaders/PlanetTile.slang.
         struct Layer
@@ -140,8 +169,8 @@ namespace Flux::Planetology {
             // pente coûte autant que le bruit, et les octaves fines du détail sont les plus nombreuses.
             std::uint32_t erodedOctaves;
         };
-        enum LayerIndex { Continents, MountainZone, HillZone, PeakField, Hills, Detail, WarpLargeField, WarpSmallField, GullyField };
-        constexpr std::array<Layer, 9> Layers{{
+        enum LayerIndex { Continents, MountainZone, HillZone, PeakField, Hills, Detail, WarpLargeField, WarpSmallField, GullyField, CraterField };
+        constexpr std::array<Layer, 10> Layers{{
             {0, 5, 0.5, {0.0, 0.0, 0.0}, LayerScale::Continent, 0.0, 0},
             {1, 3, 0.5, {31.7, -12.3, 7.1}, LayerScale::Zone, 0.0, 0},
             {2, 5, 0.5, {-8.9, 44.2, -19.6}, LayerScale::Zone, 0.0, 0},
@@ -156,6 +185,8 @@ namespace Flux::Planetology {
             // Ravines : cellules de 1/12 de la largeur des montagnes (une maille du réseau = longueur d'onde / 2π) et plus
             // fines (voir Terrain::Gullies).
             {3, 7, 0.5, {-2.9, 37.1, 15.3}, LayerScale::Mountain, 0.0, 0},
+            // Cratères : une octave par taille (voir Terrain::Craters).
+            {0, CraterOctaves, 0.5, {13.7, -7.3, -27.1}, LayerScale::Crater, 0.0, 0},
         }};
         static_assert([] {
             std::uint32_t count = 0;
@@ -166,10 +197,20 @@ namespace Flux::Planetology {
         }() == TileGpuInputs::Octaves);
 
         double FrequencyScale(const Terrain& terrain, LayerScale scale) {
-            return scale == LayerScale::Mountain ? terrain.GetScale() : scale == LayerScale::Zone ? terrain.GetZoneScale() : terrain.GetContinentScale();
+            switch (scale) {
+                case LayerScale::Mountain: return terrain.GetScale();
+                case LayerScale::Zone: return terrain.GetZoneScale();
+                case LayerScale::Crater: return terrain.GetCraterScale();
+                default: return terrain.GetContinentScale();
+            }
         }
         std::uint32_t OctaveShift(const Terrain& terrain, LayerScale scale) {
-            return scale == LayerScale::Mountain ? terrain.GetScaleShift() : scale == LayerScale::Zone ? terrain.GetZoneShift() : terrain.GetContinentShift();
+            switch (scale) {
+                case LayerScale::Mountain: return terrain.GetScaleShift();
+                case LayerScale::Zone: return terrain.GetZoneShift();
+                case LayerScale::Crater: return terrain.GetCraterShift();
+                default: return terrain.GetContinentShift();
+            }
         }
         // Fréquence en plus d'une couche dont la première octave a cette longueur d'onde (`natural`, m) pour qu'elle ait
         // `width` : seulement plus fine (une petite planète garde la taille que permet son rayon), 1 sans largeur.
@@ -257,15 +298,63 @@ namespace Flux::Planetology {
         t = std::atan(Math::Dot(onCube, f.t)) / QuarterPi;
     }
 
-    ReliefShape GetReliefShape(const PlanetComponent& planet) {
-        return {.mountainWidth = planet.mountainWidth, .zoneWidth = planet.zoneWidth, .continentWidth = planet.continentWidth,
-                .mountainShare = planet.mountainShare, .hillShare = planet.hillShare, .hillHeight = planet.hillHeight,
-                .peakDensity = planet.peakDensity, .plainRoughness = planet.plainRoughness,
-                .reliefRoughness = planet.reliefRoughness, .gullies = planet.gullyDepth, .erosion = planet.erosion,
-                .warp = planet.warp};
+    namespace {
+        // Réseau des cratères d'une planète de rayon `radius` (Terrain::GetCraterScale…), et la profondeur et la hauteur
+        // qu'ils peuvent ajouter au relief.
+        struct CraterLayout
+        {
+            double scale = 1.0;
+            std::uint32_t shift = 0;
+            std::uint32_t octaves = 0;
+            double depth = 0.0;
+            double rise = 0.0;
+        };
+        CraterLayout MakeCraterLayout(double radius, const CraterShape& shape) {
+            CraterLayout layout;
+            if (shape.density <= 0.0 || shape.maxRadius <= 0.0) {
+                return layout;
+            }
+            // La maille de la première taille fait le rayon des plus grands / CraterRadius ; pas plus grande que celle de
+            // l'octave 0 des autres couches (des cratères d'au plus 12 % du rayon de la planète).
+            layout.scale = std::clamp(radius * CraterRadius / (BaseFrequency * shape.maxRadius), 1.0, 16777216.0);
+            layout.shift = ShiftOf(layout.scale) + CraterDetailShift;
+            const double largest = radius * CraterRadius / (BaseFrequency * layout.scale);
+            const double sizes = std::floor(std::log2(largest / std::max(shape.minRadius, 1.0e-3))) + 1.0;
+            layout.octaves = static_cast<std::uint32_t>(std::clamp(sizes, 1.0, static_cast<double>(CraterOctaves)));
+            // Au plus profond (et au plus haut) : chaque taille à son plus grand, deux fois par réseau (cratères qui se
+            // chevauchent).
+            double density = std::min(shape.density, static_cast<double>(CraterCopies));
+            for (std::uint32_t k = 0; k < layout.octaves; ++k) {
+                const double diameter = 2.0 * largest * std::ldexp(1.0, -static_cast<int>(k));
+                const double copies = std::ceil(density);
+                layout.depth += 2.0 * copies * std::max(shape.depth, 0.0) * diameter;
+                layout.rise += 2.0 * copies * std::max(shape.rimHeight, 0.0) * diameter;
+                density = std::min(density * std::max(shape.smallShare, 0.0), static_cast<double>(CraterCopies));
+            }
+            return layout;
+        }
     }
 
-    Terrain::Terrain(const PlanetComponent& planet) : Terrain(planet.radius, planet.relief, planet.seed, GetReliefShape(planet)) {}
+    double GetCraterDepth(const PlanetComponent& planet, const CraterComponent* craters) {
+        return craters ? MakeCraterLayout(std::max(static_cast<double>(planet.radius), 1.0), GetReliefShape(planet, craters).craters).depth : 0.0;
+    }
+
+    ReliefShape GetReliefShape(const PlanetComponent& planet, const CraterComponent* craters) {
+        ReliefShape shape{.mountainWidth = planet.mountainWidth, .zoneWidth = planet.zoneWidth, .continentWidth = planet.continentWidth,
+                          .mountainShare = planet.mountainShare, .hillShare = planet.hillShare, .hillHeight = planet.hillHeight,
+                          .peakDensity = planet.peakDensity, .plainRoughness = planet.plainRoughness,
+                          .reliefRoughness = planet.reliefRoughness, .gullies = planet.gullyDepth, .erosion = planet.erosion,
+                          .warp = planet.warp};
+        if (craters && craters->density > 0.0f) { // sans cratère, les autres réglages ne changent rien
+            shape.craters = {.density = craters->density, .maxRadius = craters->maxRadius, .minRadius = craters->minRadius,
+                             .smallShare = craters->smallShare, .depth = craters->depth, .rimHeight = craters->rimHeight,
+                             .wear = craters->wear, .complexRadius = craters->complexRadius};
+        }
+        return shape;
+    }
+
+    Terrain::Terrain(const PlanetComponent& planet, const CraterComponent* craters)
+        : Terrain(planet.radius, planet.relief, planet.seed, GetReliefShape(planet, craters)) {}
 
     Terrain::Terrain(double radius, double relief, std::int32_t seed, const ReliefShape& shape)
         : m_radius(std::max(radius, 1.0)), m_relief(std::max(relief, 0.0)) {
@@ -299,7 +388,19 @@ namespace Flux::Planetology {
                    .erosion = std::max(shape.erosion, 0.0),
                    .warpLarge = WarpLarge * std::max(shape.warp, 0.0),
                    .warpSmall = WarpSmall * std::max(shape.warp, 0.0),
-                   .peakChance = static_cast<std::uint32_t>(std::clamp(std::round(shape.peakDensity * 256.0), 0.0, 256.0))};
+                   .peakChance = static_cast<std::uint32_t>(std::clamp(std::round(shape.peakDensity * 256.0), 0.0, 256.0)),
+                   .craterChance = std::clamp(shape.craters.density, 0.0, static_cast<double>(CraterCopies)),
+                   .craterGain = std::max(shape.craters.smallShare, 0.0),
+                   .craterDepth = std::max(shape.craters.depth, 0.0),
+                   .craterRim = std::max(shape.craters.rimHeight, 0.0),
+                   .craterWear = std::clamp(shape.craters.wear, 0.0, 1.0),
+                   .craterComplex = std::max(shape.craters.complexRadius, 1.0)};
+        const CraterLayout craters = MakeCraterLayout(m_radius, shape.craters);
+        m_craterScale = craters.scale;
+        m_craterShift = craters.shift;
+        m_craterOctaves = craters.octaves;
+        m_craterDepth = craters.depth;
+        m_craterRise = craters.rise;
         // Environ 1,5 m entre deux sommets au niveau le plus fin.
         const double faceEdge = 0.5 * std::numbers::pi * m_radius;
         const double levels = std::ceil(std::log2(faceEdge / (1.5 * static_cast<double>(TileQuads))));
@@ -328,7 +429,9 @@ namespace Flux::Planetology {
         const double octaves = std::floor(std::log2(wavelength / (2.0 * spacing))) + 1.0;
         // Une octave d'une couche à la largeur des montagnes compte comme m_shift octaves plus loin, d'une couche Zone
         // comme m_zoneShift (voir Fbm).
-        return static_cast<std::uint32_t>(std::clamp(octaves, 1.0, static_cast<double>(MaxOctaves + std::max({m_shift, m_zoneShift, m_continentShift}))));
+        const std::uint32_t most = std::max(MaxOctaves + std::max({m_shift, m_zoneShift, m_continentShift}),
+                                            m_craterOctaves > 0 ? m_craterShift + m_craterOctaves : 0u);
+        return static_cast<std::uint32_t>(std::clamp(octaves, 1.0, static_cast<double>(most)));
     }
 
     Terrain::Sample Terrain::Noise(const Math::Vector3d& p, bool withGradient) const {
@@ -573,6 +676,78 @@ namespace Flux::Planetology {
         return warp;
     }
 
+    namespace {
+        // Profil d'un cratère de rayon `radius` (m) à x rayons de son centre (m) : cuvette jusqu'au rebord (x = 1), puis
+        // éjectas en 1 / x³, nuls à CraterReach. age : 0 (frais) à 1 (le plus usé que permet `wear`).
+        double CraterProfile(const Terrain::ShapeConstants& shape, double x, double radius, double age) {
+            const double complex = shape.craterComplex;
+            const double size = radius > complex ? 2.0 * complex * std::sqrt(radius / complex) : 2.0 * radius;
+            const double worn = shape.craterWear * age;
+            const double depth = shape.craterDepth * size * (1.0 - CraterWorn * worn);
+            const double rim = shape.craterRim * size * (1.0 - worn);
+            if (x >= 1.0) {
+                const double tail = 1.0 / (CraterReach * CraterReach * CraterReach);
+                return rim * (1.0 / (x * x * x) - tail) / (1.0 - tail);
+            }
+            const double grown = std::clamp(radius / complex - 1.0, 0.0, 1.0); // 0 : cratère simple, 1 : complexe
+            const double floor = CraterFloor * grown;
+            const double s = std::max(x - floor, 0.0) / (1.0 - floor);
+            const double peak = std::max(1.0 - x / CraterPeakRadius, 0.0);
+            return rim - depth + depth * s * s + CraterPeak * grown * depth * peak * peak;
+        }
+    }
+
+    double Terrain::Craters(const Math::Vector3d& direction, std::uint32_t octaves) const {
+        const std::uint32_t last = std::min(m_craterOctaves, octaves > m_craterShift ? octaves - m_craterShift : 0u);
+        const Layer& layer = Layers[CraterField];
+        const auto& P = m_permutation;
+        double sum = 0.0;
+        double frequency = BaseFrequency * m_craterScale;
+        double density = m_shape.craterChance;
+        Math::Vector3d p = direction * frequency + layer.offset;
+        for (std::uint32_t k = 0; k < last; ++k) {
+            const double cell = m_radius / frequency; // m
+            for (std::uint32_t copy = 0; copy < CraterCopies && density > copy; ++copy) {
+                const double c = copy;
+                const Math::Vector3d shift = CraterCopyShift * c;
+                const Math::Vector3d q = p + Math::Vector3d{shift.x - std::floor(shift.x), shift.y - std::floor(shift.y), shift.z - std::floor(shift.z)};
+                // Les 2 x 2 x 2 mailles dont un point peut tomber à moins d'une demi-maille de celui-ci.
+                const Math::Vector3d base{std::floor(q.x - 0.5), std::floor(q.y - 0.5), std::floor(q.z - 0.5)};
+                const Math::Vector3d f = q - base;
+                const Math::Vector3d at = base + CraterCopyCell * c;
+                const auto cx = static_cast<std::int64_t>(at.x), cy = static_cast<std::int64_t>(at.y), cz = static_cast<std::int64_t>(at.z);
+                const double threshold = std::min(density - c, 1.0) * 256.0;
+                for (int i = 0; i <= 1; ++i) {
+                    for (int j = 0; j <= 1; ++j) {
+                        for (int l = 0; l <= 1; ++l) {
+                            const std::uint32_t h = P[P[P[(cx + i) & 255] + ((cy + j) & 255)] + ((cz + l) & 255)];
+                            if (P[h + 3] >= threshold) {
+                                continue;
+                            }
+                            const auto random = [&](std::uint32_t index) { return P[h + index] / 255.0; };
+                            // Du point au centre du cratère (en mailles) : sa part le long de la verticale décide s'il est
+                            // dans la couche, le reste donne la distance.
+                            const Math::Vector3d e = Math::Vector3d{double(i) + random(0), double(j) + random(1), double(l) + random(2)} - f;
+                            const double radial = Math::Dot(e, direction);
+                            const double slab = SmoothStep(CraterSlabOuter, CraterSlabInner, std::abs(radial));
+                            const Math::Vector3d flat = e - direction * radial;
+                            const double radius = CraterRadius * (0.5 + 0.5 * random(4));
+                            const double r2 = Math::Dot(flat, flat);
+                            if (slab <= 0.0 || r2 >= radius * radius * (CraterReach * CraterReach)) {
+                                continue;
+                            }
+                            sum += slab * CraterProfile(m_shape, std::sqrt(r2) / radius, radius * cell, random(5));
+                        }
+                    }
+                }
+            }
+            frequency *= 2.0;
+            p *= 2.0;
+            density = std::min(density * m_shape.craterGain, static_cast<double>(CraterCopies));
+        }
+        return sum;
+    }
+
     Terrain::WarpedPoints Terrain::GetWarpedPoints(const Math::Vector3d& direction) const {
         // Grandes formes, puis montagnes et collines.
         const Math::Vector3d large = direction + Warp(direction, WarpLargeField, m_shape.warpLarge);
@@ -580,11 +755,13 @@ namespace Flux::Planetology {
     }
 
     double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones) const {
+        // Cratères : en mètres, ajoutés au relief (une lune peut n'avoir qu'eux).
+        const double craters = m_craterOctaves > 0 ? Craters(direction, octaves) : 0.0;
         if (m_relief <= 0.0) {
             if (zones) {
                 *zones = {};
             }
-            return 0.0;
+            return craters;
         }
         const double toSlope = m_relief / m_radius; // une unité de hauteur (fraction du relief) par radian, en m/m
         const auto [large, small] = GetWarpedPoints(direction);
@@ -619,7 +796,7 @@ namespace Flux::Planetology {
         const double height = -0.4 + 0.45 * land + 0.15 * continents
                             + MountainWeight * mountainZone * (ChainBase + PeakHeight * peaks) + gullies
                             + m_shape.hillWeight * hillZone * hills + roughness * detail;
-        return m_relief * std::clamp(height, -1.0, 1.0);
+        return m_relief * std::clamp(height, -1.0, 1.0) + craters;
     }
 
     double Terrain::GetOmittedRelief(std::uint32_t octaves) const {
@@ -641,7 +818,13 @@ namespace Flux::Planetology {
         const double omitted = 0.6 * layerTail(Continents) + MountainWeight * PeakHeight * layerTail(PeakField) + m_shape.hillWeight * layerTail(Hills)
                              + 2.0 * m_shape.gullyAmplitude * layerTail(GullyField)
                              + (m_shape.detailPlains + m_shape.detailHills + m_shape.detailMountains) * layerTail(Detail);
-        return m_relief * omitted;
+        // Cratères omis, chacun à son plus grand (en mètres).
+        double craters = 0.0;
+        for (std::uint32_t k = octaves > m_craterShift ? octaves - m_craterShift : 0u; k < m_craterOctaves; ++k) {
+            const double diameter = 2.0 * CraterRadius * m_radius / (BaseFrequency * m_craterScale * std::ldexp(1.0, static_cast<int>(k)));
+            craters += (m_shape.craterDepth + m_shape.craterRim) * diameter;
+        }
+        return m_relief * omitted + craters;
     }
 
     double GetSplitDistance(const Terrain& terrain, std::uint32_t level, double splitFactor) {
@@ -650,7 +833,8 @@ namespace Flux::Planetology {
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {
-        return GetTileBounds(terrain, key, terrain.GetRadius() - 1.5 * terrain.GetRelief() - 1.0, terrain.GetRadius() + terrain.GetRelief());
+        return GetTileBounds(terrain, key, terrain.GetRadius() - 1.5 * terrain.GetRelief() - terrain.GetCraterDepth() - 1.0,
+                             terrain.GetRadius() + terrain.GetRelief() + terrain.GetCraterRise());
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key, double lowest, double highest) {
@@ -822,7 +1006,8 @@ namespace Flux::Planetology {
         inputs.axisS = float4(f.s, terrain.GetRelief());
         inputs.axisT = float4(f.t, depth);
         inputs.options = {octaves, key.level > 0 ? terrain.GetOctaves(key.level - 1u) : octaves, key.level,
-                           terrain.GetScaleShift() | terrain.GetZoneShift() << 8 | terrain.GetContinentShift() << 16};
+                           terrain.GetScaleShift() | terrain.GetZoneShift() << 8 | terrain.GetContinentShift() << 16
+                               | terrain.GetCraterShift() << 24};
         const WetnessLayout wetness = GetWetnessLayout(terrain, key.level);
         inputs.wetness = {wetness.octaves, wetness.side, std::bit_cast<std::uint32_t>(wetness.fade), 0};
         const Terrain::ShapeConstants& shape = terrain.GetShapeConstants();
@@ -830,7 +1015,9 @@ namespace Flux::Planetology {
         inputs.shape = {{{narrow(shape.chainStart), narrow(shape.chainEnd), narrow(shape.hillStart), narrow(shape.hillEnd)},
                          {narrow(shape.detailPlains), narrow(shape.detailHills), narrow(shape.detailMountains), narrow(shape.hillWeight)},
                          {narrow(shape.gullyAmplitude), narrow(shape.erosion), narrow(shape.warpLarge), narrow(shape.warpSmall)},
-                         {narrow(shape.peakChance), 0.0f, 0.0f, 0.0f}}};
+                         {narrow(shape.peakChance), narrow(shape.craterChance), narrow(shape.craterGain),
+                          narrow(terrain.GetCraterOctaves())},
+                         {narrow(shape.craterDepth), narrow(shape.craterRim), narrow(shape.craterWear), narrow(shape.craterComplex)}}};
         for (std::uint32_t i = 0; i < TileGpuInputs::Columns; ++i) {
             const double a = tangent(x0 + static_cast<std::int64_t>(i) - 2);
             const double b = tangent(y0 + static_cast<std::int64_t>(i) - 2);

@@ -21,6 +21,7 @@ int main() {
         {"animation squelettique", RunAnimationTests},
         {"fils de travail (JobSystem)", RunJobSystemTests},
         {"espèces et biomes des arbres", RunVegetationTests},
+        {"cratères des planètes", RunCraterTests},
         {"spectre des vagues de l'océan", RunOceanWavesTests},
         {"simulation sans rendu", RunSimulationTests},
         {"jeu simulé (GameSim)", RunGameSimTests},

@@ -25,6 +25,7 @@ bool RunImageTests();
 bool RunPhysicsTests();
 bool RunAnimationTests();
 bool RunVegetationTests();
+bool RunCraterTests();
 bool RunOceanWavesTests();
 bool RunSimulationTests();
 bool RunGameSimTests();
