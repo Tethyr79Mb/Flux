@@ -136,7 +136,7 @@ namespace Flux {
         VegetationDistance GetVegetationDistance() const { return m_vegetationDistance; }
         void SetModelDetail(ModelDetail detail) { m_modelDetail = detail; }
         ModelDetail GetModelDetail() const { return m_modelDetail; }
-        // Hauteur de l'image rendue (pixels), pour l'écart à l'écran des niveaux de détail ; avant Prepare.
+        // Hauteur de l'image affichée (pixels, après FSR), pour l'écart à l'écran des niveaux de détail ; avant Prepare.
         void SetViewHeight(float pixels) { m_viewHeight = pixels; }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
         // cible (le graphe de rendu la rend ensuite lisible pour la scène). Une étape par cascade, chacune

@@ -486,7 +486,9 @@ namespace Flux {
                 workers->Run(tracersDone, prepareTracers);
             }
             meshes->SetJobSystem(workers);
-            meshes->SetViewHeight(renderHeight);
+            // Niveaux de détail comptés en pixels de l'image affichée : FSR y reconstruit les détails, la taille de
+            // rendu (1,7 fois plus petite en « Équilibré ») simplifiait les modèles trop près.
+            meshes->SetViewHeight(static_cast<float>(frame.scene3d.height));
             meshes->Prepare(scene, camera, aspect, hidden, skyLighting, temporal, assetsDirectory, frameIndex);
             const MeshRenderer::PrepareTimes& parts = meshes->GetPrepareTimes();
             timings.prepareEntities = parts.entities;
