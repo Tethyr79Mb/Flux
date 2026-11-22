@@ -13,10 +13,10 @@
 
 static const uint ListCount = 8;     // VegetationRenderer::ListCount
 static const float ImpostorFadeShare = 0.3;  // VegetationRenderer::ImpostorFadeShare
-static const uint MaxSpecies = 8;    // VegetationRenderer::MaxSpecies
-static const uint MaxCommands = 128; // VegetationRenderer::MaxCommands
+static const uint MaxSpecies = 16;   // VegetationRenderer::MaxSpecies
+static const uint MaxCommands = 256; // VegetationRenderer::MaxCommands
 static const uint SpeciesLists = ListCount * MaxSpecies;
-static const uint TreesPerCell = 64 * 64;
+static const uint TreesPerCell = 2 * 64 * 64; // VegetationRenderer::TreesPerPlain
 static const uint GroupSize = 256;
 
 // Doit correspondre à VegetationRenderer::CullFrame.
@@ -37,7 +37,7 @@ struct CullFrame
     uint4 capacities[2];
     uint4 commandLists[MaxCommands / 4]; // liste x MaxSpecies + espèce de chaque commande
     uint4 counts;            // x : commandes ; y : plaines
-    float4 forest;           // x, y : tranche des ombres des forêts au loin (m)
+    float4 forest;           // x, y : tranche des ombres des forêts au loin (m) ; z : fin du sous-bois (m)
     // Pyramide de profondeur de l'image précédente (OcclusionCulling) : sa vue sans décalage, le déplacement de la
     // caméra depuis (relatif à la caméra -> relatif à l'ancienne), sa taille (x, y : pixels ; z : niveaux ; w : 0 sans
     // pyramide, rien n'est caché) et le premier texel de chaque niveau.
@@ -221,8 +221,11 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float4 placed = trees[at + 0];
         const float4 up = trees[at + 1];
         const float3 position = cell.origin.xyz + Rotate(planet, placed.xyz);
-        const uint species = min(uint(up.w / 8.0), MaxSpecies - 1);
-        const float angle = 0.5 * (up.w - float(species) * 8.0);
+        // Espèce, + 16 pour le sous-bois (computeTrees), qui s'arrête plus près.
+        const uint packed = uint(up.w / 8.0);
+        const uint species = min(packed & 15u, MaxSpecies - 1);
+        const float angle = 0.5 * (up.w - float(packed) * 8.0);
+        const float end = packed >= 16u ? frame.forest.z : distances.z;
         const float4 sphere = frame.spheres[species];
         const float tint = (Random(placed.xyz + 0.37) - 0.5) * frame.tints[species / 4][species % 4] * 2.0;
         const float3 normal = Rotate(planet, up.xyz); // haut de l'arbre
@@ -238,7 +241,7 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float3 center = position + Rotate(rotation, sphere.xyz * scale);
         const float radius = sphere.w * scale;
         const float distance = length(center);
-        if (distance - radius > distances.z) {
+        if (distance - radius > end) {
             continue;
         }
         const bool inView = InView(center, radius);
@@ -255,7 +258,7 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
                 // Au loin, l'imposteur (vertexImpostor, deux triangles) : tous gardés, aucun arbre n'apparaît en
                 // approchant (on n'en gardait qu'une part, qui grandissait avec la proximité). Près de la portée, ils
                 // rapetissent jusqu'à disparaître ; la couleur des forêts sur le sol (fragmentPlanet) prend le relais.
-                const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
+                const float shrink = saturate((end - distance) / max(0.15 * end, 1.0));
                 Append(2, species, tint, position, scale * shrink, rotation);
             }
         } else if (distance + radius > frame.forest.x && distance - radius < frame.forest.y) {
@@ -266,7 +269,7 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             const float top = dot(center - position, normal) + radius;
             const float length = sunHeight > 0.0 ? min(frame.toSun.w, 2.0 * top / sunHeight) : frame.toSun.w;
             if (ReachesSlice(center, radius, length, frame.forest.x, frame.forest.y)) {
-                const float shrink = saturate((distances.z - distance) / (0.15 * distances.z));
+                const float shrink = saturate((end - distance) / max(0.15 * end, 1.0));
                 Append(7, species, tint, position, scale * shrink, rotation);
             }
         }

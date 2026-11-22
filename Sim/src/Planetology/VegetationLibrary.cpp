@@ -136,58 +136,75 @@ namespace Flux::Planetology {
                 Log::Error("Végétation : {} : {}", path, biome.error());
                 continue;
             }
-            std::array<std::uint32_t, 4> entries{};
-            std::array<float, 4> weights{};
+            // Espèces d'une liste du biome : leur première variante | nombre << 8 et leurs parts cumulées (la
+            // dernière à 1) ; total : la somme des parts (0 : aucune espèce lue). canopy : couleur moyenne des cimes.
+            struct Shares
+            {
+                std::array<std::uint32_t, 4> entries{};
+                std::array<float, 4> cumulative{1.0f, 1.0f, 1.0f, 1.0f};
+                float total = 0.0f;
+            };
+            const auto gather = [&](const std::vector<VegetationBiome::Share>& list, Math::LinearColor* canopy) {
+                Shares shares;
+                std::array<float, 4> weights{};
+                std::uint32_t used = 0;
+                for (const VegetationBiome::Share& share : list) {
+                    auto found = speciesFiles.find(share.species);
+                    if (found == speciesFiles.end()) {
+                        std::string speciesText;
+                        if (!read(share.species, speciesText)) {
+                            continue;
+                        }
+                        auto species = ParseTreeSpecies(speciesText);
+                        if (!species) {
+                            Log::Error("Végétation : {} : {}", share.species, species.error());
+                            continue;
+                        }
+                        found = speciesFiles.emplace(share.species, std::move(*species)).first;
+                    }
+                    const TreeSpecies& species = found->second;
+                    auto first = placed.find(share.species);
+                    if (first == placed.end()) {
+                        if (set.species.size() + species.variants.size() > VegetationSet::MaxSpecies) {
+                            Log::Error("Végétation : {} variantes d'arbres au plus par planète, {} ignorée", VegetationSet::MaxSpecies, share.species);
+                            continue;
+                        }
+                        first = placed.emplace(share.species, static_cast<std::uint32_t>(set.species.size())).first;
+                        for (const TreeSpecies::Variant& variant : species.variants) {
+                            set.species.push_back({variant, species.minScale, species.maxScale, species.maxSlope, species.tint,
+                                                   species.trunkRadius, species.trunkHeight, species.spacing});
+                        }
+                    }
+                    shares.entries[used] = first->second | (static_cast<std::uint32_t>(species.variants.size()) << 8);
+                    weights[used] = share.share;
+                    if (canopy) {
+                        canopy->r += species.canopyColor.r * share.share;
+                        canopy->g += species.canopyColor.g * share.share;
+                        canopy->b += species.canopyColor.b * share.share;
+                    }
+                    ++used;
+                }
+                shares.total = std::accumulate(weights.begin(), weights.end(), 0.0f);
+                if (shares.total > 0.0f) {
+                    float sum = 0.0f;
+                    for (std::uint32_t s = 0; s < used; ++s) {
+                        sum += weights[s];
+                        shares.cumulative[s] = s + 1 == used ? 1.0f : sum / shares.total;
+                    }
+                }
+                for (std::uint32_t s = used; s < 4; ++s) {
+                    shares.entries[s] = used > 0 ? shares.entries[used - 1] : 0u;
+                }
+                return shares;
+            };
             Math::LinearColor canopy{0.0f, 0.0f, 0.0f, 1.0f};
-            std::uint32_t used = 0;
-            for (const VegetationBiome::Share& share : biome->species) {
-                auto found = speciesFiles.find(share.species);
-                if (found == speciesFiles.end()) {
-                    std::string speciesText;
-                    if (!read(share.species, speciesText)) {
-                        continue;
-                    }
-                    auto species = ParseTreeSpecies(speciesText);
-                    if (!species) {
-                        Log::Error("Végétation : {} : {}", share.species, species.error());
-                        continue;
-                    }
-                    found = speciesFiles.emplace(share.species, std::move(*species)).first;
-                }
-                const TreeSpecies& species = found->second;
-                auto first = placed.find(share.species);
-                if (first == placed.end()) {
-                    if (set.species.size() + species.variants.size() > VegetationSet::MaxSpecies) {
-                        Log::Error("Végétation : {} variantes d'arbres au plus par planète, {} ignorée", VegetationSet::MaxSpecies, share.species);
-                        continue;
-                    }
-                    first = placed.emplace(share.species, static_cast<std::uint32_t>(set.species.size())).first;
-                    for (const TreeSpecies::Variant& variant : species.variants) {
-                        set.species.push_back({variant, species.minScale, species.maxScale, species.maxSlope, species.tint,
-                                               species.trunkRadius, species.trunkHeight, species.spacing});
-                    }
-                }
-                entries[used] = first->second | (static_cast<std::uint32_t>(species.variants.size()) << 8);
-                weights[used] = share.share;
-                canopy.r += species.canopyColor.r * share.share;
-                canopy.g += species.canopyColor.g * share.share;
-                canopy.b += species.canopyColor.b * share.share;
-                ++used;
-            }
-            const float total = std::accumulate(weights.begin(), weights.end(), 0.0f);
+            const Shares trees = gather(biome->species, &canopy);
+            const Shares understory = gather(biome->understory, nullptr);
             // Sans espèce : le biome prend sa place (un désert), sans arbres.
-            const float density = total > 0.0f ? biome->density : 0.0f;
-            std::array<float, 4> cumulative{1.0f, 1.0f, 1.0f, 1.0f};
-            if (total > 0.0f) {
-                float sum = 0.0f;
-                for (std::uint32_t s = 0; s < used; ++s) {
-                    sum += weights[s];
-                    cumulative[s] = s + 1 == used ? 1.0f : sum / total;
-                }
-                canopy = {canopy.r / total, canopy.g / total, canopy.b / total, 1.0f};
-            }
-            for (std::uint32_t s = used; s < 4; ++s) {
-                entries[s] = used > 0 ? entries[used - 1] : 0u;
+            const float density = trees.total > 0.0f ? biome->density : 0.0f;
+            const float understoryDensity = understory.total > 0.0f ? biome->understoryDensity : 0.0f;
+            if (trees.total > 0.0f) {
+                canopy = {canopy.r / trees.total, canopy.g / trees.total, canopy.b / trees.total, 1.0f};
             }
             set.biomes.push_back({{biome->plains, biome->hills, biome->mountains, biome->cover},
                                     {biome->minAltitude * 0.01f, biome->maxAltitude * 0.01f, biome->minTemperature, biome->maxTemperature},
@@ -195,9 +212,12 @@ namespace Flux::Planetology {
                                     {canopy.r, canopy.g, canopy.b, biome->grove},
                                     {biome->granite, biome->limestone, biome->sandstone, biome->basalt},
                                     // Bornes ouvertes au-delà de 0 et 1 : la bande fondue (BiomeFit) ne rogne pas un sol à nu ou épais.
-                                    {biome->minSoil > 0.0f ? biome->minSoil : -1.0f, biome->maxSoil < 1.0f ? biome->maxSoil : 2.0f, 0.0f, 0.0f}});
-            set.biomeSpecies.push_back(entries);
-            set.biomeShares.push_back(cumulative);
+                                    {biome->minSoil > 0.0f ? biome->minSoil : -1.0f, biome->maxSoil < 1.0f ? biome->maxSoil : 2.0f,
+                                     understoryDensity, biome->understoryScale}});
+            set.biomeSpecies.push_back(trees.entries);
+            set.biomeShares.push_back(trees.cumulative);
+            set.understorySpecies.push_back(understory.entries);
+            set.understoryShares.push_back(understory.cumulative);
             set.biomeSpacing.push_back(biome->spacing);
         }
     }

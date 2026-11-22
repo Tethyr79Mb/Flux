@@ -59,6 +59,15 @@ namespace FluxEditor {
             return false;
         }
 
+        // Espèces des deux étages du biome qui désignent `from` : réécrites vers `to`.
+        void ReplaceShares(Flux::Planetology::VegetationBiome& biome, const std::string& from, const std::string& to) {
+            for (auto* shares : {&biome.species, &biome.understory}) {
+                for (Flux::Planetology::VegetationBiome::Share& share : *shares) {
+                    ReplacePath(share.species, from, to);
+                }
+            }
+        }
+
         std::optional<std::filesystem::path> MovedPath(const std::filesystem::path& path, const std::filesystem::path& from,
                                                        const std::filesystem::path& to) {
             const std::filesystem::path relative = path.lexically_normal().lexically_relative(from.lexically_normal());
@@ -382,47 +391,66 @@ namespace FluxEditor {
             ui.SetItemTooltip("Les espèces du biome poussent par taches de cette taille, une espèce chacune");
         }
         if (ui.CollapsingHeader("Espèces")) {
-            float total = 0.0f;
-            for (const VegetationBiome::Share& share : biome.species) {
-                total += share.share;
-            }
-            std::optional<std::size_t> removed;
-            for (std::size_t s = 0; s < biome.species.size(); ++s) {
-                VegetationBiome::Share& share = biome.species[s];
-                ui.PushId(s);
-                changed |= DrawAsset(engine, ui, "Espèce", AssetType::Species, share.species);
-                changed |= ui.DragFloat("Part", share.share, 0.5f, 0.0, 1000.0, 0);
-                ui.SetItemTooltip(std::format("{:.0f} % des arbres", total > 0.0f ? 100.0f * share.share / total : 0.0f));
-                if (ui.Button("Modifier l'espèce")) {
-                    if (const Project* project = engine.GetProject()) {
-                        m_openNext = project->assetsDirectory / Platform::PathFromUtf8(share.species);
-                    }
-                }
-                ui.SameLine();
-                if (ui.Button("Retirer")) {
-                    removed = s;
-                }
-                ui.Separator();
-                ui.PopId();
-            }
-            if (removed) {
-                biome.species.erase(biome.species.begin() + static_cast<std::ptrdiff_t>(*removed));
-                changed = true;
-            }
+            changed |= DrawShares(engine, ui, biome.species, "des arbres");
             if (biome.species.empty()) {
                 ui.TextDisabled("Aucune espèce : pas d'arbres.");
             }
-            ui.BeginDisabled(biome.species.size() >= VegetationBiome::MaxSpecies);
-            if (ui.Button("Ajouter une espèce...", UI::Icon::Plus)) {
-                // Choisie d'abord : une espèce sans fichier ne se relirait pas.
-                if (std::optional<std::string> chosen = ChooseAsset(engine, AssetType::Species, "")) {
-                    biome.species.push_back({std::move(*chosen), 50.0f});
-                    changed = true;
+        }
+        if (ui.CollapsingHeader("Sous-bois")) {
+            ui.TextDisabled("Jeunes arbres et buissons, semés entre les arbres sur leur propre grille.");
+            changed |= ui.DragFloat("Densité##sous-bois", biome.understoryDensity, 0.01f, 0.0, 1.0, 2);
+            ui.SetItemTooltip("Part des places occupée dans une forêt (une place par case de 3 à 6 m) ; moins hors des forêts");
+            changed |= ui.DragFloat("Taille##sous-bois", biome.understoryScale, 0.01f, 0.05, 20.0, 2);
+            ui.SetItemTooltip("x la taille de l'espèce (0,3 : un épicéa de 30 m en fait 9)");
+            ui.PushId("sous-bois");
+            changed |= DrawShares(engine, ui, biome.understory, "du sous-bois");
+            ui.PopId();
+            if (biome.understory.empty()) {
+                ui.TextDisabled("Aucune espèce : pas de sous-bois.");
+            }
+        }
+        return changed;
+    }
+
+    bool VegetationPanel::DrawShares(Engine& engine, UI::Context& ui, std::vector<VegetationBiome::Share>& shares, const char* noun) {
+        bool changed = false;
+        float total = 0.0f;
+        for (const VegetationBiome::Share& share : shares) {
+            total += share.share;
+        }
+        std::optional<std::size_t> removed;
+        for (std::size_t s = 0; s < shares.size(); ++s) {
+            VegetationBiome::Share& share = shares[s];
+            ui.PushId(s);
+            changed |= DrawAsset(engine, ui, "Espèce", AssetType::Species, share.species);
+            changed |= ui.DragFloat("Part", share.share, 0.5f, 0.0, 1000.0, 0);
+            ui.SetItemTooltip(std::format("{:.0f} % {}", total > 0.0f ? 100.0f * share.share / total : 0.0f, noun));
+            if (ui.Button("Modifier l'espèce")) {
+                if (const Project* project = engine.GetProject()) {
+                    m_openNext = project->assetsDirectory / Platform::PathFromUtf8(share.species);
                 }
             }
-            ui.EndDisabled();
-            ui.SetItemTooltip(std::format("{} espèces au plus", VegetationBiome::MaxSpecies));
+            ui.SameLine();
+            if (ui.Button("Retirer")) {
+                removed = s;
+            }
+            ui.Separator();
+            ui.PopId();
         }
+        if (removed) {
+            shares.erase(shares.begin() + static_cast<std::ptrdiff_t>(*removed));
+            changed = true;
+        }
+        ui.BeginDisabled(shares.size() >= VegetationBiome::MaxSpecies);
+        if (ui.Button("Ajouter une espèce...", UI::Icon::Plus)) {
+            // Choisie d'abord : une espèce sans fichier ne se relirait pas.
+            if (std::optional<std::string> chosen = ChooseAsset(engine, AssetType::Species, "")) {
+                shares.push_back({std::move(*chosen), 50.0f});
+                changed = true;
+            }
+        }
+        ui.EndDisabled();
+        ui.SetItemTooltip(std::format("{} espèces au plus", VegetationBiome::MaxSpecies));
         return changed;
     }
 
@@ -493,9 +521,7 @@ namespace FluxEditor {
             const VegetationBiome shown = m_biome;
             const auto replace = [&](std::string& text) {
                 if (Read(text)) {
-                    for (VegetationBiome::Share& share : m_biome.species) {
-                        ReplacePath(share.species, oldReference, newReference);
-                    }
+                    ReplaceShares(m_biome, oldReference, newReference);
                     text = Write();
                 }
             };
@@ -504,9 +530,7 @@ namespace FluxEditor {
             }
             replace(m_saved);
             m_biome = shown;
-            for (VegetationBiome::Share& share : m_biome.species) {
-                ReplacePath(share.species, oldReference, newReference);
-            }
+            ReplaceShares(m_biome, oldReference, newReference);
         }
         std::error_code error;
         m_savedTime = std::filesystem::last_write_time(m_path, error);

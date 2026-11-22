@@ -53,6 +53,11 @@ namespace Flux::Planetology {
             float share = 1.0f;
         };
         std::vector<Share> species; // MaxSpecies au plus
+        // Sous-bois : un second étage semé sur sa propre grille entre les arbres (jeunes arbres, buissons), MaxSpecies
+        // espèces au plus. Les mêmes fichiers d'espèces que les arbres : un jeune épicéa est l'épicéa à petite échelle.
+        float understoryDensity = 0.0f; // part des places occupée dans une forêt (moins hors des forêts)
+        float understoryScale = 0.3f;   // taille, x celle de l'espèce
+        std::vector<Share> understory;
     };
 
     // Lecture : valeurs absentes prises par défaut, valeurs hors limites ramenées dedans.
