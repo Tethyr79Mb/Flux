@@ -1942,11 +1942,6 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
     surface.toEye = normalize(-v.worldPosition);
     surface.f0 = float3(0.04);
     float occlusion = 1.0;
-    // Terre sous les brins (Grass.slang) : là où ils sont serrés (shape.w : portée de l'herbe, 0 : aucune), la couche
-    // d'herbe du sol devient de la terre. Plus loin, où ils s'éclaircissent (au-delà de 20 m), elle repasse vers le pré :
-    // la terre se verrait par plaques entre des brins clairsemés.
-    const float grassRange = planet.forest.y > 0.0 ? planet.shape.w : 0.0;
-    const float underBlades = grassRange > 0.0 ? smoothstep(min(50.0, grassRange), min(20.0, 0.5 * grassRange), distance) : 0.0;
     if (planet.climate.w > 0.0) {
         float weights[GroundLayers] = { 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 };
         CoverGround(weights, GroundGrass, grassy * (1.0 - patches));
@@ -1955,9 +1950,6 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
         // Sans zones (une lune), la roche partout est l'image de la lune.
         CoverGround(weights, planet.beach.z > 0.0 ? GroundMoon : GroundRock, rock);
         CoverGround(weights, GroundSnow, snow);
-        const float underGrass = weights[GroundGrass] * underBlades;
-        weights[GroundGrass] -= underGrass;
-        weights[GroundSoil] += underGrass;
         // Projections : pesées par l'orientation (puissance 4 : transitions courtes), deux au plus (la plus faible
         // est retirée des autres, comme les sommets du pavage), sans celles de profil.
         float3 blend = pow(abs(localNormal), float3(4.0));
@@ -2039,9 +2031,8 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
                                            temperature, foot, snow, input.geology.xyz, surface.roughness);
     }
-    // Sous l'herbe en brins (Grass.slang, avec la végétation) : de près, la terre (textures du sol) assombrie comme un
-    // humus à l'ombre des brins ; au loin, et sans textures, la couleur moyenne du pré (pas de limite là où les brins
-    // s'arrêtent).
+    // Sous l'herbe en brins (Grass.slang, avec la végétation) : la couleur moyenne du pré, la même de près et au loin (pas
+    // de limite là où les brins s'arrêtent), avec le motif de l'image d'herbe s'il y en a.
     if (planet.forest.y > 0.0) {
         // Face au soleil, on voit les brins par leur côté à l'ombre : le pré est plus sombre que de dos. Au loin, on ne voit
         // plus que leurs pointes claires : il s'éclaircit.
@@ -2050,9 +2041,17 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
                             * GrassMeadowShade * lerp(1.0, 0.6, againstSun) * lerp(1.0, 1.3, smoothstep(20.0, 150.0, distance))
                             * (planet.climate.w > 0.0 ? params.color.rgb : float3(1.0));
         const float meadowShare = saturate(GrassShare(cover) * 1.5);
-        // Brun chaud et sombre d'une terre de prairie (la texture de terre est plutôt grise et minérale).
-        const float3 humus = surface.diffuse * float3(0.46, 0.38, 0.28) * lerp(1.0, 0.6, againstSun);
-        surface.diffuse = lerp(surface.diffuse, planet.climate.w > 0.0 ? lerp(meadow, humus, underBlades) : meadow, meadowShare);
+        float3 underGrass = meadow;
+        if (planet.climate.w > 0.0) {
+            // La couleur du pré à toute distance, avec le motif de l'image d'herbe (sa clarté rapportée à sa moyenne).
+            // De près, une terre brune (image de terre) sous les brins faisait un anneau marron autour de la caméra,
+            // vert au-delà de 20 à 50 m : il suivait la caméra et disparaissait en prenant de l'altitude.
+            const float3 grassAverage = GrassBaseColor(planet) * GrassDryTint(temperature, macro, 0.0) * (0.9 + macro * 0.4)
+                                      * params.color.rgb;
+            const float3 luma = float3(0.2126, 0.7152, 0.0722);
+            underGrass *= clamp(dot(surface.diffuse, luma) / max(dot(grassAverage, luma), 1.0e-4), 0.25, 2.5);
+        }
+        surface.diffuse = lerp(surface.diffuse, underGrass, meadowShare);
         // Ni reflet ni lustre : à contre-jour, le reflet rasant du sol faisait une bande claire entre les brins
         // et au-delà de leur portée.
         surface.f0 = lerp(surface.f0, float3(0.01), meadowShare);
