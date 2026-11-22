@@ -273,8 +273,6 @@ namespace Flux {
         std::optional<Math::Box3f> LoadModel(const std::filesystem::path& path);
         // Noms des animations du modèle, dans l'ordre du fichier (chargé au besoin) ; vide s'il n'en a pas.
         std::vector<std::string> GetAnimationNames(const std::filesystem::path& path);
-        // Durée d'une animation de ce modèle, en secondes ; 0 si le modèle n'est pas chargé ou ne l'a pas.
-        float GetAnimationDuration(const std::filesystem::path& path, std::string_view name);
 
         const RenderTimings& GetTimings() const;
         // Temps du GPU étape par étape pour la prochaine image : à demander à chaque image où on les affiche (panneau

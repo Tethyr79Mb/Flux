@@ -1512,12 +1512,6 @@ namespace Flux {
         return names;
     }
 
-    float Renderer::GetAnimationDuration(const std::filesystem::path& path, std::string_view name) {
-        const GpuModel* model = m_impl->meshes->GetModels().Find(path);
-        const ModelAnimation* animation = model ? FindAnimation(model->skeleton, name) : nullptr;
-        return animation ? animation->duration : 0.0f;
-    }
-
     bool Renderer::RequestCapture() {
         return m_impl->device->RequestCapture();
     }

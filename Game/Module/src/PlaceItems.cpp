@@ -459,10 +459,9 @@ namespace Game {
             if (body != NullEntity) {
                 scene.Add<ModelComponent>(agent).model = scene.Get<ModelComponent>(body).model;
                 if (const auto* animator = scene.TryGet<AnimatorComponent>(body)) {
-                    AnimatorComponent idle;
-                    idle.animation = animator->idleAnimation.empty() ? animator->animation : animator->idleAnimation;
-                    idle.idleAnimation = idle.animation;
-                    scene.Add<AnimatorComponent>(agent, std::move(idle));
+                    // Même graphe : immobile derrière son comptoir, il y prend l'état de repos.
+                    scene.Add<AnimatorComponent>(agent, AnimatorComponent{.graph = animator->graph, .animation = animator->animation,
+                                                                          .speed = animator->speed, .loop = animator->loop});
                 }
             } else {
                 const Entity cube = scene.CreateEntity("Corps", agent);

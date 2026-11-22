@@ -25,12 +25,13 @@ namespace Flux {
     // Instant d'une animation : ramené dans sa durée (boucle), ou borné à ses extrémités.
     FLUX_SIM_API float AnimationTime(const ModelAnimation& animation, double time, bool loop);
 
-    // Une animation à un instant ; animation nulle : la pose de repos.
+    // Une animation à un instant, et sa part dans un mélange ; animation nulle : la pose de repos.
     struct AnimationSample
     {
         const ModelAnimation* animation = nullptr;
         double time = 0.0; // secondes
         bool loop = true;
+        float weight = 1.0f;
     };
 
     // Calcule la pose d'un squelette. Garde ses tableaux d'une fois sur l'autre : aucune allocation une fois rodé.
@@ -38,9 +39,10 @@ namespace Flux {
         public:
         // Pose de sample, puis les matrices des os (monde du modèle x inverse de liaison), une par os, telles que le GPU
         // les applique aux sommets.
-        void Evaluate(const ModelSkeleton& skeleton, const AnimationSample& sample) { Evaluate(skeleton, sample, sample, 1.0f); }
-        // Fondu de from vers to : weight 0 donne from, 1 donne to (changement d'animation en douceur).
-        void Evaluate(const ModelSkeleton& skeleton, const AnimationSample& from, const AnimationSample& to, float weight);
+        void Evaluate(const ModelSkeleton& skeleton, const AnimationSample& sample) { EvaluateBlend(skeleton, std::span(&sample, 1)); }
+        // Mélange de plusieurs animations selon leurs parts (fondus, mélange marche et course) : moyenne pondérée
+        // des translations et des échelles, des rotations normalisées (nlerp). Aucune part : la pose de repos.
+        void EvaluateBlend(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples);
 
         std::span<const NodePose> GetLocalPoses() const { return m_poses; }
         // Matrice de chaque nœud dans le repère du modèle.
@@ -49,7 +51,7 @@ namespace Flux {
 
         private:
         std::vector<NodePose> m_poses;
-        std::vector<NodePose> m_from;
+        std::vector<NodePose> m_sample;
         std::vector<Math::Matrix4f> m_nodeMatrices;
         std::vector<Math::Matrix4f> m_jointMatrices;
     };

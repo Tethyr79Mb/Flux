@@ -10,10 +10,6 @@ namespace Flux {
         using Math::Vector3f;
         using Math::Slerp;
 
-        Vector3f Lerp(const Vector3f& a, const Vector3f& b, float t) {
-            return a + (b - a) * t;
-        }
-
         // Valeur k (composantes components) d'une courbe ; CubicSpline : element 0 tangente d'entrée, 1 valeur,
         // 2 tangente de sortie.
         struct Keys
@@ -179,19 +175,41 @@ namespace Flux {
         }
     }
 
-    void PoseEvaluator::Evaluate(const ModelSkeleton& skeleton, const AnimationSample& from, const AnimationSample& to,
-                                 float weight) {
+    void PoseEvaluator::EvaluateBlend(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples) {
         const std::size_t nodeCount = skeleton.nodes.size();
-        weight = std::clamp(weight, 0.0f, 1.0f);
-        SamplePose(skeleton, to, m_poses);
-        if (weight < 1.0f) {
-            SamplePose(skeleton, from, m_from);
-            for (std::size_t n = 0; n < nodeCount; ++n) {
-                NodePose& pose = m_poses[n];
-                const NodePose& start = m_from[n];
-                pose.translation = Lerp(start.translation, pose.translation, weight);
-                pose.rotation = Slerp(start.rotation, pose.rotation, weight);
-                pose.scale = Lerp(start.scale, pose.scale, weight);
+        float total = 0.0f;
+        for (const AnimationSample& sample : samples) {
+            total += std::max(sample.weight, 0.0f);
+        }
+        if (samples.size() == 1 || !(total > 0.0f)) {
+            SamplePose(skeleton, samples.size() == 1 ? samples.front() : AnimationSample{}, m_poses);
+        } else {
+            // Somme pondérée, rotations ramenées dans le même hémisphère que la première (q et -q sont la même
+            // rotation), puis normalisées : assez juste entre poses voisines, sans dépendre de l'ordre des parts.
+            m_poses.assign(nodeCount, NodePose{{}, {0.0f, 0.0f, 0.0f, 0.0f}, {}});
+            bool first = true;
+            for (const AnimationSample& sample : samples) {
+                const float weight = std::max(sample.weight, 0.0f) / total;
+                if (weight <= 0.0f) {
+                    continue;
+                }
+                SamplePose(skeleton, sample, m_sample);
+                for (std::size_t n = 0; n < nodeCount; ++n) {
+                    NodePose& pose = m_poses[n];
+                    const NodePose& add = m_sample[n];
+                    pose.translation = pose.translation + add.translation * weight;
+                    pose.scale = pose.scale + add.scale * weight;
+                    const Quaternionf& q = add.rotation;
+                    const float sign = !first && pose.rotation.x * q.x + pose.rotation.y * q.y + pose.rotation.z * q.z + pose.rotation.w * q.w < 0.0f
+                                           ? -weight
+                                           : weight;
+                    pose.rotation = {pose.rotation.x + q.x * sign, pose.rotation.y + q.y * sign, pose.rotation.z + q.z * sign,
+                                     pose.rotation.w + q.w * sign};
+                }
+                first = false;
+            }
+            for (NodePose& pose : m_poses) {
+                pose.rotation = Math::Normalize(pose.rotation);
             }
         }
 

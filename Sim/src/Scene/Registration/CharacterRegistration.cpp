@@ -42,16 +42,24 @@ namespace Flux {
             .Field("acceleration", "Accélération (m/s²)", &CharacterComponent::acceleration,
                    {.speed = 0.1, .min = 0.5, .max = 1000.0, .decimals = 1})
             .Field("player", "Dirigé par le joueur", &CharacterComponent::player);
+        // Anciens animateurs à sept animations nommées (avant les graphes) : le graphe du personnage du jeu, qui joue
+        // les mêmes états avec les mêmes noms.
+        const auto toGraph = [](AnimatorComponent& animator, const std::string& old) {
+            if (animator.graph.empty() && !old.empty()) {
+                animator.graph = std::string(DefaultCharacterGraph);
+            }
+        };
         registry.Register<AnimatorComponent>("animator", "Animation")
-            .Asset("animation", "Animation", &AnimatorComponent::animation, AssetType::Animation)
-            .Asset("idleAnimation", "Au repos", &AnimatorComponent::idleAnimation, AssetType::Animation)
-            .Asset("runAnimation", "En courant", &AnimatorComponent::runAnimation, AssetType::Animation)
-            .Asset("airAnimation", "En l'air", &AnimatorComponent::airAnimation, AssetType::Animation)
-            .Asset("sitDownAnimation", "S'asseoir", &AnimatorComponent::sitDownAnimation, AssetType::Animation)
-            .Asset("seatedAnimation", "Assis", &AnimatorComponent::seatedAnimation, AssetType::Animation)
-            .Asset("standUpAnimation", "Se lever", &AnimatorComponent::standUpAnimation, AssetType::Animation)
+            .Asset("graph", "Graphe", &AnimatorComponent::graph, AssetType::AnimationGraph)
+            .Asset("animation", "Animation sans graphe", &AnimatorComponent::animation, AssetType::Animation)
             .Field("speed", "Vitesse", &AnimatorComponent::speed,
                    {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
-            .Field("loop", "En boucle", &AnimatorComponent::loop);
+            .Field("loop", "En boucle", &AnimatorComponent::loop)
+            .ConvertedText("idleAnimation", toGraph)
+            .ConvertedText("runAnimation", toGraph)
+            .ConvertedText("airAnimation", toGraph)
+            .ConvertedText("sitDownAnimation", toGraph)
+            .ConvertedText("seatedAnimation", toGraph)
+            .ConvertedText("standUpAnimation", toGraph);
     }
 }
