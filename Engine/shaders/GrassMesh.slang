@@ -19,13 +19,15 @@ static const uint GrassPatchQuads = 4;
 static const uint GrassPatchSide = GrassTileQuads / GrassPatchQuads;
 static const uint GrassPatchCount = GrassPatchSide * GrassPatchSide; // un thread de la tâche par carré
 // Bornes d'un carré : sur une tuile fine (1,5 m entre sommets) il couvre ~36 m², soit ~7 000 brins à la densité par
-// défaut. Une aire plus grande ou non finie (sommets pas encore calculés) l'écarte : sans elles, des milliards de brins
-// partaient au pilote (délai dépassé, GPU perdu).
-static const float GrassMaxPatchArea = 250.0;
+// défaut ; sur la plus grande qui en porte (MeshRenderer : GrassMaxTileEdge, 320 m), 1 600 m², mais au loin, où il n'en
+// garde qu'une part. Une aire plus grande ou non finie (sommets pas encore calculés) l'écarte, et ses brins restent
+// bornés : sans elles, des milliards de brins partaient au pilote (délai dépassé, GPU perdu).
+static const float GrassMaxPatchArea = 2500.0;
 static const uint GrassMaxPatchBlades = 16384; // 512 groupes : 64 carrés restent sous les 65 535 d'une tâche
 
 // Commandes des tuiles de l'image (5 uint chacune : indexCount, instanceCount, firstIndex, vertexOffset,
-// firstInstance) ; params.draw : première du lot.
+// firstInstance) ; params.draw : première du lot. Pour l'herbe, firstIndex dit le quart dessiné (1 à 4, 0 : la tuile
+// entière) : une tuile dont une partie est remplacée par ses filles ne garde que les carrés de ses autres quarts.
 [[vk::binding(11, 1)]] StructuredBuffer<uint> tileCommands;
 
 struct GrassPayload
@@ -52,6 +54,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     const uint tileInPage = tileCommands[command + 3] >> GrassVertexShift;
     const uint drawIndex = tileCommands[command + 4] >> GrassInstanceShift;
     const uint firstVertex = tileInPage * GrassTileVertices;
+    const uint quarter = tileCommands[command + 2];
     if (thread == 0) {
         grass.draw = drawIndex;
         grass.firstVertex = firstVertex;
@@ -67,7 +70,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     float3 high = float3(-1.0e30);
     for (uint y = 0; y <= GrassPatchQuads; ++y) {
         for (uint x = 0; x <= GrassPatchQuads; ++x) {
-            const float3 p = ReadGrassPosition(firstVertex, (origin.y + y) * GrassTileSide + origin.x + x);
+            const float3 p = ReadGrassPosition(drawIndex, firstVertex, (origin.y + y) * GrassTileSide + origin.x + x);
             low = min(low, p);
             high = max(high, p);
         }
@@ -78,7 +81,10 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     const float3 center = Transform(d.world, local).xyz; // sans échelle : le rayon ne change pas
     const float nearest = max(length(center) - radius, 0.0);
     const float keep = GrassKeep(nearest);
-    bool kept = keep > 0.0 && InView(center, radius)
+    // Quart q : moitié droite si q & 1, haute si q & 2 (TileKey::Child, BuildTileIndices).
+    const uint half = GrassTileQuads / 2;
+    const bool inQuarter = quarter == 0 || (uint(origin.x >= half) + 2 * uint(origin.y >= half) == quarter - 1);
+    bool kept = inQuarter && keep > 0.0 && InView(center, radius)
              && !Occluded(center + frame[0].cameraDelta.xyz, radius + length(frame[0].cameraDelta.xyz));
     float3 climate = float3(0.0);
     if (kept) {
@@ -89,8 +95,8 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             const uint2 at = corner == 4 ? origin + GrassPatchQuads / 2
                            : origin + uint2(corner & 1u, corner >> 1) * GrassPatchQuads;
             const uint index = at.y * GrassTileSide + at.x;
-            share = max(share, GrassShareAt(drawIndex, ReadGrassPosition(firstVertex, index),
-                                            normalize(ReadGrassNormal(firstVertex, index)), climate));
+            share = max(share, GrassShareAt(drawIndex, ReadGrassPosition(drawIndex, firstVertex, index),
+                                            normalize(ReadGrassNormal(drawIndex, firstVertex, index)), climate));
         }
         kept = share > 0.02;
     }

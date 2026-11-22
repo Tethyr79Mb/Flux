@@ -329,7 +329,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   en mémoire. Mesh shaders : une tâche par tuile écarte ses 64 carrés de 4 x 4 mailles hors champ, cachés ou sans
   herbe, puis chaque brin hors champ avant la couverture du sol (herbe au bord de l'image : 0,32 → 0,07 ms), 3 à 1 segments
   selon la distance ; au loin il en reste une part, élargie (200/m², triplée sur 10 m, toute jusqu'à 20 m, puis en
-  distance^-1,5, fondue de 60 à 100 % de la portée de 150 m). Touffes, plages, brins secs, pied sombre ; le sol prend
+  distance^-1,5, fondue de 60 à 100 % de la portée de 150 m), sur les tuiles jusqu'à 320 m de côté, quarts de tuile et glissement vers la parente compris (avant : 80 m, l'herbe s'arrêtait vers 50 m). Vraies touffes (24 rangs autour d'un pied, 25 % de brins seuls), plages, brins secs, pied sombre ; le sol prend
   sous l'herbe la couleur du pré à toute distance, avec le motif de l'image d'herbe (plus d'anneau de terre marron autour de la caméra, 2026-11-22). Vent par vagues, lumière translucide. Repli sans mesh shaders :
   par les sommets, 4 fois moins dense, 60 % de la portée. Air et ombre des nuages calculés une fois par paquet, ombre
   du soleil simple sur les brins (sans recherche d'obstacles, 4 lectures), 3 segments sous 8 m. Coût : 1,90 → 0,99 ms

@@ -189,7 +189,10 @@ namespace Flux {
         constexpr float GrassVertexDensity = 0.25f;
         constexpr float GrassVertexRange = 0.6f;
         constexpr float GrassFullDistance = 20.0f; // m, Grass.slang
-        constexpr float GrassMaxTileEdge = 80.0f; // 2,5 m entre sommets au plus
+        // Plus grande tuile qui porte de l'herbe : 10 m entre sommets au plus. Les tuiles de 80 m au plus d'avant
+        // s'arrêtaient vers 50 m de la caméra, bien avant la portée de 150 m ; une tuile grossière à portée pendant le
+        // chargement reste bornée (GrassMaxPatchArea et GrassMaxPatchBlades dans GrassMesh.slang, clusters ici).
+        constexpr float GrassMaxTileEdge = 320.0f;
 
         // Tailles minimales des buffers de l'image : de quoi animer des dizaines de personnages et dessiner des
         // centaines d'entités sans réallouer.
@@ -1518,15 +1521,14 @@ namespace Flux {
             const Math::Vector3f sphere(tile.sphere);
             const bool water = ocean && tile.lowest < seaRadius
                             && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
-            // Herbe : sur les tuiles entières à sa portée, qui ne glissent pas encore vers leur parente (le pied des brins
-            // est lu sur les sommets tels quels) là où l'herbe pousse, pas jusqu'à toute sa portée : sinon, à 250 m, plus
-            // aucune tuile ne passe ; ce sont les plus fines, environ 1,5 m entre deux sommets. Une tuile
-            // grossière encore à portée (ses filles pas encore calculées) n'en a pas : des kilomètres carrés de brins.
+            // Herbe : sur les tuiles à sa portée jusqu'à GrassMaxTileEdge, glissement vers leur parente compris (le pied
+            // des brins le suit, ReadGrassPosition) ; un quart de tuile avec les mesh shaders (taskGrass ne garde que ses
+            // carrés), la tuile entière seulement par les sommets. Une tuile plus grossière encore à portée (ses filles
+            // pas encore calculées) n'en a pas : des kilomètres carrés de brins.
             const float distance = Math::Length(sphere) - tile.radius;
-            const bool grassTile = grass && !tile.shadowOnly && tile.indexCount == 4 * Planetology::TileQuarterIndices
-                                && tile.edge <= GrassMaxTileEdge && distance < m_grass.range
-                                && (tile.morphScale == 0.0f
-                                    || tile.morphStart >= std::min(m_grass.range, distance + 2.0f * tile.radius));
+            const bool whole = tile.indexCount == 4 * Planetology::TileQuarterIndices;
+            const bool grassTile = grass && !tile.shadowOnly && (whole || m_grassMesh) && tile.edge <= GrassMaxTileEdge
+                                && distance < m_grass.range;
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius, tile.edge,
                                    distance, water, tile.firstIndex, tile.indexCount, tile.shadowOnly, grassTile});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
@@ -2120,7 +2122,11 @@ namespace Flux {
             }
             ++m_tileBatches.back().count;
             const std::uint32_t tileInPage = Planetology::PlanetTileCompute::GetFirstVertex(draw.tile) / Planetology::TileVertexCount;
-            m_tileCommands.push_back({GrassClusterIndices, clusters, 0, static_cast<std::int32_t>(tileInPage << GrassVertexShift),
+            // Mesh shaders : firstIndex dit le quart dessiné (1 à 4, 0 : la tuile entière), lu par taskGrass ; les sommets
+            // lisent les indices des brins depuis 0.
+            const std::uint32_t quarter = m_grassMesh && draw.indexCount != 4 * Planetology::TileQuarterIndices
+                                        ? draw.firstIndex / Planetology::TileQuarterIndices + 1u : 0u;
+            m_tileCommands.push_back({GrassClusterIndices, clusters, quarter, static_cast<std::int32_t>(tileInPage << GrassVertexShift),
                                       (firstData + draw.data) << GrassInstanceShift});
         }
 
