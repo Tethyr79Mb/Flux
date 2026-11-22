@@ -8,7 +8,7 @@
   "species": [
     {"species": "Vegetation/Especes/Feuillu.espece.json", "share": 100}
   ],
-  "understoryDensity": 0.2,
+  "understoryDensity": 0.05,
   "understoryScale": 0.2,
   "understory": [
     {"species": "Vegetation/Especes/Feuillu.espece.json", "share": 100}

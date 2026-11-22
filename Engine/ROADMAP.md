@@ -296,7 +296,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   au hasard), sans les blocs d'espacement des arbres, écarté du pied de chaque arbre possible, plus clairsemé hors
   des forêts (30 %) ; par biome, ses espèces (4 au plus), sa densité et sa taille ; mêmes fichiers d'espèces que les
   arbres (un jeune épicéa est l'épicéa à 0,2), avec collision. Visible jusqu'à 1 500 m (« Sous-bois visible
-  jusqu'à »). Biomes livrés : jeunes arbres de leurs espèces (densité 0,2). Coût : places par plaine doublées
+  jusqu'à »). Biomes livrés : jeunes arbres de leurs espèces (densité 0,05). Coût : places par plaine doublées
   (256 Ko, 147 Mo pour les 576 plaines), groupes du semis doublés quand un biome en a ; 16 variantes d'espèces par
   planète (8 avant). Buissons : à venir (PR suivante).
   Humidité du relief (géologie, étape 1, demande de Bruno du 2026-11-13) : creux humides au sol épais, crêtes sèches

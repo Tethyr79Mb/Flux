@@ -8,7 +8,7 @@
     {"species": "Vegetation/Especes/Epicea.espece.json", "share": 60},
     {"species": "Vegetation/Especes/Sapin.espece.json", "share": 40}
   ],
-  "understoryDensity": 0.2,
+  "understoryDensity": 0.05,
   "understoryScale": 0.2,
   "understory": [
     {"species": "Vegetation/Especes/Epicea.espece.json", "share": 60},
