@@ -55,7 +55,7 @@ float3 GrassClimate(uint draw, uint firstVertex, uint index, float3 local)
     const DrawData d = draws[draw];
     const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
     const uint v = (firstVertex + index) * 8;
-    const float wet = pageVertices[v + 7];
+    const float wet = UnpackCover(pageVertices[v + 7]).x;
     const float3 lithology = Lithology(normalize(d.rim.xyz + local) * planet.shape.x, UnpackZones(pageVertices[v + 6]).y);
     return float3(PlanetClimate(planet, d.rim.xyz + local) + float2(0.0, ReliefHumidity * wet), SoilDepth(wet, lithology));
 }
@@ -66,9 +66,21 @@ float3 ReadGrassNormal(uint firstVertex, uint index)
     return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
 }
 
+// Pente qui choisit les matières au sommet `index` (PlanetTile.slang, comme le sol : PlanetVertex) : l'herbe pousse là
+// où le sol la montre, au même endroit à chaque niveau de détail.
+float GrassCoverFlatness(uint draw, uint firstVertex, uint index)
+{
+    const float flatness = UnpackCover(pageVertices[(firstVertex + index) * 8 + 7]).y;
+    if (flatness != NoCoverFlatness) {
+        return flatness;
+    }
+    const float3 local = draws[draw].rim.xyz + ReadGrassPosition(firstVertex, index);
+    return dot(normalize(ReadGrassNormal(firstVertex, index)), normalize(local));
+}
+
 // Le sol de la tuile au point (s, t) de sa grille (en mailles, de 0 à GrassTileQuads), sur les deux triangles de sa
 // maille tels que BuildTileIndices les découpe ((a, b, c) puis (a, c, d)) : le pied du brin est sur le sol dessiné.
-void GrassGround(uint firstVertex, float2 st, out float3 position, out float3 normal)
+void GrassGround(uint draw, uint firstVertex, float2 st, out float3 position, out float3 normal, out float flatness)
 {
     const uint2 q = min(uint2(st), uint2(GrassTileQuads - 1));
     const float2 f = saturate(st - float2(q));
@@ -80,16 +92,22 @@ void GrassGround(uint firstVertex, float2 st, out float3 position, out float3 no
     const float3 pc = ReadGrassPosition(firstVertex, c);
     const float3 na = ReadGrassNormal(firstVertex, a);
     const float3 nc = ReadGrassNormal(firstVertex, c);
+    const float fa = GrassCoverFlatness(draw, firstVertex, a);
+    const float fc = GrassCoverFlatness(draw, firstVertex, c);
     if (f.x >= f.y) {
         const float3 pb = ReadGrassPosition(firstVertex, b);
         const float3 nb = ReadGrassNormal(firstVertex, b);
+        const float fb = GrassCoverFlatness(draw, firstVertex, b);
         position = pa + f.x * (pb - pa) + f.y * (pc - pb);
         normal = na + f.x * (nb - na) + f.y * (nc - nb);
+        flatness = fa + f.x * (fb - fa) + f.y * (fc - fb);
     } else {
         const float3 pd = ReadGrassPosition(firstVertex, d);
         const float3 nd = ReadGrassNormal(firstVertex, d);
+        const float fd = GrassCoverFlatness(draw, firstVertex, d);
         position = pa + f.x * (pc - pd) + f.y * (pd - pa);
         normal = na + f.x * (nc - nd) + f.y * (nd - na);
+        flatness = fa + f.x * (fc - fd) + f.y * (fd - fa);
     }
     normal = normalize(normal);
 }
@@ -130,14 +148,13 @@ uint GrassSeed(uint draw)
 }
 
 // Le sol montre de l'herbe en ce point de la tuile (part de 0 à 1, comme fragmentPlanet).
-float GrassShareAt(uint draw, float3 position, float3 normal, float3 climate)
+float GrassShareAt(uint draw, float3 position, float flatness, float3 climate)
 {
     const DrawData d = draws[draw];
     const PlanetData planet = frame[0].planets[asuint(d.rim.w)];
     const float3 local = d.rim.xyz + position;
-    const float3 up = normalize(local);
     const float distance = length(Transform(d.world, position).xyz);
-    const GroundCover cover = GetGroundCover(planet, local, dot(normal, up), length(local) - planet.shape.x, climate, distance);
+    const GroundCover cover = GetGroundCover(planet, local, flatness, length(local) - planet.shape.x, climate, distance);
     return GrassShare(cover);
 }
 
@@ -185,7 +202,8 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const float2 r3 = GroundRandom(GroundHash(h2 + 0x9B05688Cu));
 
     float3 position, normal;
-    GrassGround(firstVertex, origin + r0 * size, position, normal);
+    float flatness;
+    GrassGround(draw, firstVertex, origin + r0 * size, position, normal, flatness);
     const DrawData d = draws[draw];
     blade.root = Transform(d.world, position).xyz;
     // Hors du champ : écarté avant le plus cher (couverture du sol, repère, vent). Le paquet entier l'était déjà quand
@@ -211,7 +229,7 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
         return blade; // sous l'eau
     }
     const float3 up = normalize(local);
-    const GroundCover cover = GetGroundCover(planet, local, dot(normal, up), length(local) - planet.shape.x, climate, distance);
+    const GroundCover cover = GetGroundCover(planet, local, flatness, length(local) - planet.shape.x, climate, distance);
     // Autant de brins que d'herbe sur le sol ; plus courts au bord d'une zone d'herbe.
     grow *= saturate((GrassShare(cover) - r1.x * 0.9) * 4.0);
     if (grow < 0.05) {

@@ -537,6 +537,9 @@ struct PlanetVertexOutput
     float3 groundPosition : GROUND;
     // Sol : température (°C) et humidité (0 à 1) sans les taches de moins de 400 m (voir PlanetClimate).
     float2 climate : CLIMATE;
+    // Pente qui choisit les matières (cosinus contre la verticale) : celle du relief à une échelle fixe (PlanetTile.slang,
+    // CoverCapped), la même à chaque niveau de détail, ou celle de la normale sur les tuiles grossières.
+    float coverFlatness : COVER;
     // Roche-mère (Lithology : granit, calcaire, grès ; le reste basalte) et profondeur de la terre (SoilDepth), par
     // sommet : les régions font des dizaines de km.
     float4 geology : GEOLOGY;
@@ -596,8 +599,12 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
     output.groundPosition = draws[draw].ground.xyz + position;
     const uint planetIndex = asuint(draws[draw].rim.w);
     const PlanetData planet = frame[0].planets[planetIndex];
-    // Humidité du relief dans uv.y (PlanetTile.slang, Write) : les vallons plus humides, les crêtes plus sèches.
-    const float wet = input.uv.y;
+    // Humidité du relief dans uv.y (PlanetTile.slang, Write) : les vallons plus humides, les crêtes plus sèches ; et
+    // la pente des matières.
+    const float2 cover = UnpackCover(input.uv.y);
+    const float wet = cover.x;
+    output.coverFlatness = cover.y != NoCoverFlatness ? cover.y
+                         : dot(normalize(lerp(input.normal, input.morphNormal, morph)), normalize(output.planetPosition));
     output.climate = PlanetClimate(planet, output.planetPosition) + float2(0.0, ReliefHumidity * wet);
     const float2 zones = UnpackZones(input.uv.x);
     const float3 lithology = Lithology(normalize(output.planetPosition) * planet.shape.x, zones.y);
@@ -1897,7 +1904,7 @@ GBufferOutput fragmentPlanet(PlanetVertexOutput input)
 GBufferOutput fragmentPlanetGeometry(PlanetVertexOutput input)
 {
     const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition, float3(1.0))
-                       + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0))
+                       + input.climate.x + input.climate.y + input.coverFlatness + input.forest + dot(input.forestColor, float3(1.0))
                        + float(input.base.draw);
     return GBufferUnlit(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30);
 }
@@ -1921,9 +1928,10 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
         }
     }
     float3 normal = normalize(v.normal);
-    // Pente : la normale ramenée dans le repère de la planète (colonnes de sa rotation), contre la verticale.
+    // La normale ramenée dans le repère de la planète (colonnes de sa rotation) : projections des textures. La pente
+    // qui choisit les matières vient du sommet (coverFlatness), pas d'elle.
     const float3 localNormal = float3(dot(normal, draw.normal[0].xyz), dot(normal, draw.normal[1].xyz), dot(normal, draw.normal[2].xyz));
-    const float flatness = dot(localNormal, up);
+    const float flatness = input.coverFlatness;
 
     const float distance = length(v.worldPosition);
     const GroundCover cover = GetGroundCover(planet, local, flatness, altitude, float3(input.climate, input.geology.w), distance);

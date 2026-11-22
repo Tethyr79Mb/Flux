@@ -981,6 +981,22 @@ namespace Flux::Planetology {
         }
     }
 
+    namespace {
+        // Pente des matières du sol (CoverFlatness dans shaders/PlanetTile.slang) : sur le relief avec les octaves d'une
+        // tuile aux sommets espacés d'au plus CoverSpacing, la même à chaque niveau de détail, mesurée sur ces tuiles et
+        // les plus fines. Plus petit, les bosses plus fines choisiraient leur matière, mais le passage à la normale des
+        // tuiles grossières se ferait plus près de la caméra.
+        constexpr double CoverSpacing = 4.0; // m
+
+        // Octaves | premier niveau mesuré << 16 (TileGpuInputs::wetness.w).
+        std::uint32_t GetCoverLayout(const Terrain& terrain) {
+            const double fine = (0.5 * std::numbers::pi * terrain.GetRadius() / TileQuads) / CoverSpacing;
+            const auto level = static_cast<std::uint32_t>(std::clamp(std::ceil(std::log2(std::max(fine, 1.0))), 0.0,
+                                                                     static_cast<double>(terrain.GetMaxLevel())));
+            return terrain.GetOctaves(level) | level << 16;
+        }
+    }
+
     void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs) {
         const Face& f = Faces[key.face % 6];
         const double R = terrain.GetRadius();
@@ -1009,7 +1025,7 @@ namespace Flux::Planetology {
                            terrain.GetScaleShift() | terrain.GetZoneShift() << 8 | terrain.GetContinentShift() << 16
                                | terrain.GetCraterShift() << 24};
         const WetnessLayout wetness = GetWetnessLayout(terrain, key.level);
-        inputs.wetness = {wetness.octaves, wetness.side, std::bit_cast<std::uint32_t>(wetness.fade), 0};
+        inputs.wetness = {wetness.octaves, wetness.side, std::bit_cast<std::uint32_t>(wetness.fade), GetCoverLayout(terrain)};
         const Terrain::ShapeConstants& shape = terrain.GetShapeConstants();
         const auto narrow = [](double v) { return static_cast<float>(v); };
         inputs.shape = {{{narrow(shape.chainStart), narrow(shape.chainEnd), narrow(shape.hillStart), narrow(shape.hillEnd)},

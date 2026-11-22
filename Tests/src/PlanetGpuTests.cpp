@@ -355,12 +355,17 @@ bool RunPlanetGpuTests() {
             const float hills = std::floor(vertices[v].uv.x / 1024.0f);
             CHECK(std::abs(hills / 1023.0f - mesh.vertices[v].uv.x) < 3.0e-3f);
             CHECK(std::abs((vertices[v].uv.x - hills * 1024.0f) / 1023.0f - mesh.vertices[v].uv.y) < 3.0e-3f);
-            // Humidité du relief dans uv.y : la grille du CPU, en double (les jupes prennent celle de leur bord).
+            // Humidité du relief et pente des matières dans uv.y, 12 bits chacune (PackCover) ; l'humidité est la
+            // grille du CPU, en double (les jupes prennent celle de leur bord). La pente : un cosinus, ou 4095 (aucune).
+            const float coverWet = std::floor(vertices[v].uv.y / 4096.0f);
+            const float coverFlatness = vertices[v].uv.y - coverWet * 4096.0f;
+            CHECK(coverFlatness >= 0.0f && coverFlatness <= 4095.0f);
             if (v < Planetology::TileSide * Planetology::TileSide) {
                 const double wet = Planetology::SampleWetness(wetness, v % Planetology::TileSide, v / Planetology::TileSide);
-                if (std::abs(vertices[v].uv.y - wet) > 0.05) {
+                const double gpuWet = coverWet * (2.0 / 4095.0) - 1.0;
+                if (std::abs(gpuWet - wet) > 0.05) {
                     std::printf("ÉCHEC tuile %zu (niveau %u), sommet %u : humidité du relief %.3f, CPU %.3f\n", n,
-                                static_cast<unsigned>(c.key.level), v, vertices[v].uv.y, wet);
+                                static_cast<unsigned>(c.key.level), v, gpuWet, wet);
                     return false;
                 }
             }

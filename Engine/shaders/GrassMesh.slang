@@ -90,7 +90,7 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
                            : origin + uint2(corner & 1u, corner >> 1) * GrassPatchQuads;
             const uint index = at.y * GrassTileSide + at.x;
             share = max(share, GrassShareAt(drawIndex, ReadGrassPosition(firstVertex, index),
-                                            normalize(ReadGrassNormal(firstVertex, index)), climate));
+                                            GrassCoverFlatness(drawIndex, firstVertex, index), climate));
         }
         kept = share > 0.02;
     }

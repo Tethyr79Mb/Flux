@@ -287,7 +287,8 @@ namespace Flux::Planetology {
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
         std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (GetScaleShift | GetZoneShift << 8 | GetContinentShift << 16 | GetCraterShift << 24)
         // Humidité du relief (GetWetnessLayout) : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu
-        // (bits d'un float).
+        // (bits d'un float) ; w : pente des matières du sol (GetCoverLayout dans Planet.cpp) :
+        // octaves | premier niveau mesuré << 16.
         std::array<std::uint32_t, 4> wetness{};
         // Terrain::ShapeConstants : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains, detailHills,
         // detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, craterChance,
