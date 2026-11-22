@@ -11,7 +11,8 @@
 struct PostParams
 {
     float4 texel;   // xy : taille d'un texel de la source (1 / largeur, 1 / hauteur) ; z : rayon du flou de remontée
-    float4 options; // x : force du bloom (0 : aucun) ; y : exposition ; z : 1 / nombre de niveaux du bloom
+    float4 options; // x : force du bloom (0 : aucun) ; y : exposition ; z : 1 / nombre de niveaux du bloom ;
+                    // w : image finale, numéro de l'image (entier, asuint) pour le bruit du tramage
 };
 [[vk::push_constant]] ConstantBuffer<PostParams> post;
 
@@ -109,8 +110,54 @@ float4 fragmentUpsample(VertexOutput input) : SV_Target
     return float4(other.SampleLevel(uv, 0.0).rgb + sum * (1.0 / 16.0), 1.0);
 }
 
+// Tramage de la sortie 8 bits. Sans lui, un dégradé lent (sol éclairé de biais, paroi plane, limbe d'une planète)
+// tombe en marches d'un niveau sur 255, bien visibles en aplats. Un bruit d'un niveau, ajouté là où les niveaux sont
+// égaux (valeurs sRGB écrites), fait retomber la moyenne de quelques pixels entre deux niveaux : la marche devient un
+// grain invisible à distance normale. Distribution triangulaire (somme de deux tirages sur [-1, 1] niveau) : la force
+// du grain ne dépend plus de la valeur (Gjøl, « Banding in Games », Playdead, GDC 2016). Même tirage pour les trois
+// canaux : un grain gris se voit moins qu'un grain coloré. Bruit neuf à chaque image : l'œil le moyenne à 60 Hz au lieu
+// d'y voir un motif collé à l'écran ; le tramage vient après l'anticrénelage, qui ne le voit donc jamais.
+
+// Hachage entier (PCG 3D, Jarzynski et Olano 2020, comme Hash de CloudNoise.slang) : pixel et image -> bruit blanc.
+uint3 Pcg3d(uint3 v)
+{
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return v;
+}
+
+// Formules exactes du sRGB : la fenêtre (BGRA8Srgb) réencode la valeur rendue ici avec les mêmes, le bruit ajouté en
+// sRGB y arrive donc intact.
+float3 LinearToSrgb(float3 c)
+{
+    return lerp(c * 12.92, 1.055 * pow(max(c, 0.0031308), 1.0 / 2.4) - 0.055, step(0.0031308, c));
+}
+
+float3 SrgbToLinear(float3 c)
+{
+    return lerp(c * (1.0 / 12.92), pow((max(c, 0.04045) + 0.055) * (1.0 / 1.055), 2.4), step(0.04045, c));
+}
+
+float3 Dither(float3 color, uint2 pixel, uint frame)
+{
+    const uint3 h = Pcg3d(uint3(pixel, frame));
+    const float noise = float((h.x >> 8u) + (h.y >> 8u)) * (1.0 / 16777216.0) - 1.0;
+    const float3 code = LinearToSrgb(color);
+    // Amplitude réduite à moins d'un niveau du noir et du blanc : le bruit n'y est jamais rogné, donc pas de biais
+    // (le noir de l'espace reste noir, au lieu d'être relevé d'un quart de niveau en moyenne).
+    const float3 amplitude = min(1.0 / 255.0, min(code, 1.0 - code));
+    return SrgbToLinear(code + noise * amplitude);
+}
+
 // Image finale : la scène et son bloom (other : la somme des niveaux, ramenée à une moyenne), puis la courbe de tons. Le bloom
 // prend une petite part de la lumière de chaque pixel pour l'étaler : l'image ne s'éclaircit pas dans l'ensemble.
+// Enfin le tramage (Dither).
 [shader("fragment")]
 float4 fragmentComposite(VertexOutput input) : SV_Target
 {
@@ -118,5 +165,5 @@ float4 fragmentComposite(VertexOutput input) : SV_Target
     if (post.options.x > 0.0) {
         color = lerp(color, other.SampleLevel(input.uv, 0.0).rgb * post.options.z, post.options.x);
     }
-    return float4(ToneMap(color, post.options.y), 1.0);
+    return float4(Dither(ToneMap(color, post.options.y), uint2(input.position.xy), asuint(post.options.w)), 1.0);
 }

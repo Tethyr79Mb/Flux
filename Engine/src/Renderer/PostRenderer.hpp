@@ -71,8 +71,9 @@ namespace Flux {
         // (barrières posées ici) ; le résultat est laissé lisible pour Composite, même non dessiné.
         void DrawBloom(RHI::CommandList& commands) const;
         // Dans la passe principale, viewport sur la vue 3D : la scène et son bloom, avec l'exposition et la courbe de tons
-        // (shaders/ToneCurve.slang).
-        void Composite(RHI::CommandList& commands, float strength, float exposure) const;
+        // (shaders/ToneCurve.slang), puis le tramage de la sortie 8 bits. `frameSerial` change à chaque image : le bruit
+        // du tramage aussi, sinon l'œil verrait un motif fixe collé à l'écran.
+        void Composite(RHI::CommandList& commands, float strength, float exposure, std::uint32_t frameSerial) const;
 
         // Doit correspondre à GridParams dans shaders/Grid.slang.
         struct GridParams
