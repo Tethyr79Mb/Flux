@@ -4,7 +4,7 @@
   "humidity": [0.45, 2],
   "soil": [0.4, 1],
   "cover": 0.45,
-  "density": 0.35,
+  "density": 0.7,
   "species": [
     {"species": "Vegetation/Especes/Feuillu.espece.json", "share": 100}
   ]

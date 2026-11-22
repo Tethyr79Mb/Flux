@@ -4,7 +4,7 @@
   "humidity": [0.3, 0.45],
   "rocks": {"granite": 1, "limestone": 0, "sandstone": 1, "basalt": 0},
   "cover": 0.45,
-  "density": 0.3,
+  "density": 0.6,
   "species": [
     {"species": "Vegetation/Especes/Pin.espece.json", "share": 100}
   ]
