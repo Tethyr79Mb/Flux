@@ -131,6 +131,13 @@ roche dès les pentes douces et en affleurements, où l'herbe ne pousse pas. Les
 pour chaque roche, profondeur de la terre) : `Lithology` et `SoilDepth` ont donc une copie en double dans
 `TreeSowing.cpp` pour la collision des arbres. Toute modification va dans les deux.
 
+Strates (`StrataCoordinate`, `RockStrata` dans `Mesh.slang`) : bancs horizontaux peints sur la roche, selon l'altitude
+(celle du centre de la tuile en double, sinon 0,5 m de flou à 6 000 km du centre) plissée de quelques dizaines de mètres
+sur 4 à 25 km. Trois rangs : bancs (Épaisseur des bancs), groupes de ~5, formations de ~25, chacun effacé avant d'être
+plus fin que deux pixels. Selon la roche-mère : calcaire clair à joints sombres, grès ocre à crème, basalte en coulées
+épaisses, granit presque nu. Couleur, rugosité et saillie des bancs durs ; rien sur la collision. Le relief n'a pas de
+dessous : les couches ne se voient que là où il fait une coupe (pentes, falaises).
+
 ### Les couches de bruit
 
 Chaque couche est une somme d'octaves de bruit de Perlin avec sa pente exacte. Chaque octave a une fréquence double

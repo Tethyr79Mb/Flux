@@ -52,6 +52,7 @@ struct PlanetData
     float4 climate;           // x : température à l'équateur (°C) ; y : aux pôles ; z : humidité (0 à 1)
     float4 beach;             // x : altitude du niveau de la mer (m) ; y : hauteur de la plage au-dessus (m) ; z : 1 sans zones ; w : couleurs de la roche-mère (0 à 1)
     float4 rim;               // rgb : couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
+    float4 strata;            // strates de la roche : x force (0 : aucune), y épaisseur d'un banc (m), z hauteur des plis (m)
     float4 clouds;            // xyz : centre de la planète relatif à la caméra ; w : rayon de la couche de nuages (0 : aucune)
     float4 cloudRotation;     // rotation de la planète (quaternion xyzw)
     float4 cloudShape;        // x : couverture ; y : opacité ; z : 1 / taille des formations (1/m) ; w : angle de dérive
@@ -138,7 +139,7 @@ struct DrawData
     // Lumière de contour : couleur x intensité (rgb), finesse (w ; 0 : aucune). Tuiles de planète : xyz, centre de la
     // tuile dans le repère de la planète ; w, indice dans FrameData::planets (bits d'un entier).
     float4 rim;
-    float4 ground;            // tuile de planète : xyz, centre de rim modulo GroundPeriod (MeshRenderer.hpp)
+    float4 ground;            // tuile de planète : xyz, centre de rim modulo GroundPeriod (MeshRenderer.hpp) ; w, son altitude (m, précise)
     float4 previousWorld[4];  // world à l'image précédente, relative à sa caméra (tuiles de planète : non lue)
     // De l'entité (pas des tuiles de planète), combinés à ceux du matériau (DrawParams) : un même appel dessine des
     // entités de teintes différentes.
@@ -540,6 +541,8 @@ struct PlanetVertexOutput
     // Roche-mère (Lithology : granit, calcaire, grès ; le reste basalte) et profondeur de la terre (SoilDepth), par
     // sommet : les régions font des dizaines de km.
     float4 geology : GEOLOGY;
+    // Strates de la roche : altitude plissée, en épaisseurs de banc (StrataCoordinate).
+    float strata : STRATA;
     // Forêt (0 à 1) selon ses taches et les biomes, sans la pente ni la neige (vues au pixel), et la couleur de ses
     // cimes. Par sommet : ses taches font des centaines de mètres.
     float forest : FOREST;
@@ -584,6 +587,116 @@ float2 PlanetClimate(PlanetData planet, float3 local)
     return ClimateAt(planet.shape.x, planet.shape.y, planet.climate.xyz, planet.water.w, local);
 }
 
+// --- Strates de la roche ---
+// Bancs horizontaux peints sur la roche (pentes, falaises, canyons) : le relief n'a pas de dessous, les couches se voient
+// là où il fait une coupe. Une formule, rien de stocké, sans effet sur la collision.
+
+// Coordonnée des strates d'un sommet (position : relative au centre de la tuile) : son altitude, déplacée par des plis
+// de planet.strata.z mètres sur 4 à 25 km (les bancs ne sont pas des courbes de niveau), en épaisseurs de banc.
+// L'altitude part de celle du centre (ground.w, en double sur le CPU) : |c + p| - |c| = (2 c·p + p²) / (|c + p| + |c|)
+// reste précise au mm, quand length(c + p) en float ne garde que 0,5 m à 6 000 km du centre.
+float StrataCoordinate(PlanetData planet, DrawData draw, float3 position)
+{
+    if (planet.strata.x <= 0.0) {
+        return 0.0;
+    }
+    const float3 center = draw.rim.xyz;
+    const float3 local = center + position;
+    const float altitude = draw.ground.w + (2.0 * dot(center, position) + dot(position, position)) / (length(local) + length(center));
+    const float3 q = normalize(local) * planet.shape.x;
+    const float folds = (ClimateNoise(q * (1.0 / 23000.0) + 301.0) - 0.5) * 2.0 + (ClimateNoise(q * (1.0 / 4100.0) + 401.0) - 0.5) * 0.7;
+    return (altitude + folds * planet.strata.z) / planet.strata.y;
+}
+
+struct Strata
+{
+    float3 tint;     // multiplie la couleur de la roche
+    float roughness; // ajoutée à sa rugosité (bancs tendres plus rugueux)
+    float bump;      // saillie des bancs durs, creux des tendres (m)
+};
+
+// Un rang de bancs de la coordonnée c (en bancs de ce rang ; footprint : ce qu'un pixel en couvre) : clarté au hasard
+// de chaque banc, joint sombre à sa base, dureté. Effacé avant d'être plus fin que deux pixels (il scintillerait).
+// Renvoie la clarté (autour de 0) ; hue : 0 à 1 par banc, pour la couleur.
+float StrataBeds(float c, float footprint, uint seed, float joint, inout float bump, inout float hue, inout float soft)
+{
+    const float visible = 1.0 - smoothstep(0.2, 0.5, footprint);
+    if (visible <= 0.0) {
+        return 0.0;
+    }
+    const float i = floor(c);
+    const float f = c - i;
+    const int cell = int(i);
+    const float h = ClimateHash(int3(cell, int(seed), 17));
+    const float hard = ClimateHash(int3(cell, int(seed), 29)) - 0.5;
+    // Joint : un trait sombre au bas de chaque banc, plus large de loin pour rester visible jusqu'à son effacement.
+    const float seam = (1.0 - smoothstep(0.0, joint + footprint, f)) * joint * 4.0;
+    bump += hard * smoothstep(0.0, 0.2, f) * smoothstep(1.0, 0.8, f) * visible;
+    hue = lerp(hue, h, visible * 0.5);
+    soft = max(soft, -hard * visible);
+    return ((h - 0.5) - seam) * visible;
+}
+
+// Couleur, rugosité et saillie des strates en un point de la roche (strata : StrataCoordinate ; lithology : Lithology).
+// Trois rangs : bancs, groupes de ~5 bancs, formations de ~25 (de loin, seules les formations restent). Nettes dans le
+// calcaire (clair, joints marneux) et le grès (bandes ocre, rousses, crème), en coulées épaisses dans le basalte (joints
+// rouillés), presque rien dans le granit. À appeler hors de toute branche par pixel (dérivées à l'écran).
+Strata RockStrata(PlanetData planet, float strata, float3 lithology, float3 local, float distance)
+{
+    Strata result;
+    result.tint = float3(1.0);
+    result.roughness = 0.0;
+    result.bump = 0.0;
+    if (planet.strata.x <= 0.0) {
+        return result;
+    }
+    // Bancs pas tout à fait réguliers : ondulés d'un tiers de banc sur une vingtaine de mètres.
+    const float c = strata + (PlanetNoise(local * (1.0 / 19.0) + 7.0) - 0.5) * 0.6 * saturate(2.0 - distance / 1500.0);
+    const float footprint = fwidth(c);
+    const float basalt = saturate(1.0 - lithology.x - lithology.y - lithology.z);
+    const float sediment = lithology.y + lithology.z;
+    float bump = 0.0;
+    float hue = 0.5;
+    float soft = 0.0;
+    const float beds = StrataBeds(c, footprint, 1u, 0.06, bump, hue, soft) * (0.35 * sediment + 0.08 * basalt + 0.04 * lithology.x);
+    float bedBump = bump;
+    bump = 0.0;
+    const float sets = StrataBeds(c * (1.0 / 4.7) + 0.31, footprint * (1.0 / 4.7), 2u, 0.03, bump, hue, soft)
+                     * (0.3 * sediment + 0.4 * basalt + 0.04 * lithology.x);
+    const float setBump = bump;
+    bump = 0.0;
+    const float formations = StrataBeds(c * (1.0 / 23.0) + 0.57, footprint * (1.0 / 23.0), 3u, 0.0, bump, hue, soft)
+                           * (0.35 * sediment + 0.25 * basalt);
+    const float strength = planet.strata.x;
+    const float3 luma = float3(0.2126, 0.7152, 0.0722);
+    // Grès : de l'ocre rouge au crème selon les bancs ; calcaire : du gris au crème ; basalte : rouille dans les joints.
+    float3 color = lerp(float3(1.25, 0.82, 0.6), float3(1.05, 1.0, 0.88), hue) * lithology.z
+                 + lerp(float3(0.92, 0.95, 1.0), float3(1.06, 1.02, 0.92), hue) * lithology.y
+                 + lerp(float3(1.0), float3(1.12, 0.92, 0.82), saturate(-beds * 4.0)) * basalt + lithology.x;
+    color /= max(dot(color, luma), 0.01);
+    result.tint = lerp(float3(1.0), color * max(1.0 + beds + sets + formations, 0.3), strength);
+    result.roughness = soft * 0.08 * sediment * strength;
+    // Saillie : une fraction de l'épaisseur des bancs, effacée de loin (le petit relief n'y est plus qu'un grain).
+    result.bump = (bedBump * 0.12 + setBump * 0.5 + bump * 1.5) * planet.strata.y * (sediment + 0.6 * basalt) * strength
+                * saturate(2.0 - distance / 600.0);
+    return result;
+}
+
+// Normale penchée par une petite hauteur (m) au-dessus de la surface, par ses dérivées à l'écran (sans tangentes).
+float3 BumpNormal(float3 normal, float3 worldPosition, float height)
+{
+    const float3 dp1 = ddx(worldPosition);
+    const float3 dp2 = ddy(worldPosition);
+    const float3 r1 = cross(dp2, normal);
+    const float3 r2 = cross(normal, dp1);
+    const float determinant = dot(dp1, r1);
+    if (abs(determinant) <= 1.0e-12) {
+        return normal;
+    }
+    const float3 gradient = sign(determinant) * (ddx(height) * r1 + ddy(height) * r2);
+    return normalize(abs(determinant) * normal - gradient);
+}
+
 // Sommet d'une tuile de planète, glissé vers la forme parente selon sa distance : vertexPlanet, ou meshPlanet
 // (shaders/PlanetMesh.slang) qui lit ses sommets lui-même.
 PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
@@ -602,6 +715,7 @@ PlanetVertexOutput PlanetVertex(uint draw, PlanetVertexInput input)
     const float2 zones = UnpackZones(input.uv.x);
     const float3 lithology = Lithology(normalize(output.planetPosition) * planet.shape.x, zones.y);
     output.geology = float4(lithology, SoilDepth(wet, lithology));
+    output.strata = StrataCoordinate(planet, draws[draw], position);
     output.forest = 0.0;
     output.forestColor = float3(0.0);
     if (planet.forest.y > 0.0) {
@@ -1897,7 +2011,7 @@ GBufferOutput fragmentPlanet(PlanetVertexOutput input)
 GBufferOutput fragmentPlanetGeometry(PlanetVertexOutput input)
 {
     const float unused = dot(input.base.worldPosition + input.planetPosition + input.groundPosition, float3(1.0))
-                       + input.climate.x + input.climate.y + input.forest + dot(input.forestColor, float3(1.0))
+                       + input.climate.x + input.climate.y + input.strata + input.forest + dot(input.forestColor, float3(1.0))
                        + float(input.base.draw);
     return GBufferUnlit(float3(0.25 + 0.25 * saturate(normalize(input.base.normal).y)) + unused * 1.0e-30);
 }
@@ -1937,6 +2051,7 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
     const float foot = cover.foot;
     const float snow = cover.snow;
     const float relief = max(planet.shape.y, 1.0);
+    const Strata strata = RockStrata(planet, input.strata, input.geology.xyz, local, distance);
 
     Surface surface;
     surface.toEye = normalize(-v.worldPosition);
@@ -2007,6 +2122,10 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
                     sample.color = float3(dot(sample.color, float3(0.2126, 0.7152, 0.0722)));
                 }
                 sample.color *= GroundTint(planet, layer) * PlanetLithologyTint(planet, input.geology.xyz, layer);
+                if (layer == GroundRock) {
+                    sample.color *= strata.tint;
+                    sample.occlusionRoughness.y += strata.roughness;
+                }
                 if (layer == GroundGrass) {
                     // L'herbe jaunit et roussit dans le froid (toundra) et par taches sèches.
                     sample.color *= GrassDryTint(temperature, macro, 0.0);
@@ -2024,12 +2143,16 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
         groundNormal = normalize(groundNormal);
         // Retour du repère de la planète au monde (colonnes de sa rotation).
         normal = normalize(draw.normal[0].xyz * groundNormal.x + draw.normal[1].xyz * groundNormal.y + draw.normal[2].xyz * groundNormal.z);
+        if (planet.strata.x > 0.0) {
+            // Les bancs durs en saillie, là où la roche se voit (sa part, sous la neige).
+            normal = BumpNormal(normal, v.worldPosition, strata.bump * rock * (1.0 - snow));
+        }
         surface.diffuse = color * params.color.rgb;
         surface.roughness = saturate(occlusionRoughness.y);
         occlusion = occlusionRoughness.x;
     } else {
         surface.diffuse = UntexturedGround(v, planet, local, normal, distance, macro, rock, beach, grassy, desert, patches,
-                                           temperature, foot, snow, input.geology.xyz, surface.roughness);
+                                           temperature, foot, snow, input.geology.xyz, strata, surface.roughness);
     }
     // Sous l'herbe en brins (Grass.slang, avec la végétation) : la couleur moyenne du pré, la même de près et au loin (pas
     // de limite là où les brins s'arrêtent), avec le motif de l'image d'herbe s'il y en a.
@@ -2079,7 +2202,7 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
 // couleur diffuse ; `normal` reçoit le petit relief.
 float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout float3 normal, float distance, float macro,
                         float rock, float beach, float grassy, float desert, float patches, float temperature, float foot,
-                        float snow, float3 lithology, out float roughness)
+                        float snow, float3 lithology, Strata strata, out float roughness)
 {
     const float near = saturate(1.0 - distance / 120.0);
     const float fine = PlanetNoise(local * (1.0 / 3.1)) * 0.55 + PlanetNoise(local * (1.0 / 0.93)) * 0.3 * near
@@ -2092,22 +2215,15 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
     ground = lerp(ground, float4(grassColor, planet.grass.w), grassy * (1.0 - patches));
     ground = lerp(ground, planet.sand * float4(LithologyTint(lithology, GroundSand), 1.0), max(desert, beach));
     ground = lerp(ground, soil, foot);
-    ground = lerp(ground, planet.rock * float4(PlanetLithologyTint(planet, lithology, GroundRock) * (0.85 + macro * 0.5), 1.0), rock);
+    ground = lerp(ground, planet.rock * float4(PlanetLithologyTint(planet, lithology, GroundRock) * strata.tint * (0.85 + macro * 0.5), 1.0), rock);
     ground = lerp(ground, planet.snow, snow);
     const float3 color = ground.rgb * (1.0 + fine * lerp(0.3, 0.5, rock) * saturate(1.0 - distance / 400.0));
 
     // Petit relief (bosses, cailloux) par les dérivées à l'écran du grain, plus marqué dans la roche.
-    const float bump = fine * lerp(0.04, 0.12, rock) * (1.0 - snow * 0.7) * saturate(1.0 - distance / 200.0);
-    const float3 dp1 = ddx(v.worldPosition);
-    const float3 dp2 = ddy(v.worldPosition);
-    const float3 r1 = cross(dp2, normal);
-    const float3 r2 = cross(normal, dp1);
-    const float determinant = dot(dp1, r1);
-    if (abs(determinant) > 1.0e-12) {
-        const float3 gradient = sign(determinant) * (ddx(bump) * r1 + ddy(bump) * r2);
-        normal = normalize(abs(determinant) * normal - gradient);
-    }
-    roughness = saturate(ground.w);
+    const float bump = fine * lerp(0.04, 0.12, rock) * (1.0 - snow * 0.7) * saturate(1.0 - distance / 200.0)
+                     + strata.bump * rock * (1.0 - snow);
+    normal = BumpNormal(normal, v.worldPosition, bump);
+    roughness = saturate(ground.w + strata.roughness * rock);
     return color * params.color.rgb;
 }
 
