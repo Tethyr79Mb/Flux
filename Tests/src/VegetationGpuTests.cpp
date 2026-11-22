@@ -295,8 +295,8 @@ bool RunVegetationGpuTests() {
     }
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
     for (std::size_t k = 0; k < keys.size(); ++k) {
-        // Forêt partout et densité 1 : presque toutes les places.
-        CHECK(first[k].size() > VegetationRenderer::TreesPerPlain * 3 / 4);
+        // Forêt partout et densité 1 : presque toutes les places de la grille des arbres (sans sous-bois ici).
+        CHECK(first[k].size() > Planetology::TreeGrid * Planetology::TreeGrid * 3 / 4);
         const Math::Vector3d origin = Planetology::GetTileBounds(terrain, keys[k]).origin;
         double worst = 0.0;
         for (const VegetationRenderer::Tree& tree : first[k]) {
