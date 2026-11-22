@@ -185,6 +185,12 @@ namespace Flux {
         // Dans l'espace (hors de l'air d'une planète et d'un Intérieur), l'œil ne s'habitue pas au noir plus de ce nombre
         // de stops sous le gris moyen au soleil : le côté nuit d'une planète reste sombre.
         float spaceAdaptation = 3.0f;
+        // Occlusion ambiante (GTAO, si les réglages graphiques l'activent) : la lumière ambiante assombrie dans les coins,
+        // sous et entre les objets. Portée des obstacles (m), force (0 : aucune, 1 : normale), part de la fin de la
+        // portée où un obstacle compte de moins en moins.
+        float occlusionRadius = 2.0f;
+        float occlusionIntensity = 1.0f;
+        float occlusionFalloff = 0.6f;
     };
 
     // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des

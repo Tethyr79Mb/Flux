@@ -125,6 +125,9 @@ namespace Flux {
             std::array<float, 4> forward; // w : plan proche
             std::array<float, 4> toSun;   // w : tangente du rayon apparent du soleil
             std::uint32_t noiseFrame = 0;
+            // Écart toléré à l'écran des niveaux de détail (pixels, ModelDetail) : le ray tracing ne connaît que le
+            // modèle complet, une surface simplifiée peut passer jusqu'à cet écart sous lui.
+            float lodPixels = 1.0f;
         };
         const RayShadowView& GetRayShadowView() const { return m_rayShadowView; }
         void SetGroundDetail(GroundDetail detail) { m_planets->SetGroundDetail(detail); }
@@ -133,7 +136,7 @@ namespace Flux {
         VegetationDistance GetVegetationDistance() const { return m_vegetationDistance; }
         void SetModelDetail(ModelDetail detail) { m_modelDetail = detail; }
         ModelDetail GetModelDetail() const { return m_modelDetail; }
-        // Hauteur de l'image rendue (pixels), pour l'écart à l'écran des niveaux de détail ; avant Prepare.
+        // Hauteur de l'image affichée (pixels, après FSR), pour l'écart à l'écran des niveaux de détail ; avant Prepare.
         void SetViewHeight(float pixels) { m_viewHeight = pixels; }
         // Passe de la carte d'ombres, hors de la passe principale et avant elle ; à chaque image, GetShadowMap déjà
         // cible (le graphe de rendu la rend ensuite lisible pour la scène). Une étape par cascade, chacune

@@ -349,6 +349,9 @@ namespace Flux {
             data.sunColor = ToArray(lighting.sunColor, preExposure);
         } else {
             const SkyComponent& sky = *component;
+            lighting.occlusionRadius = sky.occlusionRadius;
+            lighting.occlusionIntensity = sky.occlusionIntensity;
+            lighting.occlusionFalloff = sky.occlusionFalloff;
             lighting.toSun = sunDirection.value_or(SunDirection(sky.sunElevation, sky.sunAzimuth));
             lighting.sunColor = sun ? sunLight(sun->lightColor, sun->illuminance) : sunLight(sky.sunColor, sky.sunIlluminance);
             const float brightness = Photometry::FromNits(std::max(sky.luminance, 0.0f));

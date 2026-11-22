@@ -14,7 +14,7 @@ namespace Flux {
             std::array<float, 4> up;
             std::array<float, 4> forward;
             std::array<float, 4> toSun;
-            std::array<float, 4> size; // largeur, hauteur, mètres par pixel à 1 m, inutilisé
+            std::array<float, 4> size; // largeur, hauteur, mètres par pixel à 1 m, écart des niveaux de détail (pixels)
             std::array<std::uint32_t, 4> options; // image (bruit), sens du lissage
         };
         static_assert(sizeof(RayShadowParams) == 96);
@@ -119,7 +119,7 @@ namespace Flux {
         const float upLength = std::sqrt(view.up[0] * view.up[0] + view.up[1] * view.up[1] + view.up[2] * view.up[2]);
         const RayShadowParams params{view.right, view.up, view.forward, view.toSun,
                                      {static_cast<float>(extent.width), static_cast<float>(extent.height),
-                                      2.0f * upLength / static_cast<float>(std::max(extent.height, 1u)), 0.0f},
+                                      2.0f * upLength / static_cast<float>(std::max(extent.height, 1u)), view.lodPixels},
                                      {view.noiseFrame, direction, 0u, 0u}};
         commands.BindPipeline(pipeline);
         commands.SetBindGroup(0, group);

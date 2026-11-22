@@ -97,6 +97,12 @@ namespace FluxEditor {
                 m_modelDetail = static_cast<ModelDetail>(found - ModelDetailKeys.begin());
             }
         }
+        if (const auto occlusion = json.find("ambientOcclusion"); occlusion != json.end() && occlusion->is_string()) {
+            const auto found = std::ranges::find(AmbientOcclusionQualityKeys, occlusion->get<std::string>());
+            if (found != AmbientOcclusionQualityKeys.end()) {
+                m_ambientOcclusion = static_cast<AmbientOcclusionQuality>(found - AmbientOcclusionQualityKeys.begin());
+            }
+        }
         ApplyGraphics(engine);
     }
 
@@ -114,7 +120,8 @@ namespace FluxEditor {
                         {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]},
                         {"cloudQuality", CloudQualityKeys[static_cast<std::size_t>(m_cloudQuality)]},
                         {"vegetationDistance", VegetationDistanceKeys[static_cast<std::size_t>(m_vegetationDistance)]},
-                        {"modelDetail", ModelDetailKeys[static_cast<std::size_t>(m_modelDetail)]}};
+                        {"modelDetail", ModelDetailKeys[static_cast<std::size_t>(m_modelDetail)]},
+                        {"ambientOcclusion", AmbientOcclusionQualityKeys[static_cast<std::size_t>(m_ambientOcclusion)]}};
         std::ofstream file(FilePath(), std::ios::binary | std::ios::trunc);
         file << json.dump(2);
         if (!file) {
@@ -132,6 +139,7 @@ namespace FluxEditor {
         renderer.SetCloudQuality(m_cloudQuality);
         renderer.SetVegetationDistance(m_vegetationDistance);
         renderer.SetModelDetail(m_modelDetail);
+        renderer.SetAmbientOcclusion(m_ambientOcclusion);
     }
 
     void SettingsWindow::ApplyStyle(Engine& engine) const {
@@ -154,13 +162,17 @@ namespace FluxEditor {
             CloudQuality cloudQuality;
             VegetationDistance vegetationDistance;
             ModelDetail modelDetail;
+            AmbientOcclusionQuality ambientOcclusion;
         };
         constexpr std::array<GraphicsPreset, 4> GraphicsPresets{{
-            {"Bas", Upscaling::FsrPerformance, GroundDetail::Low, CloudQuality::Low, VegetationDistance::Low, ModelDetail::Low},
+            {"Bas", Upscaling::FsrPerformance, GroundDetail::Low, CloudQuality::Low, VegetationDistance::Low, ModelDetail::Low,
+             AmbientOcclusionQuality::Medium},
             {"Moyen", Upscaling::FsrBalanced, GroundDetail::Medium, CloudQuality::Medium, VegetationDistance::Medium,
-             ModelDetail::Medium},
-            {"Élevé", DefaultUpscaling, DefaultGroundDetail, DefaultCloudQuality, DefaultVegetationDistance, DefaultModelDetail},
-            {"Ultra", Upscaling::FsrNativeAA, GroundDetail::Ultra, CloudQuality::High, VegetationDistance::Ultra, ModelDetail::Ultra},
+             ModelDetail::Medium, AmbientOcclusionQuality::Medium},
+            {"Élevé", DefaultUpscaling, DefaultGroundDetail, DefaultCloudQuality, DefaultVegetationDistance, DefaultModelDetail,
+             DefaultAmbientOcclusionQuality},
+            {"Ultra", Upscaling::FsrNativeAA, GroundDetail::Ultra, CloudQuality::High, VegetationDistance::Ultra, ModelDetail::Ultra,
+             AmbientOcclusionQuality::High},
         }};
 
         struct Category
@@ -227,7 +239,7 @@ namespace FluxEditor {
         for (const GraphicsPreset& preset : GraphicsPresets) {
             bool active = m_upscaling == preset.upscaling && m_groundDetail == preset.groundDetail
                        && m_cloudQuality == preset.cloudQuality && m_vegetationDistance == preset.vegetationDistance
-                       && m_modelDetail == preset.modelDetail;
+                       && m_modelDetail == preset.modelDetail && m_ambientOcclusion == preset.ambientOcclusion;
             custom = custom && !active;
             if (&preset != GraphicsPresets.data()) {
                 ui.SameLine();
@@ -238,13 +250,14 @@ namespace FluxEditor {
                 m_cloudQuality = preset.cloudQuality;
                 m_vegetationDistance = preset.vegetationDistance;
                 m_modelDetail = preset.modelDetail;
+                m_ambientOcclusion = preset.ambientOcclusion;
                 ApplyGraphics(engine);
                 Save();
             }
         }
         ui.HelpText(custom ? "Personnalisé : les réglages ne suivent aucun préréglage."
                            : "Règle d'un coup la mise à l'échelle, le détail du sol et des modèles, les nuages et la "
-                             "végétation.");
+                             "végétation, l'occlusion ambiante.");
 
         ui.SectionTitle("Affichage");
         bool vsync = renderer.IsVSyncEnabled();
@@ -322,6 +335,14 @@ namespace FluxEditor {
             Save();
         }
         ui.HelpText("Pas de calcul dans les nuages : Bas coûte environ 40 % d'Élevé, avec plus de grain.");
+        int occlusion = static_cast<int>(m_ambientOcclusion);
+        if (ui.Choice("Occlusion ambiante", occlusion, AmbientOcclusionQualityLabels)) {
+            m_ambientOcclusion = static_cast<AmbientOcclusionQuality>(occlusion);
+            renderer.SetAmbientOcclusion(m_ambientOcclusion);
+            Save();
+        }
+        ui.HelpText("Assombrit la lumière ambiante dans les coins, sous et entre les objets (GTAO). Moyenne calcule un "
+                    "pixel sur quatre, pour les petites cartes graphiques. Portée et force : dans le Ciel de la scène.");
 
         ui.SectionTitle("Effets");
         if (ui.Checkbox("Bloom", m_bloomEnabled)) {
@@ -351,6 +372,7 @@ namespace FluxEditor {
             m_cloudQuality = DefaultCloudQuality;
             m_vegetationDistance = DefaultVegetationDistance;
             m_modelDetail = DefaultModelDetail;
+            m_ambientOcclusion = DefaultAmbientOcclusionQuality;
             m_bloomEnabled = true;
             m_bloom = Renderer::DefaultBloom;
             ApplyGraphics(engine);

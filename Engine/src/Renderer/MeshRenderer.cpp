@@ -1745,7 +1745,7 @@ namespace Flux {
         frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
         frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);
         m_rayShadowView = {frame.cameraRight, frame.cameraUp, ToArray(camera.GetForward(), camera.nearPlane), frame.toSun,
-                           temporal.noiseFrame};
+                           temporal.noiseFrame, GetModelDetailPixels(m_modelDetail)};
         // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
         if (m_interiors.size() > MaxInteriors) {
             std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);

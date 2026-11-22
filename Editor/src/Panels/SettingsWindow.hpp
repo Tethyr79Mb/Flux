@@ -53,5 +53,6 @@ namespace FluxEditor {
         Flux::CloudQuality m_cloudQuality = Flux::DefaultCloudQuality;
         Flux::VegetationDistance m_vegetationDistance = Flux::DefaultVegetationDistance;
         Flux::ModelDetail m_modelDetail = Flux::DefaultModelDetail;
+        Flux::AmbientOcclusionQuality m_ambientOcclusion = Flux::DefaultAmbientOcclusionQuality;
     };
 }

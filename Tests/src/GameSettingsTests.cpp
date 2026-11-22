@@ -17,6 +17,7 @@ bool RunGameSettingsTests() {
     changed.cloudQuality = CloudQuality::Low;
     changed.vegetationDistance = VegetationDistance::Ultra;
     changed.modelDetail = ModelDetail::Low;
+    changed.ambientOcclusion = AmbientOcclusionQuality::Medium;
     changed.upscaling = Upscaling::FsrPerformance;
     changed.sharpness = 0.8f;
     changed.volume = 0.25f;
@@ -30,6 +31,7 @@ bool RunGameSettingsTests() {
     CHECK(reread->cloudQuality == CloudQuality::Low);
     CHECK(reread->vegetationDistance == VegetationDistance::Ultra);
     CHECK(reread->modelDetail == ModelDetail::Low);
+    CHECK(reread->ambientOcclusion == AmbientOcclusionQuality::Medium);
     CHECK(reread->upscaling == Upscaling::FsrPerformance && reread->sharpness == 0.8f);
     CHECK(reread->swapchainImages == 2);
 

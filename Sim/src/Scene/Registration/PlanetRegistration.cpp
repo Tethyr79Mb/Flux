@@ -53,7 +53,13 @@ namespace Flux {
             .Field("adaptationSpeed", "Exposition : vitesse d'adaptation", &SkyComponent::adaptationSpeed,
                    {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("spaceAdaptation", "Exposition : nuit dans l'espace (stops sous le soleil)", &SkyComponent::spaceAdaptation,
-                   {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 1});
+                   {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 1})
+            .Field("occlusionRadius", "Occlusion ambiante : portée (m)", &SkyComponent::occlusionRadius,
+                   {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2})
+            .Field("occlusionIntensity", "Occlusion ambiante : force", &SkyComponent::occlusionIntensity,
+                   {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
+            .Field("occlusionFalloff", "Occlusion ambiante : fondu en fin de portée", &SkyComponent::occlusionFalloff,
+                   {.speed = 0.01, .min = 0.01, .max = 1.0, .decimals = 2});
         registry.Register<WorldComponent>("world", "Monde")
             .Field("gravity", "Gravité (m/s²)", &WorldComponent::gravity,
                    {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
