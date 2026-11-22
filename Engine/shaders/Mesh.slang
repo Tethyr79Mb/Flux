@@ -1948,10 +1948,10 @@ float GrassShare(GroundCover cover)
 float3 SoilHorizonTint(GroundCover cover, float humidity)
 {
     const float h = saturate(cover.horizon + cover.macro * 0.3);
-    // Terre brune et sombre (l'image de terre, beige, se lisait comme du gravier), humus presque noir-brun.
-    const float3 humus = float3(0.5, 0.36, 0.25) * lerp(1.0, 0.75, saturate(humidity));
-    const float3 earth = float3(0.78, 0.6, 0.44);
-    const float3 weathered = float3(1.3, 1.22, 1.12);
+    // L'image de terre telle quelle au milieu du talus ; humus plus sombre et plus brun.
+    const float3 humus = float3(0.68, 0.58, 0.5) * lerp(1.0, 0.8, saturate(humidity));
+    const float3 earth = float3(1.0);
+    const float3 weathered = float3(1.3, 1.24, 1.16);
     return lerp(lerp(humus, earth, smoothstep(0.1, 0.45, h)), weathered, smoothstep(0.7, 0.95, h));
 }
 
@@ -2143,13 +2143,6 @@ GBufferOutput PlanetGBuffer(PlanetVertexOutput input)
                 }
                 sample.color *= GroundTint(planet, layer) * PlanetLithologyTint(planet, input.geology.xyz, layer);
                 if (layer == GroundSoil) {
-                    // L'image de terre est un sol caillouteux : ses cailloux, ramenés vers sa couleur moyenne (et son
-                    // relief aplati), ne restent marqués que dans l'altérite, contre la roche.
-                    const float pebbles = lerp(0.35, 1.0, smoothstep(0.7, 0.95, cover.horizon));
-                    sample.color = lerp(GroundAverage(GroundSoil, localNormal).color * GroundTint(planet, layer)
-                                            * PlanetLithologyTint(planet, input.geology.xyz, layer),
-                                        sample.color, pebbles);
-                    sample.normal = lerp(localNormal * length(sample.normal), sample.normal, pebbles);
                     sample.color *= SoilHorizonTint(cover, input.climate.y);
                 }
                 if (layer == GroundRock) {
