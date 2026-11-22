@@ -138,6 +138,11 @@ plus fin que deux pixels. Selon la roche-mère : calcaire clair à joints sombre
 épaisses, granit presque nu. Couleur, rugosité et saillie des bancs durs ; rien sur la collision. Le relief n'a pas de
 dessous : les couches ne se voient que là où il fait une coupe (pentes, falaises).
 
+Talus (`GetGroundCover`, `SoilHorizonTint`) : entre l'herbe et la roche, une bande de terre nue d'autant plus large
+que la terre est épaisse ; la roche n'y prend le dessus qu'après 45° (28° sur un sol mince). En descendant la pente :
+humus sombre (plus sombre si humide), terre teintée par la roche-mère, puis altérite claire contre la roche. Une
+teinte de l'image de terre, sans lecture de plus.
+
 ### Les couches de bruit
 
 Chaque couche est une somme d'octaves de bruit de Perlin avec sa pente exacte. Chaque octave a une fréquence double
