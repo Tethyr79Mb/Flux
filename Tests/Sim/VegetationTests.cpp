@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <vector>
 
 using namespace Flux;
 
@@ -41,6 +42,8 @@ bool RunVegetationTests() {
     auto rockyAgain = Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome(*rocky));
     CHECK(rockyAgain && rockyAgain->limestone == 0.0f && rockyAgain->minSoil == 0.4f && rockyAgain->maxSoil == 1.0f);
     CHECK(!Planetology::ParseVegetationBiome(R"({"rocks": [1, 0]})"));
+    CHECK(!Planetology::ParseVegetationBiome(R"({"understory": {"species": "a"}})"));
+    CHECK(Planetology::ParseVegetationBiome(R"({"understoryDensity": 3})")->understoryDensity == 1.0f);
     CHECK(!Planetology::ParseVegetationBiome(R"({"species": [{"species": "a"}, {"species": "b"}, {"species": "c"},
                                                              {"species": "d"}, {"species": "e"}]})"));
 
@@ -69,6 +72,11 @@ bool RunVegetationTests() {
     CHECK(set.biomes[2].soil[0] < 0.0f && set.biomes[2].soil[1] > 1.0f);
     CHECK(set.biomeSpecies[2][0] >> 8 == 2 && set.biomeSpecies[2][1] >> 8 == 2);
     CHECK(set.biomes[2].color[3] == 200.0f); // taille des bosquets absente du fichier : par défaut
+    // Sous-bois de la montagne : les mêmes variantes que ses arbres (jeunes épicéas et sapins), sans en ajouter.
+    CHECK(set.biomes[2].soil[2] > 0.0f && set.biomes[2].soil[3] < 0.5f);
+    CHECK(set.understorySpecies[2][0] == set.biomeSpecies[2][0] && set.understorySpecies[2][1] == set.biomeSpecies[2][1]);
+    CHECK(set.understoryShares[2][3] == 1.0f);
+    CHECK(set.biomes[1].soil[2] == 0.0f); // désert : ni arbres ni sous-bois
     // Relu tel quel tant que rien ne change.
     const std::uint64_t revision = set.revision;
     CHECK(library.Get(assets, vegetation).revision == revision);
@@ -84,7 +92,12 @@ bool RunVegetationTests() {
     written.maxHumidity = 0.7f;
     written.grove = 350.0f;
     written.species = {{"Végétation/a \"b\".espece.json", 60.0f}, {"c.espece.json", 40.0f}};
+    written.understoryDensity = 0.35f;
+    written.understoryScale = 0.25f;
+    written.understory = {{"c.espece.json", 2.0f}};
     auto reread = Planetology::ParseVegetationBiome(Planetology::WriteVegetationBiome(written));
+    CHECK(reread && reread->understoryDensity == 0.35f && reread->understoryScale == 0.25f && reread->understory.size() == 1
+          && reread->understory[0].species == "c.espece.json" && reread->understory[0].share == 2.0f);
     CHECK(reread && reread->plains == 0.25f && reread->minTemperature == -3.5f && reread->maxHumidity == 0.7f && reread->grove == 350.0f);
     CHECK(reread->species.size() == 2 && reread->species[0].species == written.species[0].species && reread->species[1].share == 40.0f);
     CHECK(Planetology::WriteVegetationBiome(*reread) == Planetology::WriteVegetationBiome(written));
@@ -109,6 +122,58 @@ bool RunVegetationTests() {
 
     // Zones du relief : de 0 à 1, sans changer la hauteur ; des montagnes et des plaines sur une planète.
     const Planetology::Terrain terrain(60000.0, 800.0, 5);
+
+    // Sous-bois (SowPlain) : sur une planète tempérée partout couverte de forêt, des jeunes arbres en plus des arbres,
+    // marqués et plus petits, jamais au pied d'un arbre, plus nombreux avec une densité plus forte ; sans densité, aucun.
+    {
+        PlanetComponent planet;
+        planet.radius = 60000.0f;
+        planet.relief = 800.0f;
+        planet.seed = 5;
+        planet.temperature = 15.0f;
+        planet.poleTemperature = 15.0f;
+        planet.seaLevel = -200.0f;
+        planet.snowLevel = 1000.0f;
+        const Planetology::Terrain world(planet);
+        Planetology::VegetationSet forest;
+        forest.species = {{{"a.glb", "a.glb", "a.glb"}, 1.0f, 1.0f, 90.0f, 0.0f, 0.3f, 10.0f, 12.0f}};
+        forest.biomes.push_back({{1.0f, 1.0f, 1.0f, 1.0f}, {-10.0f, 10.0f, -1000.0f, 1000.0f}, {-10.0f, 10.0f, 1.0f, 1.0f},
+                                 {0.0f, 0.0f, 0.0f, 200.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {-1.0f, 2.0f, 0.3f, 0.25f}});
+        forest.biomeSpecies.push_back({1u << 8, 1u << 8, 1u << 8, 1u << 8});
+        forest.biomeShares.push_back({1.0f, 1.0f, 1.0f, 1.0f});
+        forest.understorySpecies = forest.biomeSpecies;
+        forest.understoryShares = forest.biomeShares;
+        const Planetology::SowSettings settings = Planetology::GetSowSettings(world, planet);
+        const Planetology::TileKey plain = Planetology::FindTile(Math::Normalize(Math::Vector3d{0.3, 0.8, -0.5}), Planetology::GetPlainLevel(world));
+        const auto count = [&](const Planetology::VegetationSet& set, std::size_t& trees, std::size_t& young) {
+            std::vector<Planetology::SownTree> sown;
+            Planetology::SowPlain(world, settings, set, plain, sown);
+            trees = young = 0;
+            for (const Planetology::SownTree& tree : sown) {
+                (tree.understory ? young : trees) += 1;
+                if (tree.understory) {
+                    CHECK(tree.scale == 0.25f);
+                    for (const Planetology::SownTree& other : sown) {
+                        CHECK(other.understory || Math::Length(other.position - tree.position) > 1.0);
+                    }
+                }
+            }
+            return true;
+        };
+        std::size_t trees, young;
+        CHECK(count(forest, trees, young));
+        CHECK(trees > 100 && young > 300);
+        Planetology::VegetationSet denser = forest;
+        denser.biomes[0].soil[2] = 0.6f;
+        std::size_t denserTrees, denserYoung;
+        CHECK(count(denser, denserTrees, denserYoung));
+        CHECK(denserTrees == trees && denserYoung > young * 3 / 2);
+        Planetology::VegetationSet bare = forest;
+        bare.biomes[0].soil[2] = 0.0f;
+        std::size_t bareTrees, bareYoung;
+        CHECK(count(bare, bareTrees, bareYoung));
+        CHECK(bareTrees == trees && bareYoung == 0);
+    }
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
     int mountains = 0;
     int plains = 0;

@@ -26,14 +26,16 @@ namespace Flux::Planetology {
         std::array<float, 4> color;
         // Par défaut, tout convient (comme un biome sans « rocks » ni « soil ») : un biome construit sans les donner pousse.
         std::array<float, 4> rocks{1.0f, 1.0f, 1.0f, 1.0f}; // préférence pour le granit, le calcaire, le grès, le basalte (Lithology)
-        std::array<float, 4> soil{-1.0f, 2.0f, 0.0f, 0.0f};  // x, y : profondeur de la terre (SoilDepth) ; z, w : libres
+        // x, y : profondeur de la terre (SoilDepth) ; z, w : densité et échelle du sous-bois (VegetationBiome::understory…).
+        std::array<float, 4> soil{-1.0f, 2.0f, 0.0f, 0.0f};
     };
 
     // Biomes d'une planète prêts pour le GPU : les variantes de leurs espèces mises en une table (MaxSpecies au plus).
     struct VegetationSet
     {
         static constexpr std::uint32_t MaxBiomes = 8;   // shaders/PlanetClimate.slang
-        static constexpr std::uint32_t MaxSpecies = 8;  // shaders/PlanetTile.slang, shaders/Vegetation.slang
+        // Variantes d'espèces, arbres et sous-bois ensemble (une espèce des deux étages n'en prend qu'une fois).
+        static constexpr std::uint32_t MaxSpecies = 16; // shaders/PlanetTile.slang, shaders/Vegetation.slang
         static constexpr std::uint32_t MaxSharesPerBiome = VegetationBiome::MaxSpecies;
         struct Species
         {
@@ -49,6 +51,9 @@ namespace Flux::Planetology {
         std::vector<std::array<std::uint32_t, 4>> biomeSpecies;
         std::vector<std::array<float, 4>> biomeShares;
         std::vector<float> biomeSpacing; // VegetationBiome::spacing
+        // Comme biomeSpecies et biomeShares, pour le sous-bois.
+        std::vector<std::array<std::uint32_t, 4>> understorySpecies;
+        std::vector<std::array<float, 4>> understoryShares;
         std::uint64_t revision = 0; // change avec un fichier lu
     };
 

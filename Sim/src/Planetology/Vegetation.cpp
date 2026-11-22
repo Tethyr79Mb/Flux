@@ -141,28 +141,45 @@ namespace Flux::Planetology {
                 return std::unexpected(error.empty() ? "« rocks » doit être { \"granite\": 1, \"limestone\": 1, \"sandstone\": 1, \"basalt\": 1 }" : error);
             }
         }
-        if (const auto species = document->find("species"); species != document->end()) {
-            if (!species->is_array()) {
-                return std::unexpected("« species » doit lister [{ \"species\": \"….espece.json\", \"share\": 50 }, ...]");
+        // Liste d'espèces et leurs parts (« species », « understory »).
+        const auto readShares = [&](const char* key, std::vector<VegetationBiome::Share>& shares) -> std::expected<void, std::string> {
+            const auto list = document->find(key);
+            if (list == document->end()) {
+                return {};
             }
-            for (const Json& entry : *species) {
+            if (!list->is_array()) {
+                return std::unexpected(std::format("« {} » doit lister [{{ \"species\": \"….espece.json\", \"share\": 50 }}, ...]", key));
+            }
+            for (const Json& entry : *list) {
                 VegetationBiome::Share share;
                 if (!entry.is_object() || !ReadString(entry, "species", share.species, error) || !ReadNumber(entry, "share", share.share, error)
                     || share.species.empty()) {
                     return std::unexpected(error.empty() ? "espèce : { \"species\": \"….espece.json\", \"share\": 50 } attendu" : error);
                 }
-                if (biome.species.size() == VegetationBiome::MaxSpecies) {
-                    return std::unexpected(std::format("{} espèces au plus par biome", VegetationBiome::MaxSpecies));
+                if (shares.size() == VegetationBiome::MaxSpecies) {
+                    return std::unexpected(std::format("« {} » : {} espèces au plus par biome", key, VegetationBiome::MaxSpecies));
                 }
                 share.share = std::max(share.share, 0.0f);
-                biome.species.push_back(std::move(share));
+                shares.push_back(std::move(share));
             }
+            return {};
+        };
+        if (auto read = readShares("species", biome.species); !read) {
+            return std::unexpected(read.error());
+        }
+        if (auto read = readShares("understory", biome.understory); !read) {
+            return std::unexpected(read.error());
+        }
+        if (!ReadNumber(*document, "understoryDensity", biome.understoryDensity, error)
+            || !ReadNumber(*document, "understoryScale", biome.understoryScale, error)) {
+            return std::unexpected(error);
         }
         for (float* zone : {&biome.plains, &biome.hills, &biome.mountains, &biome.cover, &biome.density, &biome.granite, &biome.limestone,
-                            &biome.sandstone, &biome.basalt}) {
+                            &biome.sandstone, &biome.basalt, &biome.understoryDensity}) {
             *zone = std::clamp(*zone, 0.0f, 1.0f);
         }
         biome.scale = std::clamp(biome.scale, 0.05f, 20.0f);
+        biome.understoryScale = std::clamp(biome.understoryScale, 0.05f, 20.0f);
         biome.spacing = std::clamp(biome.spacing, 0.25f, 8.0f);
         biome.grove = std::clamp(biome.grove, 20.0f, 5000.0f);
         biome.minSoil = std::clamp(biome.minSoil, 0.0f, 1.0f);
@@ -213,11 +230,18 @@ namespace Flux::Planetology {
                                        Number(biome.minSoil), Number(biome.maxSoil),
                                        Number(biome.cover), Number(biome.density), Number(biome.scale),
                                        Number(biome.spacing), Number(biome.grove));
-        for (std::size_t s = 0; s < biome.species.size(); ++s) {
-            text += std::format("{}\n    {{\"species\": {}, \"share\": {}}}", s == 0 ? "" : ",", String(biome.species[s].species),
-                                Number(biome.species[s].share));
-        }
-        text += biome.species.empty() ? "]\n}\n" : "\n  ]\n}\n";
+        const auto writeShares = [&text](const std::vector<VegetationBiome::Share>& shares) {
+            for (std::size_t s = 0; s < shares.size(); ++s) {
+                text += std::format("{}\n    {{\"species\": {}, \"share\": {}}}", s == 0 ? "" : ",", String(shares[s].species),
+                                    Number(shares[s].share));
+            }
+            text += shares.empty() ? "]" : "\n  ]";
+        };
+        writeShares(biome.species);
+        text += std::format(",\n  \"understoryDensity\": {},\n  \"understoryScale\": {},\n  \"understory\": [",
+                            Number(biome.understoryDensity), Number(biome.understoryScale));
+        writeShares(biome.understory);
+        text += "\n}\n";
         return text;
     }
 }

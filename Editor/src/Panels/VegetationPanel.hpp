@@ -59,6 +59,9 @@ namespace FluxEditor {
         void Commit();
 
         bool DrawBiome(Flux::Engine& engine, Flux::UI::Context& ui);
+        // Espèces d'un étage du biome et leurs parts ; noun : ce qu'elles font (« des arbres »).
+        bool DrawShares(Flux::Engine& engine, Flux::UI::Context& ui, std::vector<Flux::Planetology::VegetationBiome::Share>& shares,
+                        const char* noun);
         bool DrawSpecies(Flux::Engine& engine, Flux::UI::Context& ui);
         bool DrawAsset(Flux::Engine& engine, Flux::UI::Context& ui, const char* label, Flux::AssetType type,
                        std::string& value);

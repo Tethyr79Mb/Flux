@@ -220,6 +220,16 @@ namespace Flux::Planetology {
             for (std::size_t b = 0; b < VegetationSet::MaxBiomes; ++b) {
                 m_sowVegetation.blocks[b / 4][b % 4] = blocks.sides[b];
             }
+            m_understory = false;
+            for (std::size_t b = 0; b < count; ++b) {
+                if (b < biomes.understorySpecies.size() && b < biomes.understoryShares.size()) {
+                    m_sowVegetation.understorySpecies[b] = biomes.understorySpecies[b];
+                    m_sowVegetation.understoryShares[b] = biomes.understoryShares[b];
+                    m_understory = m_understory || biomes.biomes[b].soil[2] > 0.0f;
+                } else {
+                    m_sowVegetation.biomes[b].soil[2] = 0.0f; // sans ses espèces, pas de sous-bois
+                }
+            }
             m_tints = {};
             for (std::size_t s = 0; s < std::min<std::size_t>(biomes.species.size(), MaxSpecies); ++s) {
                 m_tints[s] = biomes.species[s].tint;
@@ -234,6 +244,7 @@ namespace Flux::Planetology {
         m_lodDistance = std::max(vegetation.lodDistance, 0.0f);
         m_farDistance = std::max(vegetation.farDistance, m_lodDistance);
         m_range = std::max(vegetation.range * rangeScale, 0.0f);
+        m_understoryRange = std::clamp(vegetation.understoryRange * rangeScale, 0.0f, m_range);
         for (const PlanetRenderer::Plain& plain : plains) {
             if (plain.distance < m_range) {
                 (plain.ahead ? m_ahead : m_visible).push_back(plain);
@@ -446,7 +457,7 @@ namespace Flux::Planetology {
         data.toSun = vector(receivers.GetToSun(), ShadowCasterDistance);
         data.counts = {static_cast<std::uint32_t>(m_commands.size()), frame.culled, 0, 0};
         // Comme MeshRenderer : du dernier dixième de la dernière cascade proche à la portée.
-        data.forest = {0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1], m_range, 0.0f, 0.0f};
+        data.forest = {0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1], m_range, m_understoryRange, 0.0f};
         const RHI::Buffer* pyramid = m_pyramid.buffer ? m_pyramid.buffer : frame.cells.get();
         if (m_pyramid.buffer) {
             data.previousViewProjection = m_previousViewProjection;
@@ -482,8 +493,8 @@ namespace Flux::Planetology {
         if (frame.sown == 0) {
             return;
         }
-        // Compteurs des plaines à zéro, puis TreesPerPlain / 256 groupes par plaine (une place par thread) : sans
-        // barrière entre les plaines, le GPU les mène de front.
+        // Compteurs des plaines à zéro, puis TreesPerPlain / 256 groupes par plaine (une place par thread ; la moitié,
+        // celle des arbres, sans sous-bois) : sans barrière entre les plaines, le GPU les mène de front.
         commands.BindPipeline(*m_clearCounts);
         commands.SetBindGroup(0, *frame.sowGroup);
         const SowConstants count{frame.sown};
@@ -495,7 +506,7 @@ namespace Flux::Planetology {
         for (std::uint32_t job = 0; job < frame.sown; ++job) {
             const SowConstants constants{job};
             commands.PushConstants(&constants, sizeof(constants));
-            commands.Dispatch(SowGroupsPerPlain);
+            commands.Dispatch(m_understory ? SowGroupsPerPlain : SowGroupsPerPlain / 2);
         }
         commands.ComputeBarrier(RHI::ComputeReaders::Host);
     }

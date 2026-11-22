@@ -361,6 +361,7 @@ namespace Flux {
         float lodDistance = 200.0f; // m
         float farDistance = 200.0f;
         float range = 5000.0f;    // m : plus aucun arbre au-delà (la couleur des forêts reste sur le sol)
+        float understoryRange = 1500.0f; // m : plus de sous-bois au-delà (VegetationBiome::understory), au plus range
         // Éclairage du feuillage (shaders/Mesh.slang, ShadeFoliage) : de combien la lumière du soleil déborde sur les
         // feuilles tournées de l'autre côté (0 : pas du tout), et la part qui traverse une feuille vue à contre-jour.
         float leafWrap = 0.3f;

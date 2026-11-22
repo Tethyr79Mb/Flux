@@ -53,6 +53,7 @@ Ordre conseillé des réglages, du plus grand au plus fin :
 9. **Nuages, puis végétation.** Les biomes de la planète (8 au plus, dans l'ordre : le premier qui convient prend le
    sol) décident des forêts et des espèces : zone du relief (plaines, collines, montagnes et leurs piémonts),
    altitude, température, humidité. Jamais sur la plage, sous la neige ni sur une pente trop raide pour l'espèce.
+   Chaque biome a aussi un sous-bois (jeunes arbres, buissons) : ses espèces, sa densité, sa taille.
 
 ## 2. Ce que fait le moteur
 
@@ -111,10 +112,11 @@ Le relief est une formule : la hauteur dans une direction donnée. Rien n'est st
 **Toute modification va dans les deux.** `PlanetGpuTests` vérifie qu'ils restent égaux, sur trois planètes : 60 km,
 200 km et la Terre.
 
-Le semis des arbres a lui aussi deux exemplaires : `SowPlace` (`PlanetTile.slang`, avec `ClimateAt`, `ForestNoise` et
+Le semis des arbres a lui aussi deux exemplaires : `SowPlace` et `SowUnderstory` (`PlanetTile.slang`, avec `ClimateAt`, `ForestNoise` et
 `BiomeFit` de `PlanetClimate.slang`) pour l'image, et `Planetology::SowPlain` (`TreeSowing.cpp`) pour la collision des
 troncs. Biome et espèce y sont tirés par bosquets (`GroveValue` : une valeur par cellule, aux bords ondulés), pas
-arbre par arbre. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
+arbre par arbre. Le sous-bois a sa propre grille (une place par case de 3 à 6 m), plus clairsemée hors des forêts,
+et laisse libre le pied de chaque arbre possible. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
 (`PlanetHash`, gardé pour l'aspect du sol et des nuages) change d'un pilote à l'autre. `VegetationGpuTests` vérifie
 qu'ils donnent les mêmes arbres (0,5 % d'écart au plus, au ras d'un seuil, le relief du GPU étant en float).
 

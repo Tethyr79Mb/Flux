@@ -154,7 +154,7 @@ struct Biome
     float4 humidity; // x, y : humidité ; z : densité des forêts ; w : taille des arbres (x celle de l'espèce)
     float4 color;    // rgb : couleur linéaire des cimes (moyenne de ses espèces) ; w : taille des bosquets d'une espèce (m)
     float4 rocks;    // préférence pour le granit, le calcaire, le grès, le basalte (Lithology)
-    float4 soil;     // x, y : profondeur de la terre (SoilDepth ; au-delà de 0 et 1 : sans borne)
+    float4 soil;     // x, y : profondeur de la terre (SoilDepth ; au-delà de 0 et 1 : sans borne) ; z, w : densité et taille du sous-bois
 };
 
 // 1 entre low et high, 0 au-delà de soft de part et d'autre.

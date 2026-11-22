@@ -43,10 +43,12 @@ namespace Flux::Planetology {
         public:
         // Doivent correspondre à shaders/PlanetTile.slang et shaders/Vegetation.slang.
         static constexpr std::uint32_t TreeGrid = Planetology::TreeGrid;
-        static constexpr std::uint32_t TreesPerPlain = TreeGrid * TreeGrid;
-        // Groupes de computeTrees par plaine semée : une place par thread, 256 threads (GroupSize de PlanetTile.slang).
+        // Places d'une plaine : celles des arbres, puis celles du sous-bois (VegetationBiome::understory).
+        static constexpr std::uint32_t TreesPerPlain = 2 * TreeGrid * TreeGrid;
+        // Groupes de computeTrees par plaine semée : une place par thread, 256 threads (GroupSize de PlanetTile.slang) ;
+        // la moitié sans sous-bois sur la planète.
         static constexpr std::uint32_t SowGroupsPerPlain = TreesPerPlain / 256;
-        // Plaines gardées semées (32 octets par place : 128 Ko par plaine) : toutes celles en vue (jusqu'à 5 ou 6 km
+        // Plaines gardées semées (32 octets par place : 256 Ko par plaine) : toutes celles en vue (jusqu'à 5 ou 6 km
         // avec les imposteurs), plus celles semées d'avance.
         static constexpr std::uint32_t MaxVisiblePlains = 512;
         static constexpr std::uint32_t MaxAheadPlains = 64;
@@ -57,7 +59,7 @@ namespace Flux::Planetology {
         static constexpr float FadeTime = 0.5f;
         static constexpr std::uint32_t MaxSpecies = VegetationSet::MaxSpecies;
         // Une par primitive de chaque espèce de chaque liste (13 pour une espèce à deux primitives).
-        static constexpr std::uint32_t MaxCommands = 128;
+        static constexpr std::uint32_t MaxCommands = 256;
         // Listes d'arbres de l'image.
         // ForestShadow : arbres hors du champ au-delà des cascades proches dont l'ombre peut y tomber (imposteurs
         // seulement, carte des forêts au loin).
@@ -159,7 +161,8 @@ namespace Flux::Planetology {
             Math::Vector3f position; // relative au point de référence de la tuile de sa plaine
             float scale;
             Math::Vector3f up;       // repère de la planète
-            float speciesAngle;      // espèce (VegetationSet::species) x 8 + angle autour du haut (radians)
+            // (espèce (VegetationSet::species) + 16 pour le sous-bois) x 8 + angle autour du haut (radians)
+            float speciesAngle;
         };
         // Relit les arbres d'une plaine semée (mémoire Readback, le GPU passé) ; false si elle ne l'est pas.
         bool ReadTrees(TileKey key, std::vector<Tree>& trees) const;
@@ -184,6 +187,8 @@ namespace Flux::Planetology {
             std::array<std::array<float, 4>, MaxSpecies> species;
             std::array<std::uint32_t, 4> counts;
             std::array<std::array<std::uint32_t, 4>, VegetationSet::MaxBiomes / 4> blocks;
+            std::array<std::array<std::uint32_t, 4>, VegetationSet::MaxBiomes> understorySpecies;
+            std::array<std::array<float, 4>, VegetationSet::MaxBiomes> understoryShares;
         };
         // Doit correspondre à CullCell dans shaders/Vegetation.slang.
         struct CullCell
@@ -209,7 +214,7 @@ namespace Flux::Planetology {
             std::array<std::uint32_t, 8> capacities;
             std::array<std::uint32_t, MaxCommands> commandLists; // liste x MaxSpecies + espèce
             std::array<std::uint32_t, 4> counts;
-            std::array<float, 4> forest; // x, y : tranche des ombres des forêts au loin (m)
+            std::array<float, 4> forest; // x, y : tranche des ombres des forêts au loin (m) ; z : fin du sous-bois (m)
             Math::Matrix4f previousViewProjection;
             std::array<float, 4> cameraDelta;
             std::array<std::uint32_t, 4> pyramidSize; // w : 1 si testés
@@ -273,6 +278,8 @@ namespace Flux::Planetology {
         std::array<float, 10> m_signature{};
         Math::Quaternionf m_rotation;
         float m_lodDistance = 0.0f, m_farDistance = 0.0f, m_range = 0.0f;
+        float m_understoryRange = 0.0f;
+        bool m_understory = false; // un biome de la planète a du sous-bois : ses groupes du semis tournent
         std::vector<PlanetRenderer::Plain> m_visible;
         std::vector<PlanetRenderer::Plain> m_ahead;
         std::chrono::steady_clock::time_point m_now;
