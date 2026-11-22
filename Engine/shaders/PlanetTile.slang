@@ -34,8 +34,7 @@ struct TileInputs
     float4 axisS;  // xyz : axe s ; w : relief
     float4 axisT;  // xyz : axe t ; w : profondeur des jupes
     uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (OctaveShift)
-    uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float) ;
-                   // w : pente des matières (GetCoverLayout) : octaves | premier niveau mesuré << 16 (0 : aucune)
+    uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float)
     // Réglages de la forme (Terrain::ShapeConstants) : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains,
     // detailHills, detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance,
     // craterChance, craterGain, tailles de cratères), (craterDepth, craterRim, craterWear, craterComplex).
@@ -651,45 +650,6 @@ float3 WideLocal(uint i, uint j)
     return Local(Delta(i + 1, j + 1), wideHeights[j * Wide + i]);
 }
 
-// --- Pente des matières ---
-
-// La matière du sol (herbe, terre, roche) se choisit d'après la pente : prise de la normale de la tuile, elle changeait
-// quand la tuile se subdivisait (ses sommets plus serrés voient des bosses que la tuile grossière lissait, et l'écart
-// des sommets change la pente mesurée), et l'herbe virait à la terre sous les yeux en s'approchant. Elle est mesurée
-// ici la même à chaque niveau de détail : sur le relief sans ses octaves plus fines que GetCoverLayout, entre le
-// sommet et deux points à CoverStep mètres. Les tuiles plus grossières que ce niveau (sommets plus écartés que ces
-// octaves) gardent leur normale : elles la verraient par trop peu de points.
-static const float CoverStep = 2.0; // m
-
-bool CoverMeasured() { return tile.wetness.w != 0 && tile.options.z >= (tile.wetness.w >> 16); }
-
-// Écart au centre de la tuile du point à `meters` du point `delta` le long de la tangente t (unitaire), comme
-// WetnessHeight : (δ + t.ε) / s - c.ε² / (s.(1 + s)).
-float3 CoverDelta(float3 delta, float3 t, float meters)
-{
-    const float epsilon = meters / tile.axisN.w;
-    const float epsilon2 = epsilon * epsilon;
-    const float s = sqrt(1.0 + epsilon2);
-    return (delta + t * epsilon) / s - tile.center.xyz * (epsilon2 / (s * (1.0 + s)));
-}
-
-// Pente des matières au sommet (i, j) (0 à TileQuads) : cosinus contre la verticale.
-float CoverFlatness(uint i, uint j)
-{
-    const uint octaves = tile.wetness.w & 0xFFFFu;
-    const float3 delta = Delta(i + 2, j + 2);
-    const float3 d = tile.center.xyz + delta;
-    const float3 t1 = normalize(tile.axisS.xyz - d * dot(d, tile.axisS.xyz));
-    const float3 t2 = cross(d, t1);
-    const float3 at = Local(delta, Height(delta, octaves));
-    const float3 deltaS = CoverDelta(delta, t1, CoverStep);
-    const float3 deltaT = CoverDelta(delta, t2, CoverStep);
-    const float3 du = Local(deltaS, Height(deltaS, octaves)) - at;
-    const float3 dv = Local(deltaT, Height(deltaT, octaves)) - at;
-    // abs : le sens du produit vectoriel ne compte pas, seule la pente.
-    return min(abs(dot(normalize(cross(du, dv)), normalize(tile.center.xyz * tile.axisN.w + at))), 1.0);
-}
-
 // Sommet (ci, cj) de la parente (0 à Coarse - 1, décalage 2.ci - 2) ; colonne 2.ci.
 float3 CoarseLocal(uint ci, uint cj)
 {
@@ -801,10 +761,9 @@ TileVertex BuildVertex(uint i, uint j)
     return vertex;
 }
 
-// zones : Terrain::Zones, wet : l'humidité du relief, et la pente des matières, dans les coordonnées de texture
-// (PackZones, PackCover, lues par vertexPlanet pour les biomes, le climat et les matières).
-void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones, float wet,
-           float coverFlatness)
+// zones : Terrain::Zones, et wet : l'humidité du relief, dans les coordonnées de texture (PackZones, lues par
+// vertexPlanet pour les biomes et le climat).
+void Write(uint index, float3 position, float3 normal, float3 morphOffset, float3 morphNormal, float2 zones, float wet)
 {
     index += constants.firstVertex;
     const uint v = index * 8;
@@ -815,7 +774,7 @@ void Write(uint index, float3 position, float3 normal, float3 morphOffset, float
     vertices[v + 4] = normal.y;
     vertices[v + 5] = normal.z;
     vertices[v + 6] = PackZones(zones);
-    vertices[v + 7] = PackCover(wet, coverFlatness);
+    vertices[v + 7] = wet;
     const uint m = index * 6;
     morph[m + 0] = morphOffset.x;
     morph[m + 1] = morphOffset.y;
@@ -909,8 +868,7 @@ void computeMain(uint thread : SV_GroupIndex)
     for (uint v = thread; v < TileSide * TileSide; v += GroupSize) {
         const TileVertex vertex = BuildVertex(v % TileSide, v / TileSide);
         Write(v, vertex.position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(v % TileSide, v / TileSide),
-              SampleWetness(float(v % TileSide), float(v / TileSide)),
-              CoverMeasured() ? CoverFlatness(v % TileSide, v / TileSide) : NoCoverFlatness);
+              SampleWetness(float(v % TileSide), float(v / TileSide)));
         const float3 target = vertex.position + vertex.morphOffset;
         AddToMeshlets(v % TileSide, v / TileSide, vertex.position);
         AddToMeshlets(v % TileSide, v / TileSide, target);
@@ -931,7 +889,7 @@ void computeMain(uint thread : SV_GroupIndex)
         const float3 direction = tile.center.xyz + Delta(at.x + 2, at.y + 2);
         const float3 position = vertex.position - direction * tile.axisT.w;
         Write(TileSide * TileSide + k, position, vertex.normal, vertex.morphOffset, vertex.morphNormal, WideZones(at.x, at.y),
-              SampleWetness(float(at.x), float(at.y)), NoCoverFlatness); // jupes : presque jamais vues
+              SampleWetness(float(at.x), float(at.y)));
         radius = max(radius, length(position + vertex.morphOffset));
         AddToMeshlets(at.x, at.y, position);
         AddToMeshlets(at.x, at.y, position + vertex.morphOffset);

@@ -47,7 +47,7 @@ Ordre conseillé des réglages, du plus grand au plus fin :
 7. **Climat.** La température baisse vers les pôles (axe y de la planète) et avec l'altitude (6,5 °C par km).
    L'humidité suit des bandes de latitude comme sur Terre (humide à l'équateur et vers 55°, sec vers 25-30° et aux
    pôles, bords ondulés), autour du réglage de la planète. Ils choisissent la matière du sol (herbe, terre, sable, neige), la roche
-   prenant les pentes (mesurées sans le détail de moins de ~8 m : la matière ne change pas avec le niveau de détail). La neige commence à `Neige à partir de` (% du relief) : baisser le relief la fait descendre.
+   prenant les pentes. La neige commence à `Neige à partir de` (% du relief) : baisser le relief la fait descendre.
 8. **Atmosphère.** Densité (1 = Terre), hauteur et couleur du ciel. Elle règle aussi la vitesse permise au vaisseau :
    le mode voyage est bridé à mesure que l'air s'épaissit.
 9. **Nuages, puis végétation.** Les biomes de la planète (8 au plus, dans l'ordre : le premier qui convient prend le

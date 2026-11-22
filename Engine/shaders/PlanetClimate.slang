@@ -101,8 +101,7 @@ static const float ReliefHumidity = 0.25;
 static const float ReliefForest = 0.3;
 
 // Les sommets des tuiles portent dans uv.x les zones du relief (Terrain::Zones : collines, montagnes, 0 à 1) sur
-// 10 bits chacune, en un entier exact dans un float, et dans uv.y l'humidité du relief et la pente des matières
-// (PackCover). Des entiers : à décoder par sommet, jamais interpolés.
+// 10 bits chacune, en un entier exact dans un float, et dans uv.y l'humidité du relief.
 float PackZones(float2 zones)
 {
     const float2 q = round(saturate(zones) * 1023.0);
@@ -113,27 +112,6 @@ float2 UnpackZones(float packed)
 {
     const float hills = floor(packed * (1.0 / 1024.0));
     return float2(hills, packed - hills * 1024.0) * (1.0 / 1023.0);
-}
-
-// Pente qui choisit les matières du sol (cosinus contre la verticale, PlanetTile.slang) absente : la tuile est trop
-// grossière pour la mesurer, la normale des sommets la donne.
-static const float NoCoverFlatness = -1.0;
-
-// Humidité du relief (-1 à 1) et pente des matières (0 à 1, ou NoCoverFlatness) sur 12 bits chacune, en un entier
-// exact dans un float ; la valeur 4095 de la pente veut dire NoCoverFlatness.
-float PackCover(float wet, float flatness)
-{
-    const float w = round((clamp(wet, -1.0, 1.0) * 0.5 + 0.5) * 4095.0);
-    const float f = flatness < 0.0 ? 4095.0 : round(saturate(flatness) * 4094.0);
-    return w * 4096.0 + f;
-}
-
-// x : humidité du relief ; y : pente des matières, ou NoCoverFlatness.
-float2 UnpackCover(float packed)
-{
-    const float w = floor(packed * (1.0 / 4096.0));
-    const float f = packed - w * 4096.0;
-    return float2(w * (2.0 / 4095.0) - 1.0, f >= 4094.5 ? NoCoverFlatness : f * (1.0 / 4094.0));
 }
 
 // --- Roche-mère (géologie, étape 2) ---
