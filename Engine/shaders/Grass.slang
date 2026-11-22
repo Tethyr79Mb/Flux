@@ -33,8 +33,10 @@ static const float GrassFullDistance = 20.0; // m : tous les brins jusque-là (M
 static const uint GrassClusterBlades = 32;
 static const uint GrassVertexSegments = 2;
 
-// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv).
+// Page de tuiles (PlanetTileCompute) : ModelVertex (8 floats : position, normale, uv), et MorphVertex (6 floats :
+// glissement vers la forme parente, sa normale).
 [[vk::binding(0, 3)]] StructuredBuffer<float> pageVertices;
+[[vk::binding(1, 3)]] StructuredBuffer<float> pageMorph;
 
 float GrassDensity() { return params.color.x; }
 float GrassHeight() { return params.color.y; }
@@ -42,10 +44,19 @@ float GrassRange() { return params.color.z; }
 float GrassWidth() { return params.color.w; }
 float GrassWind() { return params.emissive.x; }
 
-float3 ReadGrassPosition(uint firstVertex, uint index)
+// Sommet `index` de la tuile glissé vers sa parente comme le sol le dessine (PlanetVertex) : l'herbe pousse aussi sur
+// les tuiles qui glissent, sans flotter ni s'enfoncer.
+float3 ReadGrassRestPosition(uint firstVertex, uint index)
 {
     const uint v = (firstVertex + index) * 8;
     return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
+}
+
+float3 ReadGrassPosition(uint draw, uint firstVertex, uint index)
+{
+    const uint m = (firstVertex + index) * 6;
+    const float3 position = ReadGrassRestPosition(firstVertex, index);
+    return position + float3(pageMorph[m], pageMorph[m + 1], pageMorph[m + 2]) * PlanetMorph(draw, position);
 }
 
 // Climat des grandes échelles au sommet `index` (PlanetClimate), avec l'humidité du relief de ce sommet (uv.y), et en z
@@ -60,15 +71,18 @@ float3 GrassClimate(uint draw, uint firstVertex, uint index, float3 local)
     return float3(PlanetClimate(planet, d.rim.xyz + local) + float2(0.0, ReliefHumidity * wet), SoilDepth(wet, lithology));
 }
 
-float3 ReadGrassNormal(uint firstVertex, uint index)
+float3 ReadGrassNormal(uint draw, uint firstVertex, uint index)
 {
-    const uint v = (firstVertex + index) * 8 + 3;
-    return float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
+    const uint v = (firstVertex + index) * 8;
+    const uint m = (firstVertex + index) * 6;
+    const float3 position = float3(pageVertices[v], pageVertices[v + 1], pageVertices[v + 2]);
+    return lerp(float3(pageVertices[v + 3], pageVertices[v + 4], pageVertices[v + 5]),
+                float3(pageMorph[m + 3], pageMorph[m + 4], pageMorph[m + 5]), PlanetMorph(draw, position));
 }
 
 // Le sol de la tuile au point (s, t) de sa grille (en mailles, de 0 à GrassTileQuads), sur les deux triangles de sa
 // maille tels que BuildTileIndices les découpe ((a, b, c) puis (a, c, d)) : le pied du brin est sur le sol dessiné.
-void GrassGround(uint firstVertex, float2 st, out float3 position, out float3 normal)
+void GrassGround(uint draw, uint firstVertex, float2 st, out float3 position, out float3 normal)
 {
     const uint2 q = min(uint2(st), uint2(GrassTileQuads - 1));
     const float2 f = saturate(st - float2(q));
@@ -76,31 +90,32 @@ void GrassGround(uint firstVertex, float2 st, out float3 position, out float3 no
     const uint b = a + 1;
     const uint c = a + GrassTileSide + 1;
     const uint d = a + GrassTileSide;
-    const float3 pa = ReadGrassPosition(firstVertex, a);
-    const float3 pc = ReadGrassPosition(firstVertex, c);
-    const float3 na = ReadGrassNormal(firstVertex, a);
-    const float3 nc = ReadGrassNormal(firstVertex, c);
+    const float3 pa = ReadGrassPosition(draw, firstVertex, a);
+    const float3 pc = ReadGrassPosition(draw, firstVertex, c);
+    const float3 na = ReadGrassNormal(draw, firstVertex, a);
+    const float3 nc = ReadGrassNormal(draw, firstVertex, c);
     if (f.x >= f.y) {
-        const float3 pb = ReadGrassPosition(firstVertex, b);
-        const float3 nb = ReadGrassNormal(firstVertex, b);
+        const float3 pb = ReadGrassPosition(draw, firstVertex, b);
+        const float3 nb = ReadGrassNormal(draw, firstVertex, b);
         position = pa + f.x * (pb - pa) + f.y * (pc - pb);
         normal = na + f.x * (nb - na) + f.y * (nc - nb);
     } else {
-        const float3 pd = ReadGrassPosition(firstVertex, d);
-        const float3 nd = ReadGrassNormal(firstVertex, d);
+        const float3 pd = ReadGrassPosition(draw, firstVertex, d);
+        const float3 nd = ReadGrassNormal(draw, firstVertex, d);
         position = pa + f.x * (pc - pd) + f.y * (pd - pa);
         normal = na + f.x * (nc - nd) + f.y * (nd - na);
     }
     normal = normalize(normal);
 }
 
-// Aire (m²) du carré de la grille de `origin` à `origin` + size mailles (ses quatre coins).
+// Aire (m²) du carré de la grille de `origin` à `origin` + size mailles (ses quatre coins), sans le glissement : le
+// nombre de brins ne bouge pas avec la caméra.
 float GrassArea(uint firstVertex, uint2 origin, uint size)
 {
-    const float3 p0 = ReadGrassPosition(firstVertex, origin.y * GrassTileSide + origin.x);
-    const float3 p1 = ReadGrassPosition(firstVertex, origin.y * GrassTileSide + origin.x + size);
-    const float3 p2 = ReadGrassPosition(firstVertex, (origin.y + size) * GrassTileSide + origin.x + size);
-    const float3 p3 = ReadGrassPosition(firstVertex, (origin.y + size) * GrassTileSide + origin.x);
+    const float3 p0 = ReadGrassRestPosition(firstVertex, origin.y * GrassTileSide + origin.x);
+    const float3 p1 = ReadGrassRestPosition(firstVertex, origin.y * GrassTileSide + origin.x + size);
+    const float3 p2 = ReadGrassRestPosition(firstVertex, (origin.y + size) * GrassTileSide + origin.x + size);
+    const float3 p3 = ReadGrassRestPosition(firstVertex, (origin.y + size) * GrassTileSide + origin.x);
     return 0.5 * length(cross(p2 - p0, p3 - p1));
 }
 
@@ -170,6 +185,13 @@ GrassBlade NoGrassBlade()
     return blade;
 }
 
+// Touffes : les brins vont par GrassTuftBlades rangs de suite autour d'un pied tiré au hasard dans le carré, à moins de
+// GrassTuftRadius ; une part (GrassScattered) reste semée seule entre elles. Un pré, pas un gazon semé brin à brin.
+// Rangs de suite : au loin, où il ne reste que les premiers rangs, ce sont des touffes entières qui partent.
+static const uint GrassTuftBlades = 24;
+static const float GrassTuftRadius = 0.15; // m
+static const float GrassScattered = 0.25;
+
 // Brin de rang `index` (sur `total` à pleine densité) d'un carré de la tuile : de `origin` à `origin` + size mailles.
 // climate : celui des grandes échelles au centre du carré (GrassClimate : avec la profondeur de la terre), le même pour
 // tous ses brins. L'air et l'ombre des nuages viennent de la passe d'éclairage (Lighting.slang), une fois par pixel.
@@ -182,10 +204,25 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const float2 r0 = GroundRandom(h0);
     const float2 r1 = GroundRandom(h1);
     const float2 r2 = GroundRandom(h2);
-    const float2 r3 = GroundRandom(GroundHash(h2 + 0x9B05688Cu));
+    const uint h3 = GroundHash(h2 + 0x9B05688Cu);
+    const float2 r3 = GroundRandom(h3);
+    const float2 r4 = GroundRandom(GroundHash(h3 + 0x2545F491u));
+
+    float2 st = origin + r0 * size;
+    float inTuft = 0.0; // 1 au pied de la touffe, 0 à son bord ou hors touffe
+    if (r4.x >= GrassScattered) {
+        const float2 center = GroundRandom(GroundHash(seed ^ GroundHash((index / GrassTuftBlades) * 0x85EBCA6Bu + 0xC2B2AE35u)));
+        // Écart des sommets de la tuile (m), le même partout à 1 % près : le rayon de la touffe en mailles.
+        const float quad = max(length(ReadGrassRestPosition(firstVertex, 1) - ReadGrassRestPosition(firstVertex, 0)), 1.0e-3);
+        const float radius = sqrt(r4.y);
+        const float angle = r0.y * 6.2831853;
+        st = clamp(origin + center * size + float2(cos(angle), sin(angle)) * (radius * GrassTuftRadius / quad),
+                   float2(0.0), float2(GrassTileQuads));
+        inTuft = 1.0 - radius;
+    }
 
     float3 position, normal;
-    GrassGround(firstVertex, origin + r0 * size, position, normal);
+    GrassGround(draw, firstVertex, st, position, normal);
     const DrawData d = draws[draw];
     blade.root = Transform(d.world, position).xyz;
     // Hors du champ : écarté avant le plus cher (couverture du sol, repère, vent). Le paquet entier l'était déjà quand
@@ -253,10 +290,12 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     const float patch = saturate(0.5 + 0.5 * sin(k * (211.0 * ground.x + 137.0 * ground.z + 59.0 * ground.y))
                                      * sin(k * (-113.0 * ground.x + 181.0 * ground.z + 97.0 * ground.y))
                                  + 0.25 * sin(k * (83.0 * ground.x - 61.0 * ground.z + 151.0 * ground.y)));
-    const float height = GrassHeight() * lerp(0.55, 1.35, clump) * lerp(0.65, 1.25, patch) * lerp(0.5, 1.2, r1.y) * grow;
+    // Plus hauts au cœur d'une touffe, plus courts et plus couchés à son bord.
+    const float tuftShape = r4.x >= GrassScattered ? lerp(0.75, 1.25, inTuft) : 1.0;
+    const float height = GrassHeight() * lerp(0.55, 1.35, clump) * lerp(0.65, 1.25, patch) * lerp(0.5, 1.2, r1.y) * tuftShape * grow;
     // Toujours un peu ployé (vers `facing`, au hasard autour du brin) : le point de courbure haut et droit, la pointe
     // qui retombe en arc.
-    const float lean = lerp(0.2, 0.8, r2.y);
+    const float lean = lerp(0.2, 0.8, r2.y) * (r4.x >= GrassScattered ? lerp(1.3, 0.7, inTuft) : 1.0);
     const float3 tipDirection = normalize(growUp * (1.0 - 0.5 * lean) + facing * lean + windDirection * push * 1.5);
     blade.root -= growUp * 0.03; // sous le sol : pas de jour entre le brin et un triangle du sol voisin
     blade.tip = blade.root + tipDirection * height;

@@ -245,7 +245,7 @@ namespace Flux {
             std::uint32_t firstIndex; // toute la tuile ou un quart (PlanetRenderer::Tile)
             std::uint32_t indexCount;
             bool shadowOnly;          // hors du champ, seulement pour son ombre (PlanetRenderer::Tile::shadowOnly)
-            bool grass = false;       // de l'herbe y pousse (proche, entière, sans glissement vers sa parente)
+            bool grass = false;       // de l'herbe y pousse (proche ; entière, ou un quart avec les mesh shaders)
         };
         // Appel indirect : `count` commandes de m_tileCommands à partir de `first`, toutes de la même page.
         struct TileBatch
