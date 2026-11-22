@@ -31,6 +31,7 @@ namespace Flux::Planetology {
         std::array<float, 4> climate{}; // température à l'équateur, aux pôles (°C), humidité, 1 si textures du sol (GroundTextures)
         std::array<float, 4> beach{};   // altitude du niveau de la mer, hauteur de la plage au-dessus (m) ; z : 1 sans zones (roche partout)
         std::array<float, 4> rim{};     // couleur x intensité de la lumière de contour ; w : finesse (0 : aucune)
+        std::array<float, 4> strata{};  // strates de la roche : force (0 : aucune), épaisseur d'un banc, hauteur des plis (m)
         // Nuages (CloudsComponent) : centre de la planète relatif à la caméra et rayon de leur couche (w, 0 : aucun) ;
         // rotation de la planète (quaternion) ; couverture, opacité, 1 / taille des formations, angle de dérive ; couleur et
         // épaisseur de la couche (w, m).
@@ -43,7 +44,7 @@ namespace Flux::Planetology {
         std::array<float, 4> forest{};
         std::array<BiomeGpu, VegetationSet::MaxBiomes> biomes{};
     };
-    static_assert(sizeof(PlanetGpu) == 240 + 96 * VegetationSet::MaxBiomes);
+    static_assert(sizeof(PlanetGpu) == 256 + 96 * VegetationSet::MaxBiomes);
 
     // Tuiles des planètes (PlanetComponent) : pour chaque image, parcourt l'arbre de tuiles de chaque face et retient
     // celles à dessiner, plus fines près de la caméra (Flux/Planetology/Planet.hpp). Les tuiles manquantes sont calculées

@@ -185,6 +185,12 @@ namespace Flux {
         // Dans l'espace (hors de l'air d'une planète et d'un Intérieur), l'œil ne s'habitue pas au noir plus de ce nombre
         // de stops sous le gris moyen au soleil : le côté nuit d'une planète reste sombre.
         float spaceAdaptation = 3.0f;
+        // Occlusion ambiante (GTAO, si les réglages graphiques l'activent) : la lumière ambiante assombrie dans les coins,
+        // sous et entre les objets. Portée des obstacles (m), force (0 : aucune, 1 : normale), part de la fin de la
+        // portée où un obstacle compte de moins en moins.
+        float occlusionRadius = 2.0f;
+        float occlusionIntensity = 1.0f;
+        float occlusionFalloff = 0.6f;
     };
 
     // Réglages du monde de la scène (comme les World Settings d'Unreal) : la gravité et l'air hors des planètes et des
@@ -292,6 +298,12 @@ namespace Flux {
         // Couleurs de la roche-mère (0 à 1) : granit, calcaire, grès et basalte teintent la roche, le sable et la terre
         // par régions de plusieurs dizaines de km (basalte sombre). 0 : la même couleur partout.
         float lithologyTint = 1.0f;
+        // Strates : bancs de roche horizontaux, visibles dans les pentes et les falaises (rien sur la collision). Force
+        // (0 : aucune ; nettes dans le calcaire et le grès, en coulées épaisses dans le basalte, presque rien dans le
+        // granit), épaisseur d'un banc (m ; ils se groupent par ~5 et par ~25) et hauteur de leurs plis sur des km (m).
+        float strata = 1.0f;
+        float strataThickness = 2.5f;
+        float strataFolds = 60.0f;
         float temperature = 20.0f;      // °C à l'équateur, au niveau zéro
         float poleTemperature = -30.0f; // °C aux pôles
         float humidity = 0.5f;          // 0 : planète désertique, 1 : très humide

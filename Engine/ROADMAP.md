@@ -118,7 +118,7 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
   - 🔧 A2. G-buffer (2026-11-14, 16 octets par pixel : couleur de base et sorte de matériau, normales de la carte et de la face en octaèdre 16 bits, métal, rugosité, occlusion) et passe d'éclairage en compute pour les modèles opaques ; image identique avec et sans ray tracing, temps GPU égal (±0,03 ms). Limites : lampes encore parcourues une à une par pixel (grappes en A4) ; vue de contrôle passée par la courbe de tons.
   - ✅ A3. Sol, arbres (de près et imposteurs), herbe dans le G-buffer (2026-11-16, sortes de matière : modèle, feuillage, brin, imposteur) ; air, ombre des nuages et intérieurs dans la passe d'éclairage, une fois par pixel visible. Image identique à master (sol, forêt, orbite) et plus rapide sur la RX 7700 XT : au sol avec arbres 3,70 → 2,46 ms, forêt 1,71 → 1,44 ms, orbite 2,36 → 2,16 ms (arbres 1,72 → 0,69 ms). Océan et transparents restent en direct.
   - ⬜ A4. Lumières en grappes (16 × 9 × 24), transparents compris.
-  - ⬜ A5. Occlusion ambiante GTAO (demi-résolution) et ombres de contact.
+  - 🔨 A5. Occlusion ambiante GTAO et ombres de contact. Fait (2026-11-18) : GTAO (méthode XeGTAO) des pixels du G-buffer, pleine taille de rendu en Haute, un pixel sur quatre en Moyenne (configuration minimum), bruit moyenné par l'anticrénelage, lissage 5 x 5 aux bords ; n'assombrit que l'ambiante (multi-rebond, occlusion des reflets) ; portée (2 m par défaut), force et fondu dans le Ciel, qualité dans les options, vue « Occlusion ambiante » du panneau Moteur. Limites : pas de mips de la profondeur (rayon borné à 128 pixels à l'écran), océan et transparents sans occlusion, pas de normale courbée. À faire : ombres de contact.
   - 🔨 A6. Reflets de l'écran et sondes de reflets dans les vaisseaux et stations. Fait (2026-11-14) : sondes fixes (composant « Sonde de reflets », 4 au plus par image), capturées par le GPU en 256 pixels (objets opaques sur le ciel), préfiltrées comme le ciel, lues avec parallaxe de boîte et fondu vers le ciel ; refaites quand elles bougent, quand le ciel ou le soleil change, à la fin d'un chargement ou à intervalle choisi. À faire : sol des planètes, arbres, eau et transparents absents des captures ; diffus tiré du niveau le plus flou (pas d'irradiance à part) ; capture d'un coup (pas étalée sur plusieurs images) ; pas de boîte dessinée dans l'éditeur ; reflets de l'écran.
   - ⬜ A7. Ombres des lampes (atlas) et brouillard volumique (froxels).
   - ⬜ B1. Lumière renvoyée par la planète proche (ligne suivante).
@@ -307,7 +307,10 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   l'humidité du relief et la roche : roche dès les pentes douces et affleurements là où elle est mince, sans herbe.
   Couleurs fixes dans le code (réglables avec les types de planète). Condition « sol » des biomes (étape 3) :
   préférence pour chaque roche-mère et profondeur de la terre, dans le panneau Végétation (pinède sur grès et granit,
-  plaine et marais sur sol épais). À venir : rivières.
+  plaine et marais sur sol épais). Strates de la roche (couches, 2026-11-22) : bancs, groupes et formations selon
+  l'altitude plissée et la roche-mère, réglables dans l'inspecteur (force, épaisseur, plis) ; talus de terre entre
+  l'herbe et la roche (humus, terre, altérite), roche seulement dans les fortes pentes sous une terre épaisse. À venir :
+  litière sous les forêts, rivières.
   À améliorer : pas de sécheresse au cœur des continents ni d'ombre de
   pluie derrière les montagnes ; espacement arrondi à la case du semis (environ 6 m), et quelques arbres d'espèces
   différentes encore proches au bord d'un biome ; semis du CPU (collision) 20 % plus long ; humidité du relief

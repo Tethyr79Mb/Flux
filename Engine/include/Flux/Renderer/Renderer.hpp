@@ -8,6 +8,7 @@
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
 #include "Flux/Planetology/VegetationDistance.hpp"
+#include "Flux/Renderer/AmbientOcclusion.hpp"
 #include "Flux/Renderer/GBufferView.hpp"
 #include "Flux/Renderer/ModelDetail.hpp"
 #include "Flux/Renderer/Upscaling.hpp"
@@ -236,6 +237,9 @@ namespace Flux {
         // simplifié.
         void SetModelDetail(ModelDetail detail);
         ModelDetail GetModelDetail() const;
+        // Occlusion ambiante GTAO (DefaultAmbientOcclusionQuality par défaut) ; portée et force dans le Ciel de la scène.
+        void SetAmbientOcclusion(AmbientOcclusionQuality quality);
+        AmbientOcclusionQuality GetAmbientOcclusion() const;
         // Mode de présentation réellement utilisé, lisible (FIFO, MAILBOX...).
         std::string_view GetPresentModeName() const;
 

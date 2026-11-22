@@ -1471,6 +1471,11 @@ namespace Flux {
                                      std::clamp(planet.lithologyTint, 0.0f, 1.0f)}});
             // Portée de l'herbe : le sol y montre de la terre sous les brins (PlanetColor).
             m_planetData[index].shape[3] = grass ? m_grass.range : 0.0f;
+            // Strates de la roche (RockStrata dans Mesh.slang) ; pas sur les planètes sans zones (lunes : régolithe).
+            if (planet.zones && planet.strata > 0.0f) {
+                m_planetData[index].strata = {std::min(planet.strata, 1.0f), std::max(planet.strataThickness, 0.2f),
+                                              std::max(planet.strataFolds, 0.0f), 0.0f};
+            }
             // Lumière de contour sur les corps sans air seulement : une atmosphère dessine déjà son halo vu de l'espace
             // (ciel et air du sol, diffusion multiple), un contour ajouté le doublait et brillait aussi côté nuit.
             // Effacée sous 5 % du rayon : au sol, presque tout le terrain est vu de biais et la prenait en plein.
@@ -1535,7 +1540,10 @@ namespace Flux {
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
                                   {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
-                                  {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z), 0.0f},
+                                  {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z),
+                                   // Altitude du centre en double : un float à des milliers de km du centre ne garde
+                                   // que 0,5 m, trop peu pour des strates de 1 m (StrataCoordinate).
+                                   static_cast<float>(Math::Length(tile.local) - static_cast<double>(planet.radius))},
                                   {}, {}, {}, {}});
         }
     }
@@ -1746,7 +1754,7 @@ namespace Flux {
         frame.cameraRight = ToArray(camera.GetRight() * (tanY * aspect), temporal.jitter.x);
         frame.cameraUp = ToArray(camera.GetUp() * tanY, temporal.jitter.y);
         m_rayShadowView = {frame.cameraRight, frame.cameraUp, ToArray(camera.GetForward(), camera.nearPlane), frame.toSun,
-                           temporal.noiseFrame};
+                           temporal.noiseFrame, GetModelDetailPixels(m_modelDetail)};
         // Trop de volumes intérieurs : les plus proches de la caméra (ceux qu'on voit de près).
         if (m_interiors.size() > MaxInteriors) {
             std::ranges::nth_element(m_interiors, m_interiors.begin() + MaxInteriors, {}, &PreparedInterior::distance);

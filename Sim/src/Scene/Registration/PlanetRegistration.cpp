@@ -53,7 +53,13 @@ namespace Flux {
             .Field("adaptationSpeed", "Exposition : vitesse d'adaptation", &SkyComponent::adaptationSpeed,
                    {.speed = 0.05, .min = 0.0, .max = 100.0, .decimals = 2})
             .Field("spaceAdaptation", "Exposition : nuit dans l'espace (stops sous le soleil)", &SkyComponent::spaceAdaptation,
-                   {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 1});
+                   {.speed = 0.05, .min = 0.0, .max = 20.0, .decimals = 1})
+            .Field("occlusionRadius", "Occlusion ambiante : portée (m)", &SkyComponent::occlusionRadius,
+                   {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2})
+            .Field("occlusionIntensity", "Occlusion ambiante : force", &SkyComponent::occlusionIntensity,
+                   {.speed = 0.01, .min = 0.0, .max = 4.0, .decimals = 2})
+            .Field("occlusionFalloff", "Occlusion ambiante : fondu en fin de portée", &SkyComponent::occlusionFalloff,
+                   {.speed = 0.01, .min = 0.01, .max = 1.0, .decimals = 2});
         registry.Register<WorldComponent>("world", "Monde")
             .Field("gravity", "Gravité (m/s²)", &WorldComponent::gravity,
                    {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})
@@ -126,6 +132,12 @@ namespace Flux {
             .Field("snowTint", "Teinte de la texture de neige", &PlanetComponent::snowTint, {.alpha = false})
             .Field("lithologyTint", "Couleurs de la roche-mère", &PlanetComponent::lithologyTint,
                    {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("strata", "Strates de la roche", &PlanetComponent::strata,
+                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("strataThickness", "Épaisseur des bancs (m)", &PlanetComponent::strataThickness,
+                   {.speed = 0.05, .min = 0.2, .max = 50.0, .decimals = 2})
+            .Field("strataFolds", "Plis des strates (m)", &PlanetComponent::strataFolds,
+                   {.speed = 1.0, .min = 0.0, .max = 2000.0, .decimals = 0})
             .Group("climate", "Climat")
             .Field("temperature", "Température à l'équateur (°C)", &PlanetComponent::temperature,
                    {.speed = 0.5, .min = -200.0, .max = 200.0, .decimals = 1})

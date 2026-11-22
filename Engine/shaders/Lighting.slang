@@ -17,11 +17,63 @@
 [[vk::binding(2, 3)]] Sampler2D gbufferNormals; // xy : normale de la carte ; zw : de la face (octaédriques, EncodeOctahedron)
 [[vk::binding(3, 3)]] Sampler2D gbufferSurface; // selon la sorte de matière (GBufferStandard…, Mesh.slang)
 [[vk::binding(4, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> lightingColor; // émissif et contour lus, puis tout
+// Occlusion ambiante (AmbientOcclusion.slang) : x, part de la lumière ambiante qui arrive ; y, distance devant la caméra.
+// Lue si params.color.y (pas entre deux pixels calculés : 1 ou 2) n'est pas nul.
+[[vk::binding(6, 3)]] Sampler2D ambientOcclusion;
 #ifdef FLUX_RAY_QUERY
 [[vk::binding(5, 3)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> lightingSun;
 #endif
 
 static const uint LightingGroupSize = 8; // LightingRenderer.cpp
+
+// Occlusion ambiante de l'écran au pixel (1 sans elle). Demi-résolution : les quatre pixels calculés voisins, pondérés
+// comme un filtrage bilinéaire et par l'écart de distance (le fond derrière un poteau ne l'assombrit pas).
+float ScreenOcclusion(int2 pixel, float viewDepth)
+{
+    const uint stride = uint(params.color.y);
+    if (stride == 0u) {
+        return 1.0;
+    }
+    if (stride == 1u) {
+        return ambientOcclusion.Load(int3(pixel, 0)).x;
+    }
+    uint2 size;
+    ambientOcclusion.GetDimensions(size.x, size.y);
+    const int2 last = int2((size + stride - 1u) / stride) - 1;
+    // Le pixel calculé i est le pixel 2i de la taille de rendu.
+    const float2 position = float2(pixel) / float(stride);
+    const int2 corner = int2(floor(position));
+    const float2 f = position - float2(corner);
+    float sum = 0.0;
+    float total = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        const int2 offset = int2(i & 1, i >> 1);
+        const float2 tap = ambientOcclusion.Load(int3(clamp(corner + offset, int2(0), last), 0)).xy;
+        const float2 axis = lerp(1.0 - f, f, float2(offset));
+        const float bilinear = axis.x * axis.y;
+        const float weight = bilinear * (saturate(1.0 - abs(tap.y - viewDepth) / (0.05 * viewDepth)) + 1.0e-3);
+        sum += tap.x * weight;
+        total += weight;
+    }
+    return total > 0.0 ? sum / total : 1.0;
+}
+
+// Les surfaces claires renvoient entre elles une partie de la lumière que l'occlusion retire : un coin blanc s'assombrit
+// moins qu'un coin noir (Jimenez et al. 2016, ajusté sur des rendus de référence ; albédo en luminance).
+float MultiBounce(float visibility, float albedo)
+{
+    const float a = 2.0404 * albedo - 0.3324;
+    const float b = -4.7951 * albedo + 0.6417;
+    const float c = 2.7552 * albedo + 0.6903;
+    return saturate(max(visibility, ((visibility * a + b) * visibility + c) * visibility));
+}
+
+// Part des reflets de l'environnement gardée sous une occlusion `visibility` (Lagarde et de Rousiers 2014) : un reflet
+// lisse vu de face passe encore, un reflet rugueux s'éteint comme le diffus.
+float SpecularOcclusion(float nv, float visibility, float roughness)
+{
+    return saturate(pow(nv + visibility, exp2(-16.0 * roughness - 1.0)) - 1.0 + visibility);
+}
 
 // Vue de débogage (params.cascade, GBufferView) : une donnée du G-buffer telle quelle, à la place de la lumière.
 float3 GBufferDebug(uint view, float3 base, float3 normal, float4 surface)
@@ -61,8 +113,11 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
     const float3 normal = DecodeOctahedron(normals.xy);
     const float3 geometryNormal = DecodeOctahedron(normals.zw);
     const float4 material = gbufferSurface.Load(texel);
+    const float screenOcclusion = ScreenOcclusion(int2(id.xy), params.color.x / depth);
     if (params.cascade != 0) {
-        lightingColor[id.xy] = float4(GBufferDebug(params.cascade, base.rgb, normal, material), 1.0);
+        // Vue « occlusion ambiante » (GBufferView::AmbientOcclusion) : l'occlusion de l'écran seule, en gris.
+        const float3 shown = params.cascade == 4 ? float3(screenOcclusion) : GBufferDebug(params.cascade, base.rgb, normal, material);
+        lightingColor[id.xy] = float4(shown, 1.0);
 #ifdef FLUX_RAY_QUERY
         lightingSun[id.xy] = float4(0.0);
 #endif
@@ -107,9 +162,16 @@ void computeLighting(uint3 id : SV_DispatchThreadID)
             occlusion = 1.0;
         }
     }
+    // Occlusion de l'écran mêlée à celle de la matière (la plus forte des deux), pour la seule lumière ambiante : le
+    // soleil et les lampes ont leurs ombres. Reflets à part, selon l'angle de vue et la rugosité. Sans occlusion de
+    // l'écran (1), l'image est celle d'avant.
+    const float screen = MultiBounce(screenOcclusion, dot(surface.diffuse, float3(0.2126, 0.7152, 0.0722)));
+    const float visibility = min(occlusion, screen);
+    const float specularOcclusion = min(occlusion, SpecularOcclusion(saturate(dot(surface.normal, surface.toEye)), screen,
+                                                                     surface.roughness));
     float inside;
-    const float3 lit = LightSurface(surface, geometryNormal, worldPosition, occlusion, clouds, inside, foliage, material.xw,
-                                    shadowLift);
+    const float3 lit = LightSurface(surface, geometryNormal, worldPosition, visibility, clouds, inside, foliage, material.xw,
+                                    shadowLift, specularOcclusion);
     float3 transmittance;
     const float3 scattered = AirTo(worldPosition, transmittance);
     // Lumière propre déjà multipliée par l'exposition (Radiance) : seulement voilée par l'air ici.
