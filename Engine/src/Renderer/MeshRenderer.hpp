@@ -591,6 +591,7 @@ namespace Flux {
             float width = 0.0f;
             float range = 0.0f;
             float wind = 0.0f;
+            float flowers = 0.0f; // part des brins fleuris (VegetationComponent::grassFlowers)
         };
         GrassSettings m_grass;
         std::span<const TileBatch> m_grassBatches;
